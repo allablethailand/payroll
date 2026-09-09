@@ -49,8 +49,16 @@
         <!-- 2026-08-29, follow-up to Bank File Format: "ส่วน Format เอกสารของการนำส่งสรรพากร และ
              ประกันสังคม ก็อยากให้มีการตั้งค่าเหมือนกัน" -- a VERSION SELECTOR (pick which known format
              version to file), not a field editor like Bank File Format -- see
-             StatutoryFormatVersionModel's own docblock for why. -->
-        <li class="nav-item" role="presentation">
+             StatutoryFormatVersionModel's own docblock for why.
+             2026-09-08, explicit request: "Tab รูปแบบเอกสาร ไม่จำเป็น...ในฝั่งบริษัทอย่าจะต้องซ่อนไปก่อน
+             เพราะบริษัทไม่มีสิทธิ์ในการตั้งค่าเอง" -- which government format version applies is a
+             company-wide/national compliance decision, not something an individual company should
+             pick for itself, so the tab is hidden on this company-facing page. `d-none` only (not
+             deleted) -- the tab button/pane/StatutoryFormatVersionModel/its endpoints are all
+             UNCHANGED and still fully working, just unreachable from here for now; if this ever
+             needs to be admin-only-configurable instead of company-configurable, it can resurface
+             on a different (admin) page without rebuilding any of this. -->
+        <li class="nav-item d-none" role="presentation">
             <button class="nav-link setup-menu" id="document-format-tab" data-bs-toggle="tab" data-bs-target="#document-format-pane" type="button" role="tab" aria-controls="document-format-pane" aria-selected="false">
                 <i class="fa-solid fa-file-lines me-2"></i><span data-i18n="tab_document_format">Document Format</span>
             </button>
@@ -66,7 +74,13 @@
             </button>
         </li>
     </ul>
-    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
+    <!-- 2026-09-08, explicit request: "หมายเหตุอยู่ติด Tab เกินไปครับในหน้าหลักทั้ง 3 Tab" -- `pt-3` added
+         (this page had none at all; `setup/data-sync.php` already uses the same `.tab-content p-3`
+         precedent for its own tab bar/content gap) so the description paragraph at the top of each
+         of the 3 panes below no longer sits flush against the tab bar above it. Only the TOP side --
+         left/right/bottom spacing wasn't part of the complaint, and each pane already manages its
+         own internal spacing (table margins, .card-surface padding, etc.). -->
+    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 pt-3" style="border-top-left-radius:0;border-top-right-radius:0;">
     <div class="tab-pane fade show active" id="company-setting-pane" role="tabpanel" aria-labelledby="company-setting-tab" tabindex="0">
         <p class="text-muted small mb-2" data-i18n="company_setting_description">Enable/disable statutory items for your company and adjust rates where the law permits, based on your company's registered country.</p>
         <!-- 2026-09-03, Backlog Phase 9, T044 -- relocated here from the removed Master Rates tab

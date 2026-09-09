@@ -251,6 +251,11 @@ if ($compIdForOrigamiFlags > 0 && $navUserId > 0) {
 <script src="<?=asset('public/js/session-guard.js')?>"></script>
 <script src="<?=asset('public/js/input.js')?>"></script>
 <script src="<?=asset('public/js/table-column-filter.js')?>"></script>
+<!-- 2026-09-08 -- shared sticky-left/right-column helper for a scrollX DataTable (plain CSS
+     position:sticky, NOT the broken FixedColumns extension -- see that file's own top-of-file
+     docblock for why). Loaded globally so any table can opt in with zero per-page setup, same
+     convention as table-column-filter.js above. -->
+<script src="<?=asset('public/js/sticky-table-columns.js')?>"></script>
 <!-- 2026-09-04, Backlog Phase 10, T055 -- generic reusable "Assign to Department/Position/Team/
      Employee" widget driving the shared #entityAssignModal in modals.php. Loaded globally (same as
      the modal itself) so any future page can call openAssignModal() with zero per-page setup -- see

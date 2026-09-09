@@ -140,11 +140,14 @@ function aisRenderTable(data) {
 
     // ---- head (built directly, before DataTable init -- column count/labels are dynamic per
     // fiscal year, so this isn't the usual "static thead in the view" DataTables setup) ----
-    // 2026-08-30, explicit request: "ปรับให้มี Department team position เพิ่ม และให้ Fixed Column ส่วนของ
-    // ข้อมูลพนักงาน ไว้" -- 3 new columns join Employee in the LEFT-fixed group (see fixedColumns
-    // below), so they scroll together with the employee identity while the month columns scroll
-    // independently.
-    let headHtml = '<tr><th>' + (langData['employee'] || 'Employee') + '</th>'
+    // 2026-09-08, explicit request: "แยก code กับ ชื่อพนักงานเป็นคนละ column กันครับ แผนก ทีม ตำแหน่ง
+    // ไม่ต้อง fixed column ครับ ให้เลื่อนได้เหมือนเดือน" -- Employee No./Employee (name) split into 2 real
+    // columns (matches every other table in this app's own "code and name are separate columns"
+    // convention, e.g. Employee Recheck Data) and are the only 2 columns still frozen left (see
+    // `left: 2` on the DataTable init below, down from 4) -- Department/Team/Position moved OUT of
+    // the frozen group entirely, scrolling together with the month columns instead.
+    let headHtml = '<tr><th>' + (langData['employee_no'] || 'Employee No.') + '</th>'
+        + '<th>' + (langData['employee'] || 'Employee') + '</th>'
         + '<th>' + (langData['department'] || 'Department') + '</th>'
         + '<th>' + (langData['team'] || 'Team') + '</th>'
         + '<th>' + (langData['position'] || 'Position') + '</th>';
@@ -156,11 +159,11 @@ function aisRenderTable(data) {
 
     // ---- foot (real totals from the server -- reflects every filtered employee, not just what
     // DataTable's own client-side search box currently shows) ----
-    // Plain empty <td>s (not colspan) for the 3 new Department/Team/Position columns -- FixedColumns
-    // clones/aligns header+body+footer cells 1:1 by column INDEX, so keeping the footer's own cell
-    // count identical to the header's (rather than collapsing these into the "Total" label's own
-    // colspan) is what keeps the frozen-column math correct.
-    let footHtml = '<tr><td>' + (langData['total'] || 'Total') + '</td><td></td><td></td><td></td>';
+    // Plain empty <td>s (one per identity column: Employee No./Employee/Department/Team/Position) --
+    // keeping the footer's own cell count identical to the header's (rather than collapsing these
+    // into the "Total" label's own colspan) is what keeps each column's <td> lined up under its own
+    // <th> in a plain (non-scrollX) table.
+    let footHtml = '<tr><td>' + (langData['total'] || 'Total') + '</td><td></td><td></td><td></td><td></td>';
     months.forEach(function (m) {
         const mt = data.totals.months[m.key] || { gross: 0, deduction: 0, net: 0 };
         footHtml += `<td class="text-end">${aisMoneyCellHtml(mt)}</td>`;
@@ -173,17 +176,9 @@ function aisRenderTable(data) {
     $('#tb_annual_summary tfoot').html(footHtml);
 
     // ---- columns ----
-    // 2026-08-30, explicit request: "ปรับให้มี Department team position เพิ่ม" -- 3 new columns, part
-    // of the LEFT-fixed group alongside Employee (see fixedColumns below).
     const columns = [
-        {
-            data: null,
-            render: function (row) {
-                const name = currentLang === 'th' ? row.name_th : row.name_en;
-                return `<div class="ais-employee-no">${escapeHtml(row.employee_no)}</div>
-                    <div class="ais-employee-name">${escapeHtml(name || row.name_th || row.name_en || '')}</div>`;
-            }
-        },
+        { data: null, render: (row) => `<span class="ais-employee-no">${escapeHtml(row.employee_no)}</span>` },
+        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '') },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
@@ -221,15 +216,27 @@ function aisRenderTable(data) {
         paging: false,
         info: false,
         order: [],
-        scrollX: true,
-        scrollY: '60vh',
-        scrollCollapse: true,
-        // 2026-08-30, explicit request: "ให้ Fixed Column ส่วนของข้อมูลพนักงาน ไว้ แล้ว Column ส่วนที่เหลือ
-        // ใช้เมาส์เพื่อลากดู" -- left grew from 1 (Employee only) to 4 (Employee/Department/Team/
-        // Position -- the whole "who is this row" identity block); the month columns in between and
-        // the Annual Total on the right are unchanged in kind (still scroll / still fixed right).
-        fixedColumns: { left: 4, right: 1 },
         language: getTableLang(),
+        // 2026-09-08, explicit follow-up request ("column ทั้ง 3 Tab พนักงาน fixed และ column รวมทั้งปี
+        // fixed ขวา ส่วนของเดือนใช้เมาส์ลากดูได้เหมือนหน้า employee tab ตรวจสอบข้อมูล") -- was DataTables'
+        // own core `scrollX`+`scrollY`+the FixedColumns extension (`fixedColumns: {left:4, right:1}`),
+        // confirmed BROKEN app-wide for 2 independent reasons (see public/js/sticky-table-columns.js's
+        // own docblock): FixedColumns itself throws on load (missing `DataTable.Dom` in the installed
+        // `datatables.net` core), and `scrollX`/`scrollY` need CSS this app never actually loads
+        // (the base `datatables.net` skin's own stylesheet, only its bs5 skin was ever installed) --
+        // so neither the frozen columns nor the vertical 60vh cap were ever actually working, despite
+        // being configured. Rebuilt on the SAME plain-CSS-position:sticky pattern Employee Recheck
+        // Data already uses -- `initStickyColumns()` freezes columns on the left/right,
+        // `initTableDragScroll()` wraps the table in `.table-responsive` and adds real click-and-drag
+        // panning for the columns in between. The old `scrollY:'60vh'` vertical cap is NOT replaced --
+        // it was never actually capping anything either (same missing-CSS reason), so dropping it is
+        // not a real behavior change.
+        // 2026-09-08, same-day follow-up ("แยก code กับ ชื่อพนักงานเป็นคนละ column กันครับ แผนก ทีม ตำแหน่ง
+        // ไม่ต้อง fixed column ครับ ให้เลื่อนได้เหมือนเดือน") -- left dropped from 4 to 2 (Employee No.+
+        // Employee only, now that they're 2 real columns instead of 1 combined one -- see the head/
+        // columns above) -- Department/Team/Position are no longer part of the frozen group at all,
+        // they scroll together with the month columns now.
+        drawCallback: function () { initStickyColumns('#tb_annual_summary', { left: 2, right: 1 }); },
         // 2026-09-04, Backlog Phase 11, T067 -- Department/Team/Position are genuinely categorical
         // (a small, real distinct-value set), the confirmed real gap in this table. Employee (name+
         // no, effectively unique per row) and the 12 month/annual-total money columns are
@@ -242,15 +249,23 @@ function aisRenderTable(data) {
         // though a money column isn't literally named in that list. Re-applied on every rebuild
         // (destroy:true + initComplete, not a one-time init) since this table's own column set/data
         // changes on every filter/year change -- initComplete fires again each time.
+        // 2026-09-08: indices shifted 1,2,3 -> 2,3,4 now that Employee No./Employee are 2 separate
+        // columns instead of 1.
         initComplete: function () {
             initExcelColumnFilters(this.api(), {
                 mode: 'client',
                 columns: [
-                    { index: 1, key: 'department' },
-                    { index: 2, key: 'team' },
-                    { index: 3, key: 'position' },
+                    { index: 2, key: 'department' },
+                    { index: 3, key: 'team' },
+                    { index: 4, key: 'position' },
                 ],
             });
+            // Re-run AFTER initExcelColumnFilters rebuilds the header cells' own inner markup (sort
+            // arrow + filter icon), which can nudge their rendered width slightly -- drawCallback's
+            // own call above (which fires BEFORE initComplete on the very first draw) would otherwise
+            // compute the left offsets from marginally-stale widths.
+            initStickyColumns('#tb_annual_summary', { left: 2, right: 1 });
+            initTableDragScroll('#tb_annual_summary');
         },
     });
     updateText($('#tb_annual_summary')[0]);
@@ -404,7 +419,10 @@ function aisRenderPitTable(data) {
     }
     $('#ais-pit-pane .ais-table-wrap').removeClass('d-none');
 
-    let headHtml = '<tr><th>' + (langData['employee'] || 'Employee') + '</th>'
+    // 2026-09-08, explicit request: "แยก code กับ ชื่อพนักงานเป็นคนละ column กันครับ แผนก ทีม ตำแหน่ง ไม่ต้อง
+    // fixed column ครับ ให้เลื่อนได้เหมือนเดือน" -- same split as Tab 1's own aisTable above.
+    let headHtml = '<tr><th>' + (langData['employee_no'] || 'Employee No.') + '</th>'
+        + '<th>' + (langData['employee'] || 'Employee') + '</th>'
         + '<th>' + (langData['department'] || 'Department') + '</th>'
         + '<th>' + (langData['team'] || 'Team') + '</th>'
         + '<th>' + (langData['position'] || 'Position') + '</th>';
@@ -412,13 +430,14 @@ function aisRenderPitTable(data) {
     headHtml += '<th>' + (langData['annual_total'] || 'Annual Total') + '</th></tr>';
     $('#tb_ais_pit thead').html(headHtml);
 
-    let footHtml = '<tr><td>' + (langData['total'] || 'Total') + '</td><td></td><td></td><td></td>';
+    let footHtml = '<tr><td>' + (langData['total'] || 'Total') + '</td><td></td><td></td><td></td><td></td>';
     months.forEach(m => { footHtml += `<td class="text-end">${aisFmt((data.totals.months || {})[m.key] || 0)}</td>`; });
     footHtml += `<td class="text-end"><span class="ais-total-value">${aisFmt(data.totals.annual_tax_withheld)}</span></td></tr>`;
     $('#tb_ais_pit tfoot').html(footHtml);
 
     const columns = [
-        { data: null, render: (row) => `<div class="ais-employee-no">${escapeHtml(row.employee_no)}</div><div class="ais-employee-name">${escapeHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '')}</div>` },
+        { data: null, render: (row) => `<span class="ais-employee-no">${escapeHtml(row.employee_no)}</span>` },
+        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '') },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
@@ -436,9 +455,13 @@ function aisRenderPitTable(data) {
 
     aisPitTable = $('#tb_ais_pit').DataTable({
         data: employees, columns: columns, destroy: true, paging: false, info: false, order: [],
-        scrollX: true, scrollY: '60vh', scrollCollapse: true,
-        fixedColumns: { left: 4, right: 1 },
         language: getTableLang(),
+        // 2026-09-08, same fix as Tab 1's own aisTable above -- see that DataTable's own comment for
+        // the full "scrollX/FixedColumns confirmed broken app-wide" reasoning, unchanged here. left:2
+        // (Employee No.+Employee only, not Department/Team/Position) matches Tab 1's own same-day
+        // follow-up too.
+        drawCallback: function () { initStickyColumns('#tb_ais_pit', { left: 2, right: 1 }); },
+        initComplete: function () { initTableDragScroll('#tb_ais_pit'); },
     });
     updateText($('#tb_ais_pit')[0]);
 }
@@ -509,20 +532,29 @@ function aisRenderMonthlyTable(employees) {
         aisMonthlyTable = null;
         $('#tb_ais_monthly tbody').empty();
     }
+    // 2026-09-08: toggles the wrapper (once initTableDragScroll has created it, so its own pt-2 mb-5
+    // padding/spacing disappears along with the table instead of leaving an empty padded box behind) or
+    // the bare <table> itself (before that wrapper exists yet -- a genuinely first-ever "no data"
+    // render, where `.parent()` is still whatever plain container the view puts it in).
+    const $aisMonthlyHideTarget = $('#tb_ais_monthly').parent().hasClass('table-responsive') ? $('#tb_ais_monthly').parent() : $('#tb_ais_monthly');
     if (!employees.length) {
         $('#aisMonthlyTableEmpty').removeClass('d-none');
-        $('#tb_ais_monthly').closest('.table-responsive').addClass('d-none');
+        $aisMonthlyHideTarget.addClass('d-none');
         return;
     }
     $('#aisMonthlyTableEmpty').addClass('d-none');
-    $('#tb_ais_monthly').closest('.table-responsive').removeClass('d-none');
+    $aisMonthlyHideTarget.removeClass('d-none');
     aisMonthlyTable = $('#tb_ais_monthly').DataTable({
         data: employees,
         destroy: true,
         pageLength: pageLength,
         lengthMenu: lengthMenu,
+        // 2026-09-08, explicit follow-up request: "แยก code กับ ชื่อพนักงานเป็นคนละ column กันครับ แผนก ทีม
+        // ตำแหน่ง ไม่ต้อง fixed column" -- same split as Tab 1/2; Department/Team/Position were never
+        // part of this tab's own frozen group anyway (only Employee was, see left:1 below).
         columns: [
-            { data: null, render: (row) => `<div class="ais-employee-no">${escapeHtml(row.employee_no)}</div><div class="ais-employee-name">${escapeHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '')}</div>` },
+            { data: null, render: (row) => `<span class="ais-employee-no">${escapeHtml(row.employee_no)}</span>` },
+            { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '') },
             { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
             { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
             { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
@@ -532,6 +564,23 @@ function aisRenderMonthlyTable(employees) {
             { data: 'tax_withheld', className: 'text-end', render: (v) => `<span class="fw-semibold">${aisFmt(v)}</span>` },
         ],
         language: getTableLang(),
+        // 2026-09-08, explicit follow-up request ("ทั้ง 3 Tab พนักงาน fixed...ใช้เมาส์ลากดูได้เหมือนหน้า
+        // employee tab ตรวจสอบข้อมูล") -- this tab has no month matrix/Annual Total column (a single
+        // calendar-month snapshot, not a 12-month spread), so only Employee No.+Employee are frozen
+        // (left:2, no right) -- the same drag-scroll/sticky-column mechanism as Tab 1/2 above, applied
+        // for consistency across all 3 tabs of this page even though 9 plain columns rarely need
+        // horizontal scroll on a typical desktop width. `pt-2` on the new wrapper (initTableDragScroll's
+        // 2nd param) matches the top padding the STATIC `.table-responsive` wrapper this table used to
+        // sit in (removed from the view -- see that file's own comment) already had -- `p-3`'s own
+        // left/right component was dropped same-day (explicit follow-up: "เอา p-3 ออกครับ ความกว้าง
+        // ตารางไม่ตรงกับ header"): it inset this wrapper an extra layer beyond the filter/stat-card rows
+        // above it, which don't have that same extra inset.
+        drawCallback: function () { initStickyColumns('#tb_ais_monthly', { left: 2 }); },
+        // 2026-09-08: 'mb-5' added to the dynamically-created wrapper's own classes now that the
+        // outer `.card-surface p-0 mb-5` this table used to sit in is gone from the view (explicit
+        // request: "card-surface p-0 mb-5 ไม่เอาครับ") -- keeps the same spacing before whatever
+        // section follows without needing that wrapper back.
+        initComplete: function () { initTableDragScroll('#tb_ais_monthly', 'pt-2 mb-5'); },
     });
     updateText($('#tb_ais_monthly')[0]);
 }

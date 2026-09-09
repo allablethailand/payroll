@@ -137,6 +137,16 @@ html, body {
     padding: 0;
     padding-right: 0 !important;
 }
+/* 2026-09-08, explicit request: "ตอนนี้ส่วนของท้าย page ทุก page ไม่มีพื้นที่ว่างช่วงด้านล่าง" -- every
+   page's content used to end flush against the bottom of the scrollable area (no breathing room
+   before the page just stops), since neither `body` nor the per-page `.container-body` wrapper below
+   ever had a bottom counterpart to `.container-body`'s own `margin-top: 100px` (which only exists to
+   clear the fixed top navbar). Kept separate from the `padding:0` reset immediately above (that rule
+   is the intentional "no default browser spacing" baseline every page relies on) rather than folded
+   into it, so it reads as its own deliberate addition, not a tweak to the reset itself. */
+body {
+    padding-bottom: 40px;
+}
 /* 2026-08-29, explicit request: per-user Font Size setting (S/M/L). Every Bootstrap component in
    this app sizes itself in `rem`, which resolves against THIS root font-size -- the existing
    12px above already establishes that (it's why the whole app doesn't render at the browser's
@@ -1249,6 +1259,14 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .container-body {
     margin-top: 100px;
+    /* 2026-09-08, explicit request: "เพิ่ม padding จาก body กับ footer หน่อยครับ" -- this wrapper
+       (every page's own main content, per Controller::view()'s shared layout) already clears the
+       fixed top navbar via margin-top above, but had no equivalent breathing room of its own at the
+       BOTTOM before the page's content just stops -- paired with the new `body { padding-bottom }`
+       right above this class in the file, not a replacement for it (the two live on different
+       elements: this one ends where a given page's own content ends, `body`'s covers the true end of
+       the whole scrollable document). */
+    margin-bottom: 40px;
 }
 .label-head {
     padding: 0.5em 0.7em;
@@ -3519,6 +3537,99 @@ html, body {
     background: #f2f4f7;
     border-radius: 4px;
     padding: .05rem .3rem;
+}
+
+/* ==========================================================================
+   Tax & Statutory -- statutoryRateModal's Rate Versions pane (2026-09-08, same-day follow-up round
+   2, explicit request: "ฝั่งซ้ายให้เป็น li ก็ได้ครับ ลดความกว้างลงหน่อย"). `.sr-version-list` is a plain
+   Bootstrap `.list-group` (see modals.php/tax-statutory.js's own docblocks for why this pane isn't
+   a DataTable -- it's a small "pick one to inspect/edit" master-detail selector, not a browsable
+   data grid) -- `--bs-list-group-active-*` redefined here (same "override the library's own CSS
+   variable, scoped narrowly" technique as the DataTables processing-dot recolor above) so the
+   selected version reads in brand orange instead of Bootstrap's default blue. Compact padding since
+   this column is narrower (`col-lg-4`) than the form beside it; a tall version history scrolls
+   internally instead of growing the whole modal. */
+.sr-version-list {
+    max-height: 520px;
+    overflow-y: auto;
+}
+/* 2026-09-08, same-day follow-up round 3, explicit request: "ปุ่มลบ และ active ของ version ช่วยปรับให้
+   ใหม่ครับ" -- was Bootstrap's own `.list-group-item.active` (solid brand-orange fill, white text),
+   which reads too loud/alarming for a plain "this is the one currently open" indicator -- same
+   "color too flashy" category of feedback this app already got once earlier this session on the
+   Employee Recheck table's own sticky-column highlight, which settled on a quiet neutral tint
+   instead of a saturated fill for the exact same reason. Replaced with a quieter left-accent-bar +
+   soft orange tint (same restrained "this is a distinct thing" visual language `.tbl-sticky-col`
+   already uses elsewhere in this app) via a custom `.sr-selected` class instead of Bootstrap's own
+   `.active`, so there is zero fight with Bootstrap's own hardcoded active background/border/color
+   variables. */
+.sr-version-item {
+    cursor: pointer;
+    padding: .65rem .75rem .65rem 1rem;
+    border-left: 3px solid transparent;
+}
+.sr-version-item:hover {
+    background: var(--app-hover-bg);
+}
+.sr-version-item.sr-selected {
+    background: rgba(255, 153, 0, .10);
+    border-left-color: #FF9900;
+}
+/* Delete now only appears on hover/selection (was always visible at reduced opacity) -- a quieter
+   default state now that this list is denser (narrower column, more rows fit on screen at once). */
+.sr-version-item .btn-delete-sr-rate {
+    opacity: 0;
+    transition: opacity .12s ease;
+}
+.sr-version-item:hover .btn-delete-sr-rate,
+.sr-version-item.sr-selected .btn-delete-sr-rate {
+    opacity: 1;
+}
+
+/* View mode (openStatutoryRateModal(row, true), the main list's new "View" button, explicit
+   request: "เพิ่มปุ่ม View เพื่อดู Vertion อัตราล่าสุดที่ใช้ครับ View อย่างเดียว") -- disables editing/
+   creating/deleting/promoting entirely, leaving only browsing the (still-clickable, still
+   read-only) version list. `#srRateVersionFieldset`'s own `disabled` attribute (set in JS) is
+   defense-in-depth for the form itself, which View mode now hides outright anyway (see
+   renderSrVersionViewCard()'s own docblock in tax-statutory.js) -- these selectors cover the
+   controls that live OUTSIDE the form (list toolbar, per-item delete, footer buttons) --
+   `!important` because each already has its own independent `.d-none` toggle logic elsewhere that
+   this must override regardless of which one is applied/removed second. */
+.sr-modal-readonly #srAddRateVersionBtn,
+.sr-modal-readonly #srPullFromMasterBtn,
+.sr-modal-readonly .btn-delete-sr-rate,
+.sr-modal-readonly #srHistoryModalFooter #srRateVersionSaveBtn,
+.sr-modal-readonly #srHistoryModalFooter #srPromoteVersionBtn {
+    display: none !important;
+}
+/* renderSrVersionViewCard() (tax-statutory.js) -- plain labeled value tiles, deliberately NOT
+   styled to look like form fields (no border/input-shaped boxes) so View mode reads unmistakably
+   as read-only at a glance, not just "a form you happen to not be able to click into." */
+.sr-view-field {
+    background: var(--app-hover-bg);
+    border-radius: 8px;
+    padding: .6rem .85rem;
+    height: 100%;
+}
+.sr-view-label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    color: var(--app-text-muted);
+    margin-bottom: .15rem;
+}
+.sr-view-value {
+    font-size: .95rem;
+    font-weight: 600;
+    color: var(--app-text);
+    word-break: break-word;
+}
+.sr-view-pre {
+    font-size: .8rem;
+    font-weight: 400;
+    background: transparent;
+    white-space: pre-wrap;
+    word-break: break-word;
 }
 
 /* ==========================================================================
@@ -7250,15 +7361,17 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     padding: 4px 2px;
 }
 
-/* ==================== Annual Income Summary (2026-08-29) ====================
+/* ==================== Annual Income Summary (2026-08-29, frozen-column mechanism replaced 2026-09-08) ====================
    Explicit request: "อยากให้ Column ที่เป็นพนักงาน Fixed อยู่กับที่ แล้วลากดู Column ฝั่งขวา และขวาสุดที่
    เป็นสรุป ให้ fiexd ขวาสุด...และตารางให้เป็น datatable" -- a real DataTable (public/js/reports/
-   annual-summary.js) using the FixedColumns extension (public/node_modules/
-   datatables.net-fixedcolumns*, added as an npm dependency for this) for the frozen employee
-   (left)/annual-total (right) columns while scrolling both axes -- FixedColumns clones those
-   columns into their own positioned tables via JS, so unlike the original hand-rolled version of
-   this page, freezing itself needs no position:sticky CSS here; only visual styling (colors,
-   fonts, month-state header colors) is this file's job now. */
+   annual-summary.js). Originally used DataTables' own FixedColumns extension for the frozen
+   employee(left)/annual-total(right) columns -- confirmed 2026-09-08 that extension never actually
+   worked at all in this app (see public/js/sticky-table-columns.js's own docblock: the installed
+   `datatables.net` core never exposes `DataTable.Dom`, which FixedColumns requires at load time) --
+   replaced with that same shared helper's plain CSS `position:sticky` mechanism (`.tbl-sticky-col`
+   etc., see this file's own section on Employee "Recheck Data" for those shared rules). This
+   section's own rules below are purely visual styling (colors, fonts, month-state header colors),
+   unchanged by that swap. */
 .ais-table-wrap .dataTables_wrapper {
     font-size: .88rem;
 }
@@ -7274,7 +7387,10 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     text-align: left;
 }
 .ais-employee-no { font-weight: 700; color: #1e293b; }
-.ais-employee-name { color: #64748b; font-size: .8rem; }
+/* .ais-employee-name removed 2026-09-08 -- Employee No./Employee split into 2 real columns (explicit
+   request: "แยก code กับ ชื่อพนักงานเป็นคนละ column"), so the gray-subtext-under-bold-code treatment this
+   class gave a STACKED single cell no longer applies to anything; confirmed zero remaining references
+   before removing. */
 .ais-cell-net { font-weight: 600; }
 .ais-cell-sub { font-size: .72rem; color: #94a3b8; display: block; }
 .ais-cell-sub.ais-cell-deduction { color: #dc3545; }
@@ -7333,6 +7449,65 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .ais-legend-swatch.ais-month-past_missing { background: #fdecec; border: 1px solid #f3b4ac; }
 .ais-legend-swatch.ais-month-current { background: #dbeafe; border: 1px solid #93c5fd; }
 .ais-legend-swatch.ais-month-future { background: #f8fafc; border: 1px solid #e2e8f0; }
+
+/* Employee "Recheck Data" table (2026-09-08, explicit request: "อยากให้ column รหัสพนักงาน และชื่อพนักงาน
+   fixed อยู่กับที่ฝั่งซ้าย...และ column Action อยากให้ fixed อยู่ขวาตลอด ส่วน Column ส่วนกลางๆ อยากให้ใช้เมาส์
+   เลื่อนดูข้อมูลได้") -- `.tbl-sticky-col` itself (this section's last rule) is the SHARED, reusable
+   part (public/js/sticky-table-columns.js applies it to whichever cells its caller asks for -- not
+   scoped to this one table), used here via public/js/employee/list.js's own
+   `initStickyColumns('#tb_employee_recheck', { left: 2, right: 1 })`. `white-space:nowrap` on every
+   header/cell is what keeps a short label like "Actions" from wrapping onto 2 lines once the column
+   is free to size itself to its own scrollable track instead of being squeezed by the old
+   responsive:true column-collapse layout. First candidate table for this pattern -- more tables are
+   expected to move to it the same way, per the same request. */
+.recheck-fixedcols-table th, .recheck-fixedcols-table td {
+    white-space: nowrap;
+}
+/* Shared sticky-column styling (public/js/sticky-table-columns.js's own initStickyColumns()) -- an
+   opaque background is required so a scrolled-under column doesn't visibly show through the frozen
+   one. Sets `--bs-table-bg` (the CSS custom property Bootstrap 5's own `.table` rule reads via
+   `background-color: var(--bs-table-bg)`, normally inherited as `transparent` down from `.table`
+   itself) DIRECTLY on the cell rather than setting `background-color` here outright -- an explicit
+   declaration on the element always wins over an inherited one regardless of selector specificity,
+   so this can't lose to Bootstrap's own (higher-specificity) `.table > :not(caption) > * > *` rule
+   the way a plain `background-color` override here would. Bootstrap's own striping/hover tint layers
+   via `box-shadow` (a separate `--bs-table-accent-bg`, untouched here), so both still render
+   correctly on top of this.
+   2026-09-08, follow-up request: "อยากให้ column ที่ fixed และเลื่อนได้มีสีต่างกัน", then same-day
+   correction ("สีดูฉูดฉาดและแตกต่างเกินไป") -- first tried `var(--app-accent-soft-bg)` (this app's warm
+   orange/brown "highlighted" tint, used for e.g. `.page-header-card-icon`) but that read as too loud
+   for something that spans an entire column's height on every row, not a small icon badge. Settled on
+   `var(--app-hover-bg)` instead -- the same quiet, neutral off-white/off-dark tint this app already
+   uses for a plain row-hover state -- just enough contrast against the ordinary white/dark surface to
+   read as "a different column" at a glance, without competing for attention with actual status colors
+   (badges/icons) inside the cells. */
+.tbl-sticky-col {
+    --bs-table-bg: var(--app-hover-bg);
+}
+/* Visual divider between the frozen block(s) and the scrollable middle -- mirrors the seam
+   DataTables' own FixedColumns extension draws (see that file's own docblock for why this app uses
+   plain position:sticky instead). initStickyColumns() itself marks exactly which cell sits on each
+   boundary (the LAST left-frozen column / the FIRST right-frozen column) via these 2 classes, rather
+   than trying to derive "which sticky cell is on the edge" from a CSS sibling selector alone. */
+.tbl-sticky-col-edge-left {
+    box-shadow: inset -6px 0 6px -6px rgba(0, 0, 0, .15);
+}
+.tbl-sticky-col-edge-right {
+    box-shadow: inset 6px 0 6px -6px rgba(0, 0, 0, .15);
+}
+/* Click-and-hold-then-drag horizontal panning (public/js/sticky-table-columns.js's own
+   initTableDragScroll()) -- plain `overflow-x:auto` alone only supports scrollbar-drag/shift+wheel,
+   not a genuine click-and-drag gesture anywhere on the table body, which is what was explicitly
+   asked for. `grab`/`grabbing` cursors are the standard affordance for this interaction (same
+   convention as e.g. Google Maps' own pan cursor); `user-select:none` while actively dragging stops
+   the browser's native text-selection drag from fighting the custom scroll. */
+.tbl-drag-scroll {
+    cursor: grab;
+}
+.tbl-drag-scroll.tbl-drag-scroll-active {
+    cursor: grabbing;
+    user-select: none;
+}
 
 /* Payroll Run Detail: Employee Breakdown table (2026-08-29, explicit follow-up request:
    "รายการให้แสดงให้ต่างกับรายการที่ยังไม่ Verify หรือ Lock ตรงเงินได้เงินหักสุทธิ์ ปรับการแสดงผลให้ชัดขึ้น") --
@@ -7628,53 +7803,20 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     .om-loader { animation: none; }
 }
 
-/* 2026-09-07, real bug found and fixed (explicit report: "Loader ใน Datatable...ดูไม่สมส่วน และไม่สวย")
-   -- datatables.net-bs5's own stylesheet hardcodes `div.dt-processing > div:last-child { width:80px;
-   height:15px; margin:1em auto; }`, sized for the library's NATIVE 4-bouncing-dots animation (that
-   selector targets what's normally the dots' own wrapper) -- see app.js's own getTableLang()
-   docblock for how this app's `processing` HTML (spinner + text label) collided with it: the label
-   div, being the last child, was squeezed into that same fixed 80x15px box, clipping/skewing text
-   that box was never sized for. Also gives the whole overlay real visual weight (a card, not bare
-   floating text over the table) matching this app's own surface/border/shadow language elsewhere.
-   `div.dt-processing` itself (outer positioning/centering/z-index, from the library) is left alone
-   -- only ITS OWN sizing is widened here since the library's fixed 200px/-100px centering math
-   assumes a narrower box than a full card treatment needs. */
+/* 2026-09-08, explicit request: "Design Loading ของ Datatable อยากให้ปรับใหม่ครับ ตอนนี้มีปัญหาว่ามันซ่อนไป
+   ใน Datatable ครับ เป็นแบบเดิมก็ได้ Default ของ Datatable แต่เปลี่ยนเป็นสีส้ม" -- retires the 2026-09-07
+   custom card+label design above (removed here, not just superseded) once it turned out to still
+   collide with this app's own scrolling table wrappers (sticky columns/drag-scroll) badly enough to
+   render effectively hidden inside the table. Reverted to datatables.net-bs5's own OUT-OF-THE-BOX
+   `.dt-processing.card` box + native 4-dot bounce animation entirely untouched (own positioning/
+   sizing/z-index, own white card surface) -- app.js's own getTableLang() no longer overrides
+   `processing` at all. The ONLY customization left is the dots' own color: bs5 colors them via the
+   CSS custom property `--dt-row-selected` (default Bootstrap primary blue, `13,110,253`), redefined
+   here to brand orange -- scoped to `div.dt-processing` itself (inherited by its own descendants,
+   i.e. just the dots) rather than overriding the variable globally, so nothing else that might ever
+   read `--dt-row-selected` elsewhere (e.g. a future DataTables row-selection feature) is affected. */
 div.dt-processing {
-    width: auto;
-    min-width: 180px;
-    margin-left: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    top: 50%;
-    margin-top: 0;
-    padding: 0;
-}
-.om-dt-processing-inner {
-    display: inline-flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    padding: 18px 26px;
-    background: var(--app-surface-bg);
-    border: 1px solid var(--app-border);
-    border-radius: 14px;
-    box-shadow: 0 8px 24px rgba(16, 24, 40, .12);
-}
-.om-dt-processing-label {
-    font-size: .82rem;
-    font-weight: 500;
-    color: var(--app-text-muted);
-    white-space: nowrap;
-}
-/* Overrides the library's own `div.dt-processing > div:last-child` fixed-box rule for OUR markup
-   specifically (`.om-dt-processing-inner` is that same last-child) -- same class-pairing technique
-   already used elsewhere in this app to out-specificity a library default without touching its file. */
-div.dt-processing > div.om-dt-processing-inner:last-child {
-    position: static;
-    width: auto;
-    height: auto;
-    margin: 0;
-    text-align: center;
+    --dt-row-selected: 255, 153, 0;
 }
 
 .om-page-loader {

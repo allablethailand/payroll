@@ -951,6 +951,136 @@ try {
     ], $userId, true);
     checkTrue('the admin can still recover by switching to a different, real target run' . (empty($fcDeadRecoverRes['status']) ? " ({$fcDeadRecoverRes['message']})" : ''), $fcDeadRecoverRes['status']);
 
+    // ========================================================================================
+    // 2026-09-08, Origami email exchange (2 rounds): attribution.status ('resolved'/
+    // 'pending_fold_in') + the new attribution_update event/endpoint. Origami used to BLOCK
+    // sending a supplemental at all until an admin had already linked it to a target -- now they
+    // send it immediately with status='pending_fold_in' (target_process_id=null), following up
+    // later via a separate attribution_update event once a real target is chosen. Confirmed with
+    // Origami that tax_treatment (calc intent) and attribution.status (link state) are
+    // deliberately independent axes -- see PayrollSyncModel::normalizeAttribution()'s own
+    // docblock for the reasoning this section verifies.
+    // ========================================================================================
+    echo "\n=== attribution.status='pending_fold_in' (merge intent, target genuinely unknown yet) ===\n";
+    $pfiEmpNo = 'ATTR_PFI_EMP_' . uniqid();
+    $insPfiEmp = $pdo->prepare("INSERT INTO `employees`
+        (comp_id, employee_no, title, gender, name_th, surname_th, name_en, surname_en, date_of_birth, nationality,
+         personal_email, mobile_no, address_line_1_register, address_line_1_contact,
+         emergency_name, emergency_surname, emergency_relationship, emergency_mobile,
+         employment_date, employment_status, employment_type, workforce_type, record_time_method,
+         salary_type, base_salary_amount, salary_effective_date, tax_calculation_method, employee_status,
+         sso_enrolled, pvd_enrolled, tax_exempt)
+        VALUES (:comp_id, :employee_no, 'mr', 'male', 'ทดสอบ', 'PFI', 'Test', 'PFI', '1990-01-01', 'Thai',
+         :email, '0812345678', 'A', 'A', 'E', 'E', 'friend', '0898888888',
+         '2020-01-01', 'permanent', 'full_time', 'office', 'manual',
+         'monthly', 30000, '2020-01-01', 'average', 'active', 0, 0, 0)");
+    $insPfiEmp->execute([':comp_id' => $compId, ':employee_no' => $pfiEmpNo, ':email' => uniqid() . '@test.local']);
+
+    $pfiSupplementalProcessId = random_int(400000, 499999);
+    $pfiPayload = [
+        'schema_version' => 1, 'process_id' => $pfiSupplementalProcessId, 'process_no' => 'ORIGAMI-2026-ATTR-PFI',
+        'process_subject' => 'Pending Fold-in Trip Allowance', 'process_description' => null,
+        'process_start' => null, 'process_end' => null, 'process_paid' => null,
+        'report_id' => 1, 'comp_id' => 1, 'comp_code' => $compCode, 'comp_name' => 'Test Co',
+        'period_id' => 1, 'period_name' => 'Monthly', 'frequency_type' => 'monthly', 'run_kind' => 'supplemental',
+        // Real example from Origami's own spec: target genuinely not chosen yet.
+        'attribution' => ['target_process_id' => null, 'tax_treatment' => 'merge', 'status' => 'pending_fold_in'],
+        'items' => [attrBasePayloadItem($pfiEmpNo, 500.0)], 'employee_status' => [],
+    ];
+    $pfiResult = $syncModel->ingest($pfiPayload);
+    checkTrue('pending_fold_in supplemental ingests successfully (NOT silently dropped as "no attribution")', $pfiResult['status']);
+    $pfiProcessRowId = $pfiResult['process_row_id'];
+
+    $pfiStoredRow = $pdo->query("SELECT attribution_target_origami_process_id, attribution_tax_treatment, attribution_status
+        FROM payroll_sync_processes WHERE id = {$pfiProcessRowId}")->fetch(PDO::FETCH_ASSOC);
+    check('stored attribution_status is pending_fold_in', $pfiStoredRow['attribution_status'], 'pending_fold_in');
+    check('stored attribution_tax_treatment is still merge (the calc-intent axis, unaffected)', $pfiStoredRow['attribution_tax_treatment'], 'merge');
+    checkTrue('stored attribution_target_origami_process_id is genuinely NULL (no target chosen yet)', $pfiStoredRow['attribution_target_origami_process_id'] === null);
+
+    $pfiPendingList = $syncModel->pendingList($compId);
+    $pfiRow = current(array_filter($pfiPendingList, fn($r) => (int)$r['id'] === $pfiProcessRowId));
+    checkTrue('pending_fold_in row appears in Pending Pull', $pfiRow !== false);
+    check('attribution_target_status is pending_fold_in (earlier in the lifecycle than waiting_known/waiting_unknown)', $pfiRow['attribution_target_status'] ?? null, 'pending_fold_in');
+
+    echo "\n=== attribution.status='pending_fold_in' + tax_treatment='separate' (Origami's own confirmed real combination) ===\n";
+    $sepPfiSupplementalProcessId = random_int(500000, 599999);
+    $sepPfiPayload = $pfiPayload;
+    $sepPfiPayload['process_id'] = $sepPfiSupplementalProcessId;
+    $sepPfiPayload['process_no'] = 'ORIGAMI-2026-ATTR-SEP-PFI';
+    $sepPfiPayload['attribution'] = ['target_process_id' => null, 'tax_treatment' => 'separate', 'status' => 'pending_fold_in'];
+    $sepPfiResult = $syncModel->ingest($sepPfiPayload);
+    checkTrue('separate + pending_fold_in supplemental ingests successfully', $sepPfiResult['status']);
+    $sepPfiProcessRowId = $sepPfiResult['process_row_id'];
+    $sepPfiStoredRow = $pdo->query("SELECT attribution_tax_treatment, attribution_status FROM payroll_sync_processes WHERE id = {$sepPfiProcessRowId}")->fetch(PDO::FETCH_ASSOC);
+    check('separate + pending_fold_in: attribution_status stored as pending_fold_in', $sepPfiStoredRow['attribution_status'], 'pending_fold_in');
+    check('separate + pending_fold_in: attribution_tax_treatment stored as separate', $sepPfiStoredRow['attribution_tax_treatment'], 'separate');
+    $sepPfiPendingList = $syncModel->pendingList($compId);
+    $sepPfiRow = current(array_filter($sepPfiPendingList, fn($r) => (int)$r['id'] === $sepPfiProcessRowId));
+    checkTrue("separate + pending_fold_in row appears in Pending Pull (fixture precondition)", $sepPfiRow !== false);
+    // Note: NOT `$sepPfiRow['attribution_target_status'] ?? 'sentinel'` -- `??` also fires when the
+    // key exists but is genuinely null (the correct value being asserted here), which would make
+    // this assertion pass/fail for the wrong reason. array_key_exists() is the correct check.
+    checkTrue("attribution_target_status key is present on the row (not just absent)", is_array($sepPfiRow) && array_key_exists('attribution_target_status', $sepPfiRow));
+    check("attribution_target_status is null for 'separate' regardless of pending_fold_in -- confirmed with Origami: separate NEVER gates tax finalization on the merge target", $sepPfiRow['attribution_target_status'], null);
+
+    echo "\n=== applyAttributionUpdate(): resolves a pending_fold_in row's target ===\n";
+    $pfiUpdatePayload = [
+        'schema_version' => 1, 'event' => 'attribution_update',
+        'process_id' => $pfiSupplementalProcessId, 'process_no' => 'ORIGAMI-2026-ATTR-PFI',
+        'attribution' => ['target_process_id' => $targetOrigamiProcessId, 'target_process_no' => 'ORIGAMI-2026-ATTR-TARGET', 'tax_treatment' => 'merge', 'status' => 'resolved'],
+    ];
+    $pfiUpdateResult = $syncModel->applyAttributionUpdate($pfiUpdatePayload);
+    checkTrue('attribution_update succeeds' . (empty($pfiUpdateResult['message']) ? '' : " ({$pfiUpdateResult['message']})"), $pfiUpdateResult['status']);
+    check('attribution_update reports the correct process_row_id', $pfiUpdateResult['process_row_id'] ?? null, $pfiProcessRowId);
+    check('attribution_update reports attribution_status=resolved', $pfiUpdateResult['attribution_status'] ?? null, 'resolved');
+
+    $pfiResolvedRow = $pdo->query("SELECT attribution_target_origami_process_id, attribution_target_process_no, attribution_status
+        FROM payroll_sync_processes WHERE id = {$pfiProcessRowId}")->fetch(PDO::FETCH_ASSOC);
+    check('target_origami_process_id now set to the real target', (int)$pfiResolvedRow['attribution_target_origami_process_id'], $targetOrigamiProcessId);
+    check('target_process_no updated too', $pfiResolvedRow['attribution_target_process_no'], 'ORIGAMI-2026-ATTR-TARGET');
+    check('attribution_status flips to resolved', $pfiResolvedRow['attribution_status'], 'resolved');
+
+    // The target regular process WAS already pulled into a real run earlier in this file
+    // ($targetRunId, still draft up top) -- attributionTargetStatus() should now read 'ready',
+    // not 'waiting_known'/'waiting_unknown', proving the resolved row correctly falls straight
+    // through into the PRE-EXISTING merge-readiness lifecycle with zero extra plumbing.
+    $pfiResolvedList = $syncModel->pendingList($compId);
+    $pfiResolvedListRow = current(array_filter($pfiResolvedList, fn($r) => (int)$r['id'] === $pfiProcessRowId));
+    check('attribution_target_status is now ready (falls straight into the existing lifecycle)', $pfiResolvedListRow['attribution_target_status'] ?? null, 'ready');
+
+    echo "\n=== applyAttributionUpdate(): error paths ===\n";
+    $badVersionResult = $syncModel->applyAttributionUpdate(['schema_version' => 99, 'event' => 'attribution_update', 'process_id' => 1, 'attribution' => []]);
+    checkFalse('rejects an unsupported schema_version', $badVersionResult['status']);
+
+    $badEventResult = $syncModel->applyAttributionUpdate(['schema_version' => 1, 'event' => 'payroll_export', 'process_id' => 1, 'attribution' => []]);
+    checkFalse('rejects a wrong event type', $badEventResult['status']);
+
+    $missingFieldResult = $syncModel->applyAttributionUpdate(['schema_version' => 1, 'event' => 'attribution_update', 'attribution' => []]);
+    checkFalse('rejects a missing process_id', $missingFieldResult['status']);
+
+    $unknownProcessResult = $syncModel->applyAttributionUpdate([
+        'schema_version' => 1, 'event' => 'attribution_update', 'process_id' => random_int(900000, 999999),
+        'attribution' => ['target_process_id' => 123, 'tax_treatment' => 'merge', 'status' => 'resolved'],
+    ]);
+    checkFalse('rejects an unknown process_id (never received via payroll_export)', $unknownProcessResult['status']);
+
+    echo "\n=== applyAttributionUpdate(): NOT blocked even after the process has been pulled into a run ===\n";
+    // Deliberately different from ingest()'s own "already linked to a run" safety net --
+    // attribution_update only ever touches attribution columns, never numeric/gross data, so it
+    // must keep working (for audit/reporting visibility) even after the row is consumed.
+    $pfiPulledCreate = $runModel->create($compId, [
+        'sync_process_id' => $pfiProcessRowId, 'cycle_id' => null, 'run_name' => 'PFI Pulled Standalone',
+        'period_start_date' => '2026-07-21', 'period_end_date' => '2026-08-20', 'payment_date' => '2026-07-25',
+        'run_purpose' => 'incentive',
+    ], $userId, true);
+    checkTrue('fixture: the pending_fold_in row is pulled standalone (the escape hatch) before its own attribution_update arrives' . (empty($pfiPulledCreate['status']) ? " ({$pfiPulledCreate['message']})" : ''), $pfiPulledCreate['status']);
+
+    $pfiPostPullUpdateResult = $syncModel->applyAttributionUpdate([
+        'schema_version' => 1, 'event' => 'attribution_update', 'process_id' => $pfiSupplementalProcessId,
+        'attribution' => ['target_process_id' => $targetOrigamiProcessId, 'target_process_no' => 'ORIGAMI-2026-ATTR-TARGET', 'tax_treatment' => 'merge', 'status' => 'resolved'],
+    ]);
+    checkTrue('attribution_update still succeeds after the row was already pulled into its own standalone run (not blocked)' . (empty($pfiPostPullUpdateResult['message']) ? '' : " ({$pfiPostPullUpdateResult['message']})"), $pfiPostPullUpdateResult['status']);
+
 } finally {
     $pdo->rollBack();
 }

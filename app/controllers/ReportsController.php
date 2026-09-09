@@ -441,6 +441,7 @@ class ReportsController extends Controller {
                 'period_end_date' => $run['period_end_date'],
                 'payment_date' => $run['payment_date'],
                 'state' => $run['state'],
+                'employee_count' => (int)($run['employee_count'] ?? 0),
                 'applicable_codes' => $codes,
             ];
         }

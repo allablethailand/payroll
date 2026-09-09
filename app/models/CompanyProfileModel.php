@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/AuditLogModel.php';
+require_once __DIR__ . '/CompanyStatutoryRateVersionModel.php';
 class CompanyProfileModel {
     private $db;
     private AuditLogModel $auditLog;
@@ -222,6 +223,12 @@ class CompanyProfileModel {
             $userId = $_SESSION['user']['employee_id'] ?? null;
             if ($ok && $isComplete && $wasDraft) {
                 (new PayrollEarningDeductionTypeModel())->seedDefaults((int)$companyId, $userId !== null ? (int)$userId : null);
+                // 2026-09-08, Clone+Version redesign -- "ตอนเปิดใช้งานบริษัท ก็ดึง Master Clone มาเพื่อ
+                // ให้บริษัทปรับแต่งเอง" -- same draft->active transition as seedDefaults() just above,
+                // same idempotent-safe-to-call-more-than-once precedent. $isComplete already proved
+                // registered_country is a real, master_countries-backed code, so it's safe to pass
+                // straight through without re-validating here.
+                (new CompanyStatutoryRateVersionModel($this->db))->cloneMasterForCompany((int)$companyId, (string)$data['registered_country'], $userId !== null ? (int)$userId : null);
             }
             if ($ok && $existing) {
                 $stmtAfter = $this->db->prepare("SELECT * FROM companies WHERE id = :company_id");

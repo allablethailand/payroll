@@ -216,6 +216,9 @@
                 <div class="text-muted small me-auto" id="termsModalScrollHint" data-i18n="terms_and_conditions_scroll_hint">Please scroll to the bottom to continue.</div>
                 <button type="button" class="btn btn-primary" id="btnAcceptTerms" disabled data-i18n="terms_and_conditions_accept_btn">I have read and accept the Terms and Conditions</button>
             </div>
+            <div class="modal-footer terms-modal-footer-view">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+            </div>
         </div>
     </div>
 </div>
@@ -346,7 +349,7 @@
                             data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12" data-option-values="1,2,3,4,5,6,7,8,9,10,11,12"></select>
                     </div>
                     <div class="d-none" id="reportsPreviewEmployeeWrap">
-                        <select class="form-select form-select-sm select2-remote" id="reportsPreviewEmployeeSelect" style="min-width:200px;" data-api="/api/employee.report_to.get"></select>
+                        <select class="form-select form-select-sm select2-remote" id="reportsPreviewEmployeeSelect" style="min-width:200px;" data-api="/api/employee.report_to.get" data-payroll-participants-only="1"></select>
                     </div>
                     <!-- 2026-09-07: DeductionBreakdownReport's own config picker -- a checkbox
                          dropdown (not a plain <select multiple>, so multiple boxes can be toggled
@@ -1334,6 +1337,7 @@
                     <i class="fa-solid fa-sliders me-1"></i><span id="srModalItemName"></span>
                     <span class="badge bg-light text-dark border ms-2 d-none" id="srModalScopeBadgeMaster" data-i18n="statutory_scope_master">Master</span>
                     <span class="badge bg-warning-subtle text-warning border ms-2 d-none" id="srModalScopeBadgeCustom" data-i18n="statutory_scope_custom">Your Company's Item</span>
+                    <span class="badge bg-secondary ms-2 d-none" id="srModalReadOnlyBadge" data-i18n="view_only">View Only</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -1346,11 +1350,21 @@
                             <i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="sr_tab_details">Item Details</span>
                         </button>
                     </li>
-                    <li class="nav-item d-none" role="presentation" id="srSettingTabItem">
-                        <button class="nav-link setup-menu" id="sr-setting-tab" data-bs-toggle="tab" data-bs-target="#sr-setting-pane" type="button" role="tab">
-                            <i class="fa-solid fa-scale-balanced me-1"></i><span data-i18n="sr_tab_setting">Company Setting</span>
-                        </button>
-                    </li>
+                    <!-- 2026-09-08, Clone+Version redesign -- the "Company Setting" tab (a single flat
+                         rate override, no history) is GONE entirely: for a MASTER item, this Rate
+                         Versions tab is now the ONLY tab (statutoryRateModalTabs' own `<ul>` is hidden
+                         by openStatutoryRateModal() whenever scope==='master', since there's nothing
+                         left to switch between) and shows THIS COMPANY'S OWN cloned/customized version
+                         list -- Default (source='master_clone')/Customized (source='company_custom')
+                         badge per row, "Add Version"/"Pull from Master" toolbar buttons, and a per-row
+                         "Promote to System Default" action. See CompanyStatutoryRateVersionModel's own
+                         docblock for the full architecture this replaces. -->
+                    <!-- 2026-09-08, explicit request: "น่าจะไม่ใช่คำว่าประวัติอัตรา ต้องเปลี่ยนคำ" -- the
+                         `rate_history` i18n VALUE (not the key, same "change the value not the key"
+                         precedent used elsewhere in this app) renamed ประวัติอัตรา/"Rate History" ->
+                         เวอร์ชันอัตรา/"Rate Versions", matching the "Add Rate Version" button's own
+                         wording just below in this same tab (add_bracket_version) -- confirmed this
+                         key is used in exactly this ONE place before renaming its value. -->
                     <li class="nav-item d-none" role="presentation" id="srHistoryTabItem">
                         <button class="nav-link setup-menu" id="sr-history-tab" data-bs-toggle="tab" data-bs-target="#sr-history-pane" type="button" role="tab">
                             <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="rate_history">Rate History</span>
@@ -1454,242 +1468,199 @@
                             </div>
                         </form>
                     </div>
-                    <!-- Company Setting tab -- master items only (item_scope='master'). Content
-                         UNCHANGED from the old companySettingModal, just relocated into this tab. -->
-                    <div class="tab-pane fade" id="sr-setting-pane" role="tabpanel">
-                        <form id="companySettingForm" novalidate>
-                            <div class="row mb-3">
-                                <div class="col-sm-12">
-                                    <input type="checkbox" class="me-2" id="cs_is_active" checked>
-                                    <span data-i18n="modal_company_enable_item">Enable this statutory item for our company</span>
-                                </div>
-                            </div>
-                            <div id="cs_override_wrapper">
-                                <hr class="my-3 text-muted opacity-25">
-                                <p class="text-muted small" id="cs_master_default_hint"></p>
-                                <div id="cs_rate_fields" class="d-none">
-                                    <div class="row mb-3">
-                                        <div class="col-sm-4 align-self-center">
-                                            <label class="form-label mb-1"><span data-i18n="modal_employee_rate">Employee Rate (%)</span></label>
-                                        </div>
-                                        <div class="col-sm-4">
-                                            <input type="number" step="0.0001" min="0" class="form-control" id="cs_employee_rate_override" data-i18n="default" placeholder="Default">
-                                        </div>
-                                    </div>
-                                    <div class="row mb-3">
-                                        <div class="col-sm-4 align-self-center">
-                                            <label class="form-label mb-1"><span data-i18n="modal_employer_rate">Employer Rate (%)</span></label>
-                                        </div>
-                                        <div class="col-sm-4">
-                                            <input type="number" step="0.0001" min="0" class="form-control" id="cs_employer_rate_override" data-i18n="default" placeholder="Default">
-                                        </div>
-                                    </div>
-                                </div>
-                                <div id="cs_amount_fields" class="d-none">
-                                    <div class="row mb-3">
-                                        <div class="col-sm-4 align-self-center">
-                                            <label class="form-label mb-1"><span data-i18n="modal_employee_amount">Employee Amount</span></label>
-                                        </div>
-                                        <div class="col-sm-4">
-                                            <input type="number" step="0.01" min="0" class="form-control" id="cs_employee_amount_override" data-i18n="default" placeholder="Default">
-                                        </div>
-                                    </div>
-                                    <div class="row mb-3">
-                                        <div class="col-sm-4 align-self-center">
-                                            <label class="form-label mb-1"><span data-i18n="modal_employer_amount">Employer Amount</span></label>
-                                        </div>
-                                        <div class="col-sm-4">
-                                            <input type="number" step="0.01" min="0" class="form-control" id="cs_employer_amount_override" data-i18n="default" placeholder="Default">
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row mb-3">
-                                    <div class="col-sm-4 align-self-center">
-                                        <label class="form-label mb-1"><span data-i18n="modal_remark">Remark</span></label>
-                                    </div>
-                                    <div class="col-sm-8">
-                                        <input type="text" class="form-control" id="cs_remark" data-i18n="remark_placeholder" placeholder="Optional notes">
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="d-flex justify-content-between mt-4">
-                                <button type="button" class="btn btn-outline-danger" id="btnResetCompanySetting"><i class="fa-solid fa-rotate-left me-1"></i><span data-i18n="reset_to_default">Reset to Default</span></button>
-                                <div>
-                                    <button type="button" class="btn btn-outline-brand d-none" id="srPromoteOverrideBtn">
-                                        <i class="fa-solid fa-arrow-up-from-bracket me-1"></i><span data-i18n="sr_promote_override_btn">Promote to System Default</span>
-                                    </button>
-                                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
-                                </div>
-                            </div>
-                        </form>
-                    </div>
-                    <!-- Rate History tab -- both scopes. List view (default) + an inline edit view
-                         swapped in via .d-none (same "no nested/stacked modal" approach as T046's
-                         own request) for adding/editing one dated rate version. Mirrors the OLD
-                         rateHistoryModal+rateVersionModal's own field set (deleted in T044) --
-                         rebuilt here rather than restored verbatim, since it now needs to work for a
-                         company's own custom item too, not just a master item. -->
+                    <!-- Rate History tab -- both scopes. 2026-09-08, same-day follow-up round 2, explicit
+                         request: "ฝั่งซ้ายให้เป็น li ก็ได้ครับ ลดความกว้างลงหน่อย และปุ่มแก้ไขตัดออก กดแล้วให้
+                         แสดง form แก้ไขเลย ปุ่ม set to default ให้ย้ายมาไว้ที่ฝั่งขวาแทนครับ...ส่วนของ Form วาง
+                         ซ้ายขวาก็ได้ครับ เพื่อไม่ให้กว้างเกินไป" -- the version list is a plain
+                         `<ul class="list-group">` now (loadSrVersionList()/renderSrVersionList() in
+                         tax-statutory.js, NOT a DataTable -- this is a small "pick one to inspect/
+                         edit" master-detail selector, not a browsable data grid), narrower
+                         (`col-lg-4`), with no separate Edit action -- clicking a `<li>` itself loads
+                         it into the form on the right (`.sr-version-item` click handler), highlighted
+                         `.active` (Bootstrap's own list-group selected-state class) while open. Only
+                         Delete stays on the `<li>` itself; "Promote to System Default" moved out to
+                         the shared modal footer below (next to Save, both act on whichever version is
+                         CURRENTLY loaded in the form) since it's a "do something with the open
+                         version" action, not a per-row list action, same reasoning that already
+                         applies to Save. The form's own fields are paired into 2-column rows
+                         (`row g-3` + `col-md-6`) so this wider column doesn't read as one long
+                         vertical list. -->
                     <div class="tab-pane fade" id="sr-history-pane" role="tabpanel">
-                        <div id="srHistoryListView">
-                            <div class="d-flex justify-content-end mb-2">
-                                <button type="button" class="btn btn-sm btn-outline-brand" id="srAddRateVersionBtn">
-                                    <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_bracket_version">Add Rate Version</span>
-                                </button>
+                        <!-- "ปรับแต่งหรือ Default" hint strip -- master items only, shows the
+                             master's own currently-effective rate so it's visible without leaving
+                             this pane, next to the Pull button that reads the SAME value in. -->
+                        <p class="text-muted small d-none" id="sr_master_default_hint"></p>
+                        <div class="row g-3">
+                            <div class="col-lg-4">
+                                <div class="d-flex justify-content-end gap-2 mb-2">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="srPullFromMasterBtn">
+                                        <i class="fa-solid fa-cloud-arrow-down me-1"></i><span data-i18n="sr_pull_from_master_btn">Pull from Master</span>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-brand" id="srAddRateVersionBtn">
+                                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_bracket_version">Add Rate Version</span>
+                                    </button>
+                                </div>
+                                <ul class="list-group sr-version-list" id="sr_version_list"></ul>
                             </div>
-                            <div class="table-responsive">
-                                <table class="table table-sm table-hover align-middle mb-0" id="tb_sr_rate_history">
-                                    <thead class="table-light text-secondary">
-                                        <tr>
-                                            <th data-i18n="modal_effective_date">Effective Date</th>
-                                            <th data-i18n="modal_end_date">End Date</th>
-                                            <th class="text-end" data-i18n="table_current_rate">Rate</th>
-                                            <th data-i18n="table_last_updated">Last Updated</th>
-                                            <th style="width:90px;"></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody></tbody>
-                                </table>
+                            <div class="col-lg-8 ps-lg-4">
+                                <!-- "เปิดครั้งแรกให้ เปิด Version Default" -- filled in by selectSrHistoryRow()/
+                                     showSrHistoryEditView() (tax-statutory.js) the moment the version
+                                     list finishes loading, so there's always a clear "New Version" vs
+                                     "Editing version effective {date}" context above the form. -->
+                                <div class="small fw-bold text-secondary mb-2" id="srVersionFormContext"></div>
+                                <!-- View mode (openStatutoryRateModal(row, true)) renders INTO this div via
+                                     renderSrVersionViewCard() (tax-statutory.js) and hides #srRateVersionForm
+                                     entirely instead of merely disabling it -- a genuinely different, plain
+                                     read-only display (labeled value tiles, a real non-editable bracket
+                                     table, pretty-printed formula JSON), not a grayed-out form. -->
+                                <div id="srVersionViewCard" class="d-none"></div>
+                                <form id="srRateVersionForm" novalidate>
+                                    <input type="hidden" id="sr_rate_id">
+                                    <!-- Wrapping every real field (not the hidden id) in one fieldset lets
+                                         View mode (srViewCurrentVersion(), read-only) disable the WHOLE
+                                         form in a single call instead of field-by-field. -->
+                                    <fieldset id="srRateVersionFieldset">
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label mb-1"><span data-i18n="modal_effective_date">Effective Date</span> <span class="text-danger">*</span></label>
+                                            <div class="input-group">
+                                                <input type="text" class="form-control required datepicker" id="sr_rate_effective_date" autocomplete="off">
+                                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label mb-1"><span data-i18n="modal_end_date">End Date</span></label>
+                                            <div class="input-group">
+                                                <input type="text" class="form-control datepicker" id="sr_rate_end_date" autocomplete="off">
+                                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                                            </div>
+                                            <span class="text-muted small" data-i18n="end_date_optional_hint">Leave blank if this rate is still in effect (open-ended).</span>
+                                        </div>
+                                    </div>
+                                    <hr class="my-3 text-muted opacity-25">
+                                    <div id="sr_rate_flat_fields">
+                                        <div class="row g-3 mb-3">
+                                            <div class="col-md-6" id="sr_rate_employee_rate_wrapper">
+                                                <label class="form-label mb-1"><span data-i18n="modal_employee_rate">Employee Rate (%)</span> <span class="text-danger">*</span></label>
+                                                <input type="number" step="0.0001" min="0" class="form-control" id="sr_rate_employee_rate" data-i18n="statutory_rate_placeholder" placeholder="e.g., 5.00">
+                                            </div>
+                                            <div class="col-md-6" id="sr_rate_employer_rate_wrapper">
+                                                <label class="form-label mb-1"><span data-i18n="modal_employer_rate">Employer Rate (%)</span> <span class="text-danger">*</span></label>
+                                                <input type="number" step="0.0001" min="0" class="form-control" id="sr_rate_employer_rate" data-i18n="statutory_rate_placeholder" placeholder="e.g., 5.00">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="sr_rate_amount_fields" class="d-none">
+                                        <div class="row g-3 mb-3">
+                                            <div class="col-md-6" id="sr_rate_employee_amount_wrapper">
+                                                <label class="form-label mb-1"><span data-i18n="modal_employee_amount">Employee Amount</span> <span class="text-danger">*</span></label>
+                                                <input type="number" step="0.01" min="0" class="form-control" id="sr_rate_employee_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
+                                            </div>
+                                            <div class="col-md-6" id="sr_rate_employer_amount_wrapper">
+                                                <label class="form-label mb-1"><span data-i18n="modal_employer_amount">Employer Amount</span> <span class="text-danger">*</span></label>
+                                                <input type="number" step="0.01" min="0" class="form-control" id="sr_rate_employer_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div id="sr_rate_bracket_fields" class="d-none">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <h6 class="fw-bold mb-0"><span data-i18n="tax_brackets">Tax Brackets</span></h6>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" id="srBtnAddBracketRow"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_bracket">Bracket</span></button>
+                                        </div>
+                                        <div class="table-responsive">
+                                            <table class="table pl-table mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th data-i18n="bracket_from">From</th>
+                                                        <th data-i18n="bracket_to">To</th>
+                                                        <th data-i18n="bracket_rate">Rate (%)</th>
+                                                        <th style="width:50px;"></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="srBracketBody"></tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                    <div id="sr_rate_formula_fields" class="d-none">
+                                        <label class="form-label mb-1"><span data-i18n="modal_formula_config">Formula Config (JSON)</span> <span class="text-danger">*</span></label>
+                                        <textarea class="form-control" id="sr_rate_formula_config" rows="4" data-i18n="formula_config_json_example" placeholder='{"base_rate": 1.45, "additional_rate": 0.9, "additional_threshold": 200000}'></textarea>
+                                    </div>
+                                    <!-- 2026-09-08, explicit question that surfaced a real gap: "(TH_PIT) ฐาน
+                                         คำนวณขั้นต่ำ ฐานคำนวณสูงสุด คืออะไรครับ" -- confirmed directly against
+                                         StatutoryCalculationEngine's own source: min_base_amount/max_base_amount
+                                         are read ONLY inside computeFlatRate() (they clamp the WAGE BASE a %
+                                         rate applies to, e.g. TH_SSO's real 1,650-15,000 THB clamp before its
+                                         5% is applied) -- computeFixedAmount()/computeProgressiveBracket()/
+                                         computeFormula() never read them at all. For a progressive_bracket item
+                                         like TH_PIT (whole taxable income runs straight through the bracket
+                                         table, no base-clamping concept exists there) these 2 fields were
+                                         genuinely inert -- whatever a company typed in had zero effect on the
+                                         calculation, which is exactly why it read as unexplained/confusing. Now
+                                         hidden entirely (applySrCalcMethodFields() toggles #sr_rate_base_fields)
+                                         for every calc_method except flat_rate, the only one that ever uses them. -->
+                                    <hr class="my-3 text-muted opacity-25">
+                                    <div class="row g-3 mb-3" id="sr_rate_base_fields">
+                                        <div class="col-md-6">
+                                            <label class="form-label mb-1"><span data-i18n="modal_min_base">Minimum Base Amount</span></label>
+                                            <input type="number" step="0.01" min="0" class="form-control" id="sr_rate_min_base_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label mb-1"><span data-i18n="modal_max_base">Maximum Base Amount</span></label>
+                                            <input type="number" step="0.01" min="0" class="form-control" id="sr_rate_max_base_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
+                                        </div>
+                                    </div>
+                                    <div class="row g-3 mb-3">
+                                        <div class="col-12">
+                                            <label class="form-label mb-1"><span data-i18n="modal_remark">Remark</span></label>
+                                            <textarea class="form-control" id="sr_rate_remark" rows="2" data-i18n="remark_placeholder" placeholder="Optional notes"></textarea>
+                                        </div>
+                                    </div>
+                                    <hr class="my-3 text-muted opacity-25">
+                                    <div class="calc-preview-box" id="srRateCalcPreviewBox">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <h6 class="fw-bold mb-0 text-secondary"><i class="fa-solid fa-calculator me-2 text-brand"></i><span data-i18n="calc_preview_title">Calculation Preview</span></h6>
+                                            <button type="button" class="btn btn-outline-secondary btn-sm" id="srBtnRateCalcPreview"><i class="fa-solid fa-play me-1"></i><span data-i18n="calc_preview_button">Preview</span></button>
+                                        </div>
+                                        <div class="row g-2 mb-2">
+                                            <div class="col-6">
+                                                <label class="form-label small mb-1" data-i18n="calc_preview_sample_base_amount">Sample Base Amount</label>
+                                                <input type="number" min="0" step="0.01" class="form-control form-control-sm" id="srRateCalcPreviewBase" value="30000" data-i18n="base_salary_amount_placeholder" placeholder="e.g., 30000">
+                                                <!-- 2026-09-08, real gap found and fixed from an explicit example the user tried themselves
+                                                     (entered 35,000 for TH_PIT and got 0.00, which read as a bug -- confirmed via
+                                                     PayrollRunModel::recalculate() that this field means something GENUINELY DIFFERENT per
+                                                     calc_method and the UI never said so: for flat_rate/fixed_amount it's a per-PERIOD wage
+                                                     base (what 30,000 already suggests), but for progressive_bracket it's ANNUAL NET TAXABLE
+                                                     INCOME after deductions (taxable_income = gross*12 in the real engine) -- 35,000 read as
+                                                     "a normal monthly salary" is genuinely, correctly exempt (0%) once treated as an annual
+                                                     figure, the calculation was never wrong, only unlabeled. applySrCalcMethodFields() (tax-
+                                                     statutory.js) swaps this hint's text AND the field's own default value per calc_method. -->
+                                                <div class="form-text" id="srRateCalcPreviewBaseHint"></div>
+                                            </div>
+                                        </div>
+                                        <div class="calc-preview-result d-none" id="srRateCalcPreviewResult"></div>
+                                    </div>
+                                    </fieldset>
+                                </form>
                             </div>
-                        </div>
-                        <div id="srHistoryEditView" class="d-none">
-                            <form id="srRateVersionForm" novalidate>
-                                <input type="hidden" id="sr_rate_id">
-                                <div class="row mb-3">
-                                    <div class="col-sm-3 align-self-center">
-                                        <label class="form-label mb-1"><span data-i18n="modal_effective_date">Effective Date</span> <span class="text-danger">*</span></label>
-                                    </div>
-                                    <div class="col-sm-4">
-                                        <div class="input-group">
-                                            <input type="text" class="form-control required datepicker" id="sr_rate_effective_date" autocomplete="off">
-                                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row mb-3">
-                                    <div class="col-sm-3 align-self-center">
-                                        <label class="form-label mb-1"><span data-i18n="modal_end_date">End Date</span></label>
-                                    </div>
-                                    <div class="col-sm-4">
-                                        <div class="input-group">
-                                            <input type="text" class="form-control datepicker" id="sr_rate_end_date" autocomplete="off">
-                                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                                        </div>
-                                    </div>
-                                    <div class="col-sm-5 pt-2">
-                                        <span class="text-muted small" data-i18n="end_date_optional_hint">Leave blank if this rate is still in effect (open-ended).</span>
-                                    </div>
-                                </div>
-                                <hr class="my-3 text-muted opacity-25">
-                                <div id="sr_rate_flat_fields">
-                                    <div class="row mb-3" id="sr_rate_employee_rate_wrapper">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-1"><span data-i18n="modal_employee_rate">Employee Rate (%)</span> <span class="text-danger">*</span></label>
-                                        </div>
-                                        <div class="col-sm-4">
-                                            <input type="number" step="0.0001" min="0" class="form-control" id="sr_rate_employee_rate" data-i18n="statutory_rate_placeholder" placeholder="e.g., 5.00">
-                                        </div>
-                                    </div>
-                                    <div class="row mb-3" id="sr_rate_employer_rate_wrapper">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-1"><span data-i18n="modal_employer_rate">Employer Rate (%)</span> <span class="text-danger">*</span></label>
-                                        </div>
-                                        <div class="col-sm-4">
-                                            <input type="number" step="0.0001" min="0" class="form-control" id="sr_rate_employer_rate" data-i18n="statutory_rate_placeholder" placeholder="e.g., 5.00">
-                                        </div>
-                                    </div>
-                                </div>
-                                <div id="sr_rate_amount_fields" class="d-none">
-                                    <div class="row mb-3" id="sr_rate_employee_amount_wrapper">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-1"><span data-i18n="modal_employee_amount">Employee Amount</span> <span class="text-danger">*</span></label>
-                                        </div>
-                                        <div class="col-sm-4">
-                                            <input type="number" step="0.01" min="0" class="form-control" id="sr_rate_employee_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
-                                        </div>
-                                    </div>
-                                    <div class="row mb-3" id="sr_rate_employer_amount_wrapper">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-1"><span data-i18n="modal_employer_amount">Employer Amount</span> <span class="text-danger">*</span></label>
-                                        </div>
-                                        <div class="col-sm-4">
-                                            <input type="number" step="0.01" min="0" class="form-control" id="sr_rate_employer_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
-                                        </div>
-                                    </div>
-                                </div>
-                                <div id="sr_rate_bracket_fields" class="d-none">
-                                    <div class="d-flex justify-content-between align-items-center mb-2">
-                                        <h6 class="fw-bold mb-0"><span data-i18n="tax_brackets">Tax Brackets</span></h6>
-                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="srBtnAddBracketRow"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_bracket">Bracket</span></button>
-                                    </div>
-                                    <div class="table-responsive">
-                                        <table class="table pl-table mb-0">
-                                            <thead>
-                                                <tr>
-                                                    <th data-i18n="bracket_from">From</th>
-                                                    <th data-i18n="bracket_to">To</th>
-                                                    <th data-i18n="bracket_rate">Rate (%)</th>
-                                                    <th style="width:50px;"></th>
-                                                </tr>
-                                            </thead>
-                                            <tbody id="srBracketBody"></tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                                <div id="sr_rate_formula_fields" class="d-none">
-                                    <div class="row mb-3">
-                                        <div class="col-sm-3 align-self-center">
-                                            <label class="form-label mb-1"><span data-i18n="modal_formula_config">Formula Config (JSON)</span> <span class="text-danger">*</span></label>
-                                        </div>
-                                        <div class="col-sm-9">
-                                            <textarea class="form-control" id="sr_rate_formula_config" rows="4" data-i18n="formula_config_json_example" placeholder='{"base_rate": 1.45, "additional_rate": 0.9, "additional_threshold": 200000}'></textarea>
-                                        </div>
-                                    </div>
-                                </div>
-                                <hr class="my-3 text-muted opacity-25">
-                                <div class="row mb-3">
-                                    <div class="col-sm-3 align-self-center">
-                                        <label class="form-label mb-1"><span data-i18n="modal_min_base">Minimum Base Amount</span></label>
-                                    </div>
-                                    <div class="col-sm-3">
-                                        <input type="number" step="0.01" min="0" class="form-control" id="sr_rate_min_base_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
-                                    </div>
-                                    <div class="col-sm-3 align-self-center">
-                                        <label class="form-label mb-1"><span data-i18n="modal_max_base">Maximum Base Amount</span></label>
-                                    </div>
-                                    <div class="col-sm-3">
-                                        <input type="number" step="0.01" min="0" class="form-control" id="sr_rate_max_base_amount" data-i18n="amount_placeholder" placeholder="e.g., 500.00">
-                                    </div>
-                                </div>
-                                <div class="row mb-3">
-                                    <div class="col-sm-3 align-self-center">
-                                        <label class="form-label mb-1"><span data-i18n="modal_remark">Remark</span></label>
-                                    </div>
-                                    <div class="col-sm-9">
-                                        <input type="text" class="form-control" id="sr_rate_remark" data-i18n="remark_placeholder" placeholder="Optional notes">
-                                    </div>
-                                </div>
-                                <hr class="my-3 text-muted opacity-25">
-                                <div class="calc-preview-box" id="srRateCalcPreviewBox">
-                                    <div class="d-flex justify-content-between align-items-center mb-2">
-                                        <h6 class="fw-bold mb-0 text-secondary"><i class="fa-solid fa-calculator me-2 text-brand"></i><span data-i18n="calc_preview_title">Calculation Preview</span></h6>
-                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="srBtnRateCalcPreview"><i class="fa-solid fa-play me-1"></i><span data-i18n="calc_preview_button">Preview</span></button>
-                                    </div>
-                                    <div class="row g-2 mb-2">
-                                        <div class="col-6">
-                                            <label class="form-label small mb-1" data-i18n="calc_preview_sample_base_amount">Sample Base Amount</label>
-                                            <input type="number" min="0" step="0.01" class="form-control form-control-sm" id="srRateCalcPreviewBase" value="30000" data-i18n="base_salary_amount_placeholder" placeholder="e.g., 30000">
-                                        </div>
-                                    </div>
-                                    <div class="calc-preview-result d-none" id="srRateCalcPreviewResult"></div>
-                                </div>
-                                <div class="d-flex justify-content-end gap-2 mt-4">
-                                    <button type="button" class="btn btn-light" id="srCancelRateVersionBtn"><span data-i18n="cancel">Cancel</span></button>
-                                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
-                                </div>
-                            </form>
                         </div>
                     </div>
                 </div>
+            </div>
+            <!-- Shown only while the Rate Versions pane is the active view (a MASTER item shows it
+                 always, since that's its only pane; a CUSTOM item toggles it via shown.bs.tab, see
+                 tax-statutory.js) -- the Item Details tab keeps its own inline Save/Promote buttons,
+                 unaffected. `#srPromoteVersionBtn` (`me-auto` pushes it to the opposite side from
+                 Close/Save) only shows for a MASTER item's version that's actually saved (has a real
+                 id) -- see showSrHistoryEditView()'s own toggle. View mode (srViewCurrentVersion())
+                 hides this whole footer entirely via .sr-modal-readonly (style.css). -->
+            <div class="modal-footer d-none" id="srHistoryModalFooter">
+                <button type="button" class="btn btn-outline-brand d-none me-auto" id="srPromoteVersionBtn">
+                    <i class="fa-solid fa-arrow-up-from-bracket me-1"></i><span data-i18n="sr_promote_version_btn">Promote to System Default</span>
+                </button>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="submit" form="srRateVersionForm" class="btn btn-primary" id="srRateVersionSaveBtn">
+                    <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
+                </button>
             </div>
         </div>
     </div>

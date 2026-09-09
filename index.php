@@ -196,12 +196,17 @@
     $router->post('api/statutory-item.custom.save', 'TaxStatutoryController@customItemSave');
     $router->post('api/statutory-item.custom.delete', 'TaxStatutoryController@customItemDelete');
     $router->post('api/statutory-item.custom.promote', 'TaxStatutoryController@customItemPromote');
-    $router->post('api/company-statutory-setting.promote', 'TaxStatutoryController@companySettingPromote');
     $router->get('api/company-statutory-setting.list', 'TaxStatutoryController@companySettingList');
     $router->get('api/company-statutory-setting.get', 'TaxStatutoryController@companySettingGet');
-    $router->post('api/company-statutory-setting.save', 'TaxStatutoryController@companySettingSave');
-    $router->post('api/company-statutory-setting.reset', 'TaxStatutoryController@companySettingReset');
     $router->post('api/company-statutory-setting.toggle-status', 'TaxStatutoryController@companySettingToggleStatus');
+    // 2026-09-08, Clone+Version redesign -- replaces company-statutory-setting.save/reset/promote
+    // (flat override) with a real per-company dated version list, see CompanyStatutoryRateVersionModel.
+    $router->get('api/company-rate-version.list', 'TaxStatutoryController@companyRateVersionList');
+    $router->get('api/company-rate-version.get', 'TaxStatutoryController@companyRateVersionGet');
+    $router->post('api/company-rate-version.save', 'TaxStatutoryController@companyRateVersionSave');
+    $router->post('api/company-rate-version.delete', 'TaxStatutoryController@companyRateVersionDelete');
+    $router->post('api/company-rate-version.pull', 'TaxStatutoryController@companyRateVersionPull');
+    $router->post('api/company-rate-version.promote', 'TaxStatutoryController@companyRateVersionPromote');
     // Statutory document format version selector (2026-08-29) -- Tax & Statutory settings, 3rd tab.
     $router->get('api/statutory-format-version.settings', 'StatutoryFormatVersionController@settings');
     $router->post('api/statutory-format-version.save', 'StatutoryFormatVersionController@save');
@@ -627,6 +632,7 @@
     $router->get('api/employee.document.view', 'EmployeeController@documentView');
     $router->post('api/employee.document.delete', 'EmployeeController@documentDelete');
     $router->post('api/payroll-sync.ingest', 'PayrollSyncController@ingest');
+    $router->post('api/payroll-sync.attribution-update', 'PayrollSyncController@attributionUpdate');
     $router->get('api/payroll-sync.pending-list', 'PayrollSyncController@pendingList');
     $router->get('api/payroll-sync.pending-get', 'PayrollSyncController@pendingGet');
     // 2026-08-31, explicit request: reject-back for a Pending Pull document, with a required comment.

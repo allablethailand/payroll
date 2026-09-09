@@ -42,6 +42,7 @@ require_once __DIR__ . '/../app/core/Database.php';
 require_once __DIR__ . '/../app/services/EncryptionService.php';
 require_once __DIR__ . '/../app/models/TaxStatutoryModel.php';
 require_once __DIR__ . '/../app/models/CompanyStatutorySettingModel.php';
+require_once __DIR__ . '/../app/models/CompanyStatutoryRateVersionModel.php';
 require_once __DIR__ . '/../app/models/PayrollCycleModel.php';
 require_once __DIR__ . '/../app/models/PayrollRunModel.php';
 
@@ -135,6 +136,7 @@ try {
     $userId = 1;
     $taxModel = new TaxStatutoryModel();
     $csModel = new CompanyStatutorySettingModel($pdo);
+    $rateVersionModel = new CompanyStatutoryRateVersionModel($pdo);
     $cycleModel = new PayrollCycleModel($pdo);
     $runModel = new PayrollRunModel($pdo);
 
@@ -222,7 +224,12 @@ try {
         check('company A, post-promotion: employee_amount unchanged at 1000.00', (float)$lineA1['employee_amount'], 1000.0);
     }
 
-    echo "\n=== Part 4: promoteOverrideToMaster() (T045) -- override applies in a real run, then a THIRD company defaults to it ===\n";
+    echo "\n=== Part 4: CompanyStatutoryRateVersionModel::promoteToMaster() (Clone+Version redesign) -- a company's own version applies in a real run, then a THIRD company defaults to it ===\n";
+    // 2026-09-08, Clone+Version redesign -- replaces the old flat-override
+    // CompanyStatutorySettingModel::save()/promoteOverrideToMaster() flow. compA here is a FRESH
+    // company created via a raw INSERT (makeCompany(), never through CompanyProfileModel::save()),
+    // so it has no comp_id-scoped clone row yet for TH_PVD at all -- the version added below is its
+    // first.
     $pvdRow = $csModel->get($compA, 3); // TH_PVD is seeded id=3 -- confirmed via direct query before writing this test.
     checkTrue('fixture: TH_PVD (id=3) resolves for compA via CompanyStatutorySettingModel::get()', $pvdRow !== null);
     $stmtPvdCode = $pdo->prepare("SELECT id, code FROM statutory_items WHERE code = 'TH_PVD' AND comp_id IS NULL AND deleted_at IS NULL");
@@ -233,11 +240,15 @@ try {
 
     $overrideEmployeeRate = 4.44;
     $overrideEmployerRate = 4.44;
-    $overrideSave = $csModel->save($compA, [
-        'statutory_item_id' => $pvdItemId, 'is_active' => true,
-        'employee_rate_override' => $overrideEmployeeRate, 'employer_rate_override' => $overrideEmployerRate,
+    // Backdated well before every payment date this test computes, open-ended -- same "a version's
+    // effective_date must genuinely be in effect at the calc dates being tested" reasoning
+    // tests/statutory_engine_test.php's own Scenario 3 comment explains.
+    $versionSave = $rateVersionModel->save($compA, [
+        'statutory_item_id' => $pvdItemId, 'effective_date' => '2020-01-01',
+        'employee_rate' => $overrideEmployeeRate, 'employer_rate' => $overrideEmployerRate,
     ], $userId);
-    checkTrue('fixture: compA sets a TH_PVD rate override' . (empty($overrideSave['message']) ? '' : " ({$overrideSave['message']})"), $overrideSave['status']);
+    checkTrue('fixture: compA adds its own TH_PVD rate version' . (empty($versionSave['message']) ? '' : " ({$versionSave['message']})"), $versionSave['status']);
+    $pvdVersionId = $versionSave['id'];
 
     $empA_pvd = makeEmployee($pdo, $compA, $cycleA, 60000.0, false, true, true);
     $detailsA_pvdOverride = runAndGetDetails($runModel, $compA, $cycleA, $userId, 2);
@@ -249,8 +260,8 @@ try {
     }
 
     $promoteEffectiveDate = (new DateTime())->modify('first day of this month')->modify('+4 months')->format('Y-m-d');
-    $promoteOverride = $csModel->promoteOverrideToMaster($compA, $pvdItemId, $promoteEffectiveDate, $userId);
-    checkTrue('promoteOverrideToMaster() succeeds' . (empty($promoteOverride['message']) ? '' : " ({$promoteOverride['message']})"), $promoteOverride['status']);
+    $promoteVersion = $rateVersionModel->promoteToMaster($compA, $pvdVersionId, $promoteEffectiveDate, $userId);
+    checkTrue('promoteToMaster() succeeds' . (empty($promoteVersion['message']) ? '' : " ({$promoteVersion['message']})"), $promoteVersion['status']);
 
     $compC = makeCompany($pdo, 'TH');
     $cycleC = makeCycle($cycleModel, $compC, $userId);
@@ -263,16 +274,18 @@ try {
         check('brand-new company defaults to the PROMOTED rate with zero config: employer_amount = 90000 * 4.44% = 3996.00', (float)$linePvdC['employer_amount'], 3996.0);
     }
 
-    // Confirm compA's own override was actually CLEARED (not just superseded) -- a later run for
-    // compA itself, past the promotion's effective date, must land on the SAME new master default,
-    // not a stale override that happens to equal it by coincidence.
-    $reloadedSetting = $csModel->get($compA, $pvdItemId);
-    checkTrue('compA\'s own override is cleared after promotion (employee_rate_override is null)', $reloadedSetting !== null && $reloadedSetting['employee_rate_override'] === null);
+    // 2026-09-08: unlike the OLD flat-override flow, promoteToMaster() deliberately does NOT clear
+    // the company's own version afterward (see that method's own docblock) -- confirm it SURVIVES
+    // instead, and that a later run for compA itself still resolves through its OWN kept version
+    // (not merely "happens to match the new master by coincidence" -- it's the SAME row).
+    $reloadedVersion = $rateVersionModel->get($compA, $pvdVersionId);
+    checkTrue('compA\'s own version SURVIVES after promotion (not cleared, unlike the old flat-override flow)', $reloadedVersion !== null);
+    check('surviving version still carries its own 4.44 rate', round((float)($reloadedVersion['employee_rate'] ?? 0), 2), 4.44);
     $detailsA_postPromotion = runAndGetDetails($runModel, $compA, $cycleA, $userId, 4);
     $linePvdA_post = breakdownLine($detailsA_postPromotion, $empA_pvd, 'TH_PVD');
     checkTrue('real run: compA itself, post-promotion, still gets a TH_PVD line', $linePvdA_post !== null);
     if ($linePvdA_post !== null) {
-        check('compA, post-promotion: now on the (new) master default, same 4.44% -- employee_amount = 60000 * 4.44% = 2664.00', (float)$linePvdA_post['employee_amount'], 2664.0);
+        check('compA, post-promotion: still resolves through its OWN version, same 4.44% -- employee_amount = 60000 * 4.44% = 2664.00', (float)$linePvdA_post['employee_amount'], 2664.0);
     }
 
     echo "\n" . ($failures === 0 ? "ALL TESTS PASSED (transaction rolled back, no data persisted)" : "SOME TESTS FAILED") . "\n";
