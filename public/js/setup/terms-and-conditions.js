@@ -124,7 +124,19 @@
 
     // Detects reaching the bottom of the scrollable modal body -- .modal-dialog-scrollable makes
     // .modal-body itself the scrolling element, not the whole modal or the window.
-    $(document).on('scroll', '#termsModalBody', function () {
+    // 2026-09-09, real bug found and fixed ("Switch เข้ามาเจอให้อ่าน แต่กดยอมรับแล้วไม่ได้"): this was
+    // a DELEGATED handler ($(document).on('scroll', '#termsModalBody', ...)), which never fired at
+    // all -- the DOM `scroll` event does NOT bubble (per spec), so delegating it from an ancestor
+    // (document) can never catch it; only a listener bound DIRECTLY to the scrolling element itself
+    // sees it. Whenever the T&C text was long enough to actually require scrolling (the whole point
+    // of this gate), the scroll-to-bottom re-enable logic silently never ran -- #btnAcceptTerms
+    // stayed disabled forever no matter how far the employee scrolled, on a forced modal with no
+    // other way to close it. The shown.bs.modal handler below (short-content, no-scroll-needed case)
+    // masked this in quick manual smoke-testing with brief placeholder text. Fixed by binding
+    // directly to #termsModalBody (safe: modals.php is included before this script tag in
+    // footer.php, so the element already exists in the DOM when this file runs) instead of
+    // delegating from document.
+    $('#termsModalBody').on('scroll', function () {
         if ($('#termsModal').attr('data-forced') !== '1') return;
         const el = this;
         if (el.scrollTop + el.clientHeight >= el.scrollHeight - 4) {
@@ -167,6 +179,18 @@
                 $btn.prop('disabled', false);
                 if (typeof showError === 'function') showError(res && res.message ? res.message : 'Failed to save.');
             }
+        }).fail(function (xhr) {
+            // Was previously silent on a non-2xx response (a dead/killed session, a suspended
+            // account, a transport error) -- the button just stayed disabled forever with zero
+            // feedback on a forced, un-closeable modal. A 401 with reason timeout/superseded is
+            // still separately caught by session-guard.js's own global ajaxError handler (shows its
+            // own "Session Ended" popup + redirect), so don't double up on that one; everything else
+            // gets re-enabled + a visible error here instead of leaving the employee stuck.
+            const reason = xhr && xhr.responseJSON && xhr.responseJSON.reason;
+            if (xhr && xhr.status === 401 && reason && reason !== 'not_logged_in') return;
+            $btn.prop('disabled', false);
+            const msg = (xhr && xhr.responseJSON && xhr.responseJSON.message) || 'Failed to save.';
+            if (typeof showError === 'function') showError(msg);
         });
     });
 })();
