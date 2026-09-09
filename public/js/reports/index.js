@@ -386,20 +386,65 @@ $(document).on('click', '.reports-preview-download-btn', function () {
    design history (matrix -> single-run picker -> matrix again). */
 
 const REPORT_TYPE_ICONS = { statutory: 'fa-landmark', payment: 'fa-money-check-dollar', internal: 'fa-building' };
+// 2026-09-08, explicit request: "th มี icon แล้วดูรกตัดออกไปเลยครับ และจัดกลุ่มรายงานได้ไหมครับ กลุ่มไหนเป็น
+// กลุ่มเดียวกันให้เป็นปุ่มที่มี dropdown ให้เลือก" -- was one COLUMN per individual report code (up to 8,
+// per ReportsController::CYCLE_REPORT_CODES), each header carrying its own report-type icon +
+// label, which got cluttered fast. Now one column PER report_type GROUP (statutory/payment/
+// internal, same 3-way split Export History's own filter already uses -- reusing its i18n keys) --
+// the header is now a plain text label (no icon at all, per the explicit "ตัดออกไปเลยครับ"), and each
+// cell is a single dropdown-toggle button listing only that group's codes actually applicable to
+// that run (data-run-id/data-code preserved on each item, so the existing .btn-cycle-matrix-print
+// delegated click handler below needs no changes at all).
+const REPORT_GROUP_ORDER = ['statutory', 'payment', 'internal'];
+const REPORT_GROUP_LABEL_KEYS = { statutory: 'report_type_statutory', payment: 'report_type_payment', internal: 'report_type_internal' };
+// 2026-09-08, same-day follow-up: "ใน dropdown ใส่ icon เข้าไปได้ครับของแต่ละรายงาน" -- a distinct icon
+// PER REPORT CODE (not just one shared per group) so the dropdown items are visually scannable, not
+// just a plain text list. Falls back to the group's own icon for any code not listed here (future-
+// proofing a new code added to ReportsController::CYCLE_REPORT_CODES later without this map being
+// updated in lockstep).
+const REPORT_CODE_ICONS = {
+    TH_PND1: 'fa-file-invoice-dollar',
+    TH_SSO110: 'fa-hand-holding-medical',
+    TH_SLF: 'fa-graduation-cap',
+    PAY_SLIP: 'fa-file-invoice',
+    BANK_TRANSFER_FILE: 'fa-building-columns',
+    PAYROLL_REGISTER: 'fa-table-list',
+    CASH_PAYMENT_SUMMARY: 'fa-money-bill-wave',
+    DEDUCTION_BREAKDOWN: 'fa-chart-pie',
+};
 
 let cycleMatrixRuns = [];    // [{id, run_name, cycle_name, period_start_date, period_end_date, payment_date, state, applicable_codes:[code,...]}]
 let cycleMatrixColumns = []; // [{code, report_type, format, per_employee, label}] -- union of every code applicable to at least one returned run
 let tbCycleMatrix = null;
 
-function cycleMatrixColumnHeaderHtml(col) {
-    return `<span class="reports-row-report-type-icon rt-${col.report_type}"><i class="fa-solid ${REPORT_TYPE_ICONS[col.report_type] || 'fa-file-lines'}"></i></span>${escapeHtml(reportLabel(col))}`;
+// Groups derived fresh from cycleMatrixColumns every render (not hardcoded) -- the column SET
+// itself can differ between filter results (a narrower date range might exclude the one run that
+// had SSO-active employees, say), and a group with zero columns present this time is simply omitted
+// rather than showing an always-empty "-" column.
+function cycleMatrixGroups() {
+    const byType = {};
+    cycleMatrixColumns.forEach(function (col) {
+        (byType[col.report_type] = byType[col.report_type] || []).push(col);
+    });
+    return REPORT_GROUP_ORDER.filter(t => byType[t] && byType[t].length).map(t => ({ type: t, columns: byType[t] }));
 }
-function cycleMatrixCellHtml(run, col) {
-    if (!run.applicable_codes.includes(col.code)) {
+function cycleMatrixGroupLabel(group) {
+    return langData[REPORT_GROUP_LABEL_KEYS[group.type]] || group.type;
+}
+function cycleMatrixGroupCellHtml(run, group) {
+    const applicable = group.columns.filter(col => run.applicable_codes.includes(col.code));
+    if (!applicable.length) {
         return '<span class="text-muted">&ndash;</span>';
     }
-    const title = col.per_employee ? (langData['select_employee_to_download'] || 'Select an employee to download') : (langData['report_preview_and_download'] || 'Preview & Download');
-    return `<button type="button" class="btn btn-link btn-circle-action text-primary btn-cycle-matrix-print" data-run-id="${run.id}" data-code="${col.code}" title="${escapeAttr(title)}"><i class="fa-solid fa-print"></i></button>`;
+    const groupIcon = REPORT_TYPE_ICONS[group.type] || 'fa-file-lines';
+    const items = applicable.map(function (col) {
+        const itemIcon = REPORT_CODE_ICONS[col.code] || groupIcon;
+        return `<li><button type="button" class="dropdown-item btn-cycle-matrix-print" data-run-id="${run.id}" data-code="${col.code}"><i class="fa-solid ${itemIcon} me-2 text-muted"></i>${escapeHtml(reportLabel(col))}</button></li>`;
+    }).join('');
+    return `<div class="dropdown">
+        <button type="button" class="btn btn-link btn-circle-action text-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="${escapeAttr(langData['report_preview_and_download'] || 'Preview & Download')}"><i class="fa-solid ${groupIcon}"></i></button>
+        <ul class="dropdown-menu dropdown-menu-end">${items}</ul>
+    </div>`;
 }
 function loadCycleRunsMatrix() {
     $.ajax({
@@ -431,25 +476,44 @@ function renderCycleMatrixTable() {
     $('#tb_cycle_matrix').empty();
     if (!hasRows) return;
 
-    // Column SET (which reports appear as columns at all) can differ between filter results (a
-    // narrower date range might exclude the one run that had SSO-active employees, say) -- the
-    // <thead> is rebuilt from scratch every time alongside the `columns` config below, rather than
-    // written once as static markup, so the two can never drift out of sync with each other.
+    const groups = cycleMatrixGroups();
+
+    // Column SET (which report-type groups appear as columns at all) can differ between filter
+    // results -- the <thead> is rebuilt from scratch every time alongside the `columns` config
+    // below, rather than written once as static markup, so the two can never drift out of sync.
+    // 2026-09-08, same-day follow-up: "column export อยากให้กองอยู่ด้านขวา เพิ่มชื่อรอบกับจำนวนพนักงานเข้าไป
+    // ด้วยครับ" -- Cycle (payroll_cycle) + Employees (table_employee_count, already-cached
+    // payroll_runs.employee_count, see PayrollReportDataModel::getCompletedRuns()'s own comment) join
+    // the info columns BEFORE the export-group dropdowns, which stay exactly where they already
+    // were -- the LAST columns -- so this addition is what actually piles every export action
+    // together on the right, rather than moving the groups themselves.
     let headHtml = '<thead class="table-light text-secondary"><tr>'
         + `<th data-i18n="table_payroll_run">${escapeHtml(langData['table_payroll_run'] || 'Payroll Run')}</th>`
-        + `<th data-i18n="pay_period">${escapeHtml(langData['pay_period'] || 'Pay Period')}</th>`;
-    cycleMatrixColumns.forEach(function (col) {
-        headHtml += `<th class="text-center">${cycleMatrixColumnHeaderHtml(col)}</th>`;
+        + `<th data-i18n="payroll_cycle">${escapeHtml(langData['payroll_cycle'] || 'Payroll Schedule')}</th>`
+        + `<th data-i18n="pay_period">${escapeHtml(langData['pay_period'] || 'Pay Period')}</th>`
+        + `<th class="text-center" data-i18n="table_employee_count">${escapeHtml(langData['table_employee_count'] || 'Employees')}</th>`;
+    // 2026-09-08, same-day follow-up: "Column ของทั้ง 3 ปุ่มอยากให้ลดความกว้างลงให้เท่ากัน และไปรวมอยู่ฝั่งขวา
+    // ของตารางจะดูเป็นระเบียบกว่าครับ" -- these 3 columns were already the LAST (rightmost) ones, but
+    // with no explicit width DataTables/the browser's own auto table layout let them absorb leftover
+    // space (since the info columns beside them don't fill the container on their own), so they ended
+    // up wide and spread apart instead of reading as one tight cluster. `.reports-matrix-group-col`
+    // (this page's own <style> block) pins them to a small, EQUAL, fixed width -- the info columns
+    // (which have no explicit width) absorb whatever space is left instead, which is what actually
+    // pulls the 3 buttons together into a compact group at the right edge.
+    groups.forEach(function (group) {
+        headHtml += `<th class="text-center reports-matrix-group-col">${escapeHtml(cycleMatrixGroupLabel(group))}</th>`;
     });
     headHtml += '</tr></thead><tbody></tbody>';
     $('#tb_cycle_matrix').html(headHtml);
 
     const columns = [
         { data: null, render: { display: (d, t, run) => `<span class="reports-row-report-name">${escapeHtml(run.run_name || run.cycle_name || '-')}</span>`, sort: (d, t, run) => run.run_name || run.cycle_name || '', filter: (d, t, run) => run.run_name || run.cycle_name || '' } },
+        { data: null, render: (d, t, run) => escapeHtml(run.cycle_name || '-') },
         { data: null, render: { display: (d, t, run) => `${formatDisplayDate(run.period_start_date)} - ${formatDisplayDate(run.period_end_date)}`, sort: (d, t, run) => run.period_start_date, filter: (d, t, run) => run.period_start_date } },
+        { data: null, className: 'text-center', render: (d, t, run) => (run.employee_count || 0) },
     ];
-    cycleMatrixColumns.forEach(function (col) {
-        columns.push({ data: null, className: 'text-center', orderable: false, render: (d, t, run) => cycleMatrixCellHtml(run, col) });
+    groups.forEach(function (group) {
+        columns.push({ data: null, className: 'text-center reports-matrix-group-col', orderable: false, render: (d, t, run) => cycleMatrixGroupCellHtml(run, group) });
     });
     tbCycleMatrix = $('#tb_cycle_matrix').DataTable({
         data: cycleMatrixRuns,
@@ -458,7 +522,33 @@ function renderCycleMatrixTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         columns: columns,
-        drawCallback: function () { getTableLang(); },
+        // 2026-09-08, same-day follow-up, real bug found and fixed (explicit report: "ตอนแถวน้อยๆ กด
+        // แล้ว dropdown ไปซ่อนด้านล่างต้องเลื่อนดูเอา แต่ถ้าแถวเยอะๆ ไม่มีปัญหาครับ") -- this table's own
+        // wrapper (#cycleMatrixTableWrap) is `.table-responsive` (overflow-x:auto), and setting
+        // overflow-x to anything but `visible` makes the browser compute overflow-y as `auto` too
+        // (CSS spec, not a guess) -- with FEW rows the wrapper's own auto-height is barely taller than
+        // the table itself, so a dropdown-menu opening below its toggle immediately exceeds that
+        // short box and gets caught by the newly-active vertical scrollbar instead of floating freely
+        // (exactly "have to scroll to see it"); with MANY rows the wrapper is already tall enough that
+        // this rarely bites, which is why it looked fine there. Bootstrap's default Popper strategy
+        // (`absolute`) positions relative to the nearest positioned ancestor and IS clipped by a
+        // scrolling ancestor's overflow box; `strategy: 'fixed'` positions relative to the viewport
+        // instead, which is never clipped by an ancestor's overflow (same root-cause class already
+        // hit once in this app for Employee Detail's own tab-bar "More" dropdown, there caused by a
+        // plain `overflow:hidden` -- this is the `overflow:auto` variant of the same thing, fixed via
+        // Popper config instead of removing the overflow rule, since THIS overflow is load-bearing
+        // for the table's own horizontal drag-scroll). Every
+        // dropdown-toggle is freshly rendered on each draw (DataTables re-runs `render()` for every
+        // cell), so `getOrCreateInstance()` always constructs a NEW instance with this config here --
+        // never reuses a stale one from a previous draw's now-detached button.
+        drawCallback: function () {
+            getTableLang();
+            $('#tb_cycle_matrix .dropdown-toggle').each(function () {
+                bootstrap.Dropdown.getOrCreateInstance(this, {
+                    popperConfig: (defaultConfig) => Object.assign({}, defaultConfig, { strategy: 'fixed' })
+                });
+            });
+        },
     });
 }
 $(document).on('click', '.btn-cycle-matrix-print', function () {

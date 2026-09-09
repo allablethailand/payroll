@@ -441,7 +441,8 @@ class EmployeeController extends Controller {
         $limit = intval($_POST['limit'] ?? 10);
         $search = (string)($_POST['searchTerm'] ?? '');
         $excludeId = isset($_POST['exclude_id']) && $_POST['exclude_id'] !== '' ? (int)$_POST['exclude_id'] : null;
-        $data = $this->model->reportToOptions((int)$compId, $excludeId, $search, $page, $limit);
+        $payrollParticipantsOnly = !empty($_POST['payroll_participants_only']);
+        $data = $this->model->reportToOptions((int)$compId, $excludeId, $search, $page, $limit, $payrollParticipantsOnly);
         $this->json(['status' => true, 'data' => $data]);
     }
     /** 2026-09-02, explicit request: Probation/Internship "use company policy" read-only info card

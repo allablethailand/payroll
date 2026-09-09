@@ -966,6 +966,16 @@ function initPendingSyncTable() {
                     // finding out by clicking Merge and getting a refusal.
                     let attrBadge = '';
                     if (isSupplemental && row.attribution_tax_treatment === 'merge') {
+                        // 2026-09-08, Origami email exchange (2 rounds) -- 'pending_fold_in' means
+                        // Origami itself hasn't chosen a target AT ALL yet (no target id/no to show
+                        // at all, unlike 'waiting_unknown' below which at least has a target NAME,
+                        // just not received yet) -- resolves only via a future attribution_update
+                        // event, checked first since there's no target to build the other badges'
+                        // own {target} text from.
+                        if (row.attribution_target_status === 'pending_fold_in') {
+                            attrBadge = `<span class="badge bg-secondary-subtle text-secondary ms-1" title="${langData['sync_attribution_pending_fold_in_tooltip'] || 'Origami has not chosen a target regular cycle for this item yet. It will notify us automatically once a target is chosen.'}">${langData['sync_attribution_pending_fold_in'] || '→ Waiting for Origami to choose a target'}</span>`;
+                            return `<strong class="text-dark">${escapeHtml(d)}</strong>${badge}${attrBadge}`;
+                        }
                         const target = escapeHtml(row.attribution_target_process_no || `#${row.attribution_target_origami_process_id}`);
                         if (row.attribution_target_status === 'ready') {
                             attrBadge = `<span class="badge bg-info-subtle text-info ms-1">${(langData['sync_attribution_merge_into'] || '→ Merge into {target}').replace('{target}', target)}</span>`;

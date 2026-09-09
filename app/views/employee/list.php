@@ -279,6 +279,20 @@
             </button>
             <div class="station-filter-body">
                 <div class="row g-2">
+                    <!-- 2026-09-08, explicit follow-up request ("อยู่ในระบบเงิน ควรขึ้นไปอยู่บน Filter เป็น
+                         select") -- was a separate .btn-group row BELOW this filter card (see
+                         2026-08-31's own comment on why it started as a toggle, not a new tab); moved
+                         up into the filter row itself as a plain select2-static (same pattern as the
+                         Employee tab's own "Payroll Participation" filter right above this pane) so it
+                         reads as one more filter dimension instead of a separate control area.
+                         data-option-values carries the real `participant`/`excluded` values
+                         EmployeeModel::recheckList()'s own $participantMode expects -- the i18n KEYS
+                         used for the label text are unrelated strings (recheck_view_in_payroll/
+                         recheck_view_not_in_payroll), so this can't be left to submit the raw key. -->
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1" data-i18n="view">View</label>
+                        <select class="form-select select2-static" id="employee_recheck_filter_view" data-option-keys="recheck_view_in_payroll,recheck_view_not_in_payroll" data-option-values="participant,excluded"></select>
+                    </div>
                     <div class="col-6 col-md-4 col-lg-2">
                         <label class="form-label mb-1" data-i18n="role">Role</label>
                         <select class="form-select select2-remote" id="employee_recheck_filter_role" data-api="/api/role.get" data-type="role"></select>
@@ -302,40 +316,46 @@
                 </div>
             </div>
         </div>
-        <!-- 2026-09-02, Platform Hardening Phase 1.6: Clear Filter split out of the view-toggle row
-             below into its own .station-filter-clear-row (attaches to the filter card right above
-             it) so it reads as part of the filter frame -- the view-toggle group keeps its own row. -->
         <div class="station-filter-clear-row d-none" id="employeeRecheckFilterClearRow">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmployeeRecheckFilter">
                 <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
             </button>
         </div>
-        <!-- 2026-08-31, explicit request: "เพิ่มปุ่มให้นำออกจากการจ่ายเงินเดือน และมีปุ่มเพิ่ม Employee ที่ไม่ทำ
-             จ่ายเงินเดือนกลับเข้ามาทำเงินเดือน" -- a view toggle rather than a brand-new tab, so it reuses
-             this same table/columns/filters instead of duplicating markup (see EmployeeModel::
-             recheckList()'s own $participantMode comment). -->
-        <div class="mb-3">
-            <div class="btn-group" role="group" id="employeeRecheckViewToggle">
-                <button type="button" class="btn btn-sm btn-outline-secondary active" data-view="participant" data-i18n="recheck_view_in_payroll">In Payroll</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary" data-view="excluded" data-i18n="recheck_view_not_in_payroll">Not in Payroll</button>
-            </div>
-        </div>
-        <!-- 2026-08-30, same-day follow-up ("ปรับให้เป็น table responsive เหมือนเพื่อนไปเลยครับ ให้ Column
-             แรกกับ Column สุดท้าย อยู่ตำแหน่งเดิม แล้วไป expand ส่วนอื่น") -- reverted from the
-             scrollX+fixedColumns treatment (previous round) to this app's own STANDARD
-             responsive:true pattern instead, matching #tb_employee exactly: a dedicated Responsive
-             expand-control column at index 0 (`dtr-control`, see that table's own comment on why a
-             SEPARATE column instead of embedding the toggle into the first data column), and
-             responsivePriority pinning Employee identity (now index 1) + Actions (last) as the 2
-             columns that never collapse -- every field-readiness/Identification/Bank Details/Status
-             column in between collapses into the expand row first when space is tight. No
-             .table-responsive wrapper needed (that's Bootstrap's own overflow-x mechanism;
-             DataTables Responsive is a column-collapse mechanism, not a scroll one) -- same plain
-             wrapper #tb_employee itself uses. -->
-        <table class="table table-striped table-hover" id="tb_employee_recheck">
+        <!-- 2026-09-08, explicit follow-up request ("อยากให้ column รหัสพนักงาน และชื่อพนักงาน fixed อยู่กับที่
+             ฝั่งซ้าย...และ column Action อยากให้ fixed อยู่ขวาตลอด ส่วน Column ส่วนกลางๆ อยากให้ใช้เมาส์เลื่อนดู
+             ข้อมูลได้...ทดลองกับตารางนี้ก่อน แค่จะมีอีกหลายตารางที่ปรับให้เป็นรูปแบบนี้") -- reverts the
+             2026-08-30 responsive:true/column-collapse choice back to a frozen-column layout.
+             2026-09-08, round 2 follow-up ("ตอนนี้ใช้เมาส์เลื่อนเพื่อลากดู column ไม่ได้") -- the FIRST
+             attempt used DataTables' own core `scrollX` option, which needs CSS this app never
+             actually loads (`.dataTables_scrollBody { overflow-x:auto; }` etc. live in the BASE
+             `datatables.net` skin's own stylesheet, never installed here -- confirmed by grepping the
+             installed CSS directly, not guessed).
+             2026-09-08, round 3 follow-up ("ยังใช้เมาส์เลื่อนส่วนของ body ไม่ได้...ปุ่มแสดง N รายการ
+             pagination เลื่อนไปตามด้วย") -- round 2's fix wrapped the RAW `<table>` in `.table-responsive`
+             right here in the static view, BEFORE DataTables ever initializes on it -- DataTables then
+             builds its OWN length/search/info/pagination controls as siblings of the table INSIDE
+             whatever the table's parent happens to be at init time, so all of those ended up nested
+             inside this scrolling div too, scrolling along with the columns (exactly the 2nd complaint)
+             -- and plain `overflow-x:auto` only ever supports scrollbar-drag/shift+wheel, not a genuine
+             click-and-hold-then-drag gesture anywhere on the table body (the 1st complaint). There is
+             NO static wrapper here anymore -- `public/js/employee/list.js`'s own
+             `initEmployeeRecheckTable()` now does the wrapping itself, in `initComplete` (fires once,
+             AFTER DataTables has already built its length/search/info/pagination controls as siblings
+             of the table), so `.table-responsive` ends up wrapping ONLY the `<table>` element itself,
+             never those controls -- and `initTableDragScroll()` (public/js/sticky-table-columns.js)
+             adds the actual click-and-drag panning on top of that same wrapper (plain overflow-x:auto
+             alone never supported that gesture, scrollbar-drag/shift+wheel only).
+             `.recheck-fixedcols-table` (style.css) forces `white-space:nowrap` so the table is actually
+             WIDER than its container (letting `.table-responsive` do its job) instead of Bootstrap's
+             own default auto-shrink-to-fit hiding the overflow, and gives a short header label like
+             "Actions" no reason to wrap onto 2 lines either.
+             `initStickyColumns()` (plain CSS position:sticky on this SAME table's own cells -- no
+             scrollHead/scrollBody split to juggle, this app never uses DataTables' own `scrollX`) does
+             the actual column freezing; the `dtr-control` expand column from the old responsive:true
+             layout is gone -- nothing left to expand, every column is reachable by scrolling instead. -->
+        <table class="table table-striped table-hover recheck-fixedcols-table" id="tb_employee_recheck">
             <thead class="table-light text-secondary">
                 <tr>
-                    <th></th>
                     <!-- 2026-08-31, explicit request: "ตารางพนักงานทุกตาราง แยก code กับชื่อเป็นคนละ Column" --
                          was one "Employee" column with employee_no/name stacked, split into 2 (matches
                          the main #tb_employee table's own convention, which already had them separate). -->

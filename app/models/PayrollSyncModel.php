@@ -467,6 +467,96 @@ class PayrollSyncModel {
         return ['status' => true];
     }
 
+    /**
+     * 2026-09-08, Origami email exchange (2 rounds) -- handles the new `attribution_update` event
+     * (own endpoint, own API key -- see PayrollSyncController::attributionUpdate()). Patches ONLY
+     * the attribution columns of an EXISTING `payroll_sync_processes` row, found by Origami's own
+     * `process_id` (the same key `ingest()` upserts on) -- never touches items/employee-status/
+     * numeric data at all, so this deliberately does NOT go through ingest()'s own
+     * "already linked to a run" blocked-update safety net (that guard exists specifically because a
+     * FULL re-push could silently change numbers under an in-progress/consumed run -- an
+     * attribution-only patch has no such risk category, and the whole point of this event is to
+     * still work after the row has already been pulled/merged for audit/reporting visibility, even
+     * though resolving a target this way never auto-merges anything -- see below).
+     *
+     * Deliberately does NOT auto-merge, even if the newly-resolved target already exists as a real
+     * run here and this supplemental was ALREADY pulled into its own standalone run via the
+     * existing "Pull to Run" escape hatch before the target became known -- same "never auto-merge
+     * silently, only ever surface a confirm prompt to a live admin" principle
+     * PayrollRunModel::create()'s own pending_merges_ready detection already established, which
+     * cannot apply here since there is no live admin session during an inbound webhook call. If
+     * this supplemental hasn't been pulled anywhere yet, it simply reappears in Pending Pull with
+     * `attribution_target_status` now correctly 'ready' (attributionTargetStatus() is computed
+     * live per page view, no extra plumbing needed) -- an admin merges it from there as normal. If
+     * it WAS already pulled standalone, the resolved target is still recorded here for visibility,
+     * and an admin can manually set `merge_target_run_id` on that run's own Edit form (already
+     * built, see PayrollRunModel::update()) if they want to merge it after the fact.
+     */
+    public function applyAttributionUpdate(array $payload): array {
+        $version = $payload['schema_version'] ?? null;
+        if ($version !== self::SUPPORTED_SCHEMA_VERSION) {
+            return ['status' => false, 'message' => "Unsupported schema_version: " . var_export($version, true) . '. This receiver only understands version ' . self::SUPPORTED_SCHEMA_VERSION . '.'];
+        }
+        if (($payload['event'] ?? null) !== 'attribution_update') {
+            return ['status' => false, 'message' => "Invalid event: expected 'attribution_update'."];
+        }
+        foreach (['process_id', 'attribution'] as $field) {
+            if (!isset($payload[$field]) || $payload[$field] === '') {
+                return ['status' => false, 'message' => "Missing required field: {$field}"];
+            }
+        }
+        if (!is_array($payload['attribution'])) {
+            return ['status' => false, 'message' => 'attribution must be an object.'];
+        }
+
+        $originProcessId = (int)$payload['process_id'];
+        $stmt = $this->db->prepare("SELECT id, comp_id, run_kind FROM `payroll_sync_processes` WHERE origami_process_id = :pid LIMIT 1");
+        $stmt->execute([':pid' => $originProcessId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            // Genuinely unknown to us -- unlike ingest(), there is no sensible "create it" fallback
+            // here (an attribution_update has no items/comp_code/frequency_type etc. to create a
+            // full process row from), so this is refused outright rather than silently no-op'd.
+            return ['status' => false, 'message' => "Unknown process_id: {$originProcessId}. This process has never been received via the payroll_export event."];
+        }
+
+        $attribution = $this->normalizeAttribution((string)$row['run_kind'], $payload['attribution']);
+        $updateStmt = $this->db->prepare("UPDATE `payroll_sync_processes` SET
+                attribution_target_origami_process_id = :attr_target_id,
+                attribution_target_process_no = :attr_target_no,
+                attribution_tax_treatment = :attr_tax_treatment,
+                attribution_status = :attr_status,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :id");
+        $updateStmt->execute([
+            ':attr_target_id' => $attribution['target_origami_process_id'],
+            ':attr_target_no' => $attribution['target_process_no'],
+            ':attr_tax_treatment' => $attribution['tax_treatment'],
+            ':attr_status' => $attribution['attribution_status'],
+            ':id' => $row['id'],
+        ]);
+
+        // Best-effort notification, same "must never turn a genuinely successful write into a
+        // failed response" posture as ingest()'s own sync_new_data notification -- only fires when
+        // this update genuinely just RESOLVED a merge-intent attribution (the case the "please
+        // don't finalize until you hear from us" instruction was actually about), not for a
+        // separate-treatment or still-pending update.
+        if ($attribution['tax_treatment'] === 'merge' && $attribution['attribution_status'] === 'resolved') {
+            try {
+                (new NotificationModel())->createForPermissionHolders(
+                    (int)$row['comp_id'], 'payroll_run.process', 'sync_attribution_resolved',
+                    "รอบเป้าหมายของรายการ Sync ถูกกำหนดแล้ว", "Sync item's merge target is now resolved",
+                    "รายการที่รอ fold-in พร้อม merge เข้ารอบเป้าหมายแล้วครับ", "An item waiting to fold in is now ready to merge into its target round",
+                    "/payroll-process", 'payroll_sync_process', (int)$row['id'], "sync_attribution_resolved:{$row['id']}", 'fa-link'
+                );
+            } catch (Throwable $e) {
+                // Best-effort -- see comment above.
+            }
+        }
+
+        return ['status' => true, 'process_row_id' => (int)$row['id'], 'attribution_status' => $attribution['attribution_status']];
+    }
+
     private function resolveCompanyId(string $compCode): ?int {
         $stmt = $this->db->prepare("SELECT id FROM companies WHERE origami_payroll_comp_code = :code LIMIT 1");
         $stmt->execute([':code' => $compCode]);
@@ -501,26 +591,55 @@ class PayrollSyncModel {
      * regular cycle is always attributed to itself"). Same defensive posture as
      * normalizeRunKind() -- never trust the external payload's shape blindly; a malformed/partial
      * `attribution` object degrades to "no attribution" (null tax_treatment) rather than throwing
-     * or half-populating the 3 columns inconsistently.
-     * @return array{target_origami_process_id: ?int, target_process_no: ?string, tax_treatment: ?string}
+     * or half-populating the columns inconsistently.
+     *
+     * 2026-09-08, Origami email exchange (2 rounds) -- gained `attribution.status`
+     * (`'resolved'`/`'pending_fold_in'`). Origami used to BLOCK sending a supplemental batch at all
+     * until an admin had already linked it to a real target -- they now send it immediately with
+     * `status='pending_fold_in'` and `target_process_id=null`, following up later with a separate
+     * `attribution_update` event once a real target is chosen. Confirmed with Origami (2nd round,
+     * not guessed) that `status` (link state) and `tax_treatment` (calc intent -- does finalizing
+     * this batch's tax need to WAIT for the merge, or calculate standalone regardless) are
+     * deliberately independent: `tax_treatment='separate'` + `status='pending_fold_in'` is a real,
+     * intentional combination (a standalone-taxed batch whose REPORTING period attribution just
+     * isn't chosen yet), not a contradiction -- see attributionTargetStatus()'s own docblock for
+     * where that distinction actually matters.
+     *
+     * `status` is DERIVED here, not trusted verbatim from the wire, except for the one case that
+     * needs it (target genuinely absent) -- a `target_process_id` that IS present always means
+     * 'resolved' regardless of what `status` claims, since that's the literal definition Origami
+     * themselves gave it (status answers "do we know the target yet").
+     * @return array{target_origami_process_id: ?int, target_process_no: ?string, tax_treatment: ?string, attribution_status: ?string}
      */
     private function normalizeAttribution(?string $runKind, mixed $value): array {
-        $empty = ['target_origami_process_id' => null, 'target_process_no' => null, 'tax_treatment' => null];
+        $empty = ['target_origami_process_id' => null, 'target_process_no' => null, 'tax_treatment' => null, 'attribution_status' => null];
         if ($runKind !== 'supplemental' || !is_array($value)) {
             return $empty;
         }
         $treatment = ($value['tax_treatment'] ?? null) === 'merge' ? 'merge' : 'separate';
         $targetId = isset($value['target_process_id']) && is_numeric($value['target_process_id']) ? (int)$value['target_process_id'] : null;
         if ($targetId === null) {
-            // No real target named -- per Origami's own doc, this is the "explicitly chose NOT to
-            // merge with any regular cycle" case, functionally identical to `attribution: null`
-            // even if a (malformed or intent-only) object was technically present.
-            return $empty;
+            if (($value['status'] ?? null) !== 'pending_fold_in') {
+                // No real target AND not explicitly pending fold-in -- per Origami's own doc, this
+                // is the "explicitly chose NOT to attribute this batch to anything" case,
+                // functionally identical to `attribution: null` even if a (malformed or intent-only)
+                // object was technically present.
+                return $empty;
+            }
+            // Target genuinely not chosen yet -- attribution INTENT is real (tax_treatment still
+            // matters, see docblock above) even though the target itself isn't resolved.
+            return [
+                'target_origami_process_id' => null,
+                'target_process_no' => null,
+                'tax_treatment' => $treatment,
+                'attribution_status' => 'pending_fold_in',
+            ];
         }
         return [
             'target_origami_process_id' => $targetId,
             'target_process_no' => !empty($value['target_process_no']) ? trim((string)$value['target_process_no']) : null,
             'tax_treatment' => $treatment,
+            'attribution_status' => 'resolved',
         ];
     }
 
@@ -571,7 +690,7 @@ class PayrollSyncModel {
                     process_description = :process_description, process_start = :process_start,
                     process_end = :process_end, process_paid = :process_paid, run_kind = :run_kind,
                     attribution_target_origami_process_id = :attr_target_id, attribution_target_process_no = :attr_target_no,
-                    attribution_tax_treatment = :attr_tax_treatment,
+                    attribution_tax_treatment = :attr_tax_treatment, attribution_status = :attr_status,
                     status = 'pending', rejected_reason = NULL, rejected_by = NULL, rejected_at = NULL,
                     origami_report_id = :report_id,
                     origami_comp_code = :comp_code, origami_comp_name = :comp_name,
@@ -587,6 +706,7 @@ class PayrollSyncModel {
                 ':attr_target_id' => $attribution['target_origami_process_id'],
                 ':attr_target_no' => $attribution['target_process_no'],
                 ':attr_tax_treatment' => $attribution['tax_treatment'],
+                ':attr_status' => $attribution['attribution_status'],
                 ':report_id' => $p['report_id'] ?? null,
                 ':comp_code' => (string)$p['comp_code'], ':comp_name' => (string)$p['comp_name'],
                 ':period_id' => $p['period_id'] ?? null, ':period_name' => $p['period_name'] ?? null,
@@ -602,12 +722,12 @@ class PayrollSyncModel {
         $stmt = $this->db->prepare("INSERT INTO payroll_sync_processes
                 (comp_id, origami_process_id, process_no, process_subject, process_description,
                  process_start, process_end, process_paid, run_kind,
-                 attribution_target_origami_process_id, attribution_target_process_no, attribution_tax_treatment,
+                 attribution_target_origami_process_id, attribution_target_process_no, attribution_tax_treatment, attribution_status,
                  origami_report_id, origami_comp_code, origami_comp_name,
                  origami_period_id, period_name, frequency_type, external_cycle_code, schema_version, raw_payload)
             VALUES (:comp_id, :pid, :process_no, :process_subject, :process_description,
                  :process_start, :process_end, :process_paid, :run_kind,
-                 :attr_target_id, :attr_target_no, :attr_tax_treatment,
+                 :attr_target_id, :attr_target_no, :attr_tax_treatment, :attr_status,
                  :report_id, :comp_code, :comp_name,
                  :period_id, :period_name, :frequency_type, :external_cycle_code, :schema_version, :raw_payload)");
         $stmt->execute([
@@ -618,6 +738,7 @@ class PayrollSyncModel {
             ':attr_target_id' => $attribution['target_origami_process_id'],
             ':attr_target_no' => $attribution['target_process_no'],
             ':attr_tax_treatment' => $attribution['tax_treatment'],
+            ':attr_status' => $attribution['attribution_status'],
             ':report_id' => $p['report_id'] ?? null, ':comp_code' => (string)$p['comp_code'], ':comp_name' => (string)$p['comp_name'],
             ':period_id' => $p['period_id'] ?? null, ':period_name' => $p['period_name'] ?? null,
             ':external_cycle_code' => $externalCycleCode,
@@ -1910,10 +2031,24 @@ class PayrollSyncModel {
      *   see upsertProcess()'s own UPDATE branch) -- unlike `waiting_known`/`waiting_unknown`, this
      *   attribution will NEVER resolve on its own; genuinely distinct from "still waiting" so the
      *   UI doesn't imply it'll become ready eventually.
+     * - `'pending_fold_in'` (2026-09-08): Origami itself hasn't chosen a target AT ALL yet
+     *   (`attribution_status='pending_fold_in'`, `attribution_target_origami_process_id IS NULL`)
+     *   -- genuinely earlier in the lifecycle than `waiting_known`/`waiting_unknown` (those both
+     *   assume Origami already picked a target, just checking whether WE'VE received/pulled it).
+     *   Resolves only via a future `attribution_update` event (PayrollSyncModel::
+     *   applyAttributionUpdate()), never on its own from anything on our side. Checked FIRST,
+     *   before the target-lookup checks below, since there is no target to look up yet.
+     *   Deliberately only applies when `tax_treatment='merge'` -- confirmed with Origami that
+     *   `tax_treatment='separate'` rows never gate on merge-readiness regardless of
+     *   `attribution_status` (their pending_fold_in there is purely a future report/period
+     *   reconciliation label, not something this app's own tax finalization needs to wait for).
      */
     private function attributionTargetStatus(array $row): ?string {
         if (($row['run_kind'] ?? '') !== 'supplemental' || ($row['attribution_tax_treatment'] ?? '') !== 'merge') {
             return null;
+        }
+        if (($row['attribution_status'] ?? null) === 'pending_fold_in') {
+            return 'pending_fold_in';
         }
         if (!empty($row['attribution_target_run_id'])) {
             return 'ready';
@@ -1975,7 +2110,7 @@ class PayrollSyncModel {
         // PayrollRunModel::mergeSupplementalIntoRun() refused.
         $stmt = $this->db->prepare("SELECT p.id, p.origami_process_id, p.process_no, p.process_subject,
                 p.process_start, p.process_end, p.process_paid, p.run_kind,
-                p.attribution_target_origami_process_id, p.attribution_target_process_no, p.attribution_tax_treatment,
+                p.attribution_target_origami_process_id, p.attribution_target_process_no, p.attribution_tax_treatment, p.attribution_status,
                 p.origami_comp_name, p.period_name, p.frequency_type, p.external_cycle_code,
                 p.item_count, p.unmapped_item_count, p.received_at,
                 tp.id AS attribution_target_sync_process_id, tp.status AS attribution_target_process_status,

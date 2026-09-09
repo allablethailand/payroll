@@ -86,6 +86,7 @@
         $modal.attr('data-forced', forced ? '1' : '0');
         $modal.find('.terms-modal-close-btn').toggleClass('d-none', forced);
         $modal.find('.terms-modal-footer-forced').toggleClass('d-none', !forced);
+        $modal.find('.terms-modal-footer-view').toggleClass('d-none', forced);
         $('#termsModalHistory').toggleClass('d-none', forced);
         $('#btnAcceptTerms').prop('disabled', forced);
     }

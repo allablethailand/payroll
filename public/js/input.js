@@ -287,6 +287,18 @@ function initSelect2(selector, options = {}) {
                         if (employeeId !== undefined && employeeId !== '') {
                             extraData.employee_id = employeeId;
                         }
+                        // 2026-09-08, same "read fresh from the live DOM attribute on every search"
+                        // pattern as the others above -- first consumer is the Payment Voucher report's
+                        // own employee picker (#reportsPreviewEmployeeSelect), which reuses this same
+                        // general-purpose api/employee.report_to.get endpoint but must never offer an
+                        // employee flagged as not receiving salary (employees.is_payroll_participant=0)
+                        // -- see EmployeeModel::reportToOptions()'s own docblock. Other reuse sites
+                        // (Report-To manager picker, template "Assign To" pickers) leave this unset, so
+                        // they keep seeing every employee exactly as before.
+                        const payrollParticipantsOnly = $this.attr('data-payroll-participants-only');
+                        if (payrollParticipantsOnly !== undefined && payrollParticipantsOnly !== '') {
+                            extraData.payroll_participants_only = payrollParticipantsOnly;
+                        }
                         return $.extend({
                             searchTerm: params.term,
                             page: params.page || 1,

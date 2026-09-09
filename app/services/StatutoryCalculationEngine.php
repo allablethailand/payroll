@@ -162,8 +162,15 @@ class StatutoryCalculationEngine {
             return $line;
         }
 
-        $rateRow = $this->resolveEffectiveRate((int)$item['statutory_item_id'], $calcDate);
-        $noRateNote = $this->itemHasAnyRateHistory((int)$item['statutory_item_id']) ? 'no_rate_configured' : 'no_rate_ever_configured';
+        // 2026-09-08, Clone+Version redesign -- $item['item_scope'] ('master'/'custom', already
+        // carried by every row CompanyStatutorySettingModel::list() returns) decides which rows
+        // resolveEffectiveRate()/itemHasAnyRateHistory() are even allowed to consider: a CUSTOM
+        // item's own rate history is always comp_id-IS-NULL-scoped (ownership is transitive via
+        // statutory_item_id, unchanged by this redesign), so it never participates in the
+        // company-clone lookup at all -- only a MASTER item does.
+        $rateCompId = ($item['item_scope'] ?? 'master') === 'custom' ? null : $compId;
+        $rateRow = $this->resolveEffectiveRate((int)$item['statutory_item_id'], $calcDate, $rateCompId);
+        $noRateNote = $this->itemHasAnyRateHistory((int)$item['statutory_item_id'], $rateCompId) ? 'no_rate_configured' : 'no_rate_ever_configured';
 
         switch ($item['calc_method']) {
             case 'flat_rate':
@@ -171,11 +178,14 @@ class StatutoryCalculationEngine {
                     $line['note'] = $noRateNote;
                     return $line;
                 }
-                $isCompanyOverride = $item['employee_rate_override'] !== null || $item['employer_rate_override'] !== null;
-                // Per-employee rate wins over the company-wide override above -- see calculate()'s
-                // own docblock. Only applied when the caller actually passed a non-null value for
-                // that side; a present-but-null key (or an absent item code entirely) leaves the
-                // company/master rate resolved above untouched.
+                // 2026-09-08: the old company-wide flat override (company_statutory_settings.
+                // employee_rate_override etc.) is gone -- $rateRow itself already IS the
+                // company's own current version when one exists (resolveEffectiveRate() above
+                // already preferred it), so there is no separate "company override" layer left to
+                // detect here. Per-employee rate still wins over whatever $rateRow resolved to --
+                // see calculate()'s own docblock. Only applied when the caller actually passed a
+                // non-null value for that side; a present-but-null key (or an absent item code
+                // entirely) leaves the resolved rate untouched.
                 $employeeOverride = $employeeRateOverrides[$item['code']] ?? [];
                 $isEmployeeOverride = false;
                 if (array_key_exists('employee_rate_override', $employeeOverride) && $employeeOverride['employee_rate_override'] !== null) {
@@ -196,7 +206,7 @@ class StatutoryCalculationEngine {
                     $priorMonthUsage = $this->monthlyUsagePriorToThisPeriod($compId, $employeeId, $item['code'], $periodStartDate);
                 }
                 [$line['employee_amount'], $line['employer_amount'], $line['base_amount'], $line['formula']] = self::computeFlatRate($item, $rateRow, $base, $priorMonthUsage);
-                $line['rate_source'] = $isEmployeeOverride ? 'employee_override' : ($isCompanyOverride ? 'company_override' : 'master');
+                $line['rate_source'] = $isEmployeeOverride ? 'employee_override' : 'master';
                 return $line;
 
             case 'fixed_amount':
@@ -204,9 +214,8 @@ class StatutoryCalculationEngine {
                     $line['note'] = $noRateNote;
                     return $line;
                 }
-                $isOverride = $item['employee_amount_override'] !== null || $item['employer_amount_override'] !== null;
                 [$line['employee_amount'], $line['employer_amount'], $line['formula']] = self::computeFixedAmount($item, $rateRow);
-                $line['rate_source'] = $isOverride ? 'company_override' : 'master';
+                $line['rate_source'] = 'master';
                 return $line;
 
             case 'progressive_bracket':
@@ -263,12 +272,36 @@ class StatutoryCalculationEngine {
         }
     }
 
-    private function resolveEffectiveRate(int $itemId, string $calcDate): ?array {
-        $stmt = $this->db->prepare("SELECT * FROM `statutory_item_rate_history`
+    /**
+     * 2026-09-08, Clone+Version redesign -- prefers the COMPANY's own cloned/customized version
+     * (comp_id = $compId) when one exists, falling back to Master's own row (comp_id IS NULL)
+     * otherwise. The fallback covers 2 real cases: a CUSTOM item (always resolved with
+     * $compId=null by the caller, see calculateLine()'s own comment -- ownership is transitive
+     * via statutory_item_id already, not this column), and a MASTER item a company hasn't been
+     * cloned for yet (a pre-this-feature company that predates the activation-time clone hook, or
+     * a brand-new Master item added after that company's own clone already ran).
+     */
+    private function resolveEffectiveRate(int $itemId, string $calcDate, ?int $compId): ?array {
+        if ($compId !== null) {
+            $row = $this->resolveEffectiveRateScoped($itemId, $calcDate, $compId);
+            if ($row) {
+                return $row;
+            }
+        }
+        return $this->resolveEffectiveRateScoped($itemId, $calcDate, null);
+    }
+    private function resolveEffectiveRateScoped(int $itemId, string $calcDate, ?int $compId): ?array {
+        $sql = "SELECT * FROM `statutory_item_rate_history`
             WHERE statutory_item_id = :item_id AND deleted_at IS NULL
             AND effective_date <= :calc_date AND (end_date IS NULL OR end_date >= :calc_date)
-            ORDER BY effective_date DESC LIMIT 1");
-        $stmt->execute([':item_id' => $itemId, ':calc_date' => $calcDate]);
+            AND " . ($compId === null ? "comp_id IS NULL" : "comp_id = :comp_id") . "
+            ORDER BY effective_date DESC LIMIT 1";
+        $stmt = $this->db->prepare($sql);
+        $params = [':item_id' => $itemId, ':calc_date' => $calcDate];
+        if ($compId !== null) {
+            $params[':comp_id'] = $compId;
+        }
+        $stmt->execute($params);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: null;
     }
@@ -279,10 +312,18 @@ class StatutoryCalculationEngine {
      * statutory_items with zero real CPF/SOCSO/EPF rates configured), as opposed to a real gap in
      * an otherwise-maintained timeline. Distinguishing these two lets recalculate() treat the
      * former as a soft "not yet configured" note (0 amount, no hard block) and the latter as a
-     * real misconfiguration worth blocking the run over.
+     * real misconfiguration worth blocking the run over. Same company-scoped-then-Master-fallback
+     * shape as resolveEffectiveRate() above, for the same 2 reasons.
      */
-    private function itemHasAnyRateHistory(int $itemId): bool {
-        $stmt = $this->db->prepare("SELECT COUNT(*) FROM `statutory_item_rate_history` WHERE statutory_item_id = :item_id AND deleted_at IS NULL");
+    private function itemHasAnyRateHistory(int $itemId, ?int $compId): bool {
+        if ($compId !== null) {
+            $stmt = $this->db->prepare("SELECT COUNT(*) FROM `statutory_item_rate_history` WHERE statutory_item_id = :item_id AND comp_id = :comp_id AND deleted_at IS NULL");
+            $stmt->execute([':item_id' => $itemId, ':comp_id' => $compId]);
+            if ((int)$stmt->fetchColumn() > 0) {
+                return true;
+            }
+        }
+        $stmt = $this->db->prepare("SELECT COUNT(*) FROM `statutory_item_rate_history` WHERE statutory_item_id = :item_id AND comp_id IS NULL AND deleted_at IS NULL");
         $stmt->execute([':item_id' => $itemId]);
         return (int)$stmt->fetchColumn() > 0;
     }

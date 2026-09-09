@@ -49,7 +49,11 @@ class PayrollReportDataModel {
      */
     public function getCompletedRuns(int $compId, array $allowedStates, ?string $dateFrom = null, ?string $dateTo = null): array {
         $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
-        $sql = "SELECT r.id, r.run_name, r.state, r.period_start_date, r.period_end_date, r.payment_date, c.cycle_name
+        // r.employee_count (2026-09-08, explicit request: "เพิ่ม...จำนวนพนักงานเข้าไปด้วยครับ") -- the
+        // SAME cached column PayrollRunModel::recalculate() itself already maintains
+        // (`UPDATE payroll_runs SET employee_count = ...`), not a fresh COUNT(*) subquery -- this is
+        // one row per COMPLETED run already, so the cached figure is exactly what was actually paid.
+        $sql = "SELECT r.id, r.run_name, r.state, r.period_start_date, r.period_end_date, r.payment_date, r.employee_count, c.cycle_name
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})";

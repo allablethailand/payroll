@@ -14,6 +14,7 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../app/core/Database.php';
 require_once __DIR__ . '/../app/models/TaxStatutoryModel.php';
 require_once __DIR__ . '/../app/models/CompanyStatutorySettingModel.php';
+require_once __DIR__ . '/../app/models/CompanyStatutoryRateVersionModel.php';
 require_once __DIR__ . '/../app/services/StatutoryCalculationEngine.php';
 
 $pdo = Database::getInstance()->pdo;
@@ -37,6 +38,7 @@ try {
     $compId = 1; // Allable Co.,Ltd. (TH)
     $taxModel = new TaxStatutoryModel();
     $csModel = new CompanyStatutorySettingModel($pdo);
+    $rateVersionModel = new CompanyStatutoryRateVersionModel($pdo);
     $engine = new StatutoryCalculationEngine($pdo);
 
     // Lookup real item ids by code (do not hardcode ids, in case seed order changes)
@@ -77,21 +79,43 @@ try {
     check('employee_amount (floored to 1650 base * 5%)', $result['employee_amount'], 82.5);
     check('employer_amount', $result['employer_amount'], 82.5);
 
-    echo "=== Scenario 3: TH_PVD with company rate override ===\n";
-    $saveRes = $csModel->save($compId, [
+    echo "=== Scenario 3: TH_PVD with a company-owned rate version (Clone+Version redesign) ===\n";
+    // 2026-09-08, Clone+Version redesign -- CompanyStatutorySettingModel::save() (flat override) no
+    // longer exists; a company's own rate is a real dated version on the SAME statutory_item_
+    // rate_history table Master's own versions live on, comp_id-scoped (see
+    // CompanyStatutoryRateVersionModel's own docblock). comp_id=1 already has a 'master_clone' row
+    // for TH_PVD from CompanyProfileModel's own activation hook / the 2026-09-08 migration's
+    // one-time backfill, dated effective_date=today with no end_date -- this new version is
+    // deliberately dated BEFORE that (so it's genuinely in effect at the '2026-07-01' calc date
+    // used below) with an explicit end_date the day before the clone's own effective_date, so the
+    // two don't overlap (a version's own effective_date must be >= whatever it's meant to supersede
+    // for closeOpenRateVersion() to close it automatically -- backdating past an existing OPEN row
+    // needs an explicit end_date instead, same real-world "versions apply going forward" constraint
+    // a dated history table is supposed to have).
+    $saveRes = $rateVersionModel->save($compId, [
         'statutory_item_id' => $pvdId,
-        'is_active' => true,
-        'employee_rate_override' => 5,
-        'employer_rate_override' => 4,
+        'effective_date' => '2020-01-01',
+        'end_date' => '2026-09-07',
+        'employee_rate' => 5,
+        'employer_rate' => 4,
     ], 1);
-    check('override save status', $saveRes['status'], true);
+    check('version save status', $saveRes['status'], true);
+    $pvdVersionId = $saveRes['id'];
     $result = $engine->calculateItem($compId, 'TH_PVD', ['basic_salary' => 30000, 'pf_eligible_earnings' => 30000], '2026-07-01');
-    check('employee_amount uses override 5% not master 3%', $result['employee_amount'], 1500.0);
-    check('employer_amount uses override 4% not master 3%', $result['employer_amount'], 1200.0);
-    check('rate_source flagged as company_override', $result['rate_source'], 'company_override');
+    check('employee_amount uses this company\'s own version (5%) not master (3%)', $result['employee_amount'], 1500.0);
+    check('employer_amount uses this company\'s own version (4%) not master (3%)', $result['employer_amount'], 1200.0);
+    // rate_source stays 'master' (not renamed) -- a company's own resolved version IS its effective
+    // baseline rate now, see StatutoryCalculationEngine's own docblock on this collapsing from 3
+    // values to 2 (the other being 'employee_override', a per-EMPLOYEE flag, unrelated to this).
+    check('rate_source stays master (company version resolved transparently)', $result['rate_source'], 'master');
 
     echo "=== Scenario 4: TH_PVD disabled by company ===\n";
-    $csModel->save($compId, ['statutory_item_id' => $pvdId, 'is_active' => false], 1);
+    // 2026-09-08, explicit request: "ใช้แค่ toggle ในตารางก็เพียงพอ" -- save() no longer accepts
+    // `is_active` at all (rate-override-only now, see CompanyStatutorySettingModel::save()'s own
+    // docblock); enable/disable is exclusively toggleStatus()'s job. TH_PVD is untouched by any
+    // earlier scenario in this file, so it's still on its master default (active) here.
+    $toggleResult = $csModel->toggleStatus($compId, $pvdId, 1);
+    check('toggleStatus flips TH_PVD to inactive (fixture precondition)', $toggleResult['new_status'], 'inactive');
     $result = $engine->calculateItem($compId, 'TH_PVD', ['basic_salary' => 30000, 'pf_eligible_earnings' => 30000], '2026-07-01');
     check('employee_amount is 0 when disabled', $result['employee_amount'], 0.0);
     check('note is disabled', $result['note'], 'disabled');
@@ -140,7 +164,15 @@ try {
     check('note is no_rate_configured', $result['note'], 'no_rate_configured');
 
     echo "=== Scenario 8: full calculate() across all active TH items ===\n";
-    $csModel->save($compId, ['statutory_item_id' => $pvdId, 'is_active' => true, 'employee_rate_override' => '', 'employer_rate_override' => ''], 1);
+    // 2026-09-08: re-enabling TH_PVD (disabled by Scenario 4 above) is toggleStatus()'s job now,
+    // not save()'s (which no longer exists -- see that model's own docblock). Scenario 3's own
+    // company version is deleted here so this scenario reflects the plain master-clone rate (3%)
+    // again, same "restore to baseline before the aggregate scenario" intent the old override-clear
+    // call had.
+    $toggleBackResult = $csModel->toggleStatus($compId, $pvdId, 1);
+    check('toggleStatus flips TH_PVD back to active (Scenario 8 fixture precondition)', $toggleBackResult['new_status'], 'active');
+    $deleteRes = $rateVersionModel->delete($compId, $pvdVersionId, 1);
+    check('Scenario 3\'s own version deleted (Scenario 8 fixture precondition)', $deleteRes['status'], true);
     $full = $engine->calculate($compId, ['basic_salary' => 30000, 'taxable_income' => 400000, 'sso_eligible_earnings' => 30000, 'pf_eligible_earnings' => 30000], '2026-07-01');
     check('calculate() returns 3 line items for TH', count($full['items']), 3);
     check('total_employee_deduction sums all active items', $full['total_employee_deduction'], 750.0 + 900.0 + 17500.0);
@@ -173,9 +205,18 @@ try {
 
     // progressive_bracket (TH_PIT) -- reuse the real, already-configured brackets so the expected
     // result matches Scenario 5's own published-table value (17,500 THB @ taxable_income=400,000).
+    // 2026-09-08, Clone+Version redesign -- `AND comp_id IS NULL` added: comp_id=1 now also has its
+    // OWN cloned statutory_item_rate_history row for TH_PIT (dated today, from the migration's
+    // one-time activation backfill), which -- being progressive_bracket -- has NO
+    // statutory_item_brackets rows of its own (the one-time SQL backfill only clones rate_history
+    // rows, not brackets; CompanyStatutoryRateVersionModel::cloneMasterForCompany(), the ongoing
+    // per-activation hook, DOES clone brackets, but that's not what ran for this pre-existing
+    // company). Without this filter, `ORDER BY effective_date DESC LIMIT 1` picked that newer,
+    // bracket-less company row over Master's own real 8-bracket row, breaking this fixture-sanity
+    // check with 0 brackets found.
     $pitBracketsStmt = $pdo->prepare("SELECT min_amount, max_amount, rate FROM `statutory_item_brackets`
         WHERE statutory_item_rate_history_id = (
-            SELECT id FROM `statutory_item_rate_history` WHERE statutory_item_id = :item_id AND deleted_at IS NULL
+            SELECT id FROM `statutory_item_rate_history` WHERE statutory_item_id = :item_id AND comp_id IS NULL AND deleted_at IS NULL
             ORDER BY effective_date DESC LIMIT 1
         ) ORDER BY bracket_order ASC");
     $pitBracketsStmt->execute([':item_id' => $pitId]);

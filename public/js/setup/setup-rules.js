@@ -17,7 +17,7 @@
 // ".btn-circle-action" section) replace the old adjacent .btn-group.
 function actionBtns(editFn, delFn, extraBtns) {
     return `
-    <div class="d-flex gap-1 justify-content-center flex-wrap">
+    <div class="d-flex gap-1 justify-content-center flex-nowrap">
         <button class="btn btn-link btn-circle-action text-warning" onclick="${editFn}"><i class="fa-solid fa-pen-to-square"></i></button>
         ${extraBtns || ''}
         <button class="btn btn-link btn-circle-action text-danger" onclick="${delFn}"><i class="fa-solid fa-trash-can"></i></button>

@@ -65,11 +65,21 @@
         $isAuthRoute = (strpos($requestUri, '/auth') !== false);
         $isApiAuthRoute = (strpos($requestUri, '/api/auth') !== false);
         $isApiLoginRoute = (strpos($requestUri, '/api/login') !== false);
-        // Machine-to-machine ingest from Origami's cron job (see PayrollSyncController::ingest())
-        // -- authenticated by its own Bearer/PAYROLL_SYNC_INGEST_API_KEY check, not a session.
-        // Scoped to this one action specifically -- other api/payroll-sync.* routes (e.g.
-        // pending-list, for the logged-in Payroll Process page) must stay session-gated.
-        $isApiPayrollSyncRoute = (strpos($requestUri, '/api/payroll-sync.ingest') !== false);
+        // Machine-to-machine pushes from Origami (see PayrollSyncController::ingest()/
+        // attributionUpdate()) -- each authenticated by its own separate Bearer/*_API_KEY check,
+        // not a session. Scoped to exactly these 2 actions -- other api/payroll-sync.* routes (e.g.
+        // pending-list, for the logged-in Payroll Process page) must stay session-gated. 2026-09-08:
+        // widened from a single hardcoded route to an array of exact matches (not a broad prefix)
+        // now that a 2nd machine-to-machine route exists, on purpose so a FUTURE api/payroll-sync.*
+        // route defaults to session-gated unless explicitly added here.
+        $machineToMachineSyncRoutes = ['/api/payroll-sync.ingest', '/api/payroll-sync.attribution-update'];
+        $isApiPayrollSyncRoute = false;
+        foreach ($machineToMachineSyncRoutes as $mtmRoute) {
+            if (strpos($requestUri, $mtmRoute) !== false) {
+                $isApiPayrollSyncRoute = true;
+                break;
+            }
+        }
         $isExcluded = $isAuthRoute || $isApiAuthRoute || $isApiLoginRoute || $isApiPayrollSyncRoute;
 
         if ($isLoggedIn && !$isExcluded) {

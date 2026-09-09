@@ -1809,10 +1809,21 @@ class EmployeeModel {
         return $row;
     }
 
-    public function reportToOptions(int $compId, ?int $excludeId, string $search, int $page, int $limit): array {
+    // 2026-09-08, explicit request: "ส่วนที่ดึงรายชื่อมาทำเงินเดือน และออก Report จะต้องไม่ดึงคนที่ไม่ได้
+    // รับเงินเดือนมาด้วย" -- this endpoint is a general-purpose employee picker reused for several
+    // unrelated purposes (Report-To manager selection, Payslip/Employment Certificate Template
+    // "Assign To" pickers) where offering a non-payroll-participant is correct (a manager or a
+    // document's audience need not themselves be paid through this app), so the filter is opt-in via
+    // $payrollParticipantsOnly rather than baked into $where unconditionally -- the one caller that
+    // DOES need it is the Payment Voucher report's own employee picker (Reports > Annual Reports),
+    // wired via #reportsPreviewEmployeeSelect's `data-payroll-participants-only="1"` (see input.js).
+    public function reportToOptions(int $compId, ?int $excludeId, string $search, int $page, int $limit, bool $payrollParticipantsOnly = false): array {
         $offset = ($page - 1) * $limit;
         $where = "comp_id = :comp_id AND deleted_at IS NULL";
         $params = [':comp_id' => $compId];
+        if ($payrollParticipantsOnly) {
+            $where .= " AND is_payroll_participant = 1";
+        }
         if ($excludeId !== null) {
             $where .= " AND id != :exclude_id";
             $params[':exclude_id'] = $excludeId;
