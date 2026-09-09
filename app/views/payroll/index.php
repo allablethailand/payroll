@@ -21,7 +21,7 @@
     </div>
 
         <div class="station-filter" id="stationFilter">
-            <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
             <button type="button" class="station-filter-toggle" id="stationFilterToggle" title="Toggle filter">
                 <i class="fas fa-chevron-up"></i>
             </button>
@@ -33,14 +33,14 @@
             <div class="station-filter-body">
                 <div class="row g-2">
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><span data-i18n="filter_date_from">From</span></label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
                         <div class="input-group">
                             <input type="text" class="form-control datepicker" id="filter_date_from" autocomplete="off">
                             <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                         </div>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><span data-i18n="filter_date_to">To</span></label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
                         <div class="input-group">
                             <input type="text" class="form-control datepicker" id="filter_date_to" autocomplete="off">
                             <span class="input-group-text"><i class="fas fa-calendar"></i></span>
@@ -52,15 +52,15 @@
                          (no ajax.reload needed, same mechanism the Station cards themselves already
                          use -- see registerStationSearchFilter() in index.js). -->
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="run_origin_label">Origin</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-route me-1 text-muted"></i><span data-i18n="run_origin_label">Origin</span></label>
                         <select class="form-select select2-static" id="filter_run_origin" data-option-keys="filter_all,run_origin_sync,run_origin_cycle,run_origin_manual" data-option-values="all,sync,cycle,manual"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="modal_cycle">Payroll Schedule</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-calendar-check me-1 text-muted"></i><span data-i18n="modal_cycle">Payroll Schedule</span></label>
                         <select class="form-select select2-remote" id="filter_run_cycle" data-api="/api/payroll-cycle.options"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="modal_run_purpose">Run Purpose</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-bullseye me-1 text-muted"></i><span data-i18n="modal_run_purpose">Run Purpose</span></label>
                         <select class="form-select select2-static" id="filter_run_purpose" data-option-keys="filter_all,run_purpose_payroll,run_purpose_incentive" data-option-values="all,payroll,incentive"></select>
                     </div>
                 </div>

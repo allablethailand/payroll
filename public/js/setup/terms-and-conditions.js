@@ -17,7 +17,13 @@
         return $('<div>').text(s == null ? '' : String(s)).html();
     }
 
+    // Holds whichever version's data is CURRENTLY shown in #termsModalContent (the active version,
+    // or an old one picked via .btn-terms-view-version) so a language switch can re-render it
+    // in-place without a round trip -- see termsRefreshLanguage() below.
+    let lastRenderedData = null;
+
     function renderContent(active) {
+        lastRenderedData = active;
         const content = currentLang === 'en' ? active.content_en : active.content_th;
         // 2026-09-07: content is now real HTML (headings/bold/bullet lists -- see the
         // 2026-09-07_2_terms_and_conditions_draft_content.sql migration's own docblock), not the
@@ -26,6 +32,21 @@
         // docblock: no user-input path ever writes to content_th/content_en).
         $('#termsModalContent').html(content || '');
     }
+
+    // 2026-09-09, real bug found and fixed ("ตอนที่ขึ้น Modal ให้กด เปลี่ยนภาษาแล้วไม่ยอมเปลี่ยนตาม"):
+    // #termsModalContent is plain server-fetched HTML with no data-i18n attributes at all, so
+    // app.js's own applyLanguage() (which changeLanguage() always calls via loadLang()) can never
+    // touch it -- every other page with this same shape (Setup Guide checklist, Version changelog,
+    // Help Drawer) already has its own `xxxRefreshLanguage()` hook called from changeLanguage(), but
+    // this modal never got one when it was built, so its content silently stayed in whichever
+    // language was active when the modal was first opened, no matter how many times the language
+    // switcher was clicked afterward. Re-renders whatever is currently shown (current version OR an
+    // old version being viewed via History) using the SAME data already in memory -- no re-fetch
+    // needed, and it's a safe no-op when the modal has never been opened this page load.
+    window.termsRefreshLanguage = function () {
+        if (lastRenderedData) renderContent(lastRenderedData);
+        if (viewingBannerInfo) renderViewingBanner(viewingBannerInfo.versionLabel, viewingBannerInfo.acceptedAt);
+    };
 
     // 2026-09-07, explicit design question answered: "ถ้ามีหลาย Version จะแสดงยังไง...เป็นตารางก่อน
     // แล้วค่อยกดดูข้อความ...ช่วย Design ให้แสดงผลใน modal เดียวครับ รองรับ responsive" -- was a plain
@@ -58,10 +79,24 @@
         $('#termsModalHistory').html(html);
         if (typeof applyLanguage === 'function') applyLanguage();
     }
+    // Set only while the "viewing an old version" banner is showing (View mode only -- the banner
+    // area itself is hidden in the forced login-gate mode, see setForcedUi()) -- holds just enough
+    // to REBUILD the banner's sentence from scratch, since it's plain templated text (langData +
+    // string substitution), not something applyLanguage()'s data-i18n pass can touch on its own.
+    let viewingBannerInfo = null;
+
+    function renderViewingBanner(versionLabel, acceptedAt) {
+        const tpl = (typeof langData !== 'undefined' && langData['terms_and_conditions_viewing_version'])
+            || 'Viewing version {version} (accepted {date}) -- this is not the current version.';
+        const dateText = (typeof formatDisplayDateTime === 'function') ? formatDisplayDateTime(acceptedAt) : acceptedAt;
+        $('#termsModalViewingBannerText').text(tpl.replace('{version}', versionLabel).replace('{date}', dateText));
+    }
+
     function showCurrentVersionInModal() {
         $.get(`${BASE_URL}/api/terms.get`).done(function (res) {
             if (res && res.status && res.data) renderContent(res.data);
         });
+        viewingBannerInfo = null;
         $('#termsModalViewingBanner').addClass('d-none');
     }
     $(document).on('click', '.btn-terms-view-version', function () {
@@ -71,10 +106,8 @@
         $.get(`${BASE_URL}/api/terms.version`, { id: termsId }).done(function (res) {
             if (!res || !res.status || !res.data) return;
             renderContent(res.data);
-            const tpl = (typeof langData !== 'undefined' && langData['terms_and_conditions_viewing_version'])
-                || 'Viewing version {version} (accepted {date}) -- this is not the current version.';
-            const dateText = (typeof formatDisplayDateTime === 'function') ? formatDisplayDateTime(acceptedAt) : acceptedAt;
-            $('#termsModalViewingBannerText').text(tpl.replace('{version}', versionLabel).replace('{date}', dateText));
+            viewingBannerInfo = { versionLabel: versionLabel, acceptedAt: acceptedAt };
+            renderViewingBanner(versionLabel, acceptedAt);
             $('#termsModalViewingBanner').removeClass('d-none');
             document.getElementById('termsModalBody').scrollTop = 0;
         });
@@ -96,7 +129,8 @@
         $.get(`${BASE_URL}/api/terms.get`).done(function (res) {
             if (!res || !res.status || !res.data) return; // no active T&C at all -- nothing to show
             setForcedUi(forced && !res.data.accepted);
-            $('#termsModalViewingBanner').addClass('d-none'); // reset any "viewing an old version" state from a previous open
+            viewingBannerInfo = null; // reset any "viewing an old version" state from a previous open
+            $('#termsModalViewingBanner').addClass('d-none');
             renderContent(res.data);
             if (!forced) {
                 $.get(`${BASE_URL}/api/terms.history`).done(function (histRes) {

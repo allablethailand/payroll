@@ -24,31 +24,31 @@
          per-column Excel filters (ordering:false, an ever-growing append-only log always sorted by
          time). -->
     <div class="station-filter" id="auditLogStationFilter">
-        <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
         <button type="button" class="station-filter-toggle" id="auditLogStationFilterToggle" title="Toggle filter">
             <i class="fas fa-chevron-up"></i>
         </button>
         <div class="station-filter-body">
             <div class="row g-2">
                 <div class="col-6 col-md-4 col-lg-3">
-                    <label class="form-label mb-1" data-i18n="audit_log_table">Table</label>
+                    <label class="form-label mb-1"><i class="fa-solid fa-table me-1 text-muted"></i><span data-i18n="audit_log_table">Table</span></label>
                     <select id="filter_al_table_name" class="form-select select2-static"
                             data-option-keys="audit_log_table_all,audit_log_table_employees,audit_log_table_companies,audit_log_table_payroll_earning_deduction_types,audit_log_table_company_payroll_policies,audit_log_table_attendance_deduction_rules"
                             data-option-values="all,employees,companies,payroll_earning_deduction_types,company_payroll_policies,attendance_deduction_rules"></select>
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1" data-i18n="audit_log_record_id">Record</label>
+                    <label class="form-label mb-1"><i class="fa-solid fa-hashtag me-1 text-muted"></i><span data-i18n="audit_log_record_id">Record</span></label>
                     <input type="number" id="filter_al_record_id" class="form-control" min="1">
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1" data-i18n="date_from">From</label>
+                    <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_from">From</span></label>
                     <div class="input-group">
                         <input type="text" class="form-control datepicker" id="filter_al_date_from" autocomplete="off">
                         <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                     </div>
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1" data-i18n="date_to">To</label>
+                    <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_to">To</span></label>
                     <div class="input-group">
                         <input type="text" class="form-control datepicker" id="filter_al_date_to" autocomplete="off">
                         <span class="input-group-text"><i class="fas fa-calendar"></i></span>

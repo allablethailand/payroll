@@ -922,21 +922,21 @@
                              additionally get the system's per-column Excel-style filter
                              (initExcelColumnFilters(), see detail.js) instead of duplicating them here. -->
                         <div class="station-filter mb-2" id="reportHistoryStationFilter">
-                            <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                             <button type="button" class="station-filter-toggle" id="reportHistoryStationFilterToggle" title="Toggle filter">
                                 <i class="fas fa-chevron-up"></i>
                             </button>
                             <div class="station-filter-body">
                                 <div class="row g-2">
                                     <div class="col-6 col-md-4">
-                                        <label class="form-label mb-1"><span data-i18n="filter_date_from">From</span></label>
+                                        <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
                                         <div class="input-group">
                                             <input type="text" class="form-control datepicker" id="reportHistoryDateFrom" autocomplete="off">
                                             <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                                         </div>
                                     </div>
                                     <div class="col-6 col-md-4">
-                                        <label class="form-label mb-1"><span data-i18n="filter_date_to">To</span></label>
+                                        <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
                                         <div class="input-group">
                                             <input type="text" class="form-control datepicker" id="reportHistoryDateTo" autocomplete="off">
                                             <span class="input-group-text"><i class="fas fa-calendar"></i></span>
@@ -1728,25 +1728,25 @@
                 <div class="modal-body">
                     <div class="row g-2 mb-3">
                         <div class="col-sm-3">
-                            <label class="form-label mb-1" data-i18n="department">Department</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                             <select class="form-select select2-remote" id="joinFilterDepartment" data-api="/api/department.get" data-type="department"></select>
                         </div>
                         <!-- 2026-08-24, explicit request ("ในการดึงพนักงานเข้ามาเพื่อคำนวณเงินเดือน ให้มี
                              Filter ส่วนที่เพิ่มเมื่อสักครู่ด้วยครับ") -- same Team filter just added to
                              Employee List. -->
                         <div class="col-sm-2">
-                            <label class="form-label mb-1" data-i18n="team">Team</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-people-group me-1 text-muted"></i><span data-i18n="team">Team</span></label>
                             <select class="form-select select2-remote" id="joinFilterTeam" data-api="/api/team.get" data-type="team"></select>
                         </div>
                         <div class="col-sm-3">
-                            <label class="form-label mb-1" data-i18n="position">Position</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-briefcase me-1 text-muted"></i><span data-i18n="position">Position</span></label>
                             <select class="form-select select2-remote" id="joinFilterPosition" data-api="/api/position.get" data-type="position"></select>
                         </div>
                         <!-- 2026-08-22, explicit request ("ตรง Join Employee อยากให้เพิ่ม Filter
                              รอบเงินเดือนได้ด้วย") -- filters by the employee's own standing payroll
                              cycle (employees.cycle_id), not this run's own cycle. -->
                         <div class="col-sm-3">
-                            <label class="form-label mb-1" data-i18n="payroll_cycle">Payroll Schedule</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-check me-1 text-muted"></i><span data-i18n="payroll_cycle">Payroll Schedule</span></label>
                             <select class="form-select select2-remote" id="joinFilterCycle" data-api="/api/payroll-cycle.options"></select>
                         </div>
                         <div class="col-sm-1 d-flex align-items-end">

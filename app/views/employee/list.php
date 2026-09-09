@@ -105,45 +105,45 @@
     <div class="tab-content" id="employeeTopTabsContent">
     <div class="tab-pane fade show active" id="employee-top-pane" role="tabpanel" aria-labelledby="employee-top-tab" tabindex="0">
     <div class="station-filter" id="employeeStationFilter">
-        <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
         <button type="button" class="station-filter-toggle" id="employeeStationFilterToggle" title="Toggle filter">
             <i class="fas fa-chevron-up"></i>
         </button>
         <div class="station-filter-body">
             <div class="row g-2">
                 <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1"><span data-i18n="filter_date_from">From</span></label>
+                    <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
                     <div class="input-group">
                         <input type="text" class="form-control datepicker" id="employee_filter_date_from" autocomplete="off">
                         <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                     </div>
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1"><span data-i18n="filter_date_to">To</span></label>
+                    <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
                     <div class="input-group">
                         <input type="text" class="form-control datepicker" id="employee_filter_date_to" autocomplete="off">
                         <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                     </div>
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1" data-i18n="role">Role</label>
+                    <label class="form-label mb-1"><i class="fa-solid fa-user-tag me-1 text-muted"></i><span data-i18n="role">Role</span></label>
                     <select class="form-select select2-remote" id="employee_filter_role" data-api="/api/role.get" data-type="role"></select>
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1" data-i18n="department">Department</label>
+                    <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                     <select class="form-select select2-remote" id="employee_filter_department" data-api="/api/department.get" data-type="department"></select>
                 </div>
                 <!-- 2026-08-24, explicit request: "เพิ่ม Filter ทีมในหน้า list พนักงานด้วย" -->
                 <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1" data-i18n="team">Team</label>
+                    <label class="form-label mb-1"><i class="fa-solid fa-people-group me-1 text-muted"></i><span data-i18n="team">Team</span></label>
                     <select class="form-select select2-remote" id="employee_filter_team" data-api="/api/team.get" data-type="team"></select>
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1" data-i18n="shift">Shift</label>
+                    <label class="form-label mb-1"><i class="fa-solid fa-clock me-1 text-muted"></i><span data-i18n="shift">Shift</span></label>
                     <select class="form-select select2-remote" id="employee_filter_shift" data-api="/api/shift.options" data-type="shift"></select>
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1" data-i18n="branch">Branch</label>
+                    <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
                     <select class="form-select select2-remote" id="employee_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
                 </div>
                 <!-- 2026-08-30 (Phase 3, T022, explicit request: Tab/Filter จ่าย vs ไม่จ่ายเงินเดือน) --
@@ -151,7 +151,7 @@
                      Payroll Configuration's Calculation Method dropdown -- not a master table, this
                      is a closed 2-state toggle plus "All", not an open list. -->
                 <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1" data-i18n="payroll_participant_label">Payroll Participation</label>
+                    <label class="form-label mb-1"><i class="fa-solid fa-money-check-dollar me-1 text-muted"></i><span data-i18n="payroll_participant_label">Payroll Participation</span></label>
                     <!-- data-option-values can't use a genuinely blank value for "All" -- initSelect2's
                          static mode does `.split(',').filter(Boolean)` on both attributes, which
                          silently drops an empty segment and misaligns keys<->values by index. Uses
@@ -273,7 +273,7 @@
     </div>
     <div class="tab-pane fade" id="employee-recheck-top-pane" role="tabpanel" aria-labelledby="employee-recheck-top-tab" tabindex="0">
         <div class="station-filter" id="employeeRecheckStationFilter">
-            <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
             <button type="button" class="station-filter-toggle" id="employeeRecheckStationFilterToggle" title="Toggle filter">
                 <i class="fas fa-chevron-up"></i>
             </button>
@@ -290,27 +290,27 @@
                          used for the label text are unrelated strings (recheck_view_in_payroll/
                          recheck_view_not_in_payroll), so this can't be left to submit the raw key. -->
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="view">View</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-eye me-1 text-muted"></i><span data-i18n="view">View</span></label>
                         <select class="form-select select2-static" id="employee_recheck_filter_view" data-option-keys="recheck_view_in_payroll,recheck_view_not_in_payroll" data-option-values="participant,excluded"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="role">Role</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-user-tag me-1 text-muted"></i><span data-i18n="role">Role</span></label>
                         <select class="form-select select2-remote" id="employee_recheck_filter_role" data-api="/api/role.get" data-type="role"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="department">Department</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                         <select class="form-select select2-remote" id="employee_recheck_filter_department" data-api="/api/department.get" data-type="department"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="team">Team</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-people-group me-1 text-muted"></i><span data-i18n="team">Team</span></label>
                         <select class="form-select select2-remote" id="employee_recheck_filter_team" data-api="/api/team.get" data-type="team"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="shift">Shift</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-clock me-1 text-muted"></i><span data-i18n="shift">Shift</span></label>
                         <select class="form-select select2-remote" id="employee_recheck_filter_shift" data-api="/api/shift.options" data-type="shift"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1" data-i18n="branch">Branch</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
                         <select class="form-select select2-remote" id="employee_recheck_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
                     </div>
                 </div>

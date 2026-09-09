@@ -22,19 +22,19 @@
          so filtering is wired via DataTables' own column search API (announcements.js), not a
          server round-trip. -->
     <div class="station-filter" id="announcementStationFilter">
-        <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
         <button type="button" class="station-filter-toggle" id="announcementStationFilterToggle" title="Toggle filter">
             <i class="fas fa-chevron-up"></i>
         </button>
         <div class="station-filter-body">
             <div class="row g-2">
                 <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1" data-i18n="col_status">Status</label>
+                    <label class="form-label mb-1"><i class="fa-solid fa-toggle-on me-1 text-muted"></i><span data-i18n="col_status">Status</span></label>
                     <select class="form-select select2-static" id="announcement_filter_status"
                         data-option-keys="announcement_status_draft,announcement_status_published" data-option-values="draft,published"></select>
                 </div>
                 <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1" data-i18n="announcement_accept_required">Accept Required</label>
+                    <label class="form-label mb-1"><i class="fa-solid fa-circle-check me-1 text-muted"></i><span data-i18n="announcement_accept_required">Accept Required</span></label>
                     <select class="form-select select2-static" id="announcement_filter_accept_required"
                         data-option-keys="yes,no" data-option-values="1,0"></select>
                 </div>

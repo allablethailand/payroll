@@ -149,26 +149,26 @@
         </div>
       </div>
       <div class="station-filter" id="emailQueueStationFilter">
-        <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
         <button type="button" class="station-filter-toggle" id="emailQueueStationFilterToggle" title="Toggle filter">
           <i class="fas fa-chevron-up"></i>
         </button>
         <div class="station-filter-body">
           <div class="row g-2">
             <div class="col-6 col-md-4 col-lg-3">
-              <label class="form-label mb-1" data-i18n="status">Status</label>
+              <label class="form-label mb-1"><i class="fa-solid fa-toggle-on me-1 text-muted"></i><span data-i18n="status">Status</span></label>
               <select class="form-select select2-static" id="emailQueueFilterStatus" data-option-keys="email_queue_status_pending,email_queue_status_sent,email_queue_status_failed" data-option-values="pending,sent,failed"></select>
             </div>
             <div class="col-6 col-md-4 col-lg-3">
-              <label class="form-label mb-1" data-i18n="date_from">From</label>
+              <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_from">From</span></label>
               <input type="text" class="form-control datepicker" id="emailQueueFilterDateFrom" autocomplete="off">
             </div>
             <div class="col-6 col-md-4 col-lg-3">
-              <label class="form-label mb-1" data-i18n="date_to">To</label>
+              <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_to">To</span></label>
               <input type="text" class="form-control datepicker" id="emailQueueFilterDateTo" autocomplete="off">
             </div>
             <div class="col-6 col-md-4 col-lg-3">
-              <label class="form-label mb-1" data-i18n="recipient">Recipient</label>
+              <label class="form-label mb-1"><i class="fa-solid fa-envelope me-1 text-muted"></i><span data-i18n="recipient">Recipient</span></label>
               <input type="text" class="form-control" id="emailQueueFilterToAddress" autocomplete="off" data-i18n="email_filter_placeholder" placeholder="e.g., name@company.com">
             </div>
           </div>
