@@ -65,21 +65,21 @@
            filters (entity_type/status, already existing before this redesign) stay on the table
            header itself -- this row is for the date range they can't express. -->
       <div class="station-filter mb-2" id="dsHistoryStationFilter">
-        <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
         <button type="button" class="station-filter-toggle" id="dsHistoryStationFilterToggle" title="Toggle filter">
           <i class="fas fa-chevron-up"></i>
         </button>
         <div class="station-filter-body">
           <div class="row g-2">
             <div class="col-6 col-md-3">
-              <label class="form-label mb-1"><span data-i18n="filter_date_from">From</span></label>
+              <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
               <div class="input-group">
                 <input type="text" class="form-control datepicker" id="dsHistoryFilterDateFrom" autocomplete="off">
                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
               </div>
             </div>
             <div class="col-6 col-md-3">
-              <label class="form-label mb-1"><span data-i18n="filter_date_to">To</span></label>
+              <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
               <div class="input-group">
                 <input type="text" class="form-control datepicker" id="dsHistoryFilterDateTo" autocomplete="off">
                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>

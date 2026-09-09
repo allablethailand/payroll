@@ -55,25 +55,25 @@
                  component every other page's own filter uses (see Employee List's Login History
                  tab for the canonical shape this was copied from). -->
             <div class="station-filter" id="attendanceStationFilter">
-                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="attendanceStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="employee">Employee</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-user me-1 text-muted"></i><span data-i18n="employee">Employee</span></label>
                             <select class="form-select select2-remote" id="filter_att_employee" data-api="/api/employee.report_to.get" data-type=""></select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="filter_date_from">From</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_att_date_from" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                             </div>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="filter_date_to">To</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_att_date_to" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
@@ -108,25 +108,25 @@
         </div>
         <div class="tab-pane fade" id="leave-pane" role="tabpanel" aria-labelledby="leave-tab" tabindex="0">
             <div class="station-filter" id="leaveStationFilter">
-                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="leaveStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="employee">Employee</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-user me-1 text-muted"></i><span data-i18n="employee">Employee</span></label>
                             <select class="form-select select2-remote" id="filter_leave_employee" data-api="/api/employee.report_to.get" data-type=""></select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="filter_date_from">From</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_leave_date_from" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                             </div>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="filter_date_to">To</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_leave_date_to" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
@@ -160,25 +160,25 @@
         </div>
         <div class="tab-pane fade" id="overtime-pane" role="tabpanel" aria-labelledby="overtime-tab" tabindex="0">
             <div class="station-filter" id="overtimeStationFilter">
-                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="overtimeStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="employee">Employee</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-user me-1 text-muted"></i><span data-i18n="employee">Employee</span></label>
                             <select class="form-select select2-remote" id="filter_ot_employee" data-api="/api/employee.report_to.get" data-type=""></select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="filter_date_from">From</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_ot_date_from" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                             </div>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="filter_date_to">To</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_ot_date_to" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
@@ -220,29 +220,29 @@
              established for Reports' own Download History. -->
         <div class="tab-pane fade" id="import-history-pane" role="tabpanel" aria-labelledby="import-history-tab" tabindex="0">
             <div class="station-filter" id="importHistoryStationFilter">
-                <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                 <button type="button" class="station-filter-toggle" id="importHistoryStationFilterToggle" title="Toggle filter">
                     <i class="fas fa-chevron-up"></i>
                 </button>
                 <div class="station-filter-body">
                     <div class="row g-2">
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="event_type">Event</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-bolt me-1 text-muted"></i><span data-i18n="event_type">Event</span></label>
                             <select class="form-select" id="filter_ih_event_type" data-option-keys="download,import" data-option-values="download,import"></select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="entity_type">Data Type</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-database me-1 text-muted"></i><span data-i18n="entity_type">Data Type</span></label>
                             <select class="form-select" id="filter_ih_entity_type" data-option-keys="attendance,leave,overtime" data-option-values="attendance,leave,overtime"></select>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="filter_date_from">From</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_ih_date_from" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                             </div>
                         </div>
                         <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1" data-i18n="filter_date_to">To</label>
+                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
                             <div class="input-group">
                                 <input type="text" class="form-control datepicker" id="filter_ih_date_to" autocomplete="off">
                                 <span class="input-group-text"><i class="fas fa-calendar"></i></span>

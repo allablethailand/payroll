@@ -26,21 +26,21 @@
     </div>
 
     <div class="station-filter" id="notifStationFilter">
-        <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
         <button type="button" class="station-filter-toggle" id="notifStationFilterToggle" title="Toggle filter">
             <i class="fas fa-chevron-up"></i>
         </button>
         <div class="station-filter-body">
             <div class="row g-2">
                 <div class="col-6 col-md-3">
-                    <label class="form-label small mb-1"><span data-i18n="filter_date_from">From</span></label>
+                    <label class="form-label small mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
                     <div class="input-group">
                         <input type="text" class="form-control datepicker" id="notif_filter_date_from" autocomplete="off">
                         <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                     </div>
                 </div>
                 <div class="col-6 col-md-3">
-                    <label class="form-label small mb-1"><span data-i18n="filter_date_to">To</span></label>
+                    <label class="form-label small mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
                     <div class="input-group">
                         <input type="text" class="form-control datepicker" id="notif_filter_date_to" autocomplete="off">
                         <span class="input-group-text"><i class="fas fa-calendar"></i></span>
@@ -49,7 +49,7 @@
                 <!-- 2026-08-29, same-day follow-up: system-wide table audit punch-list item -- the
                      Status column (Read/Unread) had no filter dimension at all. -->
                 <div class="col-6 col-md-3">
-                    <label class="form-label small mb-1" data-i18n="status">Status</label>
+                    <label class="form-label small mb-1"><i class="fa-solid fa-toggle-on me-1 text-muted"></i><span data-i18n="status">Status</span></label>
                     <select class="form-select select2-static" id="notif_filter_is_read" data-option-keys="notif_status_read,notif_status_unread" data-option-values="1,0"></select>
                 </div>
             </div>

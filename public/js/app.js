@@ -317,7 +317,7 @@ function syncLangCookie(lang) {
     document.cookie = `lang=${lang}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
 }
 // 2026-08-31, real bug found and fixed (explicit report: "ตอน session หลุดมี alert แจ้ง error ของ
-// datatable ครับ ดูเป็น Bug") -- root cause confirmed by grep: `$.fn.dataTable.ext.errorMode` was
+// datatable ครับ ดูเป็น Bug") -- root cause confirmed by grep: `$.fn.dataTable.ext.errMode` was
 // never set anywhere in this app, which leaves DataTables on its own default, `'alert'` -- ANY ajax
 // fetch failure on ANY DataTable (a 401 session-timeout response included) pops a native, unstyled
 // `alert("DataTables warning: table id=... - Ajax error...")` box. This fires independently of, and
@@ -329,10 +329,19 @@ function syncLangCookie(lang) {
 // page, footer.php's dataTables.js included, has already run) so DataTables' own internal ajax-error
 // handling goes silent everywhere, leaving session-guard.js's popup as the one and only thing the
 // user ever sees for this. A DataTable's own explicit `error:` callback (if a page defines one) is
-// unaffected either way -- errorMode only governs the DEFAULT path when no such callback exists.
+// unaffected either way -- errMode only governs the DEFAULT path when no such callback exists.
+// 2026-09-09, real bug found and fixed (explicit report: same native alert plus the SweetAlert2 popup
+// still both firing on every table after a session timeout, "น่าจะเป็นทุกตาราง") -- the fix above was
+// applied to `$.fn.dataTable.ext.errorMode`, a property that does not exist anywhere in this
+// project's installed DataTables version. Confirmed directly from the library's own source
+// (`node_modules/datatables.net/js/dataTables.js`'s `_fnLog()`): it reads `ext.sErrMode || ext.errMode`
+// (note: `errMode`, no "or"), so the misspelled assignment silently set an unused property while
+// `errMode` stayed at its real default, `'alert'` -- the native alert never actually stopped firing,
+// the 2026-08-31 fix never took effect at all. Corrected the property name; behavior/reasoning above
+// is otherwise unchanged.
 $(document).ready(function () {
     if (window.jQuery && $.fn.dataTable) {
-        $.fn.dataTable.ext.errorMode = 'none';
+        $.fn.dataTable.ext.errMode = 'none';
     }
 });
 // The "Auto เปลี่ยนโดยไม่ต้อง Reload หน้า" (auto-change without reloading the page) half of the same
@@ -877,6 +886,10 @@ async function changeLanguage(lang) {
     if (typeof sgRefreshChecklistLanguage === 'function') sgRefreshChecklistLanguage();
     if (typeof changelogRefreshLanguage === 'function') changelogRefreshLanguage();
     if (typeof helpDrawerRefreshLanguage === 'function') helpDrawerRefreshLanguage();
+    // 2026-09-09, same pattern: Terms and Conditions modal content (#termsModalContent) is plain
+    // server-fetched HTML with no data-i18n, so applyLanguage() above never touches it -- see
+    // terms-and-conditions.js's own docblock on termsRefreshLanguage() for the real bug this fixes.
+    if (typeof termsRefreshLanguage === 'function') termsRefreshLanguage();
 }
 // 2026-08-29, explicit request: per-user Font Size (S/M/L) + Language, persisted server-side (see
 // UserPreferenceModel's own docblock) -- FONT_SIZE_STEPS maps the Settings modal's 0-2 slider

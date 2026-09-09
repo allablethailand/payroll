@@ -56,34 +56,34 @@
              search is DataTable's own built-in search box (in the table card below) instead of a
              separate input here, for the same reason -- it has no button either. -->
         <div class="station-filter" id="aisStationFilter">
-            <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
             <button type="button" class="station-filter-toggle" id="aisStationFilterToggle" title="Toggle filter">
                 <i class="fa-solid fa-chevron-up"></i>
             </button>
             <div class="station-filter-body">
                 <div class="row g-3">
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="fiscal_year">Fiscal Year</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-calendar me-1 text-muted"></i><span data-i18n="fiscal_year">Fiscal Year</span></label>
                         <select class="form-select" id="aisFiscalYear"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="department">Department</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                         <select class="form-select select2-remote" id="aisFilterDepartment" data-api="/api/department.get" data-type="department"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="team">Team</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-people-group me-1 text-muted"></i><span data-i18n="team">Team</span></label>
                         <select class="form-select select2-remote" id="aisFilterTeam" data-api="/api/team.get" data-type="team"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="branch">Branch</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
                         <select class="form-select select2-remote" id="aisFilterBranch" data-api="/api/branch.get" data-type="branch"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="role">Role</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-user-tag me-1 text-muted"></i><span data-i18n="role">Role</span></label>
                         <select class="form-select select2-remote" id="aisFilterRole" data-api="/api/role.get" data-type="role"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="status">Status</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-toggle-on me-1 text-muted"></i><span data-i18n="status">Status</span></label>
                         <select class="form-select" id="aisFilterStatus" data-option-keys="status_all,status_active,status_probation,status_resigned,status_terminated" data-option-values=",active,probation,resigned,terminated"></select>
                     </div>
                 </div>
@@ -164,34 +164,34 @@
     <!-- ==================== Tab 2: Annual Withholding Tax (PIT) Summary (Phase 4, T027) ==================== -->
     <div class="tab-pane fade" id="ais-pit-pane" role="tabpanel" aria-labelledby="ais-pit-tab" tabindex="0">
         <div class="station-filter" id="aisPitStationFilter">
-            <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
             <button type="button" class="station-filter-toggle" id="aisPitStationFilterToggle" title="Toggle filter">
                 <i class="fa-solid fa-chevron-up"></i>
             </button>
             <div class="station-filter-body">
                 <div class="row g-3">
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="fiscal_year">Fiscal Year</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-calendar me-1 text-muted"></i><span data-i18n="fiscal_year">Fiscal Year</span></label>
                         <select class="form-select" id="aisPitFiscalYear"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="department">Department</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                         <select class="form-select select2-remote" id="aisPitFilterDepartment" data-api="/api/department.get" data-type="department"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="team">Team</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-people-group me-1 text-muted"></i><span data-i18n="team">Team</span></label>
                         <select class="form-select select2-remote" id="aisPitFilterTeam" data-api="/api/team.get" data-type="team"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="branch">Branch</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
                         <select class="form-select select2-remote" id="aisPitFilterBranch" data-api="/api/branch.get" data-type="branch"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="role">Role</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-user-tag me-1 text-muted"></i><span data-i18n="role">Role</span></label>
                         <select class="form-select select2-remote" id="aisPitFilterRole" data-api="/api/role.get" data-type="role"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="status">Status</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-toggle-on me-1 text-muted"></i><span data-i18n="status">Status</span></label>
                         <select class="form-select" id="aisPitFilterStatus" data-option-keys="status_all,status_active,status_probation,status_resigned,status_terminated" data-option-values=",active,probation,resigned,terminated"></select>
                     </div>
                 </div>
@@ -244,34 +244,34 @@
         <!-- Plain calendar year+month picker, deliberately NOT the fiscal-year abstraction the other
              2 tabs use -- see AnnualIncomeSummaryModel::monthlyPitDetail()'s own docblock. -->
         <div class="station-filter" id="aisMonthlyStationFilter">
-            <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
             <button type="button" class="station-filter-toggle" id="aisMonthlyStationFilterToggle" title="Toggle filter">
                 <i class="fa-solid fa-chevron-up"></i>
             </button>
             <div class="station-filter-body">
                 <div class="row g-3">
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="year">Year</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-calendar me-1 text-muted"></i><span data-i18n="year">Year</span></label>
                         <select class="form-select" id="aisMonthlyYear"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="month">Month</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-calendar-week me-1 text-muted"></i><span data-i18n="month">Month</span></label>
                         <select class="form-select select2-static" id="aisMonthlyMonth" data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12" data-option-values="1,2,3,4,5,6,7,8,9,10,11,12"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="department">Department</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                         <select class="form-select select2-remote" id="aisMonthlyFilterDepartment" data-api="/api/department.get" data-type="department"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="team">Team</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-people-group me-1 text-muted"></i><span data-i18n="team">Team</span></label>
                         <select class="form-select select2-remote" id="aisMonthlyFilterTeam" data-api="/api/team.get" data-type="team"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="branch">Branch</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
                         <select class="form-select select2-remote" id="aisMonthlyFilterBranch" data-api="/api/branch.get" data-type="branch"></select>
                     </div>
                     <div class="col-sm-2">
-                        <label class="form-label small mb-1" data-i18n="role">Role</label>
+                        <label class="form-label small mb-1"><i class="fa-solid fa-user-tag me-1 text-muted"></i><span data-i18n="role">Role</span></label>
                         <select class="form-select select2-remote" id="aisMonthlyFilterRole" data-api="/api/role.get" data-type="role"></select>
                     </div>
                 </div>

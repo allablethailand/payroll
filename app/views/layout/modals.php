@@ -382,21 +382,21 @@
             </div>
             <div class="modal-body">
                 <div class="station-filter mb-2" id="cycleReportHistoryStationFilter">
-                    <i class="fa-solid fa-filter me-1"></i><span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                    <span class="station-filter-label" data-i18n="label_filter">Filter</span>
                     <button type="button" class="station-filter-toggle" id="cycleReportHistoryStationFilterToggle" title="Toggle filter">
                         <i class="fas fa-chevron-up"></i>
                     </button>
                     <div class="station-filter-body">
                         <div class="row g-2">
                             <div class="col-6 col-md-4">
-                                <label class="form-label mb-1"><span data-i18n="filter_date_from">From</span></label>
+                                <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
                                 <div class="input-group">
                                     <input type="text" class="form-control datepicker" id="cycleReportHistoryDateFrom" autocomplete="off">
                                     <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                                 </div>
                             </div>
                             <div class="col-6 col-md-4">
-                                <label class="form-label mb-1"><span data-i18n="filter_date_to">To</span></label>
+                                <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
                                 <div class="input-group">
                                     <input type="text" class="form-control datepicker" id="cycleReportHistoryDateTo" autocomplete="off">
                                     <span class="input-group-text"><i class="fas fa-calendar"></i></span>
@@ -453,19 +453,19 @@
                 <div id="employeeSyncFilterRow" class="d-none">
                 <div class="row g-2 align-items-end mb-3">
                     <div class="col-6 col-md-3">
-                        <label class="form-label mb-1" data-i18n="department">Department</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                         <select class="form-select" id="sync_filter_department"></select>
                     </div>
                     <div class="col-6 col-md-3">
-                        <label class="form-label mb-1" data-i18n="position">Position</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-briefcase me-1 text-muted"></i><span data-i18n="position">Position</span></label>
                         <select class="form-select" id="sync_filter_position"></select>
                     </div>
                     <div class="col-6 col-md-2">
-                        <label class="form-label mb-1" data-i18n="employee_sync_filter_type">Type</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-tag me-1 text-muted"></i><span data-i18n="employee_sync_filter_type">Type</span></label>
                         <select class="form-select" id="sync_filter_type"></select>
                     </div>
                     <div class="col-6 col-md-2">
-                        <label class="form-label mb-1" data-i18n="employee_sync_filter_team">Team (Origami)</label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-people-group me-1 text-muted"></i><span data-i18n="employee_sync_filter_team">Team (Origami)</span></label>
                         <select class="form-select" id="sync_filter_team"></select>
                     </div>
                     <div class="col-12 col-md-2">
