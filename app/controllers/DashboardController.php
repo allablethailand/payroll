@@ -104,17 +104,23 @@ class DashboardController extends Controller {
         $allRuns = $this->runModel->list($compId);
 
         // 2026-09-06: the historical lens filters the pipeline/recent-runs view down to just the
-        // runs that BELONG to the selected month (by payment_date OR period_end_date -- same "which
-        // month is this run's own" definition the Calendar widget uses, see
-        // DashboardModel::calendarEvents()) -- turns "counts" from an all-time snapshot into "how
-        // did this month's own runs turn out", which is what reviewing a past month actually means.
-        // $allRuns itself stays UNFILTERED (needed as-is for cost_trend's own multi-month series
-        // below, regardless of which single month is selected).
+        // runs that BELONG to the selected month -- turns "counts" from an all-time snapshot into
+        // "how did this month's own runs turn out", which is what reviewing a past month actually
+        // means. $allRuns itself stays UNFILTERED (needed as-is for cost_trend's own multi-month
+        // series below, regardless of which single month is selected).
+        // 2026-09-10, real bug found and fixed: this used to match by `payment_date OR
+        // period_end_date`, which double-counted/mis-bucketed any run whose period-end and payment
+        // date land in DIFFERENT months (e.g. period ending 25/08, paid 05/09 -- would show under
+        // BOTH August's and September's historical view). "Which month a run belongs to" must have
+        // exactly one answer, and per the same PayrollRunModel::findActiveRunForCyclePaymentMonth()
+        // precedent every other report in this app was fixed to match today, that's payment_date --
+        // matches the Calendar widget's own SEPARATE "payroll_cutoff" vs "payroll_payment" event dots
+        // (DashboardModel::calendarEvents()), which never conflated the two to begin with.
         $runsForView = $allRuns;
         if ($isHistorical) {
             $runsForView = array_values(array_filter($allRuns, function (array $row) use ($monthStart, $monthEnd): bool {
-                $inMonth = fn($d) => !empty($d) && $d >= $monthStart && $d <= $monthEnd;
-                return $inMonth($row['payment_date'] ?? null) || $inMonth($row['period_end_date'] ?? null);
+                $paymentDate = $row['payment_date'] ?? null;
+                return !empty($paymentDate) && $paymentDate >= $monthStart && $paymentDate <= $monthEnd;
             }));
         }
 

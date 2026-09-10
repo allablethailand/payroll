@@ -125,7 +125,9 @@ class PaySlipReport implements ReportGeneratorInterface {
             $ytd = null;
             foreach ($template['elements'] as $el) {
                 if (($el['element_type'] ?? '') === 'text' && trim((string)($el['content'] ?? '')) === '{{ytd_summary}}') {
-                    $ytd = $dataModel->getYtdTotals($compId, (int)$detail['employee_id'], (string)$run['period_start_date'], self::ALLOWED_STATES);
+                    // 2026-09-10: was period_start_date -- YTD is a cash-basis (payment date) concept,
+                    // see PayrollReportDataModel::getYtdTotals()'s own docblock for the full reasoning.
+                    $ytd = $dataModel->getYtdTotals($compId, (int)$detail['employee_id'], (string)$run['payment_date'], self::ALLOWED_STATES);
                     break;
                 }
             }
