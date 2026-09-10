@@ -473,6 +473,123 @@ function aisRenderPitTable(data) {
     updateText($('#tb_ais_pit')[0]);
 }
 
+/* ==================== Tab: Annual SSO Contribution Summary (Batch 2, item 6, 2026-09-10) ====================
+   Direct structural mirror of the Annual Withholding Tax (PIT) Summary tab above -- same fiscal-
+   year concept, same client-side/un-paginated/FixedColumns table, same #aisCellDetailModal cell
+   click-to-drill-down (that modal already returns the full statutory breakdown, TH_SSO line
+   included, so no SSO-specific detail view was needed here either). Tracks employee-side SSO
+   contribution only (AnnualIncomeSummaryModel::rawDeductionRows()'s own `employee_amount`, confirmed via
+   AskUserQuestion -- not employee+employer combined). ==================== */
+let aisSsoTable = null;
+let aisSsoLoaded = false;
+
+function aisSsoCurrentFilters() {
+    return {
+        fiscal_year: $('#aisSsoFiscalYear').val(),
+        department_id: $('#aisSsoFilterDepartment').val() || '',
+        team_id: $('#aisSsoFilterTeam').val() || '',
+        branch_id: $('#aisSsoFilterBranch').val() || '',
+        role_id: $('#aisSsoFilterRole').val() || '',
+        employee_status: $('#aisSsoFilterStatus').val() || '',
+    };
+}
+function aisSsoUpdateClearFilterVisibility() {
+    const f = aisSsoCurrentFilters();
+    const hasFilter = !!(f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
+    $('#aisSsoFilterClearRow').toggleClass('d-none', !hasFilter);
+}
+function loadAisSsoFiscalYears() {
+    $.ajax({
+        url: `${BASE_URL}/api/annual-income-summary.years`, method: 'GET', dataType: 'json',
+        success: function (res) {
+            if (!res.status) return;
+            const $select = $('#aisSsoFiscalYear').empty();
+            const years = res.data && res.data.length ? res.data : [new Date().getFullYear()];
+            years.forEach(y => $select.append(new Option('FY ' + y, y)));
+            loadAisSsoSummary();
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
+    });
+}
+function loadAisSsoSummary() {
+    const filters = aisSsoCurrentFilters();
+    if (!filters.fiscal_year) return;
+    $('#ais-sso-pane .ais-table-wrap').addClass('d-none');
+    $('#aisSsoTableEmpty').addClass('d-none');
+    $.ajax({
+        url: `${BASE_URL}/api/annual-income-summary.sso-summary`, method: 'GET', dataType: 'json', data: filters,
+        success: function (res) {
+            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred while loading the data.'); return; }
+            $('#aisSsoSummaryEmployeeCount').text(res.data.totals.employee_count || 0);
+            $('#aisSsoSummaryTotal').text(aisFmt(res.data.totals.annual_sso_amount));
+            aisRenderSsoTable(res.data);
+        },
+        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
+    });
+}
+function aisSsoCellHtml(row, val, month) {
+    if (!val) return '<span class="text-muted">-</span>';
+    return `<button type="button" class="ais-cell-clickable" data-employee-id="${row.employee_id}" data-year="${month.year}" data-month="${month.month}">
+        <span class="ais-cell-net">${aisFmt(val)}</span>
+    </button>`;
+}
+function aisRenderSsoTable(data) {
+    const months = data.months || [];
+    const employees = data.employees || [];
+
+    if (aisSsoTable) {
+        aisSsoTable.destroy();
+        aisSsoTable = null;
+        $('#tb_ais_sso').empty().append('<thead></thead><tfoot></tfoot>');
+    }
+    if (!employees.length) {
+        $('#aisSsoTableEmpty').removeClass('d-none');
+        $('#ais-sso-pane .ais-table-wrap').addClass('d-none');
+        return;
+    }
+    $('#ais-sso-pane .ais-table-wrap').removeClass('d-none');
+
+    let headHtml = '<tr><th>' + (langData['employee_no'] || 'Employee No.') + '</th>'
+        + '<th>' + (langData['employee'] || 'Employee') + '</th>'
+        + '<th>' + (langData['department'] || 'Department') + '</th>'
+        + '<th>' + (langData['team'] || 'Team') + '</th>'
+        + '<th>' + (langData['position'] || 'Position') + '</th>';
+    months.forEach(m => { headHtml += `<th class="ais-month-${m.state}">${escapeHtml(aisMonthLabel(m))}</th>`; });
+    headHtml += '<th>' + (langData['annual_total'] || 'Annual Total') + '</th></tr>';
+    $('#tb_ais_sso thead').html(headHtml);
+
+    let footHtml = '<tr><td>' + (langData['total'] || 'Total') + '</td><td></td><td></td><td></td><td></td>';
+    months.forEach(m => { footHtml += `<td class="text-end">${aisFmt((data.totals.months || {})[m.key] || 0)}</td>`; });
+    footHtml += `<td class="text-end"><span class="ais-total-value">${aisFmt(data.totals.annual_sso_amount)}</span></td></tr>`;
+    $('#tb_ais_sso tfoot').html(footHtml);
+
+    const columns = [
+        { data: null, render: (row) => `<span class="ais-employee-no">${escapeHtml(row.employee_no)}</span>` },
+        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '') },
+        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
+        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
+        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
+    ];
+    months.forEach(function (m, idx) {
+        columns.push({
+            data: null, className: 'text-end',
+            render: { display: (row) => aisSsoCellHtml(row, row.months[idx], m), sort: (row) => row.months[idx] || 0, filter: (row) => row.months[idx] || 0 }
+        });
+    });
+    columns.push({
+        data: null, className: 'text-end',
+        render: { display: (row) => `<span class="ais-total-value">${aisFmt(row.annual_sso_amount)}</span>`, sort: (row) => row.annual_sso_amount, filter: (row) => row.annual_sso_amount }
+    });
+
+    aisSsoTable = $('#tb_ais_sso').DataTable({
+        data: employees, columns: columns, destroy: true, paging: false, info: false, order: [],
+        language: getTableLang(),
+        drawCallback: function () { initStickyColumns('#tb_ais_sso', { left: 2, right: 1 }); },
+        initComplete: function () { initTableDragScroll('#tb_ais_sso'); },
+    });
+    updateText($('#tb_ais_sso')[0]);
+}
+
 /* ==================== Tab 3: Monthly Withholding Tax (Phase 4, T026) ====================
    Plain calendar year+month, not the fiscal-year abstraction -- see AnnualIncomeSummaryModel::
    monthlyPitDetail()'s own docblock. A flat client-side table (no month columns to freeze, so no
@@ -606,6 +723,20 @@ $(document).on('click', '#aisPitClearFilterBtn', function () {
     $('#aisPitFilterStatus').val('').trigger('change');
 });
 
+$(document).on('click', '#aisSsoStationFilterToggle', function () {
+    const $filter = $('#aisSsoStationFilter').toggleClass('collapsed');
+    const collapsed = $filter.hasClass('collapsed');
+    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
+});
+$(document).on('change', '#aisSsoFiscalYear, #aisSsoFilterDepartment, #aisSsoFilterTeam, #aisSsoFilterBranch, #aisSsoFilterRole, #aisSsoFilterStatus', function () {
+    aisSsoUpdateClearFilterVisibility();
+    loadAisSsoSummary();
+});
+$(document).on('click', '#aisSsoClearFilterBtn', function () {
+    $('#aisSsoFilterDepartment, #aisSsoFilterTeam, #aisSsoFilterBranch, #aisSsoFilterRole').val(null).trigger('change.select2');
+    $('#aisSsoFilterStatus').val('').trigger('change');
+});
+
 $(document).on('click', '#aisMonthlyStationFilterToggle', function () {
     const $filter = $('#aisMonthlyStationFilter').toggleClass('collapsed');
     const collapsed = $filter.hasClass('collapsed');
@@ -619,8 +750,9 @@ $(document).on('click', '#aisMonthlyClearFilterBtn', function () {
     $('#aisMonthlyFilterDepartment, #aisMonthlyFilterTeam, #aisMonthlyFilterBranch, #aisMonthlyFilterRole').val(null).trigger('change.select2');
 });
 
-// Lazy-init both new tabs on first shown.bs.tab (same "DataTable built while display:none collapses
-// every column" gotcha this app has hit and documented many times already -- see docs/ui-standards.md).
+// Lazy-init every non-default tab (including the SSO tab added in Batch 2, item 6) on first
+// shown.bs.tab (same "DataTable built while display:none collapses every column" gotcha this app
+// has hit and documented many times already -- see docs/ui-standards.md).
 $(document).on('shown.bs.tab', '#ais-pit-tab', function () {
     if (aisPitLoaded) return;
     aisPitLoaded = true;
@@ -632,6 +764,18 @@ $(document).on('shown.bs.tab', '#ais-pit-tab', function () {
         initSelect2('#aisPitFilterStatus', { mode: 'static' });
     }
     loadAisPitFiscalYears();
+});
+$(document).on('shown.bs.tab', '#ais-sso-tab', function () {
+    if (aisSsoLoaded) return;
+    aisSsoLoaded = true;
+    if (typeof initSelect2 === 'function') {
+        initSelect2('#aisSsoFilterDepartment', { mode: 'ajax', allowClear: true });
+        initSelect2('#aisSsoFilterTeam', { mode: 'ajax', allowClear: true });
+        initSelect2('#aisSsoFilterBranch', { mode: 'ajax', allowClear: true });
+        initSelect2('#aisSsoFilterRole', { mode: 'ajax', allowClear: true });
+        initSelect2('#aisSsoFilterStatus', { mode: 'static' });
+    }
+    loadAisSsoFiscalYears();
 });
 $(document).on('shown.bs.tab', '#ais-monthly-pit-tab', function () {
     if (aisMonthlyLoaded) return;

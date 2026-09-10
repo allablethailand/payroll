@@ -143,3 +143,20 @@ date. **Must confirm first that no real payroll run references any of these proc
 deleting anything.
 
 **Source:** Batch 2, item 5 investigation (2026-09-10).
+
+---
+
+## Annual Income & Tax Summary page has no export at all (any tab)
+
+Item 6's original spec asked to match the tax-withholding tab's "export capability" — investigation
+found `/reports/annual-summary` has **zero export function on any of its now-4 tabs** (confirmed via
+grep across the controller/JS/view; the view's own docblock states this is deliberately "an
+interactive page...not a generate-and-download document card like the rest of the Reports module").
+Confirmed via AskUserQuestion: the new SSO tab matches this — no export — rather than adding a new
+export capability that doesn't exist anywhere on this page today.
+
+**If export is wanted here in the future:** it would be new scope for the whole page (all 4 tabs),
+not a small addition to one tab — decide the format (Excel only, matching Reports module convention?)
+and whether it applies to all tabs or just specific ones before starting.
+
+**Source:** Batch 2, item 6 investigation (2026-09-10).
