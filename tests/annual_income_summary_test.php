@@ -282,6 +282,68 @@ try {
     $monthlyJune = $model->monthlyPitDetail($compId, 2026, 6, []);
     check('T029: monthlyPitDetail() for June 2026 (the draft run\'s own month) returns ZERO employees -- the draft run\'s real data never surfaces', count($monthlyJune['employees']), 0);
 
+    /* ---------- 2026-09-10, real bug regression: a run whose PERIOD spans two calendar months must
+       bucket into the PAYMENT month, not the period-start month, across summary()/annualPitSummary()/
+       monthlyPitDetail() alike. Direct reproduction of the reported bug's own example: period
+       26/07-25/08, paid 31/08 -- must land in August (index 4 of FY2026, April-start), never July
+       (index 3). Placed LAST (after T029's draft-run check) so this new run's own real contribution
+       to the annual total doesn't perturb the "annual total unchanged by the draft run" comparison
+       made just above, which was captured before this run existed. ---------- */
+    echo "=== 2026-09-10 fix regression: cross-month-boundary run buckets by payment_date ===\n";
+    makeAisRun($pdo, $runModel, $compId, $cycleId, $userId, '2026-07-26', '2026-08-25');
+    // makeAisRun() itself sets payment_date = period_end_date (see its own definition above) --
+    // period_end_date here is 2026-08-25, still August, so this alone wouldn't reproduce the bug.
+    // Directly override payment_date to 2026-08-31 (the exact reported example) to genuinely put the
+    // period-start month (July) and the payment month (August) in conflict.
+    $pdo->prepare("UPDATE payroll_runs SET payment_date = '2026-08-31' WHERE comp_id = :comp_id AND period_start_date = '2026-07-26'")
+        ->execute([':comp_id' => $compId]);
+    // Independent reference values keyed by payment_date (NOT period_start_date, unlike
+    // $realNetFor()/$realPitFor() above) -- this run's own period_start_date is still July, so
+    // reusing those existing helpers here would silently look up the wrong month and defeat the
+    // point of this regression check.
+    $stmtRealNetByPayment = $pdo->prepare(
+        "SELECT SUM(d.net_amount) FROM payroll_run_details d INNER JOIN payroll_runs r ON r.id = d.run_id
+         WHERE d.employee_id = :emp AND r.comp_id = :comp AND YEAR(r.payment_date) = :y AND MONTH(r.payment_date) = :m"
+    );
+    $realNetAugust = (function () use ($stmtRealNetByPayment, $emp1, $compId): float {
+        $stmtRealNetByPayment->execute([':emp' => $emp1, ':comp' => $compId, ':y' => 2026, ':m' => 8]);
+        return (float)($stmtRealNetByPayment->fetchColumn() ?: 0);
+    })();
+    $stmtRealPitByPayment = $pdo->prepare(
+        "SELECT d.statutory_breakdown FROM payroll_run_details d INNER JOIN payroll_runs r ON r.id = d.run_id
+         WHERE d.employee_id = :emp AND r.comp_id = :comp AND YEAR(r.payment_date) = :y AND MONTH(r.payment_date) = :m"
+    );
+    $realPitAugust = (function () use ($stmtRealPitByPayment, $emp1, $compId): float {
+        $stmtRealPitByPayment->execute([':emp' => $emp1, ':comp' => $compId, ':y' => 2026, ':m' => 8]);
+        $raw = $stmtRealPitByPayment->fetchColumn();
+        if ($raw === false) return 0.0;
+        $pit = 0.0;
+        foreach (json_decode((string)$raw, true) ?? [] as $item) {
+            if (($item['code'] ?? null) === 'TH_PIT') { $pit += (float)($item['employee_amount'] ?? 0); }
+        }
+        return $pit;
+    })();
+    checkTrue('fixture sanity: the cross-month run has a real, non-zero net figure', $realNetAugust > 0);
+
+    $crossResult = $model->summary($compId, 2026, 4, []);
+    $crossEmp1Row = null;
+    foreach ($crossResult['employees'] as $e) { if ($e['employee_id'] === $emp1) $crossEmp1Row = $e; }
+    check('summary(): July (index 3) net stays 0 -- the run does NOT bucket into its period-start month', (float)$crossEmp1Row['months'][3]['net'], 0.0);
+    checkTrue('summary(): August (index 4) net matches the run -- buckets by payment_date instead', abs((float)$crossEmp1Row['months'][4]['net'] - $realNetAugust) < 0.01);
+
+    $crossPit = $model->annualPitSummary($compId, 2026, 4, []);
+    $crossPitEmp1 = null;
+    foreach ($crossPit['employees'] as $e) { if ($e['employee_id'] === $emp1) $crossPitEmp1 = $e; }
+    check('annualPitSummary(): July (index 3) tax_withheld stays 0', (float)$crossPitEmp1['months'][3], 0.0);
+    checkTrue('annualPitSummary(): August (index 4) tax_withheld matches the run', abs((float)$crossPitEmp1['months'][4] - $realPitAugust) < 0.01);
+
+    $monthlyJuly = $model->monthlyPitDetail($compId, 2026, 7, []);
+    check('monthlyPitDetail(July 2026): the cross-month run does NOT appear here', count($monthlyJuly['employees']), 0);
+    $monthlyAugust = $model->monthlyPitDetail($compId, 2026, 8, []);
+    $monthlyAugustEmp1 = null;
+    foreach ($monthlyAugust['employees'] as $e) { if ($e['employee_id'] === $emp1) $monthlyAugustEmp1 = $e; }
+    checkTrue('monthlyPitDetail(August 2026): the cross-month run correctly appears here instead', $monthlyAugustEmp1 !== null);
+
     echo "\n--------------------------------------------------\n";
     echo "Passed: {$passes}, Failed: {$failures}\n";
     if ($failures > 0) {

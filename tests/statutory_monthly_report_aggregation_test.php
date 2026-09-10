@@ -196,7 +196,14 @@ try {
     $compB = makeCompany($pdo);
     $monthlyCycleB = makeMonthlyCycle($cycleModel, $compB, $userId);
     $empB = makeEmployee($pdo, $compB, $monthlyCycleB, 'monthly', 50000.0);
-    $monthB = runApprovedAndGetDetails($runModel, $compB, $monthlyCycleB, $userId, '2026-03-01', '2026-03-31', '2026-04-05');
+    // 2026-09-10: payment_date kept in the SAME month as the period (31/03) so this Part is only
+    // exercising "run_id path vs. month path agree for one single-run month" -- the DELIBERATE
+    // cross-month-boundary case (period spanning two months, paid in a third) is its own Part 2b
+    // below, added the same day PndOneReport/Sso110Report switched from period_start_date to
+    // payment_date as the filing-month anchor (see PayrollReportDataModel::getRunsInMonth()'s own
+    // docblock) -- this fixture used to pay on '2026-04-05' (a MONTH LATER than its own period) and
+    // still asserted it filed under March (month=3), which was this exact bug encoded into a test.
+    $monthB = runApprovedAndGetDetails($runModel, $compB, $monthlyCycleB, $userId, '2026-03-01', '2026-03-31', '2026-03-31');
     $runIdB = (int)current(array_filter($monthB, fn($d) => (int)$d['employee_id'] === $empB))['run_id'];
     $pitLineB = breakdownLine($monthB, $empB, 'TH_PIT');
     $ssoLineB = breakdownLine($monthB, $empB, 'TH_SSO');
@@ -212,6 +219,31 @@ try {
     // whole month) -- confirms the 2 code paths aren't silently diverging.
     $pnd1MonthBExcel = $pndReport->generate(['comp_id' => $compB, 'year' => $yearBe, 'month' => 3], 'excel');
     check('PND1: run_id path and year+month path AGREE for a single-run monthly-frequency month', readExcelCellF2($pnd1MonthBExcel['content']), readExcelCellF2($pnd1RunIdExcel['content']));
+
+    echo "\n=== Part 2b: real bug regression -- a run whose PERIOD spans two months, paid in the SECOND month, must file under the PAYMENT month, not the period-start month ===\n";
+    // Direct reproduction of the reported bug's own example: period 26/07-25/08, paid 31/08 -- must
+    // report as August (payment_date's month), never July (period_start_date's month).
+    $compC = makeCompany($pdo);
+    $monthlyCycleC = makeMonthlyCycle($cycleModel, $compC, $userId);
+    $empC = makeEmployee($pdo, $compC, $monthlyCycleC, 'monthly', 45000.0);
+    $runC = runApprovedAndGetDetails($runModel, $compC, $monthlyCycleC, $userId, '2026-07-26', '2026-08-25', '2026-08-31');
+    $pitLineC = breakdownLine($runC, $empC, 'TH_PIT');
+    $ssoLineC = breakdownLine($runC, $empC, 'TH_SSO');
+
+    $julyBe = $yearBe; // same $yearBe (2026 AD) as above
+    $julyThrown = false;
+    try {
+        $pndReport->generate(['comp_id' => $compC, 'year' => $julyBe, 'month' => 7], 'excel');
+    } catch (LocalizedException $e) {
+        $julyThrown = true;
+    }
+    checkTrue('PND1: a 26/07-25/08-period run paid 31/08 does NOT appear under July (period-start month)', $julyThrown);
+
+    $pnd1AugustExcel = $pndReport->generate(['comp_id' => $compC, 'year' => $julyBe, 'month' => 8], 'excel');
+    check('PND1: that SAME run correctly appears under August (payment_date\'s own month) instead', readExcelCellF2($pnd1AugustExcel['content']), (float)$pitLineC['employee_amount']);
+
+    $sso110AugustExcel = $ssoReport->generate(['comp_id' => $compC, 'year' => $julyBe, 'month' => 8], 'excel');
+    check('SSO110: same run also correctly appears under August, not July', readExcelCellF2($sso110AugustExcel['content']), (float)$ssoLineC['employee_amount']);
 
     echo "\n=== Part 3: no settled runs in the requested month throws a clear error, not an empty report ===\n";
     $noDataThrown = false;

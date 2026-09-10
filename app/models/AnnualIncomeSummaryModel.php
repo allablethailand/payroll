@@ -51,10 +51,24 @@ class AnnualIncomeSummaryModel {
         return $months;
     }
 
+    /**
+     * 2026-09-10, real bug found and fixed (explicit report: a run whose pay period spans two
+     * calendar months, e.g. 26/07-25/08 paid 31/08, was being bucketed into July's fiscal-year/
+     * month column throughout this whole page instead of August's -- the actual cash outflow, and
+     * the month PIT was actually withheld, happens on payment_date, not period_start_date). Every
+     * date-grouping query in this class below switched from period_start_date to payment_date, same
+     * fix/reasoning as PayrollReportDataModel's own identical same-day fix (see that class's own
+     * docblock) -- this class is the Annual Income Summary / Annual PIT Summary / Monthly PIT Detail
+     * page's ENTIRE data source, so this is the single biggest-blast-radius instance of this bug in
+     * the app. period_start_date/period_end_date are still returned as plain DISPLAY columns
+     * (cellDetail()) where showing the actual pay period alongside the payment month is useful --
+     * only the grouping/filtering key changed.
+     */
+
     /** Distinct fiscal-year labels that have at least one finalized run, newest first. */
     public function availableFiscalYears(int $compId, int $fiscalStartMonth): array {
         $stmt = $this->db->prepare(
-            "SELECT DISTINCT YEAR(period_start_date) AS y, MONTH(period_start_date) AS m
+            "SELECT DISTINCT YEAR(payment_date) AS y, MONTH(payment_date) AS m
              FROM payroll_runs
              WHERE comp_id = :comp_id AND state IN ('approved','paid','locked') AND status = 'active' AND deleted_at IS NULL"
         );
@@ -82,13 +96,13 @@ class AnnualIncomeSummaryModel {
         // ---------- per-employee, per-month aggregation ----------
         $placeholders = implode(',', array_fill(0, count(self::ALLOWED_STATES), '?'));
         $stmtAgg = $this->db->prepare(
-            "SELECT d.employee_id, YEAR(r.period_start_date) AS y, MONTH(r.period_start_date) AS m,
+            "SELECT d.employee_id, YEAR(r.payment_date) AS y, MONTH(r.payment_date) AS m,
                     SUM(d.gross_amount) AS gross, SUM(d.total_deduction_amount) AS deduction, SUM(d.net_amount) AS net
              FROM payroll_run_details d
              INNER JOIN payroll_runs r ON r.id = d.run_id
              WHERE r.comp_id = ? AND r.status = 'active' AND r.deleted_at IS NULL
                AND r.state IN ({$placeholders})
-               AND r.period_start_date >= ? AND r.period_start_date <= ?
+               AND r.payment_date >= ? AND r.payment_date <= ?
              GROUP BY d.employee_id, y, m"
         );
         $stmtAgg->execute(array_merge([$compId], self::ALLOWED_STATES, [$fyStart, $fyEnd]));
@@ -168,13 +182,13 @@ class AnnualIncomeSummaryModel {
         $stmt = $this->db->prepare(
             "SELECT d.base_salary_amount, d.earning_breakdown, d.deduction_breakdown, d.statutory_breakdown,
                     d.gross_amount, d.total_deduction_amount, d.net_amount,
-                    r.id AS run_id, r.run_name, r.period_start_date, r.period_end_date, r.run_purpose
+                    r.id AS run_id, r.run_name, r.period_start_date, r.period_end_date, r.payment_date, r.run_purpose
              FROM payroll_run_details d
              INNER JOIN payroll_runs r ON r.id = d.run_id
              WHERE r.comp_id = ? AND d.employee_id = ? AND r.status = 'active' AND r.deleted_at IS NULL
                AND r.state IN ({$placeholders})
-               AND YEAR(r.period_start_date) = ? AND MONTH(r.period_start_date) = ?
-             ORDER BY r.period_start_date ASC"
+               AND YEAR(r.payment_date) = ? AND MONTH(r.payment_date) = ?
+             ORDER BY r.payment_date ASC"
         );
         $stmt->execute(array_merge([$compId, $employeeId], self::ALLOWED_STATES, [$year, $month]));
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -186,6 +200,7 @@ class AnnualIncomeSummaryModel {
                 'run_purpose' => $row['run_purpose'],
                 'period_start_date' => $row['period_start_date'],
                 'period_end_date' => $row['period_end_date'],
+                'payment_date' => $row['payment_date'],
                 'base_salary_amount' => (float)$row['base_salary_amount'],
                 'earning_lines' => json_decode((string)$row['earning_breakdown'], true) ?? [],
                 'deduction_lines' => json_decode((string)$row['deduction_breakdown'], true) ?? [],
@@ -242,7 +257,7 @@ class AnnualIncomeSummaryModel {
      *  PndOneKorSummaryReport already use for their own period selection. */
     public function availableCalendarYears(int $compId): array {
         $stmt = $this->db->prepare(
-            "SELECT DISTINCT YEAR(period_start_date) AS y FROM payroll_runs
+            "SELECT DISTINCT YEAR(payment_date) AS y FROM payroll_runs
              WHERE comp_id = :comp_id AND state IN ('approved','paid','locked') AND status = 'active' AND deleted_at IS NULL
              ORDER BY y DESC"
         );
@@ -261,13 +276,13 @@ class AnnualIncomeSummaryModel {
     private function rawPitRows(int $compId, string $dateFrom, string $dateTo): array {
         $placeholders = implode(',', array_fill(0, count(self::ALLOWED_STATES), '?'));
         $stmt = $this->db->prepare(
-            "SELECT d.employee_id, YEAR(r.period_start_date) AS y, MONTH(r.period_start_date) AS m,
+            "SELECT d.employee_id, YEAR(r.payment_date) AS y, MONTH(r.payment_date) AS m,
                     d.gross_amount, d.total_deduction_amount, d.net_amount, d.statutory_breakdown
              FROM payroll_run_details d
              INNER JOIN payroll_runs r ON r.id = d.run_id
              WHERE r.comp_id = ? AND r.status = 'active' AND r.deleted_at IS NULL
                AND r.state IN ({$placeholders})
-               AND r.period_start_date >= ? AND r.period_start_date <= ?"
+               AND r.payment_date >= ? AND r.payment_date <= ?"
         );
         $stmt->execute(array_merge([$compId], self::ALLOWED_STATES, [$dateFrom, $dateTo]));
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -427,10 +442,10 @@ class AnnualIncomeSummaryModel {
     private function buildMonthMeta(array $monthDefs, int $compId, string $fyStart, string $fyEnd): array {
         $placeholders = implode(',', array_fill(0, count(self::ALLOWED_STATES), '?'));
         $stmt = $this->db->prepare(
-            "SELECT DISTINCT YEAR(period_start_date) AS y, MONTH(period_start_date) AS m
+            "SELECT DISTINCT YEAR(payment_date) AS y, MONTH(payment_date) AS m
              FROM payroll_runs
              WHERE comp_id = ? AND status = 'active' AND deleted_at IS NULL AND state IN ({$placeholders})
-               AND period_start_date >= ? AND period_start_date <= ?"
+               AND payment_date >= ? AND payment_date <= ?"
         );
         $stmt->execute(array_merge([$compId], self::ALLOWED_STATES, [$fyStart, $fyEnd]));
         $done = [];
