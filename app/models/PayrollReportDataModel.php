@@ -1,6 +1,12 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/../services/reports/LocalizedException.php';
+// 2026-09-10: getRunDetails() below shares PayrollRunModel::isBaseSalaryExcluded() +
+// ::BASE_SALARY_OVERRIDE_CODE with PayrollRunModel::getDetails() itself, so the on-screen
+// Employee Breakdown table and PayrollRegisterReport's Excel/PDF export of that same table can
+// never disagree on which rows count as "base salary not calculated". See that method's own
+// docblock for the full 3-way resolution.
+require_once __DIR__ . '/PayrollRunModel.php';
 
 /**
  * Shared read-only helpers used by report generators across all three report types
@@ -163,6 +169,10 @@ class PayrollReportDataModel {
         // common single-payment-cycle case. Payment-report consumers (BankTransferFileReport/
         // PaymentVoucherReport) use these instead of the raw gross_amount/total_deduction_amount/
         // net_amount columns when computing what to actually transfer.
+        // r.run_purpose/r.include_base_salary + the 2 base-salary-exclusion subqueries (2026-09-10)
+        // -- feeds PayrollRunModel::isBaseSalaryExcluded() below, the SAME shared helper
+        // PayrollRunModel::getDetails() itself uses, so PayrollRegisterReport's Excel/PDF export of
+        // this exact table can never disagree with the on-screen one on which rows are excluded.
         $sql = "SELECT d.*, e.employee_no, e.title, e.name_th, e.surname_th, e.name_en, e.surname_en,
                     e.tax_id_no, e.sso_no, e.id_card_no, e.key_version, e.department_id, e.branch_id, e.position_id,
                     e.bank_id, e.bank_account_no, e.bank_account_name,
@@ -177,9 +187,13 @@ class PayrollReportDataModel {
                     ma.level_4_th AS address_subdistrict_th, ma.level_4_en AS address_subdistrict_en,
                     (d.gross_amount - COALESCE(pp.gross_paid, 0)) AS gross_amount_due,
                     (d.total_deduction_amount - COALESCE(pp.deduction_paid, 0)) AS deduction_amount_due,
-                    (d.net_amount - COALESCE(pp.net_paid, 0)) AS net_amount_due
+                    (d.net_amount - COALESCE(pp.net_paid, 0)) AS net_amount_due,
+                    r.run_purpose, r.include_base_salary,
+                    (SELECT lo2.action FROM `payroll_run_line_overrides` lo2 WHERE lo2.run_id = d.run_id AND lo2.employee_id = d.employee_id AND lo2.item_code = :base_salary_code LIMIT 1) AS base_salary_override_action,
+                    EXISTS(SELECT 1 FROM `payroll_run_item_exclusions` rie WHERE rie.run_id = d.run_id AND rie.item_code = :base_salary_code2) AS run_excludes_base_salary
                 FROM `payroll_run_details` d
                 JOIN `employees` e ON e.id = d.employee_id
+                JOIN `payroll_runs` r ON r.id = d.run_id
                 LEFT JOIN `structure_departments` dep ON dep.id = e.department_id
                 LEFT JOIN `structure_branches` br ON br.id = e.branch_id
                 LEFT JOIN `structure_positions` pos ON pos.id = e.position_id
@@ -194,12 +208,23 @@ class PayrollReportDataModel {
                 WHERE d.run_id = :run_id
                 ORDER BY e.employee_no ASC";
         $stmt = $this->db->prepare($sql);
-        $stmt->execute([':run_id' => $runId, ':run_id_pp' => $runId]);
+        $stmt->execute([
+            ':run_id' => $runId, ':run_id_pp' => $runId,
+            ':base_salary_code' => PayrollRunModel::BASE_SALARY_OVERRIDE_CODE,
+            ':base_salary_code2' => PayrollRunModel::BASE_SALARY_OVERRIDE_CODE,
+        ]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($rows as &$row) {
             $row['earning_breakdown'] = json_decode((string)$row['earning_breakdown'], true) ?? [];
             $row['deduction_breakdown'] = json_decode((string)$row['deduction_breakdown'], true) ?? [];
             $row['statutory_breakdown'] = json_decode((string)$row['statutory_breakdown'], true) ?? [];
+            $row['base_salary_excluded'] = PayrollRunModel::isBaseSalaryExcluded(
+                $row['base_salary_override_action'],
+                !empty($row['run_excludes_base_salary']),
+                (string)($row['run_purpose'] ?? 'payroll'),
+                !empty($row['include_base_salary'])
+            );
+            unset($row['base_salary_override_action'], $row['run_excludes_base_salary'], $row['run_purpose'], $row['include_base_salary']);
         }
         return $rows;
     }

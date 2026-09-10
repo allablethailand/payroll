@@ -45,6 +45,15 @@ class PayrollRegisterReport implements ReportGeneratorInterface {
         'full_name' => ['th' => 'ชื่อ-สกุล', 'en' => 'Full Name'],
         'department' => ['th' => 'แผนก', 'en' => 'Department'],
         'base_salary' => ['th' => 'เงินเดือนฐาน', 'en' => 'Base Salary'],
+        // 2026-09-10, real gap found and fixed (confirmed business rule): the on-screen Employee
+        // Breakdown table has shown this red "Not Calculated" label (base_salary_excluded, see
+        // PayrollRunModel::isBaseSalaryExcluded()'s own docblock) since 2026-08-29, but this
+        // report -- the ONLY Excel/PDF export of that exact same table -- never had the concept at
+        // all, always printing a plain 0.00 for an excluded row same as a genuinely-zero one. Same
+        // TH/EN text as `base_salary_excluded_label` in public/lang/*.json (that key backs the
+        // on-screen table's own JS-rendered label; this is the PHP-side equivalent for this report,
+        // not a duplicate concept).
+        'base_salary_excluded' => ['th' => 'ไม่นำมาคำนวณ', 'en' => 'Not Calculated'],
         'gross_total' => ['th' => 'รายได้รวม', 'en' => 'Total Income'],
         'social_security' => ['th' => 'ประกันสังคม', 'en' => 'Social Security'],
         'provident_fund' => ['th' => 'กองทุนสำรองเลี้ยงชีพ', 'en' => 'Provident Fund'],
@@ -181,7 +190,16 @@ class PayrollRegisterReport implements ReportGeneratorInterface {
                 $d['employee_no'],
                 $this->employeeDisplayName($d, $language),
                 ($language === 'en' ? ($d['department_name_en'] ?? null) : ($d['department_name_th'] ?? null)) ?? ($d['department_name_th'] ?? ''),
-                (float)$d['base_salary_amount'],
+                // 2026-09-10: a string label, not 0.00, when base salary was intentionally excluded
+                // from this employee's calculation (see LABELS' own docblock above) -- both output
+                // branches below already tolerate a string here: setCellPreservingType() (Excel)
+                // already branches on is_string(), and generatePdf()'s own row loop was fixed
+                // alongside this change to do the same instead of always number_format()-ing every
+                // "numeric" column regardless of type. $colTotals' own `(float)$v` cast on this
+                // value already evaluates to 0.0 for a non-numeric string with zero extra logic
+                // needed -- an excluded row correctly never inflates the base-salary total either
+                // way.
+                !empty($d['base_salary_excluded']) ? $this->L('base_salary_excluded', $language) : (float)$d['base_salary_amount'],
             ];
             // 2026-09-02, Phase 7: SUM (not overwrite) same-code lines -- harmless for the
             // pre-existing case (two lines that happen to share an identical CUSTOM:{name} code
@@ -268,7 +286,12 @@ class PayrollRegisterReport implements ReportGeneratorInterface {
             $html .= '<tr>';
             foreach ($row as $i => $v) {
                 $isNum = $i >= $firstNumericColIdx;
-                $html .= $isNum ? '<td class="num">' . $esc($fmtNum($v)) . '</td>' : '<td>' . $esc($v) . '</td>';
+                // 2026-09-10: was an unconditional $fmtNum($v) for every "numeric" column -- the
+                // base-salary-excluded label (a real string now, see generate()'s own row-building
+                // comment) would otherwise get silently number_format()-ed into "0.00", losing the
+                // label in this PDF branch even though the Excel branch already handled it
+                // correctly via setCellPreservingType()'s own is_string() check.
+                $html .= $isNum ? '<td class="num">' . $esc(is_string($v) ? $v : $fmtNum($v)) . '</td>' : '<td>' . $esc($v) . '</td>';
             }
             $html .= '</tr>';
         }

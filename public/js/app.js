@@ -1240,8 +1240,37 @@ function modalLangDropdownHtml() {
         <ul class="nav-lang-menu"></ul>
     </div>`;
 }
+// 2026-09-10, real bug fix (explicit report: modal แบบฟอร์มทุกตัว (เช่น เงินได้/#eedModal,
+// สร้างรอบ/#payrollRunModal) render footer 2 ชั้นซ้อนกัน) -- root cause was THIS handler's own
+// footer-detection selector, `.find('> .modal-footer')` (direct-child of .modal-content only).
+// Many of this app's own form modals wrap `.modal-body`+`.modal-footer` inside a `<form>` element
+// (e.g. `<div class="modal-content"><div class="modal-header">...</div><form>...<div
+// class="modal-footer">Cancel/Save</div></form></div>`), which makes their own `.modal-footer` a
+// GRANDCHILD of `.modal-content`, not a direct child -- the old selector never found it, so this
+// handler always concluded "this modal has no footer at all" and appended a brand-new EMPTY
+// `.modal-footer` div straight onto `.modal-content` (a sibling after the `<form>`), then injected
+// a generic "Close" button into that new one -- stacking a second footer bar underneath the form's
+// own real Cancel/Save footer that was there the whole time.
+// Fix has 2 parts, confirmed with the user rather than guessed:
+//   1. `.find('.modal-footer')` (no `>`) finds an existing footer regardless of nesting depth.
+//   2. Once ANY `.modal-footer` is found anywhere in the modal, this NEVER injects anything into
+//      or alongside it -- not even a dismiss-button-presence check (the old code's OWN guard, which
+//      is what let it "safely" auto-add a Close button into a footer it treated as brand new) --
+//      because several modals in this app close via a plain onclick handler that calls
+//      `.modal('hide')` directly instead of the `data-bs-dismiss` HTML attribute, and a presence
+//      check keyed on that attribute alone would have kept re-injecting a redundant Close button
+//      into those every time this fires. A brand-new default footer is only ever created when NO
+//      `.modal-footer` element exists anywhere in the modal at all, AND the modal is the default
+//      `data-footer="view"` type (see modalFooterTypeOf() below) -- a modal explicitly marked
+//      form/confirm/none is expected to bring its own controls (or none at all for "none"), so a
+//      genuinely missing footer there is left alone rather than papered over with a generic button.
+function modalFooterTypeOf($modal) {
+    const type = String($modal.data('footer') || '').trim();
+    return ['form', 'view', 'confirm', 'none'].indexOf(type) !== -1 ? type : 'view';
+}
 $(document).on('show.bs.modal', '.modal', function () {
-    const $content = $(this).find('> .modal-dialog > .modal-content').first();
+    const $modal = $(this);
+    const $content = $modal.find('> .modal-dialog > .modal-content').first();
     if (!$content.length) return;
 
     let $header = $content.find('> .modal-header').first();
@@ -1253,12 +1282,14 @@ $(document).on('show.bs.modal', '.modal', function () {
         buildLanguageMenu($dropdown);
     }
 
-    let $footer = $content.find('> .modal-footer').first();
-    if (!$footer.length) {
-        $footer = $('<div class="modal-footer"></div>').appendTo($content);
-    }
-    if (!$footer.find('[data-bs-dismiss="modal"]').length) {
-        $footer.prepend(`<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">${(langData && langData['close']) || 'Close'}</button>`);
+    const $existingFooter = $content.find('.modal-footer').first();
+    if (!$existingFooter.length && modalFooterTypeOf($modal) === 'view') {
+        // langData reflects whichever language is currently active at the moment this modal opens
+        // (not hardcoded English) -- same `langData['close']` key every other Close button in this
+        // app already uses, falling back to the English literal only if the key itself is missing.
+        $('<div class="modal-footer"></div>')
+            .append(`<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">${(langData && langData['close']) || 'Close'}</button>`)
+            .appendTo($content);
     }
 });
 function getLangValue(key) {
