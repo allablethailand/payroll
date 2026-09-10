@@ -1,3 +1,27 @@
+# Working rules (always apply)
+
+## Git
+- Never run git commit, git add, git stash, git checkout, or git reset.
+- Edit files, then stop and report: files changed + `git status` + `git diff --stat`.
+- The developer reviews and commits manually.
+
+## Database
+- Never run DDL (CREATE/ALTER/DROP) or data migrations directly against any database.
+- Any schema change → write `database/migrations/YYYY-MM-DD_short_description.sql`
+  (e.g. `2026-08-29_add_xyz_column.sql`; more than one file the same day → append
+  `_2`/`_3`), with a `-- UP` section and a `-- DOWN` (rollback) section. One file =
+  one change/feature, never append multiple unrelated changes into one file.
+- Report which tasks require a migration to be run before the code works.
+- Code that depends on a new column must fail safely or clearly if the
+  migration has not been applied.
+
+## Process
+- Ask before guessing any business rule.
+- Fix logic only unless explicitly told to change UI/style.
+- One task at a time; stop and report after each.
+
+---
+
 # Origami Payroll — Project Guide
 
 ## Project
@@ -13,9 +37,8 @@ PHP 8.x, MySQL 8.x, Bootstrap 5, jQuery, SweetAlert2, CSS (custom, ไม่ใ�
 - **ห้ามแก้ `database/payroll.sql` เพิ่มเติมสำหรับงานหลังจากนี้อีก** (ก่อนหน้านี้ทั้ง session ที่ผ่านมา
   ทุก schema change ถูก append เข้าไฟล์นี้ตรงๆ พร้อม comment ระบุวันที่ — เปลี่ยนวิธีตั้งแต่ตอนนี้)
   ถ้ามีงานที่เกี่ยวกับ Database (ALTER/CREATE TABLE/INSERT ข้อมูล master ใหม่ ฯลฯ) ให้:
-  1. สร้างไฟล์ SQL ใหม่แยกต่างหากใน `database/migrations/` ตั้งชื่อตามวันที่ + คำอธิบายสั้นๆ
-     รูปแบบ `YYYY-MM-DD_short_description.sql` (เช่น `2026-08-29_add_xyz_column.sql`) — ถ้ามีมากกว่า
-     1 ไฟล์ในวันเดียวกัน ต่อท้ายด้วย `_2`/`_3` ตามลำดับ
+  1. สร้างไฟล์ migration ตาม format ที่ระบุไว้ใน **## Database** section บนสุดของไฟล์นี้ (ชื่อไฟล์ +
+     UP/DOWN section)
   2. รัน migration นั้นกับ DB จริงตามปกติ (เหมือนที่เคยทำมาตลอด session นี้ — ผ่าน PDO/PHP CLI หรือ
      mysql client โดยตรง)
   3. **ไม่ต้อง sync กลับเข้า `database/payroll.sql`** — ปล่อยให้ไฟล์นั้นหยุดนิ่งเป็น snapshot ของตอน

@@ -3052,6 +3052,13 @@ try {
     $runModel->recalculate($inclItemsOnlyRes['id'], $compId, $adminUserId, true);
     $inclItemsOnlyDetail = $runModel->getDetails($inclItemsOnlyRes['id'], $compId)[0] ?? [];
     check('include_standing_items=1, include_base_salary=0: base_salary_amount stays 0', (float)($inclItemsOnlyDetail['base_salary_amount'] ?? -1), 0.0);
+    // 2026-09-10, real gap found and fixed (confirmed business rule): base_salary_amount=0 here
+    // used to display as a plain "0.00" in the on-screen table/Excel export -- base_salary_excluded
+    // never accounted for this exact case (incentive run, include_base_salary=0, no per-employee
+    // override, no Run Settings item-exclusion configured on top) even though effectiveBase is
+    // genuinely 0 for the SAME "intentionally not included" reason as the other 2 mechanisms. See
+    // PayrollRunModel::isBaseSalaryExcluded()'s own docblock.
+    check('include_standing_items=1, include_base_salary=0: base_salary_excluded is now TRUE (real gap fixed 2026-09-10 -- no override, no Run Settings exclusion, purely the incentive-run include_base_salary=0 toggle)', $inclItemsOnlyDetail['base_salary_excluded'] ?? null, true);
     $inclItemsPedEarning = current(array_filter($inclItemsOnlyDetail['earning_breakdown'] ?? [], fn($l) => ($l['source'] ?? null) === 'ped' && (int)($l['assignment_id'] ?? 0) === $freshAssignmentId));
     checkTrue('include_standing_items=1: the standing PED earning assignment (TESTALLOW, +1000) is pulled in', $inclItemsPedEarning !== false);
     $inclItemsPedDeduction = current(array_filter($inclItemsOnlyDetail['deduction_breakdown'] ?? [], fn($l) => ($l['source'] ?? null) === 'ped' && (int)($l['assignment_id'] ?? 0) === $freshCustomAssignmentId));
