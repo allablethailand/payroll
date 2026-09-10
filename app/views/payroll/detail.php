@@ -524,19 +524,19 @@
                         <!-- 2026-09-02, explicit request: "ตารางพนักงาน แยก code และชื่อคนละ Column Code
                              อยู่ก่อน" -- was one combined 2-line cell (name bold on top, code muted
                              underneath); split into its own Code column, placed before Name. -->
-                        <th data-i18n="employee_no">Employee Code</th>
-                        <th data-i18n="table_employee_name">Name</th>
-                        <th data-i18n="table_source">Source</th>
+                        <th class="text-nowrap" data-i18n="employee_no">Employee Code</th>
+                        <th class="text-nowrap" data-i18n="table_employee_name">Name</th>
+                        <th class="text-nowrap" data-i18n="table_source">Source</th>
                         <!-- 2026-09-02, explicit request: "ในตารางพนักงานให้เพิ่ม Column รับเงินผ่านบัญชี หรือ
                              เงินสด" -- was only visible on the separate "Payment Method Summary" tab;
                              now also its own column here on the main Details table. -->
-                        <th class="text-center" data-i18n="table_payment_method">Payment Method</th>
-                        <th class="text-end" data-i18n="table_base_salary">Base Salary</th>
-                        <th class="text-end" data-i18n="table_gross_amount">Gross</th>
-                        <th class="text-end" data-i18n="table_deduction_amount">Deductions</th>
-                        <th class="text-end" data-i18n="table_net_pay">Net Pay</th>
-                        <th data-i18n="table_calculation">Calculation</th>
-                        <th class="text-center" data-i18n="table_verify_lock">Verify / Lock</th>
+                        <th class="text-center text-nowrap" data-i18n="table_payment_method">Payment Method</th>
+                        <th class="text-end text-nowrap" data-i18n="table_base_salary">Base Salary</th>
+                        <th class="text-end text-nowrap" data-i18n="table_gross_amount">Gross</th>
+                        <th class="text-end text-nowrap" data-i18n="table_deduction_amount">Deductions</th>
+                        <th class="text-end text-nowrap" data-i18n="table_net_pay">Net Pay</th>
+                        <th class="text-nowrap" data-i18n="table_calculation">Calculation</th>
+                        <th class="text-center text-nowrap" data-i18n="table_verify_lock">Verify / Lock</th>
                         <!-- 2026-08-27, explicit request: blank out any "Action(s)" header, matches
                              the empty-header convention every other Actions column already uses. -->
                         <th class="text-center"></th>
