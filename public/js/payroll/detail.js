@@ -1412,44 +1412,10 @@ $(document).on('click', '#btnSaveRunSettings', function () {
    SUBMITTER's own action, gated on can_process_payroll instead) appears next to the Timeline
    button whenever the run is rejected/need_info, wiring up reviseAfterReject()/
    reviseAfterNeedInfo() -- both existed in PayrollRunModel already but had no UI anywhere until now. */
-// 2026-09-10, explicit request: show the employee's real photo (same profile_photo_path field/URL
-// convention as employee/list.js's own avatar column) in front of an approver's name, falling back
-// to the initial-letter circle when there's no photo on file (or the 3rd param is omitted, e.g. by
-// apvPersonLineHtmlRd's own "Created by" caller, which this request didn't ask to change).
-// onerror handler for apvAvatarHtmlRd's own <img> below -- reads size/initial back off data-*
-// attributes (already escapeAttr()'d, so no re-escaping needed here) rather than embedding the
-// fallback markup as a string inside the onerror attribute itself.
-function apvAvatarImgErrorRd(img) {
-    const size = img.getAttribute('data-size');
-    const initial = img.getAttribute('data-initial');
-    img.outerHTML = `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
-}
-function apvAvatarHtmlRd(name, size, photoPath) {
-    size = size || 26;
-    const initial = escapeAttr((name || '?').trim().charAt(0).toUpperCase() || '?');
-    if (photoPath) {
-        return `<img src="${BASE_URL}/${escapeAttr(photoPath)}" alt="" data-size="${size}" data-initial="${initial}" style="width:${size}px;height:${size}px;min-width:${size}px;border-radius:50%;object-fit:cover;object-position:center top;" onerror="apvAvatarImgErrorRd(this)">`;
-    }
-    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
-}
-function apvPersonLineHtmlRd(name) {
-    return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtmlRd(name, 26)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
-}
-const APV_COLORS_RD = {
-    done: { icon: '#16a34a', badgeBg: '#dcfce7', badgeText: '#15803d' },
-    pending: { icon: '#f59e0b', badgeBg: '#fef3c7', badgeText: '#b45309' },
-    rejected: { icon: '#ef4444', badgeBg: '#fee2e2', badgeText: '#b91c1c' },
-    info: { icon: '#0d6efd', badgeBg: '#cfe2ff', badgeText: '#0a58ca' },
-    muted: { icon: '#cbd5e1', badgeBg: '#f1f5f9', badgeText: '#64748b' },
-};
-function apvBadgeHtmlRd(tone, label) {
-    const c = APV_COLORS_RD[tone] || APV_COLORS_RD.muted;
-    return `<span class="apv-badge" style="background:${c.badgeBg};color:${c.badgeText};">${escapeHtml(label)}</span>`;
-}
-function apvIconHtmlRd(tone, icon) {
-    const c = APV_COLORS_RD[tone] || APV_COLORS_RD.muted;
-    return `<div class="apv-stage-icon" style="background:${c.icon};"><i class="fa-solid ${icon}"></i></div>`;
-}
+// 2026-09-10, Batch 3A item 3: apvAvatarImgErrorRd/apvAvatarHtmlRd/apvPersonLineHtmlRd/
+// APV_COLORS_RD/apvBadgeHtmlRd/apvIconHtmlRd moved to app.js's own apvAvatarImgError()/
+// apvAvatarHtml()/apvPersonLineHtml()/APV_COLORS/apvBadgeHtml()/apvIconHtml() -- confirmed
+// byte-identical across index.js/detail.js/approval.js before merging.
 function apvApproverToneRd(status) {
     return { approved: 'done', rejected: 'rejected', need_info: 'info', pending: 'pending', not_applicable: 'muted' }[status] || 'muted';
 }
@@ -1461,8 +1427,8 @@ function apvApproverSubstepHtmlRd(a) {
     const name = (currentLang === 'th' ? a.name_th : a.name_en) || a.name_th || a.name_en || a.employee_no;
     return `<div class="apv-substep">
         <div class="apv-substep-head">
-            <span class="apv-substep-label">${apvAvatarHtmlRd(name, 22, a.profile_photo_path)}${escapeHtml(name)}</span>
-            ${apvBadgeHtmlRd(apvApproverToneRd(a.status), apvApproverLabelRd(a.status))}
+            <span class="apv-substep-label">${apvAvatarHtml(name, 22, a.profile_photo_path)}${escapeHtml(name)}</span>
+            ${apvBadgeHtml(apvApproverToneRd(a.status), apvApproverLabelRd(a.status))}
         </div>
         ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtml(a.acted_at)}</div>` : ''}
         ${a.note ? `<div class="apv-substep-remark">${escapeHtml(a.note)}</div>` : ''}
@@ -1493,7 +1459,7 @@ function apvStepDotsHtmlRd(steps) {
 function apvStepGroupHtmlRd(step) {
     const badgeHtml = !step.unlocked
         ? `<span class="apv-badge" style="background:#f1f5f9;color:#64748b;"><i class="fa-solid fa-lock me-1"></i>${langData['step_locked'] || 'Locked'}</span>`
-        : apvBadgeHtmlRd(apvApproverToneRd(step.status), apvApproverLabelRd(step.status));
+        : apvBadgeHtml(apvApproverToneRd(step.status), apvApproverLabelRd(step.status));
     const stepLabel = (langData['step_label'] || 'Step {n}').replace('{n}', step.step_order);
     const approversHtml = step.approvers.length
         ? step.approvers.map(apvApproverSubstepHtmlRd).join('')
@@ -1517,53 +1483,22 @@ function apvApprovalStageHtmlRd(run) {
             : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`);
     return `
         <div class="apv-stage">
-            <div class="apv-stage-marker">${apvIconHtmlRd(info.tone, info.icon)}<div class="apv-stage-line"></div></div>
+            <div class="apv-stage-marker">${apvIconHtml(info.tone, info.icon)}<div class="apv-stage-line"></div></div>
             <div class="apv-stage-content">
                 <div class="apv-stage-head">
                     <span class="apv-stage-title">${langData['approval_flow_title'] || 'Approval'}</span>
-                    ${apvBadgeHtmlRd(info.tone, info.label)}
+                    ${apvBadgeHtml(info.tone, info.label)}
                 </div>
                 <div class="apv-stage-body">${bodyHtml}</div>
             </div>
         </div>
     `;
 }
-function apvPaidStageHtmlRd(run) {
-    const isPaidOrLocked = run.state === 'paid' || run.state === 'locked';
-    const tone = isPaidOrLocked ? 'done' : 'muted';
-    const label = run.state === 'locked' ? (langData['state_locked'] || 'Locked') : (isPaidOrLocked ? (langData['state_paid'] || 'Paid') : (langData['status_pending'] || 'Pending'));
-    return `
-        <div class="apv-stage">
-            <div class="apv-stage-marker">${apvIconHtmlRd(tone, isPaidOrLocked ? 'fa-money-check-dollar' : 'fa-flag')}<div class="apv-stage-line"></div></div>
-            <div class="apv-stage-content">
-                <div class="apv-stage-head">
-                    <span class="apv-stage-title">${langData['state_paid'] || 'Paid'}</span>
-                    ${apvBadgeHtmlRd(tone, label)}
-                </div>
-                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.paid_at) : escapeHtml(run.paid_at)}</div>` : ''}
-                <div class="apv-stage-body">
-                    <span class="apv-muted-text">${isPaidOrLocked ? '' : (langData['waiting_for_approval_to_complete'] || 'Waiting for the approval process to complete.')}</span>
-                </div>
-            </div>
-        </div>
-    `;
-}
-function apvCreatedStageHtmlRd(run) {
-    const creator = (currentLang === 'th' ? run.created_by_name_th : run.created_by_name_en) || run.created_by_name_th || run.created_by_name_en || '-';
-    return `
-        <div class="apv-stage apv-stage-last">
-            <div class="apv-stage-marker">${apvIconHtmlRd('done', 'fa-plus')}</div>
-            <div class="apv-stage-content">
-                <div class="apv-stage-head">
-                    <span class="apv-stage-title">${langData['stage_created'] || 'Created'}</span>
-                    ${apvBadgeHtmlRd('done', langData['stage_created'] || 'Created')}
-                </div>
-                <div class="apv-stage-date">${run.created_at ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.created_at) : escapeHtml(run.created_at)) : ''}</div>
-                <div class="apv-stage-body">${apvPersonLineHtmlRd(creator)}</div>
-            </div>
-        </div>
-    `;
-}
+// 2026-09-10, Batch 3A item 3: apvPaidStageHtmlRd() (a single merged Paid/Locked box that never
+// showed who paid/locked) split into app.js's own apvPaidStageHtml()/apvLockedStageHtml(), each
+// pulling tone/label/date from runLifecycleSteps() (item 2) instead of re-deriving run.state here.
+// apvCreatedStageHtmlRd() also moved to app.js's own apvCreatedStageHtml() -- see
+// renderRunTimelineModal() below for the new call sites.
 function renderAuditTimelineRd(logs) {
     if (!logs || !logs.length) {
         return `<div class="text-secondary small">${langData['no_history_yet'] || 'No action has been taken on this request yet.'}</div>`;
@@ -1626,11 +1561,16 @@ function renderRunTimelineModal(run) {
     // 2026-08-23, explicit request ("ในหน้า Approve Modal Approval Timeline พวกปุ่มที่กด อยากให้มาอยู่ที่
     // Modal Footer") -- same footer relocation as the Approval Queue page's own Timeline modal.
     $('#runTimelineModalActions').html(buttons.join(''));
+    // 2026-09-10, Batch 3A item 3: 2 new stations (Locked, on top since it's the newest event --
+    // same newest-first ordering the other stages already use) -- lifecycle computed ONCE and
+    // passed to both Paid/Locked so they don't each re-derive the 5-step progress.
+    const lifecycle = runLifecycleSteps(run, { showDates: true });
     $('#runTimelineModalBody').html(`
         <div class="apv-timeline">
-            ${apvPaidStageHtmlRd(run)}
+            ${apvLockedStageHtml(run, lifecycle)}
+            ${apvPaidStageHtml(run, lifecycle)}
             ${apvApprovalStageHtmlRd(run)}
-            ${apvCreatedStageHtmlRd(run)}
+            ${apvCreatedStageHtml(run)}
         </div>
         <hr>
         <h6 class="fw-bold small text-uppercase text-secondary">${langData['approval_history'] || 'History'}</h6>
@@ -2872,9 +2812,9 @@ let employeeCommentEmployeeId = null;
 let employeeCommentEditingId = null;
 // 2026-08-29 same-day redesign ("ช่วยปรับปรุง Design ทั้ง Form และ List ให้หน่อยครับ") -- own
 // dedicated .apv-comment-* tone/icon mapping (was a plain badge-only distinction before); mirrors
-// the tone vocabulary this page's shared .apv-stage component already uses (see APV_COLORS_RD)
-// without touching that shared map, since it's also used by the unrelated Timeline/Action-History
-// components on this same page.
+// the tone vocabulary this page's shared .apv-stage component already uses (see app.js's own
+// APV_COLORS) without touching that shared map, since it's also used by the unrelated Timeline/
+// Action-History components on this same page.
 const EMPLOYEE_COMMENT_TAG_META = {
     in_progress: { icon: 'fa-hourglass-half', color: '#f59e0b', bg: 'linear-gradient(135deg,#f59e0b,#d97706)', key: 'employee_comment_tag_in_progress', fallback: 'In Progress' },
     completed: { icon: 'fa-check', color: '#16a34a', bg: 'linear-gradient(135deg,#22c55e,#15803d)', key: 'employee_comment_tag_completed', fallback: 'Completed' },
@@ -3033,9 +2973,8 @@ $(document).on('click', '#btnAddEmployeeComment', function () {
 // Timeline modals so all 3 pages can never drift out of sync on action-code wording again.
 // 2026-08-27, explicit request: "ในหน้า Process Detail Tab Action History ปรับจากตารางเป็น Timeline
 // สวยๆ" -- reuses the SAME `.apv-stage` circular-marker/connector-line component this page's own
-// Timeline modal/status card already builds with (apvIconHtmlRd()/apvBadgeHtmlRd(), see
-// apvCreatedStageHtmlRd() etc. above) instead of inventing a second timeline design on the same
-// page. Distinct from the plainer `renderAuditTimelineRd()` (left-border list, `.apv-log-entry`)
+// Timeline modal/status card already builds with (app.js's own apvIconHtml()/apvBadgeHtml()/
+// apvCreatedStageHtml()) instead of inventing a second timeline design on the same page. Distinct from the plainer `renderAuditTimelineRd()` (left-border list, `.apv-log-entry`)
 // already used inside the Timeline modal's own condensed "History" section further down -- that one
 // stays untouched (it's a summary inside a modal, not this tab), this is the full, richer rendering
 // for the tab's own dedicated space. Newest first, matching renderAuditTimelineRd()'s own ordering
@@ -3079,7 +3018,7 @@ let auditHistoryEntries = [];
 // always-expanded card feel cluttered.
 function auditHistoryRowHtmlRd(entry, index, isLast) {
     const meta = auditTimelineMetaRd(entry.action);
-    const color = (APV_COLORS_RD[meta.tone] || APV_COLORS_RD.muted).icon;
+    const color = (APV_COLORS[meta.tone] || APV_COLORS.muted).icon;
     const actor = personDisplayNameRd(entry, 'performed_by');
     const stateChangeHtml = entry.from_state
         ? `${stateBadgeRd(entry.from_state)} <i class="fa-solid fa-arrow-right mx-1"></i> ${stateBadgeRd(entry.to_state)}`

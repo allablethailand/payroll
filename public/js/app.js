@@ -1369,11 +1369,11 @@ function auditActionLabel(action) {
 // per this same distinction the CSS tone classes (done/current/rejected/need_info/cancelled) were
 // already computing correctly; only the LABEL TEXT was ever wrong, colors were already fine.
 const RUN_LIFECYCLE_STEPS = [
-    { key: 'draft', icon: 'fa-file-alt', pendingKey: 'state_draft', doneKey: 'step_draft_done' },
-    { key: 'pending_approval', icon: 'fa-paper-plane', pendingKey: 'step_submit_pending', doneKey: 'step_submit_done' },
-    { key: 'approved', icon: 'fa-check', pendingKey: 'state_pending_approval', doneKey: 'state_approved' },
-    { key: 'paid', icon: 'fa-money-check-dollar', pendingKey: 'step_paid_pending', doneKey: 'state_paid' },
-    { key: 'locked', icon: 'fa-lock', pendingKey: 'step_locked_pending', doneKey: 'state_locked' },
+    { key: 'draft', icon: 'fa-file-alt', pendingKey: 'state_draft', doneKey: 'step_draft_done', dateField: 'created_at' },
+    { key: 'pending_approval', icon: 'fa-paper-plane', pendingKey: 'step_submit_pending', doneKey: 'step_submit_done', dateField: 'submitted_at' },
+    { key: 'approved', icon: 'fa-check', pendingKey: 'state_pending_approval', doneKey: 'state_approved', dateField: 'approved_at' },
+    { key: 'paid', icon: 'fa-money-check-dollar', pendingKey: 'step_paid_pending', doneKey: 'state_paid', dateField: 'paid_at' },
+    { key: 'locked', icon: 'fa-lock', pendingKey: 'step_locked_pending', doneKey: 'state_locked', dateField: 'locked_at' },
 ];
 const RUN_LIFECYCLE_BRANCH_INFO = {
     rejected: { icon: 'fa-xmark', labelKey: 'step_approval_rejected' },
@@ -1420,20 +1420,29 @@ function computeRunLifecycleProgress(run) {
     const idx = RUN_LIFECYCLE_STEPS.findIndex(s => s.key === state);
     return { reachedIdx: idx, branch: null };
 }
-// Detail-page-only date lookup (explicit decision: List's mini-timeline shows step+status with NO
-// date at all -- it already has its own "Last Updated" column, and list() rows don't carry the
-// full audit_log needed here without a new backend query). Reads the LAST matching entry so a
-// re-approve after a revert-then-redo cycle shows the latest occurrence, not a stale earlier one.
-// Same action codes AUDIT_ACTION_LABEL_KEYS above already maps (markPaid, not mark_paid).
+// Reads the LAST matching audit_log entry so a re-approve after a revert-then-redo cycle shows the
+// latest occurrence, not a stale earlier one. Same action codes AUDIT_ACTION_LABEL_KEYS above
+// already maps (markPaid, not mark_paid).
+// 2026-09-10, Batch 3A item 3, real bug caught before shipping: this is called by MORE than just
+// Detail's own full spine now -- the Approval Timeline modal's Paid/Locked stages (this same item)
+// need a date on ALL 3 pages that open it, but List/Approval Queue's copies fetch the run via
+// api/payroll-run.approval-timeline, whose own audit_log was intentionally stripped in item 1 (its
+// "History" section was cut) -- with no fallback this would have silently shown NO date there,
+// a regression from the old apvPaidStageHtmlPr/Ap's own `run.paid_at` read. Falls back to the
+// run's own timestamp column (step.dateField) whenever audit_log isn't present -- correct in the
+// common case (no revert-then-redo for that step) and never reached at all for List's own 5-step
+// spine above, which still passes showDates:false.
 const RUN_LIFECYCLE_AUDIT_ACTIONS = { pending_approval: 'submit', approved: 'approve', paid: 'markPaid', locked: 'lock' };
-function runLifecycleDateFromAuditLog(run, stepKey) {
-    if (stepKey === 'draft') return run.created_at || null;
-    const action = RUN_LIFECYCLE_AUDIT_ACTIONS[stepKey];
-    const log = run.audit_log || [];
-    for (let i = log.length - 1; i >= 0; i--) {
-        if (log[i].action === action) return log[i].performed_at || null;
+function runLifecycleStepDate(run, step) {
+    if (step.key === 'draft') return run.created_at || null;
+    const action = RUN_LIFECYCLE_AUDIT_ACTIONS[step.key];
+    const log = run.audit_log;
+    if (log && log.length) {
+        for (let i = log.length - 1; i >= 0; i--) {
+            if (log[i].action === action) return log[i].performed_at || null;
+        }
     }
-    return null;
+    return run[step.dateField] || null;
 }
 // The one function both pages call. `options.showDates` (Detail: true, List: false) is the ONLY
 // difference between the two call sites -- everything else (steps/labels/tones/branch) is
@@ -1458,7 +1467,7 @@ function runLifecycleSteps(run, options) {
         } else if (i === currentIndex) {
             cls = 'current';
         }
-        const date = showDates ? runLifecycleDateFromAuditLog(run, step.key) : null;
+        const date = showDates ? runLifecycleStepDate(run, step) : null;
         return { key: step.key, cls, icon, label, date };
     });
     return { steps, reachedIdx, currentIndex, branch };
@@ -1477,6 +1486,120 @@ function apvApprovalStageInfo(state) {
         case 'rejected': return { tone: 'rejected', icon: 'fa-xmark', label: langData['state_rejected'] || 'Not Approved' };
         default: return { tone: 'muted', icon: 'fa-hourglass', label: langData['status_pending'] || 'Not Started' };
     }
+}
+// 2026-09-10, Batch 3A item 3 (explicit request: "ใช้ avatar function ตัวเดียว...ทำ backlog 'รวม
+// apvAvatarHtml Rd/Pr/Ap เป็นตัวเดียวใน app.js' ในข้อนี้เลย") -- byte-identical
+// APV_COLORS_RD/PR/AP, apvIconHtml{Rd,Pr,Ap}, apvBadgeHtml{Rd,Pr,Ap}, apvAvatarImgError{Rd,Pr,Ap},
+// apvAvatarHtml{Rd,Pr,Ap} across index.js/detail.js/approval.js -- confirmed byte-for-byte
+// identical before merging (same verification standard as apvApprovalStageInfo() above), not just
+// assumed similar. Consolidated here since this item ALSO needs apvPersonLineHtml()/
+// apvCreatedStageHtml() and the new apvPaidStageHtml()/apvLockedStageHtml() split below, all of
+// which build on these -- writing that fix 3x instead of once would repeat exactly the mirror-copy
+// pattern CLAUDE.md now says not to.
+const APV_COLORS = {
+    done: { icon: '#16a34a', badgeBg: '#dcfce7', badgeText: '#15803d' },
+    pending: { icon: '#f59e0b', badgeBg: '#fef3c7', badgeText: '#b45309' },
+    rejected: { icon: '#ef4444', badgeBg: '#fee2e2', badgeText: '#b91c1c' },
+    info: { icon: '#0d6efd', badgeBg: '#cfe2ff', badgeText: '#0a58ca' },
+    muted: { icon: '#cbd5e1', badgeBg: '#f1f5f9', badgeText: '#64748b' },
+};
+function apvBadgeHtml(tone, label) {
+    const c = APV_COLORS[tone] || APV_COLORS.muted;
+    return `<span class="apv-badge" style="background:${c.badgeBg};color:${c.badgeText};">${escapeHtml(label)}</span>`;
+}
+function apvIconHtml(tone, icon) {
+    const c = APV_COLORS[tone] || APV_COLORS.muted;
+    return `<div class="apv-stage-icon" style="background:${c.icon};"><i class="fa-solid ${icon}"></i></div>`;
+}
+function apvAvatarImgError(img) {
+    const size = img.getAttribute('data-size');
+    const initial = img.getAttribute('data-initial');
+    img.outerHTML = `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
+}
+function apvAvatarHtml(name, size, photoPath) {
+    size = size || 26;
+    const initial = escapeAttr((name || '?').trim().charAt(0).toUpperCase() || '?');
+    if (photoPath) {
+        return `<img src="${BASE_URL}/${escapeAttr(photoPath)}" alt="" data-size="${size}" data-initial="${initial}" style="width:${size}px;height:${size}px;min-width:${size}px;border-radius:50%;object-fit:cover;object-position:center top;" onerror="apvAvatarImgError(this)">`;
+    }
+    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
+}
+function apvPersonLineHtml(name, size, photoPath) {
+    return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtml(name, size, photoPath)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
+}
+// "Created" stage -- always done (a run exists the moment it's created, nothing to wait for), so
+// unlike Paid/Locked below it has no pending state to render.
+function apvCreatedStageHtml(run) {
+    const creator = (currentLang === 'th' ? run.created_by_name_th : run.created_by_name_en) || run.created_by_name_th || run.created_by_name_en || '-';
+    return `
+        <div class="apv-stage apv-stage-last">
+            <div class="apv-stage-marker">${apvIconHtml('done', 'fa-plus')}</div>
+            <div class="apv-stage-content">
+                <div class="apv-stage-head">
+                    <span class="apv-stage-title">${langData['stage_created'] || 'Created'}</span>
+                    ${apvBadgeHtml('done', langData['stage_created'] || 'Created')}
+                </div>
+                <div class="apv-stage-date">${run.created_at ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.created_at) : escapeHtml(run.created_at)) : ''}</div>
+                <div class="apv-stage-body">${apvPersonLineHtml(creator, 26, run.created_by_profile_photo_path)}</div>
+            </div>
+        </div>
+    `;
+}
+// "Paid"/"Locked" stages (2026-09-10, Batch 3A item 3 -- were ONE merged box, apvPaidStageHtmlRd(),
+// that never showed who paid/locked at all, only a date, and never had a separate station for
+// Locked). Split into 2, each pulling its own tone/label/date from runLifecycleSteps()'s own
+// 'paid'/'locked' entries (passed in as `lifecycle`, computed ONCE by the caller so this doesn't
+// re-derive the whole 5-step progress twice per modal render) instead of re-deriving state -> tone/
+// label here -- exactly the "use runLifecycleSteps()/apvApprovalStageInfo() from item 2, don't
+// build a new mapping" instruction. Who+photo come from PayrollRunModel::get()'s own new
+// paid_by_name_*/paid_by_profile_photo_path (locked_by_* likewise) -- neither existed before this
+// item; the old merged box could never have shown a person even if it had wanted to.
+function apvStageByKey(lifecycle, key) {
+    return lifecycle.steps.find(function (s) { return s.key === key; }) || { cls: '', label: '' };
+}
+function apvPaidStageHtml(run, lifecycle) {
+    const step = apvStageByKey(lifecycle, 'paid');
+    const done = step.cls === 'done';
+    const tone = done ? 'done' : 'muted';
+    const payer = (currentLang === 'th' ? run.paid_by_name_th : run.paid_by_name_en) || run.paid_by_name_th || run.paid_by_name_en || '';
+    const bodyHtml = done
+        ? apvPersonLineHtml(payer, 26, run.paid_by_profile_photo_path)
+        : `<span class="apv-muted-text">${langData['waiting_for_approval_to_complete'] || 'Waiting for the approval process to complete.'}</span>`;
+    return `
+        <div class="apv-stage">
+            <div class="apv-stage-marker">${apvIconHtml(tone, done ? 'fa-money-check-dollar' : 'fa-flag')}<div class="apv-stage-line"></div></div>
+            <div class="apv-stage-content">
+                <div class="apv-stage-head">
+                    <span class="apv-stage-title">${langData['state_paid'] || 'Paid'}</span>
+                    ${apvBadgeHtml(tone, step.label)}
+                </div>
+                ${done && step.date ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(step.date) : escapeHtml(step.date)}</div>` : ''}
+                <div class="apv-stage-body">${bodyHtml}</div>
+            </div>
+        </div>
+    `;
+}
+function apvLockedStageHtml(run, lifecycle) {
+    const step = apvStageByKey(lifecycle, 'locked');
+    const done = step.cls === 'done';
+    const tone = done ? 'done' : 'muted';
+    const locker = (currentLang === 'th' ? run.locked_by_name_th : run.locked_by_name_en) || run.locked_by_name_th || run.locked_by_name_en || '';
+    const bodyHtml = done
+        ? apvPersonLineHtml(locker, 26, run.locked_by_profile_photo_path)
+        : `<span class="apv-muted-text">${langData['waiting_for_payment_to_complete'] || 'Waiting for the payment process to complete.'}</span>`;
+    return `
+        <div class="apv-stage">
+            <div class="apv-stage-marker">${apvIconHtml(tone, done ? 'fa-lock' : 'fa-flag')}<div class="apv-stage-line"></div></div>
+            <div class="apv-stage-content">
+                <div class="apv-stage-head">
+                    <span class="apv-stage-title">${langData['state_locked'] || 'Locked'}</span>
+                    ${apvBadgeHtml(tone, step.label)}
+                </div>
+                ${done && step.date ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(step.date) : escapeHtml(step.date)}</div>` : ''}
+                <div class="apv-stage-body">${bodyHtml}</div>
+            </div>
+        </div>
+    `;
 }
 function getLangValue(key) {
     return key.split('.').reduce((acc, part) => {
