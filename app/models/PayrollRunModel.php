@@ -2247,12 +2247,17 @@ class PayrollRunModel {
                 'payee_type' => $override['payee_type'],
                 'payee_employee_id' => $override['payee_employee_id'] !== null ? (int)$override['payee_employee_id'] : null,
                 'destination_id' => $override['destination_id'] !== null ? (int)$override['destination_id'] : null,
+                // 2026-09-10, Batch 3B item 3: same "override wins outright, never merged field-by-
+                // field" rule this method's own docblock already states for payee_employee_id/
+                // destination_id -- bank_account_id follows it too.
+                'bank_account_id' => $override['bank_account_id'] !== null ? (int)$override['bank_account_id'] : null,
             ];
         }
         return [
             'payee_type' => $rec['payee_type'] ?? null,
             'payee_employee_id' => ($rec['payee_employee_id'] ?? null) !== null ? (int)$rec['payee_employee_id'] : null,
             'destination_id' => ($rec['destination_id'] ?? null) !== null ? (int)$rec['destination_id'] : null,
+            'bank_account_id' => ($rec['bank_account_id'] ?? null) !== null ? (int)$rec['bank_account_id'] : null,
         ];
     }
 
@@ -2535,7 +2540,7 @@ class PayrollRunModel {
         // wins over the template's own payee_type/payee_employee_id/destination_id
         // (employee_recurring_deductions), which stays completely untouched by this.
         $recurringDeductionDestOverridesByRecurringId = [];
-        $stmtRddOv = $this->db->prepare("SELECT recurring_id, payee_type, payee_employee_id, destination_id
+        $stmtRddOv = $this->db->prepare("SELECT recurring_id, payee_type, payee_employee_id, destination_id, bank_account_id
             FROM `payroll_run_recurring_deduction_overrides` WHERE run_id = :run_id");
         $stmtRddOv->execute([':run_id' => $id]);
         foreach ($stmtRddOv->fetchAll(PDO::FETCH_ASSOC) as $ov) {
@@ -3164,7 +3169,7 @@ class PayrollRunModel {
                     // further down, same SQL as this branch's own manual-lines query below).
                     if ($includeStandingItems) {
                         $stmtPed = $this->db->prepare("SELECT eed.id AS assignment_id, i.id AS installment_id, i.amount,
-                                eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.is_other, eed.payee_employee_id, eed.payee_type, eed.destination_id,
+                                eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.is_other, eed.payee_employee_id, eed.payee_type, eed.destination_id, eed.bank_account_id,
                                 pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                             FROM `employee_earning_deductions` eed
                             LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = eed.ped_type_id
@@ -3197,6 +3202,8 @@ class PayrollRunModel {
                                 // the company/not_disbursed tag, not just 'employee' transfer.
                                 'payee_type' => $ped['payee_type'],
                                 'destination_id' => $ped['destination_id'] !== null ? (int)$ped['destination_id'] : null,
+                                // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company'.
+                                'bank_account_id' => $ped['bank_account_id'] !== null ? (int)$ped['bank_account_id'] : null,
                             ];
                             if ($resolved['item_type'] === 'earning') {
                                 $earningLines[] = $line;
@@ -3235,6 +3242,7 @@ class PayrollRunModel {
                                 'payee_type' => $recPayee['payee_type'],
                                 'payee_employee_id' => $recPayee['payee_employee_id'],
                                 'destination_id' => $recPayee['destination_id'],
+                                'bank_account_id' => $recPayee['bank_account_id'],
                             ];
                         }
                     }
@@ -3244,7 +3252,7 @@ class PayrollRunModel {
                     // or the ONLY source when it's off (today's original/default incentive-run
                     // behavior, unchanged).
                     $stmtLines = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
-                            pml.payee_type, pml.destination_id,
+                            pml.payee_type, pml.destination_id, pml.bank_account_id,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `payroll_run_manual_lines` pml
                         LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
@@ -3269,6 +3277,7 @@ class PayrollRunModel {
                             // just the 'employee' transfer case.
                             'payee_type' => $line['payee_type'],
                             'destination_id' => $line['destination_id'] !== null ? (int)$line['destination_id'] : null,
+                            'bank_account_id' => $line['bank_account_id'] !== null ? (int)$line['bank_account_id'] : null,
                         ];
                         if ($resolved['item_type'] === 'earning') {
                             $earningLines[] = $entry;
@@ -3319,7 +3328,7 @@ class PayrollRunModel {
                     // saved fine and showed up on the Employee Detail Salary tab). Resolved the same
                     // way as payroll_run_manual_lines' own custom items, via resolveManualLineRow().
                     $stmtPed = $this->db->prepare("SELECT eed.id AS assignment_id, i.id AS installment_id, i.amount,
-                            eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.is_other, eed.payee_employee_id, eed.payee_type, eed.destination_id,
+                            eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.is_other, eed.payee_employee_id, eed.payee_type, eed.destination_id, eed.bank_account_id,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `employee_earning_deductions` eed
                         LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = eed.ped_type_id
@@ -3349,6 +3358,7 @@ class PayrollRunModel {
                             'payee_employee_id' => $ped['payee_employee_id'] !== null ? (int)$ped['payee_employee_id'] : null,
                             'payee_type' => $ped['payee_type'],
                             'destination_id' => $ped['destination_id'] !== null ? (int)$ped['destination_id'] : null,
+                            'bank_account_id' => $ped['bank_account_id'] !== null ? (int)$ped['bank_account_id'] : null,
                         ];
                         if ($resolved['item_type'] === 'earning') {
                             $earningLines[] = $line;
@@ -3390,6 +3400,7 @@ class PayrollRunModel {
                             'payee_type' => $recPayee['payee_type'],
                             'payee_employee_id' => $recPayee['payee_employee_id'],
                             'destination_id' => $recPayee['destination_id'],
+                            'bank_account_id' => $recPayee['bank_account_id'],
                         ];
                     }
 
@@ -3415,7 +3426,7 @@ class PayrollRunModel {
                     // else or needing a whole separate off-cycle run). Contrast with the $isIncentive
                     // branch above, where manual lines are the ONLY source instead of an addition.
                     $stmtAdj = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
-                            pml.payee_type, pml.destination_id,
+                            pml.payee_type, pml.destination_id, pml.bank_account_id,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `payroll_run_manual_lines` pml
                         LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
@@ -3435,6 +3446,7 @@ class PayrollRunModel {
                             'payee_employee_id' => $adj['payee_employee_id'] !== null ? (int)$adj['payee_employee_id'] : null,
                             'payee_type' => $adj['payee_type'],
                             'destination_id' => $adj['destination_id'] !== null ? (int)$adj['destination_id'] : null,
+                            'bank_account_id' => $adj['bank_account_id'] !== null ? (int)$adj['bank_account_id'] : null,
                         ];
                         if ($resolvedAdj['item_type'] === 'earning') {
                             $earningLines[] = $line;
@@ -4604,7 +4616,7 @@ class PayrollRunModel {
      *     set (not an error -- the catalog item wins, matching how a frontend toggle between the
      *     two modes would only ever send one side populated anyway).
      */
-    public function addManualLine(int $id, int $compId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, bool $isAdmin, ?string $note = null, ?string $customItemName = null, ?string $customItemType = null, ?int $payeeEmployeeId = null, ?string $payeeType = null, ?bool $includeInCashSummary = null, ?array $destinationData = null, ?bool $isOther = null): array {
+    public function addManualLine(int $id, int $compId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, bool $isAdmin, ?string $note = null, ?string $customItemName = null, ?string $customItemType = null, ?int $payeeEmployeeId = null, ?string $payeeType = null, ?bool $includeInCashSummary = null, ?array $destinationData = null, ?bool $isOther = null, ?int $bankAccountId = null): array {
         if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
@@ -4702,18 +4714,31 @@ class PayrollRunModel {
             }
             $destinationId = $destResult['destination_id'];
         }
+        // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- same mandatory-going-
+        // forward rule as EmployeeEarningDeductionModel::save()/EmployeeRecurringDeductionModel::save().
+        if ($payeeType !== 'company') {
+            $bankAccountId = null;
+        } elseif ($bankAccountId === null) {
+            return ['status' => false, 'message' => 'bank_account_id is required when payee_type is company.'];
+        } else {
+            $stmtBank = $this->db->prepare("SELECT id FROM `bank_accounts` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL AND status = 'active'");
+            $stmtBank->execute([':id' => $bankAccountId, ':comp_id' => $compId]);
+            if (!$stmtBank->fetch()) {
+                return ['status' => false, 'message' => 'Invalid bank_account_id.'];
+            }
+        }
         // Same "forced 0 for not_disbursed, otherwise honor the caller (default included)" rule as
         // EmployeeEarningDeductionModel::save()'s own include_in_cash_summary comment.
         $includeInCashSummaryVal = $payeeType === 'not_disbursed' ? 0 : ($includeInCashSummary === false ? 0 : 1);
 
         $this->db->prepare("INSERT INTO `payroll_run_manual_lines`
-                (run_id, employee_id, ped_type_id, custom_item_name, custom_item_type, is_other, amount, note, payee_employee_id, payee_type, destination_id, include_in_cash_summary, created_by)
-            VALUES (:run_id, :employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :is_other, :amount, :note, :payee_employee_id, :payee_type, :destination_id, :include_in_cash_summary, :created_by)")
+                (run_id, employee_id, ped_type_id, custom_item_name, custom_item_type, is_other, amount, note, payee_employee_id, payee_type, destination_id, bank_account_id, include_in_cash_summary, created_by)
+            VALUES (:run_id, :employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :is_other, :amount, :note, :payee_employee_id, :payee_type, :destination_id, :bank_account_id, :include_in_cash_summary, :created_by)")
             ->execute([
                 ':run_id' => $id, ':employee_id' => $employeeId, ':ped_type_id' => $pedTypeId,
                 ':custom_item_name' => $customItemName, ':custom_item_type' => $customItemType, ':is_other' => $isOtherFlag ? 1 : 0,
                 ':amount' => $amount, ':note' => $note, ':payee_employee_id' => $payeeEmployeeId,
-                ':payee_type' => $payeeType, ':destination_id' => $destinationId, ':include_in_cash_summary' => $includeInCashSummaryVal, ':created_by' => $userId,
+                ':payee_type' => $payeeType, ':destination_id' => $destinationId, ':bank_account_id' => $bankAccountId, ':include_in_cash_summary' => $includeInCashSummaryVal, ':created_by' => $userId,
             ]);
 
         // 2026-08-21, explicit request ("ต้องเก็บ Log ว่าใครแก้ไขข้อมูลอะไรไปเมื่อไหร่") -- addManualLine()/
@@ -5183,14 +5208,16 @@ class PayrollRunModel {
      */
     public function manualLinesForEmployee(int $compId, int $runId, int $employeeId): array {
         $stmt = $this->db->prepare("SELECT pml.id, pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
-                pml.payee_type, pml.destination_id, pml.include_in_cash_summary, pml.created_by, pml.created_at,
+                pml.payee_type, pml.destination_id, pml.bank_account_id, pml.include_in_cash_summary, pml.created_by, pml.created_at,
                 pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type, payee.employee_no AS payee_employee_no,
                 pd.account_name AS destination_account_name,
+                ba.account_name AS bank_account_name,
                 creator.name_th AS created_by_name_th, creator.name_en AS created_by_name_en
             FROM `payroll_run_manual_lines` pml
             LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
             LEFT JOIN `employees` payee ON payee.id = pml.payee_employee_id
             LEFT JOIN `payment_destinations` pd ON pd.id = pml.destination_id
+            LEFT JOIN `bank_accounts` ba ON ba.id = pml.bank_account_id
             LEFT JOIN `employees` creator ON creator.id = pml.created_by
             JOIN `payroll_runs` r ON r.id = pml.run_id AND r.comp_id = :comp_id
             WHERE pml.run_id = :run_id AND pml.employee_id = :employee_id
@@ -5213,6 +5240,8 @@ class PayrollRunModel {
                 'payee_type' => $row['payee_type'],
                 'destination_id' => $row['destination_id'] !== null ? (int)$row['destination_id'] : null,
                 'destination_account_name' => $row['destination_account_name'],
+                'bank_account_id' => $row['bank_account_id'] !== null ? (int)$row['bank_account_id'] : null,
+                'bank_account_name' => $row['bank_account_name'],
                 'include_in_cash_summary' => (int)$row['include_in_cash_summary'],
                 'created_by' => $row['created_by'] !== null ? (int)$row['created_by'] : null,
                 'created_by_name_th' => $row['created_by_name_th'],
@@ -5565,13 +5594,16 @@ class PayrollRunModel {
 
         $destIds = [];
         $payeeEmpIds = [];
+        $bankAccountIds = [];
         foreach ($recRows as $r) {
             if (!empty($r['destination_id'])) { $destIds[] = (int)$r['destination_id']; }
             if (!empty($r['payee_employee_id'])) { $payeeEmpIds[] = (int)$r['payee_employee_id']; }
+            if (!empty($r['bank_account_id'])) { $bankAccountIds[] = (int)$r['bank_account_id']; }
         }
         foreach ($overridesByRecurringId as $ov) {
             if (!empty($ov['destination_id'])) { $destIds[] = (int)$ov['destination_id']; }
             if (!empty($ov['payee_employee_id'])) { $payeeEmpIds[] = (int)$ov['payee_employee_id']; }
+            if (!empty($ov['bank_account_id'])) { $bankAccountIds[] = (int)$ov['bank_account_id']; }
         }
         $destLabels = [];
         if (!empty($destIds)) {
@@ -5582,6 +5614,18 @@ class PayrollRunModel {
             $stmtDest->execute($destIds);
             foreach ($stmtDest->fetchAll(PDO::FETCH_ASSOC) as $d) {
                 $destLabels[(int)$d['id']] = trim(($d['account_name'] ?? '') . ($d['bank_name_th'] ? ' - ' . $d['bank_name_th'] : ''));
+            }
+        }
+        // 2026-09-10, Batch 3B item 3: same label-lookup pattern as $destLabels above, for the new
+        // 'company' level-2 (WHICH of the company's own bank_accounts).
+        $bankAccountLabels = [];
+        if (!empty($bankAccountIds)) {
+            $bankAccountIds = array_values(array_unique($bankAccountIds));
+            $ph3 = implode(',', array_fill(0, count($bankAccountIds), '?'));
+            $stmtBa = $this->db->prepare("SELECT id, account_name FROM `bank_accounts` WHERE id IN ({$ph3})");
+            $stmtBa->execute($bankAccountIds);
+            foreach ($stmtBa->fetchAll(PDO::FETCH_ASSOC) as $ba) {
+                $bankAccountLabels[(int)$ba['id']] = $ba['account_name'];
             }
         }
         $payeeLabels = [];
@@ -5601,6 +5645,7 @@ class PayrollRunModel {
             $override = $overridesByRecurringId[$recurringId] ?? null;
             $templateDestId = $r['destination_id'] !== null ? (int)$r['destination_id'] : null;
             $templatePayeeEmpId = $r['payee_employee_id'] !== null ? (int)$r['payee_employee_id'] : null;
+            $templateBankAccountId = !empty($r['bank_account_id']) ? (int)$r['bank_account_id'] : null;
             $result[] = [
                 'recurring_id' => $recurringId,
                 'item_code' => $r['item_code'], 'item_name_th' => $r['item_name_th'], 'item_name_en' => $r['item_name_en'],
@@ -5609,12 +5654,16 @@ class PayrollRunModel {
                 'template_payee_label' => $templatePayeeEmpId !== null ? ($payeeLabels[$templatePayeeEmpId] ?? null) : null,
                 'template_destination_id' => $templateDestId,
                 'template_destination_label' => $templateDestId !== null ? ($destLabels[$templateDestId] ?? null) : null,
+                'template_bank_account_id' => $templateBankAccountId,
+                'template_bank_account_label' => $templateBankAccountId !== null ? ($bankAccountLabels[$templateBankAccountId] ?? null) : null,
                 'override' => $override ? [
                     'payee_type' => $override['payee_type'],
                     'payee_employee_id' => $override['payee_employee_id'] !== null ? (int)$override['payee_employee_id'] : null,
                     'payee_label' => $override['payee_employee_id'] !== null ? ($payeeLabels[(int)$override['payee_employee_id']] ?? null) : null,
                     'destination_id' => $override['destination_id'] !== null ? (int)$override['destination_id'] : null,
                     'destination_label' => $override['destination_id'] !== null ? ($destLabels[(int)$override['destination_id']] ?? null) : null,
+                    'bank_account_id' => !empty($override['bank_account_id']) ? (int)$override['bank_account_id'] : null,
+                    'bank_account_label' => !empty($override['bank_account_id']) ? ($bankAccountLabels[(int)$override['bank_account_id']] ?? null) : null,
                     'note' => $override['note'],
                 ] : null,
             ];
@@ -5659,6 +5708,7 @@ class PayrollRunModel {
         }
         $payeeEmployeeId = null;
         $destinationId = null;
+        $bankAccountId = null;
         if ($payeeType === 'employee') {
             if (empty($data['payee_employee_id'])) {
                 return ['status' => false, 'message' => 'payee_employee_id is required when payee_type is employee.'];
@@ -5671,6 +5721,19 @@ class PayrollRunModel {
             $stmtPayee->execute([':id' => $payeeEmployeeId, ':comp_id' => $compId]);
             if (!$stmtPayee->fetch()) {
                 return ['status' => false, 'message' => 'Invalid payee employee.'];
+            }
+        } elseif ($payeeType === 'company') {
+            // 2026-09-10, Batch 3B item 3: same level-2 as EmployeeEarningDeductionModel::save()/
+            // EmployeeRecurringDeductionModel::save() -- mandatory when choosing 'company' here too,
+            // since this override is itself a fresh choice being made right now (not legacy data).
+            if (empty($data['bank_account_id'])) {
+                return ['status' => false, 'message' => 'bank_account_id is required when payee_type is company.'];
+            }
+            $bankAccountId = (int)$data['bank_account_id'];
+            $stmtBank = $this->db->prepare("SELECT id FROM `bank_accounts` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL AND status = 'active'");
+            $stmtBank->execute([':id' => $bankAccountId, ':comp_id' => $compId]);
+            if (!$stmtBank->fetch()) {
+                return ['status' => false, 'message' => 'Invalid bank_account_id.'];
             }
         } elseif ($payeeType === 'other_person') {
             require_once __DIR__ . '/PaymentDestinationModel.php';
@@ -5690,20 +5753,20 @@ class PayrollRunModel {
             $existingId = $stmtExisting->fetchColumn();
             if ($existingId) {
                 $this->db->prepare("UPDATE `payroll_run_recurring_deduction_overrides` SET
-                        payee_type = :payee_type, payee_employee_id = :payee_employee_id, destination_id = :destination_id, note = :note,
+                        payee_type = :payee_type, payee_employee_id = :payee_employee_id, destination_id = :destination_id, bank_account_id = :bank_account_id, note = :note,
                         updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                     WHERE id = :id")
                     ->execute([
-                        ':payee_type' => $payeeType, ':payee_employee_id' => $payeeEmployeeId, ':destination_id' => $destinationId, ':note' => $note,
+                        ':payee_type' => $payeeType, ':payee_employee_id' => $payeeEmployeeId, ':destination_id' => $destinationId, ':bank_account_id' => $bankAccountId, ':note' => $note,
                         ':updated_by' => $userId, ':id' => $existingId,
                     ]);
             } else {
                 $this->db->prepare("INSERT INTO `payroll_run_recurring_deduction_overrides`
-                        (run_id, recurring_id, payee_type, payee_employee_id, destination_id, note, created_by)
-                    VALUES (:run_id, :recurring_id, :payee_type, :payee_employee_id, :destination_id, :note, :created_by)")
+                        (run_id, recurring_id, payee_type, payee_employee_id, destination_id, bank_account_id, note, created_by)
+                    VALUES (:run_id, :recurring_id, :payee_type, :payee_employee_id, :destination_id, :bank_account_id, :note, :created_by)")
                     ->execute([
                         ':run_id' => $runId, ':recurring_id' => $recurringId, ':payee_type' => $payeeType,
-                        ':payee_employee_id' => $payeeEmployeeId, ':destination_id' => $destinationId, ':note' => $note, ':created_by' => $userId,
+                        ':payee_employee_id' => $payeeEmployeeId, ':destination_id' => $destinationId, ':bank_account_id' => $bankAccountId, ':note' => $note, ':created_by' => $userId,
                     ]);
             }
             $this->logAudit($runId, 'draft', 'draft', 'recurring_deduction_destination_override_save', $userId,
@@ -6736,6 +6799,11 @@ class PayrollRunModel {
             $remittanceRes = (new PayrollRemittanceModel($this->db))->generateForRun($id, $compId, $userId);
             if (!$remittanceRes['status']) {
                 $remittanceWarning = ' (Remittance grouping warning: ' . ($remittanceRes['message'] ?? 'unknown error') . ')';
+            } elseif (!empty($remittanceRes['unspecified_company_count'])) {
+                // 2026-09-10, Batch 3B item 3: explicit instruction -- never hide this bucket
+                // silently. Appended to the same success-message warning slot approve() already
+                // uses for the remittance-grouping warning above.
+                $remittanceWarning = ' (ปลายทางยังไม่ระบุ ' . $remittanceRes['unspecified_company_count'] . " รายการ -- {$remittanceRes['unspecified_company_count']} deduction line(s) with payee_type='company' have no specific bank account -- see the Remittance tab.)";
             }
         } catch (Throwable $e) {
             $remittanceWarning = ' (Remittance grouping warning: ' . $e->getMessage() . ')';

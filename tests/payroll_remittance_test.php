@@ -20,6 +20,7 @@ require_once __DIR__ . '/../app/models/PayrollRunModel.php';
 require_once __DIR__ . '/../app/models/EmployeeEarningDeductionModel.php';
 require_once __DIR__ . '/../app/models/PaymentDestinationModel.php';
 require_once __DIR__ . '/../app/models/PayrollRemittanceModel.php';
+require_once __DIR__ . '/../app/models/BankAccountModel.php';
 
 $pdo = Database::getInstance()->pdo;
 $pdo->beginTransaction();
@@ -105,6 +106,18 @@ try {
     checkFalse('create() rejects missing bank_id', $destModel->create($compId, ['account_name' => 'X', 'account_no' => '1', 'bank_id' => null], $userId)['status']);
     checkFalse('create() rejects an inactive/invalid bank_id', $destModel->create($compId, ['account_name' => 'X', 'account_no' => '1', 'bank_id' => 999999], $userId)['status']);
 
+    // ---------- Batch 3B item 3: level-2 for payee_type='company' -- WHICH of the company's own
+    // bank_accounts. 2 real accounts so generateForRun() below can prove per-account grouping, not
+    // just "some account was recorded". ----------
+    echo "=== Fixture: 2 company bank accounts (Batch 3B item 3) ===\n";
+    $bankAccountModel = new BankAccountModel($pdo);
+    $bankAccA = $bankAccountModel->save($compId, ['bank_id' => 1, 'account_no' => '1112223334', 'account_name' => 'Payroll Ops Account', 'is_default' => true], $userId);
+    checkTrue('bank account A created' . (empty($bankAccA['status']) ? " ({$bankAccA['message']})" : ''), $bankAccA['status']);
+    $bankAccountAId = $bankAccA['id'];
+    $bankAccB = $bankAccountModel->save($compId, ['bank_id' => 2, 'account_no' => '5556667778', 'account_name' => 'Welfare Fund Account', 'is_default' => false], $userId);
+    checkTrue('bank account B created' . (empty($bankAccB['status']) ? " ({$bankAccB['message']})" : ''), $bankAccB['status']);
+    $bankAccountBId = $bankAccB['id'];
+
     // ---------- EmployeeEarningDeductionModel: payee_type='other_person' wiring ----------
     echo "=== EmployeeEarningDeductionModel: other_person destination wiring ===\n";
     $eedModel = new EmployeeEarningDeductionModel();
@@ -127,12 +140,52 @@ try {
     $eedNewDestGet = $eedModel->get($eedNewDest['id'], $compId);
     checkTrue('a NEW destination_id was created (not reusing the ACME one)', ($eedNewDestGet['destination_id'] ?? null) !== $destinationId);
 
-    $eedCompany = $eedModel->save($employeeAId, $compId, [
-        'custom_item_name' => 'Uniform Deposit', 'custom_item_type' => 'deduction',
+    // 2026-09-10, Batch 3B item 3: bank_account_id is mandatory now for a NEW/edited payee_type=
+    // 'company' save -- both rejection paths first, then the real success case with a real account.
+    $eedCompanyNoAccount = $eedModel->save($employeeAId, $compId, [
+        'custom_item_name' => 'Uniform Deposit (missing account)', 'custom_item_type' => 'deduction',
         'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 300.00, 'effective_date' => '2027-07-01',
         'payee_type' => 'company',
     ], $userId);
-    checkTrue('save() with payee_type=company succeeds' . (empty($eedCompany['status']) ? " ({$eedCompany['message']})" : ''), $eedCompany['status']);
+    checkFalse('save() with payee_type=company rejects a MISSING bank_account_id', $eedCompanyNoAccount['status']);
+    $eedCompanyBadAccount = $eedModel->save($employeeAId, $compId, [
+        'custom_item_name' => 'Uniform Deposit (bad account)', 'custom_item_type' => 'deduction',
+        'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 300.00, 'effective_date' => '2027-07-01',
+        'payee_type' => 'company', 'bank_account_id' => 999999,
+    ], $userId);
+    checkFalse('save() with payee_type=company rejects an INVALID bank_account_id', $eedCompanyBadAccount['status']);
+
+    $eedCompany = $eedModel->save($employeeAId, $compId, [
+        'custom_item_name' => 'Uniform Deposit', 'custom_item_type' => 'deduction',
+        'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 300.00, 'effective_date' => '2027-07-01',
+        'payee_type' => 'company', 'bank_account_id' => $bankAccountAId,
+    ], $userId);
+    checkTrue('save() with payee_type=company + valid bank_account_id succeeds' . (empty($eedCompany['status']) ? " ({$eedCompany['message']})" : ''), $eedCompany['status']);
+    $eedCompanyGet = $eedModel->get($eedCompany['id'], $compId);
+    check('bank_account_id persisted', (int)($eedCompanyGet['bank_account_id'] ?? -1), $bankAccountAId);
+    check('bank_account_name resolved for display', $eedCompanyGet['bank_account_name'] ?? null, 'Payroll Ops Account');
+
+    // A second company-routed deduction, to a DIFFERENT bank account -- proves generateForRun()
+    // below actually groups PER account, not just "some account was recorded".
+    $eedCompany2 = $eedModel->save($employeeAId, $compId, [
+        'custom_item_name' => 'Welfare Fund Contribution', 'custom_item_type' => 'deduction',
+        'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 150.00, 'effective_date' => '2027-07-01',
+        'payee_type' => 'company', 'bank_account_id' => $bankAccountBId,
+    ], $userId);
+    checkTrue('save() with payee_type=company to the SECOND bank account succeeds' . (empty($eedCompany2['status']) ? " ({$eedCompany2['message']})" : ''), $eedCompany2['status']);
+
+    // Simulates real pre-existing legacy data (a payee_type='company' row saved before this
+    // migration ever existed, bank_account_id genuinely NULL) -- direct SQL on purpose, since
+    // save() now correctly refuses to create a NEW row this way; this is what generateForRun()'s
+    // own "unspecified" bucket exists to handle gracefully instead of crashing/hiding it.
+    $pdo->prepare("INSERT INTO `employee_earning_deductions`
+            (employee_id, ped_type_id, custom_item_name, custom_item_type, total_installments, current_installment, amount_mode, total_amount, effective_date, status, payee_type, bank_account_id, created_by)
+        VALUES (:employee_id, NULL, 'Legacy Company Deduction', 'deduction', 1, 0, 'even_split', 75.00, :effective_date, 'active', 'company', NULL, :created_by)")
+        ->execute([':employee_id' => $employeeAId, ':effective_date' => '2027-07-01', ':created_by' => $userId]);
+    $legacyAssignmentId = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO `employee_earning_deduction_installments` (assignment_id, installment_no, amount, status)
+        VALUES (:assignment_id, 1, 75.00, 'pending')")->execute([':assignment_id' => $legacyAssignmentId]);
+    checkTrue('fixture: legacy unspecified-company-account deduction row created directly (bypassing save() on purpose)', $legacyAssignmentId > 0);
 
     // Employee-to-employee: B is IN the run (should end up as TRANSFER_IN, no remittance at all).
     $eedToB = $eedModel->save($employeeAId, $compId, [
@@ -164,18 +217,35 @@ try {
     $remittanceModel = new PayrollRemittanceModel($pdo);
     $genRes = $remittanceModel->generateForRun($runId, $compId, $userId);
     checkTrue('generateForRun() succeeds' . (empty($genRes['status']) ? " ({$genRes['message']})" : ''), $genRes['status']);
-    check('4 remittances created (company, ACME, Court Registry, employee_fallback to D) -- employee-to-B transfer excluded (paid via TRANSFER_IN)', $genRes['remittance_count'] ?? null, 4);
+    // 2026-09-10, Batch 3B item 3: 6 now -- company/bank-A, company/bank-B, company/unspecified
+    // (was 1 blanket 'company' row before this batch), ACME, Court Registry, employee_fallback to D.
+    check('6 remittances created (3 company groups now split per bank account/unspecified, ACME, Court Registry, employee_fallback to D) -- employee-to-B transfer excluded (paid via TRANSFER_IN)', $genRes['remittance_count'] ?? null, 6);
     check('exactly 1 fallback case reported (D)', count($genRes['fallback_cases'] ?? []), 1);
     check('fallback case amount matches the deduction (600.00)', $genRes['fallback_cases'][0]['total_amount'] ?? null, 600.0);
     check('fallback case identifies employee D', $genRes['fallback_cases'][0]['fallback_employee_id'] ?? null, $employeeDId);
+    // 2026-09-10, Batch 3B item 3: the explicit "never hidden" requirement -- the legacy unspecified
+    // row must surface here, not just silently exist in the DB.
+    check('unspecified_company_count reports exactly the 1 legacy row', $genRes['unspecified_company_count'] ?? null, 1);
 
     $list = $remittanceModel->listForRun($runId, $compId);
-    check('listForRun() returns 4 rows', count($list), 4);
+    check('listForRun() returns 6 rows', count($list), 6);
 
-    $companyRow = current(array_filter($list, fn($r) => $r['destination_type'] === 'company'));
-    checkTrue('company remittance exists', $companyRow !== false);
-    check('company remittance amount = 300.00', (float)$companyRow['total_amount'], 300.0);
-    check('company remittance is auto-marked success (no real external transfer needed)', $companyRow['status'], 'success');
+    $companyRowA = current(array_filter($list, fn($r) => $r['destination_type'] === 'company' && (int)($r['bank_account_id'] ?? 0) === $bankAccountAId));
+    checkTrue('company remittance (bank account A) exists', $companyRowA !== false);
+    check('company remittance (bank A) amount = 300.00', (float)$companyRowA['total_amount'], 300.0);
+    check('company remittance (bank A) is auto-marked success (no real external transfer needed)', $companyRowA['status'], 'success');
+    check('company remittance (bank A) resolves bank_account_name for display', $companyRowA['bank_account_name'] ?? null, 'Payroll Ops Account');
+    checkFalse('company remittance (bank A) is NOT flagged unspecified', (bool)$companyRowA['is_unspecified_company_account']);
+
+    $companyRowB = current(array_filter($list, fn($r) => $r['destination_type'] === 'company' && (int)($r['bank_account_id'] ?? 0) === $bankAccountBId));
+    checkTrue('company remittance (bank account B) exists -- proves per-account grouping, not one blanket row', $companyRowB !== false);
+    check('company remittance (bank B) amount = 150.00', (float)$companyRowB['total_amount'], 150.0);
+    check('company remittance (bank B) resolves bank_account_name for display', $companyRowB['bank_account_name'] ?? null, 'Welfare Fund Account');
+
+    $companyRowUnspecified = current(array_filter($list, fn($r) => $r['destination_type'] === 'company' && $r['bank_account_id'] === null));
+    checkTrue('company remittance (unspecified) exists -- the legacy row, never silently dropped', $companyRowUnspecified !== false);
+    check('company remittance (unspecified) amount = 75.00', (float)$companyRowUnspecified['total_amount'], 75.0);
+    checkTrue('company remittance (unspecified) IS flagged unspecified', (bool)$companyRowUnspecified['is_unspecified_company_account']);
 
     $acmeRow = current(array_filter($list, fn($r) => $r['destination_type'] === 'other_person' && (int)$r['destination_id'] === $destinationId));
     checkTrue('ACME (saved destination) remittance exists', $acmeRow !== false);
@@ -192,10 +262,10 @@ try {
     check('fallback remittance amount = 600.00', (float)$fallbackRow['total_amount'], 600.0);
     check('fallback remittance identifies employee D by employee_no', $fallbackRow['fallback_employee_no'] ?? null, current(array_filter([$pdo->query("SELECT employee_no FROM employees WHERE id={$employeeDId}")->fetchColumn()])));
 
-    $companyItems = $remittanceModel->itemsForRemittance((int)$companyRow['id'], $compId);
-    check('company remittance breakdown has exactly 1 item', count($companyItems), 1);
-    check('company remittance item is from employee A', (int)$companyItems[0]['employee_id'], $employeeAId);
-    check('company remittance item_code is the custom item code', $companyItems[0]['item_code'], 'CUSTOM:Uniform Deposit');
+    $companyItems = $remittanceModel->itemsForRemittance((int)$companyRowA['id'], $compId);
+    check('company remittance (bank A) breakdown has exactly 1 item', count($companyItems), 1);
+    check('company remittance (bank A) item is from employee A', (int)$companyItems[0]['employee_id'], $employeeAId);
+    check('company remittance (bank A) item_code is the custom item code', $companyItems[0]['item_code'], 'CUSTOM:Uniform Deposit');
 
     echo "--- Employee-to-employee transfer with payee IN the run creates NO remittance at all (TRANSFER_IN handles it) ---\n";
     $rowB = current(array_filter($detailsAfterCalc, fn($d) => (int)$d['employee_id'] === $employeeBId));
@@ -208,7 +278,7 @@ try {
     $genRes2 = $remittanceModel->generateForRun($runId, $compId, $userId);
     checkTrue('re-calling generateForRun() while everything is still pending succeeds (regenerates cleanly)', $genRes2['status']);
     $list2 = $remittanceModel->listForRun($runId, $compId);
-    check('still exactly 4 remittances after regeneration (old pending ones replaced, not duplicated)', count($list2), 4);
+    check('still exactly 6 remittances after regeneration (old pending ones replaced, not duplicated)', count($list2), 6);
 
     // ---------- Status transitions ----------
     // Re-fetch by destination_id/destination_type, NOT by the stale row ids captured before
@@ -273,6 +343,27 @@ try {
     checkTrue('generate() returns non-empty xlsx content', strlen($reportResult['content'] ?? '') > 0);
     checkTrue('content is a real ZIP/XLSX (starts with PK signature)', substr($reportResult['content'], 0, 2) === 'PK');
     check('file_name follows the RunN convention', $reportResult['file_name'] ?? null, "ThirdPartyRemittance_Run{$runId}.xlsx");
+
+    // 2026-09-10, Batch 3B item 3: real cell-content verification (XLSX is a compressed zip of XML,
+    // so a raw byte substring search wouldn't reliably find anything -- same reasoning already
+    // documented for PDF text elsewhere in this project) that the report actually shows WHICH bank
+    // account for a 'company' row, and an explicit "not specified" label for the unspecified one,
+    // never a blank/generic "บริษัท" cell for either.
+    $tmpXlsxRem = tempnam(sys_get_temp_dir(), 'thirdparty_remittance_test_') . '.xlsx';
+    file_put_contents($tmpXlsxRem, $reportResult['content']);
+    $spreadsheetRem = \PhpOffice\PhpSpreadsheet\IOFactory::load($tmpXlsxRem);
+    $sheetRem = $spreadsheetRem->getActiveSheet();
+    $flatRem = [];
+    foreach ($sheetRem->getRowIterator() as $r) {
+        $rowVals = [];
+        foreach ($r->getCellIterator() as $c) { $rowVals[] = $c->getValue(); }
+        $flatRem[] = implode('|', array_map(fn($v) => (string)$v, $rowVals));
+    }
+    unlink($tmpXlsxRem);
+    $flatTextRem = implode("\n", $flatRem);
+    checkTrue('report shows bank account A\'s own name for that company row', strpos($flatTextRem, 'Payroll Ops Account') !== false);
+    checkTrue('report shows bank account B\'s own name for that company row', strpos($flatTextRem, 'Welfare Fund Account') !== false);
+    checkTrue('report shows an explicit "not specified" label for the unspecified company row, not a blank/generic cell', strpos($flatTextRem, 'ไม่ระบุบัญชี') !== false);
 
 } finally {
     $pdo->rollBack();

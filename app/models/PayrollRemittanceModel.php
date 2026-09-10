@@ -13,9 +13,16 @@ declare(strict_types=1);
  * entirely -- that case is already paid via PayrollRunModel::recalculate()'s own TRANSFER_IN
  * mechanism (a real taxable earning line credited to the payee in the SAME run, no external
  * transfer needed). Only 3 cases ever produce a remittance row:
- *  - payee_type='company' -- retained by the company itself. One combined row per run, marked
- *    'success' immediately (no real external transfer happens, but the amount is still recorded
- *    for audit -- "money left this deduction line but never left the company").
+ *  - payee_type='company' -- retained by the company itself. 2026-09-10, Batch 3B item 3: grouped
+ *    PER bank_account_id (WHICH of the company's own bank_accounts), not one blanket row per run
+ *    anymore -- a line with no bank_account_id set (legacy data from before this column existed, or
+ *    genuinely left unspecified) lands in its own "unspecified" group (bank_account_id=null) rather
+ *    than being silently merged into whichever real account happens to sort first. Every 'company'
+ *    group is still marked 'success' immediately (no real external transfer happens, but the amount
+ *    is still recorded for audit -- "money left this deduction line but never left the company") --
+ *    the "unspecified" group is never silently dropped -- generateForRun()'s own return value
+ *    surfaces its count under `unspecified_company_count` so a caller can warn about it explicitly,
+ *    and ThirdPartyRemittanceSummaryReport labels it "ไม่ระบุ" instead of a blank account name.
  *  - payee_type='other_person' -- grouped by destination_id (payment_destinations), a real
  *    external bank transfer that needs tracking.
  *  - payee_type='employee' where the payee is NOT part of this run -- the "fallback" case
@@ -83,22 +90,27 @@ class PayrollRemittanceModel {
                 }
                 $itemCode = (string)($line['code'] ?? 'UNKNOWN');
                 if ($payeeType === 'company') {
-                    $key = 'company';
-                    $groups[$key] ??= ['destination_type' => 'company', 'destination_id' => null, 'fallback_employee_id' => null, 'amount' => 0.0, 'items' => []];
+                    // 2026-09-10, Batch 3B item 3: grouped per bank_account_id now -- a line with no
+                    // bank_account_id set (legacy data, or genuinely left unspecified) gets its own
+                    // "unspecified" group key rather than being merged into whichever real account
+                    // happens to be encountered first.
+                    $bankAccountId = $line['bank_account_id'] ?? null;
+                    $key = 'company:' . ($bankAccountId ?? 'unspecified');
+                    $groups[$key] ??= ['destination_type' => 'company', 'destination_id' => null, 'fallback_employee_id' => null, 'bank_account_id' => $bankAccountId !== null ? (int)$bankAccountId : null, 'amount' => 0.0, 'items' => []];
                 } elseif ($payeeType === 'other_person') {
                     $destinationId = $line['destination_id'] ?? null;
                     if ($destinationId === null) {
                         continue; // defensive -- other_person always sets destination_id at save time, but never guess if it's somehow missing.
                     }
                     $key = 'other_person:' . $destinationId;
-                    $groups[$key] ??= ['destination_type' => 'other_person', 'destination_id' => (int)$destinationId, 'fallback_employee_id' => null, 'amount' => 0.0, 'items' => []];
+                    $groups[$key] ??= ['destination_type' => 'other_person', 'destination_id' => (int)$destinationId, 'fallback_employee_id' => null, 'bank_account_id' => null, 'amount' => 0.0, 'items' => []];
                 } elseif ($payeeType === 'employee') {
                     $payeeEmployeeId = $line['payee_employee_id'] ?? null;
                     if ($payeeEmployeeId === null || in_array((int)$payeeEmployeeId, $employeeIdsInRun, true)) {
                         continue; // payee IS in this run -- already paid via TRANSFER_IN, not a remittance.
                     }
                     $key = 'employee_fallback:' . $payeeEmployeeId;
-                    $groups[$key] ??= ['destination_type' => 'employee_fallback', 'destination_id' => null, 'fallback_employee_id' => (int)$payeeEmployeeId, 'amount' => 0.0, 'items' => []];
+                    $groups[$key] ??= ['destination_type' => 'employee_fallback', 'destination_id' => null, 'fallback_employee_id' => (int)$payeeEmployeeId, 'bank_account_id' => null, 'amount' => 0.0, 'items' => []];
                 } else {
                     continue;
                 }
@@ -125,14 +137,19 @@ class PayrollRemittanceModel {
             $this->db->prepare("DELETE FROM `payroll_remittances` WHERE run_id = :run_id AND (status = 'pending' OR destination_type = 'company')")->execute([':run_id' => $runId]);
 
             $count = 0;
+            $unspecifiedCompanyCount = 0;
             foreach ($groups as $group) {
                 $status = $group['destination_type'] === 'company' ? 'success' : 'pending';
+                if ($group['destination_type'] === 'company' && $group['bank_account_id'] === null) {
+                    $unspecifiedCompanyCount++;
+                }
                 $stmtIns = $this->db->prepare("INSERT INTO `payroll_remittances`
-                        (run_id, destination_type, destination_id, fallback_employee_id, total_amount, status, created_by)
-                    VALUES (:run_id, :destination_type, :destination_id, :fallback_employee_id, :total_amount, :status, :created_by)");
+                        (run_id, destination_type, destination_id, fallback_employee_id, bank_account_id, total_amount, status, created_by)
+                    VALUES (:run_id, :destination_type, :destination_id, :fallback_employee_id, :bank_account_id, :total_amount, :status, :created_by)");
                 $stmtIns->execute([
                     ':run_id' => $runId, ':destination_type' => $group['destination_type'],
                     ':destination_id' => $group['destination_id'], ':fallback_employee_id' => $group['fallback_employee_id'],
+                    ':bank_account_id' => $group['bank_account_id'],
                     ':total_amount' => round($group['amount'], 2), ':status' => $status, ':created_by' => $userId,
                 ]);
                 $remittanceId = (int)$this->db->lastInsertId();
@@ -148,7 +165,10 @@ class PayrollRemittanceModel {
             if ($own) {
                 $this->db->commit();
             }
-            return ['status' => true, 'remittance_count' => $count, 'fallback_cases' => $fallbackCases];
+            // 2026-09-10, Batch 3B item 3: never silently absorb the "unspecified" company bucket
+            // into a plain count -- the caller (PayrollController::approve()) surfaces this
+            // explicitly, per the explicit instruction that this must never be hidden.
+            return ['status' => true, 'remittance_count' => $count, 'fallback_cases' => $fallbackCases, 'unspecified_company_count' => $unspecifiedCompanyCount];
         } catch (Throwable $e) {
             if ($own && $this->db->inTransaction()) {
                 $this->db->rollBack();
@@ -208,16 +228,26 @@ class PayrollRemittanceModel {
         $stmt = $this->db->prepare("SELECT r.*, pd.account_name AS destination_account_name, mb.bank_name_th, mb.bank_name_en,
                 fe.employee_no AS fallback_employee_no, fe.name_th AS fallback_name_th, fe.surname_th AS fallback_surname_th,
                 fe.name_en AS fallback_name_en, fe.surname_en AS fallback_surname_en,
+                ba.account_name AS bank_account_name,
                 (SELECT COUNT(DISTINCT employee_id) FROM payroll_remittance_items WHERE remittance_id = r.id) AS employee_count
             FROM `payroll_remittances` r
             LEFT JOIN `payment_destinations` pd ON pd.id = r.destination_id
             LEFT JOIN `master_banks` mb ON mb.id = pd.bank_id
             LEFT JOIN `employees` fe ON fe.id = r.fallback_employee_id
+            LEFT JOIN `bank_accounts` ba ON ba.id = r.bank_account_id
             JOIN `payroll_runs` pr ON pr.id = r.run_id AND pr.comp_id = :comp_id
             WHERE r.run_id = :run_id
             ORDER BY r.id ASC");
         $stmt->execute([':run_id' => $runId, ':comp_id' => $compId]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // 2026-09-10, Batch 3B item 3: never silently show a blank cell for a 'company' remittance
+        // with no bank_account_id -- explicit "unspecified" flag so the UI can render a clear
+        // warning instead of a quiet gap.
+        foreach ($rows as &$row) {
+            $row['is_unspecified_company_account'] = ($row['destination_type'] === 'company' && $row['bank_account_id'] === null);
+        }
+        unset($row);
+        return $rows;
     }
 
     public function itemsForRemittance(int $remittanceId, int $compId): array {

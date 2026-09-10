@@ -15,6 +15,15 @@ class EmployeeEarningDeductionModel {
         return (bool)$stmt->fetch();
     }
 
+    /** 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- same "own private belongs-
+     *  to-comp query" convention every other model with a bank_account_id FK already uses (no
+     *  shared helper class in this codebase for this). */
+    private function bankAccountBelongsToComp(int $bankAccountId, int $compId): bool {
+        $stmt = $this->db->prepare("SELECT id FROM `bank_accounts` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL AND status = 'active'");
+        $stmt->execute([':id' => $bankAccountId, ':comp_id' => $compId]);
+        return (bool)$stmt->fetch();
+    }
+
     /** $itemType: optional 'earning'/'deduction' filter -- COALESCE against custom_item_type so a
      *  custom row is filtered by its own declared type, not left out just because it has no
      *  ped_type_id to join a catalog item_type from. */
@@ -28,11 +37,13 @@ class EmployeeEarningDeductionModel {
                     COALESCE(pt.item_type, eed.custom_item_type) AS item_type,
                     pt.source_event_code,
                     payee.employee_no AS payee_employee_no,
-                    pd.account_name AS destination_account_name
+                    pd.account_name AS destination_account_name,
+                    ba.account_name AS bank_account_name
                 FROM `employee_earning_deductions` eed
                 LEFT JOIN `payroll_earning_deduction_types` pt ON eed.ped_type_id = pt.id
                 LEFT JOIN `employees` payee ON payee.id = eed.payee_employee_id
                 LEFT JOIN `payment_destinations` pd ON pd.id = eed.destination_id
+                LEFT JOIN `bank_accounts` ba ON ba.id = eed.bank_account_id
                 WHERE eed.employee_id = :employee_id AND eed.deleted_at IS NULL";
         $params = [':employee_id' => $employeeId];
         if ($itemType !== null && $itemType !== '') {
@@ -52,11 +63,13 @@ class EmployeeEarningDeductionModel {
                     COALESCE(pt.item_type, eed.custom_item_type) AS item_type,
                     pt.calculation_method AS ped_calculation_method,
                     payee.employee_no AS payee_employee_no,
-                    pd.account_name AS destination_account_name
+                    pd.account_name AS destination_account_name,
+                    ba.account_name AS bank_account_name
                 FROM `employee_earning_deductions` eed
                 LEFT JOIN `payroll_earning_deduction_types` pt ON eed.ped_type_id = pt.id
                 LEFT JOIN `employees` payee ON payee.id = eed.payee_employee_id
                 LEFT JOIN `payment_destinations` pd ON pd.id = eed.destination_id
+                LEFT JOIN `bank_accounts` ba ON ba.id = eed.bank_account_id
                 JOIN `employees` e ON eed.employee_id = e.id
                 WHERE eed.id = :id AND e.comp_id = :comp_id AND eed.deleted_at IS NULL";
         $stmt = $this->db->prepare($sql);
@@ -373,6 +386,7 @@ class EmployeeEarningDeductionModel {
         $payeeEmployeeId = null;
         $payeeType = null;
         $destinationId = null;
+        $bankAccountId = null;
         if ($resolvedItemType === 'deduction' && !empty($data['payee_type'])) {
             $payeeType = (string)$data['payee_type'];
             if (!in_array($payeeType, ['employee', 'company', 'not_disbursed', 'other_person'], true)) {
@@ -388,6 +402,19 @@ class EmployeeEarningDeductionModel {
                 }
                 if (!$this->employeeBelongsToComp($payeeEmployeeId, $compId)) {
                     return ['status' => false, 'message' => 'Invalid payee employee.'];
+                }
+            } elseif ($payeeType === 'company') {
+                // 2026-09-10, Batch 3B item 3: level-2 for 'company' -- WHICH of the company's own
+                // bank_accounts this deduction is retained into. Mandatory only going forward (a
+                // NEW save with payee_type='company' must specify it) -- existing rows saved before
+                // this column existed keep bank_account_id=NULL, resolved as an "unspecified" bucket
+                // downstream (PayrollRemittanceModel/reports), never silently backfilled/guessed here.
+                if (empty($data['bank_account_id'])) {
+                    return ['status' => false, 'message' => 'bank_account_id is required when payee_type is company.'];
+                }
+                $bankAccountId = (int)$data['bank_account_id'];
+                if (!$this->bankAccountBelongsToComp($bankAccountId, $compId)) {
+                    return ['status' => false, 'message' => 'Invalid bank_account_id.'];
                 }
             } elseif ($payeeType === 'other_person') {
                 // 2026-09-02, Deduction Destination & Third-Party Remittance -- destination_id
@@ -462,7 +489,7 @@ class EmployeeEarningDeductionModel {
                             fee_percent = :fee_percent, fee_base = :fee_base,
                             total_amount = :total_amount, principal_amount = :principal_amount,
                             effective_date = :effective_date, notes = :notes, external_reference_no = :external_reference_no,
-                            payee_employee_id = :payee_employee_id, payee_type = :payee_type, destination_id = :destination_id, include_in_cash_summary = :include_in_cash_summary,
+                            payee_employee_id = :payee_employee_id, payee_type = :payee_type, destination_id = :destination_id, bank_account_id = :bank_account_id, include_in_cash_summary = :include_in_cash_summary,
                             updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                         WHERE id = :id";
                 $stmt = $this->db->prepare($sql);
@@ -485,6 +512,7 @@ class EmployeeEarningDeductionModel {
                     ':payee_employee_id' => $payeeEmployeeId,
                     ':payee_type' => $payeeType,
                     ':destination_id' => $destinationId,
+                    ':bank_account_id' => $bankAccountId,
                     ':include_in_cash_summary' => $includeInCashSummary,
                     ':updated_by' => $userId,
                     ':id' => $id,
@@ -499,9 +527,9 @@ class EmployeeEarningDeductionModel {
                 $assignmentId = $id;
             } else {
                 $sql = "INSERT INTO `employee_earning_deductions`
-                            (employee_id, ped_type_id, custom_item_name, custom_item_type, is_other, total_installments, current_installment, amount_mode, interest_type, interest_rate, fee_percent, fee_base, total_amount, principal_amount, effective_date, status, notes, external_reference_no, payee_employee_id, payee_type, destination_id, include_in_cash_summary, created_by)
+                            (employee_id, ped_type_id, custom_item_name, custom_item_type, is_other, total_installments, current_installment, amount_mode, interest_type, interest_rate, fee_percent, fee_base, total_amount, principal_amount, effective_date, status, notes, external_reference_no, payee_employee_id, payee_type, destination_id, bank_account_id, include_in_cash_summary, created_by)
                         VALUES
-                            (:employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :is_other, :total_installments, 0, :amount_mode, :interest_type, :interest_rate, :fee_percent, :fee_base, :total_amount, :principal_amount, :effective_date, 'active', :notes, :external_reference_no, :payee_employee_id, :payee_type, :destination_id, :include_in_cash_summary, :created_by)";
+                            (:employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :is_other, :total_installments, 0, :amount_mode, :interest_type, :interest_rate, :fee_percent, :fee_base, :total_amount, :principal_amount, :effective_date, 'active', :notes, :external_reference_no, :payee_employee_id, :payee_type, :destination_id, :bank_account_id, :include_in_cash_summary, :created_by)";
                 $stmt = $this->db->prepare($sql);
                 $stmt->execute([
                     ':employee_id' => $employeeId,
@@ -523,6 +551,7 @@ class EmployeeEarningDeductionModel {
                     ':payee_employee_id' => $payeeEmployeeId,
                     ':payee_type' => $payeeType,
                     ':destination_id' => $destinationId,
+                    ':bank_account_id' => $bankAccountId,
                     ':include_in_cash_summary' => $includeInCashSummary,
                     ':created_by' => $userId,
                 ]);
