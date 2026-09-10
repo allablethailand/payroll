@@ -110,6 +110,31 @@ class AnnualIncomeSummaryController extends Controller {
         $this->json(['status' => true, 'data' => $this->model->annualPitSummary($compId, $fiscalYear, $fsm, $filters)]);
     }
 
+    /** Batch 2, item 6 -- annual SSO-contribution grid, mirrors pitSummary() above exactly. */
+    public function ssoSummary() {
+        if (!$this->requireView()) return;
+        $compId = (int)getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Missing company context.']);
+            return;
+        }
+        $fiscalYear = (int)($_GET['fiscal_year'] ?? 0);
+        if ($fiscalYear <= 0) {
+            $this->json(['status' => false, 'message' => 'fiscal_year is required.']);
+            return;
+        }
+        $fsm = $this->fiscalStartMonth($compId);
+        $filters = [
+            'department_id' => $_GET['department_id'] ?? null,
+            'team_id' => $_GET['team_id'] ?? null,
+            'branch_id' => $_GET['branch_id'] ?? null,
+            'role_id' => $_GET['role_id'] ?? null,
+            'employee_status' => $_GET['employee_status'] ?? null,
+            'search' => $_GET['search'] ?? null,
+        ];
+        $this->json(['status' => true, 'data' => $this->model->annualSsoSummary($compId, $fiscalYear, $fsm, $filters)]);
+    }
+
     /** Phase 4, T026 -- monthly PIT detail, the page's 3rd tab. Plain calendar year+month (not the
      *  fiscal-year abstraction the other 2 tabs use) -- see AnnualIncomeSummaryModel::
      *  monthlyPitDetail()'s own docblock for why. */
