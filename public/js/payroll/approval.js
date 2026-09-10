@@ -289,17 +289,11 @@ function apvCreatedStageHtmlAp(run) {
         </div>
     `;
 }
-function auditActionLabelAp(action) {
-    const map = {
-        create: 'action_create', update: 'action_edit', recalculate: 'action_recalculate',
-        submit: 'action_submit', revert: 'action_revert', approve: 'action_approve',
-        reject: 'action_reject', reviseAfterReject: 'action_revise', markPaid: 'action_mark_paid',
-        lock: 'action_lock', delete: 'action_delete', cancel: 'action_cancel',
-        request_info: 'action_request_info', reviseAfterNeedInfo: 'action_revise',
-    };
-    const key = map[action];
-    return (key && langData[key]) || action;
-}
+// 2026-09-10: moved to app.js as auditActionLabel() -- shared with detail.js/index.js's own Timeline
+// modals. Real bug fixed in the process: this file's own copy mapped 'lock' to 'action_lock' ("Lock")
+// while detail.js/index.js already used 'action_verify_run' ("Verify") for the SAME action code since
+// the 2026-08-31 rename -- the shared table now uses 'action_verify_run' everywhere, matching the
+// other 2 pages.
 function renderAuditTimelineAp(logs) {
     if (!logs || !logs.length) {
         return `<div class="text-secondary small">${langData['no_history_yet'] || 'No action has been taken on this request yet.'}</div>`;
@@ -312,7 +306,7 @@ function renderAuditTimelineAp(logs) {
         if (l.user_agent) metaParts.push(`<i class="fa-solid fa-desktop"></i> ${escapeHtml(l.user_agent)}`);
         return `<div class="apv-log-entry">
             <div class="apv-log-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(l.performed_at) : escapeHtml(l.performed_at)}</div>
-            <div class="apv-log-action">${escapeHtml(auditActionLabelAp(l.action))} <span class="text-secondary fw-normal">(${escapeHtml(actor)})</span></div>
+            <div class="apv-log-action">${escapeHtml(auditActionLabel(l.action))} <span class="text-secondary fw-normal">(${escapeHtml(actor)})</span></div>
             ${metaParts.length ? `<div class="apv-log-meta">${metaParts.join(' &nbsp; ')}</div>` : ''}
             ${l.note ? `<div class="apv-log-note">${escapeHtml(l.note)}</div>` : ''}
         </div>`;
