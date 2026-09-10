@@ -129,6 +129,10 @@ class PayrollRunModel {
                     -- submit/approve/reject/cancel/markPaid/lock, run-settings save, etc.), just never
                     -- resolved to a display name/exposed as their own List columns until now.
                     updater.name_th AS updated_by_name_th, updater.name_en AS updated_by_name_en,
+                    -- Batch 3A item 4: the List page's own Updated By cell shows a clickable
+                    -- employee avatar now (app.js's apvAvatarHtml(..., {employeeId})), so it needs
+                    -- this employee's photo path too, not just their name.
+                    updater.profile_photo_path AS updated_by_profile_photo_path,
                     (SELECT from_state FROM `payroll_run_audit_logs` WHERE run_id = r.id AND action = 'cancel' ORDER BY id DESC LIMIT 1) AS cancelled_from_state,
                     -- 2026-08-29 ('ต้องดึงไปแสดงผลในหน้า List ด้วยว่า Verify ไปแล้วกี่คน') -- Lock retired
                     -- 2026-08-31 (see EMPLOYEE VERIFY / LOCK / COMMENTS section below), Verify itself
@@ -293,6 +297,9 @@ class PayrollRunModel {
         // locked_at/locked_by dropped 2026-08-31 -- see this method's own EMPLOYEE VERIFY / LOCK /
         // COMMENTS section header comment for why Lock was retired entirely.
         $sql = "SELECT d.*, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en, e.department_id,
+                    -- Batch 3A item 4: the Detail page's own employee table shows an avatar next to
+                    -- the name now (clickable, app.js's apvAvatarHtml(..., {employeeId})).
+                    e.profile_photo_path,
                     -- 2026-08-31, explicit request: checkbox filter (before the employee table) +
                     -- 2 summary cards + a dedicated tab all keyed on payment method -- previously
                     -- only PayrollReportDataModel::getRunDetails() (reports/cash-payment tab) read

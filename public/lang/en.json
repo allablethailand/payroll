@@ -595,6 +595,8 @@
     "resign": "Resign",
     "invite_accepted": "Invite Accepted",
     "employee_no": "Employee No.",
+    "emp_quick_view_title": "Employee Info",
+    "go_to_employee_profile": "Go to Employee Profile",
     "name": "Name",
     "shift": "Shift",
     "start_work_date": "Start Work Date",

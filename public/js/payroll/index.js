@@ -683,7 +683,15 @@ function initPayrollRunTable() {
             // date column in this app) so client-side sort operates on the raw updated_at timestamp,
             // not the dd/mm/yyyy display string.
             { data: 'updated_at', render: { display: (v) => v ? formatDisplayDateTime(v) : '-', sort: (v) => v || '', filter: (v) => v || '' } },
-            { data: null, render: (d, t, row) => escapeHtml(updatedByNamePr(row)) },
+            // 2026-09-10, Batch 3A item 4: plain name text -> clickable employee avatar + name
+            // (apvPersonLineHtml(..., {employeeId}), app.js) opening the quick-view modal. Object-
+            // form render (this app's own DataTables sort-safety convention) since the display side
+            // is now HTML, not plain text -- sort/filter still key off the raw name string.
+            { data: null, render: {
+                display: (d, t, row) => apvPersonLineHtml(updatedByNamePr(row), 24, row.updated_by_profile_photo_path, row.updated_by ? { employeeId: row.updated_by } : null),
+                sort: (d, t, row) => updatedByNamePr(row),
+                filter: (d, t, row) => updatedByNamePr(row),
+            } },
             // 2026-08-28, explicit request: "Column ท้ายสุดต้องเป็นปุ่มดำเนินการ...hidden ส่วนอื่นเป็น
             // ตัว expand แทน" -- className:'all' (dtr-all) keeps this last, already-actions column
             // from ever collapsing into the Responsive expand row, same fix as employee/list.js's

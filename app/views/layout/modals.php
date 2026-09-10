@@ -40,6 +40,41 @@
     </div>
 </div>
 
+<!-- 2026-09-10, Batch 3A item 4 -- app-wide employee quick-view popup, opened by clicking ANY
+     avatar rendered via app.js's own apvAvatarHtml(..., {employeeId}). Genuinely global (owned by
+     app.js itself, not any one page), same as #systemModal above. -->
+<div class="modal fade" id="employeeQuickViewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" data-i18n="emp_quick_view_title">Employee Info</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <div id="empQuickViewAvatar" class="d-flex justify-content-center mb-3"></div>
+                <div class="fw-bold fs-5" id="empQuickViewNameTh">-</div>
+                <div class="text-muted mb-3" id="empQuickViewNameEn">-</div>
+                <div class="row g-2 text-start small">
+                    <div class="col-6 text-muted" data-i18n="employee_no">Employee No.</div>
+                    <div class="col-6 fw-semibold" id="empQuickViewCode">-</div>
+                    <div class="col-6 text-muted" data-i18n="department">Department</div>
+                    <div class="col-6 fw-semibold" id="empQuickViewDepartment">-</div>
+                    <div class="col-6 text-muted" data-i18n="position">Position</div>
+                    <div class="col-6 fw-semibold" id="empQuickViewPosition">-</div>
+                    <div class="col-6 text-muted" data-i18n="branch">Branch</div>
+                    <div class="col-6 fw-semibold" id="empQuickViewBranch">-</div>
+                    <div class="col-6 text-muted" data-i18n="status">Status</div>
+                    <div class="col-6 fw-semibold" id="empQuickViewStatus">-</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <a href="#" target="_blank" rel="noopener" class="btn btn-primary" id="empQuickViewGoToProfile"><i class="fa-solid fa-arrow-up-right-from-square me-1"></i><span data-i18n="go_to_employee_profile">Go to Employee Profile</span></a>
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ===== Annual Income Summary (app/views/reports/annual-summary.php) ===== -->
 <!-- 2026-08-30 (Phase 4, T028, explicit request: "ตัดปุ่ม 'ตั้งค่าการตัดรอบปี' ออกจากหน้าสรุปรายได้ประจำปี
      ใช้ค่าจาก Company Profile แทน") -- #aisFiscalYearSettingsModal removed. companies.

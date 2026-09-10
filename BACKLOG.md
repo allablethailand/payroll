@@ -70,17 +70,17 @@ would defeat caching entirely rather than just busting it across deploys. Apply 
 
 ---
 
-## Consolidate apvAvatarHtml*/apvApproverSubstepHtml* (Rd/Pr/Ap) into app.js
+## Consolidate apvApproverSubstepHtml* (Rd/Pr/Ap) into app.js
 
-`apvAvatarHtmlRd`/`Pr`/`Ap`, `apvApproverSubstepHtmlRd`/`Pr`/`Ap` (and their sibling `apv*` Timeline
-helpers) are duplicated 3x across `detail.js`/`index.js`/`approval.js`, same pattern
-`auditActionLabel()` used to be before it was consolidated into `app.js` (Batch 1). Batch 2 item 2
-added employee-photo support (with `escapeAttr()` + `onerror` fallback) to all 3 copies identically,
-which is exactly the kind of change that will keep needing to be applied 3x until these are merged
-into one shared function the same way `auditActionLabel()` was.
+`apvAvatarHtml*`/`apvPersonLineHtml*`/`apvIconHtml*`/`apvBadgeHtml*`/`APV_COLORS_*`/
+`apvCreatedStageHtml*` were consolidated into app.js in Batch 3A item 3 (byte-identical across all
+3 pages, confirmed before merging). **Still duplicated 3x, not yet done**: `apvApproverSubstepHtmlRd`/
+`Pr`/`Ap` (the per-approver row inside the Approval stage's own step-group body) — same
+`auditActionLabel()` consolidation precedent, not folded into item 3 since it wasn't part of that
+item's explicit scope.
 
-**Source:** Batch 2, item 2 — explicitly deferred to "phase design" rather than folded into this
-batch's logic-only scope.
+**Source:** Batch 2, item 2 (originally flagged) — `apvAvatarHtml*` half done in Batch 3A item 3
+(2026-09-10); `apvApproverSubstepHtml*` still pending.
 
 ---
 

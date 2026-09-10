@@ -1514,19 +1514,72 @@ function apvIconHtml(tone, icon) {
 function apvAvatarImgError(img) {
     const size = img.getAttribute('data-size');
     const initial = img.getAttribute('data-initial');
-    img.outerHTML = `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
+    const employeeId = img.getAttribute('data-employee-id');
+    const clickAttr = employeeId ? ` data-employee-id="${employeeId}"` : '';
+    const clickClass = employeeId ? ' emp-avatar-link' : '';
+    const clickStyle = employeeId ? 'cursor:pointer;' : '';
+    img.outerHTML = `<span class="apv-person-avatar${clickClass}"${clickAttr} style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;${clickStyle}">${initial}</span>`;
 }
-function apvAvatarHtml(name, size, photoPath) {
+// 2026-09-10, Batch 3A item 4 (explicit instruction: "ต่อยอดจาก apvAvatarHtml ที่เพิ่งรวม ไม่สร้าง
+// avatar function ตัวที่สอง...ให้เพิ่มเป็น option ของตัวเดิม") -- `options.employeeId` is the ONLY
+// addition: when present, the avatar gets a ring border + pointer cursor + `.emp-avatar-link` class
+// + `data-employee-id` (the delegated click handler further down opens the quick-view modal). Every
+// pre-existing call site (Timeline stages/approver rows, none of which pass a 4th argument) renders
+// byte-identical to before -- `options` defaults to `{}` so nothing about their look changed.
+function apvAvatarHtml(name, size, photoPath, options) {
+    options = options || {};
     size = size || 26;
     const initial = escapeAttr((name || '?').trim().charAt(0).toUpperCase() || '?');
+    const employeeId = options.employeeId;
+    const clickAttr = employeeId ? ` data-employee-id="${escapeAttr(employeeId)}"` : '';
+    const clickClass = employeeId ? ' emp-avatar-link' : '';
+    const clickStyle = employeeId ? 'cursor:pointer;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.12);' : '';
     if (photoPath) {
-        return `<img src="${BASE_URL}/${escapeAttr(photoPath)}" alt="" data-size="${size}" data-initial="${initial}" style="width:${size}px;height:${size}px;min-width:${size}px;border-radius:50%;object-fit:cover;object-position:center top;" onerror="apvAvatarImgError(this)">`;
+        return `<img src="${BASE_URL}/${escapeAttr(photoPath)}" alt="" data-size="${size}" data-initial="${initial}"${clickAttr} class="${clickClass.trim()}" style="width:${size}px;height:${size}px;min-width:${size}px;border-radius:50%;object-fit:cover;object-position:center top;${clickStyle}" onerror="apvAvatarImgError(this)">`;
     }
-    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
+    return `<span class="apv-person-avatar${clickClass}"${clickAttr} style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;${clickStyle}">${initial}</span>`;
 }
-function apvPersonLineHtml(name, size, photoPath) {
-    return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtml(name, size, photoPath)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
+function apvPersonLineHtml(name, size, photoPath, options) {
+    return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtml(name, size, photoPath, options)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
 }
+// 2026-09-10, Batch 3A item 4 -- app-wide employee quick-view modal, opened by clicking ANY avatar
+// rendered via apvAvatarHtml(..., {employeeId}) (Process List's Updated By column, Process Detail's
+// employee table, the Approval Timeline modal's Created/Paid/Locked stages -- once those pass an
+// employeeId too). One shared modal/handler here instead of a per-page copy, same consolidation
+// precedent as everything else in this file.
+function renderEmployeeQuickViewModal(emp) {
+    const name = (currentLang === 'th' ? `${emp.name_th || ''} ${emp.surname_th || ''}` : `${emp.name_en || emp.name_th || ''} ${emp.surname_en || emp.surname_th || ''}`).trim() || '-';
+    $('#empQuickViewAvatar').html(apvAvatarHtml(name, 72, emp.profile_photo_path));
+    $('#empQuickViewNameTh').text(`${emp.name_th || ''} ${emp.surname_th || ''}`.trim() || '-');
+    $('#empQuickViewNameEn').text(`${emp.name_en || ''} ${emp.surname_en || ''}`.trim() || '-');
+    $('#empQuickViewCode').text(emp.employee_no || '-');
+    $('#empQuickViewDepartment').text((currentLang === 'th' ? emp.department_name_th : emp.department_name_en) || emp.department_name_th || '-');
+    $('#empQuickViewPosition').text((currentLang === 'th' ? emp.position_name_th : emp.position_name_en) || emp.position_name_th || '-');
+    $('#empQuickViewBranch').text((currentLang === 'th' ? emp.branch_name_th : emp.branch_name_en) || emp.branch_name_th || '-');
+    $('#empQuickViewStatus').text((langData['status_' + emp.employee_status]) || emp.employee_status || '-');
+    $('#empQuickViewGoToProfile').attr('href', `${BASE_URL}/employees/${emp.employee_no}`);
+}
+$(document).on('click', '.emp-avatar-link', function () {
+    const employeeId = $(this).data('employee-id');
+    if (!employeeId) return;
+    $.ajax({
+        url: `${BASE_URL}/api/employee.quick-view`,
+        method: 'GET',
+        data: { id: employeeId },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) {
+                if (typeof showWarning === 'function') showWarning(res.message || 'An error occurred.');
+                return;
+            }
+            renderEmployeeQuickViewModal(res.data);
+            new bootstrap.Modal(document.getElementById('employeeQuickViewModal')).show();
+        },
+        error: function () {
+            if (typeof showWarning === 'function') showWarning((langData && langData['save_failed']) || 'An error occurred while loading the data.');
+        }
+    });
+});
 // "Created" stage -- always done (a run exists the moment it's created, nothing to wait for), so
 // unlike Paid/Locked below it has no pending state to render.
 function apvCreatedStageHtml(run) {
@@ -1540,7 +1593,7 @@ function apvCreatedStageHtml(run) {
                     ${apvBadgeHtml('done', langData['stage_created'] || 'Created')}
                 </div>
                 <div class="apv-stage-date">${run.created_at ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.created_at) : escapeHtml(run.created_at)) : ''}</div>
-                <div class="apv-stage-body">${apvPersonLineHtml(creator, 26, run.created_by_profile_photo_path)}</div>
+                <div class="apv-stage-body">${apvPersonLineHtml(creator, 26, run.created_by_profile_photo_path, { employeeId: run.created_by })}</div>
             </div>
         </div>
     `;
@@ -1563,7 +1616,7 @@ function apvPaidStageHtml(run, lifecycle) {
     const tone = done ? 'done' : 'muted';
     const payer = (currentLang === 'th' ? run.paid_by_name_th : run.paid_by_name_en) || run.paid_by_name_th || run.paid_by_name_en || '';
     const bodyHtml = done
-        ? apvPersonLineHtml(payer, 26, run.paid_by_profile_photo_path)
+        ? apvPersonLineHtml(payer, 26, run.paid_by_profile_photo_path, { employeeId: run.paid_by })
         : `<span class="apv-muted-text">${langData['waiting_for_approval_to_complete'] || 'Waiting for the approval process to complete.'}</span>`;
     return `
         <div class="apv-stage">
@@ -1585,7 +1638,7 @@ function apvLockedStageHtml(run, lifecycle) {
     const tone = done ? 'done' : 'muted';
     const locker = (currentLang === 'th' ? run.locked_by_name_th : run.locked_by_name_en) || run.locked_by_name_th || run.locked_by_name_en || '';
     const bodyHtml = done
-        ? apvPersonLineHtml(locker, 26, run.locked_by_profile_photo_path)
+        ? apvPersonLineHtml(locker, 26, run.locked_by_profile_photo_path, { employeeId: run.locked_by })
         : `<span class="apv-muted-text">${langData['waiting_for_payment_to_complete'] || 'Waiting for the payment process to complete.'}</span>`;
     return `
         <div class="apv-stage">
