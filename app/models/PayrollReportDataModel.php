@@ -79,10 +79,20 @@ class PayrollReportDataModel {
      * run. Caller converts to Buddhist Era for display/selection (see ReportsController's own
      * availableYears(), matching the same +543 convention every annual report generator already
      * applies to context['year'] on the way back in).
+     *
+     * 2026-09-10, real bug found and fixed (explicit report: a run whose PAY PERIOD spans two
+     * calendar months, e.g. 26/07-25/08 paid 31/08, was showing up under its period's own month/
+     * year -- July -- instead of the month it was actually disbursed in -- August). Every method
+     * below switched from `r.period_start_date` to `r.payment_date` as the "which
+     * month/year does this run belong to" anchor, matching the ALREADY-established correct
+     * convention `PayrollRunModel::findActiveRunForCyclePaymentMonth()`'s own docblock states
+     * explicitly: "payment date -- not period -- is what genuinely determines which calendar month
+     * a run belongs to...a period can straddle a month boundary; its payment date does not."
+     * Reports must be consistent with that, not just the "future round" merge-matching feature.
      */
     public function availableReportYears(int $compId, array $allowedStates): array {
         $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
-        $sql = "SELECT DISTINCT YEAR(r.period_start_date) AS yr FROM `payroll_runs` r
+        $sql = "SELECT DISTINCT YEAR(r.payment_date) AS yr FROM `payroll_runs` r
                 WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
                 ORDER BY yr DESC";
         $stmt = $this->db->prepare($sql);
@@ -90,7 +100,9 @@ class PayrollReportDataModel {
         return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
     }
 
-    /** Runs whose pay period falls (even partially) within the given calendar year, usable states only. */
+    /** Runs actually PAID (payment_date) within the given calendar year, usable states only.
+     *  2026-09-10: was YEAR(period_start_date) -- see availableReportYears()'s own docblock above
+     *  for why payment_date is the correct anchor for "which year does this run belong to". */
     public function getRunsInYear(int $compId, int $year, array $allowedStates): array {
         $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
         // c.bank_account_id (2026-08-30, explicit follow-up: "ตรงส่วนของการตั้งค่ารอบ มีการให้เลือกบัญชีจ่าย
@@ -102,27 +114,32 @@ class PayrollReportDataModel {
         $sql = "SELECT r.*, c.cycle_name, c.bank_account_id FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
-                AND YEAR(r.period_start_date) = ?
-                ORDER BY r.period_start_date ASC";
+                AND YEAR(r.payment_date) = ?
+                ORDER BY r.payment_date ASC";
         $stmt = $this->db->prepare($sql);
         $stmt->execute(array_merge([$compId], $allowedStates, [$year]));
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     /**
-     * 2026-09-04, Backlog Phase 10, T060 Step D -- runs whose pay period falls within one calendar
-     * MONTH (not year), usable states only. Direct clone of getRunsInYear() narrowed by month, same
-     * period_start_date anchor/state-filter convention -- backs PndOneReport/Sso110Report's new
+     * 2026-09-04, Backlog Phase 10, T060 Step D -- runs actually PAID (payment_date) within one
+     * calendar MONTH (not year), usable states only. Direct clone of getRunsInYear() narrowed by
+     * month, same payment_date anchor/state-filter convention -- backs PndOneReport/Sso110Report's
      * month-aggregation path (a real Thai monthly statutory filing spans every settled run whose
-     * period falls in that month, not just one run, for a non-monthly payroll_frequency company).
+     * PAYMENT falls in that month, not just one run, for a non-monthly payroll_frequency company).
+     * 2026-09-10: anchor switched from period_start_date to payment_date -- see
+     * availableReportYears()'s own docblock above for why (this is precisely the method
+     * PndOneReport/Sso110Report use for real monthly statutory filings, so it's also the most
+     * consequential instance of this bug -- a withholding return must file under the month the tax
+     * was actually withheld/paid, not the month the work period happened to start in).
      */
     public function getRunsInMonth(int $compId, int $year, int $month, array $allowedStates): array {
         $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
         $sql = "SELECT r.*, c.cycle_name, c.bank_account_id FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
-                AND YEAR(r.period_start_date) = ? AND MONTH(r.period_start_date) = ?
-                ORDER BY r.period_start_date ASC";
+                AND YEAR(r.payment_date) = ? AND MONTH(r.payment_date) = ?
+                ORDER BY r.payment_date ASC";
         $stmt = $this->db->prepare($sql);
         $stmt->execute(array_merge([$compId], $allowedStates, [$year, $month]));
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -243,9 +260,15 @@ class PayrollReportDataModel {
      * mistaken for something submittable.
      */
     /**
-     * Sums gross/deduction/net across this employee's payroll_run_details rows for runs whose
-     * period falls in the same calendar year as $uptoDate and starts on or before it -- used for
+     * Sums gross/deduction/net across this employee's payroll_run_details rows for runs actually
+     * PAID (payment_date) in the same calendar year as $uptoDate and on or before it -- used for
      * the payslip template's "ytd_summary" field. Only counts runs in an allowed (reportable) state.
+     * 2026-09-10: $uptoDate/anchor switched from period_start_date to payment_date -- a "year to
+     * date" income summary is a cash-basis concept (matches when tax was actually withheld), same
+     * reasoning as every other method in this class after this same-day fix -- see
+     * availableReportYears()'s own docblock. Caller (PaySlipReport) now passes the CURRENT run's own
+     * payment_date, not its period_start_date, so a December-period-paid-in-January payslip's own
+     * YTD correctly resets to the new year instead of still counting as December's year.
      */
     public function getYtdTotals(int $compId, int $employeeId, string $uptoDate, array $allowedStates): array {
         $year = (int)substr($uptoDate, 0, 4);
@@ -256,7 +279,7 @@ class PayrollReportDataModel {
                 FROM `payroll_run_details` d
                 JOIN `payroll_runs` r ON r.id = d.run_id
                 WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
-                    AND YEAR(r.period_start_date) = ? AND r.period_start_date <= ?
+                    AND YEAR(r.payment_date) = ? AND r.payment_date <= ?
                     AND d.employee_id = ?";
         $stmt = $this->db->prepare($sql);
         $stmt->execute(array_merge([$compId], $allowedStates, [$year, $uptoDate, $employeeId]));

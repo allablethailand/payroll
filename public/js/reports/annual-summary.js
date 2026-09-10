@@ -294,10 +294,17 @@ function aisRenderCellDetail(runs) {
     }
     const html = runs.map(function (run) {
         const period = `${formatDisplayDate ? formatDisplayDate(run.period_start_date) : run.period_start_date} - ${formatDisplayDate ? formatDisplayDate(run.period_end_date) : run.period_end_date}`;
+        // 2026-09-10: this month's grid cell is now keyed by payment_date, not period_start_date --
+        // showing the payment date alongside the (still-displayed) pay period makes it clear WHY this
+        // run appears under this particular month even when its period spans a month boundary.
+        const paymentLabel = run.payment_date ? (formatDisplayDate ? formatDisplayDate(run.payment_date) : run.payment_date) : '-';
         return `<div class="card-surface p-3 mb-3">
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <div class="fw-bold">${escapeHtml(run.run_name || '-')}</div>
-                <div class="text-muted small">${escapeHtml(period)}</div>
+                <div class="text-end">
+                    <div class="text-muted small">${escapeHtml(period)}</div>
+                    <div class="text-muted small">${escapeHtml(langData['modal_payment_date'] || 'Payment Date')}: ${escapeHtml(paymentLabel)}</div>
+                </div>
             </div>
             <div class="d-flex justify-content-between small py-1 border-bottom">
                 <span>${langData['table_base_salary'] || 'Base Salary'}</span>

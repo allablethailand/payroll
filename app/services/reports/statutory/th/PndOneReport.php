@@ -88,8 +88,12 @@ class PndOneReport implements ReportGeneratorInterface {
             }
             $dataModel->assertRunStateOrThrow($run, self::ALLOWED_STATES);
             $runsForDetails = [$run];
-            $yearBe = (int)date('Y', strtotime($run['period_start_date'])) + 543;
-            $monthNum = (int)date('n', strtotime($run['period_start_date']));
+            // 2026-09-10, real bug found and fixed (explicit report: a run whose period spans two
+            // calendar months, e.g. 26/07-25/08 paid 31/08, was filing as July's ภ.ง.ด.1 instead of
+            // August's -- withholding tax is filed under the month it was actually withheld/paid,
+            // not the month the work period happened to start in). Was period_start_date.
+            $yearBe = (int)date('Y', strtotime($run['payment_date'])) + 543;
+            $monthNum = (int)date('n', strtotime($run['payment_date']));
         } elseif ($hasYearMonth) {
             $yearBe = (int)$context['year'];
             $monthNum = (int)$context['month'];

@@ -93,8 +93,13 @@ class Sso110Report implements ReportGeneratorInterface {
             }
             $dataModel->assertRunStateOrThrow($run, self::ALLOWED_STATES);
             $runsForDetails = [$run];
-            $periodYear = (int)date('Y', strtotime($run['period_start_date']));
-            $periodMonth = (int)date('n', strtotime($run['period_start_date']));
+            // 2026-09-10, real bug found and fixed (same root cause/example as PndOneReport's own
+            // identical fix this same day: a run whose period spans two calendar months, e.g.
+            // 26/07-25/08 paid 31/08, was filing as July's สปส.1-10 instead of August's). Was
+            // period_start_date -- SSO contribution is remitted for the month it was actually paid,
+            // not the month the work period happened to start in.
+            $periodYear = (int)date('Y', strtotime($run['payment_date']));
+            $periodMonth = (int)date('n', strtotime($run['payment_date']));
         } elseif ($hasYearMonth) {
             // 2026-09-04, real bug caught during my own review before shipping: the Reports page's
             // shared Annual-tab year picker (the SAME picker TH_SSO609/TH_PND1K_SUMMARY already use)
