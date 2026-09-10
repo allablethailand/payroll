@@ -2469,7 +2469,14 @@ function initRunDetailTable(details) {
                 }
                 return `<span class="fw-semibold">${escapeHtml(d)}</span>${badges.join('')}`;
             } },
-            { data: null, orderable: false, render: (d, t, row) => escapeHtml(employeeDisplayNameRd(row)) },
+            // 2026-09-10, Batch 3A item 4: avatar + name (not avatar alone -- this column must stay
+            // searchable by name via the table's own global search box). Object-form render (this
+            // app's own DataTables sort-safety convention) since display is now HTML -- filter (what
+            // the search box actually matches against) stays the plain name string.
+            { data: null, orderable: false, render: {
+                display: (d, t, row) => apvPersonLineHtml(employeeDisplayNameRd(row), 24, row.profile_photo_path, { employeeId: row.employee_id }),
+                filter: (d, t, row) => employeeDisplayNameRd(row),
+            } },
             { data: null, className: 'text-center', visible: showDataSourceColumn, render: (d, t, row) => dataSourceBadgeRd(row) },
             // 2026-09-02, explicit request: "ในตารางพนักงานให้เพิ่ม Column รับเงินผ่านบัญชี หรือเงินสด" --
             // same badge markup the (since-removed) Payment Method Summary tab used, reused here for

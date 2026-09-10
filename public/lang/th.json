@@ -596,6 +596,8 @@
     "resign": "ลาออก",
     "invite_accepted": "ตอบรับคำเชิญแล้ว",
     "employee_no": "รหัสพนักงาน",
+    "emp_quick_view_title": "ข้อมูลพนักงาน",
+    "go_to_employee_profile": "ไปหน้าพนักงาน",
     "name": "ชื่อ-นามสกุล",
     "shift": "กะการทำงาน",
     "start_work_date": "วันที่เริ่มงาน",
