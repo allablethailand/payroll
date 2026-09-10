@@ -8,6 +8,7 @@ require_once __DIR__ . '/../models/EmployeeOtRateModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 require_once __DIR__ . '/../models/PayrollSyncTransactionLogModel.php';
 require_once __DIR__ . '/../models/PayrollReportDataModel.php';
+require_once __DIR__ . '/../models/PvdEmployerRateLadderModel.php';
 require_once __DIR__ . '/../services/ThumbnailGenerator.php';
 class EmployeeController extends Controller {
     private $model;
@@ -18,6 +19,7 @@ class EmployeeController extends Controller {
     private PermissionModel $permissionModel;
     private PayrollSyncTransactionLogModel $syncTransactionLogModel;
     private PayrollReportDataModel $reportDataModel;
+    private PvdEmployerRateLadderModel $pvdLadderModel;
     public function __construct(){
         $this->model = new EmployeeModel();
         $this->earningDeductionModel = new EmployeeEarningDeductionModel();
@@ -27,6 +29,7 @@ class EmployeeController extends Controller {
         $this->permissionModel = new PermissionModel();
         $this->syncTransactionLogModel = new PayrollSyncTransactionLogModel();
         $this->reportDataModel = new PayrollReportDataModel();
+        $this->pvdLadderModel = new PvdEmployerRateLadderModel();
     }
 
     private function userId(): int {
@@ -447,6 +450,46 @@ class EmployeeController extends Controller {
         } else {
             $this->json(['status' => false, 'message' => 'Employee not found.']);
         }
+    }
+    /**
+     * 2026-09-10, Batch 3A item 7a: live "what employer rate would actually apply right now" helper
+     * for the ประกันสังคม/กองทุน tab's Employer Rate override field -- resolves the SAME
+     * override>ladder>default priority PayrollRunModel::recalculate() uses for real payroll, but
+     * "as of" is TODAY (this page has no payroll-period context, unlike a real run, which resolves
+     * against that run's own period_end_date instead -- see that method's own comment).
+     */
+    public function pvdEmployerRatePreview() {
+        if (!$this->requirePermission('employee.view')) return;
+        $compId = getCompId();
+        $employeeNo = isset($_GET['employee_no']) ? trim((string)$_GET['employee_no']) : '';
+        if (!$compId || $employeeNo === '') {
+            $this->json(['status' => false, 'message' => 'Missing employee_no.']);
+            return;
+        }
+        $employee = $this->model->get((int)$compId, $employeeNo);
+        if (!$employee) {
+            $this->json(['status' => false, 'message' => 'Employee not found.']);
+            return;
+        }
+        if (isset($employee['pvd_employer_rate']) && $employee['pvd_employer_rate'] !== null) {
+            $this->json(['status' => true, 'data' => ['source' => 'employee_override', 'rate_percent' => (float)$employee['pvd_employer_rate']]]);
+            return;
+        }
+        $joinDate = $employee['pvd_start_date'] ?? $employee['employment_date'] ?? null;
+        if ($joinDate === null) {
+            $this->json(['status' => true, 'data' => ['source' => 'default', 'rate_percent' => null]]);
+            return;
+        }
+        $years = PvdEmployerRateLadderModel::serviceYears((string)$joinDate, date('Y-m-d'));
+        $tier = $this->pvdLadderModel->resolveTier((int)$compId, $years);
+        if ($tier === null) {
+            $this->json(['status' => true, 'data' => ['source' => 'default', 'rate_percent' => null]]);
+            return;
+        }
+        $this->json(['status' => true, 'data' => [
+            'source' => 'ladder', 'rate_percent' => $tier['rate_percent'],
+            'tier_min_years' => $tier['min_service_years'], 'tier_max_years' => $tier['max_service_years'],
+        ]]);
     }
     public function reportToOptions() {
         $compId = getCompId();

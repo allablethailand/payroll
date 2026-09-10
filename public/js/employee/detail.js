@@ -476,6 +476,43 @@ $(document).on('input', '#address_line_1_contact', function () { updateAddressMa
 // one runs, the field this reads is already up to date.
 $(document).on('click', '.select-address-item', function () { updateAllAddressMatchIndicators(); });
 
+/**
+ * 2026-09-10, Batch 3A item 7a, explicit request: "helper text ให้แสดงอัตราที่จะใช้จริงตอนนี้" -- shows
+ * what the TH_PVD employer rate would actually resolve to right now (server-side, same override>
+ * ladder>default priority PayrollRunModel::recalculate() itself uses -- see
+ * EmployeeController::pvdEmployerRatePreview()'s own docblock for why "now" means today here, not a
+ * payroll run's own period_end_date). Blank when the field itself already holds an override value
+ * (the input's own value IS what's used then, nothing extra to say).
+ */
+function updatePvdEmployerRateHelper(employeeNo) {
+    const $helper = $('#pvdEmployerRateHelper');
+    if (!$helper.length) return;
+    if (!employeeNo) { $helper.text(''); return; }
+    $.ajax({
+        url: `${BASE_URL}/api/employee.pvd-employer-rate-preview`,
+        method: 'GET',
+        data: { employee_no: employeeNo },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status || !res.data) { $helper.text(''); return; }
+            const d = res.data;
+            if (d.source === 'employee_override') {
+                $helper.text('');
+                return;
+            }
+            if (d.source === 'ladder' && d.rate_percent !== null && d.rate_percent !== undefined) {
+                const tierLabel = (d.tier_max_years !== null && d.tier_max_years !== undefined)
+                    ? `${d.tier_min_years}–${d.tier_max_years}`
+                    : `${d.tier_min_years}+`;
+                const template = langData['pvd_employer_rate_helper_ladder'] || 'Leave blank to use the tenure-based rate (currently {rate}% — tier {tier} yrs).';
+                $helper.text(template.replace('{rate}', d.rate_percent).replace('{tier}', tierLabel));
+                return;
+            }
+            $helper.text(langData['pvd_employer_rate_helper_default'] || 'Leave blank to use the company\'s standard rate.');
+        },
+        error: function () { $helper.text(''); }
+    });
+}
 function populateEmployeeForm(data) {
     isLoadingEmployeeForm = true;
     const remoteFields = ['department_id', 'team_id', 'role_id', 'position_id', 'branch_id', 'bank_id', 'default_bank_account_id', 'payment_method_id', 'report_to_id', 'nationality', 'religion', 'cycle_id', 'work_location_id', 'shift_id', 'employment_type_id'];
@@ -690,6 +727,10 @@ function applyEmployeeSaveSuccess(res, wasNew) {
         }
         $('#bcCurrent').text(res.employee_no);
         refreshProfileHeader();
+        // 2026-09-10, Batch 3A item 7a: the tenure-based tier (if any) can change after a save that
+        // edited pvd_start_date/pvd_employer_rate itself -- re-fetch so the helper text under the
+        // Employer Rate field always reflects the just-saved state, not what loaded before editing.
+        updatePvdEmployerRateHelper(res.employee_no);
     }
     // New-employee flow (2026-08-19, explicit request): the FIRST save that actually creates the
     // record unlocks the rest of the tabs + the 3rd breadcrumb level -- every save (this one
@@ -1004,6 +1045,7 @@ function loadEmployeeIfEditing() {
                 $('#report_to_id').attr('data-exclude-id', currentEmployeeId);
                 populateEmployeeForm(res.data);
                 renderProfileHeader(res.data);
+                updatePvdEmployerRateHelper(employeeNo);
                 if (!childTablesLoaded) {
                     childTablesLoaded = true;
                     loadAllChildTables();

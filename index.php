@@ -78,6 +78,7 @@
     $router->post('api/payroll-run.join-employees', 'PayrollController@joinEmployees');
     $router->post('api/payroll-run.remove-employee', 'PayrollController@removeEmployee');
     $router->get('api/payroll-run.manual-lines', 'PayrollController@manualLinesForEmployee');
+    $router->get('api/payroll-run.employee-adjustments', 'PayrollController@employeeAdjustments');
     $router->post('api/payroll-run.add-manual-line', 'PayrollController@addManualLine');
     $router->post('api/payroll-run.remove-manual-line', 'PayrollController@removeManualLine');
     $router->get('api/payroll-run.sync-lines-for-employee', 'PayrollController@syncLinesForEmployee');
@@ -198,6 +199,8 @@
     $router->post('api/statutory-item.custom.delete', 'TaxStatutoryController@customItemDelete');
     $router->post('api/statutory-item.custom.promote', 'TaxStatutoryController@customItemPromote');
     $router->get('api/company-statutory-setting.list', 'TaxStatutoryController@companySettingList');
+    $router->get('api/pvd-employer-rate-ladder.list', 'TaxStatutoryController@pvdEmployerLadderList');
+    $router->post('api/pvd-employer-rate-ladder.save', 'TaxStatutoryController@pvdEmployerLadderSave');
     $router->get('api/company-statutory-setting.get', 'TaxStatutoryController@companySettingGet');
     $router->post('api/company-statutory-setting.toggle-status', 'TaxStatutoryController@companySettingToggleStatus');
     // 2026-09-08, Clone+Version redesign -- replaces company-statutory-setting.save/reset/promote
@@ -593,6 +596,7 @@
     $router->post('api/bank-file-format.reset', 'BankFileFormatController@resetToDefault');
     $router->get('api/bank-file-format.edit-logs', 'BankFileFormatController@editLogs');
     $router->get('api/employee.get', 'EmployeeController@get');
+    $router->get('api/employee.pvd-employer-rate-preview', 'EmployeeController@pvdEmployerRatePreview');
     // Batch 3A item 4 -- avatar quick-view modal.
     $router->get('api/employee.quick-view', 'EmployeeController@quickView');
     $router->post('api/employee.save', 'EmployeeController@save');

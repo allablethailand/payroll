@@ -2140,6 +2140,82 @@ $(document).on('click', '.btn-view-breakdown', function () {
     new bootstrap.Modal(document.getElementById('runDetailBreakdownModal')).show();
 });
 
+/* ---------- Employee Adjustments viewer (2026-09-10, Batch 3A item 5, explicit request: replace
+   the fa-sliders icon with a "ปรับแล้ว N" badge + view-only modal listing item/old value/new
+   value/who/when) -- sourced entirely from PayrollRunModel::employeeAdjustments() (overrides via
+   the same table getDetails()'s own line_override_count counts, enriched with the real edit-chain
+   history when one exists; ad-hoc added items via manualLinesForEmployee()) -- no new table, no
+   editing here (Manage Items/Sync Line Overrides above remain the only editing surface). ---------- */
+function empAdjustmentLineTypeLabelRd(lineType) {
+    if (lineType === 'statutory') return langData['sync_line_statutory_badge'] || 'Statutory';
+    return langData['breakdown_earnings'] || 'Earning/Deduction';
+}
+function empAdjustmentOverrideRowHtml(item, historyStartDate) {
+    const edits = item.edits || [];
+    const lastEdit = edits.length ? edits[edits.length - 1] : null;
+    const who = lastEdit
+        ? ((currentLang === 'th' ? lastEdit.changed_by_name_th : lastEdit.changed_by_name_en) || lastEdit.changed_by_name_th || lastEdit.changed_by_name_en || '')
+        : ((currentLang === 'th' ? item.fallback_changed_by_name_th : item.fallback_changed_by_name_en) || item.fallback_changed_by_name_th || item.fallback_changed_by_name_en || '');
+    const when = lastEdit ? lastEdit.changed_at : item.fallback_changed_at;
+    const newValueDisplay = item.action === 'exclude'
+        ? `<span class="text-danger">${langData['sync_line_override_excluded_badge'] || 'Excluded'}</span>`
+        : fmtNum(item.current_value);
+    const noHistoryNote = !item.history_available
+        ? `<div class="small text-muted mt-1"><i class="fa-solid fa-circle-info me-1"></i>${(langData['emp_adjustments_no_history'] || 'No detailed edit history available (tracking started {date}).').replace('{date}', historyStartDate ? formatDisplayDate(historyStartDate) : '')}</div>`
+        : '';
+    return `<div class="border rounded-3 p-2 mb-2">
+        <div><code class="fw-bold text-dark">${escapeHtml(item.item_code)}</code>
+            <span class="badge bg-info-subtle text-info ms-1">${escapeHtml(empAdjustmentLineTypeLabelRd(item.line_type))}</span></div>
+        <div class="row small mt-2 gx-2">
+            <div class="col-4"><span class="text-muted">${langData['run_audit_original'] || 'Original'}:</span> ${item.original_value !== null ? fmtNum(item.original_value) : '-'}</div>
+            <div class="col-4"><span class="text-muted">${langData['run_audit_current'] || 'Current'}:</span> ${newValueDisplay}</div>
+            <div class="col-4"><span class="text-muted">${langData['downloaded_by'] || 'By'}:</span> ${who ? escapeHtml(who) : '-'}</div>
+        </div>
+        <div class="small text-muted mt-1">${when ? formatDisplayDateTime(when) : ''}</div>
+        ${item.note ? `<div class="small text-muted mt-1"><i class="fa-solid fa-note-sticky me-1"></i>${escapeHtml(item.note)}</div>` : ''}
+        ${noHistoryNote}
+    </div>`;
+}
+function empAdjustmentManualLineRowHtml(item) {
+    const name = (currentLang === 'th' ? item.item_name_th : item.item_name_en) || item.item_name_th || item.item_name_en || item.custom_item_name || item.item_code;
+    const who = (currentLang === 'th' ? item.created_by_name_th : item.created_by_name_en) || item.created_by_name_th || item.created_by_name_en || '';
+    return `<div class="border rounded-3 p-2 mb-2">
+        <div><span class="badge bg-success-subtle text-success me-1">${langData['emp_adjustments_added_badge'] || 'Added'}</span>${escapeHtml(name || '')}</div>
+        <div class="row small mt-2 gx-2">
+            <div class="col-4"><span class="text-muted">${langData['run_audit_current'] || 'Current'}:</span> ${fmtNum(item.amount)}</div>
+            <div class="col-4"><span class="text-muted">${langData['downloaded_by'] || 'By'}:</span> ${who ? escapeHtml(who) : '-'}</div>
+            <div class="col-4">${item.created_at ? formatDisplayDateTime(item.created_at) : ''}</div>
+        </div>
+        ${item.note ? `<div class="small text-muted mt-1"><i class="fa-solid fa-note-sticky me-1"></i>${escapeHtml(item.note)}</div>` : ''}
+    </div>`;
+}
+function loadEmpAdjustmentsModal(employeeId) {
+    const emptyHtml = `<div class="text-center text-muted small py-2">${langData['emp_adjustments_empty'] || 'None.'}</div>`;
+    $('#empAdjustmentsOverrideList, #empAdjustmentsManualLineList').html(emptyHtml);
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.employee-adjustments`,
+        method: 'GET',
+        data: { run_id: PAYROLL_RUN_ID, employee_id: employeeId },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) { showWarning(res.message || langData['load_failed'] || 'Failed to load data.'); return; }
+            const overrides = res.data.overrides || [];
+            const manualLines = res.data.manual_lines || [];
+            const historyStartDate = res.data.history_feature_start_date || null;
+            $('#empAdjustmentsOverrideList').html(overrides.length ? overrides.map(item => empAdjustmentOverrideRowHtml(item, historyStartDate)).join('') : emptyHtml);
+            $('#empAdjustmentsManualLineList').html(manualLines.length ? manualLines.map(empAdjustmentManualLineRowHtml).join('') : emptyHtml);
+        },
+        error: function () { showWarning(langData['load_failed'] || 'An error occurred while loading data.'); }
+    });
+}
+$(document).on('click', '.btn-view-emp-adjustments', function () {
+    const employeeId = $(this).data('employee-id');
+    const rowData = (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(employeeId));
+    $('#empAdjustmentsEmployeeName').text(rowData ? `${rowData.employee_no} - ${employeeDisplayNameRd(rowData)}` : '');
+    loadEmpAdjustmentsModal(employeeId);
+    new bootstrap.Modal(document.getElementById('empAdjustmentsModal')).show();
+});
+
 /* ---------- Raw Sync Data viewer (2026-08-21, explicit request: "ดูข้อมูลดิบได้...เพื่อทำการ Recheck
    ข้อมูลย้อนหลังได้") -- read-only, shows exactly what Origami sent (payroll/attendance fields only,
    see PayrollRunModel::RAW_SYNC_DATA_FIELDS for the scoped field list and why PII columns are
@@ -2461,8 +2537,14 @@ function initRunDetailTable(details) {
             // separate plain Name column right after it.
             { data: 'employee_no', orderable: false, render: (d, t, row) => {
                 const badges = [];
-                if (Number(row.line_override_count || 0) > 0) {
-                    badges.push(`<i class="fa-solid fa-sliders text-warning ms-1" title="${langData['row_badge_item_override'] || 'Has item override(s)'}"></i>`);
+                // 2026-09-10, Batch 3A item 5, explicit request: replace the fa-sliders icon (which
+                // only ever hinted "something changed," no detail) with a text badge showing HOW
+                // MANY items were adjusted (overrides + ad-hoc added items combined -- see
+                // PayrollRunModel::employeeAdjustments()'s own docblock), clickable to open a
+                // view-only modal listing each one (item/old value/new value/who/when).
+                const adjustedCount = Number(row.line_override_count || 0) + Number(row.manual_line_count || 0);
+                if (adjustedCount > 0) {
+                    badges.push(`<button type="button" class="badge bg-warning-subtle text-warning-emphasis border-0 ms-1 btn-view-emp-adjustments" data-employee-id="${row.employee_id}" title="${langData['row_badge_item_override'] || 'Has item override(s)'}">${(langData['row_badge_adjusted_n'] || 'Adjusted {n}').replace('{n}', adjustedCount)}</button>`);
                 }
                 if (row.has_calc_override) {
                     badges.push(`<i class="fa-solid fa-file-invoice-dollar text-info ms-1" title="${langData['row_badge_calc_override'] || 'Has tax/SSO override'}"></i>`);

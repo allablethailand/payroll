@@ -1131,6 +1131,7 @@ $(document).ready(function () {
     // initCompanySettingTable() itself guards against double-init and just reloads) so returning to
     // this tab after visiting another one still refreshes it.
     initCompanySettingTable();
+    loadPvdEmployerLadder();
     initStatutoryRateModalUI();
     if (typeof initSelect2 === 'function') {
         // 2026-09-04, T047 -- category/calc_base are now master_statutory_categories/_calc_bases
@@ -1168,6 +1169,7 @@ $(document).ready(function () {
         const tabId = $(e.target).attr('id');
         if (tabId === 'company-setting-tab') {
             initCompanySettingTable();
+            loadPvdEmployerLadder();
         }
         if (tabId === 'document-format-tab') {
             loadStatutoryFormatSettings();
@@ -1186,6 +1188,123 @@ $(document).ready(function () {
             $('#srHistoryModalFooter').removeClass('d-none');
         }
         $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+    });
+});
+
+/* ---------- PVD Employer Rate Ladder (2026-09-10, Batch 3A item 7a) ----------
+ * Company-level "อายุงานตั้งแต่ (ปี) -> % นายจ้าง" tier list. Add Tier only ever appends (the new
+ * row's "From" = the previous last row's "To"), Remove only ever pops the last row -- this keeps
+ * every save's own continuity (no gap/overlap, first row starts at 0, only the last is open-ended)
+ * trivially true by construction on the client side, matching PvdEmployerRateLadderModel::
+ * validateRows()'s own server-side rules exactly. 0 rows/toggle off = opt-out entirely (server-side
+ * clear()), falling back to today's flat TH_PVD employer rate unchanged. ---------- */
+let pvdLadderRows = [];
+function pvdLadderRowHtml(row, index, isLast) {
+    const minVal = row.min_service_years !== null && row.min_service_years !== undefined ? row.min_service_years : 0;
+    const maxVal = row.max_service_years !== null && row.max_service_years !== undefined ? row.max_service_years : '';
+    const rateVal = row.rate_percent !== null && row.rate_percent !== undefined ? row.rate_percent : '';
+    return `<div class="row g-2 align-items-end mb-2 pvd-ladder-row" data-index="${index}">
+        <div class="col-3">
+            <label class="form-label small mb-0" data-i18n="pvd_ladder_from_years">${langData['pvd_ladder_from_years'] || 'From (yrs)'}</label>
+            <input type="number" class="form-control form-control-sm pvd-ladder-min" step="0.01" min="0" value="${minVal}" readonly>
+        </div>
+        <div class="col-3">
+            <label class="form-label small mb-0" data-i18n="pvd_ladder_to_years">${langData['pvd_ladder_to_years'] || 'To (yrs)'}</label>
+            <input type="number" class="form-control form-control-sm pvd-ladder-max" step="0.01" min="0" value="${maxVal}" placeholder="&#8734;" ${isLast ? 'disabled' : ''}>
+        </div>
+        <div class="col-4">
+            <label class="form-label small mb-0" data-i18n="pvd_ladder_rate_percent">${langData['pvd_ladder_rate_percent'] || 'Employer Rate (%)'}</label>
+            <input type="number" class="form-control form-control-sm pvd-ladder-rate" step="0.01" min="0" max="100" value="${rateVal}">
+        </div>
+        <div class="col-2">
+            ${isLast && index > 0 ? `<button type="button" class="btn btn-sm btn-outline-danger pvd-ladder-remove-row w-100"><i class="fa-solid fa-trash"></i></button>` : ''}
+        </div>
+    </div>`;
+}
+function renderPvdLadderRows() {
+    $('#pvdLadderRowsWrap').html(pvdLadderRows.map((r, i) => pvdLadderRowHtml(r, i, i === pvdLadderRows.length - 1)).join(''));
+}
+function applyPvdLadderVisibility() {
+    const enabled = $('#pvdLadderEnabled').is(':checked');
+    $('#pvdLadderRowsWrap, #pvdLadderAddRowBtn').toggleClass('d-none', !enabled);
+}
+function collectPvdLadderRowsFromDom() {
+    const rows = [];
+    $('#pvdLadderRowsWrap .pvd-ladder-row').each(function () {
+        const min = parseFloat($(this).find('.pvd-ladder-min').val());
+        const $maxInput = $(this).find('.pvd-ladder-max');
+        const maxRaw = $maxInput.val();
+        const max = ($maxInput.is(':disabled') || maxRaw === '') ? null : parseFloat(maxRaw);
+        const rate = parseFloat($(this).find('.pvd-ladder-rate').val());
+        rows.push({
+            min_service_years: isNaN(min) ? 0 : min,
+            max_service_years: (max === null || isNaN(max)) ? null : max,
+            rate_percent: isNaN(rate) ? 0 : rate,
+        });
+    });
+    return rows;
+}
+function loadPvdEmployerLadder() {
+    $.ajax({
+        url: `${BASE_URL}/api/pvd-employer-rate-ladder.list`,
+        method: 'GET', dataType: 'json',
+        success: function (res) {
+            if (!res.status) return;
+            pvdLadderRows = res.data || [];
+            const enabled = pvdLadderRows.length > 0;
+            $('#pvdLadderEnabled').prop('checked', enabled);
+            applyPvdLadderVisibility();
+            if (!enabled) {
+                pvdLadderRows = [{ min_service_years: 0, max_service_years: null, rate_percent: null }];
+            }
+            renderPvdLadderRows();
+        }
+    });
+}
+$(document).on('change', '#pvdLadderEnabled', function () {
+    applyPvdLadderVisibility();
+    if ($(this).is(':checked') && pvdLadderRows.length === 0) {
+        pvdLadderRows = [{ min_service_years: 0, max_service_years: null, rate_percent: null }];
+        renderPvdLadderRows();
+    }
+});
+$(document).on('click', '#pvdLadderAddRowBtn', function () {
+    pvdLadderRows = collectPvdLadderRowsFromDom();
+    const last = pvdLadderRows[pvdLadderRows.length - 1];
+    if (!last || last.max_service_years === null || last.max_service_years === undefined) {
+        showWarning(langData['pvd_ladder_need_end_year_first'] || 'Please set an ending year for the last tier before adding a new one.');
+        return;
+    }
+    pvdLadderRows.push({ min_service_years: last.max_service_years, max_service_years: null, rate_percent: null });
+    renderPvdLadderRows();
+});
+$(document).on('click', '.pvd-ladder-remove-row', function () {
+    pvdLadderRows = collectPvdLadderRowsFromDom();
+    pvdLadderRows.pop();
+    renderPvdLadderRows();
+});
+$(document).on('click', '#pvdLadderSaveBtn', function () {
+    const enabled = $('#pvdLadderEnabled').is(':checked');
+    const rows = enabled ? collectPvdLadderRowsFromDom() : [];
+    const $btn = $(this);
+    setButtonLoading($btn, true);
+    $.ajax({
+        url: `${BASE_URL}/api/pvd-employer-rate-ladder.save`,
+        method: 'POST', contentType: 'application/json', dataType: 'json',
+        data: JSON.stringify({ rows: rows }),
+        success: function (res) {
+            setButtonLoading($btn, false);
+            if (res.status) {
+                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+                loadPvdEmployerLadder();
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () {
+            setButtonLoading($btn, false);
+            showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+        }
     });
 });
 
