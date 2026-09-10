@@ -3887,6 +3887,23 @@ html, body {
     font-weight: 500;
     padding: 0.65rem 1.25rem;
 }
+/* 2026-09-09, explicit follow-up correction to the comment above (2nd pass, w/ reference screenshot) --
+   this is the ACTUAL "icon in each report item" request: a solid-colored rounded-square tile with a
+   white glyph, not a plain image (see detail.js's own RD_REPORT_TILE_BY_TYPE/rdReportIconTileHtml()). */
+.rd-report-tile {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 0.95rem;
+}
+.rd-report-tile-orange { background: #FF9900; }
+.rd-report-tile-purple { background: #6f5fd6; }
+.rd-report-tile-green { background: #17c88b; }
 #runDetailTabs .nav-link.active {
     color: #b45f00;
     font-weight: 600;
@@ -3897,15 +3914,20 @@ html, body {
     border-radius: 0 0 14px 14px;
     box-shadow: 0 2px 10px rgba(16, 24, 40, .04);
 }
-#run-details-pane,
-#run-history-pane,
-#run-reports-pane {
+/* 2026-09-09, real bug found and fixed (explicit report: "ใน tab-pane ตอนนี้บาง Tab มี Padding บาง Tab
+   ชิดขอบ") -- this rule used to name only 3 specific tab-pane ids (#run-details-pane/#run-history-
+   pane/#run-reports-pane) instead of targeting every pane generically, so every OTHER tab on this
+   page (#run-employee-pane, #run-cash-pane, #run-bank-account-pane, #run-remittance-pane) got ZERO
+   padding from here and read flush against #runDetailTabsContent's own border -- not a deliberate
+   design choice, just 3 ids that happened to exist when this rule was first written, with every
+   later tab added without updating it to match. Switched to a child selector so EVERY tab-pane
+   inside this tab-content gets the same padding automatically, including any future one, with
+   nothing to remember to add here again. */
+#runDetailTabsContent > .tab-pane {
     padding: 1.75rem 1.5rem;
 }
 @media (min-width: 768px) {
-    #run-details-pane,
-    #run-history-pane,
-    #run-reports-pane {
+    #runDetailTabsContent > .tab-pane {
         padding: 2rem 2rem;
     }
 }
@@ -3923,23 +3945,20 @@ html, body {
     margin-top: 1.75rem;
 }
 /* 2026-09-02, explicit request: "ปรับให้ตาราง กว้างเท่า card ของตั้งค่ารอบ ตอนนี้ตารางมี padding นิดหน่อย"
-   (Process Detail's #tb_run_detail employee table) -- both #runSettingsPanel and this table sit as
-   direct children of the same .detail-section (padding: 1.5rem above), so their outer box already
-   spans the same width -- the perceived mismatch is Bootstrap's own default per-cell horizontal
-   padding on the table's FIRST/LAST column insetting its content noticeably further from the
-   section's edge than #runSettingsPanel's own tighter p-3 border-to-content gap. Zeroes just the
-   outer edge (first/last cell of every row, both thead/tbody/tfoot) so the table's visible content
-   starts/ends flush with the card next to it, without touching padding between inner columns. */
-.rd-detail-table-flush > thead > tr > th:first-child,
-.rd-detail-table-flush > tbody > tr > td:first-child,
-.rd-detail-table-flush > tfoot > tr > th:first-child {
-    padding-left: 0;
-}
-.rd-detail-table-flush > thead > tr > th:last-child,
-.rd-detail-table-flush > tbody > tr > td:last-child,
-.rd-detail-table-flush > tfoot > tr > th:last-child {
-    padding-right: 0;
-}
+   (Process Detail's #tb_run_detail employee table) -- ORIGINALLY zeroed the first/last cell's own
+   Bootstrap padding entirely here, back when this table sat in the same .detail-section as
+   #runSettingsPanel and needed to visually align flush against it.
+   2026-09-09, real bug found and fixed (explicit report: "ใน Column แรก และ Column สุดท้ายอยู่ชิดขอบ
+   เกินไป เลยดูไม่เรียบร้อย") -- that comparison target moved to a different tab entirely in an
+   earlier round (Run Settings is on "Details" now, this table is alone on "Employee"), AND the
+   table's own wrapper gutter was separately zeroed this same day (`#tb_run_detail_wrapper .row`
+   below) to fix a DIFFERENT padding complaint -- stacking BOTH fixes together left the first/last
+   column with ZERO breathing room on either side, reading as flush-to-the-edge/untidy rather than
+   merely "aligned." The wrapper-gutter fix alone already gets the table's overall box flush with
+   its surrounding .detail-section correctly; the cell-level override on top of that was now pure
+   over-correction, not a second necessary fix -- removed entirely, letting the first/last cell fall
+   back to Bootstrap's own normal `.table` cell padding (~0.75rem), the same amount every other
+   column already has. */
 /* 2026-09-02, same-day follow-up: "ตอนนี้แน่นไปหมด และความกว้างไม่เท่าเพื่อน" -- this table grew to 12
    columns (Code/Name split + a new Payment Method column, both added this same round) inside a
    container that's only as wide as its own .detail-section/#runSettingsPanel sibling. Bootstrap's
@@ -3954,6 +3973,54 @@ html, body {
    scrolling on every normal desktop width. */
 .rd-detail-table-flush {
     min-width: 1180px;
+}
+/* 2026-09-09, explicit request: "ด้วยที่ตารางมี d-md-flex justify-content-between align-items-center
+   col-12 dt-layout-full col-md ครอบ ทำให้เหมือนตารางมี padding เอาออกได้ไหมครับ ความกว้างไม่เท่าเพื่อน" --
+   real cause confirmed directly from the installed library source, not guessed: enabling this
+   table's search/length/info/pagination (same round as the "make it a real DataTable" request) made
+   `datatables.net-bs5`'s own layout renderer (dataTables.js's `layout._` function combined with
+   dataTables.bootstrap5.js's own class overrides) wrap every control row -- AND the table's own row
+   -- in genuine Bootstrap `.row`/`.col-*` grid markup (`.dt-layout-row.row`, each cell getting
+   `.col-12`/`.col-md`/`.col-md-auto` per its role). Those columns carry Bootstrap's standard gutter
+   padding (`--bs-gutter-x`, 1.5rem split -.75rem each side by default) same as any other Bootstrap
+   grid column -- which is exactly what "เหมือนตารางมี padding" (looks like the table has padding) is
+   describing, and why it read as narrower than sibling elements on this page that never go through
+   Bootstrap's grid at all (a plain .detail-section's own content, #runSettingsPanel, ...). Zeroing
+   `--bs-gutter-x` on this table's own auto-generated wrapper (`#<table-id>_wrapper`, DataTables'
+   own `settings.sTableId+'_wrapper'` convention -- so `#tb_run_detail_wrapper`) removes BOTH the
+   `.row`'s own negative margin AND every `.col-*` child's padding in one step (Bootstrap 5's own
+   documented way to fully collapse a row's gutter), without touching `--bs-gutter-x` anywhere else
+   in the app. Button-to-button spacing (the injected Recalculate/Verify/+Employee buttons' own
+   `ms-1`/`ms-2` utility classes) and the length-vs-search / info-vs-pagination left/right split
+   (`justify-content-between` on the row, pure flex distribution) are both independent of the gutter
+   variable, so neither is affected by removing it. */
+#tb_run_detail_wrapper .row {
+    --bs-gutter-x: 0;
+}
+/* 2026-09-09, real bug found and fixed (explicit report: "ปุ่มในตาราง Employee อยากให้แสดงอยู่ในแถวเดียว
+   ตอนนี้ตกแถว") -- root cause confirmed directly from the installed library source, not guessed:
+   `.dt-search`/`.dt-length` (dataTables.js core, `classes.container`) are each just a plain
+   `<div>` wrapping a `<label>Search:<input></label>`/`<label>Show <select> entries</label>` --
+   NOT flex containers at all. The 2 buttons appended inside each (Calculate/+Employee in
+   `.dt-search`, Verify(N)/Verify All in `.dt-length` -- see initRunDetailTable()'s initComplete in
+   detail.js) are plain sibling `<button>` elements (Bootstrap's own `.btn` is `display:inline-block`)
+   next to that `<label>`, so they laid out with ordinary inline-content line-wrapping the moment
+   the combined width didn't fit -- nothing to do with the OUTER `.dt-layout-cell`'s own
+   `d-md-flex` (that governs the cell's position within the row, not this div's own children).
+   `display:flex` + `flex-wrap:nowrap` here turns this div itself into the flex container so its
+   children (label+input, then each button) sit in one row on one line; `align-items:center` keeps
+   the button and the shorter input/select vertically centered against each other; `gap` replaces
+   the buttons' own now-redundant `ms-1`/`ms-2` margin utilities for consistent spacing including
+   against the label. `.table-responsive` (this table's own existing wrapper, unchanged) is still
+   the fallback that lets the whole row scroll horizontally on a genuinely narrow viewport, same
+   "no DataTables scrollX" convention `.rd-detail-table-flush`'s own min-width rule above already
+   established for the table itself. */
+#tb_run_detail_wrapper .dt-search,
+#tb_run_detail_wrapper .dt-length {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 0.35rem;
 }
 /* ==========================================================================
    Approval Workflow editor (public/js/setup/approval-workflow.js) -- redesign (2026-08-23,

@@ -24,7 +24,10 @@
         </div>
     </div>
 
-    <div class="card-surface mb-4">
+    <!-- 2026-09-09, explicit request: "ตรง Timeline ในหน้า Process Detail เอา card-surface mb-4 ออกครับ" --
+         was the same .card-surface treatment every other content block on this page uses; removed
+         here specifically, per this explicit request, leaving a plain unstyled wrapper. -->
+    <div>
         <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
             <div>
                 <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -39,6 +42,16 @@
                  moved into its own "Reports" tab (#run-reports-pane) instead. The List page's own
                  row dropdown (public/js/payroll/index.js) is UNCHANGED, still a dropdown there --
                  this request was specifically about the Detail page. -->
+            <!-- 2026-09-09, real bug found and fixed (explicit report: "ปุ่ม Export Excel และ pdf ตอนนี้
+                 ไม่ติดกัน อยากให้อยู่ติดกันและไปอยู่ขวาสุด") -- both buttons used to be direct children
+                 of the SAME outer `justify-content-between` flex container as the run-name/badge div
+                 above them, making `justify-content-between` distribute all 3 items (name-div, Excel,
+                 PDF) with equal space between EACH of them, instead of grouping the two buttons
+                 together at the far right. Wrapped them in their own `d-flex gap-2` group so the
+                 outer flex only ever sees 2 items again (name-div, button-group) -- now the whole
+                 group moves to the right edge as one unit, with the 2 buttons touching via gap-2
+                 inside it. -->
+            <div class="d-flex gap-2">
             <!-- 2026-08-31, same-day follow-up, explicit request: "ปุ่ม Export Excel ไม่ควรไปรวมอยู่ใน
                  รายงาน ย้ายไปอยู่กับ Timeline ดูตรงการจัดตำแหน่งให้หน่อยครับ ขอสวยๆ" -- this slot sat empty
                  since the dropdown above it was removed; reused here for PAYROLL_REGISTER's own
@@ -57,9 +70,63 @@
             <button type="button" class="btn btn-outline-danger btn-sm" id="btnPreviewRunRegisterPdf">
                 <i class="fa-solid fa-file-pdf me-1"></i><span data-i18n="export_pdf">Export PDF</span>
             </button>
+            </div>
         </div>
         <div class="process-timeline-wrap" id="runProcessTimeline"></div>
         <div id="nextStepBanner" class="next-step-banner"></div>
+    </div>
+
+    <!-- 2026-09-09, explicit request: "ส่วน Card Summary ให้ย้ายไปไว้ด้านบน Tab ใต้ Timeline ของรอบ" --
+         moved out of the "Details"/Employee tabs entirely (previously inside the Employee Breakdown
+         section, only visible on whichever tab held it) so the run's headline numbers stay visible no
+         matter which tab is open. 2026-09-01, explicit follow-up correction (still applies, unchanged
+         by the move): "ให้ขึ้นใน card พนักงานครับ มีแค่ 4 Card เหมือนเดิม" -- stays 4 cards total, Bank/
+         Cash breakdown as a subtext line inside "Employees" (#infoPaymentBreakdown).
+         2026-09-09, real bug found and fixed (explicit report: "วิธีจ่ายเงิน ตอนนี้ติ๊กแล้ว Employee ไม่
+         เปลี่ยนตามครับ") -- these 4 values used to be set ONCE from the run's own server-side totals
+         (renderRunHeader()) and never touched again, so ticking the Bank/Cash payment-method filter
+         (on the Employee tab, right above the table, #paymentMethodFilterWrap) correctly filtered the
+         table+footer but left these more prominent cards showing the stale, unfiltered total. Now
+         recomputed from the table's own currently-VISIBLE (filtered) rows on every draw -- see
+         updateSummaryCardsFromTable() in detail.js. -->
+    <div class="row g-3 mb-4" id="runSummaryCards">
+        <div class="col-6 col-md-3">
+            <div class="stat-card stat-card-info">
+                <div class="stat-card-icon"><i class="fa-solid fa-users"></i></div>
+                <div>
+                    <div class="stat-card-label" data-i18n="table_employee_count">Employees</div>
+                    <div class="stat-card-value" id="infoEmployeeCount">-</div>
+                    <div class="stat-card-sub" id="infoPaymentBreakdown"></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card stat-card-success">
+                <div class="stat-card-icon"><i class="fa-solid fa-sack-dollar"></i></div>
+                <div>
+                    <div class="stat-card-label" data-i18n="table_gross_amount">Gross</div>
+                    <div class="stat-card-value" id="infoGross">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card stat-card-danger">
+                <div class="stat-card-icon"><i class="fa-solid fa-minus"></i></div>
+                <div>
+                    <div class="stat-card-label" data-i18n="table_deduction_amount">Deductions</div>
+                    <div class="stat-card-value" id="infoDeduction">-</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-3">
+            <div class="stat-card stat-card-primary">
+                <div class="stat-card-icon"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+                <div>
+                    <div class="stat-card-label" data-i18n="table_net_pay">Net Pay</div>
+                    <div class="stat-card-value" id="infoNet">-</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div class="alert alert-danger small d-none" id="validationErrorsBanner"></div>
@@ -96,12 +163,29 @@
                 <i class="fa-solid fa-circle-info me-1"></i><span data-i18n="tab_run_details">Details</span>
             </button>
         </li>
+        <!-- 2026-09-09, explicit request: "แยก Employee และการคำนวณไว้อีก Tab ครับ...ใน Tab แรกจะเป็นการ
+             ตั้งค่าทั้งหมด" -- the Employee Breakdown table + everything that ACTS on it (auto-recalculate/
+             recalc reminder/bulk Verify) moved out of the "Details" tab into this new one; "Details"
+             keeps Run Information plus the settings/config that used to compete with the employee
+             table for the same vertical space (Run Settings, Payment Method filter) -- see that tab's
+             own comments further down. Reuses the SAME "Employee Breakdown" wording/icon this section
+             heading already used before the split (data-i18n="employee_breakdown"), no new i18n key
+             needed. -->
+        <li class="nav-item" role="presentation">
+            <button class="nav-link text-secondary" id="run-employee-tab" data-bs-toggle="tab" data-bs-target="#run-employee-pane" type="button" role="tab" aria-controls="run-employee-pane" aria-selected="false">
+                <i class="fa-solid fa-users me-1"></i><span data-i18n="employee_breakdown">Employee Breakdown</span>
+            </button>
+        </li>
         <!-- 2026-08-29, same-day follow-up: "ตรงปุ่มออกรายงาน ให้ปรับเป็นเพิ่มอีก Tab ก่อน Action History
              และแสดงเป็นตารางรายการไว้" -- was a dropdown button in the page header
              (renderRunReportsButtons(), now removed) -- see loadRunReportsTab() in detail.js. -->
+        <!-- 2026-09-09, explicit follow-up: "เอา icon ออกจาก Tab ด้วยครับ" -- the "Tab Report Icon ให้เหมือน
+             Menu Report" request just above turned out to be about the ITEMS inside this tab's own list
+             (see detail.js's own RD_REPORT_TILE_BY_TYPE/rdReportIconTileHtml()), not this tab button --
+             removed entirely here, plain text label like every other place this correction applies. -->
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary" id="run-reports-tab" data-bs-toggle="tab" data-bs-target="#run-reports-pane" type="button" role="tab" aria-controls="run-reports-pane" aria-selected="false">
-                <i class="fa-solid fa-file-export me-1"></i><span data-i18n="tab_reports">Reports</span>
+                <span data-i18n="tab_reports">Reports</span>
             </button>
         </li>
         <!-- 2026-09-02, explicit request: "Tab ที่แสดงผลอยู่ตอนนี้มีส่วนไหนที่ยุบรวมกันได้" -- the
@@ -153,14 +237,19 @@
     </ul>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5" id="runDetailTabsContent">
         <div class="tab-pane fade show active" id="run-details-pane" role="tabpanel" aria-labelledby="run-details-tab" tabindex="0">
-          <div class="detail-section">
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+          <!-- 2026-09-09, explicit request: "ใน Tab Information เอา หัวข้อออกมาไว้นอก detail-section ครับ" --
+               the section heading (numbered badge + title + any header-row action button) now sits
+               ABOVE the bordered .detail-section card instead of inside its own padding, for both
+               sections in this tab -- purely a markup/visual reorder, no ids moved, no JS changes
+               needed either way. -->
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                 <h6 class="text-secondary fw-bold mb-0">
                     <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">1</label>
                     <span data-i18n="run_info">Run Information</span>
                 </h6>
                 <div id="runEditButtonWrap"></div>
-            </div>
+          </div>
+          <div class="detail-section">
             <div class="row g-4">
                 <div class="col-6 col-md-3">
                     <div class="text-muted small" data-i18n="modal_cycle">Payroll Schedule</div>
@@ -195,107 +284,48 @@
                 </div>
             </div>
           </div>
-          <div class="detail-section">
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+          <!-- 2026-09-09, explicit follow-up: "การตั้งค่าของรอบ หมายถึง margin จากกรอบของข้อ 1 ครับ ตอนนี้ไป
+               ติดข้อ 1" -- clarifies the earlier margin fix targeted the wrong element. Moving the
+               section headings OUTSIDE .detail-section (previous round) broke `.detail-section +
+               .detail-section`'s own adjacent-sibling margin-top rule (style.css) -- a plain heading
+               div now sits between the two .detail-section boxes, so they're no longer direct
+               siblings and that rule never fires, leaving section 2's heading sitting flush against
+               section 1's box with zero gap. mt-4 here (on the heading wrapper, not the panel inside
+               it) is what actually recreates that spacing. -->
+          <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3 mt-4">
                 <h6 class="text-secondary fw-bold mb-0">
                     <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">2</label>
-                    <span data-i18n="employee_breakdown">Employee Breakdown</span>
-                    <!-- 2026-08-29, explicit request: "ตอน View Mode...อยากให้ปรับให้ดูเป็น View อยากเดียว
-                         ...จะได้ดูแตกต่างจากตอนสร้างและแก้ไข" -- shown whenever currentRun.state !== 'draft'
-                         (applyRunDetailViewMode() in detail.js), the one always-visible cue that this
-                         run's Employee Breakdown is read-only, on top of the individual controls
-                         (checkboxes, bulk bar, Verify/Lock, Manage Items) that already disable/hide
-                         themselves per-control. -->
-                    <span class="badge bg-secondary-subtle text-secondary ms-2 d-none" id="runDetailViewModeBadge"><i class="fa-solid fa-eye me-1"></i><span data-i18n="view_mode">View Mode</span></span>
+                    <span data-i18n="run_settings_title">Run Settings</span>
                 </h6>
-                <div id="runRecalculateButtonWrap"></div>
-            </div>
-            <!-- 2026-08-31, explicit request: "ต้องการให้มี Block เตือนว่า...ให้กดคำนวณใหม่ทุกครั้ง...และเพิ่ม
-                 Function ให้มี checkbox ติ๊กว่าคำนวณอัตโนมัติหลังจากที่แก้ไขข้อมูลทันที...แต่ถ้าติ๊กคำนวณอัตโนมัติ
-                 Recommend ให้กดจะไม่แสดง" -- the checkbox itself (persisted per-run, see
-                 PayrollRunModel::setAutoRecalculate()) is ALWAYS visible so its current state is
-                 never ambiguous; the reminder banner beneath toggles with it (renderRecalcReminder()
-                 in detail.js) -- hidden while auto-recalculate is on, shown otherwise. Draft-only
-                 (recalculate() itself is only ever meaningful for a draft run), same visibility gate
-                 as #runRecalculateButtonWrap's own buttons. -->
-            <div class="d-flex align-items-center gap-2 mb-2 d-none" id="autoRecalculateWrap">
-                <div class="form-check form-switch mb-0">
-                    <input class="form-check-input" type="checkbox" id="chkAutoRecalculate">
-                    <label class="form-check-label small text-secondary" for="chkAutoRecalculate" data-i18n="auto_recalculate_label">Automatically recalculate right after editing data</label>
-                </div>
-            </div>
-            <div class="alert alert-warning small d-none align-items-center gap-2 mb-3" id="recalcReminderBanner">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <span data-i18n="recalc_reminder_message">If you've edited employee data or anything related to these numbers, click "Recalculate" every time to keep this run up to date.</span>
-            </div>
-            <!-- 2026-09-01, explicit follow-up correction: "ให้ขึ้นใน card พนักงานครับ มีแค่ 4 Card
-                 เหมือนเดิม" -- the 2026-08-31 attempt (a genuinely separate 2nd grid row, 2 more
-                 cards) was wrong; stays 4 cards total. The Bank/Cash breakdown now lives as a small
-                 subtext line INSIDE the existing "Employees" card instead (see #infoPaymentBreakdown,
-                 populated by updatePaymentMethodSummary() in detail.js). -->
-            <div class="row g-3 mb-5">
-                <div class="col-6 col-md-3">
-                    <div class="stat-card stat-card-info">
-                        <div class="stat-card-icon"><i class="fa-solid fa-users"></i></div>
-                        <div>
-                            <div class="stat-card-label" data-i18n="table_employee_count">Employees</div>
-                            <div class="stat-card-value" id="infoEmployeeCount">-</div>
-                            <div class="stat-card-sub" id="infoPaymentBreakdown"></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-3">
-                    <div class="stat-card stat-card-success">
-                        <div class="stat-card-icon"><i class="fa-solid fa-sack-dollar"></i></div>
-                        <div>
-                            <div class="stat-card-label" data-i18n="table_gross_amount">Gross</div>
-                            <div class="stat-card-value" id="infoGross">-</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-3">
-                    <div class="stat-card stat-card-danger">
-                        <div class="stat-card-icon"><i class="fa-solid fa-minus"></i></div>
-                        <div>
-                            <div class="stat-card-label" data-i18n="table_deduction_amount">Deductions</div>
-                            <div class="stat-card-value" id="infoDeduction">-</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-6 col-md-3">
-                    <div class="stat-card stat-card-primary">
-                        <div class="stat-card-icon"><i class="fa-solid fa-hand-holding-dollar"></i></div>
-                        <div>
-                            <div class="stat-card-label" data-i18n="table_net_pay">Net Pay</div>
-                            <div class="stat-card-value" id="infoNet">-</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <!-- 2026-08-29, explicit request: "เพิ่มให้สามารถเลือกเอาเงินเดือนออกจากการคำนวณได้ หรือค่าอื่นๆที่ไม่
+          </div>
+          <div class="detail-section">
+            <!-- 2026-09-09, explicit request: "แยก Employee และการคำนวณไว้อีก Tab ครับ...ใน Tab แรกจะเป็นการ
+                 ตั้งค่าทั้งหมด" -- Run Settings (Tax/SSO defaults + Exclude-from-Calculation) moved here
+                 from the old "Employee Breakdown" section, which is now its own "Employee" tab (see
+                 #run-employee-pane below) -- this stays with Run Information as config, not something
+                 that redraws with the employee table.
+                 2026-08-29, explicit request: "เพิ่มให้สามารถเลือกเอาเงินเดือนออกจากการคำนวณได้ หรือค่าอื่นๆที่ไม่
                  นำมาคำนวณ ทั้ง template เลย...และต้องกำหนดได้ด้วยว่าคำนวณภาษี ไม่คำนวณภาษี ส่งประกันสังคมไหม
                  กำหนดแบบทั้งหมด และรายบุคคลได้" -- whole-run defaults (a per-employee override lives in
                  each row's own "Items" button -> "Tax & SSO" tab instead, see manageLinesModal).
                  2026-08-29, same-day follow-up: "ในหน้า Process Detail แบบ View Mode จะต้องบอกรายละเอียด
                  ของการตั้งค่ารอบด้วยครับ" -- was hidden entirely once a run left draft; now ALWAYS
                  visible, read-only (every control disabled + Save hidden) once the run is no longer
-                 draft -- see loadRunSettingsPanel()'s own docblock in detail.js. Collapsed by
-                 default -- most runs never touch this, no need for it to compete with the employee
-                 table for space. -->
-            <div class="border rounded-3 p-3 mb-3 d-none" id="runSettingsPanel">
-                <div class="d-flex justify-content-between align-items-center" id="runSettingsToggle">
-                    <h6 class="mb-0 text-secondary fw-bold"><i class="fa-solid fa-sliders me-2 text-brand"></i><span data-i18n="run_settings_title">Run Settings</span></h6>
-                    <i class="fa-solid fa-chevron-down" id="runSettingsChevron"></i>
-                </div>
-                <!-- 2026-08-29, same-day follow-up: "ตรงการตั้งค่าของรอบ ใน View Mode ให้แสดงเป็นภาพรวมเลยครับ
-                     โดยที่ไม่ต้องเปิด toggle มาดู และให้ขึ้นเฉพาะรายการที่เลือก ถ้าไม่เลือกก็ให้แสดงคำให้ถูกต้องครับ
-                     ว่าเงื่อนไขเป็นแบบไหน" -- once a run leaves draft, this replaces the collapsible editable
-                     form entirely (never needs a click to reveal): plain text for whichever Tax/SSO
-                     condition was actually selected (falls back to "Each Employee's Own Setting" text
-                     when nothing was overridden -- never blank), and ONLY the items genuinely ticked
-                     as excluded (or a correct "nothing excluded" sentence when none are) -- see
-                     renderRunSettingsSummary() in detail.js. Draft mode never populates this div at
-                     all (#runSettingsBody below is still the one true editable UI there, unchanged). -->
+                 draft -- see loadRunSettingsPanel()'s own docblock in detail.js.
+                 2026-09-09, same-day follow-up: "การตั้งค่าของรอบ ให้ expand ได้เลยไม่ต้องหุบแล้ว เพราะมีพื้นที่
+                 ว่างแล้วครับ" -- used to be collapsed by default (a click-to-reveal chevron toggle) since
+                 it competed with the Employee table for space on the same tab; now that it's alone on
+                 its own tab there's no more space pressure, so it's simply always expanded for a draft
+                 run -- the collapse/chevron affordance (and its own click handler) was removed
+                 outright, not just defaulted open (see loadRunSettingsPanel()'s own docblock in
+                 detail.js for what changed there). -->
+            <!-- 2026-09-09, explicit follow-up: "id runSettingsPanel ตัด class ทิ้งไปเลยครับ" -- the
+                 border/rounded/padding/margin classes from the previous round were dropped outright
+                 (not just the border/rounded part) -- `d-none` is the only class kept, since
+                 renderRunSettingsPanel()/loadRunSettingsPanel() in detail.js still need it to hide
+                 this whole block until the run's settings have actually loaded. The real top-spacing
+                 fix lives on the section heading right above instead (see that div's own comment). -->
+            <div class="d-none" id="runSettingsPanel">
                 <div class="mt-3" id="runSettingsSummary"></div>
                 <div class="d-none mt-3" id="runSettingsBody">
                     <p class="text-muted small mb-3" data-i18n="run_settings_hint">Default settings applied to every employee in this run -- an individual employee can still be adjusted from their own row's "Items" button.</p>
@@ -343,7 +373,19 @@
                     </div>
                     <div class="mb-2">
                         <label class="form-label fw-semibold small mb-1" data-i18n="run_settings_excluded_items">Exclude from Calculation</label>
-                        <div class="text-muted small mb-2" data-i18n="run_settings_excluded_items_hint">Ticked items are left out of every employee's calculation for this run (base salary and/or any earning/deduction item).</div>
+                        <!-- 2026-09-09, explicit request: "รายการที่ติ๊กจะไม่ถูกนำมาคำนวณ...ให้เป็นติ๊ก Default
+                             ติ๊กออกคือไม่เอาครับ" -- checkbox meaning flipped: was "ticked = excluded"
+                             (nothing ticked by default); now "ticked = included/calculated normally"
+                             (every item defaults to ticked), untick an item to exclude it instead --
+                             see loadRunSettingsPanel()/the Save click handler's own comment in
+                             detail.js for where this is actually computed. Only the hint text below
+                             and the checked/collect-on-save logic changed -- the STORED/SUBMITTED
+                             `excluded_item_codes` shape is exactly the same as before (still literally
+                             "the codes that are excluded"), so nothing else that reads it (the
+                             per-employee "Exclude from This Employee's Calculation" checklist,
+                             renderRunSettingsSummary()'s View Mode overview, the backend) needed to
+                             change at all. -->
+                        <div class="text-muted small mb-2" data-i18n="run_settings_excluded_items_hint">Ticked items are calculated normally for every employee in this run. Untick an item to leave it out (base salary and/or any earning/deduction item).</div>
                         <!-- 2026-08-29, same-day follow-up: "รายรับให้เป็นสีเขียว รายจ่ายให้เป็นสีแดง และ
                              แยกกรอบกันอยู่ครับ" -- built by itemChecklistBoxesHtml() in detail.js into 2
                              (or 3, incl. Base Salary) separate bordered boxes (plain white + colored
@@ -358,6 +400,57 @@
                     </div>
                 </div>
             </div>
+          </div>
+        </div>
+
+        <!-- 2026-09-09, explicit request: "แยก Employee และการคำนวณไว้อีก Tab ครับ และปรับให้เป็น Datatable" --
+             the Employee Breakdown table (already a real client-side DataTable, see
+             initRunDetailTable() in detail.js) plus everything that ACTS on it (auto-recalculate/
+             recalc reminder banner/bulk Verify/the Payment Method filter) moved here from the
+             "Details" tab into their own tab, so config (Details tab) and the actual per-employee
+             results/actions (this tab) don't compete for the same screen. -->
+        <!-- 2026-09-09, explicit request: "ตัด detail-section ออกไปเลยจาก Tab พนักงาน" -- was wrapped in
+             the same .detail-section bordered card as "Details" tab's own sections; that box (border +
+             its own 1.5rem padding) doubled up against #runDetailTabsContent's own newly-uniform
+             tab-pane padding, boxing this content twice over. Dropped entirely -- content now sits
+             directly in the tab-pane's own padding, matching the Cash Payments/Bank Account
+             Assignment/Third-Party Remittance tabs, none of which ever used .detail-section either. -->
+        <div class="tab-pane fade" id="run-employee-pane" role="tabpanel" aria-labelledby="run-employee-tab" tabindex="0">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+                <h6 class="text-secondary fw-bold mb-0">
+                    <span data-i18n="employee_breakdown">Employee Breakdown</span>
+                    <!-- 2026-08-29, explicit request: "ตอน View Mode...อยากให้ปรับให้ดูเป็น View อยากเดียว
+                         ...จะได้ดูแตกต่างจากตอนสร้างและแก้ไข" -- shown whenever currentRun.state !== 'draft'
+                         (applyRunDetailViewMode() in detail.js), the one always-visible cue that this
+                         run's Employee Breakdown is read-only, on top of the individual controls
+                         (checkboxes, bulk bar, Verify/Lock, Manage Items) that already disable/hide
+                         themselves per-control. -->
+                    <span class="badge bg-secondary-subtle text-secondary ms-2 d-none" id="runDetailViewModeBadge"><i class="fa-solid fa-eye me-1"></i><span data-i18n="view_mode">View Mode</span></span>
+                </h6>
+                <!-- 2026-09-09, explicit request: "ย้ายปุ่มคำนวณใหม่...มาแสดงต่อ แสดง 50 รายการ" -- #btnRecalculate
+                     no longer renders here; it's injected into the Employee table's own `.dt-length`
+                     (initRunDetailTable()'s initComplete in detail.js), next to the "Show 50 entries"
+                     control, same as the Join Employees button living in `.dt-search` on the other
+                     side of that same row. -->
+            </div>
+            <!-- 2026-08-31, explicit request: "ต้องการให้มี Block เตือนว่า...ให้กดคำนวณใหม่ทุกครั้ง...และเพิ่ม
+                 Function ให้มี checkbox ติ๊กว่าคำนวณอัตโนมัติหลังจากที่แก้ไขข้อมูลทันที...แต่ถ้าติ๊กคำนวณอัตโนมัติ
+                 Recommend ให้กดจะไม่แสดง" -- the checkbox itself (persisted per-run, see
+                 PayrollRunModel::setAutoRecalculate()) is ALWAYS visible so its current state is
+                 never ambiguous; the reminder banner beneath toggles with it (renderRecalcReminder()
+                 in detail.js) -- hidden while auto-recalculate is on, shown otherwise. Draft-only
+                 (recalculate() itself is only ever meaningful for a draft run), same visibility gate
+                 as #runRecalculateButtonWrap's own buttons. -->
+            <div class="d-flex align-items-center gap-2 mb-2 d-none" id="autoRecalculateWrap">
+                <div class="form-check form-switch mb-0">
+                    <input class="form-check-input" type="checkbox" id="chkAutoRecalculate">
+                    <label class="form-check-label small text-secondary" for="chkAutoRecalculate" data-i18n="auto_recalculate_label">Automatically recalculate right after editing data</label>
+                </div>
+            </div>
+            <div class="alert alert-warning small d-none align-items-center gap-2 mb-3" id="recalcReminderBanner">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                <span data-i18n="recalc_reminder_message">If you've edited employee data or anything related to these numbers, click "Recalculate" every time to keep this run up to date.</span>
+            </div>
             <div id="noDetailsYet" class="text-center text-secondary py-4 d-none">
                 <i class="fa-solid fa-calculator fa-2x mb-3 text-secondary opacity-50"></i>
                 <span data-i18n="no_details_yet">No employees calculated yet. Click "Recalculate" to compute this run.</span>
@@ -366,8 +459,15 @@
                  พนักงานที่รับผ่านบัญชี และเงินสดครับ" -- confirmed via AskUserQuestion: 2 independent
                  checkboxes (not a 3-way radio), both checked by default (= show everyone); unticking
                  one hides that group. Filters #tb_run_detail client-side against its own
-                 payment_method_code column (see registerPaymentMethodSearchFilter() in detail.js) -- purely a view filter,
-                 changes nothing about the underlying data. -->
+                 payment_method_code column (see registerPaymentMethodSearchFilter() in detail.js) --
+                 purely a view filter, changes nothing about the underlying data.
+                 2026-09-09, explicit follow-up: "วิธีจ่ายเงิน ตัดออกครับ ไม่ใช่การตั้งค่า แต่ให้เพิ่มเป็น filter
+                 ใน Tab employee" -- this had briefly moved to the "Details" tab (as its own numbered
+                 section) in the same day's earlier tab-split round; moved back here, right above the
+                 table it actually filters, since it's a view filter, not a saved run setting. The
+                 checkbox ids are unchanged either way -- the Summary Cards above the tabs
+                 (#runSummaryCards) still update live from this filter regardless of which tab it
+                 lives on (see updateSummaryCardsFromTable()'s own docblock in detail.js). -->
             <!-- 2026-09-02, same-day follow-up: "ให้เลือกทั้งหมดได้ด้วย" -- filterPaymentAll is a plain
                  select-all checkbox (checks/unchecks both Bank and Cash together, see
                  syncPaymentMethodAllCheckbox() in detail.js), NOT a 3rd filter state of its own --
@@ -389,23 +489,17 @@
                     <label class="form-check-label small" for="filterPaymentCash" data-i18n="table_payment_cash">Cash</label>
                 </div>
             </div>
-            <!-- 2026-08-29, explicit request: "สามารถมี checkbox เลือกได้ทีละหลายคนในการ Verify" -- same
-                 visual language as .bulk-pull-bar elsewhere in this app (warning/amber tint), hidden
-                 until at least one row checkbox is checked. Lock retired 2026-08-31 (Verify itself now
-                 freezes recalculation). 2026-08-31, same-day layout review (explicit request: "ช่วยดูเรื่อง
-                 Process ส่วนนี้ไม่ให้มีความซ้ำซ้อน...จัดวางปุ่ม") -- #btnVerifyAllEmployees moved here (was
-                 in the section header next to Join Employees/Recalculate, competing with them for
-                 attention) so every "Verify" action lives in one place, right where its own
-                 selection-scoped sibling already is, instead of being split across 2 different rows
-                 of the page. Always visible (not gated on a selection existing) since it's a
-                 whole-process action independent of the checkboxes below it. -->
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
-                <div class="bulk-pull-bar d-none d-inline-flex mb-0" id="runDetailBulkBar">
-                    <span class="bulk-pull-bar-count"><span id="runDetailBulkCount">0</span> <span data-i18n="employees_selected">employee(s) selected</span></span>
-                    <button type="button" class="btn btn-sm btn-outline-success" id="btnBulkVerify"><i class="fa-solid fa-check-double me-1"></i><span data-i18n="action_verify">Verify</span></button>
-                </div>
-                <div id="runVerifyAllButtonWrap" class="ms-auto"></div>
-            </div>
+            <!-- 2026-08-29, explicit request: "สามารถมี checkbox เลือกได้ทีละหลายคนในการ Verify" -- Lock
+                 retired 2026-08-31 (Verify itself now freezes recalculation).
+                 2026-09-09, explicit follow-up across 3 rounds -- final layout: "เอาคำนวณใหม่ไปวางต่อ
+                 search แล้วตามด้วย ปุ่ม Add พนักงาน...แล้วเอาปุ่ม Verify All มาไว้ต่อจาก ตรวจสอบแล้ว...และ
+                 ปรับให้ขนาดปุ่มสูงเท่ากับช่อง search" -- every calculation-related button that used to
+                 live in this tab as its own standalone row (Recalculate in the section header,
+                 #runVerifyAllButtonWrap here, #runDetailBulkBar's amber .bulk-pull-bar box + its own
+                 #btnBulkVerify) is now injected together into the Employee table's own
+                 `.dt-search`/`.dt-length` control row instead (see initRunDetailTable()'s
+                 initComplete in detail.js for the exact order/sizing) -- this whole row is retired,
+                 not left as a dead empty wrapper. -->
             <!-- 2026-08-29, explicit request: "ตารางตรงพนักงาน ปรับให้แสดงเป็น 2 แถวแบบไม่ hide column
                  ไหมครับ เพราะ expand ดูไม่สะดวก" -- was 12 separate DataTables Responsive columns
                  (collapsing behind an expand-row toggle on narrower widths, per the user's own
@@ -415,16 +509,12 @@
                  since the combined version wasn't clear enough. responsive:false in detail.js's own
                  initRunDetailTable() means NOTHING ever hides behind an expand arrow either way; a
                  .table-responsive wrapper below gives a plain horizontal scrollbar as the only
-                 narrow-viewport fallback, same as every other wide DataTable in this app. -->
-            <!-- 2026-09-02, explicit request: "ปรับให้ตาราง กว้างเท่า card ของตั้งค่ารอบ ตอนนี้ตารางมี padding
-                 นิดหน่อย" -- #runSettingsPanel above sits flush against .detail-section's own edges
-                 (no extra horizontal padding of its own beyond that shared ancestor); .table-responsive
-                 doesn't add any padding itself, but the table's OWN cell padding (Bootstrap's default
-                 `.table > :not(caption) > * > *` padding, ~0.75rem) reads as a narrower table than the
-                 card next to it once its border is compared side-by-side with the card's own straight
-                 edge. rd-detail-table-flush zeroes that horizontal breathing room on the OUTERMOST
-                 edge only (first/last cell of every row) via style.css so the table's border lines up
-                 exactly with #runSettingsPanel's own border, without touching inter-column padding. -->
+                 narrow-viewport fallback, same as every other wide DataTable in this app.
+                 2026-09-09: this table's own tab isn't the default-active one anymore (see the
+                 tab-split comment above) -- a `shown.bs.tab` handler on #run-employee-tab calls
+                 `.columns.adjust()` (detail.js) so column widths, which DataTables measures at
+                 construction/redraw time, are recalculated correctly the first time this tab actually
+                 becomes visible instead of staying sized for a 0-width hidden container. -->
             <div class="table-responsive">
             <table class="table table-hover table-border align-middle w-100 rd-detail-table-flush" id="tb_run_detail">
                 <thead class="table-light text-secondary">
@@ -484,7 +574,6 @@
                 </tfoot>
             </table>
             </div>
-          </div>
         </div>
 
         <!-- 2026-08-29, explicit request: "ใส่ Comment ได้ของแต่ละคน กดแล้วเปิดเป็น Modal ให้ใส่ Comment
@@ -1085,45 +1174,49 @@
                              (required), same as the Create form's own #run_merge_target_id. -->
                         <div class="run-offcycle-panel d-none" id="edit_run_offcycle_panel">
                             <div class="run-offcycle-panel-title"><i class="fa-solid fa-sliders"></i> <span data-i18n="run_offcycle_panel_title">Off-schedule round options</span></div>
-                            <div class="row mb-3" id="edit_run_merge_choice_row">
+                            <!-- 2026-09-09, round-creation flow audit Phase 3 -- same collapse as the Create
+                                 form's own #run_merge_into_row (see that markup's own comment in modals.php):
+                                 ONE flat 3-way choice instead of the OLD 2-level editRunMergeChoice(new/
+                                 reference) + editRunMergeTargetMode(existing/future_cycle) nesting, driving
+                                 the SAME underlying legacy radios below (now hidden) via
+                                 syncEditRunMergeIntoUiRd() in detail.js. -->
+                            <div class="row mb-3" id="edit_run_merge_into_row">
                                 <div class="col-sm-3 align-self-center">
-                                    <label class="form-label mb-1" data-i18n="run_merge_choice_label">Create this round as</label>
+                                    <label class="form-label mb-1" data-i18n="run_merge_into_label">Fold this round into another one?</label>
                                 </div>
                                 <div class="col-sm-9">
                                     <div class="run-subchoice-toggle">
-                                        <label class="run-subchoice-btn active" for="edit_run_merge_choice_new">
-                                            <input type="radio" name="editRunMergeChoice" id="edit_run_merge_choice_new" value="new" checked>
+                                        <label class="run-subchoice-btn active" for="edit_run_merge_into_standalone">
+                                            <input type="radio" name="editRunMergeInto" id="edit_run_merge_into_standalone" value="standalone" checked>
                                             <i class="fa-solid fa-file-circle-plus"></i>
-                                            <span data-i18n="run_merge_choice_new">Open a new round</span>
+                                            <span data-i18n="run_merge_into_standalone">Keep separate</span>
                                         </label>
-                                        <label class="run-subchoice-btn" for="edit_run_merge_choice_reference">
-                                            <input type="radio" name="editRunMergeChoice" id="edit_run_merge_choice_reference" value="reference">
+                                        <label class="run-subchoice-btn" for="edit_run_merge_into_existing">
+                                            <input type="radio" name="editRunMergeInto" id="edit_run_merge_into_existing" value="existing">
                                             <i class="fa-solid fa-link"></i>
-                                            <span data-i18n="run_merge_choice_reference">Reference an existing round</span>
+                                            <span data-i18n="run_merge_into_existing">Merge into an existing round</span>
+                                        </label>
+                                        <label class="run-subchoice-btn" for="edit_run_merge_into_future_cycle">
+                                            <input type="radio" name="editRunMergeInto" id="edit_run_merge_into_future_cycle" value="future_cycle">
+                                            <i class="fa-solid fa-hourglass-half"></i>
+                                            <span data-i18n="run_merge_into_future_cycle">Merge into a future round (matched by payment month)</span>
                                         </label>
                                     </div>
                                 </div>
+                            </div>
+                            <!-- Legacy controls -- never shown, driven programmatically. -->
+                            <div class="d-none">
+                                <input type="radio" name="editRunMergeChoice" id="edit_run_merge_choice_new" value="new" checked>
+                                <input type="radio" name="editRunMergeChoice" id="edit_run_merge_choice_reference" value="reference">
                             </div>
                             <div class="row mb-3 d-none" id="edit_run_merge_target_row">
                                 <div class="col-sm-3 align-self-center">
                                     <label class="form-label mb-1" data-i18n="run_merge_target_label">Target Round</label>
                                 </div>
                                 <div class="col-sm-9">
-                                    <!-- 2026-09-06, same sub-toggle as the Create form's own
-                                         #run_merge_target_mode_row -- see this file's own comment
-                                         there and PayrollRunModel::resolveMergeTargetSpec()'s
-                                         docblock for the full mechanism. -->
-                                    <div class="run-subchoice-toggle mb-2" id="edit_run_merge_target_mode_row">
-                                        <label class="run-subchoice-btn active" for="edit_run_merge_target_mode_existing">
-                                            <input type="radio" name="editRunMergeTargetMode" id="edit_run_merge_target_mode_existing" value="existing" checked>
-                                            <i class="fa-solid fa-list-check"></i>
-                                            <span data-i18n="run_merge_target_mode_existing">Existing round</span>
-                                        </label>
-                                        <label class="run-subchoice-btn" for="edit_run_merge_target_mode_future_cycle">
-                                            <input type="radio" name="editRunMergeTargetMode" id="edit_run_merge_target_mode_future_cycle" value="future_cycle">
-                                            <i class="fa-solid fa-hourglass-half"></i>
-                                            <span data-i18n="run_merge_target_mode_future_cycle">Future round (not created yet)</span>
-                                        </label>
+                                    <div class="d-none">
+                                        <input type="radio" name="editRunMergeTargetMode" id="edit_run_merge_target_mode_existing" value="existing" checked>
+                                        <input type="radio" name="editRunMergeTargetMode" id="edit_run_merge_target_mode_future_cycle" value="future_cycle">
                                     </div>
                                     <div id="edit_run_merge_target_existing_wrap">
                                         <select class="form-select select2-remote" id="edit_run_merge_target_id" name="merge_target_run_id"
@@ -1134,16 +1227,34 @@
                                         <select class="form-select select2-remote mb-2" id="edit_run_merge_target_cycle_id" name="merge_target_cycle_id"
                                                 data-api="/api/payroll-cycle.options"></select>
                                         <div class="row g-2">
+                                            <!-- 2026-09-09, real bug found and fixed (explicit report: "Date เลือกไม่ได้")
+                                                 -- same fix as index.js's own Create form: both fields used to be
+                                                 `readonly` with no `.datepicker` class, auto-filled ONLY from picking
+                                                 a Target cycle above, with no way to adjust by hand. Now real,
+                                                 editable datepickers -- see initDatepicker() calls in detail.js. -->
                                             <div class="col-6">
                                                 <label class="form-label mb-1 small" data-i18n="run_merge_target_period_start">Target Period Start</label>
-                                                <input type="text" class="form-control" id="edit_run_merge_target_period_start" name="merge_target_period_start_date" readonly>
+                                                <input type="text" class="form-control datepicker" id="edit_run_merge_target_period_start" name="merge_target_period_start_date">
                                             </div>
                                             <div class="col-6">
                                                 <label class="form-label mb-1 small" data-i18n="run_merge_target_period_end">Target Period End</label>
-                                                <input type="text" class="form-control" id="edit_run_merge_target_period_end" name="merge_target_period_end_date" readonly>
+                                                <input type="text" class="form-control datepicker" id="edit_run_merge_target_period_end" name="merge_target_period_end_date">
                                             </div>
                                         </div>
                                         <div class="form-text small" data-i18n="run_merge_target_future_cycle_hint">The system will wait for the next round of this Payroll Cycle to be created, then automatically prompt you to merge into it.</div>
+                                        <!-- 2026-09-09, round-creation flow audit Bug 2 fix -- same read-only
+                                             preview as the Create form's own #run_merge_target_preview_box (see
+                                             that markup's own comment in modals.php), refreshed live by
+                                             detail.js as the cycle/period above change, re-checked again right
+                                             before Save. -->
+                                        <div class="d-none mt-2" id="edit_run_merge_target_preview_box">
+                                            <div class="alert alert-secondary small mb-2 d-none py-2" id="edit_run_merge_target_preview_none"></div>
+                                            <div class="alert alert-info small mb-2 d-none py-2" id="edit_run_merge_target_preview_single"></div>
+                                            <div class="d-none" id="edit_run_merge_target_preview_multi">
+                                                <label class="form-label mb-1 small text-danger" data-i18n="run_merge_target_preview_multi_label">More than one existing round matches -- pick which one this should merge into:</label>
+                                                <select class="form-select form-select-sm" id="edit_run_merge_target_preview_select"></select>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1191,14 +1302,34 @@
                              block stays hidden, same gate as PayrollRunModel::update() itself
                              enforces server-side (see edit_run_type_hint below). -->
                         <div class="d-none" id="edit_run_type_section">
-                            <div class="row mb-3" id="edit_run_purpose_row">
-                                <div class="col-sm-3 align-self-center">
-                                    <label class="form-label mb-1" data-i18n="modal_run_purpose">Run Purpose</label>
+                            <!-- 2026-09-09, round-creation flow audit Phase 3 -- same heavier .run-choice-card
+                                 restyle as the Create form's own #run_purpose_choice_row (see that markup's
+                                 own comment in modals.php). NO hard-block here though (unlike Create) --
+                                 opening Edit always has a REAL, previously-chosen currentRun.run_purpose to
+                                 reflect (a genuinely new off-cycle run already went through Create's own
+                                 hard-block before it could exist at all), so #btnEditRun's own populate code
+                                 in detail.js pre-selects the matching card instead of leaving both unpicked. -->
+                            <div class="mb-3" id="edit_run_purpose_choice_row">
+                                <label class="form-label mb-2" data-i18n="run_purpose_choice_label">What does this payment cover?</label>
+                                <div class="run-choice-toggle">
+                                    <label class="run-choice-card" for="edit_run_purpose_choice_payroll">
+                                        <input class="form-check-input" type="radio" name="editRunPurposeChoice" id="edit_run_purpose_choice_payroll" value="payroll">
+                                        <span class="run-choice-card-icon"><i class="fa-solid fa-sack-dollar"></i></span>
+                                        <span class="run-choice-card-body">
+                                            <span class="run-choice-card-label" data-i18n="run_purpose_choice_payroll_label">Full payroll payment</span>
+                                            <span class="run-choice-card-sub" data-i18n="run_purpose_choice_payroll_sub">Same as normal payroll -- full base salary, statutory, and standing items, just off-schedule</span>
+                                        </span>
+                                    </label>
+                                    <label class="run-choice-card" for="edit_run_purpose_choice_incentive">
+                                        <input class="form-check-input" type="radio" name="editRunPurposeChoice" id="edit_run_purpose_choice_incentive" value="incentive">
+                                        <span class="run-choice-card-icon"><i class="fa-solid fa-gift"></i></span>
+                                        <span class="run-choice-card-body">
+                                            <span class="run-choice-card-label" data-i18n="run_purpose_choice_incentive_label">Incentive / partial payment</span>
+                                            <span class="run-choice-card-sub" data-i18n="run_purpose_choice_incentive_sub">Base salary, statutory, and standing items are each opt-in below</span>
+                                        </span>
+                                    </label>
                                 </div>
-                                <div class="col-sm-9">
-                                    <select class="form-select select2-static" id="edit_run_purpose" name="run_purpose"
-                                            data-option-keys="run_purpose_payroll,run_purpose_incentive" data-option-values="payroll,incentive"></select>
-                                </div>
+                                <input type="hidden" id="edit_run_purpose" name="run_purpose">
                             </div>
                             <div class="row mb-3 d-none" id="edit_run_compute_statutory_row">
                                 <div class="col-sm-9 offset-sm-3">
@@ -1229,6 +1360,24 @@
                                     <div class="form-check">
                                         <input class="form-check-input" type="checkbox" id="edit_run_include_attendance_pay">
                                         <label class="form-check-label" for="edit_run_include_attendance_pay" data-i18n="include_attendance_pay_label">Include attendance-driven earnings (OT/trip allowance), calculated automatically</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- 2026-09-09, real bug found and fixed (round-creation flow audit, Bug 1)
+                                 -- this field existed on the Create form (modals.php's own
+                                 #run_use_flat_tax_rate_row) but was never ported here, so a
+                                 supplemental run's flat-tax-rate opt-in had no way to even be
+                                 DISPLAYED on Edit, let alone resaved -- see #btnEditRun's own populate
+                                 code below (reads currentRun.use_flat_tax_rate directly, does NOT
+                                 recompute the Create form's own "pre-check when Origami attributed
+                                 tax_treatment='separate'" default -- that default only makes sense
+                                 the FIRST time this choice is made; Edit must reflect what was
+                                 actually saved) and PayrollRunModel::update()'s own matching fix. -->
+                            <div class="row mb-3 d-none" id="edit_run_use_flat_tax_rate_row">
+                                <div class="col-sm-9 offset-sm-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="edit_run_use_flat_tax_rate">
+                                        <label class="form-check-label" for="edit_run_use_flat_tax_rate" data-i18n="use_flat_tax_rate_label">Withhold tax at the company's configured flat rate (Payroll Policy tab), instead of average/actual</label>
                                     </div>
                                 </div>
                             </div>
@@ -1663,8 +1812,12 @@
                 <!-- Net Pay pinned in the footer (2026-08-20, explicit request) -- with
                      modal-dialog-scrollable above, the body scrolls internally while this stays
                      visible, so a long Earnings/Deductions/Statutory list never pushes it out of
-                     view. -->
-                <div class="modal-footer d-flex justify-content-between align-items-center">
+                     view.
+                     2026-09-09, explicit request: "ย้ายยอดจ่ายสุทธิ มาต่อกัน Net Pay...ไปอยู่ขวาสุด" --
+                     was `justify-content-between` (label pinned at the footer's LEFT edge, value at
+                     the RIGHT edge, spread across the whole footer width); now `justify-content-end`
+                     + `gap-2` groups label+value together as one unit at the far right instead. -->
+                <div class="modal-footer d-flex justify-content-end align-items-center gap-2">
                     <span class="fw-bold text-secondary" data-i18n="table_net_pay">Net Pay</span>
                     <span class="fw-bold fs-5" id="breakdownModalNetPay"></span>
                 </div>

@@ -779,7 +779,13 @@ function initPayrollRunTable() {
                     const verified = Number(row.verified_employee_count || 0);
                     const errors = Number(row.error_employee_count || 0);
                     const pills = [];
-                    if (verified) pills.push(`<span class="badge rounded-pill bg-success-subtle text-success" title="${langData['verified'] || 'Verified'}"><i class="fa-solid fa-check-double me-1"></i>${verified}</span>`);
+                    // 2026-09-09, round-creation flow copy audit round 3: dedicated key, NOT the
+                    // shared 'verified' key (also used by Company Profile/Tax & Statutory for
+                    // unrelated "verified" badges where "ยืนยันแล้ว" is the correct word) -- this
+                    // app's own Verify-run action is standardized on "ตรวจสอบ" everywhere else, so
+                    // this tooltip needs its own key to say the same thing without touching those
+                    // other modules' copy.
+                    if (verified) pills.push(`<span class="badge rounded-pill bg-success-subtle text-success" title="${langData['run_verified_employee_count_tooltip'] || 'Verified'}"><i class="fa-solid fa-check-double me-1"></i>${verified}</span>`);
                     if (errors) pills.push(`<button type="button" class="badge rounded-pill bg-danger-subtle text-danger border-0 btn-view-run-errors" data-id="${row.id}" title="${langData['incomplete_data'] || 'Incomplete data'}"><i class="fa-solid fa-triangle-exclamation me-1"></i>${errors}<i class="fa-solid fa-circle-info ms-1"></i></button>`);
                     const pillRow = pills.length ? `<div class="d-flex gap-1 justify-content-end flex-wrap mt-1">${pills.join('')}</div>` : '';
                     return `<div class="fw-semibold">${d} <i class="fa-solid fa-users text-muted ms-1 small"></i></div>${pillRow}`;
@@ -1316,6 +1322,50 @@ function renderSyncDetail(data) {
     $('#pendingSyncViewBody').html(html);
 }
 
+// 2026-09-09, round-creation flow audit Phase 3 -- shared by resetRunForm(), setOffCycleMode(), and
+// #run_purpose_choice_row's own click handler so every place that used to write directly to the old
+// <select>'s .val() stays in sync with the new choice-card UI's checked/active state instead of just
+// the hidden #run_purpose field alone. `value` may be '' (genuinely no card selected -- the hard-block
+// state) or 'payroll'/'incentive'.
+function syncRunPurposeChoiceUi(value) {
+    $('#run_purpose').val(value).removeClass('is-invalid');
+    $('#run_purpose_choice_error').addClass('d-none');
+    $('#run_purpose_choice_row input[name="runPurposeChoice"]').prop('checked', false);
+    $('#run_purpose_choice_row .run-choice-card').removeClass('active');
+    if (value) {
+        const $radio = $(`input[name="runPurposeChoice"][value="${value}"]`).prop('checked', true);
+        $radio.closest('.run-choice-card').addClass('active');
+    }
+    // Always fires #run_purpose's own 'change' (updateComputeStatutoryVisibility()'s existing
+    // binding) regardless of caller -- every one of the old direct `.val(...).trigger('change')`
+    // call sites this function replaces relied on that same cascade running every time.
+    $('#run_purpose').trigger('change');
+}
+$(document).on('change', 'input[name="runPurposeChoice"]', function () {
+    syncRunPurposeChoiceUi($(this).val());
+});
+// 2026-09-09, round-creation flow audit Phase 3 -- same "new UI drives the old hidden radios"
+// approach as syncRunPurposeChoiceUi() above, for the collapsed 3-way "fold into another round?"
+// choice. setMergeChoiceMode()/setMergeTargetMode() (both unchanged) do all the actual show/hide/
+// clear work once the legacy radios below are set -- this function's only job is picking WHICH of
+// them to set and in what order (target sub-mode set silently first, so setMergeChoiceMode('reference')
+// reads the already-correct sub-mode on its one and only cascade instead of reading a stale value and
+// immediately re-correcting itself).
+function syncRunMergeIntoUi(value) {
+    $('#run_merge_into_row input[name="runMergeInto"]').prop('checked', false);
+    $('#run_merge_into_row .run-subchoice-btn').removeClass('active');
+    const $radio = $(`input[name="runMergeInto"][value="${value}"]`).prop('checked', true);
+    $radio.closest('.run-subchoice-btn').addClass('active');
+    if (value === 'standalone') {
+        $('#run_merge_choice_new').prop('checked', true).trigger('change');
+        return;
+    }
+    $(value === 'future_cycle' ? '#run_merge_target_mode_future_cycle' : '#run_merge_target_mode_existing').prop('checked', true);
+    $('#run_merge_choice_reference').prop('checked', true).trigger('change');
+}
+$(document).on('change', 'input[name="runMergeInto"]', function () {
+    syncRunMergeIntoUi($(this).val());
+});
 function resetRunForm() {
     $('#payrollRunForm')[0].reset();
     $('.is-invalid').removeClass('is-invalid');
@@ -1323,7 +1373,10 @@ function resetRunForm() {
     $('#run_sync_process_id').val('');
     $('#run_schedule_choice_cycle').prop('checked', true);
     $('#run_offcycle_row').removeClass('d-none');
-    $('#run_purpose').val('payroll').trigger('change');
+    // 2026-09-09, same-day follow-up, explicit request: "ขอให้ checked default ครับ" -- 'payroll' is
+    // the default again (was '' for one iteration -- see #run_purpose_choice_row's own comment in
+    // modals.php).
+    syncRunPurposeChoiceUi('payroll');
     $('#run_compute_statutory').prop('checked', true);
     $('#run_include_base_salary').prop('checked', false);
     $('#run_include_standing_items').prop('checked', false);
@@ -1340,7 +1393,8 @@ function resetRunForm() {
     // setMergeTargetMode()'s own comment.
     $('#run_merge_target_mode_existing').prop('checked', true);
     $('#run_merge_target_cycle_id').val('').trigger('change');
-    $('#run_merge_target_period_start, #run_merge_target_period_end').val('');
+    $('#run_merge_target_period_start, #run_merge_target_period_end').val('').datepicker('update');
+    syncRunMergeIntoUi('standalone');
     setMergeChoiceMode('new');
     setMergeTargetMode('existing');
     setOffCycleMode(false);
@@ -1356,7 +1410,7 @@ function setMergeChoiceMode(choice) {
     if (!isReference) {
         $('#run_merge_target_id').val('').trigger('change').removeClass('is-invalid');
         $('#run_merge_target_cycle_id').val('').trigger('change').removeClass('is-invalid');
-        $('#run_merge_target_period_start, #run_merge_target_period_end').val('').removeClass('is-invalid');
+        $('#run_merge_target_period_start, #run_merge_target_period_end').val('').datepicker('update').removeClass('is-invalid');
     }
     // required class on whichever picker the CURRENT sub-mode actually shows -- see
     // setMergeTargetMode() below, called right after so it always reflects the current isReference.
@@ -1384,9 +1438,13 @@ function setMergeTargetMode(mode) {
     $('#run_merge_target_cycle_id').toggleClass('required', targetRowShowing && isFutureCycle);
     if (isFutureCycle) {
         $('#run_merge_target_id').val('').trigger('change').removeClass('is-invalid');
+        // Covers reopening/reselecting this mode while a cycle/period were already picked earlier in
+        // this same session -- a no-op (hides the box) if either field is still empty.
+        refreshRunMergeTargetPreview();
     } else {
         $('#run_merge_target_cycle_id').val('').trigger('change').removeClass('is-invalid');
-        $('#run_merge_target_period_start, #run_merge_target_period_end').val('').removeClass('is-invalid');
+        $('#run_merge_target_period_start, #run_merge_target_period_end').val('').datepicker('update').removeClass('is-invalid');
+        resetRunMergeTargetPreview();
     }
     $('#run_merge_target_mode_row .run-subchoice-btn').removeClass('active');
     $(isFutureCycle ? '#run_merge_target_mode_future_cycle' : '#run_merge_target_mode_existing').closest('.run-subchoice-btn').addClass('active');
@@ -1397,23 +1455,160 @@ $(document).on('change', 'input[name="runMergeTargetMode"]', function () {
 // Auto-suggests the target period the same way picking a cycle for the run's OWN period already
 // does (applySuggestedPeriod()) -- reuses the exact same api/payroll-cycle.suggest-period endpoint,
 // since "the next period of this cycle" is exactly the key a future round will be created with.
-// Read-only display fields (dd/mm/yyyy, same convention as every other date field on this form) --
-// collectRunFormData() converts back to ISO on submit via toIsoDatePr().
+// 2026-09-09, real bug found and fixed (explicit report: "Date เลือกไม่ได้") -- these used to be
+// `readonly` display-only fields (dd/mm/yyyy, same convention as every other date field on this
+// form), auto-filled ONLY from picking a Target cycle above with no way to adjust by hand. Now real,
+// editable .datepicker inputs (see initDatepicker() calls near this file's own #run_mark_paid_date
+// init) -- collectRunFormData() still converts back to ISO on submit via toIsoDatePr() either way.
 $(document).on('change', '#run_merge_target_cycle_id', function () {
     const cycleId = $(this).val();
     if (!cycleId) {
-        $('#run_merge_target_period_start, #run_merge_target_period_end').val('');
+        $('#run_merge_target_period_start, #run_merge_target_period_end').val('').datepicker('update');
+        resetRunMergeTargetPreview();
         return;
     }
     $.ajax({
         url: `${BASE_URL}/api/payroll-cycle.suggest-period`, method: 'GET', data: { id: cycleId }, dataType: 'json',
         success: function (res) {
             if (!res.status) { return; }
-            $('#run_merge_target_period_start').val(toDisplayDatePr(res.period_start_date)).removeClass('is-invalid');
-            $('#run_merge_target_period_end').val(toDisplayDatePr(res.period_end_date)).removeClass('is-invalid');
+            $('#run_merge_target_period_start').val(toDisplayDatePr(res.period_start_date)).datepicker('update').removeClass('is-invalid');
+            $('#run_merge_target_period_end').val(toDisplayDatePr(res.period_end_date)).datepicker('update').removeClass('is-invalid');
+            refreshRunMergeTargetPreview();
         }
     });
 });
+// 2026-09-09, round-creation flow audit Bug 2 fix (explicit report: resolveMergeTargetSpec() picks
+// silently among 2+ existing candidate runs -- same cycle, payment_date in the same month -- with no
+// visible indication of which one, e.g. a semi-monthly cycle whose 15th AND 30th runs both already
+// exist for the target month). This block adds a live, read-only preview of that same lookup so the
+// admin sees (and, when ambiguous, explicitly picks) the actual target BEFORE clicking Save, instead
+// of finding out afterward by opening the new run's own Detail page. `runMergeTargetPreviewMatches`/
+// `runMergeTargetPreviewKey` cache the last fetch so re-triggering this on every keystroke isn't
+// needed AND so the submit handler below can detect staleness (cycle/period changed since the last
+// fetch) and re-check rather than trusting a possibly-outdated cached result.
+let runMergeTargetPreviewMatches = null;
+let runMergeTargetPreviewKey = null;
+function resetRunMergeTargetPreview() {
+    runMergeTargetPreviewMatches = null;
+    runMergeTargetPreviewKey = null;
+    $('#run_merge_target_preview_box').addClass('d-none');
+    $('#run_merge_target_preview_none, #run_merge_target_preview_single, #run_merge_target_preview_multi').addClass('d-none');
+    $('#run_merge_target_preview_select').empty().removeClass('is-invalid');
+}
+function runMergeTargetPreviewLabel(m) {
+    const dateStr = typeof formatDisplayDate === 'function' ? formatDisplayDate(m.payment_date) : m.payment_date;
+    return `${m.run_name} (${dateStr})`;
+}
+function renderRunMergeTargetPreview(matches) {
+    $('#run_merge_target_preview_box').removeClass('d-none');
+    $('#run_merge_target_preview_none, #run_merge_target_preview_single, #run_merge_target_preview_multi').addClass('d-none');
+    if (matches.length === 0) {
+        $('#run_merge_target_preview_none').removeClass('d-none').text(langData['run_merge_target_preview_none'] || 'No matching round yet -- this will wait until one is created.');
+    } else if (matches.length === 1) {
+        const tpl = langData['run_merge_target_preview_single'] || 'This will merge into: {name}';
+        $('#run_merge_target_preview_single').removeClass('d-none').text(tpl.replace('{name}', runMergeTargetPreviewLabel(matches[0])));
+    } else {
+        const $sel = $('#run_merge_target_preview_select').empty().removeClass('is-invalid');
+        $sel.append(new Option(langData['select_option'] || '-- Select --', ''));
+        matches.forEach(m => $sel.append(new Option(runMergeTargetPreviewLabel(m), m.id)));
+        $('#run_merge_target_preview_multi').removeClass('d-none');
+    }
+}
+// Live preview only -- purely informational, never blocks anything itself (the submit-time
+// re-check in resolveRunMergeTargetBeforeSubmit() below is the one that actually gates Save). A
+// failed lookup here just leaves the box in whatever state it was already in; the submit-time
+// re-check has its own independent error handling.
+function refreshRunMergeTargetPreview() {
+    const cycleId = $('#run_merge_target_cycle_id').val();
+    const periodStart = toIsoDatePr($('#run_merge_target_period_start').val());
+    if (!cycleId || !periodStart) {
+        resetRunMergeTargetPreview();
+        return;
+    }
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.preview-merge-target`, method: 'GET',
+        data: { cycle_id: cycleId, period_start_date: periodStart }, dataType: 'json',
+        success: function (res) {
+            if (!res.status) return;
+            runMergeTargetPreviewMatches = res.matches || [];
+            runMergeTargetPreviewKey = cycleId + '|' + periodStart;
+            renderRunMergeTargetPreview(runMergeTargetPreviewMatches);
+        }
+    });
+}
+$(document).on('changeDate', '#run_merge_target_period_start, #run_merge_target_period_end', function () {
+    refreshRunMergeTargetPreview();
+});
+// Gate before the actual save AJAX call (called from the form's own submit handler below) --
+// re-checks the SAME lookup fresh whenever the cached preview doesn't match the current cycle/period
+// values (covers a stale cache from an earlier pick), then decides what collectRunFormData()'s own
+// merge_target_* fields should actually become: 0 matches keeps the future_cycle spec as-is (still
+// genuinely waiting), exactly 1 match resolves it to that run's id (same outcome the backend would
+// reach silently on its own -- just made explicit here), 2+ matches REQUIRES the admin to have picked
+// one via #run_merge_target_preview_select (blocks Save with a warning if not, rather than silently
+// defaulting to the earliest period the old behavior did). `callback(ok, overrides)` -- `overrides`
+// (when present) get merged onto collectRunFormData()'s own payload, replacing its
+// merge_target_cycle_id/period fields with a resolved merge_target_run_id instead.
+function resolveRunMergeTargetBeforeSubmit(callback) {
+    const isReferenceMode = !$('#run_merge_target_row').hasClass('d-none');
+    const targetMode = $('input[name="runMergeTargetMode"]:checked').val() || 'existing';
+    if (!isReferenceMode || targetMode !== 'future_cycle') {
+        callback(true);
+        return;
+    }
+    const cycleId = $('#run_merge_target_cycle_id').val();
+    const periodStart = toIsoDatePr($('#run_merge_target_period_start').val());
+    if (!cycleId || !periodStart) {
+        // Required-field validation (validateRunForm()) already catches this before this function
+        // is ever reached -- guarded here too so this function is safe to call standalone.
+        callback(true);
+        return;
+    }
+    const key = cycleId + '|' + periodStart;
+    function decide(matches) {
+        if (matches.length === 0) {
+            callback(true);
+        } else if (matches.length === 1) {
+            callback(true, {
+                merge_target_run_id: matches[0].id,
+                merge_target_cycle_id: null, merge_target_period_start_date: null, merge_target_period_end_date: null,
+            });
+        } else {
+            const chosen = $('#run_merge_target_preview_select').val();
+            if (!chosen) {
+                $('#run_merge_target_preview_select').addClass('is-invalid');
+                showWarning(langData['run_merge_target_preview_pick_required'] || 'More than one existing round matches -- please pick which one before saving.');
+                callback(false);
+                return;
+            }
+            callback(true, {
+                merge_target_run_id: parseInt(chosen, 10),
+                merge_target_cycle_id: null, merge_target_period_start_date: null, merge_target_period_end_date: null,
+            });
+        }
+    }
+    if (runMergeTargetPreviewKey === key && runMergeTargetPreviewMatches !== null) {
+        decide(runMergeTargetPreviewMatches);
+        return;
+    }
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.preview-merge-target`, method: 'GET',
+        data: { cycle_id: cycleId, period_start_date: periodStart }, dataType: 'json',
+        success: function (res) {
+            const matches = (res.status && res.matches) ? res.matches : [];
+            runMergeTargetPreviewMatches = matches;
+            runMergeTargetPreviewKey = key;
+            renderRunMergeTargetPreview(matches);
+            decide(matches);
+        },
+        // Network/preview failure -- fail OPEN, not closed: let the save proceed with the
+        // future_cycle spec as-is. resolveMergeTargetSpec() itself still resolves this correctly
+        // server-side (its own single-pick fallback, unchanged) -- this preview is a UX improvement
+        // on top of that, not a replacement for it, so a lookup failure here must never block a
+        // save that would otherwise succeed.
+        error: function () { callback(true); }
+    });
+}
 // Off-cycle runs (e.g. an out-of-cycle payment) skip the Payroll Cycle field entirely -- per
 // explicit request. Only offered on the standalone "Add" flow; Pull-to-run hides the toggle
 // entirely (that data is inherently cycle-based) via #run_offcycle_row.addClass('d-none').
@@ -1439,8 +1634,9 @@ function setOffCycleMode(isOffCycle) {
     // uses on the Edit form.
     $('#run_offcycle_panel').toggleClass('d-none', !isOffCycle);
     if (!isOffCycle) {
-        $('#run_merge_choice_new').prop('checked', true);
-        setMergeChoiceMode('new');
+        // syncRunMergeIntoUi() itself fires runMergeChoice's own change -> setMergeChoiceMode('new'),
+        // so no separate explicit call is needed here anymore.
+        syncRunMergeIntoUi('standalone');
     }
     // Period Start/End are only required for a cycle-based run -- an off-cycle run (e.g. a
     // special bonus payout) doesn't always have a meaningful attendance period, per explicit
@@ -1456,9 +1652,15 @@ function setOffCycleMode(isOffCycle) {
     // run, per explicit request (2026-08-19) -- PayrollRunModel::create() rejects run_purpose=
     // 'incentive' outright whenever a cycle is selected, so hiding it here just keeps the form
     // from offering a choice the backend would reject anyway.
-    $('#run_purpose_row').toggleClass('d-none', !isOffCycle);
+    $('#run_purpose_choice_row').toggleClass('d-none', !isOffCycle);
+    // .required only while genuinely shown -- same pattern #run_merge_target_id/_cycle_id already
+    // use (see setMergeTargetMode()) -- validateRunForm()'s generic loop would otherwise block Save
+    // over a hidden, irrelevant field.
+    $('#run_purpose').toggleClass('required', isOffCycle);
     if (!isOffCycle) {
-        $('#run_purpose').val('payroll').trigger('change');
+        // 2026-09-09, same-day follow-up, explicit request: "ขอให้ checked default ครับ" -- reset back
+        // to the 'payroll' default (was '' for one iteration), same as resetRunForm()'s own comment.
+        syncRunPurposeChoiceUi('payroll');
     }
 }
 // Compute Statutory/Include Base Salary/Include Standing Items only matter (and only show) once
@@ -1480,6 +1682,13 @@ function updateComputeStatutoryVisibility() {
 // payment day settings, per explicit request -- pure convenience default, every field stays
 // editable afterward. Silently does nothing on failure (cycle not fully configured, network
 // error, etc.) so manual entry always still works as a fallback.
+// 2026-09-09, explicit request: "เปลี่ยนเป็นเลือกรอบแล้ว ถ้าวันที่มีข้อมูลอยู่ไม่ต้องเปลี่ยนค่า ถ้าไม่มีค่าให้ใส่
+// อัตโนมัติ" -- was an unconditional overwrite of all 3 date fields on every cycle change, even when
+// they already held real values (e.g. a value the admin already typed/adjusted by hand before
+// picking a cycle). Now only fills a field that's genuinely EMPTY; a field that already has a value
+// is left completely untouched, matching detail.js's own applySuggestedPeriodRd() -- which already
+// had a version of this same "don't clobber real data" reasoning for the Edit form (see that
+// function's own docblock), just not this exact per-field empty-check yet.
 function applySuggestedPeriod(cycleId) {
     if (!cycleId) {
         return;
@@ -1496,9 +1705,15 @@ function applySuggestedPeriod(cycleId) {
             // .datepicker('update') after each programmatic .val() -- see CLAUDE.md's
             // bootstrap-datepicker note (widget state goes stale otherwise, blanking the field on
             // next click-away).
-            $('#run_period_start').val(toDisplayDatePr(res.period_start_date)).datepicker('update');
-            $('#run_period_end').val(toDisplayDatePr(res.period_end_date)).datepicker('update');
-            $('#run_payment_date').val(toDisplayDatePr(res.payment_date)).datepicker('update');
+            if (!$('#run_period_start').val()) {
+                $('#run_period_start').val(toDisplayDatePr(res.period_start_date)).datepicker('update');
+            }
+            if (!$('#run_period_end').val()) {
+                $('#run_period_end').val(toDisplayDatePr(res.period_end_date)).datepicker('update');
+            }
+            if (!$('#run_payment_date').val()) {
+                $('#run_payment_date').val(toDisplayDatePr(res.payment_date)).datepicker('update');
+            }
             $('#run_period_start, #run_period_end, #run_payment_date').removeClass('is-invalid');
         }
     });
@@ -1515,6 +1730,10 @@ function validateRunForm() {
             $el.removeClass('is-invalid');
         }
     });
+    // 2026-09-09, round-creation flow audit Phase 3: #run_purpose is a hidden input now (driven by
+    // #run_purpose_choice_row's cards) -- .is-invalid on a hidden element has no visible red border
+    // of its own, so mirror it onto a small text hint next to the cards instead.
+    $('#run_purpose_choice_error').toggleClass('d-none', !$('#run_purpose').hasClass('is-invalid'));
     return firstInvalid;
 }
 function collectRunFormData() {
@@ -1522,12 +1741,12 @@ function collectRunFormData() {
     const isReferenceMode = !$('#run_merge_target_row').hasClass('d-none');
     const targetMode = $('input[name="runMergeTargetMode"]:checked').val() || 'existing';
     // 2026-08-29: run_purpose used to be forced to 'payroll' whenever the manual off-cycle
-    // checkbox wasn't ticked -- but setSupplementalPullMode() now also shows #run_purpose_row
+    // checkbox wasn't ticked -- but setSupplementalPullMode() now also shows #run_purpose_choice_row
     // (Payroll/Incentive-Other-Payment) for a supplemental sync pull, which never touches that
     // checkbox at all. Read the select whenever its row is actually visible, not just for the
     // manual off-cycle path, so a chosen "Incentive/Other Payment" on a supplemental pull is
     // actually submitted instead of silently reverting to 'payroll'.
-    const purposeSelectable = isOffCycle || !$('#run_purpose_row').hasClass('d-none');
+    const purposeSelectable = isOffCycle || !$('#run_purpose_choice_row').hasClass('d-none');
     const runPurpose = purposeSelectable ? ($('#run_purpose').val() || 'payroll') : 'payroll';
     return {
         // #run_cycle_row itself is only ever hidden for the manual off-cycle path -- a
@@ -1677,9 +1896,29 @@ $(document).on('click', '.btn-add-run', function () {
 // established -- still fully editable/un-tickable afterward.
 function setSupplementalPullMode(isSupplemental, taxTreatment) {
     $('#run_cycle_id').toggleClass('required', !isSupplemental);
-    $('#run_purpose_row').toggleClass('d-none', !isSupplemental);
+    $('#run_purpose_choice_row').toggleClass('d-none', !isSupplemental);
+    $('#run_purpose').toggleClass('required', isSupplemental);
     if (!isSupplemental) {
-        $('#run_purpose').val('payroll').trigger('change');
+        syncRunPurposeChoiceUi('payroll');
+    } else {
+        // 2026-09-09, real bug found and fixed (explicit report: "ทาง origami ส่งค่าเที่ยวมา...ใน select
+        // ยังขึ้นเงินเดือนปกติอยู่") -- confirmed against the real dev DB, not guessed: Origami's own
+        // trip-fee batches (TDI-2026-00016/00018, "ค่าเที่ยว...") already arrive with the correct
+        // `run_kind: "supplemental"` per PAYROLL_SYNC_API.md's own confirmed spec -- nothing missing
+        // on Origami's side. The row becoming visible here never actually SELECTED anything for the
+        // admin though -- resetRunForm()'s native `.reset()` call just above (in .btn-pull-sync's own
+        // handler) leaves #run_purpose sitting on its first/default <option> ("payroll"/"Normal
+        // Payroll"), and this function only ever forced it back to 'payroll' for the NON-supplemental
+        // branch, never forced anything for this one. A supplemental run is *by definition* never
+        // "regular payroll" (that's exactly what run_kind='regular' already means) -- pre-select
+        // 'incentive' here instead, still fully editable afterward same as every other Pull-derived
+        // field on this form (period dates, flat-tax-rate checkbox below).
+        // 2026-09-09, round-creation flow audit Phase 3: uses syncRunPurposeChoiceUi() (not a bare
+        // .val().trigger('change')) so the visible choice-card actually shows as selected too -- this
+        // is real, known data from Origami's own run_kind, not an unexamined default, so pre-selecting
+        // here does NOT reintroduce the "quiet trap" the standalone Add flow's own hard-block exists
+        // to prevent (see #run_purpose_choice_row's own comment in modals.php).
+        syncRunPurposeChoiceUi('incentive');
     }
     const showFlatTax = isSupplemental && taxTreatment === 'separate';
     $('#run_use_flat_tax_rate_row').toggleClass('d-none', !showFlatTax);
@@ -2152,7 +2391,17 @@ $(document).on('submit', '#payrollRunForm', function (e) {
         showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
         return;
     }
-    const payload = collectRunFormData();
+    // 2026-09-09, round-creation flow audit Bug 2 fix -- re-checks the future_cycle auto-match
+    // immediately before saving (see resolveRunMergeTargetBeforeSubmit()'s own docblock), possibly
+    // overriding collectRunFormData()'s own merge_target_* fields with a resolved merge_target_run_id.
+    // Blocks entirely (no ajax call at all) if 2+ candidates matched and the admin hasn't picked one.
+    resolveRunMergeTargetBeforeSubmit(function (ok, overrides) {
+        if (!ok) return;
+        submitRunForm(overrides);
+    });
+});
+function submitRunForm(mergeTargetOverrides) {
+    const payload = Object.assign(collectRunFormData(), mergeTargetOverrides || {});
     const $btn = $('#payrollRunForm button[type="submit"]');
     const originalHtml = $btn.html();
     $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
@@ -2206,7 +2455,7 @@ $(document).on('submit', '#payrollRunForm', function (e) {
             showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
         }
     });
-});
+}
 // 2026-09-06: shared by both the single Pull-to-Run flow and the bulk-pull flow -- lists every
 // waiting supplemental process by name and lets the admin merge them one at a time right here
 // (reusing requestMergeSupplemental()/handleMergeSyncResult()) instead of having to go find them
@@ -2476,7 +2725,9 @@ $(document).ready(function () {
     }
     if (typeof initSelect2 === 'function') {
         initSelect2('#run_cycle_id', { mode: 'ajax' });
-        initSelect2('#run_purpose', { mode: 'static' });
+        // 2026-09-09, round-creation flow audit Phase 3: #run_purpose is a plain hidden input now
+        // (driven by #run_purpose_choice_row's own choice cards), not a <select> -- no select2 init
+        // needed/possible anymore.
         // 2026-09-01, explicit request: "เปิดรอบใหม่ / อ้างอิงถึงรอบ" radio's own target picker.
         initSelect2('#run_merge_target_id', { mode: 'ajax' });
         // 2026-09-01, explicit request: 3 new filters (Origin/Payroll Schedule/Run Purpose).
@@ -2492,6 +2743,11 @@ $(document).ready(function () {
         initDatepicker('#run_period_end');
         initDatepicker('#run_payment_date');
         initDatepicker('#run_mark_paid_date');
+        // 2026-09-09, real bug found and fixed (explicit report: "Date เลือกไม่ได้") -- these 2 fields
+        // used to be plain `readonly` inputs with no datepicker init at all (see this form's own
+        // #run_merge_target_period_start/_end markup comment).
+        initDatepicker('#run_merge_target_period_start');
+        initDatepicker('#run_merge_target_period_end');
     }
     updateClearFilterVisibility();
 });

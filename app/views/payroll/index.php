@@ -60,7 +60,7 @@
                         <select class="form-select select2-remote" id="filter_run_cycle" data-api="/api/payroll-cycle.options"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-bullseye me-1 text-muted"></i><span data-i18n="modal_run_purpose">Run Purpose</span></label>
+                        <label class="form-label mb-1"><i class="fa-solid fa-bullseye me-1 text-muted"></i><span data-i18n="modal_run_purpose">Payment Type</span></label>
                         <select class="form-select select2-static" id="filter_run_purpose" data-option-keys="filter_all,run_purpose_payroll,run_purpose_incentive" data-option-values="all,payroll,incentive"></select>
                     </div>
                 </div>
