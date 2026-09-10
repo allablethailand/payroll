@@ -3047,81 +3047,52 @@
                          (confirmed via AskUserQuestion) -- approved/paid/locked targets are reachable
                          too, requiring the same revert/reopen confirmation mergeSupplementalIntoRun()'s
                          own equivalent button already asks for. -->
-                    <div class="run-offcycle-panel d-none" id="run_offcycle_panel">
-                        <div class="run-offcycle-panel-title"><i class="fa-solid fa-sliders"></i> <span data-i18n="run_offcycle_panel_title">Off-schedule round options</span></div>
-                        <div class="row mb-3" id="run_merge_choice_row">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-1" data-i18n="run_merge_choice_label">Create this round as</label>
-                            </div>
-                            <div class="col-sm-9">
-                                <div class="run-subchoice-toggle">
-                                    <label class="run-subchoice-btn active" for="run_merge_choice_new">
-                                        <input type="radio" name="runMergeChoice" id="run_merge_choice_new" value="new" checked>
-                                        <i class="fa-solid fa-file-circle-plus"></i>
-                                        <span data-i18n="run_merge_choice_new">Open a new round</span>
-                                    </label>
-                                    <label class="run-subchoice-btn" for="run_merge_choice_reference">
-                                        <input type="radio" name="runMergeChoice" id="run_merge_choice_reference" value="reference">
-                                        <i class="fa-solid fa-link"></i>
-                                        <span data-i18n="run_merge_choice_reference">Reference an existing round</span>
-                                    </label>
-                                </div>
-                            </div>
+                    <!-- 2026-09-09, round-creation flow audit Phase 3 (flow reorg, confirmed via wireframe
+                         review) -- moved from below #run_offcycle_panel to appear IMMEDIATELY after the
+                         schedule choice above. This is the ONE field on this whole form that actually
+                         drives calculation (which of compute_statutory/include_base_salary/
+                         include_standing_items/include_attendance_pay/use_flat_tax_rate apply -- see
+                         PayrollRunModel::create()/update()'s own forcing table), yet used to sit BELOW 3
+                         nested toggle levels that affect nothing but bookkeeping (which round this one
+                         eventually folds into) -- the audit's own "quiet trap" finding. Restyled from a
+                         plain <select> into the SAME heavier .run-choice-card style the Schedule choice
+                         above uses (was a plain 2-option .run-subchoice-toggle pill row) specifically
+                         because this choice matters more than the others on this form.
+                         2026-09-09, same-day follow-up, explicit request: "ขอให้ checked default ครับ" --
+                         the hard-block/no-default this section originally shipped with (see git history)
+                         is REVERSED here -- "Full payroll payment" is checked by default, same as this
+                         field's own behavior before Phase 3 (leaving it untouched = full payroll, exactly
+                         like every other .run-choice-card default on this form). #run_purpose still
+                         carries `.required`/#run_purpose_choice_error as defense-in-depth (harmless,
+                         never actually triggers now that a card is always pre-selected) rather than
+                         ripping the validation path out entirely. Shown together by BOTH
+                         setOffCycleMode() (genuine off-schedule) and setSupplementalPullMode() (a
+                         supplemental Origami pull) -- the same 2 gates #run_purpose_row already had,
+                         unchanged. A supplemental pull still overrides to its own known answer (via
+                         syncRunPurposeChoiceUi('incentive'), setSupplementalPullMode() already KNOWS this
+                         from Origami's own run_kind -- real data, not the generic default). -->
+                    <div class="mb-3 d-none" id="run_purpose_choice_row">
+                        <label class="form-label mb-2"><span data-i18n="run_purpose_choice_label">What does this payment cover?</span> <span class="text-danger">*</span></label>
+                        <div class="run-choice-toggle">
+                            <label class="run-choice-card active" for="run_purpose_choice_payroll">
+                                <input class="form-check-input" type="radio" name="runPurposeChoice" id="run_purpose_choice_payroll" value="payroll" checked>
+                                <span class="run-choice-card-icon"><i class="fa-solid fa-sack-dollar"></i></span>
+                                <span class="run-choice-card-body">
+                                    <span class="run-choice-card-label" data-i18n="run_purpose_choice_payroll_label">Full payroll payment</span>
+                                    <span class="run-choice-card-sub" data-i18n="run_purpose_choice_payroll_sub">Same as normal payroll -- full base salary, statutory, and standing items, just off-schedule</span>
+                                </span>
+                            </label>
+                            <label class="run-choice-card" for="run_purpose_choice_incentive">
+                                <input class="form-check-input" type="radio" name="runPurposeChoice" id="run_purpose_choice_incentive" value="incentive">
+                                <span class="run-choice-card-icon"><i class="fa-solid fa-gift"></i></span>
+                                <span class="run-choice-card-body">
+                                    <span class="run-choice-card-label" data-i18n="run_purpose_choice_incentive_label">Incentive / partial payment</span>
+                                    <span class="run-choice-card-sub" data-i18n="run_purpose_choice_incentive_sub">Base salary, statutory, and standing items are each opt-in below</span>
+                                </span>
+                            </label>
                         </div>
-                        <div class="row mb-3 d-none" id="run_merge_target_row">
-                            <div class="col-sm-3 align-self-center">
-                                <label class="form-label mb-1"><span data-i18n="run_merge_target_label">Target Round</span> <span class="text-danger">*</span></label>
-                            </div>
-                            <div class="col-sm-9">
-                                <!-- 2026-09-06, explicit request: "ปรับ Process ที่มีการสร้างรอบเองในฝั่ง Payroll
-                                     ให้เป็นไปในแนวทางเดียวกัน" (with the Origami-attribution "waiting for a round
-                                     that doesn't exist yet" fix) -- a 2nd-level sub-toggle: reference a round
-                                     that ALREADY exists (unchanged, existing #run_merge_target_id picker below),
-                                     or a FUTURE round of a recurring Payroll Cycle that hasn't been created yet
-                                     (PayrollRunModel::resolveMergeTargetSpec()'s own docblock). -->
-                                <div class="run-subchoice-toggle mb-2" id="run_merge_target_mode_row">
-                                    <label class="run-subchoice-btn active" for="run_merge_target_mode_existing">
-                                        <input type="radio" name="runMergeTargetMode" id="run_merge_target_mode_existing" value="existing" checked>
-                                        <i class="fa-solid fa-list-check"></i>
-                                        <span data-i18n="run_merge_target_mode_existing">Existing round</span>
-                                    </label>
-                                    <label class="run-subchoice-btn" for="run_merge_target_mode_future_cycle">
-                                        <input type="radio" name="runMergeTargetMode" id="run_merge_target_mode_future_cycle" value="future_cycle">
-                                        <i class="fa-solid fa-hourglass-half"></i>
-                                        <span data-i18n="run_merge_target_mode_future_cycle">Future round (not created yet)</span>
-                                    </label>
-                                </div>
-                                <div id="run_merge_target_existing_wrap">
-                                    <select class="form-select select2-remote" id="run_merge_target_id" name="merge_target_run_id"
-                                            data-api="/api/payroll-run.options" data-states="draft,pending_approval,approved,rejected,need_info,paid,locked"></select>
-                                    <div class="form-text small" data-i18n="run_merge_target_hint">Build this round up normally first (Join Employees / Manage Items) -- once ready, use "Merge into Target" on its own Detail page to fold it into the round selected here.</div>
-                                </div>
-                                <div class="d-none" id="run_merge_target_future_cycle_wrap">
-                                    <select class="form-select select2-remote mb-2" id="run_merge_target_cycle_id" name="merge_target_cycle_id"
-                                            data-api="/api/payroll-cycle.options"></select>
-                                    <div class="row g-2">
-                                        <div class="col-6">
-                                            <label class="form-label mb-1 small" data-i18n="run_merge_target_period_start">Target Period Start</label>
-                                            <input type="text" class="form-control" id="run_merge_target_period_start" name="merge_target_period_start_date" readonly>
-                                        </div>
-                                        <div class="col-6">
-                                            <label class="form-label mb-1 small" data-i18n="run_merge_target_period_end">Target Period End</label>
-                                            <input type="text" class="form-control" id="run_merge_target_period_end" name="merge_target_period_end_date" readonly>
-                                        </div>
-                                    </div>
-                                    <div class="form-text small" data-i18n="run_merge_target_future_cycle_hint">The system will wait for the next round of this Payroll Cycle to be created, then automatically prompt you to merge into it.</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-3 d-none" id="run_purpose_row">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-1" data-i18n="modal_run_purpose">Run Purpose</label>
-                        </div>
-                        <div class="col-sm-9">
-                            <select class="form-select select2-static" id="run_purpose" name="run_purpose"
-                                    data-option-keys="run_purpose_payroll,run_purpose_incentive" data-option-values="payroll,incentive"></select>
-                        </div>
+                        <div class="small text-danger mt-1 d-none" id="run_purpose_choice_error" data-i18n="required_star_message">Please fill all fields marked with *</div>
+                        <input type="hidden" id="run_purpose" name="run_purpose">
                     </div>
                     <div class="row mb-3 d-none" id="run_compute_statutory_row">
                         <div class="col-sm-9 offset-sm-3">
@@ -3172,6 +3143,108 @@
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="run_use_flat_tax_rate">
                                 <label class="form-check-label" for="run_use_flat_tax_rate" data-i18n="use_flat_tax_rate_label">Withhold tax at the company's configured flat rate (Payroll Policy tab), instead of average/actual</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="run-offcycle-panel d-none" id="run_offcycle_panel">
+                        <div class="run-offcycle-panel-title"><i class="fa-solid fa-sliders"></i> <span data-i18n="run_offcycle_panel_title">Off-schedule round options</span></div>
+                        <!-- 2026-09-09, round-creation flow audit Phase 3 -- collapses the OLD 2-level
+                             runMergeChoice(new/reference) + runMergeTargetMode(existing/future_cycle)
+                             nesting into ONE flat 3-way choice, since "new" carried no independent payload
+                             meaning of its own (audit finding (c): collectRunFormData() only ever sends
+                             merge_target_run_id:null either way when not in reference mode). Drives the
+                             SAME underlying legacy radios below (now hidden, never shown to the user) via
+                             runMergeInto's own change handler in index.js -- setMergeChoiceMode()/
+                             setMergeTargetMode()/collectRunFormData()/the Phase 2 preview wiring all keep
+                             working completely unchanged, since none of them were ever touched. -->
+                        <div class="row mb-3" id="run_merge_into_row">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-1" data-i18n="run_merge_into_label">Fold this round into another one?</label>
+                            </div>
+                            <div class="col-sm-9">
+                                <div class="run-subchoice-toggle">
+                                    <label class="run-subchoice-btn active" for="run_merge_into_standalone">
+                                        <input type="radio" name="runMergeInto" id="run_merge_into_standalone" value="standalone" checked>
+                                        <i class="fa-solid fa-file-circle-plus"></i>
+                                        <span data-i18n="run_merge_into_standalone">Keep separate</span>
+                                    </label>
+                                    <label class="run-subchoice-btn" for="run_merge_into_existing">
+                                        <input type="radio" name="runMergeInto" id="run_merge_into_existing" value="existing">
+                                        <i class="fa-solid fa-link"></i>
+                                        <span data-i18n="run_merge_into_existing">Merge into an existing round</span>
+                                    </label>
+                                    <label class="run-subchoice-btn" for="run_merge_into_future_cycle">
+                                        <input type="radio" name="runMergeInto" id="run_merge_into_future_cycle" value="future_cycle">
+                                        <i class="fa-solid fa-hourglass-half"></i>
+                                        <span data-i18n="run_merge_into_future_cycle">Merge into a future round (matched by payment month)</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Legacy controls -- never shown to the user, driven programmatically by
+                             #run_merge_into_row above. Kept as real, functioning radios (not just data
+                             attributes) so every existing handler that reads
+                             $('input[name="runMergeChoice"]:checked')/$('input[name="runMergeTargetMode"]:checked')
+                             keeps working with zero changes. -->
+                        <div class="d-none">
+                            <input type="radio" name="runMergeChoice" id="run_merge_choice_new" value="new" checked>
+                            <input type="radio" name="runMergeChoice" id="run_merge_choice_reference" value="reference">
+                        </div>
+                        <div class="row mb-3 d-none" id="run_merge_target_row">
+                            <div class="col-sm-3 align-self-center">
+                                <label class="form-label mb-1"><span data-i18n="run_merge_target_label">Target Round</span> <span class="text-danger">*</span></label>
+                            </div>
+                            <div class="col-sm-9">
+                                <div class="d-none">
+                                    <input type="radio" name="runMergeTargetMode" id="run_merge_target_mode_existing" value="existing" checked>
+                                    <input type="radio" name="runMergeTargetMode" id="run_merge_target_mode_future_cycle" value="future_cycle">
+                                </div>
+                                <div id="run_merge_target_existing_wrap">
+                                    <select class="form-select select2-remote" id="run_merge_target_id" name="merge_target_run_id"
+                                            data-api="/api/payroll-run.options" data-states="draft,pending_approval,approved,rejected,need_info,paid,locked"></select>
+                                    <div class="form-text small" data-i18n="run_merge_target_hint">Build this round up normally first (Join Employees / Manage Items) -- once ready, use "Merge into Target" on its own Detail page to fold it into the round selected here.</div>
+                                </div>
+                                <div class="d-none" id="run_merge_target_future_cycle_wrap">
+                                    <select class="form-select select2-remote mb-2" id="run_merge_target_cycle_id" name="merge_target_cycle_id"
+                                            data-api="/api/payroll-cycle.options"></select>
+                                    <div class="row g-2">
+                                        <!-- 2026-09-09, real bug found and fixed (explicit report: "Date เลือกไม่ได้")
+                                             -- both fields used to be `readonly` with no `.datepicker` class at all,
+                                             auto-filled ONLY from picking a Target cycle above (see
+                                             api/payroll-cycle.suggest-period's own change handler) with no way to
+                                             adjust them by hand afterward. Now real, editable datepickers (still
+                                             auto-filled the same way when a cycle is picked, just no longer locked
+                                             read-only afterward) -- see initDatepicker() calls in index.js. -->
+                                        <div class="col-6">
+                                            <label class="form-label mb-1 small" data-i18n="run_merge_target_period_start">Target Period Start</label>
+                                            <input type="text" class="form-control datepicker" id="run_merge_target_period_start" name="merge_target_period_start_date">
+                                        </div>
+                                        <div class="col-6">
+                                            <label class="form-label mb-1 small" data-i18n="run_merge_target_period_end">Target Period End</label>
+                                            <input type="text" class="form-control datepicker" id="run_merge_target_period_end" name="merge_target_period_end_date">
+                                        </div>
+                                    </div>
+                                    <div class="form-text small" data-i18n="run_merge_target_future_cycle_hint">The system will wait for the next round of this Payroll Cycle to be created, then automatically prompt you to merge into it.</div>
+                                    <!-- 2026-09-09, round-creation flow audit Bug 2 fix (explicit report: the
+                                         auto-matching above used to pick silently among 2+ existing candidates
+                                         with no visible indication of which one, whenever a company's own
+                                         recurring cycle already produced more than one run in the target month
+                                         e.g. semi-monthly 15th+30th) -- read-only preview, refreshed live as the
+                                         cycle/period above change (see index.js's own
+                                         refreshRunMergeTargetPreview()), re-checked again right before Save so
+                                         it never goes stale. #run_merge_target_preview_multi's own select is
+                                         REQUIRED (no default) whenever 2+ candidates exist -- Save is blocked
+                                         until the admin picks one explicitly, replacing the old silent
+                                         earliest-period pick. -->
+                                    <div class="d-none mt-2" id="run_merge_target_preview_box">
+                                        <div class="alert alert-secondary small mb-2 d-none py-2" id="run_merge_target_preview_none"></div>
+                                        <div class="alert alert-info small mb-2 d-none py-2" id="run_merge_target_preview_single"></div>
+                                        <div class="d-none" id="run_merge_target_preview_multi">
+                                            <label class="form-label mb-1 small text-danger" data-i18n="run_merge_target_preview_multi_label">More than one existing round matches -- pick which one this should merge into:</label>
+                                            <select class="form-select form-select-sm" id="run_merge_target_preview_select"></select>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>

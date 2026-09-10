@@ -1378,6 +1378,57 @@ class PayrollRunModel {
     }
 
     /**
+     * 2026-09-09, round-creation flow audit Bug 2 fix (explicit report: findActiveRunForCyclePaymentMonth()
+     * silently picks the earliest-period candidate with zero visible indication of WHICH run got
+     * chosen, whenever 2+ runs already match the same cycle+payment-month). Same WHERE as that method,
+     * minus the LIMIT 1 and plus enough columns for the preview UI to actually show the admin what
+     * they're choosing between -- used ONLY by previewFutureCycleMergeTarget() below, never by
+     * resolveMergeTargetSpec() itself (that method's own single-pick fallback is UNCHANGED, still the
+     * safety net for a caller that saves without ever calling the new preview endpoint at all -- e.g.
+     * a stale client, or the disambiguation happening to still land on a single match by the time of
+     * save). Returned in the SAME `ORDER BY period_start_date ASC` order so index 0 is always "what the
+     * old silent behavior would have picked" if the UI needs that reference point.
+     */
+    private function findAllActiveRunsForCyclePaymentMonth(int $compId, int $cycleId, string $targetMonthAnchor, ?int $excludeId): array {
+        $sql = "SELECT id, run_name, run_code, state, payment_date, period_start_date, period_end_date FROM `payroll_runs`
+                WHERE comp_id = :comp_id AND cycle_id = :cycle_id
+                  AND YEAR(payment_date) = YEAR(:anchor) AND MONTH(payment_date) = MONTH(:anchor)
+                AND deleted_at IS NULL AND state != 'cancelled'";
+        $params = [':comp_id' => $compId, ':cycle_id' => $cycleId, ':anchor' => $targetMonthAnchor];
+        if ($excludeId !== null) {
+            $sql .= " AND id != :exclude_id";
+            $params[':exclude_id'] = $excludeId;
+        }
+        $sql .= " ORDER BY period_start_date ASC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * 2026-09-09, round-creation flow audit Bug 2 fix -- read-only preview for the "future round"
+     * merge-target mode, called by the Create/Edit forms right before Save (and live as the admin picks
+     * the target cycle/period) so a 2+-candidate match is disambiguated EXPLICITLY by the admin instead
+     * of silently defaulting to whichever run has the earliest period_start_date. Same
+     * cycle-must-be-active-and-belong-to-this-company validation resolveMergeTargetSpec() already does,
+     * duplicated here rather than shared because that method's version returns immediately on failure as
+     * part of a larger multi-field resolution and isn't a clean extraction point on its own.
+     * @return array{status:bool, message?:string, matches?:array}
+     */
+    public function previewFutureCycleMergeTarget(int $compId, int $cycleId, string $periodStart, ?int $excludeRunId): array {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $periodStart)) {
+            return ['status' => false, 'message' => 'Invalid date format, expected YYYY-MM-DD.'];
+        }
+        $stmtCycle = $this->db->prepare("SELECT id FROM `payroll_cycles` WHERE id = :id AND comp_id = :comp_id AND status = 'active' AND deleted_at IS NULL");
+        $stmtCycle->execute([':id' => $cycleId, ':comp_id' => $compId]);
+        if (!$stmtCycle->fetch()) {
+            return ['status' => false, 'message' => 'Invalid or inactive target payroll cycle.'];
+        }
+        $matches = $this->findAllActiveRunsForCyclePaymentMonth($compId, $cycleId, $periodStart, $excludeRunId);
+        return ['status' => true, 'matches' => $matches];
+    }
+
+    /**
      * Shared by create()/update(): validates a genuine off-cycle run's merge-target spec, which is
      * now EITHER `merge_target_run_id` (an existing round, any state except cancelled -- unchanged
      * behavior) OR `merge_target_cycle_id`+period (a round that doesn't exist yet for that recurring
@@ -1928,11 +1979,33 @@ class PayrollRunModel {
         $isSupplementalSync = $run['sync_process_id'] !== null && ($run['sync_run_kind'] ?? 'regular') === 'supplemental';
         if (($isOffCycle || $isSupplementalSync) && array_key_exists('run_purpose', $data)) {
             $runPurpose = (string)($data['run_purpose'] ?? 'payroll') === 'incentive' ? 'incentive' : 'payroll';
-            $computeStatutory = $runPurpose === 'incentive' ? (!empty($data['compute_statutory']) ? 1 : 0) : 1;
-            $includeBaseSalary = $runPurpose === 'incentive' ? (!empty($data['include_base_salary']) ? 1 : 0) : 1;
-            $includeStandingItems = $runPurpose === 'incentive' ? (!empty($data['include_standing_items']) ? 1 : 0) : 1;
-            $includeAttendancePay = $runPurpose === 'incentive' ? (!empty($data['include_attendance_pay']) ? 1 : 0) : 0;
-            $useFlatTaxRate = $runPurpose === 'incentive' ? (!empty($data['use_flat_tax_rate']) ? 1 : 0) : 0;
+            if ($runPurpose === 'incentive') {
+                // 2026-09-09, real bug found and fixed (round-creation flow audit, Bug 1, explicit
+                // report of a supplemental run's flat-tax-rate opt-in getting silently wiped by any
+                // unrelated edit-save): each of these 5 flags is now only touched when the CLIENT
+                // PAYLOAD actually included its own key -- absence means "leave this run's current
+                // stored value alone", never "silently reset to 0". This is exactly the hole
+                // use_flat_tax_rate fell into: the Edit modal had no matching field/payload key for it
+                // at all (Create's own #run_use_flat_tax_rate was never ported over), so the OLD
+                // `!empty($data[...]) ? 1 : 0` pattern here -- which correctly zeroes a box that WAS
+                // actually unchecked-and-sent -- was instead unconditionally treating "key never
+                // existed" the same as "explicitly false", wiping a real, previously-saved flag on
+                // every single edit-save regardless of what the admin actually changed. Guarding
+                // every flag in this group the same way (not just the one that broke) protects
+                // against the identical regression recurring for any of the other 4 if a future edit
+                // to this modal ever drops one of their payload keys the same way.
+                $computeStatutory = array_key_exists('compute_statutory', $data) ? (!empty($data['compute_statutory']) ? 1 : 0) : $computeStatutory;
+                $includeBaseSalary = array_key_exists('include_base_salary', $data) ? (!empty($data['include_base_salary']) ? 1 : 0) : $includeBaseSalary;
+                $includeStandingItems = array_key_exists('include_standing_items', $data) ? (!empty($data['include_standing_items']) ? 1 : 0) : $includeStandingItems;
+                $includeAttendancePay = array_key_exists('include_attendance_pay', $data) ? (!empty($data['include_attendance_pay']) ? 1 : 0) : $includeAttendancePay;
+                $useFlatTaxRate = array_key_exists('use_flat_tax_rate', $data) ? (!empty($data['use_flat_tax_rate']) ? 1 : 0) : $useFlatTaxRate;
+            } else {
+                $computeStatutory = 1;
+                $includeBaseSalary = 1;
+                $includeStandingItems = 1;
+                $includeAttendancePay = 0;
+                $useFlatTaxRate = 0;
+            }
         } elseif (!$isOffCycle && !$isSupplementalSync) {
             // Just became (or already was) a regular cycle-linked/Pending-Pull run -- same
             // always-on invariant create() enforces for that case, regardless of whatever
