@@ -2537,11 +2537,22 @@ function initRunDetailTable(details) {
     // column. It only ever hid correctly on a SECOND reload, once `tb_run_detail` had a real value
     // from a prior successful assignment -- exactly matching the reported symptom.
     const showCheckboxColumn = !currentRun || currentRun.state === 'draft';
+    // 2026-09-10, explicit request: "ซ่อน column แหล่งที่มา...เมื่อรอบไม่นำฐานเงินเดือนมาคำนวณ" -- a
+    // RUN-LEVEL condition (same run_purpose='incentive' + include_base_salary=0 flag item 2's own
+    // base_salary_excluded is derived from at calc time, see PayrollRunModel::isBaseSalaryExcluded()'s
+    // own docblock), NOT the per-employee base_salary_excluded flag -- this hides the WHOLE column
+    // for every row on the run, not row-by-row (data_source genuinely doesn't apply to a run that
+    // never brings base salary into the calculation at all).
+    const showDataSourceColumn = !currentRun || currentRun.run_purpose !== 'incentive' || !!currentRun.include_base_salary;
     if ($.fn.DataTable.isDataTable('#tb_run_detail')) {
         const existingApi = $('#tb_run_detail').DataTable();
         const existingCheckboxColumn = existingApi.column(0);
         if (existingCheckboxColumn.visible() !== showCheckboxColumn) {
             existingCheckboxColumn.visible(showCheckboxColumn, false);
+        }
+        const existingDataSourceColumn = existingApi.column(3);
+        if (existingDataSourceColumn.visible() !== showDataSourceColumn) {
+            existingDataSourceColumn.visible(showDataSourceColumn, false);
         }
         existingApi.clear().rows.add(details).draw();
         return;
@@ -2585,7 +2596,7 @@ function initRunDetailTable(details) {
                 return `<span class="fw-semibold">${escapeHtml(d)}</span>${badges.join('')}`;
             } },
             { data: null, orderable: false, render: (d, t, row) => escapeHtml(employeeDisplayNameRd(row)) },
-            { data: null, className: 'text-center', render: (d, t, row) => dataSourceBadgeRd(row) },
+            { data: null, className: 'text-center', visible: showDataSourceColumn, render: (d, t, row) => dataSourceBadgeRd(row) },
             // 2026-09-02, explicit request: "ในตารางพนักงานให้เพิ่ม Column รับเงินผ่านบัญชี หรือเงินสด" --
             // same badge markup the (since-removed) Payment Method Summary tab used, reused here for
             // a consistent look.
