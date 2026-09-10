@@ -11,9 +11,27 @@
   One file = one change/feature, never append multiple unrelated changes into one file.
 - Never run ad-hoc DDL (CREATE/ALTER/DROP) against any database without a migration file
   backing it first — the file always comes before the DDL runs, never after or instead of it.
+- Apply every migration through `php scripts/migrate.php up` only — never `mysql < file.sql` and
+  never an ad-hoc PDO `exec()` of the file's contents. This is not optional style: `mysql < file.sql`
+  runs the UP and DOWN sections of the SAME file back to back, which already broke production once
+  (dropped the tables the UP section had just created). `scripts/migrate.php` is what correctly
+  splits UP from DOWN, tracks what's already applied (`schema_migrations` table), and only ever
+  runs a file's UP section, once.
+- A migration that adds a FOREIGN KEY onto an *existing* column must NULL out orphaned values for
+  that column first, in its own UP, before adding the constraint — never assume a value that's
+  always valid in the local dev DB is equally valid in production; the ADD CONSTRAINT step must
+  never be the first thing that discovers otherwise.
 - You may apply migrations to the local dev DB only. Never to any other database.
 - Report in the task summary that a migration was applied and how to roll it back.
 - Report which tasks require a migration to be run before the code works.
+- A release note's own deploy steps for a database that has run `scripts/migrate.php` before must
+  say `php scripts/migrate.php status && php scripts/migrate.php up`, never a raw `mysql < file.sql`
+  command. **First deploy to a NEW environment** (a fresh DB, or one this tool has never run
+  against) is 4 steps, not 2 — write all 4 in the release note, don't shorten it to just `status`+
+  `up`: (1) `php scripts/migrate.php status`, (2) manually check every file listed under "Unknown"
+  against that environment's real schema, (3) `php scripts/migrate.php mark <file>` each one
+  confirmed already applied (or apply it deliberately then `mark` it), (4) `php scripts/migrate.php up`
+  — `up` refuses to run anything at all while any file remains unresolved in "Unknown", by design.
 - Code that depends on a new column must fail safely or clearly if the
   migration has not been applied.
 
@@ -28,6 +46,7 @@
   parameter, generalize the existing function instead.
 - End every task report with a suggested commit message in conventional-commit format
   (type(scope): summary + 1-3 lines of why). The developer copies it when committing.
+- Also write that same commit message to `.git/COMMIT_MSG_NEXT` (overwrite each time).
 
 ---
 

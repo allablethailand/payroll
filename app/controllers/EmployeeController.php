@@ -578,6 +578,19 @@ class EmployeeController extends Controller {
         $model = new EmployeePaymentMethodModel();
         $this->json(['status' => true, 'data' => $model->scopedBankAccountOptions((int)$compId, $cycleId, $search, $page, $limit)]);
     }
+    /** 2026-09-10, Batch 3B item 2c: backs the Salary tab's default_bank_account_id placeholder
+     *  ("Uses the cycle's own default: Krungsri xxx-712") -- see
+     *  EmployeePaymentMethodModel::resolvedDefaultBankAccountLabel()'s own docblock. */
+    public function resolvedDefaultBankAccount() {
+        $compId = getCompId();
+        $cycleId = isset($_POST['cycle_id']) ? (int)$_POST['cycle_id'] : 0;
+        if (!$compId || $cycleId <= 0) {
+            $this->json(['status' => true, 'data' => null]);
+            return;
+        }
+        $model = new EmployeePaymentMethodModel();
+        $this->json(['status' => true, 'data' => $model->resolvedDefaultBankAccountLabel((int)$compId, $cycleId)]);
+    }
     /** Mixed-payment line breakdown for one employee (Employment tab's repeatable-row form, only
      *  populated while payment_method_id resolves to 'mixed') -- get() below already returns the
      *  employee's own scalar columns, this is the separate 1:many child list. */
