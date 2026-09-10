@@ -200,15 +200,8 @@ function apvApproverSubstepHtmlAp(a) {
         ${a.note ? `<div class="apv-substep-remark">${escapeHtml(a.note)}</div>` : ''}
     </div>`;
 }
-function apvApprovalStageInfoAp(state) {
-    switch (state) {
-        case 'pending_approval': return { tone: 'pending', icon: 'fa-hourglass-half', label: langData['state_pending_approval'] || 'Waiting for Approval' };
-        case 'need_info': return { tone: 'info', icon: 'fa-circle-info', label: langData['state_need_info'] || 'Need Information' };
-        case 'approved': case 'paid': case 'locked': return { tone: 'done', icon: 'fa-check', label: langData['state_approved'] || 'Approved' };
-        case 'rejected': return { tone: 'rejected', icon: 'fa-xmark', label: langData['state_rejected'] || 'Not Approved' };
-        default: return { tone: 'muted', icon: 'fa-hourglass', label: langData['status_pending'] || 'Not Started' };
-    }
-}
+// 2026-09-10, Batch 3A item 2: moved to app.js's own apvApprovalStageInfo() (shared with
+// index.js/detail.js's own identical copies).
 // 2026-08-30, explicit follow-up ("ยังไม่ได้ปรับ UI...ให้แสดงหลาย step ที่ actionable พร้อมกันแบบจุดๆ ว่า
 // ตัวเองอยู่ตำแหน่งไหน และตำแหน่งก่อนหน้านั้นอนุมัติหรือยัง") -- see index.js's own equivalent comment for
 // the full reasoning (mirrored here per this file's own "duplicate, don't share across pages" convention).
@@ -246,7 +239,7 @@ function apvStepGroupHtmlAp(step) {
     </div>`;
 }
 function apvApprovalStageHtmlAp(run) {
-    const info = apvApprovalStageInfoAp(run.state);
+    const info = apvApprovalStageInfo(run.state);
     const steps = (run.approval_flow && run.approval_flow.steps) || null;
     const approvers = (run.approval_flow && run.approval_flow.approvers) || [];
     const bodyHtml = (steps && steps.length)

@@ -951,7 +951,15 @@
                                 <label class="form-label mb-1"><span data-i18n="tax_treatment">Tax Treatment</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-9">
-                                <select class="form-select select2-static" id="tax_treatment" name="tax_treatment" data-option-keys="taxable,non_taxable" data-option-values="taxable,non_taxable"></select>
+                                <input type="hidden" id="tax_treatment" name="tax_treatment">
+                                <!-- 2026-09-10, Batch 3A item 6: 2-option dropdown -> segmented button, same
+                                     .btn-group.btn-group-sm/.btn-outline-brand pattern as the existing
+                                     Interest/Fee toggle (employee/detail.js's #eedInterestToggle) -- not a
+                                     new pattern. -->
+                                <div class="btn-group btn-group-sm" role="group" id="pedTaxTreatmentToggle" data-ped-segmented="tax_treatment">
+                                    <button type="button" class="btn btn-outline-brand" data-value="taxable" data-i18n-title="taxable" title="Taxable"><span data-i18n="ped_tax_treatment_taxable_short">Taxable</span></button>
+                                    <button type="button" class="btn btn-outline-brand" data-value="non_taxable" data-i18n-title="non_taxable" title="Tax-exempt"><span data-i18n="ped_tax_treatment_exempt_short">Tax Exempt</span></button>
+                                </div>
                             </div>
                         </div>
                         <div class="row mb-3">
@@ -976,7 +984,11 @@
                                 <label class="form-label mb-1"><span data-i18n="tax_deduction_impact">Tax Deduction Impact</span> <span class="text-danger">*</span></label>
                             </div>
                             <div class="col-sm-9">
-                                <select class="form-select select2-static" id="tax_deduction_impact" name="tax_deduction_impact" data-option-keys="impact_before_tax,impact_after_tax" data-option-values="before_tax,after_tax"></select>
+                                <input type="hidden" id="tax_deduction_impact" name="tax_deduction_impact">
+                                <div class="btn-group btn-group-sm" role="group" id="pedTaxDeductionImpactToggle" data-ped-segmented="tax_deduction_impact">
+                                    <button type="button" class="btn btn-outline-brand" data-value="before_tax" data-i18n-title="impact_before_tax" title="Deduct before tax (reduces taxable income)"><span data-i18n="ped_impact_before_tax_short">Before Tax</span></button>
+                                    <button type="button" class="btn btn-outline-brand" data-value="after_tax" data-i18n-title="impact_after_tax" title="Deduct after tax (reduces net pay only)"><span data-i18n="ped_impact_after_tax_short">After Tax</span></button>
+                                </div>
                             </div>
                         </div>
                         <div class="row mb-3">
@@ -984,7 +996,14 @@
                                 <label class="form-label mb-1" data-i18n="statutory_report_code">Statutory Report Mapping</label>
                             </div>
                             <div class="col-sm-9">
-                                <select class="form-select select2-static" id="statutory_report_code" name="statutory_report_code" data-option-keys="statutory_report_th_slf" data-option-values="TH_SLF"></select>
+                                <input type="hidden" id="statutory_report_code" name="statutory_report_code">
+                                <!-- Optional field -- "ไม่มี" (reusing the same generic "None" label the
+                                     Interest/Fee toggle's own none-state already uses) is a real 3rd choice
+                                     here, not a placeholder. -->
+                                <div class="btn-group btn-group-sm" role="group" id="pedStatutoryReportToggle" data-ped-segmented="statutory_report_code">
+                                    <button type="button" class="btn btn-outline-brand active" data-value=""><span data-i18n="interest_none">None</span></button>
+                                    <button type="button" class="btn btn-outline-brand" data-value="TH_SLF" data-i18n-title="statutory_report_th_slf" title="Student Loan Fund (กยศ.)"><span data-i18n="ped_statutory_slf_short">SLF</span></button>
+                                </div>
                             </div>
                         </div>
                         <!-- 2026-09-03, Manual Entry / Employee Salary tab review Phase 1B (explicit
@@ -1023,7 +1042,11 @@
                                 </div>
                             </div>
                             <div class="col-sm-3">
-                                <select class="form-select select2-static" id="default_fee_base" name="default_fee_base" data-option-keys="fee_base_option_principal,fee_base_option_base_salary" data-option-values="principal_amount,base_salary"></select>
+                                <input type="hidden" id="default_fee_base" name="default_fee_base">
+                                <div class="btn-group btn-group-sm" role="group" id="pedDefaultFeeBaseToggle" data-ped-segmented="default_fee_base">
+                                    <button type="button" class="btn btn-outline-brand" data-value="principal_amount" data-i18n-title="fee_base_option_principal" title="Principal Amount"><span data-i18n="ped_fee_base_principal_short">From Principal</span></button>
+                                    <button type="button" class="btn btn-outline-brand" data-value="base_salary" data-i18n-title="fee_base_option_base_salary" title="Base Salary"><span data-i18n="ped_fee_base_salary_short">From Base Salary</span></button>
+                                </div>
                             </div>
                         </div>
                     </div>

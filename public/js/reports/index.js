@@ -522,33 +522,11 @@ function renderCycleMatrixTable() {
         lengthMenu: lengthMenu,
         language: getTableLang(),
         columns: columns,
-        // 2026-09-08, same-day follow-up, real bug found and fixed (explicit report: "ตอนแถวน้อยๆ กด
-        // แล้ว dropdown ไปซ่อนด้านล่างต้องเลื่อนดูเอา แต่ถ้าแถวเยอะๆ ไม่มีปัญหาครับ") -- this table's own
-        // wrapper (#cycleMatrixTableWrap) is `.table-responsive` (overflow-x:auto), and setting
-        // overflow-x to anything but `visible` makes the browser compute overflow-y as `auto` too
-        // (CSS spec, not a guess) -- with FEW rows the wrapper's own auto-height is barely taller than
-        // the table itself, so a dropdown-menu opening below its toggle immediately exceeds that
-        // short box and gets caught by the newly-active vertical scrollbar instead of floating freely
-        // (exactly "have to scroll to see it"); with MANY rows the wrapper is already tall enough that
-        // this rarely bites, which is why it looked fine there. Bootstrap's default Popper strategy
-        // (`absolute`) positions relative to the nearest positioned ancestor and IS clipped by a
-        // scrolling ancestor's overflow box; `strategy: 'fixed'` positions relative to the viewport
-        // instead, which is never clipped by an ancestor's overflow (same root-cause class already
-        // hit once in this app for Employee Detail's own tab-bar "More" dropdown, there caused by a
-        // plain `overflow:hidden` -- this is the `overflow:auto` variant of the same thing, fixed via
-        // Popper config instead of removing the overflow rule, since THIS overflow is load-bearing
-        // for the table's own horizontal drag-scroll). Every
-        // dropdown-toggle is freshly rendered on each draw (DataTables re-runs `render()` for every
-        // cell), so `getOrCreateInstance()` always constructs a NEW instance with this config here --
-        // never reuses a stale one from a previous draw's now-detached button.
-        drawCallback: function () {
-            getTableLang();
-            $('#tb_cycle_matrix .dropdown-toggle').each(function () {
-                bootstrap.Dropdown.getOrCreateInstance(this, {
-                    popperConfig: (defaultConfig) => Object.assign({}, defaultConfig, { strategy: 'fixed' })
-                });
-            });
-        },
+        // 2026-09-10, Batch 3A item 1 -- this table's own dropdown-clipping fix (a `.table-responsive`
+        // wrapper forcing overflow-y:auto, catching the dropdown-menu when there are few rows) is now
+        // handled globally by app.js's own applyFixedStrategyToTableDropdowns() on every `draw.dt`,
+        // superseding the per-table drawCallback that used to live here.
+        drawCallback: function () { getTableLang(); },
     });
 }
 $(document).on('click', '.btn-cycle-matrix-print', function () {

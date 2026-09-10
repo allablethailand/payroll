@@ -171,77 +171,12 @@ function nextStepBanner(state) {
    action that used to live in #runActionButtons now renders under the station it belongs to.
    Delete/Cancel are NOT part of this spine at all -- both were removed from the Detail page
    entirely per explicit request and now live only on the Payroll Process list page's row actions,
-   since they're "leave the flow" actions rather than a step within it. */
-const RUN_TIMELINE_STEPS = [
-    { key: 'draft', labelKey: 'state_draft', icon: 'fa-file-alt', dateField: 'created_at' },
-    { key: 'pending_approval', labelKey: 'state_pending_approval', icon: 'fa-paper-plane', dateField: 'submitted_at' },
-    { key: 'approved', labelKey: 'state_approved', icon: 'fa-check', dateField: 'approved_at' },
-    { key: 'paid', labelKey: 'state_paid', icon: 'fa-money-check-dollar', dateField: 'paid_at' },
-    { key: 'locked', labelKey: 'state_locked', icon: 'fa-lock', dateField: 'locked_at' },
-];
-// A cancelled run's audit_log always ends with the 'cancel' action -- its own from_state (the
-// last state the run was actually sitting in right before being cancelled) is what tells us how
-// far up the spine to mark done vs. where the "Cancelled" branch belongs, without needing a
-// dedicated column just for this cosmetic purpose.
-function cancelledFromState(run) {
-    const log = run.audit_log || [];
-    const last = log[log.length - 1];
-    return (last && last.action === 'cancel') ? last.from_state : 'draft';
-}
-// 2026-08-22, explicit request ("Status ในหน้า Approve มี Waiting Approve Not Approve Need
-// Information") -- a REAL third state (confirmed with the user, not just a label), branching off
-// pending_approval alongside 'rejected'. Rendered by branchInfo() below, next to
-// renderProcessTimeline()'s own icon/label lookup.
-const RUN_TIMELINE_BRANCH_INFO = {
-    rejected: { icon: 'fa-xmark', labelKey: 'state_rejected' },
-    cancelled: { icon: 'fa-ban', labelKey: 'state_cancelled' },
-    need_info: { icon: 'fa-circle-question', labelKey: 'state_need_info' },
-};
-function computeTimelineProgress(run) {
-    const state = run.state;
-    if (state === 'rejected') {
-        // Rejection always happens FROM pending_approval -- draft+pending_approval both actually
-        // happened, the "Approved" slot is where the rejection branch shows instead.
-        return { reachedIdx: 1, branch: { atIndex: 2, type: 'rejected' } };
-    }
-    if (state === 'need_info') {
-        // Same branch slot/reasoning as rejected above -- also only ever reached FROM pending_approval.
-        return { reachedIdx: 1, branch: { atIndex: 2, type: 'need_info' } };
-    }
-    if (state === 'cancelled') {
-        const fromKey = cancelledFromState(run);
-        if (fromKey === 'draft') {
-            return { reachedIdx: -1, branch: { atIndex: 0, type: 'cancelled' } };
-        }
-        // 'rejected' isn't a spine step itself (it's a branch off pending_approval) -- treat
-        // cancelling-from-rejected the same as cancelling from pending_approval for spine purposes.
-        const effectiveKey = fromKey === 'rejected' ? 'pending_approval' : fromKey;
-        const idx = RUN_TIMELINE_STEPS.findIndex(s => s.key === effectiveKey);
-        if (idx < 0) {
-            return { reachedIdx: -1, branch: { atIndex: 0, type: 'cancelled' } };
-        }
-        return { reachedIdx: idx, branch: { atIndex: idx + 1, type: 'cancelled' } };
-    }
-    // 2026-08-29, real bug found and fixed (explicit report: "Locked จะเป็นสีเขียวตอนไหนครับ" -- when
-    // does Locked ever turn green?): was `reachedIdx: idx - 1`, meaning a station only shows
-    // done/green once you've moved PAST it into the NEXT state -- correct for every station except
-    // the very LAST one (locked), which by that same rule could never turn green, since there is no
-    // state after it to "move past it into". Also didn't match the explicit follow-up request that
-    // every action button (Approve/Mark Paid/Lock) should render ONE station AHEAD of the state
-    // that unlocks it (Approve at "Approved" while state=pending_approval, Mark Paid at "Paid"
-    // while state=approved, Lock at "Locked" while state=paid) -- exactly the same "+1 ahead"
-    // placement the Submit button already used (hardcoded i===1 while state=draft), just not
-    // applied consistently to the others. `reachedIdx: idx` (not idx-1) makes both true at once:
-    // the CURRENT state's own station is immediately done/green (matches the branch-state cases
-    // just above, which already used this same `idx` convention, not `idx-1` -- this base case was
-    // the one inconsistent with them), and currentIndex (=reachedIdx+1, used by
-    // timelineStepActionsHtml() below) naturally becomes "the next station", where the action to
-    // reach it belongs. The one state this makes currentIndex run off the end of the array for --
-    // locked, the actual last step -- is handled as its own special case in
-    // timelineStepActionsHtml() instead of here.
-    const idx = RUN_TIMELINE_STEPS.findIndex(s => s.key === state);
-    return { reachedIdx: idx, branch: null };
-}
+   since they're "leave the flow" actions rather than a step within it.
+   2026-09-10, Batch 3A item 2: the step definitions/progress computation (was RUN_TIMELINE_STEPS/
+   computeTimelineProgress()/cancelledFromState() here) moved to app.js's own
+   RUN_LIFECYCLE_STEPS/runLifecycleSteps() -- shared with index.js's mini-timeline, which used to
+   duplicate this exact same logic under its own MINI_TIMELINE_STEPS/computeMiniTimelineProgress().
+   renderProcessTimeline() below now just calls runLifecycleSteps(run, {showDates:true}). */
 // Two independent things render into a step's tl-actions slot:
 //  1. "View Timeline" -- pinned PERMANENTLY at step 1 (the Approve station), and only once the run
 //     has actually been submitted (run.submitted_at set). 2026-08-23, explicit request ("ปุ่ม
@@ -252,7 +187,7 @@ function computeTimelineProgress(run) {
 //  2. The decision/undo/revise buttons -- still anchor at whichever step is CURRENTLY relevant
 //     (i === the current/branch step -- reachedIdx+1, which for a branched state
 //     (rejected/need_info/cancelled) always equals branch.atIndex too, see
-//     computeTimelineProgress() above): Approve/Request Info/Reject/Revert at pending_approval
+//     computeRunLifecycleProgress() (app.js) above): Approve/Request Info/Reject/Revert at pending_approval
 //     (step 1 -- the same slot View Timeline lives in, so they render together there),
 //     Undo Decision at approved (step 2), or Revise at the rejected/need_info branch (step 2's
 //     branch slot). can_approve_payroll/can_process_payroll gate which of these actually show, same
@@ -274,7 +209,7 @@ function timelineStepActionsHtml(i, run, currentIndex) {
     const buttons = [];
     // 2026-08-29, explicit request: "ปุ่ม Timeline และ Approve ควรไปอยู่ที่ Station Approved แล้ว" -- was
     // pinned at i===1 (the "Pending Approval"/ส่งอนุมัติ station itself); moved to i===2 ("Approved")
-    // to match computeTimelineProgress()'s own fix (see that function's own docblock) -- once
+    // to match computeRunLifecycleProgress() (app.js)'s own fix (see that function's own docblock) -- once
     // submitted, "Pending Approval" is a COMPLETED milestone (shows green/done) and "Approved" is
     // the station representing the NEXT thing to happen, which is where View Timeline/Approve/etc.
     // now consistently live.
@@ -347,11 +282,11 @@ function timelineStepActionsHtml(i, run, currentIndex) {
         } else if ((run.state === 'rejected' || run.state === 'need_info') && run.can_process_payroll) {
             buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-pull-back" title="${langData['action_revise'] || 'Revise'}"><i class="fa-solid fa-pen-to-square me-1"></i>${langData['action_revise'] || 'Revise'}</button>`);
         }
-    } else if (i === RUN_TIMELINE_STEPS.length - 1 && run.state === 'locked' && run.can_finalize_payroll) {
+    } else if (i === RUN_LIFECYCLE_STEPS.length - 1 && run.state === 'locked' && run.can_finalize_payroll) {
         // 2026-08-29, explicit request: "ปุ่ม Lock ควรไปอยู่ที่ Lock หลังจากกด Lock แล้วให้ Lock เป็นสีเขียว" --
         // "Locked" is the LAST station with nothing further ahead of it, so unlike every other
         // action button above (which now renders one station AHEAD of the state that unlocks it,
-        // matching computeTimelineProgress()'s own "reachedIdx=idx" fix), Reopen has nowhere ahead
+        // matching computeRunLifecycleProgress() (app.js)'s own "reachedIdx=idx" fix), Reopen has nowhere ahead
         // to go -- it renders at the terminal station itself, which is also exactly where that fix
         // makes "Locked" show as done/green the moment this state is reached.
         buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger btn-tl-reopen" title="${langData['action_reopen'] || 'Reopen for Editing'}"><i class="fa-solid fa-unlock me-1"></i>${langData['action_reopen'] || 'Reopen for Editing'}</button>`);
@@ -359,33 +294,17 @@ function timelineStepActionsHtml(i, run, currentIndex) {
     return buttons.length ? `<div class="tl-actions-row">${buttons.join('')}</div>` : '';
 }
 function renderProcessTimeline(run) {
-    const { reachedIdx, branch } = computeTimelineProgress(run);
-    const currentIndex = reachedIdx + 1;
+    const { steps, currentIndex } = runLifecycleSteps(run, { showDates: true });
     let html = '<ul class="process-timeline">';
-    for (let i = 0; i < RUN_TIMELINE_STEPS.length; i++) {
-        const step = RUN_TIMELINE_STEPS[i];
-        let cls = '';
-        let icon = step.icon;
-        let label = langData[step.labelKey] || step.key;
-        if (branch && branch.atIndex === i) {
-            cls = branch.type;
-            const info = RUN_TIMELINE_BRANCH_INFO[branch.type] || { icon: 'fa-ban', labelKey: null };
-            icon = info.icon;
-            label = (info.labelKey && langData[info.labelKey]) || branch.type;
-        } else if (i <= reachedIdx) {
-            cls = 'done';
-            icon = 'fa-check';
-        } else if (i === currentIndex) {
-            cls = 'current';
-        }
-        const dateVal = run[step.dateField];
-        const dateHtml = (cls === 'done' || cls === 'current') && dateVal
-            ? `<span class="tl-date"><i class="fa-regular fa-clock"></i> ${toLocalDateOnlyRd(dateVal)}</span>`
+    for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        const dateHtml = (step.cls === 'done' || step.cls === 'current') && step.date
+            ? `<span class="tl-date"><i class="fa-regular fa-clock"></i> ${toLocalDateOnlyRd(step.date)}</span>`
             : '';
         const actionsHtml = timelineStepActionsHtml(i, run, currentIndex);
-        html += `<li class="tl-step ${cls}">
-            <span class="tl-icon"><i class="fa-solid ${icon}"></i></span>
-            <span class="tl-label">${escapeHtml(label)}</span>
+        html += `<li class="tl-step ${step.cls}">
+            <span class="tl-icon"><i class="fa-solid ${step.icon}"></i></span>
+            <span class="tl-label">${escapeHtml(step.label)}</span>
             ${dateHtml}
             ${actionsHtml ? `<span class="tl-actions">${actionsHtml}</span>` : ''}
         </li>`;
@@ -1549,15 +1468,8 @@ function apvApproverSubstepHtmlRd(a) {
         ${a.note ? `<div class="apv-substep-remark">${escapeHtml(a.note)}</div>` : ''}
     </div>`;
 }
-function apvApprovalStageInfoRd(state) {
-    switch (state) {
-        case 'pending_approval': return { tone: 'pending', icon: 'fa-hourglass-half', label: langData['state_pending_approval'] || 'Waiting for Approval' };
-        case 'need_info': return { tone: 'info', icon: 'fa-circle-info', label: langData['state_need_info'] || 'Need Information' };
-        case 'approved': case 'paid': case 'locked': return { tone: 'done', icon: 'fa-check', label: langData['state_approved'] || 'Approved' };
-        case 'rejected': return { tone: 'rejected', icon: 'fa-xmark', label: langData['state_rejected'] || 'Not Approved' };
-        default: return { tone: 'muted', icon: 'fa-hourglass', label: langData['status_pending'] || 'Not Started' };
-    }
-}
+// 2026-09-10, Batch 3A item 2: moved to app.js's own apvApprovalStageInfo() (shared with
+// index.js/approval.js's own identical copies).
 // 2026-08-30, explicit follow-up ("ยังไม่ได้ปรับ UI...ให้แสดงหลาย step ที่ actionable พร้อมกันแบบจุดๆ ว่า
 // ตัวเองอยู่ตำแหน่งไหน และตำแหน่งก่อนหน้านั้นอนุมัติหรือยัง") -- see index.js's own equivalent comment for
 // the full reasoning (mirrored here per this file's own "duplicate, don't share across pages" convention).
@@ -1595,7 +1507,7 @@ function apvStepGroupHtmlRd(step) {
     </div>`;
 }
 function apvApprovalStageHtmlRd(run) {
-    const info = apvApprovalStageInfoRd(run.state);
+    const info = apvApprovalStageInfo(run.state);
     const steps = (run.approval_flow && run.approval_flow.steps) || null;
     const approvers = (run.approval_flow && run.approval_flow.approvers) || [];
     const bodyHtml = (steps && steps.length)
@@ -2694,21 +2606,15 @@ function initRunDetailTable(details) {
         createdRow: function (row, data) {
             $(row).toggleClass('rd-row-verified', !!data.is_verified);
         },
-        // 2026-09-10, Batch 2 item 7 follow-up: this table's own wrapper is `.table-responsive`
-        // (overflow-x:auto, which forces overflow-y:auto too per the CSS spec) -- Bootstrap's default
-        // Popper strategy positions the "More" dropdown-menu relative to that scrolling ancestor and
-        // gets clipped by it; `strategy: 'fixed'` positions relative to the viewport instead (same
-        // fix already applied to tb_cycle_matrix's own dropdown, see reports/index.js's docblock).
+        // 2026-09-10, Batch 3A item 1 -- this table's own dropdown-clipping fix (`.table-responsive`
+        // forcing overflow-y:auto, catching the "More" dropdown-menu) is now handled globally by
+        // app.js's own applyFixedStrategyToTableDropdowns() on every `draw.dt`, superseding the
+        // per-table fix that used to live here.
         drawCallback: function () {
             getTableLang();
             updateRunDetailBulkBar();
             applyRunDetailViewMode();
             updateSummaryCardsFromTable();
-            $('#tb_run_detail .dropdown-toggle').each(function () {
-                bootstrap.Dropdown.getOrCreateInstance(this, {
-                    popperConfig: (defaultConfig) => Object.assign({}, defaultConfig, { strategy: 'fixed' })
-                });
-            });
         },
         // 2026-08-29, same-day follow-up: "ตอนนี้เหมือนมี Summary ด้านขวาเล็กๆ ให้ตัดออก...อยากให้มี Summary
         // ของแต่ละ Column ใน Footer" -- replaces the old updateRunDetailVerifyLockSummaryRd() side

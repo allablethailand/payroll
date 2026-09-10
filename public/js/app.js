@@ -672,6 +672,32 @@ function registerSidebarMenuSearch() {
         }
     });
 }
+// 2026-09-10, Batch 3A item 1 (explicit report: "Dropdown ใน DataTable โดนตัดเมื่อแถวน้อย" -- same
+// root cause already found and fixed per-table before this (reports/index.js's own tb_cycle_matrix,
+// payroll/detail.js's own tb_run_detail): a `.dropdown-toggle` inside `.table-responsive`/
+// `.dataTables_wrapper` (overflow-x:auto, which forces overflow-y:auto too per the CSS spec) gets
+// clipped by that scrolling ancestor under Bootstrap's default Popper `absolute` strategy;
+// `strategy:'fixed'` positions relative to the viewport instead, never clipped by an ancestor's
+// overflow. Fixed HERE, globally, instead of per-table -- `draw.dt` fires for EVERY DataTable on
+// every redraw (delegated at the document level, scoped per-call to the table that actually just
+// drew via `e.target`), so a table with a dropdown never needs its own drawCallback for this again.
+// The 2 pre-existing per-table drawCallback copies of this exact fix (tb_cycle_matrix/tb_run_detail)
+// were removed in favor of this one shared function (see CLAUDE.md's "generalize instead of
+// mirror-copy" rule) -- see this session's own grep/report for the full list of tables this covers.
+function applyFixedStrategyToTableDropdowns(root) {
+    $(root || document).find('.dropdown-toggle[data-bs-toggle="dropdown"]').each(function () {
+        if (!$(this).closest('.dataTables_wrapper, .table-responsive').length) return;
+        bootstrap.Dropdown.getOrCreateInstance(this, {
+            popperConfig: (defaultConfig) => Object.assign({}, defaultConfig, { strategy: 'fixed' })
+        });
+    });
+}
+$(document).on('draw.dt', function (e) {
+    applyFixedStrategyToTableDropdowns(e.target);
+});
+$(document).ready(function () {
+    applyFixedStrategyToTableDropdowns(document);
+});
 function getTableLang() {
     return {
         search: langData.search || "Search",
@@ -1328,6 +1354,129 @@ function auditActionLabel(action) {
         return action;
     }
     return (langData && langData[key]) || action;
+}
+// 2026-09-10, Batch 3A item 2 (explicit report: "step แสดง 'รออนุมัติ' เป็นขั้นที่ผ่านแล้วแม้รอบอนุมัติ
+// แล้ว ทำให้อ่านสับสน") -- ONE shared run-lifecycle state->step/label/tone mapping, same
+// auditActionLabel() consolidation precedent above. Previously duplicated as detail.js's own
+// RUN_TIMELINE_STEPS/computeTimelineProgress() (full-size spine, Detail page) and index.js's own
+// MINI_TIMELINE_STEPS/computeMiniTimelineProgress() (dot-chain, List page) -- each independently
+// re-derived the SAME reachedIdx/branch progress logic and, critically, used a single STATIC
+// label per step regardless of whether that step was already done, currently active, or not yet
+// reached -- e.g. step 3 ("การอนุมัติ") always showed the plain state_pending_approval text
+// ("รออนุมัติ") even once the run had actually moved on to approved/paid/locked, reading as if the
+// run were still stuck waiting. Every step below now resolves ONE of 2 labels (pending vs done) --
+// or, for step 3 specifically, one of its real branch outcomes (rejected/need_info/cancelled) --
+// per this same distinction the CSS tone classes (done/current/rejected/need_info/cancelled) were
+// already computing correctly; only the LABEL TEXT was ever wrong, colors were already fine.
+const RUN_LIFECYCLE_STEPS = [
+    { key: 'draft', icon: 'fa-file-alt', pendingKey: 'state_draft', doneKey: 'step_draft_done' },
+    { key: 'pending_approval', icon: 'fa-paper-plane', pendingKey: 'step_submit_pending', doneKey: 'step_submit_done' },
+    { key: 'approved', icon: 'fa-check', pendingKey: 'state_pending_approval', doneKey: 'state_approved' },
+    { key: 'paid', icon: 'fa-money-check-dollar', pendingKey: 'step_paid_pending', doneKey: 'state_paid' },
+    { key: 'locked', icon: 'fa-lock', pendingKey: 'step_locked_pending', doneKey: 'state_locked' },
+];
+const RUN_LIFECYCLE_BRANCH_INFO = {
+    rejected: { icon: 'fa-xmark', labelKey: 'step_approval_rejected' },
+    need_info: { icon: 'fa-circle-question', labelKey: 'step_approval_need_info' },
+    cancelled: { icon: 'fa-ban', labelKey: 'state_cancelled' },
+};
+// A cancelled run's own audit_log always ends with the 'cancel' action -- its from_state (the last
+// state it actually sat in right before being cancelled) says how far up the spine to mark done.
+// List rows don't carry the full audit_log (only run.get() does, see runLifecycleSteps()'s own
+// `showDates` param below), so PayrollRunModel::list() precomputes the same fact into a
+// `cancelled_from_state` column instead -- this reads whichever of the two is present.
+function runLifecycleCancelledFromState(run) {
+    const log = run.audit_log;
+    if (log && log.length) {
+        const last = log[log.length - 1];
+        if (last && last.action === 'cancel') return last.from_state;
+    }
+    return run.cancelled_from_state || 'draft';
+}
+function computeRunLifecycleProgress(run) {
+    const state = run.state;
+    if (state === 'rejected') {
+        // Rejection always happens FROM pending_approval -- draft+pending_approval both actually
+        // happened, the "Approved" slot is where the rejection branch shows instead.
+        return { reachedIdx: 1, branch: { atIndex: 2, type: 'rejected' } };
+    }
+    if (state === 'need_info') {
+        return { reachedIdx: 1, branch: { atIndex: 2, type: 'need_info' } };
+    }
+    if (state === 'cancelled') {
+        const fromKey = runLifecycleCancelledFromState(run);
+        if (fromKey === 'draft') {
+            return { reachedIdx: -1, branch: { atIndex: 0, type: 'cancelled' } };
+        }
+        // 'rejected' isn't a spine step itself (it's a branch off pending_approval) -- treat
+        // cancelling-from-rejected the same as cancelling from pending_approval for spine purposes.
+        const effectiveKey = fromKey === 'rejected' ? 'pending_approval' : fromKey;
+        const idx = RUN_LIFECYCLE_STEPS.findIndex(s => s.key === effectiveKey);
+        if (idx < 0) {
+            return { reachedIdx: -1, branch: { atIndex: 0, type: 'cancelled' } };
+        }
+        return { reachedIdx: idx, branch: { atIndex: idx + 1, type: 'cancelled' } };
+    }
+    const idx = RUN_LIFECYCLE_STEPS.findIndex(s => s.key === state);
+    return { reachedIdx: idx, branch: null };
+}
+// Detail-page-only date lookup (explicit decision: List's mini-timeline shows step+status with NO
+// date at all -- it already has its own "Last Updated" column, and list() rows don't carry the
+// full audit_log needed here without a new backend query). Reads the LAST matching entry so a
+// re-approve after a revert-then-redo cycle shows the latest occurrence, not a stale earlier one.
+// Same action codes AUDIT_ACTION_LABEL_KEYS above already maps (markPaid, not mark_paid).
+const RUN_LIFECYCLE_AUDIT_ACTIONS = { pending_approval: 'submit', approved: 'approve', paid: 'markPaid', locked: 'lock' };
+function runLifecycleDateFromAuditLog(run, stepKey) {
+    if (stepKey === 'draft') return run.created_at || null;
+    const action = RUN_LIFECYCLE_AUDIT_ACTIONS[stepKey];
+    const log = run.audit_log || [];
+    for (let i = log.length - 1; i >= 0; i--) {
+        if (log[i].action === action) return log[i].performed_at || null;
+    }
+    return null;
+}
+// The one function both pages call. `options.showDates` (Detail: true, List: false) is the ONLY
+// difference between the two call sites -- everything else (steps/labels/tones/branch) is
+// identical. Returns { steps: [{key,cls,icon,label,date}], reachedIdx, currentIndex, branch }.
+function runLifecycleSteps(run, options) {
+    const showDates = !!(options && options.showDates);
+    const { reachedIdx, branch } = computeRunLifecycleProgress(run);
+    const currentIndex = reachedIdx + 1;
+    const steps = RUN_LIFECYCLE_STEPS.map(function (step, i) {
+        let cls = '';
+        let icon = step.icon;
+        let label = langData[step.pendingKey] || step.key;
+        if (branch && branch.atIndex === i) {
+            cls = branch.type;
+            const info = RUN_LIFECYCLE_BRANCH_INFO[branch.type] || { icon: 'fa-ban', labelKey: null };
+            icon = info.icon;
+            label = (info.labelKey && langData[info.labelKey]) || branch.type;
+        } else if (i <= reachedIdx) {
+            cls = 'done';
+            icon = 'fa-check';
+            label = langData[step.doneKey] || step.key;
+        } else if (i === currentIndex) {
+            cls = 'current';
+        }
+        const date = showDates ? runLifecycleDateFromAuditLog(run, step.key) : null;
+        return { key: step.key, cls, icon, label, date };
+    });
+    return { steps, reachedIdx, currentIndex, branch };
+}
+// 2026-09-10, Batch 3A item 2: the 3rd literal duplicate the user named ("List/Detail/modal ใช้
+// ร่วมกัน...render แยก 3 ที่") -- byte-identical apvApprovalStageInfoPr()/Rd()/Ap() in
+// index.js/detail.js/approval.js, one per copy of the Approval Timeline modal's own "Approval"
+// stage box (tone/icon/label for that ONE station, not the whole 5-step spine above). Same
+// auditActionLabel() consolidation precedent. Item 3 (adding "จ่ายเงิน"/"ปิดรอบ" stations to this
+// same modal) extends THIS single function next, not 3 copies of it.
+function apvApprovalStageInfo(state) {
+    switch (state) {
+        case 'pending_approval': return { tone: 'pending', icon: 'fa-hourglass-half', label: langData['state_pending_approval'] || 'Waiting for Approval' };
+        case 'need_info': return { tone: 'info', icon: 'fa-circle-info', label: langData['state_need_info'] || 'Need Information' };
+        case 'approved': case 'paid': case 'locked': return { tone: 'done', icon: 'fa-check', label: langData['state_approved'] || 'Approved' };
+        case 'rejected': return { tone: 'rejected', icon: 'fa-xmark', label: langData['state_rejected'] || 'Not Approved' };
+        default: return { tone: 'muted', icon: 'fa-hourglass', label: langData['status_pending'] || 'Not Started' };
+    }
 }
 function getLangValue(key) {
     return key.split('.').reduce((acc, part) => {
