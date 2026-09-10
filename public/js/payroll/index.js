@@ -2,6 +2,9 @@ let tb_payroll_run;
 let tb_pending_sync;
 let currentStation = 'draft'; // matches the station card marked .active in the view by default
 let selectedPendingSync = {}; // id => row data, for the Pending Pull bulk-select bar
+// 2026-09-10, Batch 2 item 5: #tb_sync_items (sync-detail modal's Employee Attendance Data table).
+let tb_sync_items;
+let currentSyncItemFilter = 'all'; // 'all' | 'unmapped' | 'sso_not_set'
 
 function toIsoDatePr(displayVal) {
     if (!displayVal) return '';
@@ -1124,6 +1127,21 @@ function syncUnitLabelPr(unitType) {
     };
     return map[unitType] || unitType;
 }
+// 2026-09-10, Batch 2 item 5: single OT-hours total for #tb_sync_items's own OT column (the
+// per-scope breakdown string stays in the card/child-row detail, not this summary number).
+function syncOtTotalHrsPr(item) {
+    const scoped = Number(item.ot_req_working_day_hrs || 0) + Number(item.ot_req_weekend_hrs || 0) + Number(item.ot_req_holiday_hrs || 0);
+    if (scoped > 0) return scoped;
+    return item.ot_mins ? Number(item.ot_mins) / 60 : 0;
+}
+// 2026-09-10, Batch 2 item 5: plain name only (no payroll_code prefix) -- #tb_sync_items's own
+// Name column is separate from its Code column, unlike the old card's combined nameLine.
+function syncItemDisplayNamePr(item) {
+    if (item.matched_employee_no) {
+        return (currentLang === 'th' ? `${item.matched_name_th} ${item.matched_surname_th}` : `${item.matched_name_en} ${item.matched_surname_en}`).trim();
+    }
+    return item.emp_name || '-';
+}
 function syncDetailSectionHeaderPr(num, i18nKey, fallback) {
     return `
         <h6 class="text-secondary fw-bold mb-3 mt-1">
@@ -1226,6 +1244,17 @@ function renderIdCardCellPr(item) {
         : '';
     return `<span><i class="fa-solid fa-id-card text-muted me-1"></i>${escapeHtml(item.id_card_no_masked)}</span>${expire}`;
 }
+// 2026-09-10, Batch 2 item 5: extracted out of renderPaymentSsoCellPr() below (pure refactor, same
+// output) so the new #tb_sync_items table's own SSO column can reuse it without the payment line.
+function syncSsoBadgePr(item) {
+    if (item.deduct_sso === null || item.deduct_sso === undefined) {
+        return `<span class="badge rounded-pill bg-light text-muted border">${langData['sync_sso_not_set'] || 'SSO: Not Set'}</span>`;
+    }
+    if (Number(item.deduct_sso) === 1) {
+        return `<span class="badge rounded-pill bg-info-subtle text-info">${langData['sync_sso_deduct'] || 'SSO: Deduct'}</span>`;
+    }
+    return `<span class="badge rounded-pill bg-light text-secondary border">${langData['sync_sso_no_deduct'] || 'SSO: No Deduct'}</span>`;
+}
 function renderPaymentSsoCellPr(item) {
     let payLine;
     if (item.pay_type === 'transfer') {
@@ -1237,15 +1266,7 @@ function renderPaymentSsoCellPr(item) {
     } else {
         payLine = `<span class="text-muted">-</span>`;
     }
-    let ssoBadge;
-    if (item.deduct_sso === null || item.deduct_sso === undefined) {
-        ssoBadge = `<span class="badge rounded-pill bg-light text-muted border">${langData['sync_sso_not_set'] || 'SSO: Not Set'}</span>`;
-    } else if (Number(item.deduct_sso) === 1) {
-        ssoBadge = `<span class="badge rounded-pill bg-info-subtle text-info">${langData['sync_sso_deduct'] || 'SSO: Deduct'}</span>`;
-    } else {
-        ssoBadge = `<span class="badge rounded-pill bg-light text-secondary border">${langData['sync_sso_no_deduct'] || 'SSO: No Deduct'}</span>`;
-    }
-    return `<span>${payLine}</span> ${ssoBadge}`;
+    return `<span>${payLine}</span> ${syncSsoBadgePr(item)}`;
 }
 function renderSyncStatusRowPr(row) {
     return `
@@ -1274,6 +1295,103 @@ function syncSummaryFieldPr(icon, i18nKey, fallback, value) {
         </div>
     `;
 }
+// 2026-09-10, Batch 2 item 5, part A: scoped to #tb_sync_items by id, same convention as
+// registerStationSearchFilter() above -- registered once in $(document).ready(), never re-pushed
+// on every modal open (the array would otherwise grow one entry per open).
+function registerSyncItemsSearchFilter() {
+    $.fn.dataTable.ext.search.push(function (settings, searchData, dataIndex, rowData) {
+        if (settings.nTable.id !== 'tb_sync_items' || !rowData) return true;
+        if (currentSyncItemFilter === 'unmapped') return !rowData.matched_employee_no;
+        if (currentSyncItemFilter === 'sso_not_set') return rowData.deduct_sso === null || rowData.deduct_sso === undefined;
+        return true;
+    });
+}
+$(document).on('change', '.sync-item-filter-radio', function () {
+    currentSyncItemFilter = $(this).val();
+    if (tb_sync_items) tb_sync_items.draw();
+});
+// Builds/rebuilds #tb_sync_items every time the sync-detail modal opens (the <table> node itself
+// is fresh each time, injected by renderSyncDetail()'s own .html() call) -- the isDataTable/destroy
+// guard is defensive, same pattern initPayrollRunTable()/initPendingSyncTable() already use.
+function initSyncItemsTable(items) {
+    if ($.fn.DataTable.isDataTable('#tb_sync_items')) {
+        $('#tb_sync_items').DataTable().destroy();
+    }
+    tb_sync_items = $('#tb_sync_items').DataTable({
+        data: items,
+        responsive: false,
+        paging: items.length > 10,
+        info: items.length > 10,
+        order: [[8, 'asc']], // unmapped rows first by default; any column header remains clickable
+        language: getTableLang(),
+        columns: [
+            { data: null, render: {
+                display: (d, t, row) => escapeHtml(row.matched_employee_no || row.payroll_code),
+                sort: (d, t, row) => row.matched_employee_no || row.payroll_code || '',
+                filter: (d, t, row) => row.matched_employee_no || row.payroll_code || '',
+            } },
+            { data: null, render: {
+                display: (d, t, row) => escapeHtml(syncItemDisplayNamePr(row)),
+                sort: (d, t, row) => syncItemDisplayNamePr(row),
+                filter: (d, t, row) => syncItemDisplayNamePr(row),
+            } },
+            { data: null, render: {
+                display: (d, t, row) => `${escapeHtml(row.dept_description || '-')}<br><span class="text-muted small">${escapeHtml(row.position_name || '-')}</span>`,
+                sort: (d, t, row) => row.dept_description || '',
+                filter: (d, t, row) => `${row.dept_description || ''} ${row.position_name || ''}`,
+            } },
+            { data: null, className: 'text-end text-nowrap', render: {
+                display: (d, t, row) => fmtNum(row.working_days),
+                sort: (d, t, row) => Number(row.working_days || 0),
+                filter: (d, t, row) => String(row.working_days ?? ''),
+            } },
+            { data: null, className: 'text-end text-nowrap', render: {
+                display: (d, t, row) => fmtNum(row.absent_days),
+                sort: (d, t, row) => Number(row.absent_days || 0),
+                filter: (d, t, row) => String(row.absent_days ?? ''),
+            } },
+            { data: null, className: 'text-end text-nowrap', render: {
+                display: (d, t, row) => fmtNum(row.late_mins),
+                sort: (d, t, row) => Number(row.late_mins || 0),
+                filter: (d, t, row) => String(row.late_mins ?? ''),
+            } },
+            { data: null, className: 'text-end text-nowrap', render: {
+                display: (d, t, row) => fmtNum(syncOtTotalHrsPr(row)),
+                sort: (d, t, row) => syncOtTotalHrsPr(row),
+                filter: (d, t, row) => String(syncOtTotalHrsPr(row)),
+            } },
+            { data: null, className: 'text-end text-nowrap', render: {
+                display: (d, t, row) => fmtNum(row.trip_allowance),
+                sort: (d, t, row) => Number(row.trip_allowance || 0),
+                filter: (d, t, row) => String(row.trip_allowance ?? ''),
+            } },
+            { data: null, render: {
+                display: (d, t, row) => mappingStatusBadgePr(!!row.matched_employee_no),
+                sort: (d, t, row) => row.matched_employee_no ? 1 : 0,
+                filter: (d, t, row) => row.matched_employee_no ? (langData['sync_detail_mapped'] || 'Mapped') : (langData['sync_detail_unmapped'] || 'Unmapped'),
+            } },
+            { data: null, render: {
+                display: (d, t, row) => syncSsoBadgePr(row),
+                sort: (d, t, row) => (row.deduct_sso === null || row.deduct_sso === undefined) ? -1 : Number(row.deduct_sso),
+                filter: (d, t, row) => (row.deduct_sso === null || row.deduct_sso === undefined) ? 'not set' : String(row.deduct_sso),
+            } },
+        ],
+        createdRow: function (row, data) {
+            if (!data.matched_employee_no) $(row).addClass('table-danger');
+        },
+    });
+    updateSyncItemFilterCounts(items);
+}
+// Counts shown in each filter pill's own label -- computed once from the full (unfiltered) items
+// array passed in, not from the table's current draw, so the counts never move as the pills
+// themselves are clicked.
+function updateSyncItemFilterCounts(items) {
+    const unmappedCount = items.filter(i => !i.matched_employee_no).length;
+    const ssoNotSetCount = items.filter(i => i.deduct_sso === null || i.deduct_sso === undefined).length;
+    $('#syncItemFilterAllCount').text(items.length);
+    $('#syncItemFilterUnmappedCount').text(unmappedCount);
+    $('#syncItemFilterSsoNotSetCount').text(ssoNotSetCount);
+}
 function renderSyncDetail(data) {
     const items = data.items || [];
     const statusRows = data.employee_status || [];
@@ -1298,8 +1416,32 @@ function renderSyncDetail(data) {
         </div>
         <div class="detail-section mb-4">
             ${syncDetailSectionHeaderPr(1, 'sync_detail_items_section', 'Employee Attendance Data')}
-            <div class="sync-emp-card-list">
-                ${items.length ? items.map(renderSyncItemCardPr).join('') : `<div class="text-center text-muted py-3">-</div>`}
+            <div class="btn-group mb-2" role="group" aria-label="sync item filter">
+                <input type="radio" class="btn-check sync-item-filter-radio" name="syncItemFilter" id="syncItemFilterAll" value="all" autocomplete="off" checked>
+                <label class="btn btn-outline-secondary btn-sm" for="syncItemFilterAll">${langData['filter_all'] || 'All'} (<span id="syncItemFilterAllCount">0</span>)</label>
+                <input type="radio" class="btn-check sync-item-filter-radio" name="syncItemFilter" id="syncItemFilterUnmapped" value="unmapped" autocomplete="off">
+                <label class="btn btn-outline-danger btn-sm" for="syncItemFilterUnmapped">${langData['sync_detail_unmapped'] || 'Unmapped'} (<span id="syncItemFilterUnmappedCount">0</span>)</label>
+                <input type="radio" class="btn-check sync-item-filter-radio" name="syncItemFilter" id="syncItemFilterSsoNotSet" value="sso_not_set" autocomplete="off">
+                <label class="btn btn-outline-secondary btn-sm" for="syncItemFilterSsoNotSet">${langData['sync_sso_not_set'] || 'SSO: Not Set'} (<span id="syncItemFilterSsoNotSetCount">0</span>)</label>
+            </div>
+            <div class="table-responsive sync-detail-table">
+                <table class="table table-hover align-middle mb-0" id="tb_sync_items">
+                    <thead class="table-light">
+                        <tr>
+                            <th class="text-nowrap">${langData['table_payroll_code'] || 'Payroll Code'}</th>
+                            <th class="text-nowrap">${langData['table_employee_name'] || 'Employee Name'}</th>
+                            <th class="text-nowrap">${langData['table_dept_position'] || 'Dept / Position'}</th>
+                            <th class="text-end text-nowrap">${langData['table_working_days'] || 'Working Days'}</th>
+                            <th class="text-end text-nowrap">${langData['table_absent_days'] || 'Absent Days'}</th>
+                            <th class="text-end text-nowrap">${langData['table_late_mins'] || 'Late (min)'}</th>
+                            <th class="text-end text-nowrap">${langData['table_ot_breakdown'] || 'OT (hrs)'}</th>
+                            <th class="text-end text-nowrap">${langData['table_trip_allowance'] || 'Trip Allowance'}</th>
+                            <th class="text-nowrap">${langData['table_mapping_status'] || 'Mapping Status'}</th>
+                            <th class="text-nowrap">${langData['table_sso_status'] || 'SSO'}</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </div>
         </div>
         <div class="detail-section">
@@ -1324,6 +1466,10 @@ function renderSyncDetail(data) {
         </div>
     `;
     $('#pendingSyncViewBody').html(html);
+    // Reset to 'All' every time a (possibly different) process's detail is opened -- a filter left
+    // active from a previously-viewed process must never silently carry over.
+    currentSyncItemFilter = 'all';
+    initSyncItemsTable(items);
 }
 
 // 2026-09-09, round-creation flow audit Phase 3 -- shared by resetRunForm(), setOffCycleMode(), and
@@ -2725,6 +2871,7 @@ $(document).ready(function () {
     (window.langReady || Promise.resolve()).then(function () {
     applyOrigamiPayrollLinkGating();
     registerStationSearchFilter();
+    registerSyncItemsSearchFilter();
     initPayrollRunTable();
     restoreStationFromHash();
     if (typeof IS_ORIGAMI_PAYROLL_LINKED === 'undefined' || IS_ORIGAMI_PAYROLL_LINKED) {
