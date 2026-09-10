@@ -320,13 +320,13 @@ function resetPedTypeForm(itemType) {
     $('.is-invalid').removeClass('is-invalid');
     $('#amount_source').val('').trigger('change');
     $('#calculation_method').val('');
-    $('#tax_treatment').val('').trigger('change');
-    $('#tax_deduction_impact').val('').trigger('change');
-    $('#statutory_report_code').val('').trigger('change');
+    setPedSegmentedValue('pedTaxTreatmentToggle', '');
+    setPedSegmentedValue('pedTaxDeductionImpactToggle', '');
+    setPedSegmentedValue('pedStatutoryReportToggle', '');
     $('#default_interest_type').val('').trigger('change');
     $('#default_interest_rate').val('');
     $('#default_fee_percent').val('');
-    $('#default_fee_base').val('').trigger('change');
+    setPedSegmentedValue('pedDefaultFeeBaseToggle', '');
     applyDefaultInterestTypeFields('');
     applyItemTypeFields(itemType);
     applyAmountSourceFields('');
@@ -339,13 +339,13 @@ function populatePedTypeForm(row) {
     $('#item_name_th').val(row.item_name_th);
     $('#fixed_amount').val(row.fixed_amount || '');
     $('#percent_rate').val(row.percent_rate || '');
-    $('#tax_treatment').val(row.tax_treatment || '').trigger('change');
-    $('#tax_deduction_impact').val(row.tax_deduction_impact || '').trigger('change');
-    $('#statutory_report_code').val(row.statutory_report_code || '').trigger('change');
+    setPedSegmentedValue('pedTaxTreatmentToggle', row.tax_treatment || '');
+    setPedSegmentedValue('pedTaxDeductionImpactToggle', row.tax_deduction_impact || '');
+    setPedSegmentedValue('pedStatutoryReportToggle', row.statutory_report_code || '');
     $('#default_interest_type').val(row.default_interest_type || '').trigger('change');
     $('#default_interest_rate').val(row.default_interest_rate || '');
     $('#default_fee_percent').val(row.default_fee_percent || '');
-    $('#default_fee_base').val(row.default_fee_base || '').trigger('change');
+    setPedSegmentedValue('pedDefaultFeeBaseToggle', row.default_fee_base || '');
     applyDefaultInterestTypeFields(row.default_interest_type || '');
     $('#calc_sso').prop('checked', Number(row.calc_sso) === 1);
     $('#calc_pf').prop('checked', Number(row.calc_pf) === 1);
@@ -367,17 +367,38 @@ function populatePedTypeForm(row) {
     applyAmountSourceFields(amountSource);
     applyPedTypeModalBadge(row.item_type);
 }
+// 2026-09-10, Batch 3A item 6: generic segmented-toggle helper for the 4 dropdowns converted below
+// (tax_treatment/tax_deduction_impact/statutory_report_code/default_fee_base) -- one function
+// instead of 4 near-copies (CLAUDE.md: "generalize instead of mirror-copy"). Same
+// .btn-group.btn-group-sm/.btn-outline-brand pattern the existing Interest/Fee toggle
+// (employee/detail.js's #eedInterestToggle) already established -- not a new one.
+function setPedSegmentedValue(toggleId, value) {
+    const $toggle = $(`#${toggleId}`);
+    $toggle.find('button').removeClass('active').filter(`[data-value="${value || ''}"]`).addClass('active');
+    $toggle.removeClass('border border-danger rounded-2 p-1');
+    $(`#${$toggle.data('ped-segmented')}`).val(value || '');
+}
+$(document).on('click', '#itemModal [data-ped-segmented] button', function () {
+    setPedSegmentedValue($(this).closest('[data-ped-segmented]').attr('id'), $(this).data('value'));
+});
 function validatePedTypeForm() {
     let firstInvalid = null;
     $('#itemModal .required').each(function () {
         const $el = $(this);
         if ($el.closest('.d-none').length > 0) return;
         const value = ($el.val() || '').toString().trim();
+        // A required field that's now a hidden input backing a segmented toggle (see
+        // setPedSegmentedValue() above) can't show Bootstrap's own .is-invalid border (invisible
+        // element) -- flag the visible toggle container instead so the user still sees which field
+        // needs a choice.
+        const $toggle = $(`[data-ped-segmented="${$el.attr('id')}"]`);
         if (!value) {
             $el.addClass('is-invalid');
-            if (!firstInvalid) firstInvalid = $el;
+            $toggle.addClass('border border-danger rounded-2 p-1');
+            if (!firstInvalid) firstInvalid = $toggle.length ? $toggle : $el;
         } else {
             $el.removeClass('is-invalid');
+            $toggle.removeClass('border border-danger rounded-2 p-1');
         }
     });
     return firstInvalid;
@@ -422,12 +443,10 @@ $(document).ready(function () {
         // all -- see collectPedTypeFormData()'s own comment); #amount_source is the new user-facing
         // selector that replaces it. #ped_status is gone entirely (T014, moved to the table row).
         initSelect2('#amount_source', { mode: 'static' });
-        initSelect2('#tax_treatment', { mode: 'static' });
-        initSelect2('#tax_deduction_impact', { mode: 'static' });
-        initSelect2('#statutory_report_code', { mode: 'static', allowClear: true });
+        // tax_treatment/tax_deduction_impact/statutory_report_code/default_fee_base converted to
+        // segmented buttons (Batch 3A item 6) -- no longer <select> elements, nothing to init here.
         // 2026-09-03, Manual Entry / Employee Salary tab review Phase 1B.
         initSelect2('#default_interest_type', { mode: 'static', allowClear: true });
-        initSelect2('#default_fee_base', { mode: 'static' });
         initSelect2('#source_event_code', { mode: 'ajax', allowClear: true });
         initSelect2('#payroll_frequency', { mode: 'static' });
         initSelect2('#cutoff_day_of_week', { mode: 'static' });
