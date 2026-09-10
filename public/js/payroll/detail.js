@@ -1874,7 +1874,7 @@ function manageItemsButtonRd(row) {
     if (!currentRun || currentRun.state !== 'draft') {
         return '';
     }
-    return `<button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-manual-lines" data-employee-id="${row.employee_id}" title="${langData['action_manage_items'] || 'Items'}"><i class="fa-solid fa-list-check"></i></button>`;
+    return `<li><button type="button" class="dropdown-item btn-manage-manual-lines" data-employee-id="${row.employee_id}"><i class="fa-solid fa-list-check text-primary me-2"></i>${langData['action_manage_items'] || 'Items'}</button></li>`;
 }
 // Raw Sync Data viewer (2026-08-21, explicit request: "ถ้าเป็นการ Sync ข้อมูลมาจาก Origami...เพิ่มปุ่ม
 // ดูข้อมูลดิบได้") -- only for a row that actually came from the sync payload; a manually-added
@@ -1883,7 +1883,7 @@ function rawSyncDataButtonRd(row) {
     if (!currentRun || !currentRun.sync_process_id || row.data_source !== 'sync') {
         return '';
     }
-    return `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-raw-sync-data" data-employee-id="${row.employee_id}" title="${langData['action_raw_sync_data'] || 'Raw Sync Data'}"><i class="fa-solid fa-file-code"></i></button>`;
+    return `<li><button type="button" class="dropdown-item btn-raw-sync-data" data-employee-id="${row.employee_id}"><i class="fa-solid fa-file-code text-secondary me-2"></i>${langData['action_raw_sync_data'] || 'Raw Sync Data'}</button></li>`;
 }
 // Remove-from-run action, calculation table -- available for EVERY row on any draft run
 // (2026-08-21, explicit request: "พนักงานทุกคน สามารถลบข้อมูลออกจากรอบได้ ต่อให้ Sync มาจาก Origami
@@ -1900,7 +1900,7 @@ function removeEmployeeButtonRd(row) {
     // 2026-08-28, explicit request: "ปรับ icon ให้เป็นรูปถังขยะ" -- trash-can, matching the delete-
     // button icon convention already used everywhere else in this app (Employee List, DataTables
     // row actions, etc.) instead of the previous user-minus icon.
-    return `<button type="button" class="btn btn-link btn-circle-action text-danger btn-remove-manual-employee" data-employee-id="${row.employee_id}" title="${langData['action_remove'] || 'Remove'}"><i class="fa-solid fa-trash-can"></i></button>`;
+    return `<li><button type="button" class="dropdown-item text-danger btn-remove-manual-employee" data-employee-id="${row.employee_id}"><i class="fa-solid fa-trash-can me-2"></i>${langData['action_remove'] || 'Remove'}</button></li>`;
 }
 // Breakdown button always shows (any state) -- it's read-only, unlike the other buttons which only
 // make sense while draft. Grouped into one Bootstrap button-group -- same
@@ -1952,27 +1952,33 @@ function commentButtonRd(row) {
     const label = `${escapeAttr(row.employee_no)} - ${escapeAttr(employeeDisplayNameRd(row))}`;
     const count = Number(row.comment_count || 0);
     const countBadge = count > 0
-        ? `<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.6rem;">${count}</span>`
+        ? `<span class="badge rounded-pill bg-danger ms-2">${count}</span>`
         : '';
-    return `<button type="button" class="btn btn-link btn-circle-action text-warning btn-comment-employee position-relative" data-employee-id="${row.employee_id}" data-employee-label="${label}" title="${langData['action_comments'] || 'Comments'}"><i class="fa-solid fa-comments"></i>${countBadge}</button>`;
+    return `<li><button type="button" class="dropdown-item btn-comment-employee" data-employee-id="${row.employee_id}" data-employee-label="${label}"><i class="fa-solid fa-comments text-warning me-2"></i>${langData['action_comments'] || 'Comments'}${countBadge}</button></li>`;
 }
 // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
 // ".btn-circle-action" section) replace the old adjacent .btn-group/border-start convention this
 // whole cluster previously followed (2026-08-21/29).
+// 2026-09-10, Batch 2 item 7: only View Breakdown stays a standalone button; the other 4
+// (conditionally present) collapse into one dropdown menu -- click handlers below still bind by
+// the same classes (.btn-manage-manual-lines/.btn-raw-sync-data/.btn-comment-employee/
+// .btn-remove-manual-employee) so nothing needed to change there.
 function runDetailActionsRd(row) {
+    const items = [rawSyncDataButtonRd(row), manageItemsButtonRd(row), commentButtonRd(row), removeEmployeeButtonRd(row)].filter(Boolean).join('');
+    const menu = items
+        ? `<div class="dropdown">
+            <button type="button" class="btn btn-link btn-circle-action text-secondary dropdown-toggle" data-bs-toggle="dropdown" title="${langData['action_more'] || 'More'}"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+            <ul class="dropdown-menu dropdown-menu-end">${items}</ul>
+        </div>`
+        : '';
     // 2026-09-09, explicit request: "ใน column สุดท้ายของแต่ละแถว ปุ่มให้เรียงเป็นแถวเดียวห้ามตกบรรทัด" --
-    // was flex-wrap, letting this cluster (up to 5 circular buttons -- View Breakdown/Raw Sync Data/
-    // Manage Items/Comment/Remove) wrap onto a 2nd line within the cell whenever it didn't fit;
-    // flex-nowrap keeps them on one line always -- .rd-detail-table-flush's own min-width + the
-    // table's existing .table-responsive wrapper (unchanged) is the fallback that lets the whole
-    // table scroll horizontally instead, same "no DataTables scrollX" convention this app already
-    // established elsewhere.
+    // flex-nowrap keeps this cluster on one line always -- .rd-detail-table-flush's own min-width +
+    // the table's existing .table-responsive wrapper (unchanged) is the fallback that lets the
+    // whole table scroll horizontally instead, same "no DataTables scrollX" convention this app
+    // already established elsewhere.
     return `<div class="d-flex gap-1 justify-content-center flex-nowrap">
         <button type="button" class="btn btn-link btn-circle-action text-info btn-view-breakdown" data-employee-id="${row.employee_id}" title="${langData['action_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-magnifying-glass-dollar"></i></button>
-        ${rawSyncDataButtonRd(row)}
-        ${manageItemsButtonRd(row)}
-        ${commentButtonRd(row)}
-        ${removeEmployeeButtonRd(row)}
+        ${menu}
     </div>`;
 }
 
@@ -2766,16 +2772,16 @@ function initRunDetailTable(details) {
                 $lengthDiv.append(`<button type="button" id="btnBulkVerify" class="btn btn-sm btn-outline-success${isDraft ? '' : ' d-none'}" disabled><i class="fa-solid fa-check-double me-1"></i><span data-i18n="action_verify">${langData['action_verify'] || 'Verify'}</span> (<span id="runDetailBulkCount">0</span>)</button>`);
                 $lengthDiv.append(`<button type="button" id="btnVerifyAllEmployees" class="btn btn-sm btn-outline-success${isDraft ? '' : ' d-none'}"><i class="fa-solid fa-check-double me-1"></i><span data-i18n="action_verify_all">${langData['action_verify_all'] || 'Verify All'}</span></button>`);
             }
+            // 2026-09-10, Batch 2 item 7: filter icon restricted to genuinely-filterable columns
+            // with multiple discrete values (data source/payment method/calc status/verify status)
+            // -- dropped from the 4 numeric amount columns and the name column per explicit request.
             initExcelColumnFilters(this.api(), {
                 mode: 'client',
                 columns: [
                     { index: 3, key: 'data_source' },
                     { index: 4, key: 'payment_method_code' },
-                    { index: 5, key: 'base_salary_amount' },
-                    { index: 6, key: 'gross_amount' },
-                    { index: 7, key: 'total_deduction_amount' },
-                    { index: 8, key: 'net_amount' },
                     { index: 9, key: 'calc_status' },
+                    { index: 10, key: 'verify_status' },
                 ]
             });
         }
