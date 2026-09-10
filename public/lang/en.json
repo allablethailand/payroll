@@ -1535,6 +1535,8 @@
     "run_origin_sync": "Pulled from Origami",
     "run_origin_cycle": "Payroll Schedule",
     "run_origin_manual": "Off-schedule / Manual",
+    "run_origin_origami": "Origami",
+    "run_type_special": "Special run",
     "compute_statutory_label": "Compute tax/social security (SSO/PVD) for this payment",
     "compute_statutory_short": "Tax/SSO",
     "include_base_salary_label": "Include base salary (full amount, not prorated)",
