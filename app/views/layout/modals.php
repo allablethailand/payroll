@@ -2006,7 +2006,7 @@
 </div>
 
 <!-- ===== Payroll Approval (app/views/payroll/approval.php) ===== -->
-<div class="modal fade" id="approveRunModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="approveRunModalLabel" aria-hidden="true">
+<div class="modal fade" id="approveRunModal" data-footer="confirm" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="approveRunModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
@@ -2031,7 +2031,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="rejectRunModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="rejectRunModalLabel" aria-hidden="true">
+<div class="modal fade" id="rejectRunModal" data-footer="confirm" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="rejectRunModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
@@ -2056,7 +2056,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="requestInfoRunModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="requestInfoRunModalLabel" aria-hidden="true">
+<div class="modal fade" id="requestInfoRunModal" data-footer="confirm" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="requestInfoRunModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
@@ -2081,7 +2081,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="approvalTimelineModal" tabindex="-1" aria-labelledby="approvalTimelineModalLabel" aria-hidden="true">
+<div class="modal fade" id="approvalTimelineModal" data-footer="view" tabindex="-1" aria-labelledby="approvalTimelineModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
@@ -2105,7 +2105,7 @@
 </div>
 
 <!-- ===== Employee Detail (app/views/employee/detail.php) ===== -->
-<div class="modal fade" id="eedModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="eedModalLabel" aria-hidden="true">
+<div class="modal fade" id="eedModal" data-footer="form" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="eedModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
@@ -2952,7 +2952,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="bulkPullModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="bulkPullModalLabel" aria-hidden="true">
+<div class="modal fade" id="bulkPullModal" data-footer="form" data-bs-backdrop="static" tabindex="-1" aria-labelledby="bulkPullModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
@@ -2973,7 +2973,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="payrollRunModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="payrollRunModalLabel" aria-hidden="true">
+<div class="modal fade" id="payrollRunModal" data-footer="form" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="payrollRunModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
@@ -3311,7 +3311,7 @@
     </div>
 </div>
 
-<div class="modal fade" id="cancelRunModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="cancelRunModalLabel" aria-hidden="true">
+<div class="modal fade" id="cancelRunModal" data-footer="confirm" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="cancelRunModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">

@@ -349,8 +349,25 @@ class PayrollRunModel {
             $row['is_verified'] = (bool)$row['is_verified'];
             $row['line_override_count'] = (int)$row['line_override_count'];
             $row['has_calc_override'] = !empty($row['has_calc_override']);
-            $row['base_salary_excluded'] = $row['base_salary_override_action'] === 'exclude'
-                || ($row['base_salary_override_action'] === null && !empty($row['run_excludes_base_salary']));
+            // 2026-09-10, real gap found and fixed (confirmed business rule): this used to check
+            // only the per-employee override + Run Settings item-exclusion -- it had NO awareness
+            // at all of an incentive run's own include_base_salary=0 toggle, which zeroes
+            // effectiveBase through a COMPLETELY SEPARATE code path in recalculate() (see that
+            // method's own `$effectiveBase = $includeBaseSalary ? $baseSalary : 0.0` branch for
+            // $isIncentive, well before the override/exclusion resolution runs). An incentive run
+            // with include_base_salary unchecked and no override/Run-Settings-exclusion configured
+            // on top genuinely has base_salary_amount=0 for the same "intentionally not included"
+            // reason as the other 2 mechanisms, but this flag stayed false for it, so the table
+            // showed a plain grey "0.00" instead of the red "Not Calculated" label. See
+            // isBaseSalaryExcluded()'s own docblock for the full 3-way resolution this now shares
+            // with PayrollReportDataModel::getRunDetails() (used by PayrollRegisterReport's Excel/
+            // PDF export of this exact same table).
+            $row['base_salary_excluded'] = self::isBaseSalaryExcluded(
+                $row['base_salary_override_action'],
+                !empty($row['run_excludes_base_salary']),
+                (string)($run['run_purpose'] ?? 'payroll'),
+                !empty($run['include_base_salary'])
+            );
             unset($row['base_salary_override_action'], $row['run_excludes_base_salary']);
             $row['total_days'] = $totalDaysByEmployee[(int)$row['employee_id']] ?? null;
         }
@@ -807,6 +824,44 @@ class PayrollRunModel {
     private const COMMENT_LOCKED_STATES = ['paid', 'locked', 'cancelled'];
     /** Reserved item_code for lineOverrideSave()'s own base-salary special case -- see that method's own docblock. */
     public const BASE_SALARY_OVERRIDE_CODE = '__base_salary__';
+
+    /**
+     * 2026-09-10, real gap found and fixed (confirmed business rule): the single source of truth
+     * for "is base salary effectively excluded from this employee's calculation for a reason,
+     * not genuinely zero" -- shared between getDetails() (below, backs the on-screen Employee
+     * Breakdown table's red "Not Calculated" label) and PayrollReportDataModel::getRunDetails()
+     * (backs PayrollRegisterReport's Excel/PDF export of that exact same table), so the two can
+     * never drift apart on which rows count as excluded.
+     *
+     * 3 independent reasons, mirroring recalculate()'s own real resolution order exactly (see that
+     * method's own `$effectiveBase` assignment for $isIncentive vs. the per-employee-override/
+     * Run-Settings-exclusion block further down):
+     *   1. A per-employee override (`payroll_run_line_overrides`, item_code=BASE_SALARY_OVERRIDE_CODE)
+     *      set to 'exclude' -- always wins over everything else, even for a normal run.
+     *   2. No override at all ('override_amount' also counts as "no override" here -- a real
+     *      value IS in effect, that's the opposite of excluded) AND this run's own Run Settings
+     *      item-exclusion list (`payroll_run_item_exclusions`) contains the base-salary sentinel.
+     *   3. No override, no Run Settings exclusion, AND this is an incentive run
+     *      (`run_purpose='incentive'`) that never opted into `include_base_salary` -- functionally
+     *      identical to reasons 1/2 (base salary genuinely wasn't brought into this employee's
+     *      calculation, on purpose) even though it comes from recalculate()'s own separate
+     *      $isIncentive/$includeBaseSalary branch, not either of the other 2 tables at all. A
+     *      normal (non-incentive) run always has run_purpose='payroll', so this 3rd clause is a
+     *      guaranteed no-op for it regardless of whatever include_base_salary happens to hold.
+     */
+    public static function isBaseSalaryExcluded(?string $overrideAction, bool $runExcludesBaseSalary, string $runPurpose, bool $includeBaseSalary): bool {
+        if ($overrideAction === 'exclude') {
+            return true;
+        }
+        if ($overrideAction !== null) {
+            return false; // 'override_amount' -- a real overridden value is in effect, not an exclusion
+        }
+        if ($runExcludesBaseSalary) {
+            return true;
+        }
+        return $runPurpose === 'incentive' && !$includeBaseSalary;
+    }
+
     /**
      * 2026-08-31: same "reserved sentinel, never collides with a company's own free-text catalog
      * item_code" precedent as BASE_SALARY_OVERRIDE_CODE above -- wraps a statutory item code

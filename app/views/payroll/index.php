@@ -220,7 +220,7 @@
          moved into layout/modals.php, since this page's own PDF preview only ever targets ONE
          report/format, not a generic "preview whichever report row was clicked" mechanism the way
          Detail's own modal is -- see runRegisterPdfPreview() in index.js). -->
-    <div class="modal fade" id="runRegisterPdfPreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade" id="runRegisterPdfPreviewModal" data-footer="view" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">

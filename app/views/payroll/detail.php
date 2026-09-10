@@ -586,7 +586,7 @@
              modal-footer, alongside .modal-dialog-scrollable (already present) doing the rest: the
              list above keeps scrolling internally while this form + the action buttons stay pinned
              in view the whole time, even with a long comment history. -->
-        <div class="modal fade" id="employeeCommentModal" tabindex="-1" aria-hidden="true">
+        <div class="modal fade" id="employeeCommentModal" data-footer="none" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-dialog-scrollable">
                 <div class="modal-content">
                     <div class="modal-header">
@@ -845,7 +845,7 @@
              the SAME api/payroll-cycle.bank-account.options endpoint Employee Detail's own
              #default_bank_account_id and Payroll Configuration's cycle-level picker already use --
              same company-scoped account list, no new endpoint needed. -->
-        <div class="modal fade" id="bankAccountAssignModal" tabindex="-1" aria-hidden="true">
+        <div class="modal fade" id="bankAccountAssignModal" data-footer="form" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
@@ -875,7 +875,7 @@
             </div>
         </div>
 
-        <div class="modal fade" id="remittanceBreakdownModal" tabindex="-1" aria-hidden="true">
+        <div class="modal fade" id="remittanceBreakdownModal" data-footer="view" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-scrollable">
                 <div class="modal-content">
                     <div class="modal-header">
@@ -906,7 +906,7 @@
 
         <!-- Mark as Transferred modal -- required evidence file (jpg/png/pdf, 5MB cap, see
              PayrollRemittanceController::markTransferred()) uploaded via multipart/form-data. -->
-        <div class="modal fade" id="remittanceMarkTransferredModal" tabindex="-1" aria-hidden="true">
+        <div class="modal fade" id="remittanceMarkTransferredModal" data-footer="confirm" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
@@ -927,7 +927,7 @@
         </div>
 
         <!-- Mark as Failed modal -- a reason note is required (PayrollRemittanceModel::markFailed()). -->
-        <div class="modal fade" id="remittanceMarkFailedModal" tabindex="-1" aria-hidden="true">
+        <div class="modal fade" id="remittanceMarkFailedModal" data-footer="confirm" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
                     <div class="modal-header">
@@ -961,7 +961,7 @@
              preview -- so the empty-state card isn't rattling around in an oversized XL modal. The
              card itself (icon-in-a-circle, title + subtext) replaces the old bare
              icon-over-one-line-of-text block. -->
-        <div class="modal fade" id="reportPreviewModal" tabindex="-1" aria-hidden="true">
+        <div class="modal fade" id="reportPreviewModal" data-footer="view" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-xl modal-dialog-centered" id="reportPreviewDialog">
                 <div class="modal-content">
                     <div class="modal-header">
@@ -993,7 +993,7 @@
              ReportExportLogModel::list()'s own docblock), showing every LOGGED (non-preview)
              download -- when, by whom, language, device/browser (parsed from the request's own
              User-Agent), IP, and source (which screen triggered it). -->
-        <div class="modal fade" id="reportHistoryModal" tabindex="-1" aria-hidden="true">
+        <div class="modal fade" id="reportHistoryModal" data-footer="view" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-scrollable">
                 <div class="modal-content">
                     <div class="modal-header">
@@ -1082,7 +1082,7 @@
     </div>
 
     <!-- Edit Run Modal -->
-    <div class="modal fade" id="editRunModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="editRunModalLabel" aria-hidden="true">
+    <div class="modal fade" id="editRunModal" data-footer="form" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="editRunModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
@@ -1406,7 +1406,7 @@
          adjustment on top of the normal calculation (2026-08-19, explicit request) -- see
          PayrollRunModel::recalculate()'s $isIncentive branch vs. the manual-lines block appended
          to the normal branch. #manageLinesHint's wording switches between the two accordingly. -->
-    <div class="modal fade" id="manageLinesModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="manageLinesModalLabel" aria-hidden="true">
+    <div class="modal fade" id="manageLinesModal" data-footer="view" data-bs-backdrop="static" tabindex="-1" aria-labelledby="manageLinesModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
@@ -1790,7 +1790,7 @@
     <!-- Breakdown Modal: per-employee itemized view for one payroll_run_details row, split into
          clearly-labeled Earnings / Deductions / Statutory sections so it's unambiguous which line
          is income and which is a deduction (the main table only shows totals). -->
-    <div class="modal fade" id="runDetailBreakdownModal" tabindex="-1" aria-labelledby="runDetailBreakdownModalLabel" aria-hidden="true">
+    <div class="modal fade" id="runDetailBreakdownModal" data-footer="view" tabindex="-1" aria-labelledby="runDetailBreakdownModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
@@ -1831,7 +1831,7 @@
          excludes encrypted PII columns also on that row, see that const's own docblock). Only
          opened for a row with data_source='sync' -- a manually-added employee on a sync run has no
          sync row to show here at all. -->
-    <div class="modal fade" id="rawSyncDataModal" tabindex="-1" aria-labelledby="rawSyncDataModalLabel" aria-hidden="true">
+    <div class="modal fade" id="rawSyncDataModal" data-footer="view" tabindex="-1" aria-labelledby="rawSyncDataModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
@@ -1866,7 +1866,7 @@
          only ever offers employees this run has previously excluded, so "joining" here always means
          "re-include", never an arbitrary new add -- see PayrollRunModel::joinEmployees(). Picks
          employees, filterable by Department/Position, one or many at once. -->
-    <div class="modal fade" id="joinEmployeesModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="joinEmployeesModalLabel" aria-hidden="true">
+    <div class="modal fade" id="joinEmployeesModal" data-footer="form" data-bs-backdrop="static" tabindex="-1" aria-labelledby="joinEmployeesModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-centered">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
@@ -1951,7 +1951,7 @@
          of the Approval Queue page's own bulk-capable modals (deliberately duplicated, not shared,
          same "keep the already-working page untouched" convention as approval.js's own comments
          explain), scoped to PAYROLL_RUN_ID since this page only ever acts on the one run it's on. -->
-    <div class="modal fade" id="runApproveModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="runApproveModalLabel" aria-hidden="true">
+    <div class="modal fade" id="runApproveModal" data-footer="confirm" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="runApproveModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
@@ -1973,7 +1973,7 @@
             </div>
         </div>
     </div>
-    <div class="modal fade" id="runRejectModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="runRejectModalLabel" aria-hidden="true">
+    <div class="modal fade" id="runRejectModal" data-footer="confirm" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="runRejectModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
@@ -1995,7 +1995,7 @@
             </div>
         </div>
     </div>
-    <div class="modal fade" id="runRequestInfoModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="runRequestInfoModalLabel" aria-hidden="true">
+    <div class="modal fade" id="runRequestInfoModal" data-footer="confirm" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="runRequestInfoModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
@@ -2026,7 +2026,7 @@
          (unused until now) -- reused as-is. Gated by can_finalize_payroll (new flag, mirrors
          can_approve_payroll/can_process_payroll's own PayrollController::get() pattern), same
          permission PayrollRunModel::markPaid() itself enforces server-side. -->
-    <div class="modal fade" id="runMarkPaidModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="runMarkPaidModalLabel" aria-hidden="true">
+    <div class="modal fade" id="runMarkPaidModal" data-footer="confirm" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="runMarkPaidModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
@@ -2066,7 +2066,7 @@
          can_approve_payroll (see PayrollController::get()'s can_approve_payroll flag) -- this page
          used to show no action buttons at all once a run left draft (explicit request at the
          time); this reopens exactly that one path, scoped to users who can actually act. -->
-    <div class="modal fade" id="runTimelineModal" tabindex="-1" aria-labelledby="runTimelineModalLabel" aria-hidden="true">
+    <div class="modal fade" id="runTimelineModal" data-footer="view" tabindex="-1" aria-labelledby="runTimelineModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
