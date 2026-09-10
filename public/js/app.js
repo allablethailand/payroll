@@ -531,7 +531,9 @@ function generateReport(url, onSuccess) {
 $(document).ready(async function() {
     currentLang = localStorage.getItem('preferred_language') || 'en';
     syncLangCookie(currentLang);
-    await loadLang(currentLang);
+    // window.langReady: exposes this in-flight promise so other pages can defer initial render until langData is populated (never rejects).
+    window.langReady = loadLang(currentLang);
+    await window.langReady;
     buildLanguageMenu();
     // 2026-08-29, explicit request: per-user Font Size, applied from localStorage immediately (no
     // network round trip needed for first paint) -- reconciled against the server-saved value
