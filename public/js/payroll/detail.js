@@ -2029,7 +2029,14 @@ function breakdownLineRowsRd(lines) {
             // Backward-compat: a row saved before payee_type existed only ever meant 'employee'.
             payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
         } else if (line.payee_type === 'company') {
-            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'}</div>`;
+            // 2026-09-10, Batch 3B item 3: this line shape has no resolved bank_account_name (that
+            // JOIN only exists in dedicated per-table listing queries, not the persisted breakdown
+            // JSON itself, same limitation this branch's own 'other_person' comment already notes
+            // for destination_account_name) -- shows a warning instead of a silent generic label
+            // whenever bank_account_id is genuinely unspecified.
+            payeeHtml = line.bank_account_id
+                ? `<div class="small text-muted"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'}</div>`
+                : `<div class="small text-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['payee_bank_account_needs_review'] || 'Company Account -- bank account not specified, needs review'}</div>`;
         } else if (line.payee_type === 'other_person') {
             // 2026-09-02, Deduction Destination & Third-Party Remittance -- this line shape has no
             // resolved destination_account_name (that LEFT JOIN only exists in
@@ -3385,7 +3392,12 @@ function manualLineListItemHtml(line) {
     if (line.payee_type === 'employee' && line.payee_employee_id) {
         payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
     } else if (line.payee_type === 'company') {
-        payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'}</div>`;
+        // 2026-09-10, Batch 3B item 3: manualLinesForEmployee() joins bank_account_name for this
+        // exact display, unlike the persisted-breakdown-JSON render path elsewhere in this file --
+        // shows the real account, or a "needs review" warning when genuinely unspecified.
+        payeeHtml = line.bank_account_id
+            ? `<div class="small text-muted mt-1"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'} - ${escapeHtml(line.bank_account_name || '')}</div>`
+            : `<div class="small text-warning mt-1"><i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['payee_bank_account_needs_review'] || 'Company Account -- bank account not specified, needs review'}</div>`;
     } else if (line.payee_type === 'other_person') {
         // 2026-09-02, Deduction Destination & Third-Party Remittance -- real gap found while
         // touching this function for Phase 7 (same missing branch already found/fixed in
@@ -3804,14 +3816,18 @@ let recurringDestRows = [];
 function recurringDestPayeeSummary(p) {
     if (!p || !p.payee_type) return langData['payee_type_none'] || "Employee's Own Net Pay";
     if (p.payee_type === 'employee') return p.payee_label || (langData['payee_type_employee'] || 'Another Employee');
-    if (p.payee_type === 'company') return langData['payee_type_company'] || 'Company Account';
+    // 2026-09-10, Batch 3B item 3: shows WHICH company bank account now, instead of the generic
+    // "Company Account" label every 'company' row used to get regardless of which account was
+    // chosen -- falls back to an explicit "not specified" wording (never a silent blank) when
+    // bank_account_id is genuinely unspecified (legacy data, or before this column existed).
+    if (p.payee_type === 'company') return p.bank_account_label ? `${langData['payee_type_company'] || 'Company Account'} - ${p.bank_account_label}` : (langData['payee_type_company_unspecified'] || 'Company Account (not specified)');
     if (p.payee_type === 'other_person') return p.destination_label || (langData['payee_type_other_person'] || 'Other Person / Third Party');
     if (p.payee_type === 'not_disbursed') return langData['payee_type_not_disbursed'] || 'Not Disbursed';
     return p.payee_type;
 }
 function recurringDestRowHtml(row) {
     const name = (currentLang === 'th' ? row.item_name_th : row.item_name_en) || row.item_code;
-    const templateLabel = recurringDestPayeeSummary({ payee_type: row.template_payee_type, payee_label: row.template_payee_label, destination_label: row.template_destination_label });
+    const templateLabel = recurringDestPayeeSummary({ payee_type: row.template_payee_type, payee_label: row.template_payee_label, destination_label: row.template_destination_label, bank_account_label: row.template_bank_account_label });
     const isOverridden = !!row.override;
     const effectiveLabel = isOverridden ? recurringDestPayeeSummary(row.override) : templateLabel;
     return `<div class="border rounded-3 p-2 mb-2" data-recurring-id="${row.recurring_id}">
@@ -3843,6 +3859,12 @@ function setRecurringDestPayeeType(type) {
     $('#recurringDestEmployeeWrapper').toggleClass('d-none', type !== 'employee');
     if (type !== 'employee') {
         $('#recurringDestPayeeEmployeeSelect').val(null).trigger('change');
+    }
+    // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- mandatory, same as the other
+    // 3 payee-routing editors in this app.
+    $('#recurringDestCompanyAccountWrapper').toggleClass('d-none', type !== 'company');
+    if (type !== 'company') {
+        $('#recurringDestBankAccountSelect').val(null).trigger('change');
     }
     $('#recurringDestDestinationWrapper').toggleClass('d-none', type !== 'other_person');
     if (type !== 'other_person') {
@@ -3876,12 +3898,16 @@ $(document).on('click', '.btn-recurring-dest-edit', function () {
     // An override can never be 'none'/null (that's what Reset achieves) -- if the template itself
     // had no payee at all, default the editor to Company as a neutral starting point, not a guess
     // at what the admin actually wants.
-    const current = row.override || { payee_type: row.template_payee_type || 'company', payee_employee_id: row.template_payee_employee_id, payee_label: row.template_payee_label, destination_id: row.template_destination_id, destination_label: row.template_destination_label };
+    const current = row.override || { payee_type: row.template_payee_type || 'company', payee_employee_id: row.template_payee_employee_id, payee_label: row.template_payee_label, destination_id: row.template_destination_id, destination_label: row.template_destination_label, bank_account_id: row.template_bank_account_id, bank_account_label: row.template_bank_account_label };
     const initialType = current.payee_type || 'company';
     setRecurringDestPayeeType(initialType);
     if (initialType === 'employee' && current.payee_employee_id) {
         const opt = new Option(current.payee_label || '', current.payee_employee_id, true, true);
         $('#recurringDestPayeeEmployeeSelect').empty().append(opt).trigger('change');
+    } else if (initialType === 'company' && current.bank_account_id) {
+        // 2026-09-10, Batch 3B item 3: same pre-select pattern as the employee/destination branches.
+        const opt = new Option(current.bank_account_label || '', current.bank_account_id, true, true);
+        $('#recurringDestBankAccountSelect').empty().append(opt).trigger('change');
     } else if (initialType === 'other_person' && current.destination_id) {
         const opt = new Option(current.destination_label || '', current.destination_id, true, true);
         $('#recurringDestDestinationSelect').empty().append(opt).trigger('change');
@@ -3903,6 +3929,15 @@ $(document).on('click', '#btnSaveRecurringDestOverride', function () {
             return;
         }
         payload.payee_employee_id = payeeEmployeeId;
+    } else if (payeeType === 'company') {
+        // 2026-09-10, Batch 3B item 3: level-2, mandatory -- PayrollRunModel::
+        // recurringDeductionDestinationOverrideSave() itself rejects a missing value.
+        const bankAccountId = $('#recurringDestBankAccountSelect').val();
+        if (!bankAccountId) {
+            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
+            return;
+        }
+        payload.bank_account_id = bankAccountId;
     } else if (payeeType === 'other_person') {
         const savedDestinationId = $('#recurringDestDestinationSelect').val();
         if (savedDestinationId) {
@@ -3969,6 +4004,12 @@ function setManualLinePayeeTypeRd(type) {
     $('#manualLinePayeeWrapper').toggleClass('d-none', type !== 'employee');
     if (type !== 'employee') {
         $('#manualLinePayeeEmployee').val(null).trigger('change');
+    }
+    // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- mandatory, same as Employee
+    // Detail's own setEedPayeeType()/setErdPayeeType().
+    $('#manualLineCompanyAccountWrapper').toggleClass('d-none', type !== 'company');
+    if (type !== 'company') {
+        $('#manualLineBankAccount').val(null).trigger('change');
     }
     // 2026-09-02, Deduction Destination & Third-Party Remittance.
     $('#manualLineDestinationWrapper').toggleClass('d-none', type !== 'other_person');
@@ -4138,6 +4179,10 @@ $(document).on('click', '#btnAddManualLine', function () {
         }
         if (payeeType === 'employee') {
             payload.payee_employee_id = $('#manualLinePayeeEmployee').val() || undefined;
+        } else if (payeeType === 'company') {
+            // 2026-09-10, Batch 3B item 3: level-2, mandatory -- PayrollRunModel::addManualLine()
+            // itself rejects a missing value, this is just the payload wiring.
+            payload.bank_account_id = $('#manualLineBankAccount').val() || undefined;
         }
         // 2026-09-02, Deduction Destination & Third-Party Remittance -- either an existing saved
         // destination_id, or the new-account fields (validated/created server-side by

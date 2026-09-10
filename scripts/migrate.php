@@ -27,6 +27,35 @@ declare(strict_types=1);
  *                                              (`applied_via='manual'`) -- for a file `status`
  *                                              lists under "Unknown" that a human has manually
  *                                              confirmed is already applied on this database
+ *   php scripts/migrate.php mark-all-unknown --reason="<text>" --yes
+ *                                           -- 2026-09-10, explicit follow-up request: marks EVERY
+ *                                              file currently in the "Unknown" bucket applied
+ *                                              (`applied_via='manual'`, `reason` recorded on each
+ *                                              row) in one shot, for an environment where a human
+ *                                              has already independently confirmed the target
+ *                                              database's schema is fully current -- reviewing all
+ *                                              38+ pre-migrate.php legacy files one by one via
+ *                                              `mark <file>` is real, separate work this command
+ *                                              deliberately does NOT replace the need for; it only
+ *                                              lets someone who has ALREADY done that review (by
+ *                                              other means -- e.g. this codebase's own git history
+ *                                              and direct schema inspection) record the outcome
+ *                                              without 38 individual commands. REFUSES without
+ *                                              `--yes` (explicit confirmation this was actually
+ *                                              reviewed, not a default/accidental action) or without
+ *                                              a non-empty `--reason=` (an unexplained bulk-mark is
+ *                                              exactly the kind of thing a future reader of
+ *                                              schema_migrations needs the "why" for). Also REFUSES
+ *                                              entirely whenever `status` still shows any genuinely
+ *                                              PENDING (detectable, not-yet-applied) file -- pending
+ *                                              and unknown are different buckets for a reason, and
+ *                                              this command must never be used in a state where real
+ *                                              unapplied work could be mistaken for already-settled.
+ *                                              Never applicable to production without ITS OWN
+ *                                              from-scratch schema review (see this project's
+ *                                              CLAUDE.md's own "First deploy to a NEW environment"
+ *                                              step for why -- dev and prod are not assumed to be in
+ *                                              the same state just because dev was just reviewed).
  *
  * Uses the SAME DB connection/config as the app (`Database::getInstance()`, itself reading
  * `.env`/`config.php`) -- no credentials of any kind live in this script.
@@ -80,6 +109,7 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../app/core/Database.php';
 
 const MIGRATE_BOOTSTRAP_FILE = '2026-09-10_0_create_schema_migrations.sql';
+const MIGRATE_REASON_COLUMN_FILE = '2026-09-10_4_schema_migrations_add_reason.sql';
 
 function migTableExists(PDO $pdo, string $table): bool {
     return (bool)$pdo->query('SHOW TABLES LIKE ' . $pdo->quote($table))->fetchColumn();
@@ -165,6 +195,27 @@ function migEnsureBootstrapped(PDO $pdo, string $dir): void {
     $pdo->prepare("INSERT INTO `schema_migrations` (filename, applied_via) VALUES (:f, 'run')")
         ->execute([':f' => MIGRATE_BOOTSTRAP_FILE]);
     echo 'Bootstrapped: created schema_migrations, recorded ' . MIGRATE_BOOTSTRAP_FILE . ".\n";
+}
+
+/** Same self-bootstrap technique as migEnsureBootstrapped() above, one level down: the `reason`
+ *  column mark-all-unknown depends on (see this file's own docblock) can't wait for a normal `up`
+ *  run, since `up` itself is exactly what's blocked while unknown files remain -- self-applying
+ *  this ONE specific ALTER directly breaks that chicken-and-egg. Recorded applied_via='run' since
+ *  it genuinely was executed, same as migEnsureBootstrapped()'s own record for its file. */
+function migEnsureReasonColumn(PDO $pdo, string $dir): void {
+    if (migColumnExists($pdo, 'schema_migrations', 'reason')) {
+        return;
+    }
+    $path = $dir . '/' . MIGRATE_REASON_COLUMN_FILE;
+    if (!is_file($path)) {
+        fwrite(STDERR, 'FATAL: reason-column migration ' . MIGRATE_REASON_COLUMN_FILE . " not found in {$dir}\n");
+        exit(1);
+    }
+    $split = migSplitUpDown((string)file_get_contents($path));
+    migExecMulti($pdo, $split['up']);
+    $pdo->prepare("INSERT INTO `schema_migrations` (filename, applied_via) VALUES (:f, 'run')")
+        ->execute([':f' => MIGRATE_REASON_COLUMN_FILE]);
+    echo 'Bootstrapped: added schema_migrations.reason, recorded ' . MIGRATE_REASON_COLUMN_FILE . ".\n";
 }
 
 /** @return array{applied_run:string[], applied_detected:string[], applied_manual:string[], pending:string[], unknown:string[]}
@@ -259,6 +310,57 @@ function cmdUp(PDO $pdo, string $dir): void {
     }
 }
 
+/** Parses `--yes` and `--reason="..."` from argv (starting at $startIndex) -- this project's CLI
+ *  scripts have no argument-parsing library, and these 2 flags are simple enough not to need one. */
+function migParseFlags(array $argv, int $startIndex): array {
+    $flags = ['yes' => false, 'reason' => null];
+    for ($i = $startIndex; $i < count($argv); $i++) {
+        $arg = $argv[$i];
+        if ($arg === '--yes') {
+            $flags['yes'] = true;
+        } elseif (strpos($arg, '--reason=') === 0) {
+            $flags['reason'] = substr($arg, strlen('--reason='));
+        }
+    }
+    return $flags;
+}
+
+function cmdMarkAllUnknown(PDO $pdo, string $dir, ?string $reason, bool $confirmed): void {
+    if (!$confirmed) {
+        fwrite(STDERR, "Refusing: pass --yes to confirm you have ALREADY reviewed this database's schema and confirmed it's current -- this command does not do that review for you.\n");
+        fwrite(STDERR, "Usage: php scripts/migrate.php mark-all-unknown --reason=\"...\" --yes\n");
+        exit(1);
+    }
+    if ($reason === null || trim($reason) === '') {
+        fwrite(STDERR, "Refusing: --reason=\"...\" is required -- explain why these files are being marked applied without being reviewed one by one, for whoever reads schema_migrations later.\n");
+        exit(1);
+    }
+    $r = migClassify($pdo, $dir);
+    // 2026-09-10, explicit instruction: refuses entirely while any genuinely PENDING (detectable,
+    // not-yet-applied) file exists -- pending and unknown are different buckets for a reason; this
+    // guards against a real unapplied change being mistaken for already-settled just because this
+    // command was reached for.
+    if (!empty($r['pending'])) {
+        fwrite(STDERR, count($r['pending']) . " pending (detectable, not-yet-applied) migration file(s) exist -- resolve those via `up` first, mark-all-unknown must never run while real pending work exists:\n");
+        foreach ($r['pending'] as $f) {
+            fwrite(STDERR, "  - {$f}\n");
+        }
+        exit(1);
+    }
+    if (empty($r['unknown'])) {
+        echo "Nothing to do -- no unknown files.\n";
+        return;
+    }
+    foreach ($r['unknown'] as $file) {
+        $pdo->prepare("INSERT INTO `schema_migrations` (filename, applied_via, reason) VALUES (:f, 'manual', :reason)")
+            ->execute([':f' => $file, ':reason' => $reason]);
+    }
+    echo 'Marked ' . count($r['unknown']) . " file(s) as applied (applied_via='manual'), reason: {$reason}\n";
+    foreach ($r['unknown'] as $f) {
+        echo "  - {$f}\n";
+    }
+}
+
 function cmdMark(PDO $pdo, string $dir, string $file): void {
     $path = $dir . '/' . $file;
     if (!is_file($path)) {
@@ -321,10 +423,12 @@ $command = $argv[1] ?? '';
 switch ($command) {
     case 'status':
         migEnsureBootstrapped($pdo, $migrationsDir);
+        migEnsureReasonColumn($pdo, $migrationsDir);
         cmdStatus($pdo, $migrationsDir);
         break;
     case 'up':
         migEnsureBootstrapped($pdo, $migrationsDir);
+        migEnsureReasonColumn($pdo, $migrationsDir);
         cmdUp($pdo, $migrationsDir);
         break;
     case 'down':
@@ -334,6 +438,7 @@ switch ($command) {
             exit(1);
         }
         migEnsureBootstrapped($pdo, $migrationsDir);
+        migEnsureReasonColumn($pdo, $migrationsDir);
         cmdDown($pdo, $migrationsDir, $targetFile);
         break;
     case 'mark':
@@ -343,9 +448,16 @@ switch ($command) {
             exit(1);
         }
         migEnsureBootstrapped($pdo, $migrationsDir);
+        migEnsureReasonColumn($pdo, $migrationsDir);
         cmdMark($pdo, $migrationsDir, $targetFile);
         break;
+    case 'mark-all-unknown':
+        migEnsureBootstrapped($pdo, $migrationsDir);
+        migEnsureReasonColumn($pdo, $migrationsDir);
+        $flags = migParseFlags($argv, 2);
+        cmdMarkAllUnknown($pdo, $migrationsDir, $flags['reason'], $flags['yes']);
+        break;
     default:
-        fwrite(STDERR, "Usage: php scripts/migrate.php <status|up|down|mark> [filename]\n");
+        fwrite(STDERR, "Usage: php scripts/migrate.php <status|up|down|mark|mark-all-unknown> [filename] [--reason=\"...\"] [--yes]\n");
         exit(1);
 }

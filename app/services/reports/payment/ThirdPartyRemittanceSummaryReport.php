@@ -84,7 +84,12 @@ class ThirdPartyRemittanceSummaryReport implements ReportGeneratorInterface {
         foreach ($remittances as $r) {
             $items = $remittanceModel->itemsForRemittance((int)$r['id'], $compId);
             if ($r['destination_type'] === 'company') {
-                $destLabel = 'บริษัท';
+                // 2026-09-10, Batch 3B item 3: shows WHICH company bank account now, instead of the
+                // generic "บริษัท" label every company-type row used to get regardless of account --
+                // 'ไม่ระบุ' (not the account name left blank) whenever bank_account_id is genuinely
+                // unspecified (legacy data, or a line saved before this column existed), never a
+                // silent gap in this report.
+                $destLabel = !empty($r['is_unspecified_company_account']) ? 'บริษัท (ไม่ระบุบัญชี)' : ('บริษัท - ' . ($r['bank_account_name'] ?? 'ไม่ระบุ'));
             } elseif ($r['destination_type'] === 'employee_fallback') {
                 $destLabel = trim(($r['fallback_name_th'] ?? '') . ' ' . ($r['fallback_surname_th'] ?? ''));
             } else {

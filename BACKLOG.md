@@ -163,29 +163,6 @@ and whether it applies to all tabs or just specific ones before starting.
 
 ---
 
-## `tests/payroll_run_test.php`'s run_code assertion depends on live dev-DB state (comp_id=1)
-
-Hit for the 3rd time: `check('run_code stamped with the default PAYROLL_RUN prefix + 001 (first run
-this fresh company has ever created)', $run['run_code'], 'PR-' . date('Y') . '-001')` hardcodes
-`$compId = 1` (the real, live dev company — confirmed via `grep`, not a throwaway `makeCompany()`
-fixture like every other test file in this project uses) and assumes its PAYROLL_RUN numbering
-counter is still at 0. It isn't, once real usage (or any other test that creates real runs against
-comp_id=1) has run at least one payroll — the assertion then fails with whatever the real count has
-climbed to (e.g. "got 'PR-2026-006', expected 'PR-2026-001'"), unrelated to whatever the current task
-actually touched. Same root cause category as `feedback_dev_db_shared_state_test_fragility` already
-documents for other tests, just not fixed there yet.
-
-**Fix:** rewrite this assertion to use a fresh throwaway company (`makeCompany()`-style, matching
-every other section of this same file and every other test file in the project) instead of
-`$compId = 1`, so it stops depending on comp_id=1's real, ever-changing numbering state. Low risk,
-isolated to this one assertion/fixture — does not need `DocumentNumberingModel` itself touched
-(`tests/document_numbering_test.php` already covers that model's own numbering/reset mechanics on
-its own fixture companies).
-
-**Source:** Batch 3A item 7a regression run, hit 3rd time (2026-09-10).
-
----
-
 ## No Setup management page for `company_hospitals`/`company_pvd_plans` (rename/merge duplicates)
 
 Item 7b's SSO Hospital + PVD Investment Plan fields are a generic "company lookup list" (Select2
