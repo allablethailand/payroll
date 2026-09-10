@@ -2717,7 +2717,11 @@ function restoreStationFromHash() {
         showStation(hash, { skipHashUpdate: true });
     }
 }
+// 2026-09-10, real bug fix -- see window.langReady's own docblock in app.js: deferred so the run-state
+// badges/stepper this page's own initPayrollRunTable() renders always have real translated text on
+// first load instead of a raw enum fallback that never gets re-rendered afterward.
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     applyOrigamiPayrollLinkGating();
     registerStationSearchFilter();
     initPayrollRunTable();
@@ -2753,4 +2757,5 @@ $(document).ready(function () {
         initDatepicker('#run_merge_target_period_end');
     }
     updateClearFilterVisibility();
+    });
 });
