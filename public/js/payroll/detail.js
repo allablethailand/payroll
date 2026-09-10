@@ -1964,7 +1964,12 @@ function commentButtonRd(row) {
 // the same classes (.btn-manage-manual-lines/.btn-raw-sync-data/.btn-comment-employee/
 // .btn-remove-manual-employee) so nothing needed to change there.
 function runDetailActionsRd(row) {
-    const items = [rawSyncDataButtonRd(row), manageItemsButtonRd(row), commentButtonRd(row), removeEmployeeButtonRd(row)].filter(Boolean).join('');
+    const topItems = [rawSyncDataButtonRd(row), manageItemsButtonRd(row), commentButtonRd(row)].filter(Boolean);
+    const removeItem = removeEmployeeButtonRd(row);
+    // 2026-09-10, explicit request: Remove sits at the bottom with a divider above it, only when
+    // there's actually something above it to divide from.
+    const divider = (topItems.length && removeItem) ? '<li><hr class="dropdown-divider"></li>' : '';
+    const items = topItems.join('') + divider + removeItem;
     const menu = items
         ? `<div class="dropdown">
             <button type="button" class="btn btn-link btn-circle-action text-secondary dropdown-toggle" data-bs-toggle="dropdown" title="${langData['action_more'] || 'More'}"><i class="fa-solid fa-ellipsis-vertical"></i></button>
@@ -2689,7 +2694,22 @@ function initRunDetailTable(details) {
         createdRow: function (row, data) {
             $(row).toggleClass('rd-row-verified', !!data.is_verified);
         },
-        drawCallback: function () { getTableLang(); updateRunDetailBulkBar(); applyRunDetailViewMode(); updateSummaryCardsFromTable(); },
+        // 2026-09-10, Batch 2 item 7 follow-up: this table's own wrapper is `.table-responsive`
+        // (overflow-x:auto, which forces overflow-y:auto too per the CSS spec) -- Bootstrap's default
+        // Popper strategy positions the "More" dropdown-menu relative to that scrolling ancestor and
+        // gets clipped by it; `strategy: 'fixed'` positions relative to the viewport instead (same
+        // fix already applied to tb_cycle_matrix's own dropdown, see reports/index.js's docblock).
+        drawCallback: function () {
+            getTableLang();
+            updateRunDetailBulkBar();
+            applyRunDetailViewMode();
+            updateSummaryCardsFromTable();
+            $('#tb_run_detail .dropdown-toggle').each(function () {
+                bootstrap.Dropdown.getOrCreateInstance(this, {
+                    popperConfig: (defaultConfig) => Object.assign({}, defaultConfig, { strategy: 'fixed' })
+                });
+            });
+        },
         // 2026-08-29, same-day follow-up: "ตอนนี้เหมือนมี Summary ด้านขวาเล็กๆ ให้ตัดออก...อยากให้มี Summary
         // ของแต่ละ Column ใน Footer" -- replaces the old updateRunDetailVerifyLockSummaryRd() side
         // strip. Fires on every draw (search/sort/reload) automatically, same as drawCallback --

@@ -1470,6 +1470,8 @@
     "frequency_biweekly": "ราย 2 สัปดาห์",
     "table_payroll_code": "รหัสพนักงาน",
     "table_matched_employee": "พนักงานที่จับคู่",
+    "table_mapping_status": "สถานะจับคู่",
+    "table_sso_status": "สปส.",
     "table_dept_position": "แผนก / ตำแหน่ง",
     "table_working_days": "วันทำงาน",
     "table_absent_days": "วันขาดงาน",

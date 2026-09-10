@@ -1469,6 +1469,8 @@
     "frequency_biweekly": "Biweekly",
     "table_payroll_code": "Payroll Code",
     "table_matched_employee": "Matched Employee",
+    "table_mapping_status": "Mapping Status",
+    "table_sso_status": "SSO",
     "table_dept_position": "Dept / Position",
     "table_working_days": "Working Days",
     "table_absent_days": "Absent Days",
