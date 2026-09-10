@@ -337,6 +337,22 @@ function initSelect2(selector, options = {}) {
                 },
                 minimumInputLength: 0
             };
+            // 2026-09-10, Batch 3A item 7b: ajax + tags combo (Select2's own supported pattern, not
+            // a new mechanism) -- lets a field search/pick an existing comp_id-scoped lookup row
+            // (via the SAME api endpoint/shape every other select2-remote already uses) OR type a
+            // brand-new name that doesn't exist yet. A typed tag submits with id===text===the typed
+            // string (Select2's own default createTag behavior, made explicit here only to block a
+            // whitespace-only tag) -- the SERVER side (CompanyLookupListModel::resolveOrCreate())
+            // is what actually tells a real existing numeric id apart from new free text and
+            // auto-creates the row, not this field. First consumers: #sso_hospital_id/#pvd_plan_id
+            // (.select2-remote-tags class, see employee/detail.php).
+            if (options.tags) {
+                config.tags = true;
+                config.createTag = function (params) {
+                    const term = $.trim(params.term);
+                    return term === '' ? null : { id: term, text: term, newTag: true };
+                };
+            }
         }
         if ($modal.length) {
             config.dropdownParent = $modal;

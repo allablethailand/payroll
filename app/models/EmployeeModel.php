@@ -5,12 +5,15 @@ require_once __DIR__ . '/PayrollPolicyModel.php';
 require_once __DIR__ . '/EmployeePaymentMethodModel.php';
 require_once __DIR__ . '/EmployeeForeignWorkerDetailModel.php';
 require_once __DIR__ . '/AuditLogModel.php';
+require_once __DIR__ . '/CompanyLookupListModel.php';
 class EmployeeModel {
     private $db;
     private AuditLogModel $auditLog;
+    private CompanyLookupListModel $lookupListModel;
     public function __construct() {
         $this->db = Database::getInstance()->pdo;
         $this->auditLog = new AuditLogModel($this->db);
+        $this->lookupListModel = new CompanyLookupListModel($this->db);
     }
 
     /** Same traversal-proofing pattern as CompanyProfileModel::isValidLogoPath()/
@@ -133,7 +136,18 @@ class EmployeeModel {
             'default_bank_account_id',
             'salary_type', 'base_salary_amount', 'salary_effective_date', 'ot_eligible', 'ot_rate_source', 'tax_calculation_method', 'tax_exempt',
             'sso_enrolled', 'sso_no', 'sso_hospital_id', 'sso_start_date', 'sso_contribution_rate', 'sso_employer_contribution_rate',
+            // 2026-09-10, Batch 3A item 7b: fixed set of 7 codes matching the real official สปส.6-09
+            // form (see this feature's own migration comment for the verified list) -- NOT free
+            // text, deliberately not a master table either (a government-defined closed set that
+            // never grows, same "tied to a real form/calc, not a business-addable list" precedent
+            // as calc_method/rounding_mode elsewhere in this app).
+            'sso_leave_reason_code',
             'pvd_enrolled', 'pvd_fund_name', 'pvd_start_date', 'pvd_employee_rate', 'pvd_employer_rate',
+            // 2026-09-10, Batch 3A item 7b: pvd_plan_id resolved from a Select2 tags value (existing
+            // row id OR free-typed new plan name) by resolveLookupListFields() below, BEFORE this
+            // generic column loop runs -- by the time this loop reads $data['pvd_plan_id'], it's
+            // already a real int or null, same as sso_hospital_id.
+            'pvd_plan_id', 'pvd_fund_manager', 'pvd_member_no', 'pvd_end_date', 'pvd_end_reason',
             'insurance_plan_id', 'insurance_start_date',
             'has_spouse', 'spouse_name', 'spouse_id_card_no',
         ];
@@ -148,7 +162,8 @@ class EmployeeModel {
         return ['department_id', 'team_id', 'role_id', 'position_id', 'branch_id', 'work_location_id', 'shift_id', 'cycle_id',
                 'report_to_id', 'holiday_calendar_id', 'bank_id', 'default_bank_account_id', 'payment_method_id', 'sso_hospital_id', 'insurance_plan_id',
                 'master_address_id_register', 'master_address_id_contact', 'employment_type_id',
-                'profile_photo_file_size', 'signature_file_size'];
+                'profile_photo_file_size', 'signature_file_size',
+                'sso_leave_reason_code', 'pvd_plan_id'];
     }
 
     /**
@@ -1774,6 +1789,7 @@ class EmployeeModel {
                     pc.cycle_name,
                     sh.shift_name_th, sh.shift_name_en,
                     wl.location_name_th, wl.location_name_en,
+                    ch.name AS sso_hospital_name, cpp.name AS pvd_plan_name,
                     CONCAT(rt.name_th, ' ', rt.surname_th) AS report_to_name_th,
                     CONCAT(rt.name_en, ' ', rt.surname_en) AS report_to_name_en,
                     mar.level_1 AS postcode_register, mar.level_2_th AS province_th_register, mar.level_3_th AS district_th_register, mar.level_4_th AS sub_district_th_register,
@@ -1796,6 +1812,8 @@ class EmployeeModel {
                 LEFT JOIN `payroll_cycles` pc ON e.cycle_id = pc.id
                 LEFT JOIN `shifts` sh ON e.shift_id = sh.id
                 LEFT JOIN `master_work_locations` wl ON e.work_location_id = wl.id
+                LEFT JOIN `company_hospitals` ch ON e.sso_hospital_id = ch.id
+                LEFT JOIN `company_pvd_plans` cpp ON e.pvd_plan_id = cpp.id
                 LEFT JOIN `employees` rt ON e.report_to_id = rt.id
                 LEFT JOIN `master_addresses` mar ON e.master_address_id_register = mar.id
                 LEFT JOIN `master_addresses` mac ON e.master_address_id_contact = mac.id
@@ -2234,6 +2252,18 @@ class EmployeeModel {
                 // data echoed back), so this never re-exposes the real number to a masked caller.
                 $plainBaseSalaryForReadyCheck = self::decryptSalaryValue($existingEncryptedBaseSalary, isset($existingSalaryRow['key_version']) ? (int)$existingSalaryRow['key_version'] : null);
             }
+        }
+        // 2026-09-10, Batch 3A item 7b: Select2 "tags" fields (sso_hospital_id, pvd_plan_id) submit
+        // EITHER an existing row's numeric id (HR picked one) OR free-typed text (a brand-new tag) --
+        // resolved into a real int (or null) here, BEFORE the generic column loop below, so that
+        // loop's own intColumns() branch (`(int)$data[$col]`) never has to special-case these 2
+        // fields. CompanyLookupListModel::resolveOrCreate() does the case-insensitive dedup/auto-
+        // create; see that class's own docblock.
+        if (array_key_exists('sso_hospital_id', $data)) {
+            $data['sso_hospital_id'] = $this->lookupListModel->resolveOrCreate('company_hospitals', $compId, $data['sso_hospital_id'], $userId);
+        }
+        if (array_key_exists('pvd_plan_id', $data)) {
+            $data['pvd_plan_id'] = $this->lookupListModel->resolveOrCreate('company_pvd_plans', $compId, $data['pvd_plan_id'], $userId);
         }
         foreach ($this->allColumns() as $col) {
             if ($col === 'base_salary_amount' && $preserveExistingBaseSalary) {
