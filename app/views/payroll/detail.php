@@ -89,7 +89,8 @@
          table+footer but left these more prominent cards showing the stale, unfiltered total. Now
          recomputed from the table's own currently-VISIBLE (filtered) rows on every draw -- see
          updateSummaryCardsFromTable() in detail.js. -->
-    <div class="row g-3 mb-4" id="runSummaryCards">
+    <?php // mt-4 here, not on #nextStepBanner: detail.js overwrites its class attr ?>
+    <div class="row g-3 mt-4 mb-4" id="runSummaryCards">
         <div class="col-6 col-md-3">
             <div class="stat-card stat-card-info">
                 <div class="stat-card-icon"><i class="fa-solid fa-users"></i></div>
