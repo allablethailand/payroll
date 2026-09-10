@@ -1128,7 +1128,7 @@ function syncUnitLabelPr(unitType) {
     return map[unitType] || unitType;
 }
 // 2026-09-10, Batch 2 item 5: single OT-hours total for #tb_sync_items's own OT column (the
-// per-scope breakdown string stays in the card/child-row detail, not this summary number).
+// per-scope breakdown string stays in the child row detail, not this summary number).
 function syncOtTotalHrsPr(item) {
     const scoped = Number(item.ot_req_working_day_hrs || 0) + Number(item.ot_req_weekend_hrs || 0) + Number(item.ot_req_holiday_hrs || 0);
     if (scoped > 0) return scoped;
@@ -1142,8 +1142,7 @@ function syncItemDisplayNamePr(item) {
     }
     return item.emp_name || '-';
 }
-// 2026-09-10, Batch 2 item 5 part B: extracted out of renderSyncItemCardPr() below (pure refactor,
-// same output) so the new child row can reuse it.
+// 2026-09-10, Batch 2 item 5 part B: OT-by-scope breakdown text for the child row's own detail.
 function syncOtBreakdownTextPr(item) {
     return [
         ['sync_ot_working_day', 'Working Day', item.ot_req_working_day_hrs],
@@ -1151,7 +1150,7 @@ function syncOtBreakdownTextPr(item) {
         ['sync_ot_holiday', 'Holiday', item.ot_req_holiday_hrs],
     ]
         .filter(([, , hrs]) => Number(hrs || 0) !== 0)
-        .map(([key, fallback, hrs]) => `${langData[key] || fallback} ${escapeHtml(hrs)}h`)
+        .map(([key, fallback, hrs]) => `${langData[key] || fallback} ${escapeHtml(hrs)} ${langData['sync_unit_hours'] || 'hour(s)'}`)
         .join(' · ') || (item.ot_mins ? `${escapeHtml(item.ot_mins)} ${langData['sync_unit_minutes'] || 'minute(s)'}` : '-');
 }
 // item_values that share the same item_code (e.g. Origami's own multi-unit-redundant "ABSENT"
@@ -1174,6 +1173,30 @@ function syncItemValuesGroupedHtml(item) {
     });
     return order.map(code => `<div>${escapeHtml(groups[code].name)}: ${groups[code].parts.join(' · ')}</div>`).join('');
 }
+function syncNormalizeItemCode(code) {
+    return String(code || '').replace(/[^a-z0-9]/gi, '').toUpperCase();
+}
+function syncItemValuesHasCode(item, normalizedTargets) {
+    return (item.item_values || []).some(v => normalizedTargets.includes(syncNormalizeItemCode(v.item_code)) && Number(v.value) !== 0);
+}
+// 2026-09-10, Batch 2 item 5 follow-up, explicit request: the deleted card's own
+// early_mins/leave_approve_days/leave_wait_days/leave_without_pay_days structured columns are, per
+// Origami's own multi-unit-redundant sync design (see SyncPayResolver.php's docblock), USUALLY also
+// present as an item_values row (EARLY_LEAVE/LEAVE_APPROVED/LEAVE_PENDING/UNPAID_LEAVE) that
+// syncItemValuesGroupedHtml() above already shows -- but "usually" is not "always" ("NOT guaranteed
+// to send every representation on every pull"), so a structured value with no matching item_values
+// row would otherwise be silently invisible again. Fallback ONLY (never shown if the same event
+// already appears, non-zero, in the item_values group above) to avoid ever showing the same number
+// twice under two different labels. Same i18n keys the old card used.
+function syncItemExtraStatsFallbackHtml(item) {
+    const stats = [
+        ['table_early_mins', 'Early Leave (min)', item.early_mins, ['EARLYLEAVE']],
+        ['table_leave_approve_days', 'Leave Approved (days)', item.leave_approve_days, ['LEAVEAPPROVED']],
+        ['table_leave_wait_days', 'Leave Pending (days)', item.leave_wait_days, ['LEAVEPENDING', 'PENDINGLEAVE']],
+        ['table_leave_without_pay_days', 'Unpaid Leave (days)', item.leave_without_pay_days, ['UNPAIDLEAVE', 'LEAVEWITHOUTPAY', 'LEAVENOPAY']],
+    ].filter(([, , v, codes]) => v !== null && v !== undefined && Number(v) !== 0 && !syncItemValuesHasCode(item, codes));
+    return stats.map(([key, fallback, v]) => `<div>${langData[key] || fallback}: ${escapeHtml(v)}</div>`).join('');
+}
 // Content of #tb_sync_items's own expand row -- everything the old per-employee card showed that
 // isn't one of the 10 main columns (item_values incl. grouped ABSENT, detailed OT-by-scope
 // breakdown, payment method/SSO, masked ID card, probation status).
@@ -1188,6 +1211,7 @@ function syncItemChildRowHtml(item) {
                 <div class="col-md-6">
                     <div class="text-muted small mb-1">${langData['table_ot_breakdown'] || 'OT (hrs)'}</div>
                     <div class="mb-2">${syncOtBreakdownTextPr(item)}</div>
+                    ${syncItemExtraStatsFallbackHtml(item)}
                     <div class="mb-2">${renderPaymentSsoCellPr(item)}</div>
                     <div class="mb-2">${renderIdCardCellPr(item)}</div>
                     ${renderProbationStatusCellPr(item)}
@@ -1204,56 +1228,6 @@ function syncDetailSectionHeaderPr(num, i18nKey, fallback) {
         </h6>
     `;
 }
-// Per-employee CARD, not a table row -- 11 columns of mixed badges/stacked-lines/small-text
-// squeezed into one wide table row was the core complaint ("too dense, too many columns, no
-// clear direction"), and no amount of border/stripe styling on a table fixes a structural
-// density problem. A card per employee lets each attribute get its own labeled slot instead of
-// fighting for horizontal space, and color is now used ONLY for status meaning (mapped/unmapped,
-// SSO) -- every purely decorative icon (bank, id-card) stays neutral text-muted so color always
-// means something specific instead of just decorating.
-function renderSyncItemCardPr(item) {
-    const isMapped = !!item.matched_employee_no;
-    // 2026-08-30 rev 2: items[].emp_name (PAYROLL_SYNC_API.md) -- for an UNMAPPED row this used to
-    // show nothing but the bare payroll_code, with no way to tell which real person it belongs to
-    // without opening the raw payload. emp_name is display/verification only (payroll_code is still
-    // the actual mapping key), so it's shown here but never used for the "matched" branch, which
-    // already has a real, confirmed name from the employees table it resolved to.
-    const nameLine = isMapped
-        ? `<span class="fw-semibold">${escapeHtml(item.matched_employee_no)}</span> <span class="text-muted">— ${escapeHtml((currentLang === 'th' ? `${item.matched_name_th} ${item.matched_surname_th}` : `${item.matched_name_en} ${item.matched_surname_en}`).trim())}</span>`
-        : `<span class="text-muted">${escapeHtml(item.payroll_code)}</span>` + (item.emp_name ? ` <span class="text-muted">— ${escapeHtml(item.emp_name)}</span>` : '');
-    const values = (item.item_values || [])
-        .filter(v => Number(v.value) !== 0)
-        .map(v => {
-            const unitLabel = syncUnitLabelPr(v.unit_type);
-            return `<span class="badge bg-light text-dark border me-1 mb-1">${escapeHtml(v.item_code)}: ${escapeHtml(v.value)}${unitLabel ? ` ${escapeHtml(unitLabel)}` : ''}</span>`;
-        }).join('');
-    const otBreakdown = syncOtBreakdownTextPr(item);
-    return `
-        <div class="sync-emp-card${isMapped ? '' : ' sync-emp-card-unmapped'}">
-            <div class="sync-emp-card-header">
-                <div class="sync-emp-card-identity">
-                    ${mappingStatusBadgePr(isMapped)}
-                    <span class="sync-emp-card-name">${nameLine}</span>
-                </div>
-                <div class="sync-emp-card-dept">${escapeHtml(item.dept_description || '-')} <span class="text-muted">/ ${escapeHtml(item.position_name || '-')}</span></div>
-            </div>
-            <div class="sync-emp-stats">
-                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_working_days'] || 'Working Days'}</span><span class="sync-emp-stat-value">${escapeHtml(item.working_days ?? '-')}</span></div>
-                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_absent_days'] || 'Absent Days'}</span><span class="sync-emp-stat-value">${escapeHtml(item.absent_days ?? '-')}</span></div>
-                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_late_mins'] || 'Late (min)'}</span><span class="sync-emp-stat-value">${escapeHtml(item.late_mins ?? '-')}</span></div>
-                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_ot_breakdown'] || 'OT (hrs)'}</span><span class="sync-emp-stat-value">${otBreakdown}</span></div>
-                <div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData['table_trip_allowance'] || 'Trip Allowance'}</span><span class="sync-emp-stat-value">${escapeHtml(item.trip_allowance ?? '-')}</span></div>
-                ${syncEmpExtraStatsPr(item)}
-            </div>
-            <div class="sync-emp-card-footer">
-                <span class="sync-emp-card-payment">${renderPaymentSsoCellPr(item)}</span>
-                <span class="sync-emp-card-idcard">${renderIdCardCellPr(item)}</span>
-                ${renderProbationStatusCellPr(item)}
-                ${values ? `<span class="sync-emp-card-items">${values}</span>` : ''}
-            </div>
-        </div>
-    `;
-}
 // Derived 3-state probation status (2026-08-19, explicit request) -- PayrollSyncModel::
 // getProcessDetail() attaches item.probation_status ('on_probation'/'failed'/'passed'/null, null
 // when pass_pro was never sent/not on file for this employee, nothing to show then).
@@ -1267,20 +1241,6 @@ function renderProbationStatusCellPr(item) {
     if (!entry) return '';
     const [cls, key, fallback] = entry;
     return `<span class="badge rounded-pill ${cls}">${langData[key] || fallback}</span>`;
-}
-// 2026-09-02, explicit request: "หน้าต่างตอนกดดูรายละเอียดของรอบที่ส่ง ช่วยปรับให้แสดงข้อมูลครบ" --
-// PayrollSyncModel::getProcessDetail() already sends early_mins/leave_approve_days/leave_wait_days/
-// leave_without_pay_days per item, but the card never rendered them at all. Shown only when the
-// value is genuinely present and non-zero (same "don't clutter with nothing" filtering the
-// item_values badges above already use), appended after Trip Allowance.
-function syncEmpExtraStatsPr(item) {
-    const stats = [
-        ['table_early_mins', 'Early Leave (min)', item.early_mins],
-        ['table_leave_approve_days', 'Leave Approved (days)', item.leave_approve_days],
-        ['table_leave_wait_days', 'Leave Pending (days)', item.leave_wait_days],
-        ['table_leave_without_pay_days', 'Unpaid Leave (days)', item.leave_without_pay_days],
-    ].filter(([, , v]) => v !== null && v !== undefined && Number(v) !== 0);
-    return stats.map(([key, fallback, v]) => `<div class="sync-emp-stat"><span class="sync-emp-stat-label">${langData[key] || fallback}</span><span class="sync-emp-stat-value">${escapeHtml(v)}</span></div>`).join('');
 }
 function renderIdCardCellPr(item) {
     if (!item.id_card_no_masked) {
