@@ -156,57 +156,20 @@ function frequencyLabelPr(freq) {
 
 /* ---------- Compact per-row "Timeline" column (2026-08-22, explicit request: "หน้า Process List
    อยากให้เพิ่มอีก Column เป็น Timeline ย่อๆ ว่า Process นี้ถึงขั้นตอนไหนแล้ว และมีปุ่มลัดให้กดได้ ...
-   แต่ต้องไม่กระทบกับ Function การทำงานหลัก") -- deliberately a SEPARATE, duplicated copy of
-   detail.js's RUN_TIMELINE_STEPS/computeTimelineProgress (not shared/refactored) so the
-   already-working Payroll Process Detail page's own full-size timeline is completely untouched by
-   this change, matching this codebase's existing convention of keeping each page's JS file
-   self-contained (escapeHtml.../fmtNum... etc. are already duplicated per page rather than shared).
-   Renders into the new .mini-timeline widget (public/css/style.css, right after .process-timeline)
-   instead of the full-size spine -- dots + connecting lines only, label/date moved into each dot's
-   title tooltip since a table cell has nowhere near the width the full widget needs. */
-const MINI_TIMELINE_STEPS = [
-    { key: 'draft', labelKey: 'state_draft', dateField: 'created_at', icon: 'fa-file-alt' },
-    { key: 'pending_approval', labelKey: 'state_pending_approval', dateField: 'submitted_at', icon: 'fa-paper-plane' },
-    { key: 'approved', labelKey: 'state_approved', dateField: 'approved_at', icon: 'fa-check' },
-    { key: 'paid', labelKey: 'state_paid', dateField: 'paid_at', icon: 'fa-money-check-dollar' },
-    { key: 'locked', labelKey: 'state_locked', dateField: 'locked_at', icon: 'fa-lock' },
-];
-// row.cancelled_from_state (PayrollRunModel::list()'s new subquery column) stands in for
-// detail.js's audit-log-derived cancelledFromState(run) here -- list() rows don't carry the full
-// audit log (only get() does), so this small dedicated column is what makes the cancelled branch
-// accurate without fetching each row's full history just for this compact widget.
-function computeMiniTimelineProgress(row) {
-    const state = row.state;
-    if (state === 'rejected') {
-        return { reachedIdx: 1, branch: { atIndex: 2, type: 'rejected' } };
-    }
-    // 2026-08-22, explicit request ("Status ในหน้า Approve มี...Need Information") -- a real third
-    // state, same branch slot/reasoning as 'rejected' above (also only ever reached FROM
-    // pending_approval).
-    if (state === 'need_info') {
-        return { reachedIdx: 1, branch: { atIndex: 2, type: 'need_info' } };
-    }
-    if (state === 'cancelled') {
-        const fromKey = row.cancelled_from_state || 'draft';
-        if (fromKey === 'draft') {
-            return { reachedIdx: -1, branch: { atIndex: 0, type: 'cancelled' } };
-        }
-        const effectiveKey = fromKey === 'rejected' ? 'pending_approval' : fromKey;
-        const idx = MINI_TIMELINE_STEPS.findIndex(s => s.key === effectiveKey);
-        if (idx < 0) {
-            return { reachedIdx: -1, branch: { atIndex: 0, type: 'cancelled' } };
-        }
-        return { reachedIdx: idx, branch: { atIndex: idx + 1, type: 'cancelled' } };
-    }
-    // 2026-08-29, real bug found and fixed (explicit report: "Locked จะเป็นสีเขียวตอนไหนครับ" -- see
-    // detail.js's own computeTimelineProgress() docblock for the full explanation, ported here
-    // verbatim since this is a duplicated copy of that same logic, same "each page stays self-
-    // contained" convention this file's own top-of-file comment already documents). Was
-    // `reachedIdx: idx - 1` -- a station only showed done/green once you'd moved PAST it, which
-    // meant the LAST station (locked) could never turn green, since there's no state after it.
-    const idx = MINI_TIMELINE_STEPS.findIndex(s => s.key === state);
-    return { reachedIdx: idx, branch: null };
-}
+   แต่ต้องไม่กระทบกับ Function การทำงานหลัก") -- renders into the .mini-timeline widget
+   (public/css/style.css, right after .process-timeline) -- dots + connecting lines only, label
+   moved into each dot's title tooltip since a table cell has nowhere near the width the full
+   widget needs.
+   2026-09-10, Batch 3A item 2: was its own duplicated copy of detail.js's RUN_TIMELINE_STEPS/
+   computeTimelineProgress (MINI_TIMELINE_STEPS/computeMiniTimelineProgress here, deliberately not
+   shared at the time) -- both moved to app.js's own RUN_LIFECYCLE_STEPS/runLifecycleSteps(),
+   shared with detail.js's full-size spine now instead of re-deriving the same state->label/tone
+   mapping twice (see that function's own docblock for why the old per-page duplication was a real
+   bug: a static per-step label that never reflected done-vs-current-vs-not-yet). This widget calls
+   it with `showDates:false` (confirmed with the user -- this column already sits next to its own
+   "Last Updated" date, no need for a 2nd date under every dot) -- row.cancelled_from_state
+   (PayrollRunModel::list()'s own subquery column) is read directly by runLifecycleSteps() itself
+   as the fallback when a row has no full audit_log (list() rows never do, only get() does). */
 // Quick shortcut buttons (2026-08-22) -- deliberately only for a zero-extra-input transition:
 // Submit (draft) and Lock (paid) both call the EXACT SAME existing endpoints detail.js already
 // uses, no new backend/business logic at all. pending_approval has no shortcut here on purpose --
@@ -217,7 +180,7 @@ function computeMiniTimelineProgress(row) {
 // DOES need payment method/reference/date input, so unlike Submit/Lock it can't be a one-click
 // confirm; it opens the exact same #runMarkPaidModal markup/i18n keys the Detail page uses
 // (duplicated into this page's own view, same "each page stays self-contained" convention this
-// whole file already follows -- see the comment above MINI_TIMELINE_STEPS further up). Gated by
+// whole file already follows for its own helpers, e.g. escapeHtml.../fmtNum...). Gated by
 // row.can_finalize_payroll (new flag from PayrollController::list(), same permission
 // PayrollRunModel::markPaid()/lock() themselves enforce) -- Lock below is now gated by the same
 // flag too, closing a pre-existing gap where it rendered for anyone regardless of permission and
@@ -245,42 +208,19 @@ function miniTimelineQuickActionHtml(row) {
     return '';
 }
 // 2026-08-22, explicit request ("Timeline กับ Status ชื่อซ้ำกัน และมีจุดสุดท้ายที่มี icon...ต่างเพื่อน
-// ถ้าเป็น icon ก็เปลี่ยนให้เป็น icon ทั้งหมด") -- two fixes on top of the previous pass: (1) dropped
-// the current-step label/date line this widget briefly had, since the Status column right next to
-// it already shows that same text -- redundant; (2) EVERY dot now shows a consistent icon (not
-// just done/branch ones) -- not-yet-reached and current dots use their own step's icon (same set
-// as the full-size .process-timeline's RUN_TIMELINE_STEPS in detail.js: file/paper-plane/check/
-// money/lock), done overrides to a plain checkmark same as the full timeline does, branch dots
-// keep their existing xmark/ban/question -- so no dot is ever blank next to ones that do have an
-// icon.
-const MINI_TIMELINE_BRANCH_ICONS = { rejected: 'fa-xmark', cancelled: 'fa-ban', need_info: 'fa-question' };
-const MINI_TIMELINE_BRANCH_LABEL_KEYS = { rejected: 'state_rejected', cancelled: 'state_cancelled', need_info: 'state_need_info' };
+// ถ้าเป็น icon ก็เปลี่ยนให้เป็น icon ทั้งหมด") -- dropped the current-step label/date line this
+// widget briefly had (the Status column right next to it already shows that same text --
+// redundant), and every dot shows a consistent icon (done overrides to a plain checkmark, branch
+// dots use their own xmark/ban/question, same set runLifecycleSteps() (app.js) already returns).
 function renderMiniTimelineDots(row) {
-    const { reachedIdx, branch } = computeMiniTimelineProgress(row);
-    const currentIndex = reachedIdx + 1;
+    const { steps } = runLifecycleSteps(row, { showDates: false });
     let dotsHtml = '<ul class="mini-timeline">';
-    for (let i = 0; i < MINI_TIMELINE_STEPS.length; i++) {
-        const step = MINI_TIMELINE_STEPS[i];
-        let cls = '';
-        let label = langData[step.labelKey] || step.key;
-        let icon = step.icon;
-        const isBranchHere = branch && branch.atIndex === i;
-        if (isBranchHere) {
-            cls = branch.type;
-            label = langData[MINI_TIMELINE_BRANCH_LABEL_KEYS[branch.type]] || branch.type;
-            icon = MINI_TIMELINE_BRANCH_ICONS[branch.type] || 'fa-ban';
-        } else if (i <= reachedIdx) {
-            cls = 'done';
-            icon = 'fa-check';
-        } else if (i === currentIndex) {
-            cls = 'current';
-        }
-        const dateVal = row[step.dateField];
-        const dateText = (cls === 'done' || cls === 'current' || isBranchHere) && dateVal ? toLocalDateOnlyPr(dateVal) : '';
-        const title = escapeHtml(`${label}${dateText ? ` (${dateText})` : ''}`);
-        dotsHtml += `<li class="mt-step ${cls}"><span class="mt-dot" title="${title}"><i class="fa-solid ${icon}"></i></span></li>`;
-        if (i < MINI_TIMELINE_STEPS.length - 1) {
-            dotsHtml += `<span class="mt-line ${i <= reachedIdx ? 'done' : ''}"></span>`;
+    for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        const title = escapeHtml(step.label);
+        dotsHtml += `<li class="mt-step ${step.cls}"><span class="mt-dot" title="${title}"><i class="fa-solid ${step.icon}"></i></span></li>`;
+        if (i < steps.length - 1) {
+            dotsHtml += `<span class="mt-line ${step.cls === 'done' ? 'done' : ''}"></span>`;
         }
     }
     dotsHtml += '</ul>';
@@ -354,43 +294,10 @@ function renderStatusTimelineCell(row) {
    duplicated rather than shared per this codebase's established per-page-JS convention. Read-only
    here on purpose -- no Approve/Reject/Revert buttons -- this page shows progress, acting on a run
    stays on the Payroll Approval page/Detail page. ---------- */
-const APV_COLORS_PR = {
-    done: { icon: '#16a34a', badgeBg: '#dcfce7', badgeText: '#15803d' },
-    pending: { icon: '#f59e0b', badgeBg: '#fef3c7', badgeText: '#b45309' },
-    rejected: { icon: '#ef4444', badgeBg: '#fee2e2', badgeText: '#b91c1c' },
-    info: { icon: '#0d6efd', badgeBg: '#cfe2ff', badgeText: '#0a58ca' },
-    muted: { icon: '#cbd5e1', badgeBg: '#f1f5f9', badgeText: '#64748b' },
-};
-function apvBadgeHtmlPr(tone, label) {
-    const c = APV_COLORS_PR[tone] || APV_COLORS_PR.muted;
-    return `<span class="apv-badge" style="background:${c.badgeBg};color:${c.badgeText};">${escapeHtml(label)}</span>`;
-}
-function apvIconHtmlPr(tone, icon) {
-    const c = APV_COLORS_PR[tone] || APV_COLORS_PR.muted;
-    return `<div class="apv-stage-icon" style="background:${c.icon};"><i class="fa-solid ${icon}"></i></div>`;
-}
-// 2026-09-10, explicit request: show the employee's real photo (same profile_photo_path field/URL
-// convention as employee/list.js's own avatar column) in front of an approver's name, falling back
-// to the initial-letter circle when there's no photo on file.
-// onerror handler for apvAvatarHtmlPr's own <img> below -- reads size/initial back off data-*
-// attributes (already escapeAttr()'d, so no re-escaping needed here) rather than embedding the
-// fallback markup as a string inside the onerror attribute itself.
-function apvAvatarImgErrorPr(img) {
-    const size = img.getAttribute('data-size');
-    const initial = img.getAttribute('data-initial');
-    img.outerHTML = `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
-}
-function apvAvatarHtmlPr(name, size, photoPath) {
-    size = size || 26;
-    const initial = escapeAttr((name || '?').trim().charAt(0).toUpperCase() || '?');
-    if (photoPath) {
-        return `<img src="${BASE_URL}/${escapeAttr(photoPath)}" alt="" data-size="${size}" data-initial="${initial}" style="width:${size}px;height:${size}px;min-width:${size}px;border-radius:50%;object-fit:cover;object-position:center top;" onerror="apvAvatarImgErrorPr(this)">`;
-    }
-    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
-}
-function apvPersonLineHtmlPr(name) {
-    return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtmlPr(name, 26)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
-}
+// 2026-09-10, Batch 3A item 3: APV_COLORS_PR/apvBadgeHtmlPr/apvIconHtmlPr/apvAvatarImgErrorPr/
+// apvAvatarHtmlPr/apvPersonLineHtmlPr moved to app.js's own APV_COLORS/apvBadgeHtml()/
+// apvIconHtml()/apvAvatarImgError()/apvAvatarHtml()/apvPersonLineHtml() -- confirmed byte-identical
+// across index.js/detail.js/approval.js before merging.
 function apvApproverTonePr(status) {
     return { approved: 'done', rejected: 'rejected', need_info: 'info', pending: 'pending', not_applicable: 'muted' }[status] || 'muted';
 }
@@ -402,22 +309,15 @@ function apvApproverSubstepHtmlPr(a) {
     const name = (currentLang === 'th' ? a.name_th : a.name_en) || a.name_th || a.name_en || a.employee_no;
     return `<div class="apv-substep">
         <div class="apv-substep-head">
-            <span class="apv-substep-label">${apvAvatarHtmlPr(name, 22, a.profile_photo_path)}${escapeHtml(name)}</span>
-            ${apvBadgeHtmlPr(apvApproverTonePr(a.status), apvApproverLabelPr(a.status))}
+            <span class="apv-substep-label">${apvAvatarHtml(name, 22, a.profile_photo_path)}${escapeHtml(name)}</span>
+            ${apvBadgeHtml(apvApproverTonePr(a.status), apvApproverLabelPr(a.status))}
         </div>
         ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtml(a.acted_at)}</div>` : ''}
         ${a.note ? `<div class="apv-substep-remark">${escapeHtml(a.note)}</div>` : ''}
     </div>`;
 }
-function apvApprovalStageInfoPr(state) {
-    switch (state) {
-        case 'pending_approval': return { tone: 'pending', icon: 'fa-hourglass-half', label: langData['state_pending_approval'] || 'Waiting for Approval' };
-        case 'need_info': return { tone: 'info', icon: 'fa-circle-info', label: langData['state_need_info'] || 'Need Information' };
-        case 'approved': case 'paid': case 'locked': return { tone: 'done', icon: 'fa-check', label: langData['state_approved'] || 'Approved' };
-        case 'rejected': return { tone: 'rejected', icon: 'fa-xmark', label: langData['state_rejected'] || 'Not Approved' };
-        default: return { tone: 'muted', icon: 'fa-hourglass', label: langData['status_pending'] || 'Not Started' };
-    }
-}
+// 2026-09-10, Batch 3A item 2: moved to app.js's own apvApprovalStageInfo() (shared with
+// detail.js/approval.js's own identical copies).
 // 2026-08-30, explicit follow-up ("ยังไม่ได้ปรับ UI...ให้แสดงหลาย step ที่ actionable พร้อมกันแบบจุดๆ ว่า
 // ตัวเองอยู่ตำแหน่งไหน และตำแหน่งก่อนหน้านั้นอนุมัติหรือยัง") -- renders approval_flow.steps (new, see
 // ApprovalRequestModel::stepBreakdown()) as a dot-per-step mini-stepper + one grouped approver list
@@ -444,7 +344,7 @@ function apvStepDotsHtmlPr(steps) {
 function apvStepGroupHtmlPr(step) {
     const badgeHtml = !step.unlocked
         ? `<span class="apv-badge" style="background:#f1f5f9;color:#64748b;"><i class="fa-solid fa-lock me-1"></i>${langData['step_locked'] || 'Locked'}</span>`
-        : apvBadgeHtmlPr(apvApproverTonePr(step.status), apvApproverLabelPr(step.status));
+        : apvBadgeHtml(apvApproverTonePr(step.status), apvApproverLabelPr(step.status));
     const stepLabel = (langData['step_label'] || 'Step {n}').replace('{n}', step.step_order);
     const approversHtml = step.approvers.length
         ? step.approvers.map(apvApproverSubstepHtmlPr).join('')
@@ -458,7 +358,7 @@ function apvStepGroupHtmlPr(step) {
     </div>`;
 }
 function apvApprovalStageHtmlPr(run) {
-    const info = apvApprovalStageInfoPr(run.state);
+    const info = apvApprovalStageInfo(run.state);
     const steps = (run.approval_flow && run.approval_flow.steps) || null;
     const approvers = (run.approval_flow && run.approval_flow.approvers) || [];
     const bodyHtml = (steps && steps.length)
@@ -468,63 +368,32 @@ function apvApprovalStageHtmlPr(run) {
             : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`);
     return `
         <div class="apv-stage">
-            <div class="apv-stage-marker">${apvIconHtmlPr(info.tone, info.icon)}<div class="apv-stage-line"></div></div>
+            <div class="apv-stage-marker">${apvIconHtml(info.tone, info.icon)}<div class="apv-stage-line"></div></div>
             <div class="apv-stage-content">
                 <div class="apv-stage-head">
                     <span class="apv-stage-title">${langData['approval_flow_title'] || 'Approval'}</span>
-                    ${apvBadgeHtmlPr(info.tone, info.label)}
+                    ${apvBadgeHtml(info.tone, info.label)}
                 </div>
                 <div class="apv-stage-body">${bodyHtml}</div>
             </div>
         </div>
     `;
 }
-function apvPaidStageHtmlPr(run) {
-    const isPaidOrLocked = run.state === 'paid' || run.state === 'locked';
-    const tone = isPaidOrLocked ? 'done' : 'muted';
-    const label = run.state === 'locked' ? (langData['state_locked'] || 'Locked') : (isPaidOrLocked ? (langData['state_paid'] || 'Paid') : (langData['status_pending'] || 'Pending'));
-    return `
-        <div class="apv-stage">
-            <div class="apv-stage-marker">${apvIconHtmlPr(tone, isPaidOrLocked ? 'fa-money-check-dollar' : 'fa-flag')}<div class="apv-stage-line"></div></div>
-            <div class="apv-stage-content">
-                <div class="apv-stage-head">
-                    <span class="apv-stage-title">${langData['state_paid'] || 'Paid'}</span>
-                    ${apvBadgeHtmlPr(tone, label)}
-                </div>
-                ${isPaidOrLocked && run.paid_at ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.paid_at) : escapeHtml(run.paid_at)}</div>` : ''}
-                <div class="apv-stage-body">
-                    <span class="apv-muted-text">${isPaidOrLocked ? '' : (langData['waiting_for_approval_to_complete'] || 'Waiting for the approval process to complete.')}</span>
-                </div>
-            </div>
-        </div>
-    `;
-}
-function apvCreatedStageHtmlPr(run) {
-    const creator = (currentLang === 'th' ? run.created_by_name_th : run.created_by_name_en) || run.created_by_name_th || run.created_by_name_en || '-';
-    return `
-        <div class="apv-stage apv-stage-last">
-            <div class="apv-stage-marker">${apvIconHtmlPr('done', 'fa-plus')}</div>
-            <div class="apv-stage-content">
-                <div class="apv-stage-head">
-                    <span class="apv-stage-title">${langData['stage_created'] || 'Created'}</span>
-                    ${apvBadgeHtmlPr('done', langData['stage_created'] || 'Created')}
-                </div>
-                <div class="apv-stage-date">${run.created_at ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(run.created_at) : escapeHtml(run.created_at)) : ''}</div>
-                <div class="apv-stage-body">${apvPersonLineHtmlPr(creator)}</div>
-            </div>
-        </div>
-    `;
-}
+// 2026-09-10, Batch 3A item 3: apvPaidStageHtmlPr()/apvCreatedStageHtmlPr() moved to app.js's own
+// apvPaidStageHtml()/apvLockedStageHtml() (the old merged Paid/Locked box split in 2) and
+// apvCreatedStageHtml() -- see renderRunWorkflowModal() below for the new call sites.
 // 2026-09-10: renderAuditTimelinePr() removed -- this modal's "History" section is gone (duplicated
 // the Detail page's own Action History tab, see renderRunWorkflowModal() below); auditActionLabel()
 // itself (app.js) is untouched, still used by detail.js's own tab.
 function renderRunWorkflowModal(run) {
     $('#runWorkflowModalRunName').text(run.run_name || '');
+    const lifecycle = runLifecycleSteps(run, { showDates: true });
     $('#runWorkflowModalBody').html(`
         <div class="apv-timeline">
-            ${apvPaidStageHtmlPr(run)}
+            ${apvLockedStageHtml(run, lifecycle)}
+            ${apvPaidStageHtml(run, lifecycle)}
             ${apvApprovalStageHtmlPr(run)}
-            ${apvCreatedStageHtmlPr(run)}
+            ${apvCreatedStageHtml(run)}
         </div>
     `);
 }
