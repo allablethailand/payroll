@@ -138,27 +138,29 @@
                          plus, when this run references another (merge_target_run_id), that target's own
                          code/name right underneath -- see runCodeCellHtmlPr() in index.js (replaced the
                          old hover-only icon on Run Name with this always-visible text instead). -->
+                    <!-- 2026-09-10, explicit request: "เรียง column ใหม่...ตัด column ผู้สร้าง ออกจากตาราง"
+                         -- Created By is gone from this table entirely (moved to a native `title`
+                         tooltip on the Run Name cell instead, see runCodeCellHtmlPr()-adjacent
+                         run_name render in index.js), and Status moved up to right after Pay Period
+                         (was right before Updated By, per the OPPOSITE explicit request 2026-09-02
+                         made -- superseded now by this newer, more specific column-order request). -->
                     <th scope="col" style="width: 8%;" data-i18n="table_run_code">Code</th>
                     <th scope="col" style="width: 12%;" data-i18n="table_run_name">Run Name</th>
                     <th scope="col" style="width: 9%;" data-i18n="table_period">Pay Period</th>
-                    <th scope="col" style="width: 7%;" data-i18n="table_employee_count">Employees</th>
-                    <th scope="col" style="width: 9%;" data-i18n="table_net_amount">Net Total</th>
-                    <th scope="col" style="width: 8%;" data-i18n="table_created_by">Created By</th>
-                    <!-- 2026-08-29, explicit request: "ช่วยเพิ่ม Column ว่า Update ข้อมูลล่าสุดเมื่อไหร่ และใคร
-                         เป็นคน Update" -- updated_at/updated_by are already wired on every mutating
-                         path (PayrollRunModel::list()'s own comment), just never had their own column. -->
-                    <th scope="col" style="width: 9%;" data-i18n="table_updated_at">Last Updated</th>
                     <!-- 2026-08-23, explicit request ("ถ้ามี Comment จากการอนุมัติ ให้นำมาแสดงด้วยใน
                          Column Status แยกอาจยุบรวม Column Status กับ Column Timeline...และในColumn นี้
                          เพิ่มปุ่มดำเนินการที่สามารถกดได้ รวมถึงวันที่ Status เข้าไปด้วย"; widened + given
                          real spacing 2026-08-23 per explicit follow-up: "ช่วยปรับ Design ให้สวยขึ้นหน่อย
                          ครับ ตอนนี้แน่นไปหมด") -- Status, Timeline, and Last Updated collapsed into one
                          column: badge + status date on one row, mini-timeline dots on their own row,
-                         a reject/need-info comment chip when present, then the quick-action button.
-                         2026-09-02, explicit request: "Column Status ควรมาอยู่รองสุดท้าย" -- moved from
-                         right after Pay Period to right before Updated By (the last real data column
-                         before the unlabeled Actions column). -->
+                         a reject/need-info comment chip when present, then the quick-action button. -->
                     <th scope="col" style="width: 24%;" data-i18n="col_status">Status</th>
+                    <th scope="col" style="width: 7%;" class="text-end" data-i18n="table_employee_count">Employees</th>
+                    <th scope="col" style="width: 9%;" class="text-end" data-i18n="table_net_amount">Net Total</th>
+                    <!-- 2026-08-29, explicit request: "ช่วยเพิ่ม Column ว่า Update ข้อมูลล่าสุดเมื่อไหร่ และใคร
+                         เป็นคน Update" -- updated_at/updated_by are already wired on every mutating
+                         path (PayrollRunModel::list()'s own comment), just never had their own column. -->
+                    <th scope="col" style="width: 9%;" data-i18n="table_updated_at">Last Updated</th>
                     <th scope="col" style="width: 7%;" data-i18n="table_updated_by">Updated By</th>
                     <!-- 2026-08-27, explicit request: "th ของทุกตาราง ถ้ามีคำว่า Action ให้ตัดออกให้เป็น
                          th เปล่าๆ" -- matches the empty-header convention every other Actions column in
