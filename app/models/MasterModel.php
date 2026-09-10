@@ -202,6 +202,8 @@ class MasterModel {
             case 'rank':
             case 'work_location':
             case 'employment_type':
+            case 'hospital':
+            case 'pvd_plan':
                 if ($compId === null) {
                     break;
                 }
@@ -224,6 +226,15 @@ class MasterModel {
                     // own docblock) -- dropdown-options endpoint for Employee Detail's new
                     // employment_type_id field, same generic pattern as every other type here.
                     'employment_type' => ['table' => 'structure_employment_types', 'code' => 'employment_type_code', 'nameTh' => 'employment_type_name_th', 'nameEn' => 'employment_type_name_en'],
+                    // 2026-09-10, Batch 3A item 7b: `company_hospitals`/`company_pvd_plans` are
+                    // single-free-text-name lookup lists (no _th/_en split, same "one column, not
+                    // translated" precedent as structure_teams.client_name) -- pointing nameTh AND
+                    // nameEn at the SAME column works with this resolver unchanged (the WHERE/SELECT
+                    // just reference `name` twice, harmless). Writing (Select2 "tag" -> row id,
+                    // auto-create on first use) is CompanyLookupListModel::resolveOrCreate(), called
+                    // from EmployeeModel::save() -- this case only ever reads.
+                    'hospital' => ['table' => 'company_hospitals', 'code' => null, 'nameTh' => 'name', 'nameEn' => 'name'],
+                    'pvd_plan' => ['table' => 'company_pvd_plans', 'code' => null, 'nameTh' => 'name', 'nameEn' => 'name'],
                 ];
                 $cfg = $tableMap[$type];
                 $where = " WHERE comp_id = :comp_id AND deleted_at IS NULL AND status = 'active' ";

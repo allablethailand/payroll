@@ -183,3 +183,22 @@ isolated to this one assertion/fixture — does not need `DocumentNumberingModel
 its own fixture companies).
 
 **Source:** Batch 3A item 7a regression run, hit 3rd time (2026-09-10).
+
+---
+
+## No Setup management page for `company_hospitals`/`company_pvd_plans` (rename/merge duplicates)
+
+Item 7b's SSO Hospital + PVD Investment Plan fields are a generic "company lookup list" (Select2
+"tags" -- pick an existing entry or type a new one, auto-created via `CompanyLookupListModel::
+resolveOrCreate()`, case-insensitive/trimmed dedup on create). By explicit design (confirmed with
+the user), there is **no Setup page to manage either list yet** -- an HR admin who fat-fingers a
+name gets a genuine near-duplicate row sitting alongside the real one forever (dedup only catches
+an EXACT case-insensitive/trimmed match, not typos), and there's no UI to rename or merge one into
+another.
+
+**Fix, when needed:** a small CRUD page (list/rename/soft-delete/merge-into-another) for both
+tables, matching this app's existing Organizational Structure sub-tab pattern (Team/Branch/etc.) --
+`CompanyLookupListModel` already has everything CRUD needs except rename/merge, which would be new
+methods on that same shared model (not 2 new ones, per this feature's own "one model, not 2" rule).
+
+**Source:** Batch 3A item 7b, explicit instruction (2026-09-10).
