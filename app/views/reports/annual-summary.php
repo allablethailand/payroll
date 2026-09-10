@@ -44,6 +44,10 @@
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="ais-pit-tab" data-bs-toggle="tab" data-bs-target="#ais-pit-pane" type="button" role="tab" aria-controls="ais-pit-pane" aria-selected="false"><i class="fa-solid fa-file-invoice-dollar me-1"></i><span data-i18n="ais_tab_pit_annual">Annual Withholding Tax Summary</span></button>
         </li>
+        <!-- Batch 2, item 6 (2026-09-10) -- positioned right after the tax tab, same structure. -->
+        <li class="nav-item" role="presentation">
+            <button class="nav-link setup-menu" id="ais-sso-tab" data-bs-toggle="tab" data-bs-target="#ais-sso-pane" type="button" role="tab" aria-controls="ais-sso-pane" aria-selected="false"><i class="fa-solid fa-shield-heart me-1"></i><span data-i18n="ais_tab_sso_annual">Annual SSO Contribution Summary</span></button>
+        </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="ais-monthly-pit-tab" data-bs-toggle="tab" data-bs-target="#ais-monthly-pit-pane" type="button" role="tab" aria-controls="ais-monthly-pit-pane" aria-selected="false"><i class="fa-solid fa-calendar-days me-1"></i><span data-i18n="ais_tab_pit_monthly">Monthly Withholding Tax</span></button>
         </li>
@@ -233,6 +237,80 @@
         </div>
         <div class="ais-table-wrap pt-2 mb-5">
             <table class="ais-table table table-hover w-100" id="tb_ais_pit">
+                <thead></thead>
+                <tfoot></tfoot>
+            </table>
+        </div>
+    </div>
+
+    <!-- ==================== Tab: Annual SSO Contribution Summary (Batch 2, item 6, 2026-09-10) ====================
+         Direct structural mirror of the Annual Withholding Tax Summary tab above -- same fiscal-year
+         filter set, same 2-stat-card row, same plain (no export) table with sticky columns. -->
+    <div class="tab-pane fade" id="ais-sso-pane" role="tabpanel" aria-labelledby="ais-sso-tab" tabindex="0">
+        <div class="station-filter" id="aisSsoStationFilter">
+            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+            <button type="button" class="station-filter-toggle" id="aisSsoStationFilterToggle" title="Toggle filter">
+                <i class="fa-solid fa-chevron-up"></i>
+            </button>
+            <div class="station-filter-body">
+                <div class="row g-3">
+                    <div class="col-sm-2">
+                        <label class="form-label small mb-1"><i class="fa-solid fa-calendar me-1 text-muted"></i><span data-i18n="fiscal_year">Fiscal Year</span></label>
+                        <select class="form-select" id="aisSsoFiscalYear"></select>
+                    </div>
+                    <div class="col-sm-2">
+                        <label class="form-label small mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
+                        <select class="form-select select2-remote" id="aisSsoFilterDepartment" data-api="/api/department.get" data-type="department"></select>
+                    </div>
+                    <div class="col-sm-2">
+                        <label class="form-label small mb-1"><i class="fa-solid fa-people-group me-1 text-muted"></i><span data-i18n="team">Team</span></label>
+                        <select class="form-select select2-remote" id="aisSsoFilterTeam" data-api="/api/team.get" data-type="team"></select>
+                    </div>
+                    <div class="col-sm-2">
+                        <label class="form-label small mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
+                        <select class="form-select select2-remote" id="aisSsoFilterBranch" data-api="/api/branch.get" data-type="branch"></select>
+                    </div>
+                    <div class="col-sm-2">
+                        <label class="form-label small mb-1"><i class="fa-solid fa-user-tag me-1 text-muted"></i><span data-i18n="role">Role</span></label>
+                        <select class="form-select select2-remote" id="aisSsoFilterRole" data-api="/api/role.get" data-type="role"></select>
+                    </div>
+                    <div class="col-sm-2">
+                        <label class="form-label small mb-1"><i class="fa-solid fa-toggle-on me-1 text-muted"></i><span data-i18n="status">Status</span></label>
+                        <select class="form-select" id="aisSsoFilterStatus" data-option-keys="status_all,status_active,status_probation,status_resigned,status_terminated" data-option-values=",active,probation,resigned,terminated"></select>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="station-filter-clear-row d-none" id="aisSsoFilterClearRow">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="aisSsoClearFilterBtn" data-i18n="clear_filter">Clear Filter</button>
+        </div>
+
+        <div class="row g-3 mb-4" id="aisSsoSummaryCards">
+            <div class="col-md-3">
+                <div class="stat-card stat-card-info h-100">
+                    <div class="stat-card-icon"><i class="fa-solid fa-users"></i></div>
+                    <div>
+                        <div class="stat-card-label" data-i18n="total_employees">Employees</div>
+                        <div class="stat-card-value" id="aisSsoSummaryEmployeeCount">-</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card stat-card-danger h-100">
+                    <div class="stat-card-icon"><i class="fa-solid fa-shield-heart"></i></div>
+                    <div>
+                        <div class="stat-card-label" data-i18n="ais_total_sso_withheld">Total SSO Contribution</div>
+                        <div class="stat-card-value" id="aisSsoSummaryTotal">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="aisSsoTableEmpty" class="text-center text-secondary py-5 d-none">
+            <i class="fa-solid fa-circle-info me-1"></i><span data-i18n="ais_no_data">No payroll data found for this fiscal year.</span>
+        </div>
+        <div class="ais-table-wrap pt-2 mb-5">
+            <table class="ais-table table table-hover w-100" id="tb_ais_sso">
                 <thead></thead>
                 <tfoot></tfoot>
             </table>

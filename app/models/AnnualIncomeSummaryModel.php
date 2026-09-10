@@ -266,14 +266,18 @@ class AnnualIncomeSummaryModel {
     }
 
     /**
-     * Raw per-employee-per-run-month rows within a date range (Phase 4, T026/T027) -- shared
-     * plumbing for both annualPitSummary()'s grid and monthlyPitDetail()'s single-month list, since
-     * both need to extract the TH_PIT line from `statutory_breakdown` (JSON), which can't be summed
-     * in portable SQL the way gross/deduction/net can. Same ALLOWED_STATES gate as summary()/
-     * cellDetail() -- satisfies T029 ("ทุก Report ใหม่ต้องเช็คเงื่อนไขอนุมัติ/ปิดรอบ") by construction,
-     * since every caller of this method inherits the same gate rather than needing its own.
+     * 2026-09-10, Batch 2 item 6 follow-up (explicit request: "รวม annualPitSummary()/rawPitRows()
+     * กับ annualSsoSummary()/rawSsoRows() เป็นฟังก์ชันเดียวรับ parameter item code") -- generic
+     * per-employee-per-run-month rows within a date range, parameterized by which statutory_code
+     * to extract from `statutory_breakdown` (JSON, can't be summed in portable SQL the way gross/
+     * deduction/net can). Same ALLOWED_STATES gate as summary()/cellDetail() -- satisfies T029
+     * ("ทุก Report ใหม่ต้องเช็คเงื่อนไขอนุมัติ/ปิดรอบ") by construction, since every caller inherits the
+     * same gate rather than needing its own. Output row carries the summed amount under the neutral
+     * key 'amount' -- callers that need a specific key name (e.g. monthlyPitDetail() below, via
+     * rawPitRows()'s own thin-wrapper rename) remap it themselves, so this shared method's own
+     * output shape never has to change to fit a second caller's naming.
      */
-    private function rawPitRows(int $compId, string $dateFrom, string $dateTo): array {
+    private function rawDeductionRows(string $statutoryCode, int $compId, string $dateFrom, string $dateTo): array {
         $placeholders = implode(',', array_fill(0, count(self::ALLOWED_STATES), '?'));
         $stmt = $this->db->prepare(
             "SELECT d.employee_id, YEAR(r.payment_date) AS y, MONTH(r.payment_date) AS m,
@@ -287,35 +291,51 @@ class AnnualIncomeSummaryModel {
         $stmt->execute(array_merge([$compId], self::ALLOWED_STATES, [$dateFrom, $dateTo]));
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($rows as &$row) {
-            $pit = 0.0;
+            $amount = 0.0;
             foreach (json_decode((string)$row['statutory_breakdown'], true) ?? [] as $item) {
-                if (($item['code'] ?? null) === 'TH_PIT') {
-                    $pit += (float)($item['employee_amount'] ?? 0);
+                if (($item['code'] ?? null) === $statutoryCode) {
+                    $amount += (float)($item['employee_amount'] ?? 0);
                 }
             }
-            $row['tax_withheld'] = $pit;
+            $row['amount'] = $amount;
+        }
+        unset($row);
+        return $rows;
+    }
+
+    /** Thin wrapper over rawDeductionRows('TH_PIT', ...) that renames the neutral 'amount' key back
+     *  to 'tax_withheld' -- monthlyPitDetail() below (this method's OTHER caller, not just
+     *  annualPitSummary()) reads that exact key name, so it stays untouched by this consolidation. */
+    private function rawPitRows(int $compId, string $dateFrom, string $dateTo): array {
+        $rows = $this->rawDeductionRows('TH_PIT', $compId, $dateFrom, $dateTo);
+        foreach ($rows as &$row) {
+            $row['tax_withheld'] = $row['amount'];
         }
         unset($row);
         return $rows;
     }
 
     /**
-     * Phase 4, T027 -- annual PIT-withheld grid, same shape as summary() (per-employee, per-month,
-     * + annual total + company-wide totals row) but tracking tax_withheld instead of gross/
-     * deduction/net. Same fiscal-year concept (fiscal_year_start_month from Company Profile, T028)
-     * as the Annual Income Summary tab it's paired with.
+     * 2026-09-10, Batch 2 item 6 follow-up -- generic annual per-statutory-code grid, same shape as
+     * summary() (per-employee, per-month, + annual total + company-wide totals row) but tracking one
+     * statutory_breakdown line's employee_amount instead of gross/deduction/net. Same fiscal-year
+     * concept (fiscal_year_start_month from Company Profile, T028) as the Annual Income Summary tab
+     * every one of these grids is paired with. $amountField controls the output key name on each
+     * employee row and on `totals` (e.g. 'annual_tax_withheld'/'annual_sso_amount') so
+     * annualPitSummary()/annualSsoSummary() below can each keep their own already-shipped shape
+     * (frontend/JS reads those exact keys) without this shared method dictating one fixed name.
      * @param array $filters { department_id?, team_id?, branch_id?, role_id?, employee_status?, search? }
      * @return array{months: array, employees: array, totals: array}
      */
-    public function annualPitSummary(int $compId, int $fiscalYear, int $fiscalStartMonth, array $filters = []): array {
+    private function annualDeductionSummary(string $statutoryCode, string $amountField, int $compId, int $fiscalYear, int $fiscalStartMonth, array $filters = []): array {
         [$fyStart, $fyEnd] = $this->fiscalYearBounds($fiscalYear, $fiscalStartMonth);
         $monthDefs = $this->monthsInFiscalYear($fiscalYear, $fiscalStartMonth);
 
         $byEmployee = [];
-        foreach ($this->rawPitRows($compId, $fyStart, $fyEnd) as $row) {
+        foreach ($this->rawDeductionRows($statutoryCode, $compId, $fyStart, $fyEnd) as $row) {
             $empId = (int)$row['employee_id'];
             $key = $row['y'] . '-' . $row['m'];
-            $byEmployee[$empId][$key] = ($byEmployee[$empId][$key] ?? 0.0) + (float)$row['tax_withheld'];
+            $byEmployee[$empId][$key] = ($byEmployee[$empId][$key] ?? 0.0) + (float)$row['amount'];
         }
 
         $employeeRows = $this->employeeRowsForFilters($compId, $filters);
@@ -327,12 +347,12 @@ class AnnualIncomeSummaryModel {
         foreach ($employeeRows as $emp) {
             $empId = (int)$emp['id'];
             $months = [];
-            $annualTax = 0.0;
+            $annualAmount = 0.0;
             foreach ($monthDefs as $md) {
                 $key = $md['year'] . '-' . $md['month'];
                 $val = $byEmployee[$empId][$key] ?? 0.0;
                 $months[] = $val;
-                $annualTax += $val;
+                $annualAmount += $val;
                 $totalsMonths[$key] += $val;
             }
             $employees[] = [
@@ -348,17 +368,30 @@ class AnnualIncomeSummaryModel {
                 'position_name_th' => $emp['position_name_th'],
                 'position_name_en' => $emp['position_name_en'],
                 'months' => $months,
-                'annual_tax_withheld' => $annualTax,
+                $amountField => $annualAmount,
             ];
-            $annualTotal += $annualTax;
+            $annualTotal += $annualAmount;
             $employeeCount++;
         }
 
         return [
             'months' => $this->buildMonthMeta($monthDefs, $compId, $fyStart, $fyEnd),
             'employees' => $employees,
-            'totals' => ['months' => $totalsMonths, 'annual_tax_withheld' => $annualTotal, 'employee_count' => $employeeCount],
+            'totals' => ['months' => $totalsMonths, $amountField => $annualTotal, 'employee_count' => $employeeCount],
         ];
+    }
+
+    /** Phase 4, T027 -- annual PIT-withheld grid. Thin wrapper over annualDeductionSummary() above;
+     *  return shape/key names ('annual_tax_withheld') unchanged from before the consolidation. */
+    public function annualPitSummary(int $compId, int $fiscalYear, int $fiscalStartMonth, array $filters = []): array {
+        return $this->annualDeductionSummary('TH_PIT', 'annual_tax_withheld', $compId, $fiscalYear, $fiscalStartMonth, $filters);
+    }
+
+    /** Batch 2, item 6 -- annual SSO-contribution grid (employee_amount only, confirmed via
+     *  AskUserQuestion). Thin wrapper over annualDeductionSummary() above; return shape/key names
+     *  ('annual_sso_amount') unchanged from before the consolidation. */
+    public function annualSsoSummary(int $compId, int $fiscalYear, int $fiscalStartMonth, array $filters = []): array {
+        return $this->annualDeductionSummary('TH_SSO', 'annual_sso_amount', $compId, $fiscalYear, $fiscalStartMonth, $filters);
     }
 
     /**

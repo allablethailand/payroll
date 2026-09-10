@@ -448,6 +448,8 @@
     // is edited from Company Profile only, see that controller's own save()); 3 new routes for the
     // combined page's 2nd/3rd tabs.
     $router->get('api/annual-income-summary.pit-summary', 'AnnualIncomeSummaryController@pitSummary');
+    // Batch 2, item 6 -- new SSO tab, right after the tax tab above.
+    $router->get('api/annual-income-summary.sso-summary', 'AnnualIncomeSummaryController@ssoSummary');
     $router->get('api/annual-income-summary.monthly-pit', 'AnnualIncomeSummaryController@monthlyPit');
     $router->get('api/annual-income-summary.calendar-years', 'AnnualIncomeSummaryController@calendarYears');
     $router->get('api/report.list', 'ReportsController@list');
