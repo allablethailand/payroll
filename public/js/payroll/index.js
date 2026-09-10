@@ -732,8 +732,8 @@ function initPayrollRunTable() {
     }
     tb_payroll_run = $('#tb_payroll_run').DataTable({
         responsive: true,
-        // 2026-09-02: index 1 (was 0 before the new Code column at index 0 shifted everything else
-        // over by one) -- sorts by Pay Period descending, unchanged behavior.
+        // Sorts by Pay Period (index 2) descending -- unaffected by the 2026-09-10 column reorder,
+        // since Pay Period's own position (Code, Run Name, Pay Period, ...) didn't change.
         order: [[2, 'desc']],
         ajax: {
             url: `${BASE_URL}/api/payroll-run.list`,
@@ -755,15 +755,23 @@ function initPayrollRunTable() {
                 sort: d => d || '',
                 filter: d => d || '',
             } },
-            // Object-form render (not a plain function) so client-side sort/filter still operate on
-            // the raw run_name string, not the display HTML with the conditional icon prefixed --
-            // same DataTables sort-safety rule CLAUDE.md documents for formatted-date columns.
+            // 2026-09-10, explicit request: "ตัด column ผู้สร้าง ออกจากตาราง...ย้ายไปแสดงเป็น tooltip ที่
+            // ชื่อรอบ" -- the Created By column (employeeNamePr(row)) is gone from this table entirely;
+            // its own value is now a native `title` attribute on this cell's <strong> instead, shown
+            // on hover, reusing the existing table_created_by i18n key (no new key needed). Object-form
+            // render unchanged (same sort-safety reason as before) -- only the display branch changed.
             { data: 'run_name', render: {
-                display: (d, t, row) => `${runOriginBadgePr(row)}${runTypeIconPr(row)}<strong class="text-dark">${escapeHtml(d)}</strong>`,
+                display: (d, t, row) => `${runOriginBadgePr(row)}${runTypeIconPr(row)}<strong class="text-dark" title="${escapeHtml((langData['table_created_by'] || 'Created By') + ': ' + employeeNamePr(row))}">${escapeHtml(d)}</strong>`,
                 sort: d => d,
                 filter: d => d,
             } },
             { data: null, render: (d, t, row) => `${toDisplayDatePr(row.period_start_date)} - ${toDisplayDatePr(row.period_end_date)}` },
+            // 2026-09-10, explicit request: "เรียง column ใหม่...สถานะ...จำนวนพนักงาน...ยอดสุทธิรวม" --
+            // moved back up to right after Pay Period (was right before Updated By per the 2026-09-02
+            // request this one explicitly supersedes) -- orderable:false/no-single-filterable-value,
+            // same as before, still excluded from initExcelColumnFilters() below, only its position
+            // changed.
+            { data: null, orderable: false, render: (d, t, row) => renderStatusTimelineCell(row) },
             // 2026-08-29, explicit request: "ต้องดึงไปแสดงผลในหน้า List ด้วยว่า Verify ไปแล้วกี่คน Lock
             // ข้อมูลแล้วกี่คน" -- object-form render (display/sort/filter split, same DataTables sort-
             // safety convention this app already uses for formatted date/badge columns) so sorting by
@@ -797,17 +805,11 @@ function initPayrollRunTable() {
             // `render: fn` meant client-side sort/filter operated on the formatted string, not the
             // raw numeric amount (same class of bug already documented in CLAUDE.md).
             { data: 'total_net_amount', className: 'text-end', render: { display: d => fmtNum(d), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
-            { data: null, render: (d, t, row) => escapeHtml(employeeNamePr(row)) },
             // 2026-08-29, explicit request: "ช่วยเพิ่ม Column ว่า Update ข้อมูลล่าสุดเมื่อไหร่ และใครเป็นคน
             // Update" -- object-form render (sort-safety, same convention as every other formatted-
             // date column in this app) so client-side sort operates on the raw updated_at timestamp,
             // not the dd/mm/yyyy display string.
             { data: 'updated_at', render: { display: (v) => v ? formatDisplayDateTime(v) : '-', sort: (v) => v || '', filter: (v) => v || '' } },
-            // 2026-09-02, explicit request: "Column Status ควรมาอยู่รองสุดท้าย" -- moved from right after
-            // Pay Period to right before Updated By (this table's own convention has kept
-            // orderable:false/no-single-filterable-value widget columns like this one and Actions
-            // excluded from initExcelColumnFilters() below all along -- only its position changed).
-            { data: null, orderable: false, render: (d, t, row) => renderStatusTimelineCell(row) },
             { data: null, render: (d, t, row) => escapeHtml(updatedByNamePr(row)) },
             // 2026-08-28, explicit request: "Column ท้ายสุดต้องเป็นปุ่มดำเนินการ...hidden ส่วนอื่นเป็น
             // ตัว expand แทน" -- className:'all' (dtr-all) keeps this last, already-actions column
@@ -832,21 +834,22 @@ function initPayrollRunTable() {
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
             // rollout, client mode. Excludes the status-timeline widget (a visual component with no
             // single filterable value) and the actions column.
-            // 2026-09-02: Code column inserted at index 0 (shifted everything else +1), then Status
-            // moved from index 3 to index 7 ("Column Status ควรมาอยู่รองสุดท้าย") -- shifting
-            // employee_count/total_net_amount/employee_name/updated_at each DOWN by 1 in turn, while
-            // updated_by (already past where Status landed) stays put at 8.
+            // 2026-09-10: Created By column removed entirely (moved to a run_name tooltip, see that
+            // column's own render comment) and Status moved from index 7 back to index 3, right after
+            // Pay Period -- indices below updated to match the new column order exactly: run_code(0)/
+            // run_name(1)/period(2)/[status(3), skipped -- same "no single filterable value" reason as
+            // before, only its index changed]/employee_count(4)/total_net_amount(5)/updated_at(6)/
+            // updated_by(7)/[actions(8), skipped].
             initExcelColumnFilters(self, {
                 mode: 'client',
                 columns: [
                     { index: 0, key: 'run_code' },
                     { index: 1, key: 'run_name' },
                     { index: 2, key: 'period' },
-                    { index: 3, key: 'employee_count' },
-                    { index: 4, key: 'total_net_amount' },
-                    { index: 5, key: 'employee_name' },
+                    { index: 4, key: 'employee_count' },
+                    { index: 5, key: 'total_net_amount' },
                     { index: 6, key: 'updated_at' },
-                    { index: 8, key: 'updated_by' },
+                    { index: 7, key: 'updated_by' },
                 ]
             });
         },
