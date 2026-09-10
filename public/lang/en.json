@@ -1994,6 +1994,7 @@
     "confirm_revert_to_title": "Change this run's status?",
     "confirm_revert_to_message": "This payroll run will be set to: {status}",
     "waiting_for_approval_to_complete": "Waiting for the approval process to complete.",
+    "waiting_for_payment_to_complete": "Waiting for the payment process to complete.",
     "confirm_pull_back_title": "Pull this payroll run back for editing?",
     "confirm_pull_back_message": "It will return to draft so you can make changes and resubmit.",
     "reports_description": "Split into per-schedule reports (pulled from a payroll run) and annual reports (issued once a year) -- pick the period once, then generate whichever reports you need for it.",

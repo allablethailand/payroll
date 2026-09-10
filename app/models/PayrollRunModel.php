@@ -245,7 +245,16 @@ class PayrollRunModel {
                     sp.process_start AS sync_process_start, sp.process_end AS sync_process_end,
                     sp.process_paid AS sync_process_paid,
                     creator.name_th AS created_by_name_th, creator.name_en AS created_by_name_en,
+                    creator.profile_photo_path AS created_by_profile_photo_path,
                     submitter.name_th AS submitted_by_name_th, submitter.name_en AS submitted_by_name_en,
+                    -- 2026-09-10, Batch 3A item 3: the Approval Timeline modal's own Paid/Locked
+                    -- stations need who+photo, same as creator/approvers already have -- paid_by/
+                    -- locked_by were never JOINed before (the old merged Paid/Locked stage box only
+                    -- ever showed a date, never a name).
+                    payer.name_th AS paid_by_name_th, payer.name_en AS paid_by_name_en,
+                    payer.profile_photo_path AS paid_by_profile_photo_path,
+                    locker.name_th AS locked_by_name_th, locker.name_en AS locked_by_name_en,
+                    locker.profile_photo_path AS locked_by_profile_photo_path,
                     mt.run_name AS merge_target_run_name, mt.state AS merge_target_run_state, mt.run_code AS merge_target_run_code,
                     -- 2026-09-06: name for the waiting-on-a-future-cycle-period banner (see
                     -- resolveMergeTargetSpec()'s own docblock) -- merge_target_run_id/merge_target_cycle_id
@@ -262,6 +271,8 @@ class PayrollRunModel {
                 LEFT JOIN `payroll_sync_processes` sp ON sp.id = r.sync_process_id
                 LEFT JOIN `employees` creator ON creator.id = r.created_by
                 LEFT JOIN `employees` submitter ON submitter.id = r.submitted_by
+                LEFT JOIN `employees` payer ON payer.id = r.paid_by
+                LEFT JOIN `employees` locker ON locker.id = r.locked_by
                 LEFT JOIN `payroll_runs` mt ON mt.id = r.merge_target_run_id AND mt.deleted_at IS NULL
                 LEFT JOIN `payroll_cycles` mtc ON mtc.id = r.merge_target_cycle_id
                 WHERE r.id = :id AND r.comp_id = :comp_id AND r.deleted_at IS NULL";
