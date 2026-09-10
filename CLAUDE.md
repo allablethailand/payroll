@@ -19,6 +19,7 @@
 - Ask before guessing any business rule.
 - Fix logic only unless explicitly told to change UI/style.
 - One task at a time; stop and report after each.
+- Code comments explain why in one line max. Longer rationale goes in the commit message.
 
 ---
 
