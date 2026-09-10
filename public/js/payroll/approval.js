@@ -744,11 +744,16 @@ if (typeof watchTabDirty === 'function') {
         if (tb_payroll_approval) tb_payroll_approval.ajax.reload(null, false);
     });
 }
+// 2026-09-10, real bug fix -- see window.langReady's own docblock in app.js: deferred so this page's
+// own initPayrollApprovalTable() renders real translated state badges on first load, not a raw enum
+// fallback that never gets re-rendered afterward.
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     registerApprovalStationSearchFilter();
     initPayrollApprovalTable();
     if (typeof initDatepicker === 'function') {
         initDatepicker('#approval_filter_date_from');
         initDatepicker('#approval_filter_date_to');
     }
+    });
 });

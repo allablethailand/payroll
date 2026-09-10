@@ -4996,7 +4996,16 @@ function activateTabFromHash() {
         bootstrap.Tab.getOrCreateInstance($btn[0]).show();
     }
 }
+// 2026-09-10, real bug fix -- was `$(document).ready(function () { loadRunDetail(); ... })` directly,
+// which ran before app.js's own `langData` fetch had necessarily resolved (see window.langReady's
+// own docblock in app.js). Deferred to `window.langReady.then(...)` so the FIRST render of the run
+// header/stepper/badges always has real translated text, not a raw enum fallback that then never
+// re-renders. Safe even if this line runs after langReady already resolved (jQuery ready callbacks
+// fire in registration order, and app.js's own script tag -- and therefore its ready handler -- is
+// always registered first, but `.then()` on an already-settled Promise still fires correctly either
+// way, so there is no "attached the handler too late" failure mode here).
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     loadRunDetail();
     activateTabFromHash();
     if (typeof initDatepicker === 'function') {
@@ -5049,4 +5058,5 @@ $(document).ready(function () {
         // #run_merge_target_id.
         initSelect2('#edit_run_merge_target_id', { mode: 'ajax', allowClear: true });
     }
+    });
 });
