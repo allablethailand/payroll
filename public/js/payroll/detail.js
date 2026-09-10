@@ -3086,26 +3086,8 @@ $(document).on('click', '#btnAddEmployeeComment', function () {
     });
 });
 
-function auditActionLabel(action) {
-    const map = {
-        create: 'action_create', update: 'action_edit', recalculate: 'action_recalculate',
-        submit: 'action_submit', revert: 'action_revert', approve: 'action_approve',
-        reject: 'action_reject', reviseAfterReject: 'action_revise', markPaid: 'action_mark_paid',
-        // 2026-08-31: the backend audit action string is still literally 'lock' (PayrollRunModel::
-        // lock() itself is unchanged), but displayed with the SAME "Verify" label the button/confirm
-        // dialog now use, not the old "Lock" wording -- action_lock itself stays untouched (still
-        // legitimately used by the unrelated per-employee QA Lock toggle).
-        lock: 'action_verify_run', delete: 'action_delete', cancel: 'action_cancel', reopen: 'action_reopen',
-        add_manual_line: 'action_add_manual_line', remove_manual_line: 'action_remove_manual_line',
-        line_override_save: 'action_line_override_save', line_override_remove: 'action_line_override_remove',
-        attendance_override_save: 'action_attendance_override_save', attendance_override_remove: 'action_attendance_override_remove',
-        employee_exemption_save: 'action_employee_exemption_save', employee_exemption_remove: 'action_employee_exemption_remove',
-        run_settings_save: 'action_run_settings_save',
-        request_info: 'action_request_info', reviseAfterNeedInfo: 'action_revise',
-    };
-    const key = map[action];
-    return (key && langData[key]) || action;
-}
+// 2026-09-10: moved to app.js as auditActionLabel() -- shared with index.js/approval.js's own
+// Timeline modals so all 3 pages can never drift out of sync on action-code wording again.
 // 2026-08-27, explicit request: "ในหน้า Process Detail Tab Action History ปรับจากตารางเป็น Timeline
 // สวยๆ" -- reuses the SAME `.apv-stage` circular-marker/connector-line component this page's own
 // Timeline modal/status card already builds with (apvIconHtmlRd()/apvBadgeHtmlRd(), see

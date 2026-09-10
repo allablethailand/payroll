@@ -1294,6 +1294,41 @@ $(document).on('show.bs.modal', '.modal', function () {
             .appendTo($content);
     }
 });
+// 2026-09-10, real bug found and fixed (explicit report: raw action codes like "employee_verified"
+// showing in Payroll Process's own Approval Timeline modal "History" list) -- was 3 separate, drifted
+// copies of this same lookup (detail.js/index.js/approval.js each had their own, none with the same
+// key set -- approval.js's own copy even mapped 'lock' to the OLD "Lock" wording where the other 2
+// already use "Verify", a real cross-page wording mismatch). One shared table here instead, covering
+// every action code PayrollRunModel::logAudit() can actually write (grepped from every call site, not
+// just what happened to already be on screen). Unknown code -> raw fallback + console.warn so a
+// future new action code fails loudly during dev instead of silently showing a raw key in prod.
+const AUDIT_ACTION_LABEL_KEYS = {
+    create: 'action_create', update: 'action_edit', recalculate: 'action_recalculate',
+    view_detail: 'action_view_detail', submit: 'action_submit', revert: 'action_revert',
+    approve: 'action_approve', approve_step: 'action_approve_step',
+    reject: 'action_reject', reject_step: 'action_reject_step',
+    reviseAfterReject: 'action_revise', reviseAfterNeedInfo: 'action_revise',
+    request_info: 'action_request_info', markPaid: 'action_mark_paid',
+    lock: 'action_verify_run', reopen: 'action_reopen',
+    delete: 'action_delete', cancel: 'action_cancel',
+    add_manual_line: 'action_add_manual_line', remove_manual_line: 'action_remove_manual_line',
+    merge_supplemental: 'action_merge_supplemental', merge_run: 'action_merge_run',
+    line_override_save: 'action_line_override_save', line_override_remove: 'action_line_override_remove',
+    recurring_deduction_destination_override_save: 'action_recurring_deduction_destination_override_save',
+    recurring_deduction_destination_override_remove: 'action_recurring_deduction_destination_override_remove',
+    attendance_override_save: 'action_attendance_override_save', attendance_override_remove: 'action_attendance_override_remove',
+    employee_exemption_save: 'action_employee_exemption_save', employee_exemption_remove: 'action_employee_exemption_remove',
+    run_settings_save: 'action_run_settings_save',
+    employee_verified: 'action_employee_verified', employee_unverified: 'action_employee_unverified',
+};
+function auditActionLabel(action) {
+    const key = AUDIT_ACTION_LABEL_KEYS[action];
+    if (!key) {
+        console.warn('[auditActionLabel] missing i18n mapping for action:', action);
+        return action;
+    }
+    return (langData && langData[key]) || action;
+}
 function getLangValue(key) {
     return key.split('.').reduce((acc, part) => {
         return (acc && acc[part] !== undefined) ? acc[part] : undefined;
