@@ -24,6 +24,7 @@ require_once __DIR__ . '/../app/models/PayrollRunModel.php';
 require_once __DIR__ . '/../app/models/EmployeeRecurringDeductionModel.php';
 require_once __DIR__ . '/../app/models/PaymentDestinationModel.php';
 require_once __DIR__ . '/../app/models/PayrollRemittanceModel.php';
+require_once __DIR__ . '/../app/models/BankAccountModel.php';
 
 $pdo = Database::getInstance()->pdo;
 $pdo->beginTransaction();
@@ -51,6 +52,13 @@ try {
         VALUES (:name, :name, 'TH', '1234567890123', 'Test Address', 'Tester', 'active', :comp_code)")
         ->execute([':name' => 'Recurring Deduction Destination Test Co ' . uniqid(), ':comp_code' => $compCode]);
     $compId = (int)$pdo->lastInsertId();
+
+    // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company', needed by several fixtures below.
+    $bankAccRes = (new BankAccountModel($pdo))->save($compId, ['bank_id' => 1, 'account_no' => '1112223334', 'account_name' => 'RDD Test Account', 'is_default' => true], $userId);
+    if (empty($bankAccRes['status'])) {
+        throw new RuntimeException('Fixture: bank account creation failed: ' . ($bankAccRes['message'] ?? ''));
+    }
+    $bankAccountId = $bankAccRes['id'];
 
     function makeEmployee(PDO $pdo, int $compId, string $tag, string $employmentDate): int {
         $empNo = 'RDD_' . $tag . '_' . uniqid();
@@ -147,7 +155,8 @@ try {
     check('no override present yet', $rowBeforeOverride['override'], null);
     check('template_payee_type reflects the template default', $rowBeforeOverride['template_payee_type'] ?? null, 'other_person');
 
-    $overrideRes = $runModel->recurringDeductionDestinationOverrideSave($runId, $compId, $recurringOtherPersonId, ['payee_type' => 'company'], $userId, true);
+    // 2026-09-10, Batch 3B item 3: bank_account_id is mandatory now for a 'company' override too.
+    $overrideRes = $runModel->recurringDeductionDestinationOverrideSave($runId, $compId, $recurringOtherPersonId, ['payee_type' => 'company', 'bank_account_id' => $bankAccountId], $userId, true);
     checkTrue('override save() to company succeeds' . (empty($overrideRes['status']) ? " ({$overrideRes['message']})" : ''), $overrideRes['status']);
 
     $detailsAfterOverride = $runModel->getDetails($runId, $compId);
@@ -155,6 +164,7 @@ try {
     $lineAfterOverride = current(array_filter($rowAAfterOverride['deduction_breakdown'], fn($l) => ($l['recurring_id'] ?? null) === $recurringOtherPersonId));
     check('effective payee_type is now company (the OVERRIDE), after only ONE Save call', $lineAfterOverride['payee_type'] ?? null, 'company');
     check('effective destination_id cleared (company has no destination row)', $lineAfterOverride['destination_id'], null);
+    check('effective bank_account_id is the OVERRIDE\'s own account', $lineAfterOverride['bank_account_id'] ?? null, $bankAccountId);
 
     $templateStillOtherPerson = $recModel->get($recurringOtherPersonId, $compId);
     check('the TEMPLATE row itself is completely untouched by the run-level override', $templateStillOtherPerson['payee_type'], 'other_person');
@@ -164,6 +174,8 @@ try {
     $rowAfterOverride = current(array_filter($listAfterOverride, fn($r) => $r['recurring_id'] === $recurringOtherPersonId));
     checkTrue('recurringDeductionDestinationsForEmployee() now reports an active override', $rowAfterOverride['override'] !== null);
     check('override payee_type reported correctly', $rowAfterOverride['override']['payee_type'] ?? null, 'company');
+    check('override bank_account_id reported correctly', $rowAfterOverride['override']['bank_account_id'] ?? null, $bankAccountId);
+    check('override bank_account_label resolved for display', $rowAfterOverride['override']['bank_account_label'] ?? null, 'RDD Test Account');
     check('template_payee_type in the same response STILL shows the template\'s own default (other_person), for comparison', $rowAfterOverride['template_payee_type'] ?? null, 'other_person');
 
     echo "=== PayrollRunModel::recurringDeductionDestinationOverrideRemove(): reverts to template ===\n";

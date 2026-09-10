@@ -2517,7 +2517,13 @@ function eedItemNameCell(row) {
     if (row.payee_type === 'employee' && row.payee_employee_id) {
         payeeTag = `<div class="text-muted small"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(row.payee_employee_no || ('#' + row.payee_employee_id))}</div>`;
     } else if (row.payee_type === 'company') {
-        payeeTag = `<div class="text-muted small"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'}</div>`;
+        // 2026-09-10, Batch 3B item 3: shows WHICH bank account now; a legacy row saved before this
+        // column existed (bank_account_id still null) renders a "needs review" warning instead of
+        // silently looking identical to a fully-specified row -- new UI pattern, no existing
+        // "ต้องตรวจ" row-flag convention found anywhere else in this codebase to reuse.
+        payeeTag = row.bank_account_id
+            ? `<div class="text-muted small"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'} - ${escapeHtml(row.bank_account_name || '')}</div>`
+            : `<div class="small text-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['payee_bank_account_needs_review'] || 'Company Account -- bank account not specified, needs review'}</div>`;
     } else if (row.payee_type === 'other_person') {
         // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- real gap found
         // while adding 'other_person' to this modal: this cell already tagged 'employee'/'company'/
@@ -2866,6 +2872,14 @@ function setEedPayeeType(type) {
     if (type !== 'employee') {
         $('#eed_payee_employee_id').val(null).trigger('change');
     }
+    // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- mandatory (see
+    // EmployeeEarningDeductionModel::save()'s own docblock), same required-toggle convention as
+    // #eed_payee_employee_id above.
+    $('#eedCompanyAccountWrapper').toggleClass('d-none', type !== 'company');
+    $('#eed_bank_account_id').toggleClass('required', type === 'company');
+    if (type !== 'company') {
+        $('#eed_bank_account_id').val(null).trigger('change');
+    }
     // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- same destination
     // sub-form pattern as #erdDestinationWrapper (Phase 6)/#manualLineDestinationWrapper (Phase 2).
     $('#eedDestinationWrapper').toggleClass('d-none', type !== 'other_person');
@@ -2903,6 +2917,12 @@ function setErdPayeeType(type) {
     $('#erd_payee_employee_id').toggleClass('required', type === 'employee');
     if (type !== 'employee') {
         $('#erd_payee_employee_id').val(null).trigger('change');
+    }
+    // 2026-09-10, Batch 3B item 3: same level-2 as setEedPayeeType() above.
+    $('#erdCompanyAccountWrapper').toggleClass('d-none', type !== 'company');
+    $('#erd_bank_account_id').toggleClass('required', type === 'company');
+    if (type !== 'company') {
+        $('#erd_bank_account_id').val(null).trigger('change');
     }
     $('#erdDestinationWrapper').toggleClass('d-none', type !== 'other_person');
     if (type !== 'other_person') {
@@ -3044,6 +3064,14 @@ function populateEedForm(row, readOnly) {
         setEedPayeeType('employee');
     } else if (row.payee_type === 'company') {
         setEedPayeeType('company');
+        // 2026-09-10, Batch 3B item 3: pre-select the saved bank account, same new-Option pattern
+        // as the destination_id branch below (an ajax-mode select2 has no <option> to fall back on
+        // for a non-search-result value). row.bank_account_id is null for legacy data saved before
+        // this column existed -- leaves the field genuinely empty in that case, not a guess.
+        if (row.bank_account_id) {
+            const bankAccOpt = new Option(row.bank_account_name || '', row.bank_account_id, true, true);
+            $('#eed_bank_account_id').empty().append(bankAccOpt).trigger('change');
+        }
     } else if (row.payee_type === 'other_person' && row.destination_id) {
         setEedPayeeType('other_person');
         const destOpt = new Option(row.destination_account_name || '', row.destination_id, true, true);
@@ -3149,6 +3177,10 @@ function collectEedFormData() {
             data.bank_branch = $('#eed_dest_bank_branch').val().trim() || undefined;
             data.is_saved = $('#eed_dest_save_for_reuse').is(':checked');
         }
+    } else if (data.payee_type === 'company') {
+        // 2026-09-10, Batch 3B item 3: level-2, mandatory -- EmployeeEarningDeductionModel::save()
+        // itself rejects a missing value, this is just the payload wiring.
+        data.bank_account_id = $('#eed_bank_account_id').val() || undefined;
     }
     return data;
 }
@@ -4063,6 +4095,10 @@ function initRecurringDeductionUI() {
             payload.payee_type = payeeType;
             if (payeeType === 'employee') {
                 payload.payee_employee_id = $('#erd_payee_employee_id').val();
+            } else if (payeeType === 'company') {
+                // 2026-09-10, Batch 3B item 3: level-2, mandatory -- EmployeeRecurringDeductionModel
+                // ::save() itself rejects a missing value, this is just the payload wiring.
+                payload.bank_account_id = $('#erd_bank_account_id').val();
             } else if (payeeType === 'other_person') {
                 const savedDestinationId = $('#erd_destination_select').val();
                 if (savedDestinationId) {
@@ -4179,6 +4215,10 @@ function populateRecurringDeductionForm(row) {
         const destOpt = new Option(row.destination_account_name || '', row.destination_id, true, true);
         $('#erd_destination_select').empty().append(destOpt).trigger('change');
         $('#erdDestinationNewFields').addClass('d-none');
+    } else if (payeeType === 'company' && row.bank_account_id) {
+        // 2026-09-10, Batch 3B item 3: same pre-select pattern as populateEedForm()'s own company branch.
+        const bankAccOpt = new Option(row.bank_account_name || '', row.bank_account_id, true, true);
+        $('#erd_bank_account_id').empty().append(bankAccOpt).trigger('change');
     }
     $('#recurringDeductionModalLabel span').attr('data-i18n', 'edit_recurring_deduction').text(langData['edit_recurring_deduction'] || 'Edit Recurring Deduction');
 }

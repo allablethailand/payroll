@@ -41,6 +41,13 @@ try {
     $compId = 1;
     $eedModel = new EmployeeEarningDeductionModel();
     $pedTypeModel = new PayrollEarningDeductionTypeModel();
+    // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- reuses a real active
+    // bank_accounts row for comp_id=1 rather than creating a throwaway one, matching this file's
+    // own convention of reading real comp_id=1 fixture data (see the employee_id lookup just below).
+    $bankAccountId = (int)$pdo->query("SELECT id FROM bank_accounts WHERE comp_id = 1 AND deleted_at IS NULL AND status = 'active' LIMIT 1")->fetchColumn();
+    if ($bankAccountId <= 0) {
+        throw new RuntimeException('Fixture requires at least one active bank_accounts row for comp_id=1.');
+    }
 
     $stmt = $pdo->prepare("SELECT id FROM employees WHERE comp_id = :c AND deleted_at IS NULL LIMIT 1");
     $stmt->execute([':c' => $compId]);
@@ -358,12 +365,23 @@ try {
         ], $userId);
         checkFalse('save() rejects payee_type=employee with no payee_employee_id', $rEmployeeTypeNoId['status']);
 
-        $rCompanyPayee = $eedModel->save($employeeId, $compId, [
-            'custom_item_name' => 'หักเข้าบัญชีบริษัท', 'custom_item_type' => 'deduction',
+        // 2026-09-10, Batch 3B item 3: bank_account_id is now mandatory for payee_type='company' --
+        // rejection case first, then the real success case with a valid account.
+        $rCompanyNoAccount = $eedModel->save($employeeId, $compId, [
+            'custom_item_name' => 'หักเข้าบัญชีบริษัท (ไม่ระบุบัญชี)', 'custom_item_type' => 'deduction',
             'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 500,
             'effective_date' => '2026-01-01', 'payee_type' => 'company',
         ], $userId);
-        checkTrue('save() accepts payee_type=company with no payee_employee_id' . (empty($rCompanyPayee['status']) ? " ({$rCompanyPayee['message']})" : ''), $rCompanyPayee['status']);
+        checkFalse('save() rejects payee_type=company with no bank_account_id', $rCompanyNoAccount['status']);
+
+        $rCompanyPayee = $eedModel->save($employeeId, $compId, [
+            'custom_item_name' => 'หักเข้าบัญชีบริษัท', 'custom_item_type' => 'deduction',
+            'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 500,
+            'effective_date' => '2026-01-01', 'payee_type' => 'company', 'bank_account_id' => $bankAccountId,
+        ], $userId);
+        checkTrue('save() accepts payee_type=company with a valid bank_account_id' . (empty($rCompanyPayee['status']) ? " ({$rCompanyPayee['message']})" : ''), $rCompanyPayee['status']);
+        $rCompanyPayeeGet = $eedModel->get($rCompanyPayee['id'], $compId);
+        check('bank_account_id persisted', (int)($rCompanyPayeeGet['bank_account_id'] ?? -1), $bankAccountId);
         if (!empty($rCompanyPayee['id'])) {
             $gotCompanyPayee = $eedModel->get((int)$rCompanyPayee['id'], $compId);
             check('payee_type=company persisted', $gotCompanyPayee['payee_type'], 'company');
@@ -373,7 +391,7 @@ try {
             $rCompanyPayeeExcluded = $eedModel->save($employeeId, $compId, array_merge([
                 'custom_item_name' => 'หักเข้าบัญชีบริษัท', 'custom_item_type' => 'deduction',
                 'total_installments' => 1, 'amount_mode' => 'even_split', 'total_amount' => 500,
-                'effective_date' => '2026-01-01', 'payee_type' => 'company', 'include_in_cash_summary' => false,
+                'effective_date' => '2026-01-01', 'payee_type' => 'company', 'bank_account_id' => $bankAccountId, 'include_in_cash_summary' => false,
             ], ['id' => $rCompanyPayee['id']]), $userId);
             checkTrue('save() accepts include_in_cash_summary=false explicitly', $rCompanyPayeeExcluded['status']);
             $gotExcluded = $eedModel->get((int)$rCompanyPayee['id'], $compId);

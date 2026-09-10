@@ -574,11 +574,15 @@ class PayrollController extends Controller {
         $destinationData = (is_array($data) && isset($data['destination']) && is_array($data['destination'])) ? $data['destination'] : null;
         // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
         $isOther = (is_array($data) && !empty($data['is_other'])) ? true : null;
+        // 2026-09-10, Batch 3B item 3: only meaningful when payee_type='company'; PayrollRunModel::
+        // addManualLine() itself validates it belongs to this company/is required for that type.
+        $bankAccountIdRaw = (is_array($data) && isset($data['bank_account_id'])) ? (int)$data['bank_account_id'] : 0;
+        $bankAccountId = $bankAccountIdRaw > 0 ? $bankAccountIdRaw : null;
         if (!$compId || $id <= 0 || $employeeId <= 0 || ($pedTypeId === null && ($customItemName === null || trim($customItemName) === ''))) {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json($this->model->addManualLine($id, (int)$compId, $employeeId, $pedTypeId, $amount, $this->userId(), $this->isAdmin(), $note, $customItemName, $customItemType, $payeeEmployeeId, $payeeType, $includeInCashSummary, $destinationData, $isOther));
+        $this->json($this->model->addManualLine($id, (int)$compId, $employeeId, $pedTypeId, $amount, $this->userId(), $this->isAdmin(), $note, $customItemName, $customItemType, $payeeEmployeeId, $payeeType, $includeInCashSummary, $destinationData, $isOther, $bankAccountId));
     }
 
     public function removeManualLine() {

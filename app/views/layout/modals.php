@@ -2439,6 +2439,19 @@
                             <select class="form-select select2-remote" id="eed_payee_employee_id" name="payee_employee_id" data-api="/api/employee.report_to.get" data-type="employee"></select>
                         </div>
                     </div>
+                    <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- WHICH of the
+                         company's own bank_accounts, mirroring #eedPayeeEmployeeWrapper's own
+                         shape/data-api reuse convention (api/payroll-cycle.bank-account.options
+                         already exists, unscoped by cycle -- see PayrollConfigurationController::
+                         bankAccountOptions()) -- no new endpoint needed. -->
+                    <div class="row mb-3 d-none" id="eedCompanyAccountWrapper">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-1" data-i18n="payee_bank_account_label">Company Bank Account</label>
+                        </div>
+                        <div class="col-sm-9">
+                            <select class="form-select select2-remote" id="eed_bank_account_id" name="bank_account_id" data-api="/api/payroll-cycle.bank-account.options"></select>
+                        </div>
+                    </div>
                     <div class="row g-2 align-items-end mb-3 d-none" id="eedDestinationWrapper">
                         <div class="col-sm-3"></div>
                         <div class="col-sm-9">
@@ -2680,6 +2693,16 @@
                         </div>
                         <div class="col-sm-8">
                             <select class="form-select select2-remote" id="erd_payee_employee_id" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                        </div>
+                    </div>
+                    <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- same as
+                         #eedCompanyAccountWrapper in the EED modal above. -->
+                    <div class="row mb-3 d-none" id="erdCompanyAccountWrapper">
+                        <div class="col-sm-4 align-self-center">
+                            <label class="form-label mb-1" data-i18n="payee_bank_account_label">Company Bank Account</label>
+                        </div>
+                        <div class="col-sm-8">
+                            <select class="form-select select2-remote" id="erd_bank_account_id" data-api="/api/payroll-cycle.bank-account.options"></select>
                         </div>
                     </div>
                     <div class="row g-2 align-items-end mb-3 d-none" id="erdDestinationWrapper">

@@ -59,6 +59,13 @@ function grantPayrollPermission(PDO $pdo, int $roleId, string $permissionKey): v
 try {
     $compId = 1;
     $adminUserId = 1; // used with isAdmin=true throughout except the dedicated permission-denial check
+    // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- reuses a real active
+    // bank_accounts row for comp_id=1, same convention as the employment-date-scoped fixtures
+    // elsewhere in this file that read real comp_id=1 data rather than creating throwaway rows.
+    $bankAccountId = (int)$pdo->query("SELECT id FROM bank_accounts WHERE comp_id = 1 AND deleted_at IS NULL AND status = 'active' LIMIT 1")->fetchColumn();
+    if ($bankAccountId <= 0) {
+        throw new RuntimeException('Fixture requires at least one active bank_accounts row for comp_id=1.');
+    }
 
     // recalculate() used to filter is_payroll_ready=1, which incidentally hid every leftover
     // placeholder employee anyone had ever created against this real, shared dev-DB company (id 1)
@@ -245,9 +252,39 @@ try {
     // via DocumentNumberingModel::generateNext() (see tests/document_numbering_test.php for that
     // model's own dedicated coverage of the numbering/reset mechanics themselves) -- this just
     // confirms the wiring on PayrollRunModel's own side actually persists a real, correctly-prefixed
-    // code onto a freshly created run, for a fresh throwaway company that's never touched its own
-    // PAYROLL_RUN numbering settings before (default prefix 'PR-{YYYY}-', digit_count 3).
-    check('run_code stamped with the default PAYROLL_RUN prefix + 001 (first run this fresh company has ever created)', $run['run_code'], 'PR-' . date('Y') . '-001');
+    // code onto a freshly created run.
+    // 2026-09-10, real fragility fixed (hit and documented 3 times, see BACKLOG.md/
+    // feedback_dev_db_shared_state_test_fragility): $compId here is 1, the REAL live dev DB company
+    // -- NOT "a fresh throwaway company that's never touched its own PAYROLL_RUN numbering settings
+    // before" as the old comment claimed. Every other run created against comp_id=1 (manual testing,
+    // other test files, earlier runs of this exact test since PAYROLL_RUN numbering persists past
+    // any one rolled-back transaction) advances that same counter, so asserting the exact literal
+    // '...-001' here was really asserting "nobody else has ever touched comp_id=1's PAYROLL_RUN
+    // counter," which was never true and only gets less true over time. Replaced with a
+    // structural pattern check (still real coverage: correct prefix, correct year, a genuine
+    // zero-padded digit sequence -- exactly what DocumentNumberingModel::generateNext() is
+    // contracted to produce) that passes regardless of what count comp_id=1's counter is actually
+    // at right now.
+    checkTrue('run_code stamped with the correct PAYROLL_RUN prefix/year/digit-count shape (PR-YYYY-NNN)', (bool)preg_match('/^PR-' . date('Y') . '-\d{3}$/', (string)$run['run_code']));
+
+    // The genuine "first run this company has EVER created gets 001" claim moved here, onto a
+    // brand-new company created fresh for this one assertion (never touched by any other test file
+    // or manual session, so its PAYROLL_RUN counter is guaranteed to start at zero) -- this is the
+    // "test creates its own company/counter" fix, not just a weakened assertion on the shared one.
+    // An off-cycle run (no cycle_id) is enough to exercise create()'s own run_code stamping without
+    // also needing a cycle/employees for a company that otherwise has nothing set up.
+    echo "=== run_code: a genuinely fresh company's first-ever run really does get 001 ===\n";
+    $freshRunCodeCompId = null;
+    $pdo->prepare("INSERT INTO companies (company_legal_name, local_name, registered_country, global_tax_id, address_line_1, authorized_signatory_name, setup_status, origami_payroll_comp_code)
+        VALUES (:name, :name, 'TH', '1234567890123', 'Test Address', 'Tester', 'active', :comp_code)")
+        ->execute([':name' => 'RunCode Fresh Co ' . uniqid(), ':comp_code' => 'RUNCODE_' . uniqid()]);
+    $freshRunCodeCompId = (int)$pdo->lastInsertId();
+    $freshRunCodeRes = $runModel->create($freshRunCodeCompId, [
+        'run_name' => 'RunCode Fresh Run', 'payment_date' => $paymentDate,
+    ], $adminUserId, true);
+    checkTrue('fresh-company off-cycle run creates successfully' . (empty($freshRunCodeRes['status']) ? " ({$freshRunCodeRes['message']})" : ''), $freshRunCodeRes['status']);
+    $freshRunCodeRun = $runModel->get((int)$freshRunCodeRes['id'], $freshRunCodeCompId);
+    check('a genuinely fresh company\'s first-ever run gets exactly 001', $freshRunCodeRun['run_code'], 'PR-' . date('Y') . '-001');
 
     echo "=== Duplicate period rejected ===\n";
     $dupRes = $runModel->create($compId, [
@@ -690,11 +727,17 @@ try {
     // payee_type/include_in_cash_summary concept EmployeeEarningDeductionModel already had (this
     // table never had it at all before). ----------
     echo "=== addManualLine(): payee_type widened to company/not_disbursed (Process Detail manual lines) ===\n";
-    $companyLineRes = $runModel->addManualLine($pulledRunId, $compId, $employeeFullId, null, 300.00, $adminUserId, true, null, 'Company Retained', 'deduction', null, 'company', null);
-    checkTrue('addManualLine() accepts payee_type=company' . (empty($companyLineRes['status']) ? " ({$companyLineRes['message']})" : ''), $companyLineRes['status']);
-    $companyLineRow = $pdo->query("SELECT payee_type, payee_employee_id, include_in_cash_summary FROM payroll_run_manual_lines WHERE run_id={$pulledRunId} AND employee_id={$employeeFullId} AND custom_item_name='Company Retained'")->fetch(PDO::FETCH_ASSOC);
+    // 2026-09-10, Batch 3B item 3: bank_account_id is mandatory now for payee_type='company' --
+    // rejection case first, then the real success case with a valid account.
+    $companyLineNoAccountRes = $runModel->addManualLine($pulledRunId, $compId, $employeeFullId, null, 300.00, $adminUserId, true, null, 'Company Retained No Account', 'deduction', null, 'company', null);
+    check('addManualLine() rejects payee_type=company with no bank_account_id', $companyLineNoAccountRes['status'], false);
+
+    $companyLineRes = $runModel->addManualLine($pulledRunId, $compId, $employeeFullId, null, 300.00, $adminUserId, true, null, 'Company Retained', 'deduction', null, 'company', null, null, null, $bankAccountId);
+    checkTrue('addManualLine() accepts payee_type=company with a valid bank_account_id' . (empty($companyLineRes['status']) ? " ({$companyLineRes['message']})" : ''), $companyLineRes['status']);
+    $companyLineRow = $pdo->query("SELECT payee_type, payee_employee_id, bank_account_id, include_in_cash_summary FROM payroll_run_manual_lines WHERE run_id={$pulledRunId} AND employee_id={$employeeFullId} AND custom_item_name='Company Retained'")->fetch(PDO::FETCH_ASSOC);
     check('payee_type=company persisted on the manual line', $companyLineRow['payee_type'] ?? null, 'company');
     check('payee_employee_id stays NULL for a company-payee manual line', $companyLineRow['payee_employee_id'], null);
+    check('bank_account_id persisted on the manual line', (int)($companyLineRow['bank_account_id'] ?? -1), $bankAccountId);
 
     $notDisbursedLineRes = $runModel->addManualLine($pulledRunId, $compId, $employeeFullId, null, 120.00, $adminUserId, true, null, 'Not Disbursed Adjustment', 'deduction', null, 'not_disbursed', true);
     checkTrue('addManualLine() accepts payee_type=not_disbursed' . (empty($notDisbursedLineRes['status']) ? " ({$notDisbursedLineRes['message']})" : ''), $notDisbursedLineRes['status']);

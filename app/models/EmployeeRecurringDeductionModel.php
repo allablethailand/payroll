@@ -30,15 +30,25 @@ class EmployeeRecurringDeductionModel {
         return $compId !== false ? (int)$compId : null;
     }
 
+    /** 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- mirrors
+     *  EmployeeEarningDeductionModel::bankAccountBelongsToComp()'s own docblock. */
+    private function bankAccountBelongsToComp(int $bankAccountId, int $compId): bool {
+        $stmt = $this->db->prepare("SELECT id FROM `bank_accounts` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL AND status = 'active'");
+        $stmt->execute([':id' => $bankAccountId, ':comp_id' => $compId]);
+        return (bool)$stmt->fetch();
+    }
+
     public function list(int $employeeId, int $compId): array {
         $stmt = $this->db->prepare("SELECT erd.*, pt.item_code, pt.item_name_th, pt.item_name_en,
                 pd.account_name AS destination_account_name,
+                ba.account_name AS bank_account_name,
                 payee.employee_no AS payee_employee_no, payee.name_th AS payee_name_th, payee.surname_th AS payee_surname_th,
                 payee.name_en AS payee_name_en, payee.surname_en AS payee_surname_en
             FROM `employee_recurring_deductions` erd
             JOIN `payroll_earning_deduction_types` pt ON pt.id = erd.ped_type_id
             JOIN `employees` e ON e.id = erd.employee_id
             LEFT JOIN `payment_destinations` pd ON pd.id = erd.destination_id
+            LEFT JOIN `bank_accounts` ba ON ba.id = erd.bank_account_id
             LEFT JOIN `employees` payee ON payee.id = erd.payee_employee_id
             WHERE erd.employee_id = :employee_id AND e.comp_id = :comp_id AND erd.status = 'active' AND erd.deleted_at IS NULL
             ORDER BY erd.effective_date DESC, erd.id DESC");
@@ -56,12 +66,14 @@ class EmployeeRecurringDeductionModel {
     public function get(int $id, int $compId): ?array {
         $stmt = $this->db->prepare("SELECT erd.*, pt.item_code, pt.item_name_th, pt.item_name_en,
                 pd.account_name AS destination_account_name,
+                ba.account_name AS bank_account_name,
                 payee.employee_no AS payee_employee_no, payee.name_th AS payee_name_th, payee.surname_th AS payee_surname_th,
                 payee.name_en AS payee_name_en, payee.surname_en AS payee_surname_en
             FROM `employee_recurring_deductions` erd
             JOIN `payroll_earning_deduction_types` pt ON pt.id = erd.ped_type_id
             JOIN `employees` e ON e.id = erd.employee_id
             LEFT JOIN `payment_destinations` pd ON pd.id = erd.destination_id
+            LEFT JOIN `bank_accounts` ba ON ba.id = erd.bank_account_id
             LEFT JOIN `employees` payee ON payee.id = erd.payee_employee_id
             WHERE erd.id = :id AND e.comp_id = :comp_id AND erd.deleted_at IS NULL");
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
@@ -140,6 +152,7 @@ class EmployeeRecurringDeductionModel {
         $payeeEmployeeId = null;
         $payeeType = null;
         $destinationId = null;
+        $bankAccountId = null;
         if (!empty($data['payee_type'])) {
             $payeeType = (string)$data['payee_type'];
             if (!in_array($payeeType, ['employee', 'company', 'not_disbursed', 'other_person'], true)) {
@@ -155,6 +168,15 @@ class EmployeeRecurringDeductionModel {
                 }
                 if ($this->employeeCompId($payeeEmployeeId) !== $compId) {
                     return ['status' => false, 'message' => 'Invalid payee employee.'];
+                }
+            } elseif ($payeeType === 'company') {
+                // 2026-09-10, Batch 3B item 3: same level-2 as EmployeeEarningDeductionModel::save().
+                if (empty($data['bank_account_id'])) {
+                    return ['status' => false, 'message' => 'bank_account_id is required when payee_type is company.'];
+                }
+                $bankAccountId = (int)$data['bank_account_id'];
+                if (!$this->bankAccountBelongsToComp($bankAccountId, $compId)) {
+                    return ['status' => false, 'message' => 'Invalid bank_account_id.'];
                 }
             } elseif ($payeeType === 'other_person') {
                 require_once __DIR__ . '/PaymentDestinationModel.php';
@@ -197,13 +219,13 @@ class EmployeeRecurringDeductionModel {
                 $stmt = $this->db->prepare("UPDATE `employee_recurring_deductions` SET
                         ped_type_id = :ped_type_id, amount = :amount, fee_percent = :fee_percent, fee_base = :fee_base, effective_date = :effective_date,
                         suspended_from = :suspended_from, suspended_to = :suspended_to, notes = :notes,
-                        payee_type = :payee_type, payee_employee_id = :payee_employee_id, destination_id = :destination_id,
+                        payee_type = :payee_type, payee_employee_id = :payee_employee_id, destination_id = :destination_id, bank_account_id = :bank_account_id,
                         updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
                     WHERE id = :id");
                 $stmt->execute([
                     ':ped_type_id' => $pedTypeId, ':amount' => $amount, ':fee_percent' => $feePercent, ':fee_base' => $feeBase, ':effective_date' => $effectiveDate,
                     ':suspended_from' => $suspendedFrom, ':suspended_to' => $suspendedTo, ':notes' => $notes,
-                    ':payee_type' => $payeeType, ':payee_employee_id' => $payeeEmployeeId, ':destination_id' => $destinationId,
+                    ':payee_type' => $payeeType, ':payee_employee_id' => $payeeEmployeeId, ':destination_id' => $destinationId, ':bank_account_id' => $bankAccountId,
                     ':updated_by' => $userId, ':id' => $id,
                 ]);
                 $stmtNewRow = $this->db->prepare("SELECT * FROM `employee_recurring_deductions` WHERE id = :id");
@@ -212,12 +234,12 @@ class EmployeeRecurringDeductionModel {
                 $this->auditLog->record($compId, 'employee_recurring_deductions', $id, 'update', $existing, $newRow, $userId, 'web', $ip, $userAgent);
             } else {
                 $stmt = $this->db->prepare("INSERT INTO `employee_recurring_deductions`
-                        (employee_id, ped_type_id, amount, fee_percent, fee_base, effective_date, suspended_from, suspended_to, notes, payee_type, payee_employee_id, destination_id, status, created_by)
-                    VALUES (:employee_id, :ped_type_id, :amount, :fee_percent, :fee_base, :effective_date, :suspended_from, :suspended_to, :notes, :payee_type, :payee_employee_id, :destination_id, 'active', :created_by)");
+                        (employee_id, ped_type_id, amount, fee_percent, fee_base, effective_date, suspended_from, suspended_to, notes, payee_type, payee_employee_id, destination_id, bank_account_id, status, created_by)
+                    VALUES (:employee_id, :ped_type_id, :amount, :fee_percent, :fee_base, :effective_date, :suspended_from, :suspended_to, :notes, :payee_type, :payee_employee_id, :destination_id, :bank_account_id, 'active', :created_by)");
                 $stmt->execute([
                     ':employee_id' => $employeeId, ':ped_type_id' => $pedTypeId, ':amount' => $amount, ':fee_percent' => $feePercent, ':fee_base' => $feeBase, ':effective_date' => $effectiveDate,
                     ':suspended_from' => $suspendedFrom, ':suspended_to' => $suspendedTo, ':notes' => $notes,
-                    ':payee_type' => $payeeType, ':payee_employee_id' => $payeeEmployeeId, ':destination_id' => $destinationId, ':created_by' => $userId,
+                    ':payee_type' => $payeeType, ':payee_employee_id' => $payeeEmployeeId, ':destination_id' => $destinationId, ':bank_account_id' => $bankAccountId, ':created_by' => $userId,
                 ]);
                 $id = (int)$this->db->lastInsertId();
             }
@@ -271,7 +293,7 @@ class EmployeeRecurringDeductionModel {
      */
     public function activeForPeriod(int $employeeId, string $periodStart, string $periodEnd, ?int $compId = null): array {
         $stmt = $this->db->prepare("SELECT erd.id AS recurring_id, erd.amount, erd.fee_percent, erd.fee_base,
-                erd.payee_type, erd.payee_employee_id, erd.destination_id, pt.item_code, pt.item_name_th, pt.item_name_en
+                erd.payee_type, erd.payee_employee_id, erd.destination_id, erd.bank_account_id, pt.item_code, pt.item_name_th, pt.item_name_en
             FROM `employee_recurring_deductions` erd
             JOIN `payroll_earning_deduction_types` pt ON pt.id = erd.ped_type_id
             WHERE erd.employee_id = :employee_id AND erd.status = 'active' AND erd.deleted_at IS NULL

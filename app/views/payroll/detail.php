@@ -1559,6 +1559,14 @@
                                         <select class="form-select select2-remote" id="manualLinePayeeEmployee" data-api="/api/employee.report_to.get" data-type="employee"></select>
                                     </div>
                                 </div>
+                                <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- same
+                                     as Employee Detail's own #eedCompanyAccountWrapper. -->
+                                <div class="row g-2 align-items-end mt-1 d-none" id="manualLineCompanyAccountWrapper">
+                                    <div class="col-12">
+                                        <label class="form-label small text-muted mb-1" data-i18n="payee_bank_account_label">Company Bank Account</label>
+                                        <select class="form-select select2-remote" id="manualLineBankAccount" data-api="/api/payroll-cycle.bank-account.options"></select>
+                                    </div>
+                                </div>
                                 <!-- 2026-09-02, Deduction Destination & Third-Party Remittance -- pick an
                                      existing SAVED destination, or leave blank and fill the new-account
                                      fields below (which create a one-off or, with the checkbox, a new
@@ -1712,6 +1720,14 @@
                                     <div class="col-12">
                                         <label class="form-label small text-muted mb-1" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
                                         <select class="form-select select2-remote" id="recurringDestPayeeEmployeeSelect" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                                    </div>
+                                </div>
+                                <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- same
+                                     as Employee Detail's own #eedCompanyAccountWrapper. -->
+                                <div class="row g-2 align-items-end d-none" id="recurringDestCompanyAccountWrapper">
+                                    <div class="col-12">
+                                        <label class="form-label small text-muted mb-1" data-i18n="payee_bank_account_label">Company Bank Account</label>
+                                        <select class="form-select select2-remote" id="recurringDestBankAccountSelect" data-api="/api/payroll-cycle.bank-account.options"></select>
                                     </div>
                                 </div>
                                 <div class="row g-2 align-items-end d-none" id="recurringDestDestinationWrapper">
