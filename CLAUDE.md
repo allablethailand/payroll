@@ -6,11 +6,13 @@
 - The developer reviews and commits manually.
 
 ## Database
-- Never run DDL (CREATE/ALTER/DROP) or data migrations directly against any database.
-- Any schema change → write `database/migrations/YYYY-MM-DD_short_description.sql`
-  (e.g. `2026-08-29_add_xyz_column.sql`; more than one file the same day → append
-  `_2`/`_3`), with a `-- UP` section and a `-- DOWN` (rollback) section. One file =
-  one change/feature, never append multiple unrelated changes into one file.
+- Schema changes always go in `database/migrations/<date>_<desc>.sql` with UP and DOWN sections
+  (e.g. `2026-08-29_add_xyz_column.sql`; more than one file the same day → append `_2`/`_3`).
+  One file = one change/feature, never append multiple unrelated changes into one file.
+- Never run ad-hoc DDL (CREATE/ALTER/DROP) against any database without a migration file
+  backing it first — the file always comes before the DDL runs, never after or instead of it.
+- You may apply migrations to the local dev DB only. Never to any other database.
+- Report in the task summary that a migration was applied and how to roll it back.
 - Report which tasks require a migration to be run before the code works.
 - Code that depends on a new column must fail safely or clearly if the
   migration has not been applied.

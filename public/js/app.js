@@ -1320,6 +1320,23 @@ $(document).on('show.bs.modal', '.modal', function () {
             .appendTo($content);
     }
 });
+// Bootstrap 5's own _hideModal() unconditionally strips `modal-open`/overflow/scrollbar padding from
+// <body> on every modal close, with no check for another still-open modal underneath (verified in
+// bootstrap.bundle.js) -- stacking a 2nd modal (e.g. Employee Quick View) on top of a 1st (e.g.
+// Approval Timeline) and closing only the top one broke the bottom one's scroll lock/backdrop padding.
+// Re-apply what Bootstrap tore down whenever another .modal.show still remains, using the same
+// scrollbar-width formula Bootstrap itself uses -- deliberately not touching any bootstrap._-prefixed
+// internal API for forward-compatibility.
+$(document).on('hidden.bs.modal', '.modal', function () {
+    const remaining = document.querySelectorAll('.modal.show');
+    if (!remaining.length) return;
+    document.body.classList.add('modal-open');
+    document.body.style.overflow = 'hidden';
+    const scrollbarWidth = Math.abs(window.innerWidth - document.documentElement.clientWidth);
+    if (scrollbarWidth > 0) {
+        document.body.style.paddingRight = `${scrollbarWidth}px`;
+    }
+});
 // 2026-09-10, real bug found and fixed (explicit report: raw action codes like "employee_verified"
 // showing in Payroll Process's own Approval Timeline modal "History" list) -- was 3 separate, drifted
 // copies of this same lookup (detail.js/index.js/approval.js each had their own, none with the same

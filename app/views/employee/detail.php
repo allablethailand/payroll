@@ -2112,30 +2112,37 @@
                         </div>
                         <input type="checkbox" class="d-none" name="pvd_enrolled" id="pvd_enrolled">
                     </div>
-                    <!-- Hidden 2026-08-19 (not needed for Payroll): fund name/dates/rates are never
-                         read by the calculation engine or any report -- PVD rates come from
-                         company-wide statutory settings, not these per-employee fields. Fields stay in
-                         the DOM (values still submit/save/sync normally). -->
+                    <!-- Hidden 2026-08-19 (not needed for Payroll): fund name isn't read by the
+                         calculation engine or any report at all. STILL hidden -- 2026-09-10, item 7b
+                         (fund name/manager/member no./investment plan) is a deferred follow-up. -->
                     <div class="d-none">
                         <div class="mt-3">
                             <label class="form-label d-block mb-1"><span data-i18n="pvd_fund_name">Fund Name</span></label>
                             <input type="text" class="form-control" name="pvd_fund_name" id="pvd_fund_name" data-i18n="pvd_fund_name_placeholder" placeholder="e.g., XYZ Provident Fund">
                         </div>
-                        <div class="mt-3">
-                            <label class="form-label d-block mb-1"><span data-i18n="pvd_start_date">Start Date</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" name="pvd_start_date" id="pvd_start_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                    </div>
+                    <!-- 2026-09-10, Batch 3A item 7a: UN-hidden -- these 3 fields used to be inert
+                         (comment here previously said "never read by the calculation engine," which
+                         was true until this batch item wired pvd_start_date/pvd_employee_rate/
+                         pvd_employer_rate into real TH_PVD calculation, see PayrollRunModel::
+                         recalculate()'s own PVD block). pvd_start_date now doubles as "date joined
+                         the fund" for the tenure-based employer-rate ladder (Setup > Tax & Statutory)
+                         -- falls back to Employment Date when blank. -->
+                    <div class="mt-3">
+                        <label class="form-label d-block mb-1"><span data-i18n="pvd_start_date">Start Date</span></label>
+                        <div class="input-group">
+                            <input type="text" class="form-control datepicker" name="pvd_start_date" id="pvd_start_date" autocomplete="off">
+                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
                         </div>
-                        <div class="mt-3">
-                            <label class="form-label d-block mb-1"><span data-i18n="pvd_employee_rate">Employee Rate (%)</span></label>
-                            <input type="number" step="0.01" class="form-control" name="pvd_employee_rate" id="pvd_employee_rate" data-i18n="pvd_rate_placeholder" placeholder="e.g., 3.00">
-                        </div>
-                        <div class="mt-3">
-                            <label class="form-label d-block mb-1"><span data-i18n="pvd_employer_rate">Employer Rate (%)</span></label>
-                            <input type="number" step="0.01" class="form-control" name="pvd_employer_rate" id="pvd_employer_rate" data-i18n="pvd_rate_placeholder" placeholder="e.g., 3.00">
-                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label d-block mb-1"><span data-i18n="pvd_employee_rate">Employee Rate (%)</span></label>
+                        <input type="number" step="0.01" class="form-control" name="pvd_employee_rate" id="pvd_employee_rate" data-i18n="pvd_rate_placeholder" placeholder="e.g., 3.00">
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label d-block mb-1"><span data-i18n="pvd_employer_rate">Employer Rate (%)</span></label>
+                        <input type="number" step="0.01" class="form-control" name="pvd_employer_rate" id="pvd_employer_rate" data-i18n="pvd_rate_placeholder" placeholder="e.g., 3.00">
+                        <div class="form-text small" id="pvdEmployerRateHelper"></div>
                     </div>
                 </div>
             </div>

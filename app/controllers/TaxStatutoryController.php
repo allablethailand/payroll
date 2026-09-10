@@ -3,16 +3,19 @@ declare(strict_types=1);
 require_once __DIR__ . '/../models/TaxStatutoryModel.php';
 require_once __DIR__ . '/../models/CompanyStatutorySettingModel.php';
 require_once __DIR__ . '/../models/CompanyStatutoryRateVersionModel.php';
+require_once __DIR__ . '/../models/PvdEmployerRateLadderModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 class TaxStatutoryController extends Controller {
     private $model;
     private $companySettingModel;
     private $companyRateVersionModel;
+    private PvdEmployerRateLadderModel $pvdLadderModel;
     private PermissionModel $permissionModel;
     public function __construct(){
         $this->model = new TaxStatutoryModel();
         $this->companySettingModel = new CompanyStatutorySettingModel();
         $this->companyRateVersionModel = new CompanyStatutoryRateVersionModel();
+        $this->pvdLadderModel = new PvdEmployerRateLadderModel();
         $this->permissionModel = new PermissionModel();
     }
 
@@ -393,6 +396,36 @@ class TaxStatutoryController extends Controller {
             return;
         }
         $this->json(['status' => true, 'data' => $this->companySettingModel->list((int)$compId)]);
+    }
+
+    /** Batch 3A item 7a: PVD employer contribution ladder ("อายุงานตั้งแต่ (ปี) -> % นายจ้าง"). */
+    public function pvdEmployerLadderList() {
+        if (!$this->requirePermission('tax_statutory.view')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => true, 'data' => []]);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->pvdLadderModel->list((int)$compId)]);
+    }
+
+    public function pvdEmployerLadderSave() {
+        if (!$this->requirePermission('tax_statutory.edit')) return;
+        $compId = getCompId();
+        $data = json_decode(file_get_contents('php://input'), true);
+        $rows = (is_array($data) && isset($data['rows']) && is_array($data['rows'])) ? $data['rows'] : [];
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Invalid company.']);
+            return;
+        }
+        // Empty rows = "clear the ladder" (opt back out, fall back to the flat company/master rate)
+        // -- a distinct, valid action from "save an invalid/empty tier set", so it bypasses save()'s
+        // own "at least one tier is required" validation entirely.
+        if (empty($rows)) {
+            $this->json($this->pvdLadderModel->clear((int)$compId, $this->userId()));
+            return;
+        }
+        $this->json($this->pvdLadderModel->save((int)$compId, $rows, $this->userId()));
     }
 
     public function companySettingGet() {

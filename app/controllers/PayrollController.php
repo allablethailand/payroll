@@ -85,6 +85,47 @@ class PayrollController extends Controller {
         return $details;
     }
 
+    /**
+     * 2026-09-10, Batch 3A item 5: same masking convention as maskRunDetailRows()/maskAuditDiffLines()
+     * (ReportsController's own copy, for the whole-run report) applied to employeeAdjustments()'s
+     * combined overrides+manual-lines shape -- these are itemized payroll figures too, so anything
+     * short of FULL salary_amount.view_payroll_process visibility must not see the real numbers here.
+     */
+    private function maskEmployeeAdjustments(array $data, int $compId): array {
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), $compId);
+        if ($visibility['full']) {
+            return $data;
+        }
+        foreach ($data['overrides'] as &$ov) {
+            $ov['original_value'] = $ov['original_value'] !== null ? PermissionModel::MASK_VALUE : null;
+            $ov['current_value'] = $ov['current_value'] !== null ? PermissionModel::MASK_VALUE : null;
+            foreach ($ov['edits'] as &$edit) {
+                $edit['old_value'] = $edit['old_value'] !== null ? PermissionModel::MASK_VALUE : null;
+                $edit['new_value'] = $edit['new_value'] !== null ? PermissionModel::MASK_VALUE : null;
+            }
+            unset($edit);
+        }
+        unset($ov);
+        foreach ($data['manual_lines'] as &$line) {
+            $line['amount'] = PermissionModel::MASK_VALUE;
+        }
+        unset($line);
+        return $data;
+    }
+
+    public function employeeAdjustments() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = intval($_GET['run_id'] ?? 0);
+        $employeeId = intval($_GET['employee_id'] ?? 0);
+        if (!$compId || $runId <= 0 || $employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $data = $this->model->employeeAdjustments($runId, (int)$compId, $employeeId);
+        $this->json(['status' => true, 'data' => $this->maskEmployeeAdjustments($data, (int)$compId)]);
+    }
+
     public function index() {
         $this->view('payroll/index');
     }

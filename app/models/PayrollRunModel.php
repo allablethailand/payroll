@@ -21,6 +21,7 @@ require_once __DIR__ . '/NotificationModel.php';
 require_once __DIR__ . '/AttendanceRecordModel.php';
 require_once __DIR__ . '/DocumentNumberingModel.php';
 require_once __DIR__ . '/EmployeePaymentMethodModel.php';
+require_once __DIR__ . '/PvdEmployerRateLadderModel.php';
 
 /**
  * Payroll Run state machine + calculation.
@@ -49,6 +50,7 @@ class PayrollRunModel {
     private NonResidentTaxSettingModel $nonResidentTaxSettingModel;
     private AttendanceRecordModel $attendanceRecordModel;
     private EmployeePaymentMethodModel $paymentMethodModel;
+    private PvdEmployerRateLadderModel $pvdLadderModel;
 
     public function __construct(?PDO $pdo = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
@@ -64,6 +66,7 @@ class PayrollRunModel {
         $this->nonResidentTaxSettingModel = new NonResidentTaxSettingModel($this->db);
         $this->attendanceRecordModel = new AttendanceRecordModel($this->db);
         $this->paymentMethodModel = new EmployeePaymentMethodModel($this->db);
+        $this->pvdLadderModel = new PvdEmployerRateLadderModel($this->db);
     }
 
     /* ==================== READ ==================== */
@@ -318,6 +321,10 @@ class PayrollRunModel {
                     -- override-or-exclude, and tax/SSO override), rendered as small badges on the
                     -- row so an admin can tell at a glance without opening each employee's own modal.
                     (SELECT COUNT(*) FROM `payroll_run_line_overrides` lo WHERE lo.run_id = d.run_id AND lo.employee_id = d.employee_id) AS line_override_count,
+                    -- 2026-09-10, Batch 3A item 5: the Adjusted-N badge counts overrides AND ad-hoc
+                    -- added items together (both count as an adjustment made to this employee's
+                    -- calculation), so this needs its own count alongside line_override_count.
+                    (SELECT COUNT(*) FROM `payroll_run_manual_lines` pml WHERE pml.run_id = d.run_id AND pml.employee_id = d.employee_id) AS manual_line_count,
                     (SELECT 1 FROM `payroll_run_employee_exemptions` ex WHERE ex.run_id = d.run_id AND ex.employee_id = d.employee_id
                         AND (ex.tax_calculate_override != 'inherit' OR ex.sso_calculate_override != 'inherit') LIMIT 1) AS has_calc_override,
                     -- 2026-08-29, explicit follow-up request: base salary excluded should show as a
@@ -366,6 +373,7 @@ class PayrollRunModel {
             $row['statutory_breakdown'] = json_decode((string)$row['statutory_breakdown'], true) ?? [];
             $row['is_verified'] = (bool)$row['is_verified'];
             $row['line_override_count'] = (int)$row['line_override_count'];
+            $row['manual_line_count'] = (int)$row['manual_line_count'];
             $row['has_calc_override'] = !empty($row['has_calc_override']);
             // 2026-09-10, real gap found and fixed (confirmed business rule): this used to check
             // only the per-employee override + Run Settings item-exclusion -- it had NO awareness
@@ -644,22 +652,33 @@ class PayrollRunModel {
      * Returns ['history_available' => bool, 'lines' => [...]] -- lines is empty (not an error) for
      * a run with zero recorded edits; the caller is responsible for showing the
      * LINE_OVERRIDE_HISTORY_FEATURE_START_DATE caveat when history_available is false.
+     *
+     * 2026-09-10, Batch 3A item 5: gained an optional $employeeId filter (generalized, not
+     * duplicated) so employeeAdjustments() below can reuse this exact same diff-chain logic scoped
+     * to one employee for the Detail page's per-employee "adjusted items" modal, instead of the
+     * Payroll Run Audit report's whole-run list this method originally served alone.
      */
-    public function lineOverrideAuditDiff(int $runId, int $compId): array {
+    public function lineOverrideAuditDiff(int $runId, int $compId, ?int $employeeId = null): array {
         $run = $this->get($runId, $compId);
         if (!$run) {
             return ['history_available' => false, 'lines' => []];
         }
         $historyAvailable = (string)$run['period_start_date'] >= self::LINE_OVERRIDE_HISTORY_FEATURE_START_DATE;
 
+        $where = "WHERE h.run_id = :run_id";
+        $params = [':run_id' => $runId];
+        if ($employeeId !== null) {
+            $where .= " AND h.employee_id = :employee_id";
+            $params[':employee_id'] = $employeeId;
+        }
         $stmt = $this->db->prepare("SELECT h.*, e.employee_no, e.name_th AS employee_name_th, e.name_en AS employee_name_en,
                 u.name_th AS changed_by_name_th, u.name_en AS changed_by_name_en
             FROM `payroll_run_line_override_history` h
             JOIN `employees` e ON e.id = h.employee_id
             LEFT JOIN `employees` u ON u.id = h.changed_by
-            WHERE h.run_id = :run_id
+            {$where}
             ORDER BY h.employee_id ASC, h.line_type ASC, h.item_code ASC, h.id ASC");
-        $stmt->execute([':run_id' => $runId]);
+        $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         if ($rows) {
             $historyAvailable = true; // real recorded edits exist regardless of the run's own period date
@@ -2379,7 +2398,7 @@ class PayrollRunModel {
             $stmtEmp = $this->db->prepare("SELECT DISTINCT e.id, e.employee_no, e.base_salary_amount, e.key_version, e.employment_date, e.employment_end_date,
                     e.sso_enrolled, e.pvd_enrolled, e.tax_exempt, e.is_payroll_ready, e.ot_eligible, e.ot_rate_source, e.assigned_ot_rate_set_id,
                     e.has_spouse, e.tax_calculation_method, e.tax_non_resident, e.salary_type, e.department_id, e.team_id, e.position_id, e.employment_status,
-                    e.employment_type, e.intern_base_salary_ratio_override, e.probation_base_salary_ratio_override, e.probation_defer_pvd_override, e.probation_defer_sso_override, e.probation_defer_recurring_earning_override, e.intern_defer_pvd_override, e.intern_defer_sso_override, e.intern_defer_recurring_earning_override, e.sso_contribution_rate, e.sso_employer_contribution_rate, e.payment_method_id,
+                    e.employment_type, e.intern_base_salary_ratio_override, e.probation_base_salary_ratio_override, e.probation_defer_pvd_override, e.probation_defer_sso_override, e.probation_defer_recurring_earning_override, e.intern_defer_pvd_override, e.intern_defer_sso_override, e.intern_defer_recurring_earning_override, e.sso_contribution_rate, e.sso_employer_contribution_rate, e.pvd_start_date, e.pvd_employee_rate, e.pvd_employer_rate, e.payment_method_id,
                     CASE WHEN psi.employee_id IS NOT NULL THEN 'sync' ELSE 'manual' END AS data_source
                 FROM `employees` e
                 LEFT JOIN `payroll_sync_items` psi ON psi.process_id = :process_id AND psi.employee_id = e.id AND psi.mapping_status = 'mapped'
@@ -2423,7 +2442,7 @@ class PayrollRunModel {
             $stmtEmp = $this->db->prepare("SELECT id, employee_no, base_salary_amount, key_version, employment_date, employment_end_date,
                     sso_enrolled, pvd_enrolled, tax_exempt, is_payroll_ready, ot_eligible, ot_rate_source, assigned_ot_rate_set_id,
                     has_spouse, tax_calculation_method, tax_non_resident, salary_type, department_id, team_id, position_id, employment_status,
-                    employment_type, intern_base_salary_ratio_override, probation_base_salary_ratio_override, probation_defer_pvd_override, probation_defer_sso_override, probation_defer_recurring_earning_override, intern_defer_pvd_override, intern_defer_sso_override, intern_defer_recurring_earning_override, sso_contribution_rate, sso_employer_contribution_rate, payment_method_id, 'manual' AS data_source
+                    employment_type, intern_base_salary_ratio_override, probation_base_salary_ratio_override, probation_defer_pvd_override, probation_defer_sso_override, probation_defer_recurring_earning_override, intern_defer_pvd_override, intern_defer_sso_override, intern_defer_recurring_earning_override, sso_contribution_rate, sso_employer_contribution_rate, pvd_start_date, pvd_employee_rate, pvd_employer_rate, payment_method_id, 'manual' AS data_source
                 FROM `employees` e
                 WHERE comp_id = :comp_id AND deleted_at IS NULL AND is_payroll_participant = 1
                 AND employment_date <= :period_end
@@ -2435,7 +2454,7 @@ class PayrollRunModel {
             $stmtEmp = $this->db->prepare("SELECT e.id, e.employee_no, e.base_salary_amount, e.key_version, e.employment_date, e.employment_end_date,
                     e.sso_enrolled, e.pvd_enrolled, e.tax_exempt, e.is_payroll_ready, e.ot_eligible, e.ot_rate_source, e.assigned_ot_rate_set_id,
                     e.has_spouse, e.tax_calculation_method, e.tax_non_resident, e.salary_type, e.department_id, e.team_id, e.position_id, e.employment_status,
-                    e.employment_type, e.intern_base_salary_ratio_override, e.probation_base_salary_ratio_override, e.probation_defer_pvd_override, e.probation_defer_sso_override, e.probation_defer_recurring_earning_override, e.intern_defer_pvd_override, e.intern_defer_sso_override, e.intern_defer_recurring_earning_override, e.sso_contribution_rate, e.sso_employer_contribution_rate, e.payment_method_id, 'manual' AS data_source
+                    e.employment_type, e.intern_base_salary_ratio_override, e.probation_base_salary_ratio_override, e.probation_defer_pvd_override, e.probation_defer_sso_override, e.probation_defer_recurring_earning_override, e.intern_defer_pvd_override, e.intern_defer_sso_override, e.intern_defer_recurring_earning_override, e.sso_contribution_rate, e.sso_employer_contribution_rate, e.pvd_start_date, e.pvd_employee_rate, e.pvd_employer_rate, e.payment_method_id, 'manual' AS data_source
                 FROM `payroll_run_manual_employees` pme
                 JOIN `employees` e ON e.id = pme.employee_id AND e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 1
                 WHERE pme.run_id = :run_id");
@@ -3740,6 +3759,39 @@ class PayrollRunModel {
                     $employeeRateOverrides['TH_SSO'] = $ssoRateOverride;
                 }
 
+                // 2026-09-10, Batch 3A item 7a: TH_PVD per-employee rate override + tenure-based
+                // employer-rate ladder, wired into the SAME $employeeRateOverrides channel TH_SSO
+                // already uses above (precedence: employee override > ladder > company/master
+                // rate). Employee-side has no ladder (not requested) -- just employees.
+                // pvd_employee_rate directly, same shape as TH_SSO's own employee_rate_override.
+                $pvdRateOverride = [];
+                $pvdEmployerRateSource = 'default';
+                $pvdLadderTierUsed = null;
+                if ($emp['pvd_employee_rate'] !== null) {
+                    $pvdRateOverride['employee_rate_override'] = (float)$emp['pvd_employee_rate'];
+                }
+                if ($emp['pvd_employer_rate'] !== null) {
+                    $pvdRateOverride['employer_rate_override'] = (float)$emp['pvd_employer_rate'];
+                    $pvdEmployerRateSource = 'employee_override';
+                } else {
+                    // Tenure counted as of THIS run's own period_end_date, not "today" (explicit
+                    // request) -- a run being calculated for a past period must reflect the tenure
+                    // AT THAT TIME, not whenever the calculation happens to actually run.
+                    $pvdJoinDate = $emp['pvd_start_date'] ?? $emp['employment_date'];
+                    if ($pvdJoinDate !== null) {
+                        $serviceYears = PvdEmployerRateLadderModel::serviceYears((string)$pvdJoinDate, $periodEnd);
+                        $tier = $this->pvdLadderModel->resolveTier($compId, $serviceYears);
+                        if ($tier !== null) {
+                            $pvdRateOverride['employer_rate_override'] = $tier['rate_percent'];
+                            $pvdEmployerRateSource = 'ladder';
+                            $pvdLadderTierUsed = $tier;
+                        }
+                    }
+                }
+                if (!empty($pvdRateOverride)) {
+                    $employeeRateOverrides['TH_PVD'] = $pvdRateOverride;
+                }
+
                 $earningTotal = array_sum(array_column($earningLines, 'amount'));
                 $pedDeductionTotal = array_sum(array_column($deductionLines, 'amount'));
                 $grossAmount = round($effectiveBase + $earningTotal, 2);
@@ -3839,6 +3891,24 @@ class PayrollRunModel {
                     // employees row, but never actually affected a real payroll run's own
                     // calculation. Fixed by passing the real variable instead of a literal [].
                     $statutoryResult = $this->engine->calculate($compId, $salaryContext, $paymentDate, $employeeFlags, $employeeRateOverrides, $employeeId, $periodStart);
+
+                    // 2026-09-10, Batch 3A item 7a: stamp the resolved TH_PVD employer-rate
+                    // source/tier onto its own breakdown item, per explicit request ("เก็บ tier/
+                    // อัตราที่ใช้จริงไว้ใน breakdown...จะได้ตรวจย้อนหลังได้") -- an audit trail of WHY
+                    // this period's employer contribution used the rate it did, inspectable later
+                    // without re-deriving it from whatever the ladder/employee override state
+                    // happens to be at the time someone looks.
+                    foreach ($statutoryResult['items'] as $pvdIdx => $pvdItem) {
+                        if ($pvdItem['code'] !== 'TH_PVD') {
+                            continue;
+                        }
+                        $statutoryResult['items'][$pvdIdx]['employer_rate_source'] = $pvdEmployerRateSource;
+                        if ($pvdLadderTierUsed !== null) {
+                            $statutoryResult['items'][$pvdIdx]['employer_rate_tier_min_years'] = $pvdLadderTierUsed['min_service_years'];
+                            $statutoryResult['items'][$pvdIdx]['employer_rate_tier_max_years'] = $pvdLadderTierUsed['max_service_years'];
+                        }
+                        break;
+                    }
 
                     // 2026-08-21, real bug fix (explicit report: a 25,000/month employee was
                     // withheld ~7,500 in a single period). The engine's own TH_PIT line above is a
@@ -5104,16 +5174,24 @@ class PayrollRunModel {
         return $this->recalculate($id, $compId, $userId, $isAdmin);
     }
 
-    /** Every manual line for one employee on this run (item code/name + amount + note + line id), for the "Manage Items" UI. */
+    /**
+     * Every manual line for one employee on this run (item code/name + amount + note + line id), for
+     * the "Manage Items" UI.
+     * 2026-09-10, Batch 3A item 5: added created_by/created_at (+ creator name) -- additive, existing
+     * callers (Manage Items modal) already ignore unknown keys -- so employeeAdjustments() below can
+     * show who added a manual line and when, alongside the line_override "who/when" it already has.
+     */
     public function manualLinesForEmployee(int $compId, int $runId, int $employeeId): array {
         $stmt = $this->db->prepare("SELECT pml.id, pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
-                pml.payee_type, pml.destination_id, pml.include_in_cash_summary,
+                pml.payee_type, pml.destination_id, pml.include_in_cash_summary, pml.created_by, pml.created_at,
                 pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type, payee.employee_no AS payee_employee_no,
-                pd.account_name AS destination_account_name
+                pd.account_name AS destination_account_name,
+                creator.name_th AS created_by_name_th, creator.name_en AS created_by_name_en
             FROM `payroll_run_manual_lines` pml
             LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
             LEFT JOIN `employees` payee ON payee.id = pml.payee_employee_id
             LEFT JOIN `payment_destinations` pd ON pd.id = pml.destination_id
+            LEFT JOIN `employees` creator ON creator.id = pml.created_by
             JOIN `payroll_runs` r ON r.id = pml.run_id AND r.comp_id = :comp_id
             WHERE pml.run_id = :run_id AND pml.employee_id = :employee_id
             ORDER BY pml.id ASC");
@@ -5136,8 +5214,88 @@ class PayrollRunModel {
                 'destination_id' => $row['destination_id'] !== null ? (int)$row['destination_id'] : null,
                 'destination_account_name' => $row['destination_account_name'],
                 'include_in_cash_summary' => (int)$row['include_in_cash_summary'],
+                'created_by' => $row['created_by'] !== null ? (int)$row['created_by'] : null,
+                'created_by_name_th' => $row['created_by_name_th'],
+                'created_by_name_en' => $row['created_by_name_en'],
+                'created_at' => $row['created_at'],
             ];
         }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+    }
+
+    /**
+     * 2026-09-10, Batch 3A item 5: combined "what was adjusted for this employee on this run" view,
+     * replacing the old fa-sliders icon (which only ever hinted "something changed," with no detail)
+     * behind a new "ปรับแล้ว N" badge + view-only modal on the Detail page's employee table. No new
+     * table -- built entirely from data this app already has:
+     *   - `payroll_run_line_overrides` (current truth for "what's overridden right now," same table
+     *     getDetails()'s own line_override_count already counts) drives the override list itself;
+     *   - lineOverrideAuditDiff($runId, $compId, $employeeId) (generalized above with the employee
+     *     filter, not duplicated) enriches each override with its real original/edit-chain/current
+     *     values + who/when, whenever a history row exists (edits made 2026-08-31 forward, see
+     *     LINE_OVERRIDE_HISTORY_FEATURE_START_DATE);
+     *   - an override with NO history row (edited before that date and never touched since) still
+     *     shows up -- 'history_available' => false on that one item -- using the override row's own
+     *     created_by/updated_by/created_at/updated_at as a "who/when" fallback, so N always matches
+     *     how many items the modal actually lists;
+     *   - `payroll_run_manual_lines` (via manualLinesForEmployee(), extended above with
+     *     created_by/created_at) supplies the ad-hoc added items -- these have no "old value" at all
+     *     (nothing existed before them), so old_value is always null for this group.
+     */
+    public function employeeAdjustments(int $runId, int $compId, int $employeeId): array {
+        $run = $this->get($runId, $compId);
+        if (!$run) {
+            return ['overrides' => [], 'manual_lines' => [], 'history_feature_start_date' => self::LINE_OVERRIDE_HISTORY_FEATURE_START_DATE];
+        }
+
+        $stmtOv = $this->db->prepare("SELECT lo.item_code, lo.action, lo.override_amount, lo.note,
+                lo.created_by, lo.created_at, lo.updated_by, lo.updated_at,
+                creator.name_th AS created_by_name_th, creator.name_en AS created_by_name_en,
+                updater.name_th AS updated_by_name_th, updater.name_en AS updated_by_name_en
+            FROM `payroll_run_line_overrides` lo
+            LEFT JOIN `employees` creator ON creator.id = lo.created_by
+            LEFT JOIN `employees` updater ON updater.id = lo.updated_by
+            WHERE lo.run_id = :run_id AND lo.employee_id = :employee_id
+            ORDER BY lo.id ASC");
+        $stmtOv->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+        $overrideRows = $stmtOv->fetchAll(PDO::FETCH_ASSOC);
+
+        $diff = $this->lineOverrideAuditDiff($runId, $compId, $employeeId);
+        $diffByKey = [];
+        foreach ($diff['lines'] as $line) {
+            $diffByKey[$line['line_type'] . '|' . $line['item_code']] = $line;
+        }
+
+        $overrides = [];
+        foreach ($overrideRows as $row) {
+            $rawCode = $row['item_code'];
+            $statutoryCode = $this->unwrapStatutoryOverrideCode($rawCode);
+            $lineType = $statutoryCode !== null ? 'statutory' : 'earning_deduction';
+            $displayCode = $statutoryCode ?? $rawCode;
+            $diffLine = $diffByKey[$lineType . '|' . $displayCode] ?? null;
+            $fallbackCurrent = $row['action'] === 'exclude' ? 0.0 : ($row['override_amount'] !== null ? (float)$row['override_amount'] : null);
+            $hasUpdate = $row['updated_by'] !== null;
+
+            $overrides[] = [
+                'item_code' => $displayCode,
+                'line_type' => $lineType,
+                'action' => $row['action'],
+                'note' => $row['note'],
+                'original_value' => $diffLine['original_value'] ?? null,
+                'current_value' => $diffLine['current_value'] ?? $fallbackCurrent,
+                'edits' => $diffLine['edits'] ?? [],
+                'history_available' => $diffLine !== null,
+                'fallback_changed_by' => $hasUpdate ? (int)$row['updated_by'] : ($row['created_by'] !== null ? (int)$row['created_by'] : null),
+                'fallback_changed_by_name_th' => $hasUpdate ? $row['updated_by_name_th'] : $row['created_by_name_th'],
+                'fallback_changed_by_name_en' => $hasUpdate ? $row['updated_by_name_en'] : $row['created_by_name_en'],
+                'fallback_changed_at' => $hasUpdate ? $row['updated_at'] : $row['created_at'],
+            ];
+        }
+
+        return [
+            'overrides' => $overrides,
+            'manual_lines' => $this->manualLinesForEmployee($compId, $runId, $employeeId),
+            'history_feature_start_date' => self::LINE_OVERRIDE_HISTORY_FEATURE_START_DATE,
+        ];
     }
 
     /**
@@ -5153,6 +5311,19 @@ class PayrollRunModel {
      * been calculated at all) -- the caller falls back to omitting the "from" half of the note
      * rather than showing a misleading 0.00.
      */
+    /**
+     * Unwraps a statutoryOverrideCode()-wrapped item_code back to its real TH_SSO/TH_PVD/etc. code,
+     * or returns null when $itemCode isn't statutory-wrapped at all -- single source of truth for
+     * the unwrap side, matching statutoryOverrideCode()'s own wrap side 1:1 (used by
+     * currentLineAmount() below and employeeAdjustments()'s own override-row unwrapping).
+     */
+    private function unwrapStatutoryOverrideCode(string $itemCode): ?string {
+        if (str_starts_with($itemCode, '__statutory_') && str_ends_with($itemCode, '__')) {
+            return substr($itemCode, strlen('__statutory_'), -2);
+        }
+        return null;
+    }
+
     private function currentLineAmount(int $runId, int $employeeId, string $itemCode): ?float {
         $stmt = $this->db->prepare("SELECT base_salary_amount, earning_breakdown, deduction_breakdown, statutory_breakdown
             FROM `payroll_run_details` WHERE run_id = :run_id AND employee_id = :employee_id");
@@ -5166,8 +5337,8 @@ class PayrollRunModel {
         }
         // 2026-08-31: statutoryOverrideCode()-wrapped codes (TH_SSO/TH_PVD/TH_PIT/etc.) read from
         // statutory_breakdown's own employee_amount instead -- see that method's own docblock.
-        if (str_starts_with($itemCode, '__statutory_') && str_ends_with($itemCode, '__')) {
-            $rawCode = substr($itemCode, strlen('__statutory_'), -2);
+        $rawCode = $this->unwrapStatutoryOverrideCode($itemCode);
+        if ($rawCode !== null) {
             $lines = $row['statutory_breakdown'] !== null ? json_decode((string)$row['statutory_breakdown'], true) : [];
             foreach ((is_array($lines) ? $lines : []) as $line) {
                 if (($line['code'] ?? null) === $rawCode) {
