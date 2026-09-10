@@ -1536,6 +1536,8 @@
     "run_origin_sync": "ดึงมาจาก Origami",
     "run_origin_cycle": "อ้างอิงรอบการจ่าย",
     "run_origin_manual": "นอกรอบ / สร้างเอง",
+    "run_origin_origami": "Origami",
+    "run_type_special": "รอบพิเศษ",
     "compute_statutory_label": "คำนวณภาษี/ประกันสังคม (SSO/PVD) สำหรับการจ่ายครั้งนี้",
     "compute_statutory_short": "ภาษี/ประกันสังคม",
     "include_base_salary_label": "นำเงินเดือนพื้นฐานมาคำนวณด้วย (เต็มจำนวน ไม่ Prorate)",

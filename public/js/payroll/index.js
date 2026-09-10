@@ -59,14 +59,19 @@ function stateBadgePr(state) {
 // genuine off-schedule/manual run) had no visual cue anywhere on this page before -- sync_process_id/
 // cycle_id are already in every row (PayrollRunModel::list()'s own `r.*`), just never surfaced. See
 // runOriginBadgePr() below.
+// 2026-09-10, explicit report: "ไอคอนหน้าชื่อรอบ (cloud + ของขวัญ) สื่อไม่ชัด" -- was an icon-only
+// (hover-tooltip-only) indicator prepended before the run name. Confirmed with the user: a short
+// visible text badge, shown ONLY for the exception case (a run pulled from Origami sync) -- a
+// cycle-based or manual run gets no badge at all (the badge exists to flag "this one is different",
+// not to label every row) -- appended AFTER the name on the same line (not before, so it never pushes
+// the name itself out of column alignment), reusing this same table's own neutral chip class (see
+// the run_code cell's own `badge bg-light text-dark border`) rather than inventing a new color. The
+// long-form label (run_origin_sync) stays as the badge's own tooltip.
 function runOriginBadgePr(row) {
-    if (row.sync_process_id) {
-        return `<i class="fa-solid fa-cloud-arrow-down text-primary me-1" title="${escapeHtml(langData['run_origin_sync'] || 'Pulled from Origami')}"></i>`;
+    if (!row.sync_process_id) {
+        return '';
     }
-    if (row.cycle_id) {
-        return `<i class="fa-solid fa-rotate text-info me-1" title="${escapeHtml(langData['run_origin_cycle'] || 'Payroll Schedule (Cycle)')}"></i>`;
-    }
-    return `<i class="fa-solid fa-hand-holding-dollar text-secondary me-1" title="${escapeHtml(langData['run_origin_manual'] || 'Off-schedule / Manual')}"></i>`;
+    return `<span class="badge bg-light text-dark border ms-1" title="${escapeHtml(langData['run_origin_sync'] || 'Pulled from Origami')}">${escapeHtml(langData['run_origin_origami'] || 'Origami')}</span>`;
 }
 // 2026-09-01: pure classification helper (no markup) -- shared between the badge above and the new
 // Origin filter's own client-side DataTables search function, so the 2 never define "what counts as
@@ -76,6 +81,9 @@ function runOriginKeyPr(row) {
     if (row.cycle_id) return 'cycle';
     return 'manual';
 }
+// 2026-09-10, explicit report: same icon-clarity fix as runOriginBadgePr() above, same reasoning
+// (short visible text badge instead of an icon-only tooltip, shown only for the exception case -- a
+// normal 'payroll' run gets no badge, appended after the name, reuses the same neutral chip class).
 function runTypeIconPr(row) {
     if (row.run_purpose !== 'incentive') return '';
     const parts = [];
@@ -85,7 +93,7 @@ function runTypeIconPr(row) {
     if (Number(row.include_attendance_pay) === 1) parts.push(langData['include_attendance_pay_label'] || 'Include attendance pay');
     const label = langData['run_purpose_incentive'] || 'Incentive / Other Payment';
     const title = parts.length ? `${label}: ${parts.join(', ')}` : label;
-    return `<i class="fa-solid fa-gift text-warning me-1" title="${escapeHtml(title)}"></i>`;
+    return `<span class="badge bg-light text-dark border ms-1" title="${escapeHtml(title)}">${escapeHtml(langData['run_type_special'] || 'Special run')}</span>`;
 }
 // 2026-09-01, explicit request: "หน้า List page ควรมี indicator บอกด้วยว่ารอบนี้ตั้งค่าไว้ให้ไปรวมกับรอบไหน" --
 // this was the 2nd of the 2 known gaps flagged after the Detail-page merge-target-editing feature
@@ -744,7 +752,7 @@ function initPayrollRunTable() {
             // on hover, reusing the existing table_created_by i18n key (no new key needed). Object-form
             // render unchanged (same sort-safety reason as before) -- only the display branch changed.
             { data: 'run_name', render: {
-                display: (d, t, row) => `${runOriginBadgePr(row)}${runTypeIconPr(row)}<strong class="text-dark" title="${escapeHtml((langData['table_created_by'] || 'Created By') + ': ' + employeeNamePr(row))}">${escapeHtml(d)}</strong>`,
+                display: (d, t, row) => `<strong class="text-dark" title="${escapeHtml((langData['table_created_by'] || 'Created By') + ': ' + employeeNamePr(row))}">${escapeHtml(d)}</strong>${runOriginBadgePr(row)}${runTypeIconPr(row)}`,
                 sort: d => d,
                 filter: d => d,
             } },
@@ -765,21 +773,31 @@ function initPayrollRunTable() {
             // count as its own line, verify/lock/error as a wrapped pill row underneath), plus a new
             // red error_employee_count pill with a clickable "i" that opens #runErrorEmployeesModal
             // (fetched on demand via api/payroll-run.error-employees -- never pre-fetched per row).
+            // 2026-09-10, explicit report: "แสดง '11 [icon]' บรรทัดหนึ่ง และ '[check] 11' อีกบรรทัด" --
+            // consolidated into one line, no icon. Which form shows is keyed on the RUN'S OWN STATE,
+            // not the verified count: draft/pending_approval/need_info/rejected (not yet approved --
+            // employees can still be verified/unverified on this run) always show
+            // "{verify_status_verified} {verified}/{total}", even when verified is 0; approved/paid/
+            // locked/cancelled (decided -- verification no longer applies) show just "{total}". The
+            // error pill (a real interactive button, not just an icon) is unrelated to this complaint
+            // and stays on its own line underneath when there's incomplete data to flag -- unchanged.
             { data: 'employee_count', className: 'text-end', render: {
                 display: (d, t, row) => {
+                    const total = Number(d || 0);
                     const verified = Number(row.verified_employee_count || 0);
                     const errors = Number(row.error_employee_count || 0);
-                    const pills = [];
+                    const preApprovalStates = ['draft', 'pending_approval', 'need_info', 'rejected'];
                     // 2026-09-09, round-creation flow copy audit round 3: dedicated key, NOT the
                     // shared 'verified' key (also used by Company Profile/Tax & Statutory for
                     // unrelated "verified" badges where "ยืนยันแล้ว" is the correct word) -- this
-                    // app's own Verify-run action is standardized on "ตรวจสอบ" everywhere else, so
-                    // this tooltip needs its own key to say the same thing without touching those
-                    // other modules' copy.
-                    if (verified) pills.push(`<span class="badge rounded-pill bg-success-subtle text-success" title="${langData['run_verified_employee_count_tooltip'] || 'Verified'}"><i class="fa-solid fa-check-double me-1"></i>${verified}</span>`);
-                    if (errors) pills.push(`<button type="button" class="badge rounded-pill bg-danger-subtle text-danger border-0 btn-view-run-errors" data-id="${row.id}" title="${langData['incomplete_data'] || 'Incomplete data'}"><i class="fa-solid fa-triangle-exclamation me-1"></i>${errors}<i class="fa-solid fa-circle-info ms-1"></i></button>`);
-                    const pillRow = pills.length ? `<div class="d-flex gap-1 justify-content-end flex-wrap mt-1">${pills.join('')}</div>` : '';
-                    return `<div class="fw-semibold">${d} <i class="fa-solid fa-users text-muted ms-1 small"></i></div>${pillRow}`;
+                    // app's own Verify-run action is standardized on "ตรวจสอบ" everywhere else.
+                    const mainLine = preApprovalStates.includes(row.state)
+                        ? escapeHtml(`${langData['verify_status_verified'] || 'Verified'} ${verified}/${total}`)
+                        : escapeHtml(String(total));
+                    const errorHtml = errors
+                        ? `<div class="mt-1"><button type="button" class="badge rounded-pill bg-danger-subtle text-danger border-0 btn-view-run-errors" data-id="${row.id}" title="${langData['incomplete_data'] || 'Incomplete data'}"><i class="fa-solid fa-triangle-exclamation me-1"></i>${errors}<i class="fa-solid fa-circle-info ms-1"></i></button></div>`
+                        : '';
+                    return `<div class="fw-semibold">${mainLine}</div>${errorHtml}`;
                 },
                 sort: d => d,
                 filter: d => d,
