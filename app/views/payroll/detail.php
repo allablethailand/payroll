@@ -1826,6 +1826,32 @@
         </div>
     </div>
 
+    <!-- Employee Adjustments viewer (2026-09-10, Batch 3A item 5, explicit request: replace the
+         fa-sliders icon with a "ปรับแล้ว N" badge + view-only modal listing item/old value/new
+         value/who/when -- sourced from PayrollRunModel::employeeAdjustments(), no new table, no
+         editing here. -->
+    <div class="modal fade" id="empAdjustmentsModal" data-footer="view" tabindex="-1" aria-labelledby="empAdjustmentsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <div>
+                        <h5 class="modal-title text-secondary mb-0" id="empAdjustmentsModalLabel">
+                            <i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="emp_adjustments_modal_title">Adjusted Items</span>
+                        </h5>
+                        <div class="text-muted small" id="empAdjustmentsEmployeeName"></div>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="fw-semibold small text-uppercase text-muted mb-1" data-i18n="emp_adjustments_overrides_section">Overridden Items</div>
+                    <div id="empAdjustmentsOverrideList" class="mb-3"></div>
+                    <div class="fw-semibold small text-uppercase text-muted mb-1" data-i18n="emp_adjustments_manual_lines_section">Added Items</div>
+                    <div id="empAdjustmentsManualLineList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Raw Sync Data viewer (2026-08-21, explicit request: "ดูข้อมูลดิบได้...เพื่อทำการ Recheck
          ข้อมูลย้อนหลังได้") -- read-only, shows exactly what Origami sent for this employee
          (PayrollRunModel::RAW_SYNC_DATA_FIELDS -- payroll/attendance fields only, deliberately

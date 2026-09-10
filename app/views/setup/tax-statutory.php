@@ -106,6 +106,32 @@
             </thead>
             <tbody></tbody>
         </table>
+
+        <!-- 2026-09-10, Batch 3A item 7a, explicit request: company-level PVD employer contribution
+             ladder ("อายุงานตั้งแต่ (ปี) -> % นายจ้าง"). Opt-in -- zero tiers means this company doesn't
+             use tenure-based rates, TH_PVD's employer rate above stays exactly as it is today. A
+             per-employee Employer Rate (%) override on the Employee page's ประกันสังคม/กองทุน tab
+             always wins over this (see that field's own helper text). -->
+        <div class="card-surface p-4 mt-4" style="max-width: 760px;" id="pvdLadderCard">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <div>
+                    <h6 class="fw-bold mb-1" data-i18n="pvd_employer_ladder_title">Provident Fund Employer Rate by Tenure</h6>
+                    <p class="text-muted small mb-0" data-i18n="pvd_employer_ladder_description">Optional: set a different employer contribution % based on how long an employee has been in the fund. Leave off to keep a single flat rate. A per-employee override on the Employee page always wins over this.</p>
+                </div>
+                <div class="form-check form-switch mt-1 flex-shrink-0 ms-3">
+                    <input class="form-check-input" type="checkbox" id="pvdLadderEnabled">
+                </div>
+            </div>
+            <div id="pvdLadderRowsWrap" class="d-none"></div>
+            <button type="button" class="btn btn-sm btn-outline-secondary mt-2 d-none" id="pvdLadderAddRowBtn">
+                <i class="fa-solid fa-plus me-1"></i><span data-i18n="pvd_employer_ladder_add_tier">Add Tier</span>
+            </button>
+            <div class="d-flex justify-content-end gap-2 mt-3">
+                <button type="button" class="btn btn-primary" id="pvdLadderSaveBtn">
+                    <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
+                </button>
+            </div>
+        </div>
     </div>
     <div class="tab-pane fade" id="document-format-pane" role="tabpanel" aria-labelledby="document-format-tab" tabindex="0">
         <p class="text-muted small mb-2" data-i18n="document_format_description">The full list of statutory documents your company must file, based on your registered country -- pick a format version where a choice exists.</p>
