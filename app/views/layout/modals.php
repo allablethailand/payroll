@@ -843,7 +843,13 @@
                             <div id="cycleBankAccountsList" class="border rounded-3 p-2" style="max-height:180px;overflow-y:auto;">
                                 <div class="text-muted small" data-i18n="loading">Loading...</div>
                             </div>
-                            <div class="form-text" data-i18n="modal_cycle_bank_account_hint">Leave every account unchecked to use the company's default bank account.</div>
+                            <div id="cycleBankAccountsHint" class="form-text" data-i18n="modal_cycle_bank_account_hint">Leave every account unchecked to use the company's default bank account.</div>
+                            <!-- 2026-09-10, Batch 3B item 2b: shown INSTEAD of the small gray hint above,
+                                 only for an EXISTING cycle that currently has zero bank accounts selected
+                                 (a brand-new cycle never reaches this state -- see
+                                 renderCycleBankAccountsList()'s own auto-check-first-account comment) --
+                                 explicit request: HR must see this clearly, not a quiet fallback. -->
+                            <div id="cycleBankAccountsWarning" class="alert alert-warning small mb-0 mt-2 d-none py-2" data-i18n="modal_cycle_bank_account_warning">This cycle has no bank account selected -- it will silently fall back to the company's default account. Check at least one account above.</div>
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -851,7 +857,13 @@
                             <label class="form-label mb-1" data-i18n="default_payment_method_label">Default Payment Method</label>
                         </div>
                         <div class="col-sm-9">
-                            <select class="form-select select2-remote" id="cycle_default_payment_method_id" name="default_payment_method_id" data-api="/api/payment-method.options" allow-clear="true"></select>
+                            <!-- 2026-09-10, Batch 3B item 2: data-include-auto="1" tells
+                                 api/payment-method.options to prepend a synthetic "Follow each
+                                 employee's own setting" pseudo-row (id='auto', NOT a real
+                                 master_payment_methods row) -- ONLY this field passes it, so it
+                                 never leaks into the employee's own payment_method_id picker or
+                                 the mixed-payment-line picker, which share this same endpoint. -->
+                            <select class="form-select select2-remote" id="cycle_default_payment_method_id" name="default_payment_method_id" data-api="/api/payment-method.options" data-include-auto="1"></select>
                         </div>
                     </div>
                 </div>

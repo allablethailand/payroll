@@ -44,7 +44,17 @@ class EmployeePaymentMethodModel {
         return $row ?: null;
     }
 
-    public function methodOptions(string $search, int $page, int $limit, ?string $excludeCode = null): array {
+    /**
+     * 2026-09-10, Batch 3B item 2: $includeAuto prepends a synthetic pseudo-row (id='auto', not a
+     * real `master_payment_methods` row) representing "no forced default -- follow each employee's
+     * own payment_method_id" -- the ONLY consumer is the payroll cycle form's own Default Payment
+     * Method picker (see PayrollConfigurationController::paymentMethodOptions()'s own docblock for
+     * why this never leaks into an employee's own payment method picker). `id='auto'` is never a
+     * valid `master_payment_methods.id` (an AUTO_INCREMENT int), so it can't collide with a real
+     * row -- `PayrollCycleModel::save()` must treat this sentinel as NULL, never persist it as a
+     * literal FK value (see that method's own handling).
+     */
+    public function methodOptions(string $search, int $page, int $limit, ?string $excludeCode = null, bool $includeAuto = false): array {
         $offset = ($page - 1) * $limit;
         $where = "WHERE is_active = 1";
         $params = [];
@@ -69,8 +79,19 @@ class EmployeePaymentMethodModel {
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
+        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        return ['items' => $stmt->fetchAll(PDO::FETCH_ASSOC), 'total_count' => $totalCount];
+        if ($includeAuto && $page === 1) {
+            $autoTextTh = 'ตามการตั้งค่าของพนักงาน (แนะนำ)';
+            $autoTextEn = "Follow Each Employee's Own Setting (Recommended)";
+            $matchesSearch = $search === '' || mb_stripos($autoTextTh, $search) !== false || mb_stripos($autoTextEn, $search) !== false;
+            if ($matchesSearch) {
+                array_unshift($items, ['id' => 'auto', 'code' => 'auto', 'text_th' => $autoTextTh, 'text_en' => $autoTextEn]);
+                $totalCount++;
+            }
+        }
+
+        return ['items' => $items, 'total_count' => $totalCount];
     }
 
     /**
@@ -250,5 +271,25 @@ class EmployeePaymentMethodModel {
         $stmt = $this->db->prepare("SELECT id FROM `bank_accounts` WHERE id = :id AND comp_id = :comp_id AND is_default = 1 AND deleted_at IS NULL");
         $stmt->execute([':id' => $bankAccountId, ':comp_id' => $compId]);
         return (bool)$stmt->fetch();
+    }
+
+    /**
+     * 2026-09-10, Batch 3B item 2c: the ONE account default_bank_account_id would actually resolve
+     * to right now if the employee leaves it unset -- i.e. the same account
+     * scopedBankAccountOptions() would put first (cycle's own is_default=1 account, or the
+     * company's is_default=1 account when the cycle has none configured). Used ONLY to build the
+     * Employee Detail Salary tab's placeholder text ("Uses the cycle's own default: Krungsri
+     * xxx-712") -- deliberately a lighter-weight sibling of
+     * PayrollRunEmployeeBankAccountModel::resolveForRun()'s own precedence chain, not a call into
+     * it, since there is no run_id yet on this page (steps 1/2 of that chain -- a per-run override,
+     * or this employee's OWN default_bank_account_id -- don't apply here at all; this method only
+     * ever answers "what would step 3/4 resolve to," which is exactly what's needed to explain an
+     * EMPTY dropdown). Returns null when the cycle has no accounts AND the company has no
+     * is_default=1 account either (nothing to resolve to at all).
+     */
+    public function resolvedDefaultBankAccountLabel(int $compId, int $cycleId): ?array {
+        $options = $this->scopedBankAccountOptions($compId, $cycleId, '', 1, 1);
+        $first = $options['items'][0] ?? null;
+        return $first ?: null;
     }
 }

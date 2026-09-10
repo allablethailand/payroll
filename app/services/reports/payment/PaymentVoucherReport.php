@@ -4,6 +4,7 @@ require_once __DIR__ . '/../ReportGeneratorInterface.php';
 require_once __DIR__ . '/../PdfRendererTrait.php';
 require_once __DIR__ . '/../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../models/PayrollReportDataModel.php';
+require_once __DIR__ . '/../../../models/PayrollRunEmployeeBankAccountModel.php';
 require_once __DIR__ . '/../LocalizedException.php';
 
 /**
@@ -88,11 +89,21 @@ class PaymentVoucherReport implements ReportGeneratorInterface {
         $rowCount = 0;
         // 2026-08-30, explicit follow-up: "ตรงส่วนของการตั้งค่ารอบ มีการให้เลือกบัญชีจ่ายเงินแล้ว...ในส่วนของ
         // การออกรายงาน ถ้ายังไม่ดึงไปช่วยดึงไปด้วยครับ" -- this report spans a whole calendar year, and
-        // different runs in it can genuinely settle from different cycle bank_accounts (same
-        // per-cycle pinning BankTransferFileReport's own resolveCompanyBankAccount() already
-        // resolves), so the paying account is shown PER LINE rather than once in the header.
-        // $accountCache avoids re-resolving/re-decrypting the same account id across multiple runs
-        // in the same year that share one cycle (the overwhelmingly common case).
+        // different runs in it can genuinely settle from different accounts, so the paying account
+        // is shown PER LINE rather than once in the header.
+        // 2026-09-10, Batch 3B item 2d: real bug found and fixed -- this used to read `run['bank_
+        // account_id']` (the cycle's own denormalized pin) directly for EVERY employee regardless of
+        // payment method, which never reflected a per-run override or the employee's own
+        // default_bank_account_id at all -- a stale resolution left behind when the rest of this
+        // area (BankTransferFileReport, BankAccountPaymentSummaryReport) moved onto
+        // PayrollRunEmployeeBankAccountModel::resolveForRun()'s own precedence chain (per-run
+        // override > employee default > cycle pin > company default -- see that method's own
+        // docblock). resolveVoucherAccountId() below now calls the SAME method for a 'transfer'
+        // employee, so this voucher and BankTransferFileReport can never disagree on which account
+        // actually paid them (see tests/payroll_run_employee_bank_account_test.php's own cross-check
+        // section, which calls resolveVoucherAccountId() via reflection and compares it directly
+        // against resolveForRun()'s own output for the exact same run/employee). $accountCache
+        // avoids re-decrypting the same resolved account across multiple lines.
         $accountCache = [];
         foreach ($runs as $run) {
             $detail = $dataModel->getRunDetailForEmployee((int)$run['id'], $employeeId);
@@ -104,10 +115,13 @@ class PaymentVoucherReport implements ReportGeneratorInterface {
             $totalGross += (float)$detail['gross_amount'];
             $totalDeduction += (float)$detail['total_deduction_amount'];
             $totalNet += (float)$detail['net_amount'];
-            $cycleBankAccountId = isset($run['bank_account_id']) && $run['bank_account_id'] !== null ? (int)$run['bank_account_id'] : null;
-            $cacheKey = $cycleBankAccountId ?? 0;
+            $runId = (int)$run['id'];
+            $paymentMethodCode = (string)($detail['payment_method_code'] ?? 'transfer');
+            $runCycleBankAccountId = isset($run['bank_account_id']) && $run['bank_account_id'] !== null ? (int)$run['bank_account_id'] : null;
+            $resolvedAccountId = $this->resolveVoucherAccountId($runId, $compId, $employeeId, $paymentMethodCode, $runCycleBankAccountId);
+            $cacheKey = $resolvedAccountId ?? 0;
             if (!array_key_exists($cacheKey, $accountCache)) {
-                $accountCache[$cacheKey] = $this->resolveCompanyBankAccountLabel($compId, $cycleBankAccountId);
+                $accountCache[$cacheKey] = $this->resolveCompanyBankAccountLabel($compId, $resolvedAccountId);
             }
             $rowsHtml .= '<tr>'
                 // 2026-08-26, explicit request: "Format วันที่การแสดงผลทั้งหมดของระบบให้เป็น dd/mm/yyyy"
@@ -159,21 +173,50 @@ HTML;
     }
 
     /**
-     * Same resolution order as BankTransferFileReport::resolveCompanyBankAccount() (the run's own
-     * cycle bank_account_id first, else the company's is_default account) but returns a plain
-     * human-readable label (bank name + masked account no.) for display here, not the raw account
-     * number a transfer file needs. Never throws -- an unresolvable account just shows '-'.
+     * 2026-09-10, Batch 3B item 2d: the SINGLE resolution point generate()'s own loop calls per
+     * line -- extracted specifically so it's independently testable (via Reflection, since it's
+     * private -- same "debug/verify via reflection" technique already used elsewhere in this
+     * project, e.g. Router::matchRoute()) against PayrollRunEmployeeBankAccountModel::resolveForRun()
+     * directly, without needing to parse a rendered PDF's own (likely Flate-compressed) content
+     * stream just to prove which account ended up embedded. A 'transfer' employee is resolved
+     * through the SAME shared chain BankTransferFileReport uses; anything else (cash/check/mixed)
+     * falls back to the run's own cycle-pinned/company-default id, unchanged from before this fix
+     * (mixed's own per-line routing is out of scope here, see generate()'s own comment).
      */
-    private function resolveCompanyBankAccountLabel(int $compId, ?int $cycleBankAccountId): string {
+    private function resolveVoucherAccountId(int $runId, int $compId, int $employeeId, string $paymentMethodCode, ?int $cycleBankAccountId): ?int {
+        if ($paymentMethodCode === 'transfer') {
+            $bankAccountModel = new PayrollRunEmployeeBankAccountModel();
+            $resolved = $bankAccountModel->resolveForRun($runId, $compId);
+            return $resolved[$employeeId]['bank_account_id'] ?? null;
+        }
+        return $cycleBankAccountId;
+    }
+
+    /**
+     * 2026-09-10, Batch 3B item 2d: docblock fixed -- this used to say "same resolution order as
+     * BankTransferFileReport::resolveCompanyBankAccount()", a method that no longer exists (removed
+     * when that report itself moved onto PayrollRunEmployeeBankAccountModel::resolveForRun()'s own
+     * precedence chain). This method is now a plain LOOKUP, not a resolver in its own right: given
+     * an account id ALREADY resolved by the caller (resolveForRun() for a transfer employee, or the
+     * run's own cycle-pinned/company-default id for cash/check/mixed -- see generate()'s own
+     * comment), returns its human-readable label (bank name + masked account no.). The null-id
+     * branch below is a defensive fallback to the company's own is_default account, reachable in
+     * practice only when the caller's own resolution already came back with nothing at all (no
+     * override, no employee default, no cycle pin, AND no company default -- resolveForRun() itself
+     * returns null only in that same all-4-empty case, so this isn't a second, disagreeing
+     * resolution, just the same "there is truly nothing configured" outcome surfaced as '-' instead
+     * of throwing). Never throws -- an unresolvable account just shows '-'.
+     */
+    private function resolveCompanyBankAccountLabel(int $compId, ?int $bankAccountId): string {
         $pdo = Database::getInstance()->pdo;
         $row = null;
-        if ($cycleBankAccountId !== null && $cycleBankAccountId > 0) {
+        if ($bankAccountId !== null && $bankAccountId > 0) {
             $stmt = $pdo->prepare(
                 "SELECT ba.account_no, ba.key_version, ba.account_name, mb.bank_name_th
                  FROM `bank_accounts` ba LEFT JOIN `master_banks` mb ON mb.id = ba.bank_id
                  WHERE ba.id = :id AND ba.comp_id = :comp_id AND ba.deleted_at IS NULL AND ba.status = 'active'"
             );
-            $stmt->execute([':id' => $cycleBankAccountId, ':comp_id' => $compId]);
+            $stmt->execute([':id' => $bankAccountId, ':comp_id' => $compId]);
             $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
         }
         if ($row === null) {

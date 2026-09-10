@@ -145,6 +145,29 @@ function applyAccountPickerVisibility() {
     const code = $('#payment_method_code').val();
     $('#sectionCycleBankAccount').toggleClass('d-none', code !== 'transfer' && code !== 'mixed');
 }
+// 2026-09-10, Batch 3B item 2c: when default_bank_account_id is left unset, this previews WHICH
+// real account it would actually resolve to (via EmployeePaymentMethodModel::
+// resolvedDefaultBankAccountLabel()'s own lighter-weight sibling of PayrollRunEmployeeBankAccountModel
+// ::resolveForRun()'s precedence chain) as the field's own select2 placeholder text, instead of the
+// generic "Select an option" -- explicit request: HR must see which account will actually be used,
+// not have to go check the cycle's own config separately. No-op (falls back to the generic
+// placeholder) when there's no cycle yet, or the field already has a real selection of its own.
+function refreshDefaultBankAccountPlaceholder(cycleId) {
+    const genericPlaceholder = (typeof langData !== 'undefined' && langData['select_option']) || 'Select an option';
+    if (!cycleId) {
+        setSelect2PlaceholderText('#default_bank_account_id', genericPlaceholder);
+        return;
+    }
+    $.post(`${BASE_URL}/api/employee.resolved-default-bank-account`, { cycle_id: cycleId }, function (res) {
+        if (res.status && res.data) {
+            const label = currentLang === 'th' ? (res.data.text_th || res.data.text_en) : (res.data.text_en || res.data.text_th);
+            const prefix = (typeof langData !== 'undefined' && langData['default_bank_account_placeholder_prefix']) || "Uses the cycle's own default:";
+            setSelect2PlaceholderText('#default_bank_account_id', `${prefix} ${label}`);
+        } else {
+            setSelect2PlaceholderText('#default_bank_account_id', genericPlaceholder);
+        }
+    }, 'json');
+}
 // 2026-08-30 (Phase 3, T020, explicit request: field "จ่าย/ไม่จ่ายเงินเดือน", default = จ่าย) --
 // hides every payroll-specific tab/section for a staff-only employee. Employment tab's own org
 // placement fields (department/position/branch/employment_date/etc.) stay visible either way.
@@ -655,6 +678,8 @@ function populateEmployeeForm(data) {
         const dbaTextTh = (data.default_bank_account_bank_name_th || '') + ' - ' + (data.default_bank_account_name || '') + (data.default_bank_account_company_code ? ` (${data.default_bank_account_company_code})` : '');
         const dbaTextEn = (data.default_bank_account_bank_name_en || '') + ' - ' + (data.default_bank_account_name || '') + (data.default_bank_account_company_code ? ` (${data.default_bank_account_company_code})` : '');
         populateSelect2Field('default_bank_account_id', data.default_bank_account_id, dbaTextTh, dbaTextEn);
+    } else {
+        refreshDefaultBankAccountPlaceholder(data.cycle_id || '');
     }
     populateSelect2Field('report_to_id', data.report_to_id, data.report_to_name_th, data.report_to_name_en);
     populateSelect2Field('cycle_id', data.cycle_id, data.cycle_name, data.cycle_name);
@@ -1155,6 +1180,13 @@ $(function () {
     $(document).on('select2:clear', '#payment_method_id', function () {
         applyPaymentMethodVisibility('');
     });
+    // 2026-09-10, Batch 3B item 2c: re-preview the resolved default the moment the admin clears
+    // their own explicit choice back to "unset" -- otherwise the placeholder would keep showing
+    // whatever it last said (possibly the generic "Select an option" from before this cycle's data
+    // ever loaded) instead of refreshing right away.
+    $(document).on('select2:clear', '#default_bank_account_id', function () {
+        refreshDefaultBankAccountPlaceholder($(this).attr('data-cycle-id') || '');
+    });
     // 2026-09-02, explicit request: cycle-scoped account picker -- only updates the data-cycle-id
     // attribute (read fresh on every select2 search, see input.js's own extraData reader) rather
     // than also clearing the current selection, since this same 'change' event also fires from
@@ -1165,6 +1197,12 @@ $(function () {
         const cycleId = $(this).val() || '';
         $('#default_bank_account_id').attr('data-cycle-id', cycleId);
         $('.payment-line-bank-account').attr('data-cycle-id', cycleId);
+        // 2026-09-10, Batch 3B item 2c: refreshes the placeholder preview too -- covers both this
+        // handler's own programmatic-load fire (see the comment above) and the user genuinely
+        // switching cycles while default_bank_account_id is still unset.
+        if (!$('#default_bank_account_id').val()) {
+            refreshDefaultBankAccountPlaceholder(cycleId);
+        }
     });
     $(document).on('click', '#btnAddPaymentMethodLine', function () {
         addPaymentMethodLineRow({});

@@ -22,6 +22,7 @@ require_once __DIR__ . '/../app/models/BankAccountModel.php';
 require_once __DIR__ . '/../app/models/PayrollRunEmployeeBankAccountModel.php';
 require_once __DIR__ . '/../app/services/reports/payment/BankTransferFileReport.php';
 require_once __DIR__ . '/../app/services/reports/payment/BankAccountPaymentSummaryReport.php';
+require_once __DIR__ . '/../app/services/reports/payment/PaymentVoucherReport.php';
 require_once __DIR__ . '/../app/models/EmployeePaymentMethodModel.php';
 require_once __DIR__ . '/../app/models/PayrollRunCashPaymentModel.php';
 
@@ -43,6 +44,18 @@ function check(string $label, $actual, $expected): void {
 }
 function checkTrue(string $label, bool $actual): void { check($label, $actual, true); }
 function checkFalse(string $label, bool $actual): void { check($label, $actual, false); }
+// 2026-09-10, Batch 3B item 2d: calls PaymentVoucherReport's own PRIVATE resolveVoucherAccountId()
+// via reflection -- the exact same technique this project already uses to verify private/otherwise-
+// unreachable behavior directly (e.g. Router::matchRoute() route-pattern checks), chosen specifically
+// because a rendered PDF's content stream is very likely Flate-compressed (dompdf's own default),
+// so a plain strpos() on the PDF bytes for an account label would be unreliable -- this instead
+// proves the REAL production resolution code path PaymentVoucherReport::generate() calls, not a
+// reimplementation of it.
+function callResolveVoucherAccountId(PaymentVoucherReport $report, int $runId, int $compId, int $employeeId, string $paymentMethodCode, ?int $cycleBankAccountId): ?int {
+    $method = new ReflectionMethod($report, 'resolveVoucherAccountId');
+    $method->setAccessible(true);
+    return $method->invoke($report, $runId, $compId, $employeeId, $paymentMethodCode, $cycleBankAccountId);
+}
 
 try {
     $userId = 1;
@@ -117,6 +130,20 @@ try {
     check('B resolves to ITS OWN employee default (account B), even though company default is A', $resolved1[$employeeBId]['bank_account_id'], $accountBId);
     check('B\'s source is employee_default', $resolved1[$employeeBId]['source'], 'employee_default');
 
+    // ---------- Batch 3B item 2d: PaymentVoucherReport must resolve the SAME account as
+    // BankTransferFileReport (both now call PayrollRunEmployeeBankAccountModel::resolveForRun())
+    // for the per-employee-default case -- real bug fixed: it used to read the cycle's own
+    // denormalized bank_account_id directly, ignoring the employee's own default entirely. ----------
+    echo "=== PaymentVoucherReport: resolves the SAME account as resolveForRun() (per-employee-default case) ===\n";
+    $voucherReport = new PaymentVoucherReport();
+    $voucherResolvedB1 = callResolveVoucherAccountId($voucherReport, $runId, $compId, $employeeBId, 'transfer', null);
+    check('PaymentVoucherReport resolves B to its OWN employee default (account B), same as resolveForRun()', $voucherResolvedB1, $resolved1[$employeeBId]['bank_account_id']);
+    $voucherResolvedA1 = callResolveVoucherAccountId($voucherReport, $runId, $compId, $employeeAId, 'transfer', null);
+    check('PaymentVoucherReport resolves A to the company default (account A), same as resolveForRun()', $voucherResolvedA1, $resolved1[$employeeAId]['bank_account_id']);
+    $periodYearBeFixture = (int)date('Y', strtotime('2027-07-25')) + 543;
+    $voucherPdfEmployeeDefaultCase = $voucherReport->generate(['comp_id' => $compId, 'year' => $periodYearBeFixture, 'employee_id' => $employeeBId], 'pdf');
+    checkTrue('generate() itself succeeds (real PDF, employee-default case)', str_starts_with($voucherPdfEmployeeDefaultCase['content'], '%PDF'));
+
     // ---------- Cycle pin should be beaten by employee default, but win over company default ----------
     echo "=== resolveForRun(): cycle pin wins over company default, loses to employee default ===\n";
     $pdo->prepare("UPDATE `payroll_cycles` SET bank_account_id = :acc WHERE id = :id")->execute([':acc' => $accountBId, ':id' => $cycleId]);
@@ -137,6 +164,17 @@ try {
 
     $empBDefaultCheck = $pdo->query("SELECT default_bank_account_id FROM employees WHERE id = {$employeeBId}")->fetchColumn();
     check('the override NEVER touched employee B\'s own default_bank_account_id (template untouched)', (int)$empBDefaultCheck, $accountBId);
+
+    // ---------- Batch 3B item 2d: same cross-check, now for the PER-RUN OVERRIDE case -- B's own
+    // employee default is account B, but the fixture just overrode B to account A for THIS run;
+    // PaymentVoucherReport must follow the override, not fall back to the (now-superseded)
+    // employee default or the cycle pin. ----------
+    echo "=== PaymentVoucherReport: resolves the SAME account as resolveForRun() (per-run-override case) ===\n";
+    $voucherResolvedB3 = callResolveVoucherAccountId($voucherReport, $runId, $compId, $employeeBId, 'transfer', null);
+    check('PaymentVoucherReport resolves B to the OVERRIDE (account A), same as resolveForRun()', $voucherResolvedB3, $resolved3[$employeeBId]['bank_account_id']);
+    check('...which is specifically account A, not B\'s own employee default (proves the override actually wins here, not a coincidental match)', $voucherResolvedB3, $accountAId);
+    $voucherPdfOverrideCase = $voucherReport->generate(['comp_id' => $compId, 'year' => $periodYearBeFixture, 'employee_id' => $employeeBId], 'pdf');
+    checkTrue('generate() itself succeeds (real PDF, per-run-override case)', str_starts_with($voucherPdfOverrideCase['content'], '%PDF'));
 
     // ---------- listForRun(): the Process Detail tab's own read shape ----------
     echo "=== listForRun() ===\n";
