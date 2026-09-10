@@ -574,6 +574,8 @@
     $router->post('api/team.get', 'MasterController@getMaster');
     // 2026-09-02, Origami candidates.php field batch: employment_type_id dropdown (Employee Detail).
     $router->post('api/employment-type.get', 'MasterController@getMaster');
+    $router->post('api/hospital.get', 'MasterController@getMaster');
+    $router->post('api/pvd-plan.get', 'MasterController@getMaster');
     $router->post('api/branch.get', 'MasterController@getMaster');
     // 2026-08-31, explicit request: Assign Employees modal's destination-master Select2 -- the 2
     // assignable types that never had a select2-ajax dropdown-options endpoint before (see
@@ -597,6 +599,7 @@
     $router->get('api/bank-file-format.edit-logs', 'BankFileFormatController@editLogs');
     $router->get('api/employee.get', 'EmployeeController@get');
     $router->get('api/employee.pvd-employer-rate-preview', 'EmployeeController@pvdEmployerRatePreview');
+    $router->get('api/employee.statutory-rate-defaults', 'EmployeeController@statutoryRateDefaults');
     // Batch 3A item 4 -- avatar quick-view modal.
     $router->get('api/employee.quick-view', 'EmployeeController@quickView');
     $router->post('api/employee.save', 'EmployeeController@save');

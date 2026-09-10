@@ -513,9 +513,37 @@ function updatePvdEmployerRateHelper(employeeNo) {
         error: function () { $helper.text(''); }
     });
 }
+/**
+ * 2026-09-10, Batch 3A item 7b: "show company default next to the override field" for TH_SSO's
+ * employee/employer rate overrides + TH_PVD's employee-rate override -- genuinely company-wide
+ * (not employee-specific, unlike updatePvdEmployerRateHelper() above), so fetched ONCE per page
+ * load rather than once per employee.
+ */
+function loadStatutoryRateDefaultsHint() {
+    $.ajax({
+        url: `${BASE_URL}/api/employee.statutory-rate-defaults`,
+        method: 'GET',
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status || !res.data) return;
+            const template = langData['statutory_rate_default_hint'] || 'Leave blank to use the company/standard rate (currently {rate}%).';
+            const sso = res.data.TH_SSO || {};
+            const pvd = res.data.TH_PVD || {};
+            if (sso.employee_rate !== null && sso.employee_rate !== undefined) {
+                $('#ssoEmployeeRateHint').text(template.replace('{rate}', sso.employee_rate));
+            }
+            if (sso.employer_rate !== null && sso.employer_rate !== undefined) {
+                $('#ssoEmployerRateHint').text(template.replace('{rate}', sso.employer_rate));
+            }
+            if (pvd.employee_rate !== null && pvd.employee_rate !== undefined) {
+                $('#pvdEmployeeRateHelper').text(template.replace('{rate}', pvd.employee_rate));
+            }
+        }
+    });
+}
 function populateEmployeeForm(data) {
     isLoadingEmployeeForm = true;
-    const remoteFields = ['department_id', 'team_id', 'role_id', 'position_id', 'branch_id', 'bank_id', 'default_bank_account_id', 'payment_method_id', 'report_to_id', 'nationality', 'religion', 'cycle_id', 'work_location_id', 'shift_id', 'employment_type_id'];
+    const remoteFields = ['department_id', 'team_id', 'role_id', 'position_id', 'branch_id', 'bank_id', 'default_bank_account_id', 'payment_method_id', 'report_to_id', 'nationality', 'religion', 'cycle_id', 'work_location_id', 'shift_id', 'employment_type_id', 'sso_hospital_id', 'pvd_plan_id'];
     applyEmployeeSalaryMaskUi(data.base_salary_amount === 'XXXX');
     Object.keys(data).forEach(function (key) {
         if (remoteFields.indexOf(key) !== -1) return;
@@ -648,6 +676,10 @@ function populateEmployeeForm(data) {
     // next save then submitted that empty value, silently overwriting the real saved value with NULL.
     populateSelect2Field('work_location_id', data.work_location_id, data.location_name_th, data.location_name_en);
     populateSelect2Field('shift_id', data.shift_id, data.shift_name_th, data.shift_name_en);
+    // 2026-09-10, Batch 3A item 7b -- single free-text name (no _th/_en split), same value passed
+    // for both params, same precedent as structure_teams.client_name-shaped fields.
+    populateSelect2Field('sso_hospital_id', data.sso_hospital_id, data.sso_hospital_name, data.sso_hospital_name);
+    populateSelect2Field('pvd_plan_id', data.pvd_plan_id, data.pvd_plan_name, data.pvd_plan_name);
     $('#search_address_register').val((currentLang === 'th' ? data.address_display_th_register : data.address_display_en_register) || '');
     $('#search_address_contact').val((currentLang === 'th' ? data.address_display_th_contact : data.address_display_en_contact) || '');
     updateAllAddressMatchIndicators();
@@ -1088,8 +1120,11 @@ function loadEmployeeIfEditing() {
 $(function () {
     if (typeof initSelect2 === 'function') {
         initSelect2('.select2-remote', { mode: 'ajax' });
+        initSelect2('.select2-remote-tags', { mode: 'ajax', tags: true });
         initSelect2('.select2-native', { mode: 'native' });
+        initSelect2('#sso_leave_reason_code', { mode: 'static' });
     }
+    loadStatutoryRateDefaultsHint();
     initMobileIti();
     $('input[name="employee_type_radio"]').on('change', function () {
         const type = $(this).val();

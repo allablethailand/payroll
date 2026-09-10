@@ -9,6 +9,7 @@ require_once __DIR__ . '/../models/PermissionModel.php';
 require_once __DIR__ . '/../models/PayrollSyncTransactionLogModel.php';
 require_once __DIR__ . '/../models/PayrollReportDataModel.php';
 require_once __DIR__ . '/../models/PvdEmployerRateLadderModel.php';
+require_once __DIR__ . '/../models/CompanyStatutorySettingModel.php';
 require_once __DIR__ . '/../services/ThumbnailGenerator.php';
 class EmployeeController extends Controller {
     private $model;
@@ -20,6 +21,7 @@ class EmployeeController extends Controller {
     private PayrollSyncTransactionLogModel $syncTransactionLogModel;
     private PayrollReportDataModel $reportDataModel;
     private PvdEmployerRateLadderModel $pvdLadderModel;
+    private CompanyStatutorySettingModel $companySettingModel;
     public function __construct(){
         $this->model = new EmployeeModel();
         $this->earningDeductionModel = new EmployeeEarningDeductionModel();
@@ -30,6 +32,7 @@ class EmployeeController extends Controller {
         $this->syncTransactionLogModel = new PayrollSyncTransactionLogModel();
         $this->reportDataModel = new PayrollReportDataModel();
         $this->pvdLadderModel = new PvdEmployerRateLadderModel();
+        $this->companySettingModel = new CompanyStatutorySettingModel();
     }
 
     private function userId(): int {
@@ -489,6 +492,36 @@ class EmployeeController extends Controller {
         $this->json(['status' => true, 'data' => [
             'source' => 'ladder', 'rate_percent' => $tier['rate_percent'],
             'tier_min_years' => $tier['min_service_years'], 'tier_max_years' => $tier['max_service_years'],
+        ]]);
+    }
+    /**
+     * 2026-09-10, Batch 3A item 7b: "show company default next to the override field" for
+     * TH_SSO's employee/employer rate overrides AND TH_PVD's employee-rate override (TH_PVD's own
+     * employer-side already has its own richer, tenure-ladder-aware preview -- see
+     * pvdEmployerRatePreview() above; this endpoint is the simple flat-default case, and is
+     * genuinely company-wide, not employee-specific, so it's fetched once per page load rather
+     * than once per employee like that one).
+     */
+    public function statutoryRateDefaults() {
+        if (!$this->requirePermission('employee.view')) return;
+        $compId = getCompId();
+        if (!$compId) {
+            $this->json(['status' => false, 'message' => 'Invalid company.']);
+            return;
+        }
+        $byCode = [];
+        foreach ($this->companySettingModel->list((int)$compId) as $row) {
+            $code = $row['code'] ?? null;
+            if ($code === 'TH_SSO' || $code === 'TH_PVD') {
+                $byCode[$code] = [
+                    'employee_rate' => $row['effective_employee_rate'] !== null ? (float)$row['effective_employee_rate'] : null,
+                    'employer_rate' => $row['effective_employer_rate'] !== null ? (float)$row['effective_employer_rate'] : null,
+                ];
+            }
+        }
+        $this->json(['status' => true, 'data' => [
+            'TH_SSO' => $byCode['TH_SSO'] ?? ['employee_rate' => null, 'employer_rate' => null],
+            'TH_PVD' => $byCode['TH_PVD'] ?? ['employee_rate' => null, 'employer_rate' => null],
         ]]);
     }
     public function reportToOptions() {

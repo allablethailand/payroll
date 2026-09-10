@@ -1317,6 +1317,23 @@
                 <div class="col-sm-10 mt-3">
                     <textarea class="form-control" name="employment_end_reason" id="employment_end_reason" maxlength="255" rows="2" data-i18n="employment_end_reason_placeholder" placeholder="e.g., Resignation, End of contract, Retirement"></textarea>
                 </div>
+                <!-- 2026-09-10, Batch 3A item 7b: สาเหตุที่ต้องแจ้งออกจากประกันสังคม (สปส.6-09) -- a
+                     FIXED set matching the real official form's own 7 checkbox options exactly
+                     (verified against the actual สปส.6-09 PDF, not guessed -- see this feature's
+                     own migration comment for the source), deliberately separate from the free-text
+                     "Reason" above (that one is a general HR record; this one is the specific coded
+                     reason the form itself requires). Reuses this SAME block's visibility toggle
+                     (applyEmploymentEndFieldsVisibility() in detail.js) -- no new JS needed for
+                     show/hide. -->
+                <div class="col-sm-2 mt-3">
+                    <label class="form-label mb-1"><span data-i18n="sso_leave_reason_code">SSO Leaving Reason (สปส.6-09)</span></label>
+                </div>
+                <div class="col-sm-10 mt-3">
+                    <select class="form-select select2-static" name="sso_leave_reason_code" id="sso_leave_reason_code"
+                            data-option-keys="sso_leave_reason_1,sso_leave_reason_2,sso_leave_reason_3,sso_leave_reason_4,sso_leave_reason_5,sso_leave_reason_6,sso_leave_reason_7"
+                            data-option-values="1,2,3,4,5,6,7">
+                    </select>
+                </div>
             </div>
             <!-- Hidden 2026-08-19 (not needed for Payroll): none of these 4 fields are read anywhere
                  in payroll calc/statutory reports/approval routing -- org-chart/HR-legal tracking
@@ -2080,22 +2097,24 @@
                         <div class="mt-3">
                             <label class="form-label d-block mb-1"><span data-i18n="sso_contribution_rate">Employee Contribution Rate Override (%)</span></label>
                             <input type="number" step="0.01" class="form-control" name="sso_contribution_rate" id="sso_contribution_rate" placeholder="5.00">
-                            <div class="text-muted small" data-i18n="sso_rate_override_hint">Leave blank to use the company/standard rate.</div>
+                            <div class="text-muted small" id="ssoEmployeeRateHint" data-i18n="sso_rate_override_hint">Leave blank to use the company/standard rate.</div>
                         </div>
                         <div class="mt-3">
                             <label class="form-label d-block mb-1"><span data-i18n="sso_employer_contribution_rate">Employer Contribution Rate Override (%)</span></label>
                             <input type="number" step="0.01" class="form-control" name="sso_employer_contribution_rate" id="sso_employer_contribution_rate" placeholder="5.00">
-                            <div class="text-muted small" data-i18n="sso_rate_override_hint">Leave blank to use the company/standard rate.</div>
+                            <div class="text-muted small" id="ssoEmployerRateHint" data-i18n="sso_rate_override_hint">Leave blank to use the company/standard rate.</div>
                         </div>
                     </div>
-                    <!-- Hidden 2026-08-19 (not needed for Payroll): informational only (which hospital
-                         the employee is registered at) -- doesn't affect the SSO contribution amount,
-                         and isn't read by StatutoryCalculationEngine or the SSO reports (those use
-                         sso_no). -->
-                    <div class="mt-3 d-none">
+                    <!-- 2026-09-10, Batch 3A item 7b: UN-hidden -- was informational-only ("doesn't
+                         affect the SSO contribution amount"), but a real hospital IS now a genuine
+                         data point (สปส.1-03 requires selecting one) and there's a real place to pick
+                         from (a per-company Select2 "tags" list, see CompanyLookupListModel's own
+                         docblock -- no real government hospital master list exists to seed here). Not
+                         read by StatutoryCalculationEngine (unchanged -- purely a record-keeping
+                         field, same as before). -->
+                    <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="sso_hospital">Hospital</span></label>
-                        <select class="form-select" name="sso_hospital_id" id="sso_hospital_id">
-                            <option value="" data-i18n="please_choose">Select an option</option>
+                        <select class="form-select select2-remote-tags" name="sso_hospital_id" id="sso_hospital_id" data-api="/api/hospital.get" data-type="hospital">
                         </select>
                     </div>
                 </div>
@@ -2112,14 +2131,29 @@
                         </div>
                         <input type="checkbox" class="d-none" name="pvd_enrolled" id="pvd_enrolled">
                     </div>
-                    <!-- Hidden 2026-08-19 (not needed for Payroll): fund name isn't read by the
-                         calculation engine or any report at all. STILL hidden -- 2026-09-10, item 7b
-                         (fund name/manager/member no./investment plan) is a deferred follow-up. -->
-                    <div class="d-none">
-                        <div class="mt-3">
-                            <label class="form-label d-block mb-1"><span data-i18n="pvd_fund_name">Fund Name</span></label>
-                            <input type="text" class="form-control" name="pvd_fund_name" id="pvd_fund_name" data-i18n="pvd_fund_name_placeholder" placeholder="e.g., XYZ Provident Fund">
-                        </div>
+                    <!-- 2026-09-10, Batch 3A item 7b: UN-hidden (was deferred here from item 7a's own
+                         comment) -- fund name/manager/member no./investment plan are still not read
+                         by StatutoryCalculationEngine or any report (unchanged, purely record-
+                         keeping), same as sso_hospital_id above, but are now real fields a company
+                         genuinely wants recorded (fund manager/member no. are plain text; investment
+                         plan reuses the SAME Select2 "tags" company-lookup-list pattern as Hospital,
+                         see CompanyLookupListModel's own docblock). -->
+                    <div class="mt-3">
+                        <label class="form-label d-block mb-1"><span data-i18n="pvd_fund_name">Fund Name</span></label>
+                        <input type="text" class="form-control" name="pvd_fund_name" id="pvd_fund_name" data-i18n="pvd_fund_name_placeholder" placeholder="e.g., XYZ Provident Fund">
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label d-block mb-1"><span data-i18n="pvd_fund_manager">Fund Manager (AMC)</span></label>
+                        <input type="text" class="form-control" name="pvd_fund_manager" id="pvd_fund_manager">
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label d-block mb-1"><span data-i18n="pvd_member_no">Member No.</span></label>
+                        <input type="text" class="form-control" name="pvd_member_no" id="pvd_member_no">
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label d-block mb-1"><span data-i18n="pvd_plan_id">Investment Plan</span></label>
+                        <select class="form-select select2-remote-tags" name="pvd_plan_id" id="pvd_plan_id" data-api="/api/pvd-plan.get" data-type="pvd_plan">
+                        </select>
                     </div>
                     <!-- 2026-09-10, Batch 3A item 7a: UN-hidden -- these 3 fields used to be inert
                          (comment here previously said "never read by the calculation engine," which
@@ -2138,11 +2172,27 @@
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="pvd_employee_rate">Employee Rate (%)</span></label>
                         <input type="number" step="0.01" class="form-control" name="pvd_employee_rate" id="pvd_employee_rate" data-i18n="pvd_rate_placeholder" placeholder="e.g., 3.00">
+                        <div class="form-text small" id="pvdEmployeeRateHelper"></div>
                     </div>
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="pvd_employer_rate">Employer Rate (%)</span></label>
                         <input type="number" step="0.01" class="form-control" name="pvd_employer_rate" id="pvd_employer_rate" data-i18n="pvd_rate_placeholder" placeholder="e.g., 3.00">
                         <div class="form-text small" id="pvdEmployerRateHelper"></div>
+                    </div>
+                    <!-- 2026-09-10, Batch 3A item 7b: end of MEMBERSHIP, not end of employment -- an
+                         employee can stop contributing to the fund (opt out) while staying employed,
+                         so this is deliberately always visible/optional, not tied to
+                         #employmentEndFields' own resigned/terminated gate. -->
+                    <div class="mt-3">
+                        <label class="form-label d-block mb-1"><span data-i18n="pvd_end_date">Membership End Date</span></label>
+                        <div class="input-group">
+                            <input type="text" class="form-control datepicker" name="pvd_end_date" id="pvd_end_date" autocomplete="off">
+                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label class="form-label d-block mb-1"><span data-i18n="pvd_end_reason">Reason for Ending Membership</span></label>
+                        <input type="text" class="form-control" name="pvd_end_reason" id="pvd_end_reason" maxlength="255">
                     </div>
                 </div>
             </div>
