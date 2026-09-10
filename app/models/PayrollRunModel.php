@@ -1066,6 +1066,7 @@ class PayrollRunModel {
                 }
                 return [
                     'id' => $p['id'], 'employee_no' => $p['employee_no'], 'name_th' => $p['name_th'], 'name_en' => $p['name_en'],
+                    'profile_photo_path' => $p['profile_photo_path'] ?? null,
                     'status' => $status, 'acted_at' => $actedAt, 'note' => $note,
                 ];
             }, $pool);
@@ -1092,7 +1093,7 @@ class PayrollRunModel {
             $approvers = [];
         } else {
             $placeholders = implode(',', array_fill(0, count($eligibleIds), '?'));
-            $sql = "SELECT e.id, e.employee_no, e.name_th, e.name_en
+            $sql = "SELECT e.id, e.employee_no, e.name_th, e.name_en, e.profile_photo_path
                     FROM `employees` e
                     WHERE e.comp_id = ? AND e.deleted_at IS NULL AND e.id IN ({$placeholders})";
             $params = array_merge([$compId], $eligibleIds);

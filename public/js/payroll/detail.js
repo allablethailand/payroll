@@ -1493,10 +1493,25 @@ $(document).on('click', '#btnSaveRunSettings', function () {
    SUBMITTER's own action, gated on can_process_payroll instead) appears next to the Timeline
    button whenever the run is rejected/need_info, wiring up reviseAfterReject()/
    reviseAfterNeedInfo() -- both existed in PayrollRunModel already but had no UI anywhere until now. */
-function apvAvatarHtmlRd(name, size) {
+// 2026-09-10, explicit request: show the employee's real photo (same profile_photo_path field/URL
+// convention as employee/list.js's own avatar column) in front of an approver's name, falling back
+// to the initial-letter circle when there's no photo on file (or the 3rd param is omitted, e.g. by
+// apvPersonLineHtmlRd's own "Created by" caller, which this request didn't ask to change).
+// onerror handler for apvAvatarHtmlRd's own <img> below -- reads size/initial back off data-*
+// attributes (already escapeAttr()'d, so no re-escaping needed here) rather than embedding the
+// fallback markup as a string inside the onerror attribute itself.
+function apvAvatarImgErrorRd(img) {
+    const size = img.getAttribute('data-size');
+    const initial = img.getAttribute('data-initial');
+    img.outerHTML = `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
+}
+function apvAvatarHtmlRd(name, size, photoPath) {
     size = size || 26;
-    const initial = (name || '?').trim().charAt(0).toUpperCase() || '?';
-    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${escapeHtml(initial)}</span>`;
+    const initial = escapeAttr((name || '?').trim().charAt(0).toUpperCase() || '?');
+    if (photoPath) {
+        return `<img src="${BASE_URL}/${escapeAttr(photoPath)}" alt="" data-size="${size}" data-initial="${initial}" style="width:${size}px;height:${size}px;min-width:${size}px;border-radius:50%;object-fit:cover;object-position:center top;" onerror="apvAvatarImgErrorRd(this)">`;
+    }
+    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
 }
 function apvPersonLineHtmlRd(name) {
     return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtmlRd(name, 26)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
@@ -1527,7 +1542,7 @@ function apvApproverSubstepHtmlRd(a) {
     const name = (currentLang === 'th' ? a.name_th : a.name_en) || a.name_th || a.name_en || a.employee_no;
     return `<div class="apv-substep">
         <div class="apv-substep-head">
-            <span class="apv-substep-label">${apvAvatarHtmlRd(name, 22)}${escapeHtml(name)}</span>
+            <span class="apv-substep-label">${apvAvatarHtmlRd(name, 22, a.profile_photo_path)}${escapeHtml(name)}</span>
             ${apvBadgeHtmlRd(apvApproverToneRd(a.status), apvApproverLabelRd(a.status))}
         </div>
         ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtml(a.acted_at)}</div>` : ''}
@@ -1910,24 +1925,20 @@ function verifyLockButtonsRd(row) {
             ? `<span class="badge bg-success-subtle text-success" title="${langData['verify_status_verified'] || 'Verified'}"><i class="fa-solid fa-check-double"></i></span>`
             : '<span class="text-muted">-</span>';
     }
+    // 2026-09-10, real gap found and fixed (explicit report: "ก่อน/หลัง verify ต่างกันแค่สีไอคอน มองไม่
+    // ออก") -- the 2026-09-09 .btn-circle-action version below only ever differed by icon color
+    // (text-success/text-secondary), invisible in grayscale/for anyone who can't rely on color alone.
+    // This ONE button (not the row's other action buttons) steps back out of .btn-circle-action's
+    // icon-only convention to add a real text label + filled-vs-outline shape, both of which survive
+    // grayscale: unverified is btn-outline-secondary + "action_verify" ("ตรวจสอบ"), verified is a
+    // filled btn-success + "verify_status_verified" ("ตรวจสอบแล้ว", the SAME key the read-only
+    // (non-draft) branch above already uses for the identical concept). data-verified/data-employee-id
+    // and the .btn-verify-employee click handler are unchanged.
     const verifyTitle = row.is_verified ? (langData['action_unverify'] || 'Unverify') : (langData['action_verify'] || 'Verify');
-    // 2026-09-09, explicit request: "ปุ่ม Verify ที่อยู่ในแถวของพนักงานแต่ละคน ปรับให้ปุ่มเป็นวงกลม" -- this
-    // button now joins the SAME .btn-circle-action convention every other row-action button in
-    // runDetailActionsRd() already uses (View Breakdown/Manage Items/Comment/Remove), rather than
-    // staying a deliberate exception to it. This SUPERSEDES the 2026-08-29 "solid filled button when
-    // verified" decision below -- .btn-circle-action forces a neutral background always (see
-    // style.css), so that distinction had to move from the BUTTON's own fill to its ICON color
-    // instead (text-success when verified, text-secondary when not), matching exactly how every
-    // other circular action button here already conveys its own state/meaning through icon tint
-    // alone, not a filled background.
-    // 2026-08-29, explicit follow-up request (historical, now superseded by the above): "ปุ่ม Lock
-    // Verify ถ้ากดแล้วให้เปลี่ยนสีครับ" -- was a btn-link with just a text-color swap (subtle, easy to
-    // miss); pressed state became a solid filled button so it was unmistakable at a glance. The
-    // state is still just as unmistakable now (a solid green circle-icon vs. a muted grey one), just
-    // via a different visual channel.
-    const verifyIconCls = row.is_verified ? 'text-success' : 'text-secondary';
+    const verifyLabel = row.is_verified ? (langData['verify_status_verified'] || 'Verified') : (langData['action_verify'] || 'Verify');
+    const verifyBtnCls = row.is_verified ? 'btn-success' : 'btn-outline-secondary';
     return `<div class="d-flex gap-1 justify-content-center">
-        <button type="button" class="btn btn-link btn-circle-action ${verifyIconCls} btn-verify-employee" data-employee-id="${row.employee_id}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double"></i></button>
+        <button type="button" class="btn btn-sm ${verifyBtnCls} rounded-pill btn-verify-employee" data-employee-id="${row.employee_id}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double me-1"></i>${escapeHtml(verifyLabel)}</button>
     </div>`;
 }
 // Comment always available (any state) -- same reasoning as the Breakdown button (read-only/non-

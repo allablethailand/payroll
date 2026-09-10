@@ -358,10 +358,24 @@ function apvIconHtmlPr(tone, icon) {
     const c = APV_COLORS_PR[tone] || APV_COLORS_PR.muted;
     return `<div class="apv-stage-icon" style="background:${c.icon};"><i class="fa-solid ${icon}"></i></div>`;
 }
-function apvAvatarHtmlPr(name, size) {
+// 2026-09-10, explicit request: show the employee's real photo (same profile_photo_path field/URL
+// convention as employee/list.js's own avatar column) in front of an approver's name, falling back
+// to the initial-letter circle when there's no photo on file.
+// onerror handler for apvAvatarHtmlPr's own <img> below -- reads size/initial back off data-*
+// attributes (already escapeAttr()'d, so no re-escaping needed here) rather than embedding the
+// fallback markup as a string inside the onerror attribute itself.
+function apvAvatarImgErrorPr(img) {
+    const size = img.getAttribute('data-size');
+    const initial = img.getAttribute('data-initial');
+    img.outerHTML = `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
+}
+function apvAvatarHtmlPr(name, size, photoPath) {
     size = size || 26;
-    const initial = (name || '?').trim().charAt(0).toUpperCase() || '?';
-    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${escapeHtml(initial)}</span>`;
+    const initial = escapeAttr((name || '?').trim().charAt(0).toUpperCase() || '?');
+    if (photoPath) {
+        return `<img src="${BASE_URL}/${escapeAttr(photoPath)}" alt="" data-size="${size}" data-initial="${initial}" style="width:${size}px;height:${size}px;min-width:${size}px;border-radius:50%;object-fit:cover;object-position:center top;" onerror="apvAvatarImgErrorPr(this)">`;
+    }
+    return `<span class="apv-person-avatar" style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
 }
 function apvPersonLineHtmlPr(name) {
     return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtmlPr(name, 26)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
@@ -377,7 +391,7 @@ function apvApproverSubstepHtmlPr(a) {
     const name = (currentLang === 'th' ? a.name_th : a.name_en) || a.name_th || a.name_en || a.employee_no;
     return `<div class="apv-substep">
         <div class="apv-substep-head">
-            <span class="apv-substep-label">${apvAvatarHtmlPr(name, 22)}${escapeHtml(name)}</span>
+            <span class="apv-substep-label">${apvAvatarHtmlPr(name, 22, a.profile_photo_path)}${escapeHtml(name)}</span>
             ${apvBadgeHtmlPr(apvApproverTonePr(a.status), apvApproverLabelPr(a.status))}
         </div>
         ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtml(a.acted_at)}</div>` : ''}
@@ -490,26 +504,9 @@ function apvCreatedStageHtmlPr(run) {
         </div>
     `;
 }
-// 2026-09-10: moved to app.js as auditActionLabel() -- shared with detail.js/approval.js's own
-// Timeline modals so all 3 pages can never drift out of sync on action-code wording again.
-function renderAuditTimelinePr(logs) {
-    if (!logs || !logs.length) {
-        return `<div class="text-secondary small">${langData['no_history_yet'] || 'No action has been taken on this request yet.'}</div>`;
-    }
-    const ordered = logs.slice().reverse(); // newest first at the top, oldest at the bottom
-    return ordered.map(l => {
-        const actor = (currentLang === 'th' ? l.performed_by_name_th : l.performed_by_name_en) || l.performed_by_name_th || l.performed_by_name_en || '-';
-        const metaParts = [];
-        if (l.ip_address) metaParts.push(`<i class="fa-solid fa-location-dot"></i> ${escapeHtml(l.ip_address)}`);
-        if (l.user_agent) metaParts.push(`<i class="fa-solid fa-desktop"></i> ${escapeHtml(l.user_agent)}`);
-        return `<div class="apv-log-entry">
-            <div class="apv-log-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(l.performed_at) : escapeHtml(l.performed_at)}</div>
-            <div class="apv-log-action">${escapeHtml(auditActionLabel(l.action))} <span class="text-secondary fw-normal">(${escapeHtml(actor)})</span></div>
-            ${metaParts.length ? `<div class="apv-log-meta">${metaParts.join(' &nbsp; ')}</div>` : ''}
-            ${l.note ? `<div class="apv-log-note">${escapeHtml(l.note)}</div>` : ''}
-        </div>`;
-    }).join('');
-}
+// 2026-09-10: renderAuditTimelinePr() removed -- this modal's "History" section is gone (duplicated
+// the Detail page's own Action History tab, see renderRunWorkflowModal() below); auditActionLabel()
+// itself (app.js) is untouched, still used by detail.js's own tab.
 function renderRunWorkflowModal(run) {
     $('#runWorkflowModalRunName').text(run.run_name || '');
     $('#runWorkflowModalBody').html(`
@@ -518,9 +515,6 @@ function renderRunWorkflowModal(run) {
             ${apvApprovalStageHtmlPr(run)}
             ${apvCreatedStageHtmlPr(run)}
         </div>
-        <hr>
-        <h6 class="fw-bold small text-uppercase text-secondary">${langData['approval_history'] || 'History'}</h6>
-        <div class="apv-timeline-log">${renderAuditTimelinePr(run.audit_log)}</div>
     `);
 }
 $(document).on('click', '.btn-view-run-workflow', function (e) {

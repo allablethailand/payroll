@@ -375,7 +375,7 @@ class ApprovalRequestModel {
             return [];
         }
         $placeholders = implode(',', array_fill(0, count($allEmpIds), '?'));
-        $stmtEmp = $this->db->prepare("SELECT id, employee_no, name_th, name_en FROM `employees`
+        $stmtEmp = $this->db->prepare("SELECT id, employee_no, name_th, name_en, profile_photo_path FROM `employees`
             WHERE id IN ({$placeholders}) ORDER BY name_th ASC");
         $stmtEmp->execute($allEmpIds);
         $empById = [];
@@ -452,7 +452,7 @@ class ApprovalRequestModel {
         $empById = [];
         if (!empty($empIds)) {
             $placeholders = implode(',', array_fill(0, count($empIds), '?'));
-            $stmtEmp = $this->db->prepare("SELECT id, employee_no, name_th, name_en FROM `employees` WHERE id IN ({$placeholders})");
+            $stmtEmp = $this->db->prepare("SELECT id, employee_no, name_th, name_en, profile_photo_path FROM `employees` WHERE id IN ({$placeholders})");
             $stmtEmp->execute($empIds);
             foreach ($stmtEmp->fetchAll(PDO::FETCH_ASSOC) as $e) {
                 $empById[(int)$e['id']] = $e;
