@@ -1,0 +1,126 @@
+# Backlog
+
+Deferred items noted during work sessions. Not scheduled — pick up when asked.
+Format: Title / 1-2 line detail / Source (which batch).
+
+---
+
+## Defer langReady-gating to 28 files outside payroll-process
+
+`public/js/app.js` now exposes `window.langReady` (a Promise that resolves once `langData` is
+populated) so a page can defer its own initial render until translations are actually loaded. Only
+the 3 payroll-process files (`detail.js`/`index.js`/`approval.js`) were updated to wait on it. The
+following 28 files each have their own `$(document).ready(function () {...})` calling an initial
+load/render directly, not gated behind `window.langReady` — same latent race condition is possible
+in any of them (not confirmed reproduced in each one individually, just the same pattern):
+
+```
+public/js/dashboard.js
+public/js/employee/detail.js
+public/js/employee/list.js
+public/js/employee/login-history.js
+public/js/employee/reports.js
+public/js/input.js
+public/js/notifications.js
+public/js/quick-links.js
+public/js/reports/annual-summary.js
+public/js/reports/index.js
+public/js/reports/run-audit.js
+public/js/setup/announcements.js
+public/js/setup/approval-workflow.js
+public/js/setup/audit-log.js
+public/js/setup/changelog.js
+public/js/setup/company-profile.js
+public/js/setup/document-numbering.js
+public/js/setup/email-queue-log.js
+public/js/setup/employment-certificate-request.js
+public/js/setup/employment-certificate-template.js
+public/js/setup/help-drawer.js
+public/js/setup/payroll-configuration.js
+public/js/setup/payslip-delivery-log.js
+public/js/setup/payslip-distribution.js
+public/js/setup/payslip-request.js
+public/js/setup/payslip-template.js
+public/js/setup/setup-guide.js
+public/js/setup/tax-statutory.js
+public/js/setup/terms-and-conditions.js
+```
+
+(Re-grepped 2026-09-10 to confirm this list: 28 files, not 29 — noting the discrepancy from the
+count mentioned verbally rather than silently forcing it to match.)
+
+**Source:** Batch 2, item 0.
+
+---
+
+## Cache-bust `<script src>` for JS files and lang JSON
+
+None of the JS `<script src="...">` tags (app.js, payroll-process files, or any other page script)
+carry a version query string, and the lang JSON fetch (`loadLang()` in app.js) busts cache via
+`?v=${Date.now()}` — which forces a full network fetch on every single page load (no caching benefit
+at all). A stale browser cache serving a pre-fix copy of `index.js`/`app.js` was the actual cause of
+a false "still broken" report in Batch 2 (item 0) right after the langReady race fix shipped.
+
+**Fix direction (explicit instruction, not yet decided in detail):** use a stable version string from
+app config (e.g. `APP_VERSION`, bumped on deploy) for cache-busting — **not** `Date.now()`, which
+would defeat caching entirely rather than just busting it across deploys. Apply to every JS
+`<script src>` (not just app.js/payroll-process) and to the lang JSON fetch's own `?v=` param.
+
+**Source:** Batch 2, item 0 (first flagged), reconfirmed as backlog after item 0's fix.
+
+---
+
+## Consolidate apvAvatarHtml*/apvApproverSubstepHtml* (Rd/Pr/Ap) into app.js
+
+`apvAvatarHtmlRd`/`Pr`/`Ap`, `apvApproverSubstepHtmlRd`/`Pr`/`Ap` (and their sibling `apv*` Timeline
+helpers) are duplicated 3x across `detail.js`/`index.js`/`approval.js`, same pattern
+`auditActionLabel()` used to be before it was consolidated into `app.js` (Batch 1). Batch 2 item 2
+added employee-photo support (with `escapeAttr()` + `onerror` fallback) to all 3 copies identically,
+which is exactly the kind of change that will keep needing to be applied 3x until these are merged
+into one shared function the same way `auditActionLabel()` was.
+
+**Source:** Batch 2, item 2 — explicitly deferred to "phase design" rather than folded into this
+batch's logic-only scope.
+
+---
+
+## 8 modals outside payroll-process whose footer behavior changed (Batch 1 selector fix)
+
+Batch 1, item 1 fixed `app.js`'s global `show.bs.modal` handler (`.find('> .modal-footer')` →
+`.find('.modal-footer')`), which happened to also fix the exact same double-footer bug in 8 modals
+outside payroll-process (their own footer sits inside a `<form>`, same root cause) — as a side effect
+of the shared fix, not a deliberate markup change to these 8. They were never given a `data-footer`
+attribute (out of scope for that batch), so worth a quick visual check next time one of these pages
+is touched:
+
+```
+#documentNumberingModal   -- Setup > Document Numbering
+#payrollCycleModal        -- Setup > Payroll Configuration
+#itemModal                -- Setup > Payroll Configuration
+#payslipRequestModal      -- Setup > Payslip Requests
+#ecrRequestModal           -- Setup > Employment Certificate Requests
+#recurringEarningModal    -- Employee Detail
+#recurringDeductionModal  -- Employee Detail
+#employeeRecheckEditModal -- Employee List
+```
+
+**Source:** Batch 1, item 1 (system-wide modal audit).
+
+---
+
+## Phase design (deferred, not logic — style/UX pass)
+
+- **Employee Detail tab density** — the parts of Batch 2 item 7 not already done in the
+  logic-only pass (filter-icon pruning, action-button dropdown consolidation, single-line headers)
+  were explicitly scoped to structure only; anything visual/spacing beyond that waits for a design
+  pass.
+- **Modal header design** — no dedicated pass yet on header layout/icon conventions across modals
+  (raised alongside the footer-prop work in Batch 1, not itself in scope there).
+- **Helper/hint text pass** — modal/form helper text wording and placement not covered by the
+  logic-only batches; a copy/UX pass, not a bug fix.
+- **Confirm-before-close for a modal with unsaved changes** — Batch 1, item 1, step 5 explicitly
+  deferred this ("ยังไม่ต้องทำ confirm ก่อนปิดเมื่อฟอร์มมีการแก้ไขค้าง") when the footer-prop system was
+  built; the `data-footer` type (form/confirm/view/none) set up in Batch 1 is the natural hook to
+  wire this into once it's picked up.
+
+**Source:** Batch 1 (footer-prop work, steps 5-6) + Batch 2 item 7 discussion.

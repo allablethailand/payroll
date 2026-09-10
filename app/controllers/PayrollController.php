@@ -281,7 +281,7 @@ class PayrollController extends Controller {
         }
         // Full run row (not just id/run_name/state) -- the Approval Flow modal's Created/Paid
         // stages need created_at/created_by_name_*/paid_at/approved_at/etc. too.
-        $run['audit_log'] = $this->model->getAuditLog($id, (int)$compId);
+        // audit_log removed -- this modal's History section was cut, no other consumer of this endpoint.
         $run['approval_flow'] = $this->model->approvalFlow($id, (int)$compId);
         $run['can_approve_payroll'] = $this->model->canApprovePayroll($this->userId(), $this->isAdmin(), $run);
         $this->json(['status' => true, 'data' => $run]);
