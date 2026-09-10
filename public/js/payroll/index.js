@@ -1142,6 +1142,60 @@ function syncItemDisplayNamePr(item) {
     }
     return item.emp_name || '-';
 }
+// 2026-09-10, Batch 2 item 5 part B: extracted out of renderSyncItemCardPr() below (pure refactor,
+// same output) so the new child row can reuse it.
+function syncOtBreakdownTextPr(item) {
+    return [
+        ['sync_ot_working_day', 'Working Day', item.ot_req_working_day_hrs],
+        ['sync_ot_day_off', 'Day Off', item.ot_req_weekend_hrs],
+        ['sync_ot_holiday', 'Holiday', item.ot_req_holiday_hrs],
+    ]
+        .filter(([, , hrs]) => Number(hrs || 0) !== 0)
+        .map(([key, fallback, hrs]) => `${langData[key] || fallback} ${escapeHtml(hrs)}h`)
+        .join(' · ') || (item.ot_mins ? `${escapeHtml(item.ot_mins)} ${langData['sync_unit_minutes'] || 'minute(s)'}` : '-');
+}
+// item_values that share the same item_code (e.g. Origami's own multi-unit-redundant "ABSENT"
+// rows -- count/days/hours/minutes all for the same real-world event, see SyncPayResolver.php's
+// own docblock) collapse onto ONE line, e.g. "Absent: 24.00 time(s) · 24.00 day(s) · 164.00 hour(s)"
+// instead of one separate badge per unit. Zero-value entries are dropped first, same as the old
+// card's own badge list did.
+function syncItemValuesGroupedHtml(item) {
+    const nonZero = (item.item_values || []).filter(v => Number(v.value) !== 0);
+    if (!nonZero.length) return `<span class="text-muted">-</span>`;
+    const order = [];
+    const groups = {};
+    nonZero.forEach(v => {
+        if (!groups[v.item_code]) {
+            groups[v.item_code] = { name: v.item_name || v.item_code, parts: [] };
+            order.push(v.item_code);
+        }
+        const unitLabel = syncUnitLabelPr(v.unit_type);
+        groups[v.item_code].parts.push(`${escapeHtml(v.value)}${unitLabel ? ` ${escapeHtml(unitLabel)}` : ''}`);
+    });
+    return order.map(code => `<div>${escapeHtml(groups[code].name)}: ${groups[code].parts.join(' · ')}</div>`).join('');
+}
+// Content of #tb_sync_items's own expand row -- everything the old per-employee card showed that
+// isn't one of the 10 main columns (item_values incl. grouped ABSENT, detailed OT-by-scope
+// breakdown, payment method/SSO, masked ID card, probation status).
+function syncItemChildRowHtml(item) {
+    return `
+        <div class="p-3 sync-item-child-row">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <div class="text-muted small mb-1">${langData['sync_detail_items_section'] || 'Other Items'}</div>
+                    ${syncItemValuesGroupedHtml(item)}
+                </div>
+                <div class="col-md-6">
+                    <div class="text-muted small mb-1">${langData['table_ot_breakdown'] || 'OT (hrs)'}</div>
+                    <div class="mb-2">${syncOtBreakdownTextPr(item)}</div>
+                    <div class="mb-2">${renderPaymentSsoCellPr(item)}</div>
+                    <div class="mb-2">${renderIdCardCellPr(item)}</div>
+                    ${renderProbationStatusCellPr(item)}
+                </div>
+            </div>
+        </div>
+    `;
+}
 function syncDetailSectionHeaderPr(num, i18nKey, fallback) {
     return `
         <h6 class="text-secondary fw-bold mb-3 mt-1">
@@ -1173,14 +1227,7 @@ function renderSyncItemCardPr(item) {
             const unitLabel = syncUnitLabelPr(v.unit_type);
             return `<span class="badge bg-light text-dark border me-1 mb-1">${escapeHtml(v.item_code)}: ${escapeHtml(v.value)}${unitLabel ? ` ${escapeHtml(unitLabel)}` : ''}</span>`;
         }).join('');
-    const otBreakdown = [
-        ['sync_ot_working_day', 'Working Day', item.ot_req_working_day_hrs],
-        ['sync_ot_day_off', 'Day Off', item.ot_req_weekend_hrs],
-        ['sync_ot_holiday', 'Holiday', item.ot_req_holiday_hrs],
-    ]
-        .filter(([, , hrs]) => Number(hrs || 0) !== 0)
-        .map(([key, fallback, hrs]) => `${langData[key] || fallback} ${escapeHtml(hrs)}h`)
-        .join(' · ') || (item.ot_mins ? `${escapeHtml(item.ot_mins)} ${langData['sync_unit_minutes'] || 'minute(s)'}` : '-');
+    const otBreakdown = syncOtBreakdownTextPr(item);
     return `
         <div class="sync-emp-card${isMapped ? '' : ' sync-emp-card-unmapped'}">
             <div class="sync-emp-card-header">
@@ -1322,9 +1369,12 @@ function initSyncItemsTable(items) {
         responsive: false,
         paging: items.length > 10,
         info: items.length > 10,
-        order: [[8, 'asc']], // unmapped rows first by default; any column header remains clickable
+        order: [[9, 'asc']], // unmapped rows first by default; any column header remains clickable
         language: getTableLang(),
         columns: [
+            // Expand/collapse toggle -- icon only, no header text, not sortable/searchable.
+            { data: null, orderable: false, className: 'text-center sync-item-toggle-col',
+              defaultContent: '<button type="button" class="btn btn-link btn-sm p-0 sync-item-toggle-btn"><i class="fa-solid fa-chevron-right"></i></button>' },
             { data: null, render: {
                 display: (d, t, row) => escapeHtml(row.matched_employee_no || row.payroll_code),
                 sort: (d, t, row) => row.matched_employee_no || row.payroll_code || '',
@@ -1380,8 +1430,34 @@ function initSyncItemsTable(items) {
             if (!data.matched_employee_no) $(row).addClass('table-danger');
         },
     });
+    // 2026-09-10, Batch 2 item 5 part B, explicit requirement: "filter pill และ search ต้องยังทำงาน
+    // เมื่อมี child row เปิดค้าง (ปิด child ก่อน redraw)" -- preDraw.dt fires before EVERY redraw
+    // (built-in search box input, the filter-pill's own .draw() call, sorting, paging alike), so
+    // closing every open child row here covers all of them uniformly rather than only the pill click.
+    $('#tb_sync_items').on('preDraw.dt', function () {
+        tb_sync_items.rows().every(function () {
+            if (this.child.isShown()) {
+                this.child.hide();
+                $(this.node()).removeClass('shown');
+            }
+        });
+    });
     updateSyncItemFilterCounts(items);
 }
+$(document).on('click', '#tb_sync_items .sync-item-toggle-btn', function () {
+    const $btn = $(this);
+    const $tr = $btn.closest('tr');
+    const row = tb_sync_items.row($tr);
+    if (row.child.isShown()) {
+        row.child.hide();
+        $tr.removeClass('shown');
+        $btn.find('i').removeClass('fa-chevron-down').addClass('fa-chevron-right');
+    } else {
+        row.child(syncItemChildRowHtml(row.data())).show();
+        $tr.addClass('shown');
+        $btn.find('i').removeClass('fa-chevron-right').addClass('fa-chevron-down');
+    }
+});
 // Counts shown in each filter pill's own label -- computed once from the full (unfiltered) items
 // array passed in, not from the table's current draw, so the counts never move as the pills
 // themselves are clicked.
@@ -1428,6 +1504,7 @@ function renderSyncDetail(data) {
                 <table class="table table-hover align-middle mb-0" id="tb_sync_items">
                     <thead class="table-light">
                         <tr>
+                            <th></th>
                             <th class="text-nowrap">${langData['table_payroll_code'] || 'Payroll Code'}</th>
                             <th class="text-nowrap">${langData['table_employee_name'] || 'Employee Name'}</th>
                             <th class="text-nowrap">${langData['table_dept_position'] || 'Dept / Position'}</th>
