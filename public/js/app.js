@@ -672,6 +672,32 @@ function registerSidebarMenuSearch() {
         }
     });
 }
+// 2026-09-10, Batch 3A item 1 (explicit report: "Dropdown ใน DataTable โดนตัดเมื่อแถวน้อย" -- same
+// root cause already found and fixed per-table before this (reports/index.js's own tb_cycle_matrix,
+// payroll/detail.js's own tb_run_detail): a `.dropdown-toggle` inside `.table-responsive`/
+// `.dataTables_wrapper` (overflow-x:auto, which forces overflow-y:auto too per the CSS spec) gets
+// clipped by that scrolling ancestor under Bootstrap's default Popper `absolute` strategy;
+// `strategy:'fixed'` positions relative to the viewport instead, never clipped by an ancestor's
+// overflow. Fixed HERE, globally, instead of per-table -- `draw.dt` fires for EVERY DataTable on
+// every redraw (delegated at the document level, scoped per-call to the table that actually just
+// drew via `e.target`), so a table with a dropdown never needs its own drawCallback for this again.
+// The 2 pre-existing per-table drawCallback copies of this exact fix (tb_cycle_matrix/tb_run_detail)
+// were removed in favor of this one shared function (see CLAUDE.md's "generalize instead of
+// mirror-copy" rule) -- see this session's own grep/report for the full list of tables this covers.
+function applyFixedStrategyToTableDropdowns(root) {
+    $(root || document).find('.dropdown-toggle[data-bs-toggle="dropdown"]').each(function () {
+        if (!$(this).closest('.dataTables_wrapper, .table-responsive').length) return;
+        bootstrap.Dropdown.getOrCreateInstance(this, {
+            popperConfig: (defaultConfig) => Object.assign({}, defaultConfig, { strategy: 'fixed' })
+        });
+    });
+}
+$(document).on('draw.dt', function (e) {
+    applyFixedStrategyToTableDropdowns(e.target);
+});
+$(document).ready(function () {
+    applyFixedStrategyToTableDropdowns(document);
+});
 function getTableLang() {
     return {
         search: langData.search || "Search",

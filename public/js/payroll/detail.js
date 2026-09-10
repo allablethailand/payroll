@@ -2694,21 +2694,15 @@ function initRunDetailTable(details) {
         createdRow: function (row, data) {
             $(row).toggleClass('rd-row-verified', !!data.is_verified);
         },
-        // 2026-09-10, Batch 2 item 7 follow-up: this table's own wrapper is `.table-responsive`
-        // (overflow-x:auto, which forces overflow-y:auto too per the CSS spec) -- Bootstrap's default
-        // Popper strategy positions the "More" dropdown-menu relative to that scrolling ancestor and
-        // gets clipped by it; `strategy: 'fixed'` positions relative to the viewport instead (same
-        // fix already applied to tb_cycle_matrix's own dropdown, see reports/index.js's docblock).
+        // 2026-09-10, Batch 3A item 1 -- this table's own dropdown-clipping fix (`.table-responsive`
+        // forcing overflow-y:auto, catching the "More" dropdown-menu) is now handled globally by
+        // app.js's own applyFixedStrategyToTableDropdowns() on every `draw.dt`, superseding the
+        // per-table fix that used to live here.
         drawCallback: function () {
             getTableLang();
             updateRunDetailBulkBar();
             applyRunDetailViewMode();
             updateSummaryCardsFromTable();
-            $('#tb_run_detail .dropdown-toggle').each(function () {
-                bootstrap.Dropdown.getOrCreateInstance(this, {
-                    popperConfig: (defaultConfig) => Object.assign({}, defaultConfig, { strategy: 'fixed' })
-                });
-            });
         },
         // 2026-08-29, same-day follow-up: "ตอนนี้เหมือนมี Summary ด้านขวาเล็กๆ ให้ตัดออก...อยากให้มี Summary
         // ของแต่ละ Column ใน Footer" -- replaces the old updateRunDetailVerifyLockSummaryRd() side
