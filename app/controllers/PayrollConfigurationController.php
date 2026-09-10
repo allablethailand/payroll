@@ -91,8 +91,12 @@ class PayrollConfigurationController extends Controller {
         $limit = intval($_POST['limit'] ?? 10);
         $search = (string)($_POST['searchTerm'] ?? '');
         $excludeCode = isset($_POST['exclude_code']) ? (string)$_POST['exclude_code'] : null;
+        // 2026-09-10, Batch 3B item 2: only the payroll cycle form's own picker sends this (see
+        // that field's own data-include-auto="1" in modals.php) -- never the employee's own
+        // payment_method_id/mixed-line pickers, which share this same endpoint unchanged.
+        $includeAuto = !empty($_POST['include_auto']);
         $model = new EmployeePaymentMethodModel();
-        $this->json(['status' => true, 'data' => $model->methodOptions($search, $page, $limit, $excludeCode)]);
+        $this->json(['status' => true, 'data' => $model->methodOptions($search, $page, $limit, $excludeCode, $includeAuto)]);
     }
 
     public function cycleOptions() {

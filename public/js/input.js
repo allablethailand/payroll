@@ -299,6 +299,14 @@ function initSelect2(selector, options = {}) {
                         if (payrollParticipantsOnly !== undefined && payrollParticipantsOnly !== '') {
                             extraData.payroll_participants_only = payrollParticipantsOnly;
                         }
+                        // 2026-09-10, same "read fresh from the live DOM attribute on every search"
+                        // pattern as the others above -- first consumer is the payroll cycle form's
+                        // own Default Payment Method picker (api/payment-method.options prepends a
+                        // synthetic "auto" pseudo-option when this is set).
+                        const includeAuto = $this.attr('data-include-auto');
+                        if (includeAuto !== undefined && includeAuto !== '') {
+                            extraData.include_auto = includeAuto;
+                        }
                         return $.extend({
                             searchTerm: params.term,
                             page: params.page || 1,
@@ -372,6 +380,21 @@ function initSelect2(selector, options = {}) {
 }
 function initSelect2Remote(selector) {
     initSelect2(selector, { mode: 'ajax' });
+}
+// 2026-09-10, Batch 3B item 2c: lets a caller change what an already-initialized select2-remote
+// field's placeholder SAYS while it has no value selected (e.g. previewing which real record an
+// empty "inherit the default" field would actually resolve to) without destroying/reinitializing
+// the whole widget -- Select2 renders its placeholder as a plain `.select2-selection__placeholder`
+// span inside the widget it built at init time, so updating that span's text directly is enough;
+// no-op (by design) while the field currently HAS a real selection, since a filled-in field has no
+// placeholder showing to update. First consumer: employee/detail.js's default_bank_account_id field.
+function setSelect2PlaceholderText(selector, text) {
+    const $el = $(selector);
+    if (!$el.length || $el.val()) return;
+    const $placeholder = $el.next('.select2-container').find('.select2-selection__placeholder');
+    if ($placeholder.length) {
+        $placeholder.text(text);
+    }
 }
 function initDateRangePicker(selector, callback) {
     $(selector).daterangepicker({

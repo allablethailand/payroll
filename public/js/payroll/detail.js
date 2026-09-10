@@ -2047,9 +2047,6 @@ function breakdownLineRowsRd(lines) {
         </tr>`;
     }).join('');
 }
-function emptyRowFallbackRd(rowsHtml) {
-    return rowsHtml || `<tr><td colspan="3" class="text-center text-muted small py-2">-</td></tr>`;
-}
 function statutoryRowsRd(items) {
     // 2026-08-21, real bug fix (explicit report: "แสดงแค่ Code อยากให้มีชื่อด้วย") -- name_th/
     // name_en now come through from StatutoryCalculationEngine::calculateLine(), same pattern as
@@ -2064,7 +2061,18 @@ function statutoryRowsRd(items) {
         </tr>`;
     }).join('');
 }
-function breakdownSectionHtml(iconCls, colorCls, titleKey, titleFallback, rowsHtml, totalLabel, totalAmount) {
+function breakdownSectionHtml(iconCls, colorCls, titleKey, titleFallback, rawRowsHtml, totalLabel, totalAmount, options) {
+    // 2026-09-10, Batch 3B item 1, explicit request: a section with ZERO line items (e.g.
+    // "Deductions (Items)" when nobody has any ad-hoc deduction this period) hides its WHOLE block
+    // -- header, table, AND total row -- instead of showing an empty table with a "-" placeholder
+    // row. Earnings/Net Pay are the one deliberate exception (renderBreakdownModal()'s own call
+    // passes { alwaysShow: true }) -- the employee must always be able to see "this period
+    // genuinely has zero income," never have that section silently vanish and look like a bug.
+    const alwaysShow = !!(options && options.alwaysShow);
+    if (!rawRowsHtml && !alwaysShow) {
+        return '';
+    }
+    const rowsHtml = rawRowsHtml || `<tr><td colspan="3" class="text-center text-muted small py-2">-</td></tr>`;
     // 2026-08-21, explicit request ("แต่ละ Column ของแต่ละตารางอยากให้อยู่ในตำแหน่งที่ตรงกัน") -- the 3
     // breakdown tables (Earnings/Deductions/Statutory) are stacked in the same modal and share this
     // exact column structure, but each <table> was sizing its own columns independently based on
@@ -2115,9 +2123,9 @@ function renderBreakdownModal(row) {
 
     const statutoryTotal = (row.statutory_breakdown || []).reduce((sum, item) => sum + (Number(item.employee_amount) || 0), 0);
 
-    const html = breakdownSectionHtml('fa-arrow-trend-up', 'text-success', 'breakdown_earnings', 'Earnings', emptyRowFallbackRd(earningRowsHtml), langData['table_gross_amount'] || 'Gross', row.gross_amount)
-        + breakdownSectionHtml('fa-arrow-trend-down', 'text-danger', 'breakdown_deductions', 'Deductions (Items)', emptyRowFallbackRd(breakdownLineRowsRd(row.deduction_breakdown)), langData['breakdown_deductions_total'] || 'Deductions (Items) Total', (row.deduction_breakdown || []).reduce((sum, l) => sum + (Number(l.amount) || 0), 0))
-        + breakdownSectionHtml('fa-landmark', 'text-danger', 'breakdown_statutory', 'Deductions (Statutory)', emptyRowFallbackRd(statutoryRowsRd(row.statutory_breakdown)), langData['breakdown_statutory_total'] || 'Deductions (Statutory) Total', statutoryTotal);
+    const html = breakdownSectionHtml('fa-arrow-trend-up', 'text-success', 'breakdown_earnings', 'Earnings', earningRowsHtml, langData['table_gross_amount'] || 'Gross', row.gross_amount, { alwaysShow: true })
+        + breakdownSectionHtml('fa-arrow-trend-down', 'text-danger', 'breakdown_deductions', 'Deductions (Items)', breakdownLineRowsRd(row.deduction_breakdown), langData['breakdown_deductions_total'] || 'Deductions (Items) Total', (row.deduction_breakdown || []).reduce((sum, l) => sum + (Number(l.amount) || 0), 0))
+        + breakdownSectionHtml('fa-landmark', 'text-danger', 'breakdown_statutory', 'Deductions (Statutory)', statutoryRowsRd(row.statutory_breakdown), langData['breakdown_statutory_total'] || 'Deductions (Statutory) Total', statutoryTotal);
     $('#breakdownModalBody').html(html);
     // Net Pay lives in the modal-footer now (2026-08-20, explicit request), not the scrollable
     // body -- always visible without scrolling past the itemized sections.
@@ -2296,6 +2304,21 @@ function rawSyncDataItemValuesTableHtml(itemValues) {
 function rawSyncDataFieldLookupRd(key) {
     return RAW_SYNC_DATA_FIELDS_RD.find(f => f.key === key);
 }
+// 2026-09-10, Batch 3B item 1, explicit request: a card whose EVERY field is 0/blank/null carries
+// no real synced data at all -- 0 counts as "empty" here on purpose (per the request's own wording),
+// not just null/''. Checked ONLY against `section.fields` (the raw synced values) -- the Attendance
+// card's own workingDaysBreakdownHtml() add-on (this company's OWN calendar config, a different
+// data source from Origami's synced attendance numbers) is intentionally NOT part of this check;
+// if a run has zero synced attendance but a real calendar breakdown, the card still hides -- a
+// known, accepted simplification, not asked to be handled specially.
+function rawSyncDataValueIsEmpty(value) {
+    if (value === null || value === undefined || value === '') return true;
+    const num = Number(value);
+    return !Number.isNaN(num) && num === 0;
+}
+function rawSyncDataSectionIsEmpty(section, data) {
+    return section.fields.every(key => rawSyncDataValueIsEmpty(data[key]));
+}
 // 2026-08-29, explicit request: "การคิดจำนวนวันทำงาน ตอนนี้มีส่งมาจาก Origami ว่าทำงานทั้งหมดกี่วัน ให้แสดง
 // ในข้อมูลด้วยว่า จำนวนวันในรอบนั้นกี่วัน วันทำงานกี่วัน วันหยุดนักขัตฤกษ์กี่วัน วันหยุดประจำสัปดาห์กี่วัน" --
 // computed from this company's own shift/holiday config (PayrollRunModel::rawSyncDataForEmployee()'s
@@ -2320,6 +2343,9 @@ function workingDaysBreakdownHtml(breakdown) {
 }
 function renderRawSyncDataModal(data) {
     const sectionsHtml = RAW_SYNC_DATA_SECTIONS_RD.map(section => {
+        if (rawSyncDataSectionIsEmpty(section, data)) {
+            return '';
+        }
         const fieldsHtml = section.fields.map(key => {
             const f = rawSyncDataFieldLookupRd(key);
             if (!f) return '';

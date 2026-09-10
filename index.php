@@ -604,6 +604,7 @@
     $router->get('api/employee.quick-view', 'EmployeeController@quickView');
     $router->post('api/employee.save', 'EmployeeController@save');
     $router->post('api/employee.payment-account-options', 'EmployeeController@paymentAccountOptions');
+    $router->post('api/employee.resolved-default-bank-account', 'EmployeeController@resolvedDefaultBankAccount');
     $router->get('api/employee.payment-method-lines', 'EmployeeController@paymentMethodLines');
     $router->get('api/employee.payroll-policy-settings', 'EmployeeController@payrollPolicySettings');
     $router->post('api/employee.upload-signature', 'EmployeeController@uploadSignature');

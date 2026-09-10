@@ -202,3 +202,29 @@ tables, matching this app's existing Organizational Structure sub-tab pattern (T
 methods on that same shared model (not 2 new ones, per this feature's own "one model, not 2" rule).
 
 **Source:** Batch 3A item 7b, explicit instruction (2026-09-10).
+
+---
+
+## `scripts/migrate.php`'s auto-detection can't classify 38 historical migration files
+
+Confirmed by actually running `php scripts/migrate.php status` against the real dev DB (which has
+every historical migration already applied): of 138 files, 99 were correctly auto-detected as
+already applied (`CREATE TABLE`/`ADD COLUMN` marker found and confirmed to exist), but 38 have no
+single `CREATE TABLE`/`ALTER TABLE ... ADD COLUMN` the detector's regex can extract as a
+representative marker at all (pure `DROP`/`INSERT`-only seed files, multi-statement files with only
+`ADD CONSTRAINT`/`MODIFY COLUMN`/etc.) -- these show up under `status`'s "Unknown" bucket and `up`
+deliberately SKIPS them rather than guessing whether to run them (see `scripts/migrate.php`'s own
+docblock).
+
+**Why this matters for a real prod deploy**: on a target database that's missing one of these 38
+for real (not just "can't be auto-confirmed"), `up` would silently skip it without applying it --
+looks like a no-op success, but the schema gap remains. Run `php scripts/migrate.php status` and
+manually cross-check the 38 listed filenames against the target database before trusting `up`
+covered everything on a NEW environment (not just local dev, which is already known-current).
+
+**Fix, if this becomes a real problem**: either widen the detector to recognize a few more DDL
+shapes (`DROP TABLE`/`MODIFY COLUMN`/etc.), or add a `mark-applied <file>` command so a human who's
+manually verified one of the 38 can record it without `migrate.php` needing to re-derive that on
+its own. Neither was in this task's own scope (status/up/down only).
+
+**Source:** Batch 3B item 0, explicit instruction (2026-09-10).

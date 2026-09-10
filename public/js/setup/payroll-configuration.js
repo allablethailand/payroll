@@ -456,7 +456,10 @@ $(document).ready(function () {
         // gone, replaced by the checkbox list (rendered/collected directly, no select2 widget --
         // see renderCycleBankAccountsList()/collectCycleBankAccounts()). Its default payment method
         // picker is new.
-        initSelect2('#cycle_default_payment_method_id', { mode: 'ajax', allowClear: true });
+        // 2026-09-10, Batch 3B item 2a: no allowClear -- the field always has a real selection now,
+        // either a real master_payment_methods row or the synthetic "auto" pseudo-option (see
+        // setCycleDefaultPaymentMethodAuto()) -- there's no meaningful "cleared/empty" UI state anymore.
+        initSelect2('#cycle_default_payment_method_id', { mode: 'ajax' });
     }
     // 2026-08-29, explicit request: "ตัดเบี้ยขยันและการบันทึกเบี้ยขยันออกจากการตั้งค่า" -- Attendance
     // Bonus/Ledger UI init removed along with their tabs/modals (see the removal comment on
@@ -1104,7 +1107,13 @@ function applyLastDayToggle(checkboxId, inputId) {
 // (which included account is the default) -- the radio is only enabled while its own checkbox is
 // checked, and PayrollCycleModel::saveBankAccounts() itself rejects anything but exactly one default
 // whenever the list isn't empty (this function just keeps the UI from letting that state happen).
-function renderCycleBankAccountsList(selected) {
+// 2026-09-10, Batch 3B item 2b: `isExistingCycle` distinguishes a brand-new cycle (nothing to
+// preserve yet -- explicit request: auto-check the first account and make it the default, so a
+// cycle is never silently saved with zero accounts because nobody thought to check one) from an
+// EXISTING cycle being edited (a real, already-saved choice -- possibly a deliberate empty list --
+// must never be silently mutated just by opening the modal; shows a clear warning instead of small
+// gray text when that existing choice is genuinely empty).
+function renderCycleBankAccountsList(selected, isExistingCycle) {
     const selectedMap = {};
     (selected || []).forEach(function (row) { selectedMap[row.bank_account_id] = !!Number(row.is_default); });
     $.ajax({
@@ -1113,10 +1122,19 @@ function renderCycleBankAccountsList(selected) {
         success: function (res) {
             const items = (res.status && res.data && res.data.items) || [];
             const $list = $('#cycleBankAccountsList');
+            const $hint = $('#cycleBankAccountsHint');
+            const $warning = $('#cycleBankAccountsWarning');
             if (items.length === 0) {
                 $list.html(`<div class="text-muted small" data-i18n="modal_cycle_bank_account_none">This company has no bank accounts configured yet.</div>`);
+                $hint.removeClass('d-none');
+                $warning.addClass('d-none');
                 if (typeof updateText === 'function') updateText($list[0]);
                 return;
+            }
+            const noneSelectedYet = Object.keys(selectedMap).length === 0;
+            const autoSelectFirst = noneSelectedYet && !isExistingCycle;
+            if (autoSelectFirst) {
+                selectedMap[items[0].id] = true;
             }
             $list.html(items.map(function (item) {
                 const label = currentLang === 'th' ? (item.text_th || item.text_en) : (item.text_en || item.text_th);
@@ -1135,8 +1153,23 @@ function renderCycleBankAccountsList(selected) {
                     </div>`;
             }).join(''));
             if (typeof updateText === 'function') updateText($list[0]);
+            const showWarning = !!isExistingCycle && noneSelectedYet;
+            $warning.toggleClass('d-none', !showWarning);
+            $hint.toggleClass('d-none', showWarning);
         }
     });
+}
+// 2026-09-10, Batch 3B item 2a: the client-submitted sentinel string 'auto' means "no forced
+// default -- follow each employee's own payment_method_id" (kept as a NULL default_payment_method_id
+// server-side, see PayrollCycleModel::save()'s own comment) -- injected here the same way
+// populateCycleForm() already injects a real bank_file_format_id/default_payment_method_id Option
+// (ajax mode has no static <option>s to fall back on, so a non-search-result selection has to be
+// added by hand). Shared by resetCycleForm() (new cycle, this is the default) and
+// populateCycleForm()'s else-branch (existing cycle whose default_payment_method_id is NULL).
+function setCycleDefaultPaymentMethodAuto() {
+    const autoLabel = currentLang === 'th' ? 'ตามการตั้งค่าของพนักงาน (แนะนำ)' : "Follow Each Employee's Own Setting (Recommended)";
+    const opt = new Option(autoLabel, 'auto', true, true);
+    $('#cycle_default_payment_method_id').append(opt).trigger('change');
 }
 function collectCycleBankAccounts() {
     const accounts = [];
@@ -1158,8 +1191,8 @@ function resetCycleForm() {
     $('#cutoff_day_of_week').val('').trigger('change');
     $('#payment_day_of_week').val('').trigger('change');
     $('#bank_file_format_id').val('').trigger('change');
-    $('#cycle_default_payment_method_id').val('').trigger('change');
-    renderCycleBankAccountsList([]);
+    setCycleDefaultPaymentMethodAuto();
+    renderCycleBankAccountsList([], false);
     $('#cutoff_day_of_month, #payment_day_of_month, #ot_cutoff_day_of_month').prop('disabled', false);
     applyFrequencyFields('');
     applyOtCutoffFields('same_as_attendance');
@@ -1199,13 +1232,13 @@ function populateCycleForm(row) {
     // PayrollCycleModel::get()'s own getBankAccounts() join (every account this cycle currently
     // offers, most-default-first). row.bank_account_id (the single legacy/denormalized column) is
     // no longer read directly here -- the checkbox list below is the real source of truth now.
-    renderCycleBankAccountsList(row.bank_accounts || []);
+    renderCycleBankAccountsList(row.bank_accounts || [], true);
     if (row.default_payment_method_id) {
         const pmLabel = currentLang === 'th' ? row.default_payment_method_name_th : row.default_payment_method_name_en;
         const pmOpt = new Option(pmLabel || row.default_payment_method_name_th || row.default_payment_method_name_en || '', row.default_payment_method_id, true, true);
         $('#cycle_default_payment_method_id').append(pmOpt).trigger('change');
     } else {
-        $('#cycle_default_payment_method_id').val('').trigger('change');
+        setCycleDefaultPaymentMethodAuto();
     }
 }
 function validateCycleForm() {
@@ -1313,6 +1346,11 @@ function initPayrollCycleUI() {
         } else {
             $radio.prop('disabled', true).prop('checked', false);
         }
+        // 2026-09-10, Batch 3B item 2b: keep the warning/hint swap live as the admin actually checks
+        // an account, instead of only reflecting whatever state the modal happened to load with.
+        const anyChecked = $('#cycleBankAccountsList .cycle-bank-account-check:checked').length > 0;
+        $('#cycleBankAccountsWarning').toggleClass('d-none', anyChecked);
+        $('#cycleBankAccountsHint').toggleClass('d-none', !anyChecked);
     });
     $(document).on('submit', '#payrollCycleForm', function (e) {
         e.preventDefault();

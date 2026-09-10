@@ -681,7 +681,12 @@ class PayrollCycleModel {
         // saveBankAccounts() (kept in sync with whichever account in payroll_cycle_bank_accounts is
         // flagged is_default there) -- see that method's own docblock. This method simply never
         // touches the column anymore, so an UPDATE here can't silently desync/clear it.
-        $defaultPaymentMethodId = !empty($data['default_payment_method_id']) ? (int)$data['default_payment_method_id'] : null;
+        // 2026-09-10, Batch 3B item 2: the client's own "Follow each employee's own setting" pseudo-
+        // option submits the literal string 'auto' (see EmployeePaymentMethodModel::methodOptions()'s
+        // own docblock) -- must be treated as NULL here, same as an empty/omitted value, NOT cast
+        // to (int)'auto' === 0 (which would wrongly try to persist 0 as a real FK value).
+        $rawDefaultPaymentMethodId = $data['default_payment_method_id'] ?? null;
+        $defaultPaymentMethodId = (!empty($rawDefaultPaymentMethodId) && $rawDefaultPaymentMethodId !== 'auto') ? (int)$rawDefaultPaymentMethodId : null;
         if ($defaultPaymentMethodId !== null) {
             $stmtMethod = $this->db->prepare("SELECT id FROM `master_payment_methods` WHERE id = :id AND is_active = 1");
             $stmtMethod->execute([':id' => $defaultPaymentMethodId]);

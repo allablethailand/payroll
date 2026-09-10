@@ -31,10 +31,12 @@ class PayrollReportDataModel {
         // c.bank_file_format_id (2026-08-29) -- lets BankTransferFileReport resolve which company-
         // configured bank file layout (BankFileFormatModel) to render this run's transfer file with.
         // c.bank_account_id (2026-08-29, explicit follow-up: "ในแต่ละรอบการจ่ายอาจใช้เลขแยกกันครับ แยก
-        // บัญชีในการจ่าย") -- lets that same report resolve WHICH of the company's own bank accounts
-        // (and its own Company/Service Code) this run's cycle settles from, instead of always the
-        // company's single is_default account -- see
-        // BankTransferFileReport::resolveCompanyBankAccount()'s own docblock.
+        // บัญชีในการจ่าย") -- this cycle-level pin is one INPUT into the fuller per-employee
+        // resolution chain (per-run override > employee's own default_bank_account_id > this cycle
+        // pin > company's is_default account) -- see
+        // PayrollRunEmployeeBankAccountModel::resolveForRun()'s own docblock (2026-09-10: updated
+        // this reference -- the old resolveCompanyBankAccount() method it used to point to was
+        // removed when BankTransferFileReport itself moved onto that model).
         $sql = "SELECT r.*, c.cycle_name, c.bank_file_format_id, c.bank_account_id FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 WHERE r.id = :id AND r.comp_id = :comp_id AND r.deleted_at IS NULL";
@@ -114,9 +116,10 @@ class PayrollReportDataModel {
         // c.bank_account_id (2026-08-30, explicit follow-up: "ตรงส่วนของการตั้งค่ารอบ มีการให้เลือกบัญชีจ่าย
         // เงินแล้ว...ในส่วนของการออกรายงาน ถ้ายังไม่ดึงไปช่วยดึงไปด้วยครับ") -- PaymentVoucherReport spans
         // multiple runs per employee across a year, and different runs can settle from different
-        // cycle bank_accounts (same per-cycle account pinning BankTransferFileReport's own
-        // resolveCompanyBankAccount() already resolves) -- exposed here so that report can show which
-        // account paid each line, not just Bank Transfer File.
+        // accounts -- exposed here as one INPUT into PayrollRunEmployeeBankAccountModel::
+        // resolveForRun()'s own fuller per-employee precedence chain (2026-09-10: PaymentVoucherReport
+        // itself was fixed to actually call that chain instead of reading this column directly for
+        // every employee -- see that report's own docblock), not just Bank Transfer File.
         $sql = "SELECT r.*, c.cycle_name, c.bank_account_id FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
