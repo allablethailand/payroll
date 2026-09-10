@@ -124,3 +124,22 @@ is touched:
   wire this into once it's picked up.
 
 **Source:** Batch 1 (footer-prop work, steps 5-6) + Batch 2 item 7 discussion.
+
+---
+
+## Clean up old fixture data in `payroll_sync_processes`
+
+Investigating item 5's ABSENT-label question turned up several `payroll_sync_processes` rows
+(id 22/39/42/65/66/94/107/189) still sitting at `status='pending'`, received 2026-08-18, where
+100% of employees show `absent_days` near-equal to `working_days` (25/27, 24/27, etc.) — looks
+like test/fixture data used to exercise `SyncPayResolver`'s ABSENT multi-unit dedup logic, not
+real synced attendance (recent real pulls, e.g. process 190/192 from 2026-09-08, show 0% of
+employees with elevated absence). Not a mapping bug — `absent_days` correctly matches the
+payload's own `item_values` "days"-unit ABSENT representation.
+
+**Before UAT/production:** clean these out — either delete the pending fixture processes
+outright or write a migration/script removing only `pending` processes received before a cutoff
+date. **Must confirm first that no real payroll run references any of these process ids** before
+deleting anything.
+
+**Source:** Batch 2, item 5 investigation (2026-09-10).
