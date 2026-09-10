@@ -64,6 +64,7 @@
     $router->get('api/payroll-run.get', 'PayrollController@get');
     $router->get('api/payroll-run.approval-timeline', 'PayrollController@approvalTimeline');
     $router->post('api/payroll-run.save', 'PayrollController@save');
+    $router->get('api/payroll-run.preview-merge-target', 'PayrollController@previewMergeTarget');
     // 2026-08-31, PAYROLL_SYNC_API.md `attribution` revision -- merge a supplemental sync process
     // into an existing target run instead of pulling it as its own standalone run.
     $router->post('api/payroll-run.merge-supplemental', 'PayrollController@mergeSupplemental');

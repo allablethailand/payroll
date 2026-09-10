@@ -60,7 +60,7 @@
     <div class="station-row" id="approvalStationRow">
         <div class="station-col">
             <div class="station-card active" data-state="pending_approval">
-                <span data-i18n="approval_station_pending_approval">Waiting Approve</span> <span class="station-count">0</span>
+                <span data-i18n="approval_station_pending_approval">Pending Approval</span> <span class="station-count">0</span>
             </div>
         </div>
         <!-- 2026-08-22, explicit request ("ย้าย Need Info มาไว้ต่อจาก wait") -- moved right after
@@ -84,7 +84,7 @@
         <div class="station-col station-col--reject">
             <div class="station-card station-card--reject" data-state="rejected">
                 <div class="station-card-inner">
-                    <span data-i18n="approval_station_rejected">Not Approve</span> <span class="station-count">0</span>
+                    <span data-i18n="approval_station_rejected">Rejected</span> <span class="station-count">0</span>
                 </div>
             </div>
         </div>

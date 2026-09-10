@@ -416,6 +416,23 @@ let rdReportPreviewContext = null; // { code, format } for whichever row's modal
 function rdReportLabel(row) {
     return (currentLang === 'th' ? row.label.th : row.label.en) || row.label.th || row.label.en || row.code;
 }
+// 2026-09-09, explicit follow-up correction (2nd pass, w/ reference screenshot): "หมายถึง icon แบบนี้ครับ
+// ไม่ใช่ svg" -- a solid-colored rounded-square TILE with a white fa-solid glyph inside (the reference
+// screenshot showed orange tiles for statutory forms, purple for a payment-type one, green for
+// internal/summary reports), not a plain inline image/fa icon like the first two passes tried. Only 2
+// report_types can ever actually reach this tab's own row set (RUN_REPORT_SHORTCUTS server-side is
+// TH_SSO110/TH_PND1[statutory]/BANK_TRANSFER_FILE[payment] -- PAYROLL_REGISTER[internal] is filtered
+// out above, it has its own dedicated button) but `internal` is still mapped here for consistency/
+// future-proofing, same reasoning reports/index.js's own REPORT_TYPE_ICONS map already uses.
+const RD_REPORT_TILE_BY_TYPE = {
+    statutory: { bg: 'rd-report-tile-orange', icon: 'fa-landmark' },
+    payment: { bg: 'rd-report-tile-purple', icon: 'fa-money-check-dollar' },
+    internal: { bg: 'rd-report-tile-green', icon: 'fa-file-lines' },
+};
+function rdReportIconTileHtml(row) {
+    const tile = RD_REPORT_TILE_BY_TYPE[row.report_type] || RD_REPORT_TILE_BY_TYPE.internal;
+    return `<span class="rd-report-tile ${tile.bg} me-2"><i class="fa-solid ${tile.icon}"></i></span>`;
+}
 // 2026-08-29, same-day follow-up: "ที่โชว์ในตารางประวัติการ Download มีเก็บครบหรือยังถ้ายังไม่ครบเก็บเพิ่มให้
 // ครบครับ" -- os_name/browser_version are now captured too (see the migration's own header comment),
 // folded into the same 2 columns ("Device"/"Browser") rather than adding 2 more columns, e.g.
@@ -459,7 +476,7 @@ function loadRunReportsTab() {
             const disabledAttr = rowIsReady ? '' : 'disabled';
             return `
             <tr>
-                <td>${escapeHtml(rdReportLabel(row))}</td>
+                <td><div class="d-flex align-items-center">${rdReportIconTileHtml(row)}${escapeHtml(rdReportLabel(row))}</div></td>
                 <td class="text-center">${Number(row.download_count) || 0}</td>
                 <td>${row.last_downloaded_at ? formatDisplayDateTime(row.last_downloaded_at) : `<span class="text-muted">${langData['report_never_downloaded'] || 'Never'}</span>`}</td>
                 <td class="text-center">
@@ -1045,36 +1062,32 @@ $(document).on('click', '#btnReportHistoryClearFilter', function () {
 });
 function renderSectionButtons(run) {
     const $editWrap = $('#runEditButtonWrap').empty();
-    const $recalcWrap = $('#runRecalculateButtonWrap').empty();
-    const $verifyAllWrap = $('#runVerifyAllButtonWrap').empty();
     $('#autoRecalculateWrap').addClass('d-none');
     $('#recalcReminderBanner').addClass('d-none');
+    // 2026-09-09: reset here, BEFORE the early return below, same reason as the 2 lines above it --
+    // #btnJoinEmployees/#btnRecalculate/#btnBulkVerify/#btnVerifyAllEmployees all live in the
+    // DataTable's own .dt-search/.dt-length now (injected once, outside this function entirely --
+    // see initRunDetailTable()'s initComplete), so unlike a plain .empty()-then-rebuild wrap these
+    // have to be explicitly hidden every call or they'd keep showing whatever visibility a PREVIOUS
+    // call left them at once a run leaves draft. #btnBulkVerify's own ENABLED/disabled state (as
+    // opposed to shown/hidden) is a separate concern owned by updateRunDetailBulkBar() instead --
+    // untouched here.
+    $('#btnJoinEmployees, #btnRecalculate, #btnBulkVerify, #btnVerifyAllEmployees').addClass('d-none');
     if (run.state !== 'draft') {
         return;
     }
     $editWrap.append(`<button type="button" id="btnEditRun" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="action_edit">${langData['action_edit'] || 'Edit'}</span></button>`);
-    // 2026-08-31, explicit request: "ปุ่ม เพิ่มพนักงาน และคำนวณใหม่ ตอนนี้ดูจมอยู่ไม่เด่น" -- both were
-    // small outline buttons sitting quietly next to a plain text header; restyled to full-size solid
-    // buttons (Join Employees = brand orange/.btn-primary, this app's own "Add" convention; Recalculate
-    // = solid dark so it reads as the OTHER most-important action here without competing for the same
-    // "primary" visual weight) so they read as real calls to action, not decoration. Verify All moved
-    // OUT of this cluster entirely (see runVerifyAllButtonWrap below, now grouped with the bulk-verify
-    // bar instead) -- 3 buttons crammed into one header row was exactly the "ไม่ให้มีความซ้ำซ้อน" this
-    // same request asked to review.
-    $recalcWrap.append(`<button type="button" id="btnRecalculate" class="btn btn-dark"><i class="fa-solid fa-rotate me-1"></i><span data-i18n="action_recalculate">${langData['action_recalculate'] || 'Recalculate'}</span></button>`);
-    // Join Employees is now shown on EVERY draft run (2026-08-21, explicit request -- this is also
-    // the undo path for removeEmployeeButtonRd()'s now-universal remove). For an off-cycle/sync-based
-    // run it still adds someone to payroll_run_manual_employees exactly as before. For a genuine
-    // cycle-only run (membership otherwise fully automatic by date range), it now serves ONLY to
-    // re-include a previously-removed employee -- see PayrollRunModel::joinEmployees()'s cycle-only
-    // branch and manualEmployeeOptions(), which restricts that run type's picker to just the
-    // currently-excluded employees.
-    $recalcWrap.append(`<button type="button" id="btnJoinEmployees" class="btn btn-primary ms-2"><i class="fa-solid fa-user-plus me-1"></i><span data-i18n="action_join_employees">${langData['action_join_employees'] || 'Join Employees'}</span></button>`);
-    // 2026-08-31, explicit request: "สามารถ Verify ทั้ง Process ได้เลย...ในหน้า Detail ช่วยดูเรื่องตำแหน่งการ
-    // จัดวางครับ"; same-day layout review moved this OUT of the section header (see this function's
-    // own comment above) into #runVerifyAllButtonWrap, right beside the selection-scoped bulk-verify
-    // bar just above the employee table -- every "Verify" action now lives in exactly one place.
-    $verifyAllWrap.append(`<button type="button" id="btnVerifyAllEmployees" class="btn btn-sm btn-outline-success"><i class="fa-solid fa-check-double me-1"></i><span data-i18n="action_verify_all">${langData['action_verify_all'] || 'Verify All'}</span></button>`);
+    // 2026-09-09, explicit request across 3 follow-up rounds -- final layout: "เอาคำนวณใหม่ไปวางต่อ
+    // search แล้วตามด้วย ปุ่ม Add พนักงาน...แล้วเอาปุ่ม Verify All มาไว้ต่อจาก ตรวจสอบแล้ว" --
+    // #btnJoinEmployees/#btnRecalculate/#btnBulkVerify/#btnVerifyAllEmployees no longer live in this
+    // header cluster or the old standalone Verify-All row at all; all 4 are injected ONCE into the
+    // Employee table's own `.dt-search`/`.dt-length` (initRunDetailTable()'s initComplete, see that
+    // function's own comment for the exact left-to-right order), matching this app's own established
+    // "Add"-button-in-search-bar convention (CLAUDE.md's Table convention) now that this table
+    // finally has real search/length controls. Every one of them is shown on EVERY draft run
+    // (2026-08-21/2026-08-31 explicit requests) -- already reset to hidden above (before the early
+    // return), so this branch (only reached when run.state === 'draft') just un-hides them again.
+    $('#btnJoinEmployees, #btnRecalculate, #btnBulkVerify, #btnVerifyAllEmployees').removeClass('d-none');
 
     // 2026-08-31, explicit request: auto-recalculate checkbox + reminder banner, draft-only (see
     // PayrollRunModel::setAutoRecalculate()'s own docblock). Checkbox always visible once a run is
@@ -1123,7 +1136,12 @@ function runTypeLabelRd(run) {
 }
 function updateEditRunTypeVisibility() {
     const isIncentive = $('#edit_run_purpose').val() === 'incentive';
-    $('#edit_run_compute_statutory_row, #edit_run_include_base_salary_row, #edit_run_include_standing_items_row, #edit_run_include_attendance_pay_row').toggleClass('d-none', !isIncentive);
+    // 2026-09-09, round-creation flow audit Bug 1 fix: #edit_run_use_flat_tax_rate_row added to this
+    // same toggle group -- unlike the Create form's own #run_use_flat_tax_rate_row (only revealed for
+    // an Origami-attributed tax_treatment='separate' source, see setSupplementalPullMode()), Edit
+    // always shows it alongside the other 4 incentive checkboxes so a previously-saved true value is
+    // never hidden from view just because this modal wasn't opened via that specific attribution path.
+    $('#edit_run_compute_statutory_row, #edit_run_include_base_salary_row, #edit_run_include_standing_items_row, #edit_run_include_attendance_pay_row, #edit_run_use_flat_tax_rate_row').toggleClass('d-none', !isIncentive);
 }
 $(document).on('change', '#edit_run_purpose', updateEditRunTypeVisibility);
 
@@ -1388,12 +1406,16 @@ function loadRunSettingsPanel() {
         success: function (res) {
             if (!res.status) return;
             const d = res.data || {};
-            // Non-draft: the collapsible editable form is never populated/shown at all -- the
-            // overview below is the ONLY thing rendered, always visible, no toggle click needed.
-            $('#runSettingsChevron').toggleClass('d-none', !isDraft);
-            $('#runSettingsToggle').css('cursor', isDraft ? 'pointer' : 'default');
+            // 2026-09-09, explicit request: "การตั้งค่าของรอบ ให้ expand ได้เลยไม่ต้องหุบแล้ว เพราะมีพื้นที่
+            // ว่างแล้วครับ" -- #runSettingsBody used to always start collapsed (a click on
+            // #runSettingsToggle's chevron was needed to see it, both ids now removed from the view
+            // entirely) because this panel used to compete with the Employee table for space on the
+            // same tab; now that Run Settings has its own "Details" tab all to itself (see
+            // app/views/payroll/detail.php's own tab-split comment), it's simply always expanded for
+            // a draft run instead. Non-draft still shows the read-only overview (renderRunSettingsSummary())
+            // and never populates/shows this editable form at all -- unchanged.
             $('#runSettingsSummary').toggleClass('d-none', isDraft);
-            $('#runSettingsBody').addClass('d-none'); // always starts collapsed regardless of mode
+            $('#runSettingsBody').toggleClass('d-none', !isDraft);
             if (!isDraft) {
                 renderRunSettingsSummary(d);
                 return;
@@ -1402,10 +1424,20 @@ function loadRunSettingsPanel() {
             $(`#runCalcSsoGroup input[value="${d.sso_calculate_default || 'use_employee_setting'}"]`).prop('checked', true);
             $('#runCalcTaxGroup input, #runCalcSsoGroup input').prop('disabled', false);
             const excludedCodes = d.excluded_item_codes || [];
+            // 2026-09-09, explicit request: "รายการที่ติ๊กจะไม่ถูกนำมาคำนวณ...ให้เป็นติ๊ก Default ติ๊กออกคือ
+            // ไม่เอาครับ" -- checkbox meaning flipped from "ticked = excluded" to "ticked = included/
+            // calculated normally" (every item defaults to ticked unless it's already in the saved
+            // excluded_item_codes list, in which case it correctly renders UNticked under the new
+            // meaning) -- see the Save handler below for the matching flip on collection. The
+            // underlying `excluded_item_codes` VALUE is unchanged (still literally "codes that are
+            // excluded"), so `itemChecklistBoxesHtml()` itself and every OTHER caller of it (the
+            // per-employee "Exclude from This Employee's Calculation" checklist at
+            // loadEmpItemExclusionChecklist(), which intentionally keeps its own "ticked = excluded"
+            // meaning) needed zero changes.
             $('#runSettingsItemChecklist').html(itemChecklistBoxesHtml(d.item_options || [], {
                 checkboxClass: 'run-settings-item-check',
                 idPrefix: 'rsItem',
-                isChecked: item => excludedCodes.includes(item.item_code),
+                isChecked: item => !excludedCodes.includes(item.item_code),
             }));
             $('#btnSaveRunSettings').removeClass('d-none');
         }
@@ -1415,17 +1447,12 @@ function renderRunSettingsPanel() {
     $('#runSettingsPanel').removeClass('d-none');
     loadRunSettingsPanel();
 }
-$(document).on('click', '#runSettingsToggle', function () {
-    // View Mode shows the overview directly (renderRunSettingsSummary()) -- nothing to expand.
-    if (!currentRun || currentRun.state !== 'draft') return;
-    const $body = $('#runSettingsBody').toggleClass('d-none');
-    const collapsed = $body.hasClass('d-none');
-    $('#runSettingsChevron').toggleClass('fa-chevron-down', collapsed).toggleClass('fa-chevron-up', !collapsed);
-});
 $(document).on('click', '#btnSaveRunSettings', function () {
     const $btn = $(this);
     setButtonLoading($btn, true);
-    const excludedItemCodes = $('.run-settings-item-check:checked').map(function () { return $(this).val(); }).get();
+    // 2026-09-09: matches the "ticked = included" flip in loadRunSettingsPanel() above -- the codes
+    // to actually send as excluded are now whichever boxes are NOT checked, not the checked ones.
+    const excludedItemCodes = $('.run-settings-item-check').not(':checked').map(function () { return $(this).val(); }).get();
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.run-settings-save`,
         method: 'POST', contentType: 'application/json', dataType: 'json',
@@ -1884,21 +1911,23 @@ function verifyLockButtonsRd(row) {
             : '<span class="text-muted">-</span>';
     }
     const verifyTitle = row.is_verified ? (langData['action_unverify'] || 'Unverify') : (langData['action_verify'] || 'Verify');
-    // 2026-08-29, explicit follow-up request: "ปุ่ม Lock Verify ถ้ากดแล้วให้เปลี่ยนสีครับ" -- was a
-    // btn-link with just a text-color swap (subtle, easy to miss); pressed state is now a solid
-    // filled button so it's unmistakable at a glance, not just a slightly different icon tint.
-    const verifyBtnCls = row.is_verified ? 'btn-success text-white' : 'btn-outline-secondary';
-    // 2026-09-02, explicit request: "ปุ่มในตารางพนักงานเหมือนขนาดไม่เท่ากัน" -- btn-sm applied uniformly
-    // here AND on every button in runDetailActionsRd() below so every row-action button in this
-    // table shares the exact same box size, regardless of which .btn-* color/style it uses.
-    // 2026-09-02, same-day follow-up: the wrapping .btn-group border rounded-3 bg-white was
-    // replaced by the plain flex container the rest of this rollout uses, BUT this ONE button
-    // deliberately does NOT get .btn-circle-action -- that class forces background:#fff always
-    // (see style.css), which would silently undo the explicit "solid filled green when verified"
-    // distinction requested the same day this button was built (2026-08-29, "ปุ่ม Lock Verify ถ้ากด
-    // แล้วให้เปลี่ยนสีครับ") -- kept as its own deliberate exception to the circular-button rollout.
+    // 2026-09-09, explicit request: "ปุ่ม Verify ที่อยู่ในแถวของพนักงานแต่ละคน ปรับให้ปุ่มเป็นวงกลม" -- this
+    // button now joins the SAME .btn-circle-action convention every other row-action button in
+    // runDetailActionsRd() already uses (View Breakdown/Manage Items/Comment/Remove), rather than
+    // staying a deliberate exception to it. This SUPERSEDES the 2026-08-29 "solid filled button when
+    // verified" decision below -- .btn-circle-action forces a neutral background always (see
+    // style.css), so that distinction had to move from the BUTTON's own fill to its ICON color
+    // instead (text-success when verified, text-secondary when not), matching exactly how every
+    // other circular action button here already conveys its own state/meaning through icon tint
+    // alone, not a filled background.
+    // 2026-08-29, explicit follow-up request (historical, now superseded by the above): "ปุ่ม Lock
+    // Verify ถ้ากดแล้วให้เปลี่ยนสีครับ" -- was a btn-link with just a text-color swap (subtle, easy to
+    // miss); pressed state became a solid filled button so it was unmistakable at a glance. The
+    // state is still just as unmistakable now (a solid green circle-icon vs. a muted grey one), just
+    // via a different visual channel.
+    const verifyIconCls = row.is_verified ? 'text-success' : 'text-secondary';
     return `<div class="d-flex gap-1 justify-content-center">
-        <button type="button" class="btn btn-sm ${verifyBtnCls} btn-verify-employee" data-employee-id="${row.employee_id}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action ${verifyIconCls} btn-verify-employee" data-employee-id="${row.employee_id}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double"></i></button>
     </div>`;
 }
 // Comment always available (any state) -- same reasoning as the Breakdown button (read-only/non-
@@ -1920,7 +1949,14 @@ function commentButtonRd(row) {
 // ".btn-circle-action" section) replace the old adjacent .btn-group/border-start convention this
 // whole cluster previously followed (2026-08-21/29).
 function runDetailActionsRd(row) {
-    return `<div class="d-flex gap-1 justify-content-center flex-wrap">
+    // 2026-09-09, explicit request: "ใน column สุดท้ายของแต่ละแถว ปุ่มให้เรียงเป็นแถวเดียวห้ามตกบรรทัด" --
+    // was flex-wrap, letting this cluster (up to 5 circular buttons -- View Breakdown/Raw Sync Data/
+    // Manage Items/Comment/Remove) wrap onto a 2nd line within the cell whenever it didn't fit;
+    // flex-nowrap keeps them on one line always -- .rd-detail-table-flush's own min-width + the
+    // table's existing .table-responsive wrapper (unchanged) is the fallback that lets the whole
+    // table scroll horizontally instead, same "no DataTables scrollX" convention this app already
+    // established elsewhere.
+    return `<div class="d-flex gap-1 justify-content-center flex-nowrap">
         <button type="button" class="btn btn-link btn-circle-action text-info btn-view-breakdown" data-employee-id="${row.employee_id}" title="${langData['action_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-magnifying-glass-dollar"></i></button>
         ${rawSyncDataButtonRd(row)}
         ${manageItemsButtonRd(row)}
@@ -2403,6 +2439,31 @@ function updatePaymentMethodSummary(details) {
     // instead of blending into one plain-text line.
     $('#infoPaymentBreakdown').html(`<span class="text-info-emphasis fw-semibold"><i class="fa-solid fa-building-columns me-1"></i>${bankLabel} ${bankCount}</span><span class="mx-2 text-muted">·</span><span class="text-warning-emphasis fw-semibold"><i class="fa-solid fa-money-bill-wave me-1"></i>${cashLabel} ${cashCount}</span>`);
 }
+// 2026-09-09, real bug found and fixed (explicit report: "วิธีจ่ายเงิน ตอนนี้ติ๊กแล้ว Employee ไม่เปลี่ยนตาม
+// ครับ") -- the Bank/Cash payment-method filter checkboxes already correctly filtered #tb_run_detail's
+// own ROWS (registerPaymentMethodSearchFilter() below) and its own <tfoot> totals (footerCallback(),
+// {search:'applied'}) -- but the 4 big Summary Cards above the tabs (#infoEmployeeCount/#infoGross/
+// #infoDeduction/#infoNet, moved there 2026-09-09 -- see app/views/payroll/detail.php's own comment)
+// were only ever set ONCE, from renderRunHeader()'s own run-level totals (run.employee_count/
+// total_gross_amount/...), and never touched again -- so the single most prominent numbers on the
+// page kept showing the FULL, unfiltered run total no matter what was ticked/unticked, which is what
+// actually got reported as "Employee doesn't update." Recomputed here from the table's own CURRENTLY
+// VISIBLE (filtered) rows instead, called from drawCallback so it stays correct on every filter
+// change, recalculate, verify, etc. -- exactly the same {search:'applied'} rows footerCallback()
+// already sums, just surfaced one level up too (updatePaymentMethodSummary()'s own Bank/Cash subtext
+// now reflects the same filtered set, for the same reason). Guarded to no-op while there are zero
+// details at all (run not yet calculated) so it never regresses the correct run-level placeholder
+// renderRunHeader() already set in that case.
+function updateSummaryCardsFromTable() {
+    if (!tb_run_detail || !currentRunDetails.length) return;
+    const visibleRows = tb_run_detail.rows({ search: 'applied' }).data().toArray();
+    const sum = key => visibleRows.reduce((a, r) => a + (parseFloat(r[key]) || 0), 0);
+    $('#infoEmployeeCount').text(visibleRows.length);
+    $('#infoGross').text(fmtNum(sum('gross_amount')));
+    $('#infoDeduction').text(fmtNum(sum('total_deduction_amount')));
+    $('#infoNet').text(fmtNum(sum('net_amount')));
+    updatePaymentMethodSummary(visibleRows);
+}
 // 2026-08-31, explicit request: "ก่อนตารางพนักงาน ให้มี checkbox ขึ้นมาเพื่อให้เลือกกรองข้อมูล พนักงานที่รับผ่าน
 // บัญชี และเงินสด" -- registered ONCE (guarded the same way registerStationSearchFilter() in
 // payroll/index.js is, scoped to this one table's id so it never affects any other DataTable on the
@@ -2458,7 +2519,10 @@ let currentRunDetails = [];
 function initRunDetailTable(details) {
     currentRunDetails = details;
     registerPaymentMethodSearchFilter();
-    updatePaymentMethodSummary(details);
+    // 2026-09-09: no longer called directly here with the FULL, unfiltered `details` array -- see
+    // updateSummaryCardsFromTable()'s own docblock (called from drawCallback below instead, which
+    // also fires right after this function's own initial construction/reload, so the first paint is
+    // unaffected -- only every subsequent filter/redraw now also gets it right).
     $('#noDetailsYet').toggleClass('d-none', details.length > 0);
     $('#tb_run_detail').toggleClass('d-none', details.length === 0);
     // 2026-08-29, real bug found and fixed (explicit report: "checkbox ในกรณีที่ส่งไปอนุมัติแล้วยังขึ้นอยู่
@@ -2567,9 +2631,17 @@ function initRunDetailTable(details) {
             // Responsive expand row (kept even with responsive:false, harmless no-op either way).
             { data: null, className: 'all', orderable: false, render: (d, t, row) => runDetailActionsRd(row) },
         ],
-        paging: false,
-        searching: details.length > 10,
-        info: false,
+        // 2026-09-09, explicit request: "ตาราง Employee ใน Tab Employee ให้เป็น Datatable ครับ" -- this
+        // table was already DataTables-initialized (sort/footer totals/Excel-column-filter all
+        // already wired), but with paging/info always off and the search box only appearing past 10
+        // rows, it visually read as a plain table for most runs. Turned on the standard DataTables
+        // chrome (search box always visible, "Showing X to Y of Z entries" info line, real pagination)
+        // so it reads as one at a glance regardless of employee count -- pageLength reuses the SAME
+        // shared 50-entry standard every other paginated table in this app already uses (app.js).
+        paging: true,
+        pageLength: pageLength,
+        searching: true,
+        info: true,
         language: getTableLang(),
         // 2026-08-29, explicit follow-up request: "ตรง Column แรกไม่ต้องให้ Sort ได้ และให้ตารางเรียงจาก
         // emp code จากน้อยไปหามากครับเป็น Default" -- the Employee column (index 1, orderable:false
@@ -2589,7 +2661,7 @@ function initRunDetailTable(details) {
         createdRow: function (row, data) {
             $(row).toggleClass('rd-row-verified', !!data.is_verified);
         },
-        drawCallback: function () { getTableLang(); updateRunDetailBulkBar(); applyRunDetailViewMode(); },
+        drawCallback: function () { getTableLang(); updateRunDetailBulkBar(); applyRunDetailViewMode(); updateSummaryCardsFromTable(); },
         // 2026-08-29, same-day follow-up: "ตอนนี้เหมือนมี Summary ด้านขวาเล็กๆ ให้ตัดออก...อยากให้มี Summary
         // ของแต่ละ Column ใน Footer" -- replaces the old updateRunDetailVerifyLockSummaryRd() side
         // strip. Fires on every draw (search/sort/reload) automatically, same as drawCallback --
@@ -2620,6 +2692,58 @@ function initRunDetailTable(details) {
         // deduction/net/payment_type each get their own filter. Indices shifted +2 from the previous
         // round (see footerCallback's own comment above for why).
         initComplete: function () {
+            // 2026-09-09, explicit request (final layout, after 2 follow-up rounds): "เอาคำนวณใหม่ไป
+            // วางต่อ search แล้วตามด้วย ปุ่ม Add พนักงาน และตัดให้เหลือแค่คำว่าคำนวณ แล้วเอาปุ่ม Verify All
+            // มาไว้ต่อจาก ตรวจสอบแล้ว และเปลี่ยนคำว่าตรวจสอบแล้ว เป็นแค่คำว่าตรวจสอบ และปรับให้ขนาดปุ่มสูงเท่ากับ
+            // ช่อง search" -- final button placement/order, both `.dt-search` (right of the search
+            // box, matching this app's established "Add"-button-in-search-bar convention -- CLAUDE.md's
+            // Table convention, `injectAddButton()` in payroll-configuration.js is the same pattern)
+            // and `.dt-length` (next to "Show N entries", same pattern employee/list.js already uses
+            // for its own "Sync Selected" button) each now hold 2 buttons in a specific left-to-right
+            // order: Search input -> Calculate -> + Employee, and Show N entries -> Verify(N) -> Verify
+            // All. `btn-sm` on all 4 (previously plain `btn`) matches the search input's own
+            // `form-control-sm` height -- Bootstrap's regular `.btn` is taller than `-sm` form
+            // controls, which is what read as mismatched heights. Labels shortened: "action_recalculate"
+            // itself changed from "คำนวณใหม่"/"Recalculate" down to "คำนวณ"/"Calculate" (th.json/en.json,
+            // this key has exactly one caller so changing its VALUE was safe -- no new key needed), and
+            // "action_verify" from "ตรวจสอบแล้ว" down to "ตรวจสอบ" (also just the one other caller,
+            // verifyLockButtonsRd()'s own per-row tooltip, where "ตรวจสอบ" reads BETTER than the old
+            // "ตรวจสอบแล้ว" -- literally "already verified" -- as a prompt on a NOT-yet-verified row's
+            // own action button, so this was a genuine improvement there too, not just a side effect).
+            // "employee"/"action_verify_all" i18n keys unchanged (still reused as-is, not new keys).
+            // initComplete only ever fires ONCE per table instance (a later reload takes
+            // initRunDetailTable()'s "already exists" branch and never gets here again), so initial
+            // visibility for all 4 is set directly from `currentRun` here -- every later state change
+            // is handled by renderSectionButtons()'s own toggle instead (see that function's own
+            // comment). #btnBulkVerify additionally starts `disabled` and only re-enables once a row is
+            // actually checked (updateRunDetailBulkBar(), unchanged logic, toggles `disabled` not
+            // visibility). #btnVerifyAllEmployees moving here retires the now-empty standalone row
+            // above the table (#runVerifyAllButtonWrap) it used to live in -- removed from the view
+            // entirely rather than left as a dead wrapper.
+            const isDraft = !!currentRun && currentRun.state === 'draft';
+            const $container = $(this.api().table().container());
+            const $searchDiv = $container.find('.dt-search');
+            if ($searchDiv.find('#btnRecalculate').length === 0) {
+                // 2026-09-09: no more ms-1/ms-2 margin utilities on these -- .dt-search/.dt-length
+                // themselves are now real flex containers with their own `gap` (style.css), so a
+                // margin utility here would just add EXTRA space on top of that gap redundantly.
+                // 2026-09-09, explicit request: "ปุ่มคำนวณไม่ชอบสีดำครับ ช่วยปรับสีใหม่ แต่ต้องเข้ากับธีม
+                // ทั้งหมด" -- was btn-dark (plain black, no relation to this app's own color language
+                // at all). btn-info reuses the SAME accent this exact page already uses for
+                // "informational/primary-but-not-the-main-action" elements (the "Employees" stat
+                // card's own .stat-card-info, the Bank Transfer badge's text-info-emphasis) -- distinct
+                // from +Employee's brand-orange btn-primary and Verify's btn-outline-success right next
+                // to it in this same control row, so all 3 stay visually distinguishable from each
+                // other while every one of them is a real color from this app's existing palette,
+                // not an arbitrary new one.
+                $searchDiv.append(`<button type="button" id="btnRecalculate" class="btn btn-sm btn-info${isDraft ? '' : ' d-none'}"><i class="fa-solid fa-rotate me-1"></i><span data-i18n="action_recalculate">${langData['action_recalculate'] || 'Calculate'}</span></button>`);
+                $searchDiv.append(`<button type="button" id="btnJoinEmployees" class="btn btn-sm btn-primary${isDraft ? '' : ' d-none'}"><i class="fa-solid fa-plus me-1"></i><span data-i18n="employee">${langData['employee'] || 'Employee'}</span></button>`);
+            }
+            const $lengthDiv = $container.find('.dt-length');
+            if ($lengthDiv.find('#btnBulkVerify').length === 0) {
+                $lengthDiv.append(`<button type="button" id="btnBulkVerify" class="btn btn-sm btn-outline-success${isDraft ? '' : ' d-none'}" disabled><i class="fa-solid fa-check-double me-1"></i><span data-i18n="action_verify">${langData['action_verify'] || 'Verify'}</span> (<span id="runDetailBulkCount">0</span>)</button>`);
+                $lengthDiv.append(`<button type="button" id="btnVerifyAllEmployees" class="btn btn-sm btn-outline-success${isDraft ? '' : ' d-none'}"><i class="fa-solid fa-check-double me-1"></i><span data-i18n="action_verify_all">${langData['action_verify_all'] || 'Verify All'}</span></button>`);
+            }
             initExcelColumnFilters(this.api(), {
                 mode: 'client',
                 columns: [
@@ -2648,15 +2772,35 @@ function initRunDetailTable(details) {
    Lock buttons and Manage Items/Remove already individually gate on currentRun.state !== 'draft'
    elsewhere in this file (verifyLockButtonsRd(), manageItemsButtonRd(), removeEmployeeButtonRd()) --
    this just adds the section-level visual cue on top of those existing per-control gates. */
+// 2026-09-09, real bug avoided (found while wiring up the explicit request "ตาราง Employee ใน Tab
+// Employee ให้เป็น Datatable ครับ", which turned on real pagination -- see initRunDetailTable()'s own
+// comment): before pagination existed on this table, EVERY row's checkbox was always physically
+// present in the DOM at once, so a plain `$('.run-detail-row-check')` jQuery selector already saw
+// every employee. With paging on, DataTables only ever inserts the CURRENT PAGE's <tr> nodes into
+// the visible DOM (other pages' rows live only in its own internal row cache) -- a plain DOM
+// selector would have silently started seeing only whichever page happens to be showing, which would
+// have made "Select All"/bulk Verify quietly skip every employee not on the current page (a real,
+// payroll-affecting data-loss-shaped bug, not just a display glitch). Every place below that used to
+// query `$('.run-detail-row-check...')` directly now goes through this instead, which asks the
+// DataTable API for every matching row's own node (`.rows({search:'applied'}).nodes()`, respecting
+// the Bank/Cash filter the exact same way the footer/summary cards already do) regardless of which
+// page is currently visible.
+function allRunDetailRowCheckboxes() {
+    if (!tb_run_detail) return $();
+    return tb_run_detail.rows({ search: 'applied' }).nodes().to$().find('.run-detail-row-check');
+}
 function applyRunDetailViewMode() {
     if (!currentRun) return;
     const isViewMode = currentRun.state !== 'draft';
     $('#runDetailViewModeBadge').toggleClass('d-none', !isViewMode);
-    $('#runDetailBulkBar').toggleClass('d-none', isViewMode || $('.run-detail-row-check:checked').length === 0);
     // Checkbox column visibility is handled in initRunDetailTable() itself now (both the initial-
     // construction and reload-existing-table paths), not here -- see that function's own comment
     // for why (a real ordering bug: this drawCallback fires before the table's own outer variable
     // assignment completes on first load).
+    // 2026-09-09: #btnBulkVerify's own show/hide-by-draft-state is owned by renderSectionButtons()
+    // now (same place #btnRecalculate/#btnJoinEmployees are toggled, all 3 live together in
+    // .dt-search/.dt-length) -- this function no longer needs to touch it at all, only its
+    // enabled/disabled-by-selection state (updateRunDetailBulkBar(), called separately below).
 }
 
 /* ==================== Employee Verify / Lock / Comments (2026-08-29) ====================
@@ -2665,23 +2809,28 @@ function applyRunDetailViewMode() {
    status tag. Mirrors this page's own established .btn-group/border/rounded-3/bg-white action-row
    idiom (runDetailActionsRd()) and showConfirm()/callRunAction() patterns already used for every
    other mutating action here. ==================== */
+// 2026-09-09, explicit request: "ให้ขึ้นแสดงผลเลย แต่ Disabled ไว้ก่อน ต้องเลือก checkbox ก่อนค่อยเปิดให้ก่อน"
+// -- #btnBulkVerify used to live inside a whole bar (#runDetailBulkBar) that was itself hidden until
+// something was checked; now the button is always visible (once draft, see renderSectionButtons())
+// and instead toggles its own native `disabled` state based on the same selection count.
 function updateRunDetailBulkBar() {
-    const count = $('.run-detail-row-check:checked').length;
+    const $all = allRunDetailRowCheckboxes();
+    const count = $all.filter(':checked').length;
     $('#runDetailBulkCount').text(count);
-    $('#runDetailBulkBar').toggleClass('d-none', count === 0);
-    const total = $('.run-detail-row-check').length;
+    $('#btnBulkVerify').prop('disabled', count === 0);
+    const total = $all.length;
     $('#runDetailSelectAll').prop('checked', total > 0 && count === total)
         .prop('indeterminate', count > 0 && count < total);
 }
 $(document).on('change', '#runDetailSelectAll', function () {
-    $('.run-detail-row-check').prop('checked', $(this).is(':checked'));
+    allRunDetailRowCheckboxes().prop('checked', $(this).is(':checked'));
     updateRunDetailBulkBar();
 });
 $(document).on('change', '.run-detail-row-check', function () {
     updateRunDetailBulkBar();
 });
 function selectedRunDetailEmployeeIds() {
-    return $('.run-detail-row-check:checked').map(function () { return Number($(this).data('employee-id')); }).get();
+    return allRunDetailRowCheckboxes().filter(':checked').map(function () { return Number($(this).data('employee-id')); }).get();
 }
 function bulkVerifyLockRd(url, payload, confirmTitle, confirmMessage) {
     const employeeIds = selectedRunDetailEmployeeIds();
@@ -4334,8 +4483,9 @@ function updateEditRunTypeSectionRd() {
     // modal shouldn't silently wipe a "reference" choice already made).
     $('#edit_run_offcycle_panel').toggleClass('d-none', !offCycle);
     if (!offCycle) {
-        $('#edit_run_merge_choice_new').prop('checked', true);
-        setEditMergeChoiceMode('new');
+        // syncEditRunMergeIntoUiRd() itself fires editRunMergeChoice's own change ->
+        // setEditMergeChoiceMode('new'), so no separate explicit call is needed here anymore.
+        syncEditRunMergeIntoUiRd('standalone');
     }
 }
 // 2026-09-02, explicit request: "ยังไม่เหมือนหน้าเพิ่มรอบในหน้า List ครับ ขาด รอบพิเศษนอกรอบเงินเดือน" then
@@ -4358,6 +4508,42 @@ function setEditOffCycleMode(isOffCycle) {
 $(document).on('change', 'input[name="editRunScheduleChoice"]', function () {
     setEditOffCycleMode($(this).val() === 'offcycle');
 });
+// 2026-09-09, round-creation flow audit Phase 3 -- mirrors syncRunMergeIntoUi()/syncRunPurposeChoiceUi()
+// in index.js (see those functions' own docblocks), adapted to this modal's own edit_run_* ids. The
+// "new UI drives the old hidden radios" approach means setEditMergeChoiceMode()/setEditMergeTargetMode()
+// below (both unchanged) keep doing all the actual show/hide/clear work.
+function syncEditRunMergeIntoUiRd(value) {
+    $('#edit_run_merge_into_row input[name="editRunMergeInto"]').prop('checked', false);
+    $('#edit_run_merge_into_row .run-subchoice-btn').removeClass('active');
+    const $radio = $(`input[name="editRunMergeInto"][value="${value}"]`).prop('checked', true);
+    $radio.closest('.run-subchoice-btn').addClass('active');
+    if (value === 'standalone') {
+        $('#edit_run_merge_choice_new').prop('checked', true).trigger('change');
+        return;
+    }
+    // Target sub-mode set silently first (no .trigger()) so editRunMergeChoice's own change handler
+    // (setEditMergeChoiceMode('reference')) reads the already-correct sub-mode on its one and only
+    // cascade, instead of a stale value it would otherwise have to immediately re-correct.
+    $(value === 'future_cycle' ? '#edit_run_merge_target_mode_future_cycle' : '#edit_run_merge_target_mode_existing').prop('checked', true);
+    $('#edit_run_merge_choice_reference').prop('checked', true).trigger('change');
+}
+$(document).on('change', 'input[name="editRunMergeInto"]', function () {
+    syncEditRunMergeIntoUiRd($(this).val());
+});
+// Unlike the Create form's own syncRunPurposeChoiceUi(), `value` is NEVER '' here -- opening Edit
+// always has a real currentRun.run_purpose to reflect (see #edit_run_purpose_choice_row's own
+// comment in detail.php for why the Create form's hard-block doesn't apply to editing).
+function syncEditRunPurposeChoiceUiRd(value) {
+    $('#edit_run_purpose').val(value).removeClass('is-invalid');
+    $('#edit_run_purpose_choice_row input[name="editRunPurposeChoice"]').prop('checked', false);
+    $('#edit_run_purpose_choice_row .run-choice-card').removeClass('active');
+    const $radio = $(`input[name="editRunPurposeChoice"][value="${value}"]`).prop('checked', true);
+    $radio.closest('.run-choice-card').addClass('active');
+    $('#edit_run_purpose').trigger('change');
+}
+$(document).on('change', 'input[name="editRunPurposeChoice"]', function () {
+    syncEditRunPurposeChoiceUiRd($(this).val());
+});
 // 2026-09-01/02: mirrors setMergeChoiceMode() in index.js, adapted to this modal's own edit_run_*
 // field ids/name (editRunMergeChoice, distinct from the Create form's runMergeChoice).
 function setEditMergeChoiceMode(choice) {
@@ -4366,7 +4552,7 @@ function setEditMergeChoiceMode(choice) {
     if (!isReference) {
         $('#edit_run_merge_target_id').val('').trigger('change.select2').removeClass('is-invalid');
         $('#edit_run_merge_target_cycle_id').val('').trigger('change.select2').removeClass('is-invalid');
-        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('').removeClass('is-invalid');
+        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('').datepicker('update').removeClass('is-invalid');
     }
     setEditMergeTargetMode($('input[name="editRunMergeTargetMode"]:checked').val() || 'existing');
     // 2026-09-02, 2nd same-day follow-up: .active on the pill <label> -- .run-subchoice-btn (was
@@ -4397,26 +4583,137 @@ $(document).on('change', 'input[name="editRunMergeTargetMode"]', function () {
     // always be sent together, unambiguously, on every save.
     if (mode === 'future_cycle') {
         $('#edit_run_merge_target_id').val('').trigger('change.select2').removeClass('is-invalid');
+        refreshEditRunMergeTargetPreviewRd();
     } else {
         $('#edit_run_merge_target_cycle_id').val('').trigger('change.select2').removeClass('is-invalid');
-        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('').removeClass('is-invalid');
+        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('').datepicker('update').removeClass('is-invalid');
+        resetEditRunMergeTargetPreviewRd();
     }
 });
 $(document).on('change', '#edit_run_merge_target_cycle_id', function () {
     const cycleId = $(this).val();
     if (!cycleId) {
-        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('');
+        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('').datepicker('update');
+        resetEditRunMergeTargetPreviewRd();
         return;
     }
     $.ajax({
         url: `${BASE_URL}/api/payroll-cycle.suggest-period`, method: 'GET', data: { id: cycleId }, dataType: 'json',
         success: function (res) {
             if (!res.status) { return; }
-            $('#edit_run_merge_target_period_start').val(toDisplayDateRd(res.period_start_date)).removeClass('is-invalid');
-            $('#edit_run_merge_target_period_end').val(toDisplayDateRd(res.period_end_date)).removeClass('is-invalid');
+            $('#edit_run_merge_target_period_start').val(toDisplayDateRd(res.period_start_date)).datepicker('update').removeClass('is-invalid');
+            $('#edit_run_merge_target_period_end').val(toDisplayDateRd(res.period_end_date)).datepicker('update').removeClass('is-invalid');
+            refreshEditRunMergeTargetPreviewRd();
         }
     });
 });
+// 2026-09-09, round-creation flow audit Bug 2 fix -- same mechanism as index.js's own
+// refreshRunMergeTargetPreview()/resolveRunMergeTargetBeforeSubmit() (see those functions' own
+// docblocks for the full reasoning), adapted to this modal's own edit_run_* field ids. The one real
+// difference: `exclude_id: PAYROLL_RUN_ID` is always sent so this run never lists itself as a
+// candidate to merge into.
+let editRunMergeTargetPreviewMatches = null;
+let editRunMergeTargetPreviewKey = null;
+function resetEditRunMergeTargetPreviewRd() {
+    editRunMergeTargetPreviewMatches = null;
+    editRunMergeTargetPreviewKey = null;
+    $('#edit_run_merge_target_preview_box').addClass('d-none');
+    $('#edit_run_merge_target_preview_none, #edit_run_merge_target_preview_single, #edit_run_merge_target_preview_multi').addClass('d-none');
+    $('#edit_run_merge_target_preview_select').empty().removeClass('is-invalid');
+}
+function editRunMergeTargetPreviewLabelRd(m) {
+    const dateStr = typeof formatDisplayDate === 'function' ? formatDisplayDate(m.payment_date) : m.payment_date;
+    return `${m.run_name} (${dateStr})`;
+}
+function renderEditRunMergeTargetPreviewRd(matches) {
+    $('#edit_run_merge_target_preview_box').removeClass('d-none');
+    $('#edit_run_merge_target_preview_none, #edit_run_merge_target_preview_single, #edit_run_merge_target_preview_multi').addClass('d-none');
+    if (matches.length === 0) {
+        $('#edit_run_merge_target_preview_none').removeClass('d-none').text(langData['run_merge_target_preview_none'] || 'No matching round yet -- this will wait until one is created.');
+    } else if (matches.length === 1) {
+        const tpl = langData['run_merge_target_preview_single'] || 'This will merge into: {name}';
+        $('#edit_run_merge_target_preview_single').removeClass('d-none').text(tpl.replace('{name}', editRunMergeTargetPreviewLabelRd(matches[0])));
+    } else {
+        const $sel = $('#edit_run_merge_target_preview_select').empty().removeClass('is-invalid');
+        $sel.append(new Option(langData['select_option'] || '-- Select --', ''));
+        matches.forEach(m => $sel.append(new Option(editRunMergeTargetPreviewLabelRd(m), m.id)));
+        $('#edit_run_merge_target_preview_multi').removeClass('d-none');
+    }
+}
+function refreshEditRunMergeTargetPreviewRd() {
+    const cycleId = $('#edit_run_merge_target_cycle_id').val();
+    const periodStart = toIsoDateRd($('#edit_run_merge_target_period_start').val());
+    if (!cycleId || !periodStart) {
+        resetEditRunMergeTargetPreviewRd();
+        return;
+    }
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.preview-merge-target`, method: 'GET',
+        data: { cycle_id: cycleId, period_start_date: periodStart, exclude_id: PAYROLL_RUN_ID }, dataType: 'json',
+        success: function (res) {
+            if (!res.status) return;
+            editRunMergeTargetPreviewMatches = res.matches || [];
+            editRunMergeTargetPreviewKey = cycleId + '|' + periodStart;
+            renderEditRunMergeTargetPreviewRd(editRunMergeTargetPreviewMatches);
+        }
+    });
+}
+$(document).on('changeDate', '#edit_run_merge_target_period_start, #edit_run_merge_target_period_end', function () {
+    refreshEditRunMergeTargetPreviewRd();
+});
+function resolveEditRunMergeTargetBeforeSubmitRd(callback) {
+    const isReferenceMode = !$('#edit_run_merge_target_row').hasClass('d-none');
+    const targetMode = $('input[name="editRunMergeTargetMode"]:checked').val() || 'existing';
+    if (!isReferenceMode || targetMode !== 'future_cycle') {
+        callback(true);
+        return;
+    }
+    const cycleId = $('#edit_run_merge_target_cycle_id').val();
+    const periodStart = toIsoDateRd($('#edit_run_merge_target_period_start').val());
+    if (!cycleId || !periodStart) {
+        callback(true);
+        return;
+    }
+    const key = cycleId + '|' + periodStart;
+    function decide(matches) {
+        if (matches.length === 0) {
+            callback(true);
+        } else if (matches.length === 1) {
+            callback(true, {
+                merge_target_run_id: matches[0].id,
+                merge_target_cycle_id: null, merge_target_period_start_date: null, merge_target_period_end_date: null,
+            });
+        } else {
+            const chosen = $('#edit_run_merge_target_preview_select').val();
+            if (!chosen) {
+                $('#edit_run_merge_target_preview_select').addClass('is-invalid');
+                showWarning(langData['run_merge_target_preview_pick_required'] || 'More than one existing round matches -- please pick which one before saving.');
+                callback(false);
+                return;
+            }
+            callback(true, {
+                merge_target_run_id: parseInt(chosen, 10),
+                merge_target_cycle_id: null, merge_target_period_start_date: null, merge_target_period_end_date: null,
+            });
+        }
+    }
+    if (editRunMergeTargetPreviewKey === key && editRunMergeTargetPreviewMatches !== null) {
+        decide(editRunMergeTargetPreviewMatches);
+        return;
+    }
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.preview-merge-target`, method: 'GET',
+        data: { cycle_id: cycleId, period_start_date: periodStart, exclude_id: PAYROLL_RUN_ID }, dataType: 'json',
+        success: function (res) {
+            const matches = (res.status && res.matches) ? res.matches : [];
+            editRunMergeTargetPreviewMatches = matches;
+            editRunMergeTargetPreviewKey = key;
+            renderEditRunMergeTargetPreviewRd(matches);
+            decide(matches);
+        },
+        error: function () { callback(true); }
+    });
+}
 // 2026-09-02, explicit request: "การเลือกรอบการจ่าย แล้ว Default...ช่วยปรับทั้ง Form ตอนดึง Origami และ Form
 // สร้างรอบใหม่ และ Form แก้ไขรอบ" -- same PayrollCycleModel::suggestNextPeriod() endpoint the Create
 // form's own applySuggestedPeriod() (index.js) already calls, just missing here until now. Only ever
@@ -4425,6 +4722,12 @@ $(document).on('change', '#edit_run_merge_target_cycle_id', function () {
 // see #btnEditRun's own handler above) -- so opening Edit on an already-cycle-linked run never
 // silently overwrites its real period with a freshly "suggested" one; only actually switching to a
 // different cycle during this same edit does.
+// 2026-09-09, explicit request: "เปลี่ยนเป็นเลือกรอบแล้ว ถ้าวันที่มีข้อมูลอยู่ไม่ต้องเปลี่ยนค่า ถ้าไม่มีค่าให้ใส่
+// อัตโนมัติ" -- this docblock's own earlier reasoning ("only fires on a genuine user-driven pick...
+// only actually switching to a different cycle during this same edit does [overwrite]") is now ONE
+// LEVEL more precise: switching cycle during an edit no longer overwrites a date field that already
+// holds a real value either -- only a genuinely EMPTY field gets auto-filled. Matches index.js's own
+// applySuggestedPeriod() for the exact same reason.
 function applySuggestedPeriodRd(cycleId) {
     if (!cycleId) {
         return;
@@ -4438,9 +4741,15 @@ function applySuggestedPeriodRd(cycleId) {
             if (!res.status) {
                 return;
             }
-            $('#edit_period_start').val(toDisplayDateRd(res.period_start_date)).datepicker('update');
-            $('#edit_period_end').val(toDisplayDateRd(res.period_end_date)).datepicker('update');
-            $('#edit_payment_date').val(toDisplayDateRd(res.payment_date)).datepicker('update');
+            if (!$('#edit_period_start').val()) {
+                $('#edit_period_start').val(toDisplayDateRd(res.period_start_date)).datepicker('update');
+            }
+            if (!$('#edit_period_end').val()) {
+                $('#edit_period_end').val(toDisplayDateRd(res.period_end_date)).datepicker('update');
+            }
+            if (!$('#edit_payment_date').val()) {
+                $('#edit_payment_date').val(toDisplayDateRd(res.payment_date)).datepicker('update');
+            }
             $('#edit_period_start, #edit_period_end, #edit_payment_date').removeClass('is-invalid');
         }
     });
@@ -4503,22 +4812,36 @@ $(document).on('click', '#btnEditRun', function () {
         $mergeTargetCycleSel.empty().append(new Option(currentRun.merge_target_cycle_name || String(currentRun.merge_target_cycle_id), currentRun.merge_target_cycle_id, true, true)).trigger('change.select2');
         $('#edit_run_merge_target_period_start').val(toDisplayDateRd(currentRun.merge_target_period_start_date));
         $('#edit_run_merge_target_period_end').val(toDisplayDateRd(currentRun.merge_target_period_end_date));
+        // .datepicker('update') after programmatic .val() -- see CLAUDE.md's bootstrap-datepicker
+        // note (widget state goes stale otherwise, blanking the field on next click-away) -- same
+        // real bug ("Date เลือกไม่ได้") this pair of fields was fixed for on 2026-09-09.
+        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').datepicker('update');
+        // 2026-09-09, round-creation flow audit Bug 2 fix -- shows the current match state
+        // immediately on open for a run that's already waiting on a future-cycle target, instead of
+        // only appearing after the admin touches the cycle/period fields themselves.
+        refreshEditRunMergeTargetPreviewRd();
     } else {
         $mergeTargetCycleSel.val(null).trigger('change.select2');
-        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('');
+        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('').datepicker('update');
+        resetEditRunMergeTargetPreviewRd();
     }
-    $(hasMergeTarget || hasFutureCycleTarget ? '#edit_run_merge_choice_reference' : '#edit_run_merge_choice_new').prop('checked', true);
-    $(hasFutureCycleTarget ? '#edit_run_merge_target_mode_future_cycle' : '#edit_run_merge_target_mode_existing').prop('checked', true);
-    setEditMergeChoiceMode(hasMergeTarget || hasFutureCycleTarget ? 'reference' : 'new');
-    setEditMergeTargetMode(hasFutureCycleTarget ? 'future_cycle' : 'existing');
+    // 2026-09-09, round-creation flow audit Phase 3: single call replaces the old 4-line
+    // set-both-legacy-radios-then-call-both-setters sequence -- syncEditRunMergeIntoUiRd() drives the
+    // exact same cascade (see that function's own comment).
+    syncEditRunMergeIntoUiRd(hasFutureCycleTarget ? 'future_cycle' : (hasMergeTarget ? 'existing' : 'standalone'));
     updateEditRunTypeSectionRd();
 
     if (isOffCycleRunRd(currentRun) || (currentRun.sync_process_id && currentRun.sync_run_kind === 'supplemental')) {
-        $('#edit_run_purpose').val(currentRun.run_purpose || 'payroll').trigger('change');
+        syncEditRunPurposeChoiceUiRd(currentRun.run_purpose || 'payroll');
         $('#edit_run_compute_statutory').prop('checked', Number(currentRun.compute_statutory) === 1);
         $('#edit_run_include_base_salary').prop('checked', Number(currentRun.include_base_salary) === 1);
         $('#edit_run_include_standing_items').prop('checked', Number(currentRun.include_standing_items) === 1);
         $('#edit_run_include_attendance_pay').prop('checked', Number(currentRun.include_attendance_pay) === 1);
+        // 2026-09-09, round-creation flow audit Bug 1 fix: reflects the run's CURRENT stored value --
+        // deliberately NOT the Create form's own "pre-check when Origami attributed
+        // tax_treatment='separate'" default logic (setSupplementalPullMode()), since that default only
+        // makes sense the first time this choice is ever made; Edit must show what was actually saved.
+        $('#edit_run_use_flat_tax_rate').prop('checked', Number(currentRun.use_flat_tax_rate) === 1);
         updateEditRunTypeVisibility();
     }
     $('.is-invalid').removeClass('is-invalid');
@@ -4540,6 +4863,15 @@ $(document).on('submit', '#editRunForm', function (e) {
         showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
         return;
     }
+    // 2026-09-09, round-creation flow audit Bug 2 fix -- re-checks the future_cycle auto-match
+    // immediately before saving (see resolveEditRunMergeTargetBeforeSubmitRd()'s own docblock),
+    // possibly overriding the merge_target_* fields below with a resolved merge_target_run_id.
+    resolveEditRunMergeTargetBeforeSubmitRd(function (ok, overrides) {
+        if (!ok) return;
+        submitEditRunForm(overrides);
+    });
+});
+function submitEditRunForm(mergeTargetOverrides) {
     const payload = {
         id: PAYROLL_RUN_ID,
         run_name: $('#edit_run_name').val().trim(),
@@ -4568,6 +4900,11 @@ $(document).on('submit', '#editRunForm', function (e) {
         payload.merge_target_cycle_id = editTargetMode === 'future_cycle' ? ($('#edit_run_merge_target_cycle_id').val() || null) : null;
         payload.merge_target_period_start_date = editTargetMode === 'future_cycle' ? toIsoDateRd($('#edit_run_merge_target_period_start').val()) : null;
         payload.merge_target_period_end_date = editTargetMode === 'future_cycle' ? toIsoDateRd($('#edit_run_merge_target_period_end').val()) : null;
+        // 2026-09-09, round-creation flow audit Bug 2 fix -- when resolveEditRunMergeTargetBeforeSubmitRd()
+        // resolved the future_cycle spec to a specific existing run (either the single match, or the
+        // admin's explicit disambiguation pick among 2+), these override the future_cycle fields set
+        // just above with an explicit merge_target_run_id instead.
+        Object.assign(payload, mergeTargetOverrides || {});
     }
     // Sent whenever the run-type section is actually showing right now (genuine off-cycle OR
     // supplemental sync) -- reads the LIVE dropdown state (updateEditRunTypeSectionRd()), not just
@@ -4581,6 +4918,11 @@ $(document).on('submit', '#editRunForm', function (e) {
         payload.include_base_salary = $('#edit_run_include_base_salary').is(':checked');
         payload.include_standing_items = $('#edit_run_include_standing_items').is(':checked');
         payload.include_attendance_pay = $('#edit_run_include_attendance_pay').is(':checked');
+        // 2026-09-09, round-creation flow audit Bug 1 fix: this key was never sent at all before --
+        // PayrollRunModel::update() now only touches use_flat_tax_rate when this key is present
+        // (see that method's own fix), but the underlying bug was HERE: without this line, a
+        // previously-saved true value had no way to survive any edit-save whatsoever.
+        payload.use_flat_tax_rate = $('#edit_run_use_flat_tax_rate').is(':checked');
     }
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.save`,
@@ -4605,7 +4947,7 @@ $(document).on('submit', '#editRunForm', function (e) {
             showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
         }
     });
-});
+}
 $(document).on('click', '#btnSubmitRun', function () {
     const title = langData['confirm_submit_message'] || 'Submit this payroll run for approval? You will not be able to edit amounts until it is sent back or rejected.';
     showConfirm(langData['action_submit'] || 'Submit for Approval', title, function () {
@@ -4623,6 +4965,17 @@ $(document).on('shown.bs.tab', '#runDetailTabs button[data-bs-toggle="tab"]', fu
     if (history.replaceState) {
         history.replaceState(null, '', '#' + e.target.id);
     }
+});
+// 2026-09-09: #tb_run_detail's own tab ("Employee") isn't the default-active tab anymore now that it
+// no longer shares "Details" with Run Settings (see app/views/payroll/detail.php's own tab-split
+// comment) -- DataTables measures column widths at construction/redraw time, and a table built (or
+// last redrawn) while its Bootstrap tab-pane was `display:none` ends up with wrong/collapsed widths
+// (a well-known DataTables gotcha, same one this app's own Employment Certificate Requests tab/Payslip
+// Distribution already had to guard against elsewhere) -- `.columns.adjust()` recalculates them
+// correctly the moment this tab actually becomes visible. Harmless no-op if the table hasn't been
+// built yet (run still loading) or if it was already sized correctly.
+$(document).on('shown.bs.tab', '#run-employee-tab', function () {
+    if (tb_run_detail) tb_run_detail.columns.adjust();
 });
 function activateTabFromHash() {
     const hash = (location.hash || '').replace('#', '');
@@ -4646,6 +4999,12 @@ $(document).ready(function () {
         // un-initialized field), since bootstrap-datepicker only attaches that API once `.datepicker()`
         // has been called on the element at least once.
         initDatepicker('#run_mark_paid_date');
+        // 2026-09-09, real bug found and fixed (explicit report: "วันเริ่มต้นงวดอ้างอิง และ วันสิ้นสุดงวด
+        // อ้างอิง Date เลือกไม่ได้") -- these were plain readonly display fields (no `.datepicker` class,
+        // never initDatepicker()'d), auto-filled ONLY by picking a Target cycle above with no way to
+        // adjust by hand -- same fix as index.js's own Create form's #run_merge_target_period_start/end.
+        initDatepicker('#edit_run_merge_target_period_start');
+        initDatepicker('#edit_run_merge_target_period_end');
     }
     if (typeof initSelect2 === 'function') {
         initSelect2('#joinFilterDepartment, #joinFilterTeam, #joinFilterPosition, #joinFilterCycle', { mode: 'ajax' });
@@ -4668,7 +5027,9 @@ $(document).ready(function () {
         initSelect2('#recurringDestPayeeEmployeeSelect', { mode: 'ajax', allowClear: true });
         initSelect2('#recurringDestDestinationSelect', { mode: 'ajax', allowClear: true });
         initSelect2('#recurringDestBank', { mode: 'ajax' });
-        initSelect2('#edit_run_purpose', { mode: 'static' });
+        // 2026-09-09, round-creation flow audit Phase 3: #edit_run_purpose is a plain hidden input
+        // now (driven by #edit_run_purpose_choice_row's own choice cards), not a <select> -- no
+        // select2 init needed/possible anymore.
         // 2026-09-01: allowClear so an empty selection is a real, reachable "off-schedule/no cycle"
         // choice, same either/or #run_cycle_id represents on the Create form.
         initSelect2('#edit_run_cycle_id', { mode: 'ajax', allowClear: true });

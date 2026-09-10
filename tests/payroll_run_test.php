@@ -3837,6 +3837,161 @@ try {
     check('cycle_id is now null (off-schedule)', $runAfterClear['cycle_id'], null);
     check('run_purpose is now editable and reflects incentive (no longer forced to payroll)', $runAfterClear['run_purpose'], 'incentive');
 
+    // 2026-09-09, round-creation flow audit Bug 1 (explicit report: an off-cycle/incentive run's
+    // use_flat_tax_rate opt-in was silently reset to 0 on ANY edit-save, because the Edit modal never
+    // had a matching field/payload key for it at all -- see modals.php/detail.php/detail.js's own
+    // 2026-09-09 comments). update()'s own fix generalizes past just this one flag: for an incentive
+    // run, each of the 5 calc flags is now only overwritten when its OWN key is present in $data --
+    // absence means "leave the run's current stored value alone", not "reset to 0". Own isolated
+    // fixture, distinct $today-relative period per this file's own convention above.
+    echo "=== update(): incentive run_purpose flags -- absent key preserves current value, present key still applies (round-creation flow audit Bug 1) ===\n";
+    $flatTaxPeriodStart = (clone $today)->modify('first day of +154 months')->format('Y-m-d');
+    $flatTaxPeriodEnd = (clone $today)->modify('last day of +154 months')->format('Y-m-d');
+    $flatTaxRunRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => true, 'use_flat_tax_rate' => true,
+        'run_name' => 'FLAT_TAX_BUG1_TEST_' . uniqid(),
+        'period_start_date' => $flatTaxPeriodStart, 'period_end_date' => $flatTaxPeriodEnd, 'payment_date' => $flatTaxPeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: off-cycle incentive run created with use_flat_tax_rate=true' . (empty($flatTaxRunRes['status']) ? " ({$flatTaxRunRes['message']})" : ''), $flatTaxRunRes['status']);
+    $flatTaxRunId = $flatTaxRunRes['id'];
+    check('fixture: use_flat_tax_rate persisted as 1 from create()', (int)$runModel->get($flatTaxRunId, $compId)['use_flat_tax_rate'], 1);
+
+    // THE ACTUAL BUG, reproduced at the model level: an edit-save payload that includes run_purpose
+    // (always true once the Edit modal's off-cycle/incentive section is visible) but OMITS
+    // use_flat_tax_rate entirely -- exactly what detail.js's edit-save payload builder sent before
+    // this fix, since the field/checkbox didn't exist on that form at all. Before this fix this
+    // silently forced use_flat_tax_rate back to 0; now it must be left untouched.
+    $renameOnlyRes = $runModel->update($flatTaxRunId, $compId, [
+        'run_name' => 'FLAT_TAX_BUG1_TEST_RENAMED',
+        'run_purpose' => 'incentive', 'compute_statutory' => true,
+        'include_base_salary' => false, 'include_standing_items' => false, 'include_attendance_pay' => false,
+        // use_flat_tax_rate deliberately NOT included in this payload at all.
+    ], $adminUserId, true);
+    checkTrue('update() without use_flat_tax_rate key succeeds' . (empty($renameOnlyRes['status']) ? " ({$renameOnlyRes['message']})" : ''), $renameOnlyRes['status']);
+    $runAfterRenameOnly = $runModel->get($flatTaxRunId, $compId);
+    check('run_name change from that same save actually applied', $runAfterRenameOnly['run_name'], 'FLAT_TAX_BUG1_TEST_RENAMED');
+    check('use_flat_tax_rate is STILL 1 -- an absent key no longer silently resets it to 0 (the actual bug)', (int)$runAfterRenameOnly['use_flat_tax_rate'], 1);
+
+    // An explicit, present false DOES still turn it off -- "absent preserves" must not become
+    // "can never be turned off again".
+    $explicitOffRes = $runModel->update($flatTaxRunId, $compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => true,
+        'include_base_salary' => false, 'include_standing_items' => false, 'include_attendance_pay' => false,
+        'use_flat_tax_rate' => false,
+    ], $adminUserId, true);
+    checkTrue('update() with use_flat_tax_rate=false explicitly present succeeds' . (empty($explicitOffRes['status']) ? " ({$explicitOffRes['message']})" : ''), $explicitOffRes['status']);
+    check('use_flat_tax_rate is now genuinely 0 -- an explicitly-present false still applies normally', (int)$runModel->get($flatTaxRunId, $compId)['use_flat_tax_rate'], 0);
+
+    // And back on again with an explicit true, then confirm a payroll-purpose transition still
+    // unconditionally forces it to 0 regardless of any stale/absent key (the existing, correct
+    // behavior for a payroll-purpose run, unchanged by this fix -- see update()'s own "payroll
+    // forces all 5 flags" branch).
+    $explicitOnRes = $runModel->update($flatTaxRunId, $compId, [
+        'run_purpose' => 'incentive', 'compute_statutory' => true,
+        'include_base_salary' => false, 'include_standing_items' => false, 'include_attendance_pay' => false,
+        'use_flat_tax_rate' => true,
+    ], $adminUserId, true);
+    checkTrue('update() with use_flat_tax_rate=true explicitly present succeeds' . (empty($explicitOnRes['status']) ? " ({$explicitOnRes['message']})" : ''), $explicitOnRes['status']);
+    check('use_flat_tax_rate is genuinely 1 again', (int)$runModel->get($flatTaxRunId, $compId)['use_flat_tax_rate'], 1);
+    $toPayrollRes = $runModel->update($flatTaxRunId, $compId, ['cycle_id' => $cycleId], $adminUserId, true);
+    checkTrue('update() converting this run to cycle-linked (payroll-purpose) succeeds' . (empty($toPayrollRes['status']) ? " ({$toPayrollRes['message']})" : ''), $toPayrollRes['status']);
+    check('use_flat_tax_rate forced back to 0 -- a payroll-purpose run can never carry this flag, unchanged by this fix', (int)$runModel->get($flatTaxRunId, $compId)['use_flat_tax_rate'], 0);
+
+    // 2026-09-09, round-creation flow audit Bug 2 (explicit report: resolveMergeTargetSpec()'s own
+    // future-cycle auto-match silently picks the earliest-period run whenever 2+ candidates already
+    // exist for the same cycle+payment-month, with zero visible indication of which one). Own isolated
+    // fixture cycle (not $cycleId -- avoids any cross-talk with the many other fixtures already
+    // sharing that cycle elsewhere in this file) with 2 real runs sharing the same payment MONTH but
+    // different periods, mimicking a semi-monthly cycle's 15th+30th both already existing.
+    echo "=== previewFutureCycleMergeTarget() + explicit-pick-honored-at-save (round-creation flow audit Bug 2) ===\n";
+    $bug2CycleRes = $cycleModel->save($compId, [
+        'cycle_name' => 'TEST_BUG2_CYCLE_' . uniqid(), 'payroll_frequency' => 'semi_monthly',
+        'cutoff_day_of_month' => 25, 'payment_day_of_month' => 5, 'ot_cutoff_type' => 'same_as_attendance',
+        'bank_file_format_id' => 1, 'status' => 'active',
+    ], $adminUserId);
+    checkTrue('fixture: dedicated Bug 2 cycle created' . (empty($bug2CycleRes['status']) ? " ({$bug2CycleRes['message']})" : ''), $bug2CycleRes['status']);
+    $bug2CycleId = $bug2CycleRes['id'];
+    $bug2TargetMonthAnchor = (clone $today)->modify('first day of +160 months')->format('Y-m-d');
+
+    $previewEmptyRes = $runModel->previewFutureCycleMergeTarget($compId, $bug2CycleId, $bug2TargetMonthAnchor, null);
+    checkTrue('previewFutureCycleMergeTarget() succeeds against a valid, empty-so-far month' . (empty($previewEmptyRes['status']) ? " ({$previewEmptyRes['message']})" : ''), $previewEmptyRes['status']);
+    check('0 candidates before any run exists in this cycle/month', count($previewEmptyRes['matches']), 0);
+
+    $previewInvalidCycleRes = $runModel->previewFutureCycleMergeTarget($compId, 999999, $bug2TargetMonthAnchor, null);
+    check('previewFutureCycleMergeTarget() rejects an invalid/nonexistent cycle', $previewInvalidCycleRes['status'], false);
+
+    // First candidate: paid on the 15th of the target month.
+    $bug2Run1PeriodStart = (clone $today)->modify('first day of +160 months')->format('Y-m-d');
+    $bug2Run1PeriodEnd = (clone $today)->modify('first day of +160 months')->modify('+14 days')->format('Y-m-d');
+    $bug2Run1PaymentDate = (clone $today)->modify('first day of +160 months')->modify('+14 days')->format('Y-m-d');
+    $bug2Run1Res = $runModel->create($compId, [
+        'cycle_id' => $bug2CycleId, 'run_name' => 'BUG2_CANDIDATE_15TH_' . uniqid(),
+        'period_start_date' => $bug2Run1PeriodStart, 'period_end_date' => $bug2Run1PeriodEnd, 'payment_date' => $bug2Run1PaymentDate,
+    ], $adminUserId, true);
+    checkTrue('fixture: 1st candidate run created (earlier period, paid mid-month)' . (empty($bug2Run1Res['status']) ? " ({$bug2Run1Res['message']})" : ''), $bug2Run1Res['status']);
+    $bug2Run1Id = $bug2Run1Res['id'];
+
+    $previewOneRes = $runModel->previewFutureCycleMergeTarget($compId, $bug2CycleId, $bug2TargetMonthAnchor, null);
+    checkTrue('previewFutureCycleMergeTarget() still succeeds with exactly 1 candidate' . (empty($previewOneRes['status']) ? " ({$previewOneRes['message']})" : ''), $previewOneRes['status']);
+    check('exactly 1 candidate found', count($previewOneRes['matches']), 1);
+    check('that 1 candidate is the run just created', (int)$previewOneRes['matches'][0]['id'], $bug2Run1Id);
+
+    // Second candidate: same cycle, same payment MONTH, but a distinct later period (paid on the
+    // 30th) -- the actual "2+ candidates" scenario Bug 2 is about.
+    $bug2Run2PeriodStart = (clone $today)->modify('first day of +160 months')->modify('+15 days')->format('Y-m-d');
+    $bug2Run2PeriodEnd = (clone $today)->modify('last day of +160 months')->format('Y-m-d');
+    $bug2Run2PaymentDate = (clone $today)->modify('last day of +160 months')->format('Y-m-d');
+    $bug2Run2Res = $runModel->create($compId, [
+        'cycle_id' => $bug2CycleId, 'run_name' => 'BUG2_CANDIDATE_30TH_' . uniqid(),
+        'period_start_date' => $bug2Run2PeriodStart, 'period_end_date' => $bug2Run2PeriodEnd, 'payment_date' => $bug2Run2PaymentDate,
+    ], $adminUserId, true);
+    checkTrue('fixture: 2nd candidate run created (later period, same payment month)' . (empty($bug2Run2Res['status']) ? " ({$bug2Run2Res['message']})" : ''), $bug2Run2Res['status']);
+    $bug2Run2Id = $bug2Run2Res['id'];
+
+    $previewTwoRes = $runModel->previewFutureCycleMergeTarget($compId, $bug2CycleId, $bug2TargetMonthAnchor, null);
+    checkTrue('previewFutureCycleMergeTarget() succeeds with 2 candidates' . (empty($previewTwoRes['status']) ? " ({$previewTwoRes['message']})" : ''), $previewTwoRes['status']);
+    check('exactly 2 candidates found -- this is the ambiguous case the UI must now disambiguate explicitly', count($previewTwoRes['matches']), 2);
+    $previewTwoIds = array_map(fn($m) => (int)$m['id'], $previewTwoRes['matches']);
+    sort($previewTwoIds);
+    $expectedIds = [$bug2Run1Id, $bug2Run2Id];
+    sort($expectedIds);
+    check('both real candidate runs are present in the preview (not just one)', $previewTwoIds, $expectedIds);
+    check('preview orders earliest-period first (index 0 is what the OLD silent behavior would have picked)', (int)$previewTwoRes['matches'][0]['id'], $bug2Run1Id);
+
+    $previewExcludeRes = $runModel->previewFutureCycleMergeTarget($compId, $bug2CycleId, $bug2TargetMonthAnchor, $bug2Run1Id);
+    checkTrue('previewFutureCycleMergeTarget() succeeds with exclude_id set' . (empty($previewExcludeRes['status']) ? " ({$previewExcludeRes['message']})" : ''), $previewExcludeRes['status']);
+    check('excluding run 1 leaves exactly the other candidate (mirrors an Edit form excluding itself)', (int)$previewExcludeRes['matches'][0]['id'], $bug2Run2Id);
+    check('excluding run 1 leaves exactly 1 candidate', count($previewExcludeRes['matches']), 1);
+
+    // THE ACTUAL FIX, end-to-end: a caller (the frontend, after the admin explicitly disambiguated in
+    // the preview UI) that submits a resolved merge_target_run_id pointing at the LATER candidate gets
+    // exactly that one linked -- NOT silently overridden to the earlier one. Own distinct off-cycle
+    // fixture period so this doesn't collide with $bug2Run1/$bug2Run2's own periods.
+    $bug2SourcePeriodStart = (clone $today)->modify('first day of +161 months')->format('Y-m-d');
+    $bug2SourcePeriodEnd = (clone $today)->modify('last day of +161 months')->format('Y-m-d');
+    $explicitPickRes = $runModel->create($compId, [
+        'run_name' => 'BUG2_EXPLICIT_PICK_' . uniqid(),
+        'period_start_date' => $bug2SourcePeriodStart, 'period_end_date' => $bug2SourcePeriodEnd, 'payment_date' => $bug2SourcePeriodEnd,
+        'merge_target_run_id' => $bug2Run2Id, // the LATER (30th) candidate, explicitly chosen -- not the earliest.
+    ], $adminUserId, true);
+    checkTrue('create() with an explicit merge_target_run_id (the admin\'s disambiguation pick) succeeds' . (empty($explicitPickRes['status']) ? " ({$explicitPickRes['message']})" : ''), $explicitPickRes['status']);
+    check('the run links to the EXPLICITLY CHOSEN later candidate, not silently defaulted to the earlier one', (int)$runModel->get($explicitPickRes['id'], $compId)['merge_target_run_id'], $bug2Run2Id);
+
+    // Contrast/control, documenting the UNCHANGED fallback: a caller that sends the future_cycle spec
+    // WITHOUT ever disambiguating (e.g. a stale client, or the preview genuinely failing) still gets
+    // the OLD silent earliest-period behavior -- this is resolveMergeTargetSpec()'s own safety net,
+    // deliberately not removed, only made visible/overridable by the new preview above.
+    $bug2SilentPeriodStart = (clone $today)->modify('first day of +162 months')->format('Y-m-d');
+    $bug2SilentPeriodEnd = (clone $today)->modify('last day of +162 months')->format('Y-m-d');
+    $silentDefaultRes = $runModel->create($compId, [
+        'run_name' => 'BUG2_SILENT_DEFAULT_' . uniqid(),
+        'period_start_date' => $bug2SilentPeriodStart, 'period_end_date' => $bug2SilentPeriodEnd, 'payment_date' => $bug2SilentPeriodEnd,
+        'merge_target_cycle_id' => $bug2CycleId,
+        'merge_target_period_start_date' => $bug2TargetMonthAnchor, 'merge_target_period_end_date' => $bug2TargetMonthAnchor,
+    ], $adminUserId, true);
+    checkTrue('create() with a future_cycle spec and no explicit pick still succeeds' . (empty($silentDefaultRes['status']) ? " ({$silentDefaultRes['message']})" : ''), $silentDefaultRes['status']);
+    check('unchanged fallback: resolves to the earliest-period candidate when nobody disambiguated', (int)$runModel->get($silentDefaultRes['id'], $compId)['merge_target_run_id'], $bug2Run1Id);
+
     // A regular (non-supplemental) sync-linked run can never be cleared down to no cycle at all.
     // Another distinct $today-relative period, same reason as above.
     $altPeriodStart2 = (clone $today)->modify('first day of +153 months')->format('Y-m-d');

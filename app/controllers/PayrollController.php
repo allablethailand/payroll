@@ -308,6 +308,26 @@ class PayrollController extends Controller {
         $this->json($result);
     }
 
+    /** 2026-09-09, round-creation flow audit Bug 2 fix -- read-only preview for the "future round"
+     *  merge-target mode's own auto-matching (cycle+payment-month), so the Create/Edit forms can show
+     *  the admin exactly which existing run(s) a save would resolve against BEFORE they click Save,
+     *  instead of it happening silently server-side inside resolveMergeTargetSpec(). See
+     *  PayrollRunModel::previewFutureCycleMergeTarget()'s own docblock. Gated the same as every other
+     *  read-only lookup on this controller (requireViewAccess()), not payroll_run.add/.edit -- viewing
+     *  which runs already exist doesn't need create/edit rights, only the eventual Save does. */
+    public function previewMergeTarget() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $cycleId = isset($_GET['cycle_id']) ? (int)$_GET['cycle_id'] : 0;
+        $periodStart = isset($_GET['period_start_date']) ? (string)$_GET['period_start_date'] : '';
+        $excludeId = !empty($_GET['exclude_id']) ? (int)$_GET['exclude_id'] : null;
+        if (!$compId || $cycleId <= 0 || $periodStart === '') {
+            $this->json(['status' => false, 'message' => 'Missing cycle_id/period_start_date.']);
+            return;
+        }
+        $this->json($this->model->previewFutureCycleMergeTarget((int)$compId, $cycleId, $periodStart, $excludeId));
+    }
+
     /** 2026-08-31, PAYROLL_SYNC_API.md `attribution` revision -- Pending Pull's "Merge into Target"
      *  action for a supplemental process attributed tax_treatment='merge'. See
      *  PayrollRunModel::mergeSupplementalIntoRun()'s own docblock for the full mechanism. */

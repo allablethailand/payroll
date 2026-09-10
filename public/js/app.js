@@ -178,101 +178,20 @@ function confirmIfDirtyThen($container, baselineSnapshot, onProceed) {
     );
 }
 
-/**
- * 2026-09-03, Platform Hardening Phase 1.2 -- GENERIC modal-level dirty-check, the deferred item
- * from this same round's page-body version above. Applies to every Bootstrap modal app-wide with
- * near-zero per-modal wiring, via delegated `shown.bs.modal`/`hide.bs.modal` handlers rather than
- * requiring each of ~100 modals to opt in individually.
- *
- * Researched before building (full codebase audit, not guessed): every sampled Edit-modal flow in
- * this app fetches fresh data and populates the modal's fields SYNCHRONOUSLY, BEFORE calling
- * `.show()` -- so capturing the baseline snapshot at `shown.bs.modal` is safe and won't false-
- * positive against fields that are still mid-fetch (the one exception, `#userSettingsModal`, uses
- * `data-bs-toggle="modal"` declarative opening and already has its own bespoke revert-on-close
- * mechanism -- excluded below, not double-handled). A fieldless modal (pure confirm/delete/preview
- * dialogs, the majority of the ~100) naturally never registers as dirty at all --
- * `snapshotFormState()` returns the same empty string before and after, so this sweep needed no
- * exclude-list for that whole category, only for the handful of modals below that manage their own
- * unsaved-state semantics already.
- *
- * The hard problem this solves: telling "user is abandoning real changes" apart from "this hide()
- * call is the Save handler's own post-success close" -- the ~29+ Save handlers across the app are
- * NOT consistent in how they call `.hide()` (jQuery `.modal('hide')` vs `bootstrap.Modal.getInstance
- * (...).hide()` vs `.getOrCreateInstance(...).hide()`), but EVERY one of them calls `showSuccess()`
- * synchronously, immediately before closing, without exception (verified via audit) -- so instead of
- * touching every individual handler, `showSuccess()` itself (alert.js) stamps
- * `__lastSuccessToastAt`, and a hide arriving within MODAL_DIRTY_CHECK_SKIP_WINDOW_MS of that stamp
- * is treated as "save just succeeded," skipping the check for that one close. This is a probabilistic
- * shortcut, not a hard guarantee -- accepted tradeoff, same class as several other documented
- * timing-window compromises already in this codebase.
- *
- * Bootstrap 5.3's own `Modal.hide()` (node_modules/bootstrap/js/dist/modal.js) fires `hide.bs.modal`
- * and aborts if `event.preventDefault()` was called on it -- confirmed by reading that file directly,
- * not assumed -- and EVERY dismissal path (dismiss-button click, backdrop click, Esc key) routes
- * through this same `hide()` method internally, so this ONE delegated handler correctly covers all
- * 3 dismissal vectors uniformly (no separate click/backdrop/Esc interception needed).
- */
-let __lastSuccessToastAt = 0;
-const MODAL_DIRTY_CHECK_SKIP_WINDOW_MS = 1500;
-// Modals that manage their own unsaved-state semantics already, or aren't real edit forms --
-// excluded so this generic sweep doesn't double-handle or conflict with them. ect*/pst* (Employment
-// Certificate/Payslip Template canvas-editor sub-modals) matched by prefix below, not listed here
-// individually -- see this function's own docblock above.
-const MODAL_DIRTY_CHECK_EXCLUDE_IDS = [
-    'userSettingsModal',    // own bespoke dirty-tracking + revert-on-close already (see show.bs.modal/hidden.bs.modal handlers above)
-    'empSignaturePadModal', // fire-and-forget blob upload on click, no showSuccess() call, not an edit form
-    'empMapPinModal',
-    'cpSignaturePadModal',
-];
-const __modalDirtyBaselines = {};
-function isModalDirtyCheckExempt(modalId) {
-    if (!modalId) return true;
-    if (MODAL_DIRTY_CHECK_EXCLUDE_IDS.indexOf(modalId) !== -1) return true;
-    // Employment Certificate ("ect...") / Payslip Template ("pst...") canvas-editor sub-modals
-    // (ectTextModal, pstImageLibraryModal, etc.) already have their own bespoke dirty-check per
-    // Phase 1's own audit -- see that module's own docblock.
-    if (/^(ect|pst)[A-Z]/.test(modalId)) return true;
-    return false;
-}
-$(document).on('shown.bs.modal', '.modal', function () {
-    const modalId = this.id;
-    if (isModalDirtyCheckExempt(modalId)) return;
-    __modalDirtyBaselines[modalId] = snapshotFormState($(this));
-});
-$(document).on('hide.bs.modal', '.modal', function (e) {
-    const modalId = this.id;
-    if (isModalDirtyCheckExempt(modalId)) return;
-    if (!(modalId in __modalDirtyBaselines)) return; // never captured (e.g. shown before this script ran) -- don't block
-    const $modal = $(this);
-    // A save-success toast fired very recently -- almost certainly THIS handler's own post-success
-    // close, not an abandon. Skip the check but still clear the baseline so the NEXT open+edit+close
-    // cycle on this same modal is checked fresh.
-    if (Date.now() - __lastSuccessToastAt < MODAL_DIRTY_CHECK_SKIP_WINDOW_MS) {
-        delete __modalDirtyBaselines[modalId];
-        return;
-    }
-    if (!isFormDirty($modal, __modalDirtyBaselines[modalId])) {
-        delete __modalDirtyBaselines[modalId];
-        return;
-    }
-    // Set by the confirm's own onProceed below, right before re-triggering hide() -- lets that
-    // SECOND hide.bs.modal pass through instead of looping back into another confirm.
-    if ($modal.data('dirtyCheckBypass')) {
-        $modal.removeData('dirtyCheckBypass');
-        delete __modalDirtyBaselines[modalId];
-        return;
-    }
-    e.preventDefault();
-    showConfirm(
-        (langData && langData['confirm_discard_changes_title']) || 'Discard unsaved changes?',
-        (langData && langData['confirm_discard_changes_message']) || "You have changes that haven't been saved yet. If you continue, they will be lost.",
-        function () {
-            $modal.data('dirtyCheckBypass', true);
-            const inst = bootstrap.Modal.getInstance($modal[0]) || bootstrap.Modal.getOrCreateInstance($modal[0]);
-            inst.hide();
-        }
-    );
-});
+// 2026-09-03, Platform Hardening Phase 1.2 -- a GENERIC modal-level dirty-check (delegated
+// `shown.bs.modal`/`hide.bs.modal` handlers intercepting every Bootstrap modal app-wide, ~100 of
+// them) used to live here, asking "Discard unsaved changes?" whenever a modal with an edited field
+// was closed via X/Cancel/backdrop/Esc.
+// 2026-09-09, explicit request: "ปิดทั้งระบบ เอา dirty-check ออกทั้งหมด" -- removed entirely, system-
+// wide, after it was reported as confusing across most forms/modals in the app (explicit exception
+// named: the Payslip/Employment Certificate Template canvas editors' OWN bespoke unsaved-changes
+// handling -- those are standalone pages now, not modals, and were never covered by this mechanism
+// anyway, only ever exempted from it by id-prefix while it still existed). The page-BODY version of
+// this same idea (confirmIfDirtyThen()/snapshotFormState() above, used by explicit Cancel buttons on
+// Employee Detail/Tax & Statutory/Payroll Configuration/Permission Matrix) is UNCHANGED -- this
+// request was specifically about the modal-close interception, not that separate, explicit-button
+// mechanism. Every Bootstrap modal in the app now closes via X/Cancel/backdrop/Esc exactly as it did
+// before Phase 1.2 introduced this, with no confirm interruption.
 // 2026-09-02, real bug found and fixed (explicit report: "ใน header กดที่ icon ไหนแล้วมี ui ลงมา ถ้าไปกดตัว
 // อื่นตัวเดิมต้อง hide ไป ตอนนี้ขึ้นซ้อนๆกัน") -- the 4 header flyouts (notification bell, hub/switch-app,
 // language, profile) each only ever toggled THEIR OWN menu, never closing the other 3 -- so opening
