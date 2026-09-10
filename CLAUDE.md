@@ -20,6 +20,12 @@
 - Fix logic only unless explicitly told to change UI/style.
 - One task at a time; stop and report after each.
 - Code comments explain why in one line max. Longer rationale goes in the commit message.
+- When asked for a summary or release note, derive it from git log, never from memory.
+- Follow the given task order. Ask before reordering.
+- Mirror-by-copy is not acceptable: if a new function duplicates an existing one except for a
+  parameter, generalize the existing function instead.
+- End every task report with a suggested commit message in conventional-commit format
+  (type(scope): summary + 1-3 lines of why). The developer copies it when committing.
 
 ---
 
