@@ -593,6 +593,8 @@
     $router->post('api/bank-file-format.reset', 'BankFileFormatController@resetToDefault');
     $router->get('api/bank-file-format.edit-logs', 'BankFileFormatController@editLogs');
     $router->get('api/employee.get', 'EmployeeController@get');
+    // Batch 3A item 4 -- avatar quick-view modal.
+    $router->get('api/employee.quick-view', 'EmployeeController@quickView');
     $router->post('api/employee.save', 'EmployeeController@save');
     $router->post('api/employee.payment-account-options', 'EmployeeController@paymentAccountOptions');
     $router->get('api/employee.payment-method-lines', 'EmployeeController@paymentMethodLines');

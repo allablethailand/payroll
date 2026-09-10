@@ -478,6 +478,24 @@ class EmployeeModel {
                     LEFT JOIN `shifts` sh ON e.shift_id = sh.id
                     LEFT JOIN `structure_branches` b ON e.branch_id = b.id";
 
+    /** Batch 3A item 4 -- lightweight lookup for the app.js quick-view modal opened by clicking an
+     *  employee avatar (Process List's Created/Updated By, Process Detail's employee table, the
+     *  Approval Timeline modal). Deliberately NOT the full get() (that method decrypts/returns many
+     *  fields no quick-view popup needs, keyed by employee_no not id besides). */
+    public function quickView(int $compId, int $employeeId): ?array {
+        $sql = "SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en,
+                    e.profile_photo_path, e.employee_status,
+                    d.department_name_th, d.department_name_en,
+                    p.position_name_th, p.position_name_en,
+                    b.branch_name_th, b.branch_name_en
+                " . self::LIST_JOINS . "
+                WHERE e.id = :id AND e.comp_id = :comp_id AND e.deleted_at IS NULL";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
     /** Maps this list's DataTables column keys to their real SQL expression -- shared by list()'s
      *  own SELECT and listColumnValues()'s DISTINCT lookup, so the two can never quietly drift out
      *  of sync (e.g. the Excel-style filter offering a value list() itself would never actually

@@ -403,6 +403,23 @@ class EmployeeController extends Controller {
         $values = $this->model->listColumnValues((int)$compId, $column, $filters, $search, (string)$lang);
         $this->json(['status' => true, 'values' => $values]);
     }
+    /** Batch 3A item 4 -- backs the app.js employee-avatar quick-view modal (click any avatar
+     *  rendered via apvAvatarHtml(..., {employeeId}) app-wide). Same permission gate as get(). */
+    public function quickView() {
+        if (!$this->requirePermission('employee.view')) return;
+        $compId = getCompId();
+        $employeeId = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+        if (!$compId || $employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing id.']);
+            return;
+        }
+        $employee = $this->model->quickView((int)$compId, $employeeId);
+        if ($employee) {
+            $this->json(['status' => true, 'data' => $employee]);
+        } else {
+            $this->json(['status' => false, 'message' => 'Employee not found.']);
+        }
+    }
     public function get() {
         if (!$this->requirePermission('employee.view')) return;
         $compId = getCompId();
