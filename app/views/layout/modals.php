@@ -3097,7 +3097,15 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form id="payrollRunForm" novalidate>
+                <!-- 2026-09-11, Batch 3C item 4 sub-step 4a: merged with the old, separately-maintained
+                     #editRunForm (detail.php) into this ONE form -- Edit populates #run_id (empty =
+                     create; a real id = update) and every other field below via the same shared
+                     app.js functions the Create flow itself uses, instead of a byte-for-byte duplicate
+                     modal/form/JS set. See app.js's own "Payroll Run form (shared Create/Edit)"
+                     section for the consolidated logic. -->
+                <input type="hidden" id="run_id" name="id" value="">
                 <input type="hidden" id="run_sync_process_id" name="sync_process_id" value="">
+                <input type="hidden" id="run_sync_run_kind" value="">
                 <div class="modal-body">
                     <!-- 2026-09-02, same-day follow-up, explicit request: "พอมีแค่...ให้ติ๊กออกแล้วค่อยให้เลือก
                          รอบ...ดูงงๆ ช่วยเพิ่มเป็น radio ให้เลือก...ถ้าเลือก option 1 ให้ขึ้นรอบให้เลือก ถ้าเลือก
@@ -3314,8 +3322,11 @@
                                     <input type="radio" name="runMergeTargetMode" id="run_merge_target_mode_future_cycle" value="future_cycle">
                                 </div>
                                 <div id="run_merge_target_existing_wrap">
+                                    <!-- data-exclude-id set/cleared by app.js on modal open (Edit: this
+                                         run's own id, so it never lists itself as a candidate; Create:
+                                         cleared -- there is no run yet to exclude). -->
                                     <select class="form-select select2-remote" id="run_merge_target_id" name="merge_target_run_id"
-                                            data-api="/api/payroll-run.options" data-states="draft,pending_approval,approved,rejected,need_info,paid,locked"></select>
+                                            data-api="/api/payroll-run.options" data-states="draft,pending_approval,approved,rejected,need_info,paid,locked" data-exclude-id=""></select>
                                     <div class="form-text small" data-i18n="run_merge_target_hint">Build this round up normally first (Join Employees / Manage Items) -- once ready, use "Merge into Target" on its own Detail page to fold it into the round selected here.</div>
                                 </div>
                                 <div class="d-none" id="run_merge_target_future_cycle_wrap">
@@ -3368,6 +3379,12 @@
                         </div>
                         <div class="col-sm-9">
                             <select class="form-select select2-remote required" id="run_cycle_id" name="cycle_id" data-api="/api/payroll-cycle.options"></select>
+                            <!-- Edit-only warning (toggled by detail.js's own editRunCycleToggleRiskyRd(),
+                                 a Detail-page-specific check against the already-open run's own
+                                 employee_count/sync_process_id -- see that function's own docblock).
+                                 Stays hidden/unused on the Create flow, which has no existing run to warn
+                                 about. -->
+                            <div class="form-text small text-warning d-none" id="runCycleLockedHint" data-i18n="edit_run_cycle_locked_hint">This run already has calculated employees. Changing the schedule may affect who's included -- recalculate afterward to keep the employee list accurate.</div>
                         </div>
                     </div>
                     <div class="row mb-3">

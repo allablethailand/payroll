@@ -1060,16 +1060,11 @@ function runTypeLabelRd(run) {
     const label = langData['run_purpose_incentive'] || 'Incentive / Other Payment (no base salary)';
     return parts.length ? `${label} (${parts.join(', ')})` : label;
 }
-function updateEditRunTypeVisibility() {
-    const isIncentive = $('#edit_run_purpose').val() === 'incentive';
-    // 2026-09-09, round-creation flow audit Bug 1 fix: #edit_run_use_flat_tax_rate_row added to this
-    // same toggle group -- unlike the Create form's own #run_use_flat_tax_rate_row (only revealed for
-    // an Origami-attributed tax_treatment='separate' source, see setSupplementalPullMode()), Edit
-    // always shows it alongside the other 4 incentive checkboxes so a previously-saved true value is
-    // never hidden from view just because this modal wasn't opened via that specific attribution path.
-    $('#edit_run_compute_statutory_row, #edit_run_include_base_salary_row, #edit_run_include_standing_items_row, #edit_run_include_attendance_pay_row, #edit_run_use_flat_tax_rate_row').toggleClass('d-none', !isIncentive);
-}
-$(document).on('change', '#edit_run_purpose', updateEditRunTypeVisibility);
+// 2026-09-11, Batch 3C item 4 sub-step 4a: updateEditRunTypeVisibility() itself is gone -- merged
+// into app.js's shared updateComputeStatutoryVisibility() (its own `isEditing` branch reproduces
+// this function's exact prior behavior: #run_use_flat_tax_rate_row shown whenever incentive is
+// selected, unlike Create's own narrower rule). That shared function is already bound to
+// #run_purpose's own 'change' event in app.js -- no separate binding needed here.
 
 // 2026-09-11, Batch 3C item 5, explicit instruction: hide the Cash Payments/Bank Account Assignment/
 // Third-Party Remittance tabs entirely when the run has nothing for them to show, rather than
@@ -4550,325 +4545,75 @@ $(document).on('click', '#btnJoinSelected', function () {
 // a gate of its own.
 function editRunCycleToggleRiskyRd() {
     if (currentRun.sync_process_id) return false;
-    const selectedCycleId = $('#edit_run_cycle_id').val();
+    const selectedCycleId = $('#run_cycle_id').val();
     const wasOffCycle = !currentRun.cycle_id;
     const willBeOffCycle = !selectedCycleId;
     return wasOffCycle !== willBeOffCycle && Number(currentRun.employee_count || 0) > 0;
 }
-// Live-updates the run-type section (Run Purpose/Compute Statutory/.../Use Flat Tax Rate) AND the
-// risky-toggle warning as the admin changes the cycle dropdown DURING this same open modal -- not
-// just once on open -- since switching cycle<->off-schedule right here is now the whole point of
-// this field (see PayrollRunModel::update()'s own forcing logic for a run that just became/stopped
-// being cycle-linked, which this mirrors client-side purely for immediate visual feedback).
+// 2026-09-11, Batch 3C item 4 sub-step 4a: kept as Detail-page-only orchestration (unlike every
+// other function this sub-step consolidated) -- Create has no equivalent at all, since neither of
+// its own two flows (a plain Add, a Pull-sync) ever needs to re-derive "off-cycle or supplemental"
+// live off a CHANGING cycle dropdown mid-session; each is populated once from a known starting
+// state. Editing an EXISTING run genuinely can change cycle_id while sync_process_id/sync_run_kind
+// stay fixed, so this recomputes what setOffCycleMode()/setSupplementalPullMode() (app.js) each
+// only ever derive from ONE of the two conditions on their own, plus the risk warning above (also
+// Edit-only -- Create has no "already has employees" concept for a run that doesn't exist yet).
+// Ids updated to the shared run_* names; syncRunMergeIntoUi()/updateComputeStatutoryVisibility()
+// (app.js) replace the deleted syncEditRunMergeIntoUiRd()/updateEditRunTypeVisibility() duplicates.
 function updateEditRunTypeSectionRd() {
-    const cycleId = $('#edit_run_cycle_id').val();
-    // A supplemental sync-linked run stays eligible for Run Purpose regardless of the cycle field
-    // (sync_run_kind, not cycle_id, is what makes it supplemental) -- same "off-cycle OR
-    // supplemental sync" OR this whole feature already used before cycle became editable here.
+    const cycleId = $('#run_cycle_id').val();
     const isSupplementalSync = !!currentRun.sync_process_id && (currentRun.sync_run_kind || 'regular') === 'supplemental';
     const offCycle = !cycleId && !currentRun.sync_process_id;
-    $('#edit_run_type_section').toggleClass('d-none', !offCycle && !isSupplementalSync);
-    updateEditRunTypeVisibility();
-    $('#editRunCycleLockedHint').toggleClass('d-none', !editRunCycleToggleRiskyRd());
-    // 2026-09-01/02, explicit request: "เพิ่มในหน้า Detail ให้ด้วยครับ" then "ขาด...เปิดรอบใหม่ อ้างอิงถึงรอบที่
-    // มีอยู่" then "พอเป็น Design แบบเดียวกันแล้วดูแปลกๆครับ ช่วย Design Form ให้ใหม่" -- #edit_run_offcycle_panel
-    // (mirrors #run_offcycle_panel on the Create form) only applies to a genuinely off-cycle run
-    // (matches PayrollRunModel::update()'s own check exactly: cycle_id===null AND
-    // sync_process_id===null -- unlike Run Purpose above, a supplemental sync run does NOT qualify
-    // for this one). Forced back to "new"/no-target the moment
-    // the cycle field stops being off-cycle -- keeps whatever the admin had picked untouched while
-    // it's still genuinely off-cycle (e.g. switching which OTHER field changed on the same open
-    // modal shouldn't silently wipe a "reference" choice already made).
-    $('#edit_run_offcycle_panel').toggleClass('d-none', !offCycle);
+    $('#run_purpose_choice_row').toggleClass('d-none', !offCycle && !isSupplementalSync);
+    $('#run_purpose').toggleClass('required', offCycle || isSupplementalSync);
+    updateComputeStatutoryVisibility();
+    $('#runCycleLockedHint').toggleClass('d-none', !editRunCycleToggleRiskyRd());
+    // #run_offcycle_panel (merge-into) only applies to a genuinely off-cycle run (matches
+    // PayrollRunModel::update()'s own check: cycle_id===null AND sync_process_id===null) -- a
+    // supplemental sync run does NOT qualify, unlike Run Purpose above.
+    $('#run_offcycle_panel').toggleClass('d-none', !offCycle);
     if (!offCycle) {
-        // syncEditRunMergeIntoUiRd() itself fires editRunMergeChoice's own change ->
-        // setEditMergeChoiceMode('new'), so no separate explicit call is needed here anymore.
-        syncEditRunMergeIntoUiRd('standalone');
+        syncRunMergeIntoUi('standalone');
     }
 }
-// 2026-09-02, explicit request: "ยังไม่เหมือนหน้าเพิ่มรอบในหน้า List ครับ ขาด รอบพิเศษนอกรอบเงินเดือน" then
-// "พอมีแค่...ให้ติ๊กออกแล้วค่อยให้เลือกรอบ...ดูงงๆ ช่วยเพิ่มเป็น radio ให้เลือก" -- mirrors setOffCycleMode() in
-// index.js, adapted to this modal's own edit_run_* field ids/radio name (editRunScheduleChoice,
-// distinct from the Create form's runScheduleChoice). Only ever shown for a non-sync run (see
-// #btnEditRun's own handling of #edit_run_offcycle_row's visibility below) -- a sync-linked run's
-// "off-cycle-ness" is governed by sync_run_kind instead, a completely different mechanism this radio
-// doesn't touch.
-function setEditOffCycleMode(isOffCycle) {
-    $('#edit_run_cycle_row').toggleClass('d-none', isOffCycle);
-    $('#edit_run_cycle_id').toggleClass('required', !isOffCycle);
-    if (isOffCycle) {
-        $('#edit_run_cycle_id').val('').trigger('change');
-        $('#edit_run_cycle_id').removeClass('is-invalid');
-    }
-    $('#edit_run_offcycle_row .run-choice-card').removeClass('active');
-    $(isOffCycle ? '#edit_run_schedule_choice_offcycle' : '#edit_run_schedule_choice_cycle').closest('.run-choice-card').addClass('active');
-}
-$(document).on('change', 'input[name="editRunScheduleChoice"]', function () {
-    setEditOffCycleMode($(this).val() === 'offcycle');
-});
-// 2026-09-09, round-creation flow audit Phase 3 -- mirrors syncRunMergeIntoUi()/syncRunPurposeChoiceUi()
-// in index.js (see those functions' own docblocks), adapted to this modal's own edit_run_* ids. The
-// "new UI drives the old hidden radios" approach means setEditMergeChoiceMode()/setEditMergeTargetMode()
-// below (both unchanged) keep doing all the actual show/hide/clear work.
-function syncEditRunMergeIntoUiRd(value) {
-    $('#edit_run_merge_into_row input[name="editRunMergeInto"]').prop('checked', false);
-    $('#edit_run_merge_into_row .run-subchoice-btn').removeClass('active');
-    const $radio = $(`input[name="editRunMergeInto"][value="${value}"]`).prop('checked', true);
-    $radio.closest('.run-subchoice-btn').addClass('active');
-    if (value === 'standalone') {
-        $('#edit_run_merge_choice_new').prop('checked', true).trigger('change');
-        return;
-    }
-    // Target sub-mode set silently first (no .trigger()) so editRunMergeChoice's own change handler
-    // (setEditMergeChoiceMode('reference')) reads the already-correct sub-mode on its one and only
-    // cascade, instead of a stale value it would otherwise have to immediately re-correct.
-    $(value === 'future_cycle' ? '#edit_run_merge_target_mode_future_cycle' : '#edit_run_merge_target_mode_existing').prop('checked', true);
-    $('#edit_run_merge_choice_reference').prop('checked', true).trigger('change');
-}
-$(document).on('change', 'input[name="editRunMergeInto"]', function () {
-    syncEditRunMergeIntoUiRd($(this).val());
-});
-// Unlike the Create form's own syncRunPurposeChoiceUi(), `value` is NEVER '' here -- opening Edit
-// always has a real currentRun.run_purpose to reflect (see #edit_run_purpose_choice_row's own
-// comment in detail.php for why the Create form's hard-block doesn't apply to editing).
-function syncEditRunPurposeChoiceUiRd(value) {
-    $('#edit_run_purpose').val(value).removeClass('is-invalid');
-    $('#edit_run_purpose_choice_row input[name="editRunPurposeChoice"]').prop('checked', false);
-    $('#edit_run_purpose_choice_row .run-choice-card').removeClass('active');
-    const $radio = $(`input[name="editRunPurposeChoice"][value="${value}"]`).prop('checked', true);
-    $radio.closest('.run-choice-card').addClass('active');
-    $('#edit_run_purpose').trigger('change');
-}
-$(document).on('change', 'input[name="editRunPurposeChoice"]', function () {
-    syncEditRunPurposeChoiceUiRd($(this).val());
-});
-// 2026-09-01/02: mirrors setMergeChoiceMode() in index.js, adapted to this modal's own edit_run_*
-// field ids/name (editRunMergeChoice, distinct from the Create form's runMergeChoice).
-function setEditMergeChoiceMode(choice) {
-    const isReference = choice === 'reference';
-    $('#edit_run_merge_target_row').toggleClass('d-none', !isReference);
-    if (!isReference) {
-        $('#edit_run_merge_target_id').val('').trigger('change.select2').removeClass('is-invalid');
-        $('#edit_run_merge_target_cycle_id').val('').trigger('change.select2').removeClass('is-invalid');
-        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('').datepicker('update').removeClass('is-invalid');
-    }
-    setEditMergeTargetMode($('input[name="editRunMergeTargetMode"]:checked').val() || 'existing');
-    // 2026-09-02, 2nd same-day follow-up: .active on the pill <label> -- .run-subchoice-btn (was
-    // .run-choice-card until this round's #edit_run_offcycle_panel redesign).
-    $('#edit_run_merge_choice_row .run-subchoice-btn').removeClass('active');
-    $(isReference ? '#edit_run_merge_choice_reference' : '#edit_run_merge_choice_new').closest('.run-subchoice-btn').addClass('active');
-}
-$(document).on('change', 'input[name="editRunMergeChoice"]', function () {
-    setEditMergeChoiceMode($(this).val());
-});
-// 2026-09-06: mirrors setMergeTargetMode() in index.js, adapted to this modal's own edit_run_*
-// field ids/name (editRunMergeTargetMode, distinct from the Create form's runMergeTargetMode).
-function setEditMergeTargetMode(mode) {
-    const isFutureCycle = mode === 'future_cycle';
-    const targetRowShowing = !$('#edit_run_merge_target_row').hasClass('d-none');
-    $('#edit_run_merge_target_existing_wrap').toggleClass('d-none', isFutureCycle);
-    $('#edit_run_merge_target_future_cycle_wrap').toggleClass('d-none', !isFutureCycle);
-    $('#edit_run_merge_target_id').toggleClass('required', targetRowShowing && !isFutureCycle);
-    $('#edit_run_merge_target_cycle_id').toggleClass('required', targetRowShowing && isFutureCycle);
-    $('#edit_run_merge_target_mode_row .run-subchoice-btn').removeClass('active');
-    $(isFutureCycle ? '#edit_run_merge_target_mode_future_cycle' : '#edit_run_merge_target_mode_existing').closest('.run-subchoice-btn').addClass('active');
-}
-$(document).on('change', 'input[name="editRunMergeTargetMode"]', function () {
-    const mode = $(this).val();
-    setEditMergeTargetMode(mode);
-    // A user-driven mode switch (not the initial populate-on-open) always clears the OTHER mode's
-    // own field(s) -- see collectRunFormData()'s own comment in index.js for why both keys must
-    // always be sent together, unambiguously, on every save.
-    if (mode === 'future_cycle') {
-        $('#edit_run_merge_target_id').val('').trigger('change.select2').removeClass('is-invalid');
-        refreshEditRunMergeTargetPreviewRd();
-    } else {
-        $('#edit_run_merge_target_cycle_id').val('').trigger('change.select2').removeClass('is-invalid');
-        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('').datepicker('update').removeClass('is-invalid');
-        resetEditRunMergeTargetPreviewRd();
-    }
-});
-$(document).on('change', '#edit_run_merge_target_cycle_id', function () {
-    const cycleId = $(this).val();
-    if (!cycleId) {
-        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('').datepicker('update');
-        resetEditRunMergeTargetPreviewRd();
-        return;
-    }
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-cycle.suggest-period`, method: 'GET', data: { id: cycleId }, dataType: 'json',
-        success: function (res) {
-            if (!res.status) { return; }
-            $('#edit_run_merge_target_period_start').val(toDisplayDateRd(res.period_start_date)).datepicker('update').removeClass('is-invalid');
-            $('#edit_run_merge_target_period_end').val(toDisplayDateRd(res.period_end_date)).datepicker('update').removeClass('is-invalid');
-            refreshEditRunMergeTargetPreviewRd();
-        }
-    });
-});
-// 2026-09-09, round-creation flow audit Bug 2 fix -- same mechanism as index.js's own
-// refreshRunMergeTargetPreview()/resolveRunMergeTargetBeforeSubmit() (see those functions' own
-// docblocks for the full reasoning), adapted to this modal's own edit_run_* field ids. The one real
-// difference: `exclude_id: PAYROLL_RUN_ID` is always sent so this run never lists itself as a
-// candidate to merge into.
-let editRunMergeTargetPreviewMatches = null;
-let editRunMergeTargetPreviewKey = null;
-function resetEditRunMergeTargetPreviewRd() {
-    editRunMergeTargetPreviewMatches = null;
-    editRunMergeTargetPreviewKey = null;
-    $('#edit_run_merge_target_preview_box').addClass('d-none');
-    $('#edit_run_merge_target_preview_none, #edit_run_merge_target_preview_single, #edit_run_merge_target_preview_multi').addClass('d-none');
-    $('#edit_run_merge_target_preview_select').empty().removeClass('is-invalid');
-}
-function editRunMergeTargetPreviewLabelRd(m) {
-    const dateStr = typeof formatDisplayDate === 'function' ? formatDisplayDate(m.payment_date) : m.payment_date;
-    return `${m.run_name} (${dateStr})`;
-}
-function renderEditRunMergeTargetPreviewRd(matches) {
-    $('#edit_run_merge_target_preview_box').removeClass('d-none');
-    $('#edit_run_merge_target_preview_none, #edit_run_merge_target_preview_single, #edit_run_merge_target_preview_multi').addClass('d-none');
-    if (matches.length === 0) {
-        $('#edit_run_merge_target_preview_none').removeClass('d-none').text(langData['run_merge_target_preview_none'] || 'No matching round yet -- this will wait until one is created.');
-    } else if (matches.length === 1) {
-        const tpl = langData['run_merge_target_preview_single'] || 'This will merge into: {name}';
-        $('#edit_run_merge_target_preview_single').removeClass('d-none').text(tpl.replace('{name}', editRunMergeTargetPreviewLabelRd(matches[0])));
-    } else {
-        const $sel = $('#edit_run_merge_target_preview_select').empty().removeClass('is-invalid');
-        $sel.append(new Option(langData['select_option'] || '-- Select --', ''));
-        matches.forEach(m => $sel.append(new Option(editRunMergeTargetPreviewLabelRd(m), m.id)));
-        $('#edit_run_merge_target_preview_multi').removeClass('d-none');
-    }
-}
-function refreshEditRunMergeTargetPreviewRd() {
-    const cycleId = $('#edit_run_merge_target_cycle_id').val();
-    const periodStart = toIsoDateRd($('#edit_run_merge_target_period_start').val());
-    if (!cycleId || !periodStart) {
-        resetEditRunMergeTargetPreviewRd();
-        return;
-    }
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-run.preview-merge-target`, method: 'GET',
-        data: { cycle_id: cycleId, period_start_date: periodStart, exclude_id: PAYROLL_RUN_ID }, dataType: 'json',
-        success: function (res) {
-            if (!res.status) return;
-            editRunMergeTargetPreviewMatches = res.matches || [];
-            editRunMergeTargetPreviewKey = cycleId + '|' + periodStart;
-            renderEditRunMergeTargetPreviewRd(editRunMergeTargetPreviewMatches);
-        }
-    });
-}
-$(document).on('changeDate', '#edit_run_merge_target_period_start, #edit_run_merge_target_period_end', function () {
-    refreshEditRunMergeTargetPreviewRd();
-});
-function resolveEditRunMergeTargetBeforeSubmitRd(callback) {
-    const isReferenceMode = !$('#edit_run_merge_target_row').hasClass('d-none');
-    const targetMode = $('input[name="editRunMergeTargetMode"]:checked').val() || 'existing';
-    if (!isReferenceMode || targetMode !== 'future_cycle') {
-        callback(true);
-        return;
-    }
-    const cycleId = $('#edit_run_merge_target_cycle_id').val();
-    const periodStart = toIsoDateRd($('#edit_run_merge_target_period_start').val());
-    if (!cycleId || !periodStart) {
-        callback(true);
-        return;
-    }
-    const key = cycleId + '|' + periodStart;
-    function decide(matches) {
-        if (matches.length === 0) {
-            callback(true);
-        } else if (matches.length === 1) {
-            callback(true, {
-                merge_target_run_id: matches[0].id,
-                merge_target_cycle_id: null, merge_target_period_start_date: null, merge_target_period_end_date: null,
-            });
-        } else {
-            const chosen = $('#edit_run_merge_target_preview_select').val();
-            if (!chosen) {
-                $('#edit_run_merge_target_preview_select').addClass('is-invalid');
-                showWarning(langData['run_merge_target_preview_pick_required'] || 'More than one existing round matches -- please pick which one before saving.');
-                callback(false);
-                return;
-            }
-            callback(true, {
-                merge_target_run_id: parseInt(chosen, 10),
-                merge_target_cycle_id: null, merge_target_period_start_date: null, merge_target_period_end_date: null,
-            });
-        }
-    }
-    if (editRunMergeTargetPreviewKey === key && editRunMergeTargetPreviewMatches !== null) {
-        decide(editRunMergeTargetPreviewMatches);
-        return;
-    }
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-run.preview-merge-target`, method: 'GET',
-        data: { cycle_id: cycleId, period_start_date: periodStart, exclude_id: PAYROLL_RUN_ID }, dataType: 'json',
-        success: function (res) {
-            const matches = (res.status && res.matches) ? res.matches : [];
-            editRunMergeTargetPreviewMatches = matches;
-            editRunMergeTargetPreviewKey = key;
-            renderEditRunMergeTargetPreviewRd(matches);
-            decide(matches);
-        },
-        error: function () { callback(true); }
-    });
-}
-// 2026-09-02, explicit request: "การเลือกรอบการจ่าย แล้ว Default...ช่วยปรับทั้ง Form ตอนดึง Origami และ Form
-// สร้างรอบใหม่ และ Form แก้ไขรอบ" -- same PayrollCycleModel::suggestNextPeriod() endpoint the Create
-// form's own applySuggestedPeriod() (index.js) already calls, just missing here until now. Only ever
-// fires on a genuine user-driven pick (plain 'change', not the 'change.select2' this modal's own
-// initial-population code uses to show the run's REAL existing dates without recomputing anything --
-// see #btnEditRun's own handler above) -- so opening Edit on an already-cycle-linked run never
-// silently overwrites its real period with a freshly "suggested" one; only actually switching to a
-// different cycle during this same edit does.
-// 2026-09-09, explicit request: "เปลี่ยนเป็นเลือกรอบแล้ว ถ้าวันที่มีข้อมูลอยู่ไม่ต้องเปลี่ยนค่า ถ้าไม่มีค่าให้ใส่
-// อัตโนมัติ" -- this docblock's own earlier reasoning ("only fires on a genuine user-driven pick...
-// only actually switching to a different cycle during this same edit does [overwrite]") is now ONE
-// LEVEL more precise: switching cycle during an edit no longer overwrites a date field that already
-// holds a real value either -- only a genuinely EMPTY field gets auto-filled. Matches index.js's own
-// applySuggestedPeriod() for the exact same reason.
-function applySuggestedPeriodRd(cycleId) {
-    if (!cycleId) {
-        return;
-    }
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-cycle.suggest-period`,
-        method: 'GET',
-        data: { id: cycleId },
-        dataType: 'json',
-        success: function (res) {
-            if (!res.status) {
-                return;
-            }
-            if (!$('#edit_period_start').val()) {
-                $('#edit_period_start').val(toDisplayDateRd(res.period_start_date)).datepicker('update');
-            }
-            if (!$('#edit_period_end').val()) {
-                $('#edit_period_end').val(toDisplayDateRd(res.period_end_date)).datepicker('update');
-            }
-            if (!$('#edit_payment_date').val()) {
-                $('#edit_payment_date').val(toDisplayDateRd(res.payment_date)).datepicker('update');
-            }
-            $('#edit_period_start, #edit_period_end, #edit_payment_date').removeClass('is-invalid');
-        }
-    });
-}
-$(document).on('change', '#edit_run_cycle_id', updateEditRunTypeSectionRd);
-$(document).on('change', '#edit_run_cycle_id', function () {
-    applySuggestedPeriodRd($(this).val());
-});
+// 2026-09-11, Batch 3C item 4 sub-step 4a: setEditOffCycleMode()/syncEditRunMergeIntoUiRd()/
+// syncEditRunPurposeChoiceUiRd()/setEditMergeChoiceMode()/setEditMergeTargetMode() all deleted --
+// superseded by app.js's shared setOffCycleMode()/syncRunMergeIntoUi()/syncRunPurposeChoiceUi()/
+// setMergeChoiceMode()/setMergeTargetMode() now that ids match. #btnEditRun's own populate code
+// below calls these shared functions directly; the editRunScheduleChoice/editRunMergeInto/
+// editRunMergeChoice/editRunMergeTargetMode radio names themselves are gone too (merged markup uses
+// the Create form's own runScheduleChoice/runMergeInto/runMergeChoice/runMergeTargetMode, already
+// bound in app.js).
+// 2026-09-11, Batch 3C item 4 sub-step 4a: the merge-target-preview functions (reset/label/render/
+// refresh/resolve) and applySuggestedPeriodRd() all deleted -- superseded by app.js's shared
+// resetRunMergeTargetPreview()/runMergeTargetPreviewLabel()/renderRunMergeTargetPreview()/
+// refreshRunMergeTargetPreview()/resolveRunMergeTargetBeforeSubmit()/applySuggestedPeriod(). The one
+// real difference Edit needed (`exclude_id` so a run never lists itself as its own merge target) is
+// now handled generically via setRunFormExcludeId()/#run_merge_target_id's own data-exclude-id
+// attribute (see app.js's own docblock) instead of a second copy of each function with one extra
+// hardcoded ajax key.
+//
+// Edit-only extra binding alongside app.js's own shared #run_cycle_id change handlers
+// (applySuggestedPeriod()) -- reacts live to the admin changing the cycle dropdown DURING an
+// already-open Edit session, which Create never needs (see updateEditRunTypeSectionRd()'s own
+// docblock above).
+$(document).on('change', '#run_cycle_id', updateEditRunTypeSectionRd);
 $(document).on('click', '#btnEditRun', function () {
-    $('#edit_run_name').val(currentRun.run_name);
-    $('#edit_period_start').val(toDisplayDateRd(currentRun.period_start_date));
-    $('#edit_period_end').val(toDisplayDateRd(currentRun.period_end_date));
-    $('#edit_payment_date').val(toDisplayDateRd(currentRun.payment_date));
-    $('#edit_notes').val(currentRun.notes || '');
+    $('#run_id').val(currentRun.id);
+    $('#run_sync_process_id').val(currentRun.sync_process_id || '');
+    $('#run_sync_run_kind').val(currentRun.sync_run_kind || '');
+    $('#run_name').val(currentRun.run_name);
+    $('#run_period_start').val(toDisplayDateRd(currentRun.period_start_date));
+    $('#run_period_end').val(toDisplayDateRd(currentRun.period_end_date));
+    $('#run_payment_date').val(toDisplayDateRd(currentRun.payment_date));
+    $('#run_notes').val(currentRun.notes || '');
     // .datepicker('update') after programmatic .val() -- see CLAUDE.md's bootstrap-datepicker note
     // (widget state goes stale otherwise, blanking the field on next click-away).
-    $('#edit_period_start, #edit_period_end, #edit_payment_date').datepicker('update');
+    $('#run_period_start, #run_period_end, #run_payment_date').datepicker('update');
 
     // 2026-09-01, explicit request: cycle reference now editable here too (always enabled -- see
     // editRunCycleToggleRiskyRd()'s own docblock for why a blanket disable was loosened).
-    const $cycleSel = $('#edit_run_cycle_id');
+    const $cycleSel = $('#run_cycle_id');
     if (currentRun.cycle_id) {
         $cycleSel.empty().append(new Option(currentRun.cycle_name || String(currentRun.cycle_id), currentRun.cycle_id, true, true)).trigger('change.select2');
     } else {
@@ -4876,24 +4621,24 @@ $(document).on('click', '#btnEditRun', function () {
     }
 
     // 2026-09-02, explicit request: "ยังไม่เหมือนหน้าเพิ่มรอบในหน้า List ครับ ขาด รอบพิเศษนอกรอบเงินเดือน" --
-    // the checkbox is purely a visual affordance mirroring what the cycle field's own emptiness
-    // already meant before this existed -- hidden entirely for a sync-linked run (that data is
-    // inherently cycle-based/governed by sync_run_kind instead, same reasoning
-    // #run_offcycle_row is hidden for a Pull-sync create).
+    // the radio is purely a visual affordance mirroring what the cycle field's own emptiness already
+    // meant before this existed -- hidden entirely for a sync-linked run (that data is inherently
+    // cycle-based/governed by sync_run_kind instead, same reasoning #run_offcycle_row is hidden for
+    // a Pull-sync create). setOffCycleMode() (app.js) is the SAME function the Create flow's own
+    // radio calls -- ids now match, no separate Edit copy needed.
     const currentlyOffCycle = !currentRun.cycle_id && !currentRun.sync_process_id;
-    $('#edit_run_offcycle_row').toggleClass('d-none', !!currentRun.sync_process_id);
-    $(currentlyOffCycle ? '#edit_run_schedule_choice_offcycle' : '#edit_run_schedule_choice_cycle').prop('checked', true);
-    setEditOffCycleMode(currentlyOffCycle);
+    $('#run_offcycle_row').toggleClass('d-none', !!currentRun.sync_process_id);
+    $(currentlyOffCycle ? '#run_schedule_choice_offcycle' : '#run_schedule_choice_cycle').prop('checked', true);
+    setOffCycleMode(currentlyOffCycle);
 
     // 2026-09-01/02, same-day follow-up, explicit request: "เพิ่มในหน้า Detail ให้ด้วยครับ" then "ขาด...
     // เปิดรอบใหม่ อ้างอิงถึงรอบที่มีอยู่ และไม่ติ๊ก Auto" -- populate the merge-target field with the run's
-    // current value (or clear it), and never offer this run as its own merge target. Must run BEFORE
-    // updateEditRunTypeSectionRd() below, since that function only ever CLEARS this field (when the
-    // run turns out not to be off-cycle) -- it never populates it. Radio defaults to "new"/unticked
-    // unless the run genuinely already has a merge target set -- never pre-ticked as "reference"
-    // otherwise, per the explicit "ไม่ติ๊ก Auto" instruction.
-    $('#edit_run_merge_target_id').attr('data-exclude-id', PAYROLL_RUN_ID);
-    const $mergeTargetSel = $('#edit_run_merge_target_id');
+    // current value (or clear it), and never offer this run as its own merge target
+    // (setRunFormExcludeId(), app.js). Radio defaults to "new"/unticked unless the run genuinely
+    // already has a merge target set -- never pre-ticked as "reference" otherwise, per the explicit
+    // "ไม่ติ๊ก Auto" instruction.
+    setRunFormExcludeId(currentRun.id);
+    const $mergeTargetSel = $('#run_merge_target_id');
     const hasMergeTarget = !!currentRun.merge_target_run_id;
     if (hasMergeTarget) {
         $mergeTargetSel.empty().append(new Option(currentRun.merge_target_run_name || String(currentRun.merge_target_run_id), currentRun.merge_target_run_id, true, true)).trigger('change.select2');
@@ -4902,150 +4647,58 @@ $(document).on('click', '#btnEditRun', function () {
     }
     // 2026-09-06: same populate-on-open treatment for the "future cycle" form -- 'change.select2'
     // (not plain 'change') so opening Edit on an already-waiting run shows its REAL current target
-    // cycle/period without re-suggesting/overwriting them (mirrors #edit_run_cycle_id's own
-    // reasoning right above -- see applySuggestedPeriodRd()'s own docblock).
+    // cycle/period without re-suggesting/overwriting them (mirrors #run_cycle_id's own reasoning
+    // right above).
     const hasFutureCycleTarget = !hasMergeTarget && !!currentRun.merge_target_cycle_id;
-    const $mergeTargetCycleSel = $('#edit_run_merge_target_cycle_id');
+    const $mergeTargetCycleSel = $('#run_merge_target_cycle_id');
     if (hasFutureCycleTarget) {
         $mergeTargetCycleSel.empty().append(new Option(currentRun.merge_target_cycle_name || String(currentRun.merge_target_cycle_id), currentRun.merge_target_cycle_id, true, true)).trigger('change.select2');
-        $('#edit_run_merge_target_period_start').val(toDisplayDateRd(currentRun.merge_target_period_start_date));
-        $('#edit_run_merge_target_period_end').val(toDisplayDateRd(currentRun.merge_target_period_end_date));
+        $('#run_merge_target_period_start').val(toDisplayDateRd(currentRun.merge_target_period_start_date));
+        $('#run_merge_target_period_end').val(toDisplayDateRd(currentRun.merge_target_period_end_date));
         // .datepicker('update') after programmatic .val() -- see CLAUDE.md's bootstrap-datepicker
         // note (widget state goes stale otherwise, blanking the field on next click-away) -- same
         // real bug ("Date เลือกไม่ได้") this pair of fields was fixed for on 2026-09-09.
-        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').datepicker('update');
+        $('#run_merge_target_period_start, #run_merge_target_period_end').datepicker('update');
         // 2026-09-09, round-creation flow audit Bug 2 fix -- shows the current match state
         // immediately on open for a run that's already waiting on a future-cycle target, instead of
         // only appearing after the admin touches the cycle/period fields themselves.
-        refreshEditRunMergeTargetPreviewRd();
+        refreshRunMergeTargetPreview();
     } else {
         $mergeTargetCycleSel.val(null).trigger('change.select2');
-        $('#edit_run_merge_target_period_start, #edit_run_merge_target_period_end').val('').datepicker('update');
-        resetEditRunMergeTargetPreviewRd();
+        $('#run_merge_target_period_start, #run_merge_target_period_end').val('').datepicker('update');
+        resetRunMergeTargetPreview();
     }
     // 2026-09-09, round-creation flow audit Phase 3: single call replaces the old 4-line
-    // set-both-legacy-radios-then-call-both-setters sequence -- syncEditRunMergeIntoUiRd() drives the
-    // exact same cascade (see that function's own comment).
-    syncEditRunMergeIntoUiRd(hasFutureCycleTarget ? 'future_cycle' : (hasMergeTarget ? 'existing' : 'standalone'));
+    // set-both-legacy-radios-then-call-both-setters sequence -- syncRunMergeIntoUi() (app.js) drives
+    // the exact same cascade the Create form's own version already does, ids now shared.
+    syncRunMergeIntoUi(hasFutureCycleTarget ? 'future_cycle' : (hasMergeTarget ? 'existing' : 'standalone'));
     updateEditRunTypeSectionRd();
 
     if (isOffCycleRunRd(currentRun) || (currentRun.sync_process_id && currentRun.sync_run_kind === 'supplemental')) {
-        syncEditRunPurposeChoiceUiRd(currentRun.run_purpose || 'payroll');
-        $('#edit_run_compute_statutory').prop('checked', Number(currentRun.compute_statutory) === 1);
-        $('#edit_run_include_base_salary').prop('checked', Number(currentRun.include_base_salary) === 1);
-        $('#edit_run_include_standing_items').prop('checked', Number(currentRun.include_standing_items) === 1);
-        $('#edit_run_include_attendance_pay').prop('checked', Number(currentRun.include_attendance_pay) === 1);
         // 2026-09-09, round-creation flow audit Bug 1 fix: reflects the run's CURRENT stored value --
-        // deliberately NOT the Create form's own "pre-check when Origami attributed
-        // tax_treatment='separate'" default logic (setSupplementalPullMode()), since that default only
-        // makes sense the first time this choice is ever made; Edit must show what was actually saved.
-        $('#edit_run_use_flat_tax_rate').prop('checked', Number(currentRun.use_flat_tax_rate) === 1);
-        updateEditRunTypeVisibility();
+        // deliberately NOT the Create form's own "pre-select incentive"/"pre-check when Origami
+        // attributed tax_treatment='separate'" defaults (setSupplementalPullMode()), since those only
+        // make sense the FIRST time a choice is ever made; Edit must show what was actually saved
+        // (updateEditRunTypeSectionRd() above already made this row/its required state visible for
+        // both the off-cycle and supplemental-sync cases -- this just fills in the real values).
+        syncRunPurposeChoiceUi(currentRun.run_purpose || 'payroll');
+        $('#run_compute_statutory').prop('checked', Number(currentRun.compute_statutory) === 1);
+        $('#run_include_base_salary').prop('checked', Number(currentRun.include_base_salary) === 1);
+        $('#run_include_standing_items').prop('checked', Number(currentRun.include_standing_items) === 1);
+        $('#run_include_attendance_pay').prop('checked', Number(currentRun.include_attendance_pay) === 1);
+        $('#run_use_flat_tax_rate').prop('checked', Number(currentRun.use_flat_tax_rate) === 1);
     }
     $('.is-invalid').removeClass('is-invalid');
-    new bootstrap.Modal(document.getElementById('editRunModal')).show();
+    new bootstrap.Modal(document.getElementById('payrollRunModal')).show();
 });
-$(document).on('submit', '#editRunForm', function (e) {
-    e.preventDefault();
-    let firstInvalid = null;
-    $('#editRunModal .required').each(function () {
-        const $el = $(this);
-        if (!($el.val() || '').toString().trim()) {
-            $el.addClass('is-invalid');
-            if (!firstInvalid) firstInvalid = $el;
-        } else {
-            $el.removeClass('is-invalid');
-        }
-    });
-    if (firstInvalid) {
-        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
-        return;
-    }
-    // 2026-09-09, round-creation flow audit Bug 2 fix -- re-checks the future_cycle auto-match
-    // immediately before saving (see resolveEditRunMergeTargetBeforeSubmitRd()'s own docblock),
-    // possibly overriding the merge_target_* fields below with a resolved merge_target_run_id.
-    resolveEditRunMergeTargetBeforeSubmitRd(function (ok, overrides) {
-        if (!ok) return;
-        submitEditRunForm(overrides);
-    });
+// 2026-09-11, Batch 3C item 4 sub-step 4a: the #editRunForm submit handler + submitEditRunForm()
+// itself moved to app.js (shared #payrollRunForm submit handler + submitRunForm()) -- this page's
+// own post-save reaction (reload Process Detail's own data) listens for the 'payrollRun:saved'
+// event that shared function fires on success instead.
+$(document).on('payrollRun:saved', function (e, res) {
+    showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+    loadRunDetail();
 });
-function submitEditRunForm(mergeTargetOverrides) {
-    const payload = {
-        id: PAYROLL_RUN_ID,
-        run_name: $('#edit_run_name').val().trim(),
-        period_start_date: toIsoDateRd($('#edit_period_start').val()),
-        period_end_date: toIsoDateRd($('#edit_period_end').val()),
-        payment_date: toIsoDateRd($('#edit_payment_date').val()),
-        notes: $('#edit_notes').val().trim(),
-        // 2026-09-01: always sent (even when the field is disabled/locked -- jQuery .val() still
-        // reads a disabled select's current value fine) -- PayrollRunModel::update() itself is the
-        // one true gate on whether this can actually change anything (employee_count===0), so
-        // sending the unchanged current value when locked is a safe no-op there.
-        cycle_id: $('#edit_run_cycle_id').val() || null,
-    };
-    // 2026-09-01, same-day follow-up, explicit request: "เพิ่มในหน้า Detail ให้ด้วยครับ" -- only sent when
-    // the field is actually showing (a genuine off-cycle run), same conditional-inclusion pattern as
-    // the run-type fields below -- PayrollRunModel::update() itself also refuses this for any run
-    // that's cycle-linked or sync-linked, so this omission just keeps the payload honest.
-    if (!$('#edit_run_merge_target_row').hasClass('d-none')) {
-        // 2026-09-06: both keys ALWAYS sent together here (one truthy, the other explicitly null,
-        // depending on editRunMergeTargetMode) -- PayrollRunModel::resolveMergeTargetSpec() resolves
-        // each independently and refuses an ambiguous "both non-null" result, so switching modes
-        // without explicitly clearing the other one would otherwise be rejected. See that method's
-        // own docblock and collectRunFormData()'s matching comment in index.js.
-        const editTargetMode = $('input[name="editRunMergeTargetMode"]:checked').val() || 'existing';
-        payload.merge_target_run_id = editTargetMode === 'future_cycle' ? null : ($('#edit_run_merge_target_id').val() || null);
-        payload.merge_target_cycle_id = editTargetMode === 'future_cycle' ? ($('#edit_run_merge_target_cycle_id').val() || null) : null;
-        payload.merge_target_period_start_date = editTargetMode === 'future_cycle' ? toIsoDateRd($('#edit_run_merge_target_period_start').val()) : null;
-        payload.merge_target_period_end_date = editTargetMode === 'future_cycle' ? toIsoDateRd($('#edit_run_merge_target_period_end').val()) : null;
-        // 2026-09-09, round-creation flow audit Bug 2 fix -- when resolveEditRunMergeTargetBeforeSubmitRd()
-        // resolved the future_cycle spec to a specific existing run (either the single match, or the
-        // admin's explicit disambiguation pick among 2+), these override the future_cycle fields set
-        // just above with an explicit merge_target_run_id instead.
-        Object.assign(payload, mergeTargetOverrides || {});
-    }
-    // Sent whenever the run-type section is actually showing right now (genuine off-cycle OR
-    // supplemental sync) -- reads the LIVE dropdown state (updateEditRunTypeSectionRd()), not just
-    // currentRun's state before this edit, since converting cycle<->off-schedule during this same
-    // save is now possible (see the cycle_id field above). PayrollRunModel::update() ignores these
-    // fields entirely for a run that (after this save) ends up cycle-linked anyway, but omitting
-    // them here keeps the payload honest about what's actually visible/being changed.
-    if (!$('#edit_run_type_section').hasClass('d-none')) {
-        payload.run_purpose = $('#edit_run_purpose').val();
-        payload.compute_statutory = $('#edit_run_compute_statutory').is(':checked');
-        payload.include_base_salary = $('#edit_run_include_base_salary').is(':checked');
-        payload.include_standing_items = $('#edit_run_include_standing_items').is(':checked');
-        payload.include_attendance_pay = $('#edit_run_include_attendance_pay').is(':checked');
-        // 2026-09-09, round-creation flow audit Bug 1 fix: this key was never sent at all before --
-        // PayrollRunModel::update() now only touches use_flat_tax_rate when this key is present
-        // (see that method's own fix), but the underlying bug was HERE: without this line, a
-        // previously-saved true value had no way to survive any edit-save whatsoever.
-        payload.use_flat_tax_rate = $('#edit_run_use_flat_tax_rate').is(':checked');
-    }
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-run.save`,
-        method: 'POST',
-        contentType: 'application/json',
-        dataType: 'json',
-        data: JSON.stringify(payload),
-        success: function (res) {
-            if (res.status) {
-                // 2026-09-01: surfaces the backend's own message when it has something more specific
-                // to say (e.g. "Updated and recalculated successfully." after the off-cycle<->cycle
-                // toggle forces a real Recalculate -- see PayrollRunModel::update()'s own comment)
-                // instead of always showing the generic save_success text.
-                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
-                bootstrap.Modal.getInstance(document.getElementById('editRunModal')).hide();
-                loadRunDetail();
-            } else {
-                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
-            }
-        },
-        error: function () {
-            showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
-        }
-    });
-}
 $(document).on('click', '#btnSubmitRun', function () {
     const title = langData['confirm_submit_message'] || 'Submit this payroll run for approval? You will not be able to edit amounts until it is sent back or rejected.';
     showConfirm(langData['action_submit'] || 'Submit for Approval', title, function () {
@@ -5106,12 +4759,10 @@ $(document).ready(function () {
         // un-initialized field), since bootstrap-datepicker only attaches that API once `.datepicker()`
         // has been called on the element at least once.
         initDatepicker('#run_mark_paid_date');
-        // 2026-09-09, real bug found and fixed (explicit report: "วันเริ่มต้นงวดอ้างอิง และ วันสิ้นสุดงวด
-        // อ้างอิง Date เลือกไม่ได้") -- these were plain readonly display fields (no `.datepicker` class,
-        // never initDatepicker()'d), auto-filled ONLY by picking a Target cycle above with no way to
-        // adjust by hand -- same fix as index.js's own Create form's #run_merge_target_period_start/end.
-        initDatepicker('#edit_run_merge_target_period_start');
-        initDatepicker('#edit_run_merge_target_period_end');
+        // 2026-09-11, Batch 3C item 4 sub-step 4a: #run_merge_target_period_start/_end (renamed from
+        // #edit_run_merge_target_period_start/_end) init moved to app.js's own shared ready() block
+        // along with #run_period_start/_end/#run_payment_date -- #payrollRunModal is shared with the
+        // Create flow now, initialized once per page-load there instead of duplicated per page.
     }
     if (typeof initSelect2 === 'function') {
         initSelect2('#joinFilterDepartment, #joinFilterTeam, #joinFilterPosition, #joinFilterCycle', { mode: 'ajax' });
@@ -5134,16 +4785,11 @@ $(document).ready(function () {
         initSelect2('#recurringDestPayeeEmployeeSelect', { mode: 'ajax', allowClear: true });
         initSelect2('#recurringDestDestinationSelect', { mode: 'ajax', allowClear: true });
         initSelect2('#recurringDestBank', { mode: 'ajax' });
-        // 2026-09-09, round-creation flow audit Phase 3: #edit_run_purpose is a plain hidden input
-        // now (driven by #edit_run_purpose_choice_row's own choice cards), not a <select> -- no
-        // select2 init needed/possible anymore.
-        // 2026-09-01: allowClear so an empty selection is a real, reachable "off-schedule/no cycle"
-        // choice, same either/or #run_cycle_id represents on the Create form.
-        initSelect2('#edit_run_cycle_id', { mode: 'ajax', allowClear: true });
-        // 2026-09-01, same-day follow-up, explicit request: "เพิ่มในหน้า Detail ให้ด้วยครับ" -- allowClear
-        // so an empty selection genuinely means "no merge planned", same as the Create form's own
-        // #run_merge_target_id.
-        initSelect2('#edit_run_merge_target_id', { mode: 'ajax', allowClear: true });
+        // 2026-09-11, Batch 3C item 4 sub-step 4a: #run_cycle_id/#run_merge_target_id (renamed from
+        // #edit_run_cycle_id/#edit_run_merge_target_id) init moved to app.js's own shared ready()
+        // block -- both fields are shared with the Create flow now, initialized once per page-load
+        // there (WITH allowClear:true, which Edit always needed and Create now inherits too) instead
+        // of a second copy here.
     }
     });
 });

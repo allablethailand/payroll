@@ -1555,7 +1555,7 @@
     "table_updated_at": "Last Updated",
     "table_updated_by": "Updated By",
     "modal_cycle": "Payroll Schedule",
-    "edit_run_cycle_locked_hint": "This run already has calculated employees. Saving this change will automatically recalculate the run right away so the employee list stays accurate.",
+    "edit_run_cycle_locked_hint": "This run already has calculated employees. Changing the schedule may affect who's included -- recalculate afterward to keep the employee list accurate.",
     "offcycle_run_label": "Off-schedule run",
     "offcycle_run_label_sub": "No payroll schedule needed -- e.g. an out-of-schedule payment",
     "run_schedule_choice_cycle": "Follow a payroll schedule",
