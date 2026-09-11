@@ -745,7 +745,7 @@
                     </div>
                 </div>
                 <div class="table-responsive">
-                    <table class="table table-hover align-middle w-100">
+                    <table class="table table-hover align-middle w-100" id="tb_run_cash">
                         <thead class="table-light text-secondary">
                             <tr>
                                 <th data-i18n="employee_no">Employee No.</th>
@@ -776,7 +776,7 @@
                     </button>
                 </div>
                 <div class="table-responsive">
-                    <table class="table table-hover align-middle w-100">
+                    <table class="table table-hover align-middle w-100" id="tb_run_bank_account">
                         <thead class="table-light text-secondary">
                             <tr>
                                 <th data-i18n="employee_no">Employee No.</th>
@@ -850,7 +850,7 @@
                     </div>
                 </div>
                 <div class="table-responsive">
-                    <table class="table table-hover align-middle w-100">
+                    <table class="table table-hover align-middle w-100" id="tb_run_remittance">
                         <thead class="table-light text-secondary">
                             <tr>
                                 <th data-i18n="remittance_destination">Destination</th>

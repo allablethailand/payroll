@@ -1,4 +1,12 @@
 let tb_run_detail;
+// 2026-09-11, Batch 3C item 6: Reports/Cash Payments/Bank Account Assignment/Third-Party Remittance
+// each get their own DataTables instance now (initSharedDataTable(), app.js) -- kept as page-level
+// vars, same convention as tb_run_detail above, so each tab's own shown.bs.tab handler can call
+// .columns.adjust() on the CURRENT instance (destroy:true reconstructs a new one on every reload).
+let tb_run_reports_dt = null;
+let tb_run_cash_dt = null;
+let tb_run_bank_account_dt = null;
+let tb_run_remittance_dt = null;
 let currentRun = null;
 
 function toIsoDateRd(displayVal) {
@@ -395,23 +403,39 @@ function loadRunReportsTab() {
         $('#runReportsNotReady').toggleClass('d-none', rdReportsRows.length > 0);
         $('#tb_run_reports').toggleClass('d-none', rdReportsRows.length === 0);
         const notReadyTitle = langData['reports_available_after_approval'] || 'Reports are available once this run is approved.';
-        $('#runReportsTableBody').html(rdReportsRows.map(row => {
-            const rowIsReady = row.report_type === 'internal' ? true : stateIsReady;
-            const disabledAttr = rowIsReady ? '' : 'disabled';
-            return `
-            <tr>
-                <td><div class="d-flex align-items-center">${rdReportIconTileHtml(row)}${escapeHtml(rdReportLabel(row))}</div></td>
-                <td class="text-center">${Number(row.download_count) || 0}</td>
-                <td>${row.last_downloaded_at ? formatDisplayDateTime(row.last_downloaded_at) : `<span class="text-muted">${langData['report_never_downloaded'] || 'Never'}</span>`}</td>
-                <td class="text-center">
-                    <div class="d-flex gap-1 justify-content-center">
-                        <button type="button" class="btn btn-link btn-circle-action text-primary btn-report-preview" data-code="${row.code}" ${disabledAttr} title="${rowIsReady ? (langData['report_preview_and_download'] || 'Preview & Download') : notReadyTitle}"><i class="fa-solid fa-download"></i></button>
-                        <button type="button" class="btn btn-link btn-circle-action text-secondary btn-report-history" data-code="${row.code}" ${disabledAttr} title="${rowIsReady ? (langData['report_view_history'] || 'View Download History') : notReadyTitle}"><i class="fa-solid fa-clock-rotate-left"></i></button>
-                    </div>
-                </td>
-            </tr>
-        `;
-        }).join(''));
+        // 2026-09-11, Batch 3C item 6: was a plain <table>, no pagination/search/sort --
+        // initSharedDataTable() (app.js) now OWNS the destroy/render/construct order itself (see that
+        // function's own docblock for why the order matters) -- this row-building logic itself is
+        // unchanged, just handed to it as `renderRows` instead of called directly here first.
+        // "Last Downloaded" carries data-order (the raw ISO timestamp, or '' for "Never") so
+        // DataTables' own HTML5 data-attribute auto-detection sorts chronologically, not as the
+        // localized dd/mm/yyyy display string (see CLAUDE.md's own Table convention on this exact
+        // class of bug). #run-reports-tab's own shown.bs.tab handler below re-measures column widths
+        // the first time this tab is actually visible (this tab isn't the default-active one, so this
+        // call itself usually runs while the tab-pane is still display:none -- same gotcha
+        // #tb_run_detail's own Employee-tab handler already exists for).
+        tb_run_reports_dt = initSharedDataTable('#tb_run_reports', {
+            searchThreshold: 5,
+            renderRows: function () {
+                $('#runReportsTableBody').html(rdReportsRows.map(row => {
+                    const rowIsReady = row.report_type === 'internal' ? true : stateIsReady;
+                    const disabledAttr = rowIsReady ? '' : 'disabled';
+                    return `
+                    <tr>
+                        <td><div class="d-flex align-items-center">${rdReportIconTileHtml(row)}${escapeHtml(rdReportLabel(row))}</div></td>
+                        <td class="text-center">${Number(row.download_count) || 0}</td>
+                        <td data-order="${row.last_downloaded_at || ''}">${row.last_downloaded_at ? formatDisplayDateTime(row.last_downloaded_at) : `<span class="text-muted">${langData['report_never_downloaded'] || 'Never'}</span>`}</td>
+                        <td class="text-center">
+                            <div class="d-flex gap-1 justify-content-center">
+                                <button type="button" class="btn btn-link btn-circle-action text-primary btn-report-preview" data-code="${row.code}" ${disabledAttr} title="${rowIsReady ? (langData['report_preview_and_download'] || 'Preview & Download') : notReadyTitle}"><i class="fa-solid fa-download"></i></button>
+                                <button type="button" class="btn btn-link btn-circle-action text-secondary btn-report-history" data-code="${row.code}" ${disabledAttr} title="${rowIsReady ? (langData['report_view_history'] || 'View Download History') : notReadyTitle}"><i class="fa-solid fa-clock-rotate-left"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                }).join(''));
+            },
+        });
     });
 }
 // 2026-08-31, same-day follow-up -- see #btnExportRunRegister's own comment in detail.php. Direct
@@ -446,29 +470,45 @@ function loadRunCashTab() {
         const data = res.data;
         $('#runCashTotalCash').text(fmtNum(data.total_cash));
         $('#runCashTotalBank').text(fmtNum(data.total_bank));
-        $('#runCashTableBody').html((data.rows || []).map(row => {
-            const name = escapeHtml((currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim());
-            const isPaid = row.status === 'paid';
-            const badge = isPaid
-                ? `<span class="badge bg-success-subtle text-success">${langData['status_paid'] || 'Paid'}</span>`
-                : `<span class="badge bg-secondary-subtle text-secondary">${langData['status_unpaid'] || 'Unpaid'}</span>`;
-            const paidByName = currentLang === 'th' ? row.paid_by_name_th : row.paid_by_name_en;
-            const paidAtCell = isPaid ? `${formatDisplayDateTime(row.paid_at)}${paidByName ? `<div class="text-muted small">${escapeHtml(paidByName)}</div>` : ''}` : '-';
-            // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
-            // ".btn-circle-action" section) replace the old adjacent .btn-group (and its own former
-            // .btn-sm, redundant now that .btn-circle-action sets a fixed 32x32 size itself).
-            const actionBtn = isPaid
-                ? `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-cash-mark-unpaid" data-id="${row.id}" title="${langData['mark_as_unpaid'] || 'Mark as Unpaid'}"><i class="fa-solid fa-rotate-left"></i></button>`
-                : `<button type="button" class="btn btn-link btn-circle-action text-success btn-cash-mark-paid" data-id="${row.id}" title="${langData['mark_as_paid'] || 'Mark as Paid'}"><i class="fa-solid fa-check"></i></button>`;
-            return `<tr>
-                <td>${escapeHtml(row.employee_no)}</td>
-                <td>${name}</td>
-                <td class="text-end">${fmtNum(row.amount)}</td>
-                <td class="text-center">${badge}</td>
-                <td>${paidAtCell}</td>
-                <td class="text-center"><div class="d-flex gap-1 justify-content-center">${actionBtn}</div></td>
-            </tr>`;
-        }).join('') || `<tr><td colspan="6" class="text-center text-secondary py-3">${langData['no_cash_payments'] || 'No cash-paying employees in this run.'}</td></tr>`);
+        const cashRows = data.rows || [];
+        // 2026-09-11, Batch 3C item 6: the old inline "no data" <tr> (colspan placeholder) is gone --
+        // an empty tbody + DataTables' own language.emptyTable (below) is the correct way to show
+        // this now; a placeholder <tr> would otherwise get counted as a real data row (pagination
+        // info would read "showing 1 to 1 of 1 entries" for an empty table). Row-rendering itself is
+        // unchanged, just handed to initSharedDataTable() as `renderRows` instead of called directly
+        // (see that function's own docblock for why the destroy/render/construct order matters) --
+        // Amount/Paid At now carry data-order (raw amount / raw ISO timestamp) so DataTables' own
+        // HTML5 data-attribute auto-detection sorts numerically/chronologically instead of on the
+        // comma-formatted/localized display text (CLAUDE.md's own Table convention on this exact bug).
+        tb_run_cash_dt = initSharedDataTable('#tb_run_cash', {
+            searchThreshold: 5,
+            dtOptions: { language: { emptyTable: langData['no_cash_payments'] || 'No cash-paying employees in this run.' } },
+            renderRows: function () {
+                $('#runCashTableBody').html(cashRows.map(row => {
+                    const name = escapeHtml((currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim());
+                    const isPaid = row.status === 'paid';
+                    const badge = isPaid
+                        ? `<span class="badge bg-success-subtle text-success">${langData['status_paid'] || 'Paid'}</span>`
+                        : `<span class="badge bg-secondary-subtle text-secondary">${langData['status_unpaid'] || 'Unpaid'}</span>`;
+                    const paidByName = currentLang === 'th' ? row.paid_by_name_th : row.paid_by_name_en;
+                    const paidAtCell = isPaid ? `${formatDisplayDateTime(row.paid_at)}${paidByName ? `<div class="text-muted small">${escapeHtml(paidByName)}</div>` : ''}` : '-';
+                    // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+                    // ".btn-circle-action" section) replace the old adjacent .btn-group (and its own
+                    // former .btn-sm, redundant now that .btn-circle-action sets a fixed 32x32 size).
+                    const actionBtn = isPaid
+                        ? `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-cash-mark-unpaid" data-id="${row.id}" title="${langData['mark_as_unpaid'] || 'Mark as Unpaid'}"><i class="fa-solid fa-rotate-left"></i></button>`
+                        : `<button type="button" class="btn btn-link btn-circle-action text-success btn-cash-mark-paid" data-id="${row.id}" title="${langData['mark_as_paid'] || 'Mark as Paid'}"><i class="fa-solid fa-check"></i></button>`;
+                    return `<tr>
+                        <td>${escapeHtml(row.employee_no)}</td>
+                        <td>${name}</td>
+                        <td class="text-end" data-order="${Number(row.amount) || 0}">${fmtNum(row.amount)}</td>
+                        <td class="text-center">${badge}</td>
+                        <td data-order="${isPaid ? row.paid_at : ''}">${paidAtCell}</td>
+                        <td class="text-center"><div class="d-flex gap-1 justify-content-center">${actionBtn}</div></td>
+                    </tr>`;
+                }).join(''));
+            },
+        });
     });
 }
 function setRunCashPaymentStatus(id, status) {
@@ -525,28 +565,39 @@ function loadRunBankAccountTab() {
             return;
         }
         rdBankAccountRows = res.data || [];
-        $('#runBankAccountTableBody').html(rdBankAccountRows.map(row => {
-            const name = escapeHtml((currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim());
-            const bankName = currentLang === 'th' ? row.bank_name_th : row.bank_name_en;
-            const accountCell = row.bank_account_id
-                ? escapeHtml(`${bankName || ''} - ${row.bank_account_name || ''}`)
-                : `<span class="text-danger">${langData['bank_account_unassigned'] || 'No account configured'}</span>`;
-            const sourceBadgeClass = row.is_overridden ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary';
-            const sourceLabel = langData[RD_BANK_ACCOUNT_SOURCE_LABEL_KEY[row.source]] || row.source;
-            // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
-            // ".btn-circle-action" section) replace the old adjacent .btn-group.
-            let actionBtns = `<button type="button" class="btn btn-link btn-circle-action text-primary btn-bank-account-edit" data-employee-id="${row.employee_id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>`;
-            if (row.is_overridden) {
-                actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-bank-account-remove" data-employee-id="${row.employee_id}" title="${langData['bank_account_remove_override'] || 'Remove Override'}"><i class="fa-solid fa-rotate-left"></i></button>`;
-            }
-            return `<tr>
-                <td>${escapeHtml(row.employee_no)}</td>
-                <td>${name}</td>
-                <td>${accountCell}</td>
-                <td class="text-center"><span class="badge ${sourceBadgeClass}">${sourceLabel}</span></td>
-                <td class="text-center"><div class="d-flex gap-1 justify-content-center">${actionBtns}</div></td>
-            </tr>`;
-        }).join('') || `<tr><td colspan="5" class="text-center text-secondary py-3">${langData['no_cash_payments'] || 'No bank-paying employees in this run.'}</td></tr>`);
+        // 2026-09-11, Batch 3C item 6: see loadRunCashTab()'s own comment -- empty tbody + DataTables'
+        // own language.emptyTable, not an inline placeholder <tr> counted as real data; row-rendering
+        // handed to initSharedDataTable() as `renderRows` (destroy/render/construct order owned by
+        // that function now, see its own docblock). No money/date columns here -- Bank Account/
+        // Source are both plain text/badge, no data-order needed.
+        tb_run_bank_account_dt = initSharedDataTable('#tb_run_bank_account', {
+            searchThreshold: 5,
+            dtOptions: { language: { emptyTable: langData['bank_account_no_employees'] || 'No bank-paying employees in this run.' } },
+            renderRows: function () {
+                $('#runBankAccountTableBody').html(rdBankAccountRows.map(row => {
+                    const name = escapeHtml((currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim());
+                    const bankName = currentLang === 'th' ? row.bank_name_th : row.bank_name_en;
+                    const accountCell = row.bank_account_id
+                        ? escapeHtml(`${bankName || ''} - ${row.bank_account_name || ''}`)
+                        : `<span class="text-danger">${langData['bank_account_unassigned'] || 'No account configured'}</span>`;
+                    const sourceBadgeClass = row.is_overridden ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary';
+                    const sourceLabel = langData[RD_BANK_ACCOUNT_SOURCE_LABEL_KEY[row.source]] || row.source;
+                    // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+                    // ".btn-circle-action" section) replace the old adjacent .btn-group.
+                    let actionBtns = `<button type="button" class="btn btn-link btn-circle-action text-primary btn-bank-account-edit" data-employee-id="${row.employee_id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>`;
+                    if (row.is_overridden) {
+                        actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-bank-account-remove" data-employee-id="${row.employee_id}" title="${langData['bank_account_remove_override'] || 'Remove Override'}"><i class="fa-solid fa-rotate-left"></i></button>`;
+                    }
+                    return `<tr>
+                        <td>${escapeHtml(row.employee_no)}</td>
+                        <td>${name}</td>
+                        <td>${accountCell}</td>
+                        <td class="text-center"><span class="badge ${sourceBadgeClass}">${sourceLabel}</span></td>
+                        <td class="text-center"><div class="d-flex gap-1 justify-content-center">${actionBtns}</div></td>
+                    </tr>`;
+                }).join(''));
+            },
+        });
     });
 }
 $(document).on('click', '.btn-bank-account-edit', function () {
@@ -669,32 +720,43 @@ function loadRunRemittanceTab() {
         $('#runRemittanceTotalTransferred').text(fmtNum(totals.transferred));
         $('#runRemittanceTotalSuccess').text(fmtNum(totals.success));
         $('#runRemittanceTotalFailed').text(fmtNum(totals.failed));
-        $('#runRemittanceTableBody').html(rdRemittanceRows.map(row => {
-            const badgeClass = RD_REMITTANCE_STATUS_BADGE[row.status] || 'bg-secondary-subtle text-secondary';
-            const badge = `<span class="badge ${badgeClass}">${langData[`remittance_status_${row.status}`] || row.status}</span>`;
-            const failedNote = row.status === 'failed' && row.note ? `<div class="text-danger small">${escapeHtml(row.note)}</div>` : '';
-            const transferredAtCell = row.transferred_at ? formatDisplayDateTime(row.transferred_at) : '-';
-            // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
-            // ".btn-circle-action" section) replace the old adjacent .btn-group.
-            let actionBtns = `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-remittance-breakdown" data-id="${row.id}" title="${langData['remittance_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-list"></i></button>`;
-            if (row.status === 'pending') {
-                actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-primary btn-remittance-mark-transferred" data-id="${row.id}" title="${langData['mark_as_transferred'] || 'Mark as Transferred'}"><i class="fa-solid fa-paper-plane"></i></button>`;
-            } else if (row.status === 'transferred') {
-                actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-success btn-remittance-confirm-success" data-id="${row.id}" title="${langData['remittance_confirm_success'] || 'Confirm Success'}"><i class="fa-solid fa-circle-check"></i></button>`;
-                actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-remittance-mark-failed" data-id="${row.id}" title="${langData['mark_as_failed'] || 'Mark as Failed'}"><i class="fa-solid fa-circle-xmark"></i></button>`;
-            } else if (row.status === 'failed') {
-                actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-remittance-retry" data-id="${row.id}" title="${langData['retry'] || 'Retry'}"><i class="fa-solid fa-rotate-left"></i></button>`;
-            }
-            return `<tr>
-                <td>${escapeHtml(rdRemittanceDestinationLabel(row))}</td>
-                <td>${escapeHtml(rdRemittanceDestinationTypeLabel(row.destination_type))}</td>
-                <td class="text-center">${Number(row.employee_count) || 0}</td>
-                <td class="text-end">${fmtNum(row.total_amount)}</td>
-                <td class="text-center">${badge}${failedNote}</td>
-                <td>${transferredAtCell}</td>
-                <td class="text-center"><div class="d-flex gap-1 justify-content-center">${actionBtns}</div></td>
-            </tr>`;
-        }).join('') || `<tr><td colspan="7" class="text-center text-secondary py-3">${langData['no_remittances'] || 'No third-party remittances for this run.'}</td></tr>`);
+        // 2026-09-11, Batch 3C item 6: see loadRunCashTab()'s own comment -- empty tbody + DataTables'
+        // own language.emptyTable, not an inline placeholder <tr> counted as real data; row-rendering
+        // handed to initSharedDataTable() as `renderRows` (destroy/render/construct order owned by
+        // that function now). Amount/Transferred At carry data-order (raw amount / raw ISO
+        // timestamp), same reason as Cash Payments' own Amount/Paid At columns.
+        tb_run_remittance_dt = initSharedDataTable('#tb_run_remittance', {
+            searchThreshold: 5,
+            dtOptions: { language: { emptyTable: langData['no_remittances'] || 'No third-party remittances for this run.' } },
+            renderRows: function () {
+                $('#runRemittanceTableBody').html(rdRemittanceRows.map(row => {
+                    const badgeClass = RD_REMITTANCE_STATUS_BADGE[row.status] || 'bg-secondary-subtle text-secondary';
+                    const badge = `<span class="badge ${badgeClass}">${langData[`remittance_status_${row.status}`] || row.status}</span>`;
+                    const failedNote = row.status === 'failed' && row.note ? `<div class="text-danger small">${escapeHtml(row.note)}</div>` : '';
+                    const transferredAtCell = row.transferred_at ? formatDisplayDateTime(row.transferred_at) : '-';
+                    // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+                    // ".btn-circle-action" section) replace the old adjacent .btn-group.
+                    let actionBtns = `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-remittance-breakdown" data-id="${row.id}" title="${langData['remittance_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-list"></i></button>`;
+                    if (row.status === 'pending') {
+                        actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-primary btn-remittance-mark-transferred" data-id="${row.id}" title="${langData['mark_as_transferred'] || 'Mark as Transferred'}"><i class="fa-solid fa-paper-plane"></i></button>`;
+                    } else if (row.status === 'transferred') {
+                        actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-success btn-remittance-confirm-success" data-id="${row.id}" title="${langData['remittance_confirm_success'] || 'Confirm Success'}"><i class="fa-solid fa-circle-check"></i></button>`;
+                        actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-remittance-mark-failed" data-id="${row.id}" title="${langData['mark_as_failed'] || 'Mark as Failed'}"><i class="fa-solid fa-circle-xmark"></i></button>`;
+                    } else if (row.status === 'failed') {
+                        actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-remittance-retry" data-id="${row.id}" title="${langData['retry'] || 'Retry'}"><i class="fa-solid fa-rotate-left"></i></button>`;
+                    }
+                    return `<tr>
+                        <td>${escapeHtml(rdRemittanceDestinationLabel(row))}</td>
+                        <td>${escapeHtml(rdRemittanceDestinationTypeLabel(row.destination_type))}</td>
+                        <td class="text-center">${Number(row.employee_count) || 0}</td>
+                        <td class="text-end" data-order="${Number(row.total_amount) || 0}">${fmtNum(row.total_amount)}</td>
+                        <td class="text-center">${badge}${failedNote}</td>
+                        <td data-order="${row.transferred_at || ''}">${transferredAtCell}</td>
+                        <td class="text-center"><div class="d-flex gap-1 justify-content-center">${actionBtns}</div></td>
+                    </tr>`;
+                }).join(''));
+            },
+        });
     });
 }
 $(document).on('click', '#btnExportRunRemittance', function () {
@@ -4771,6 +4833,22 @@ $(document).on('shown.bs.tab', '#runDetailTabs button[data-bs-toggle="tab"]', fu
 // built yet (run still loading) or if it was already sized correctly.
 $(document).on('shown.bs.tab', '#run-employee-tab', function () {
     if (tb_run_detail) tb_run_detail.columns.adjust();
+});
+// 2026-09-11, Batch 3C item 6: same fix, same reason, for the 4 tables newly converted to
+// DataTables (initSharedDataTable(), app.js) -- none of these 4 tabs are the default-active one
+// either, so their own table is very likely constructed while still display:none the first time
+// loadRunDetail() runs (all 4 load functions fire eagerly together, not on-tab-shown).
+$(document).on('shown.bs.tab', '#run-reports-tab', function () {
+    if (tb_run_reports_dt) tb_run_reports_dt.columns.adjust();
+});
+$(document).on('shown.bs.tab', '#run-cash-tab', function () {
+    if (tb_run_cash_dt) tb_run_cash_dt.columns.adjust();
+});
+$(document).on('shown.bs.tab', '#run-bank-account-tab', function () {
+    if (tb_run_bank_account_dt) tb_run_bank_account_dt.columns.adjust();
+});
+$(document).on('shown.bs.tab', '#run-remittance-tab', function () {
+    if (tb_run_remittance_dt) tb_run_remittance_dt.columns.adjust();
 });
 function activateTabFromHash() {
     const hash = (location.hash || '').replace('#', '');

@@ -703,6 +703,14 @@ function getTableLang() {
         search: langData.search || "Search",
         lengthMenu: langData.lengthMenu || "Show _MENU_ entries",
         zeroRecords: langData.zeroRecords || "No matching records found",
+        // 2026-09-11, Batch 3C item 6 follow-up: genuinely missing until now (confirmed via grep --
+        // no emptyTable key existed anywhere in en.json/th.json, and this function never returned
+        // one) -- a DOM-sourced table with truly zero rows (not a search filter finding nothing,
+        // that's zeroRecords above) would show DataTables' own unlocalized "No data available in
+        // table" instead. This is the shared DEFAULT; initSharedDataTable() callers still override
+        // it per-table with a more specific message where one makes sense (e.g. Cash Payments' own
+        // "No cash-paying employees in this run.").
+        emptyTable: langData.emptyTable || "No data available in table",
         info: langData.info || "Showing _START_ to _END_ of _TOTAL_ entries",
         infoEmpty: langData.infoEmpty || "Showing 0 to 0 of 0 entries",
         infoFiltered: langData.infoFiltered || "(filtered from _MAX_ total entries)",
@@ -724,6 +732,59 @@ function getTableLang() {
             previous: langData.previous || "Previous"
         }
     };
+}
+// 2026-09-11, Batch 3C item 6 -- ONE shared init for a small/medium DOM-sourced table (rows already
+// rendered as plain <tr> HTML into the table's own <tbody>, no `data:`/`columns:`/`ajax:` config of
+// its own) that just needs pagination/search/sort layered on top -- the common options every such
+// table wants (language via getTableLang(), this app's own shared pageLength/lengthMenu constants,
+// ordering, hiding the search box entirely when there are too few rows for it to matter) collapsed
+// into one call instead of each page repeating the same handful of options. Deliberately NOT a
+// retrofit of every existing DataTable in the app (tb_employee, tb_run_detail, tb_join_employees, ...
+// each already has its own bespoke columns/ajax/serverSide config a generic helper like this can't
+// usefully replace) -- for those, only getTableLang()/refreshAllDataTablesLanguage() are shared.
+// `destroy: true` is the one non-negotiable default: a table that gets its data replaced and
+// re-rendered on every reload (the shape this helper targets) must destroy its OLD DataTables
+// instance before constructing a new one on the same freshly-rendered rows, or DataTables throws
+// "Cannot reinitialise DataTable" the second time it's called on the same <table> node.
+//
+// 2026-09-11 correction: `options.renderRows` (a callback that sets the table's own tbody.html())
+// is now REQUIRED for a table being reloaded, and this function calls it itself, in between
+// destroying the old instance and constructing the new one -- never left for the caller to
+// sequence, because the naive "caller renders rows, then calls this helper" order is a real bug:
+// DataTables' own destroy() on a DOM-sourced table (no `data:`/`ajax:` config, exactly this
+// function's target shape) restores the tbody from its OWN internal cache captured at last
+// construction -- if the caller had already replaced the tbody's rows via jQuery BEFORE calling
+// this function, destroy() (called first, inside here) would overwrite those fresh rows right back
+// to the OLD ones, and the subsequent .DataTable() construction would then read those stale rows
+// instead of what the caller actually meant to show. The only correct order is: clear the old
+// instance's own data cache, THEN destroy it (so it has nothing stale left to write back), THEN
+// render the new rows, THEN construct fresh -- enforced here so no call site has to get this right
+// on its own.
+function initSharedDataTable(selector, options) {
+    options = options || {};
+    const $table = $(selector);
+    if ($.fn.DataTable.isDataTable(selector)) {
+        $table.DataTable().clear().destroy();
+    }
+    if (typeof options.renderRows === 'function') {
+        options.renderRows();
+    }
+    const rowCount = $table.find('tbody tr').length;
+    const searchThreshold = options.searchThreshold != null ? options.searchThreshold : 10;
+    // `language` is merged one level deep on top of getTableLang() (not just Object.assign'd whole)
+    // so a caller passing e.g. { language: { emptyTable: '...' } } (a localized empty-state message
+    // for a table with genuinely zero rows -- DataTables' own emptyTable string, NOT the zeroRecords
+    // one getTableLang() already covers, which is for a SEARCH filter finding nothing) doesn't wipe
+    // out every other language key getTableLang() already provides.
+    const dtOptions = Object.assign({
+        destroy: true,
+        pageLength: pageLength,
+        lengthMenu: lengthMenu,
+        ordering: true,
+        searching: rowCount > searchThreshold,
+    }, options.dtOptions || {});
+    dtOptions.language = Object.assign({}, getTableLang(), dtOptions.language || {});
+    return $table.DataTable(dtOptions);
 }
 // 2026-08-26, explicit request: "Format วันที่การแสดงผลทั้งหมดของระบบให้เป็น dd/mm/yyyy" (make every date
 // display in the system dd/mm/yyyy). Several pages already had their OWN local helper doing exactly
