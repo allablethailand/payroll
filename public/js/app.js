@@ -1430,6 +1430,27 @@ function modalLangDropdownHtml() {
 //      `data-footer="view"` type (see modalFooterTypeOf() below) -- a modal explicitly marked
 //      form/confirm/none is expected to bring its own controls (or none at all for "none"), so a
 //      genuinely missing footer there is left alone rather than papered over with a generic button.
+// 2026-09-11, real bug found and fixed (explicit report: Tax & Statutory's statutoryRateModal --
+// "Add Custom Item" showed a complete form the FIRST time, but only header + tab nav (no form at
+// all) every time after). Root cause confirmed by reading the actual bundled bootstrap.js source
+// (node_modules/bootstrap/js/dist/tab.js), not a guess: `Tab.show()` checks `_elemIsActive()` on
+// the TRIGGER BUTTON (`this._element`, the `<button data-bs-toggle="tab">`), not on the tab-pane --
+// if that button already carries `.active` from an EARLIER open (nothing ever removes it when a
+// modal is closed), `.show()` returns immediately as a no-op, so a pane that some OTHER code had
+// already manually stripped `.active`/`.show` from (as tax-statutory.js's own openStatutoryRateModal()
+// used to do, directly on `#sr-details-pane`/`#sr-history-pane`, never touching the matching button)
+// is never re-activated -- it just stays `display:none` forever after the first open.
+// This is a real class of bug ANY modal with Bootstrap tabs could hit the same way (manually
+// stripping a tab-pane's own classes without also stripping its trigger button's), so it belongs
+// here as a shared helper rather than inline in one page's own JS -- resets EVERY tab trigger
+// button AND its own tab-pane together, always as a pair, inside the given modal/container.
+// Callers should call this (if a reset is genuinely needed before deciding which tab to show) and
+// then let `bootstrap.Tab.getOrCreateInstance(...).show()` do the actual activation -- never strip
+// only the pane's own classes by hand.
+function resetModalTabs($modal) {
+    $modal.find('[data-bs-toggle="tab"]').removeClass('active').attr('aria-selected', 'false');
+    $modal.find('.tab-pane').removeClass('show active');
+}
 function modalFooterTypeOf($modal) {
     const type = String($modal.data('footer') || '').trim();
     return ['form', 'view', 'confirm', 'none'].indexOf(type) !== -1 ? type : 'view';

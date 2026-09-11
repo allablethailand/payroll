@@ -117,13 +117,27 @@ function csAdjustableCellTs(row) {
 // 2026-09-08, explicit request: "ในตารางหลักเพิ่มปุ่ม View เพื่อดู Vertion อัตราล่าสุดที่ใช้ครับ View อย่าง
 // เดียว" -- opens the same statutoryRateModal, read-only (see openStatutoryRateModal()'s own
 // `readOnly` param), auto-loaded to the current version exactly like a normal open already does.
+// 2026-09-11, Batch 4 item 2b, explicit instruction: "ไม่เพิ่มปุ่มใหม่ ปรับ tooltip/label ของ Manage
+// ให้สื่อว่าแก้ไขได้ด้วย" -- for a company's own CUSTOM item, this button already opens
+// openStatutoryRateModal() landing on the editable "Item Details" tab pre-filled with the item's
+// own catalog data (see that function's own docblock), i.e. it already IS an edit action, just
+// never labeled as one -- confirmed the update endpoint (api/statutory-item.custom.save,
+// TaxStatutoryController::customItemSave()) already exists and is already wired through this same
+// button, so this is a discoverability fix only, no new button/endpoint/flow. A MASTER item has no
+// catalog fields to edit at all here (see T045's own docblock), so its tooltip stays plain "Manage"
+// -- only a custom row's tooltip changes.
+function csManageButtonTitleTs(row) {
+    return row.item_scope === 'custom'
+        ? (langData['sr_edit_or_manage_rates'] || 'Edit / Manage Rates')
+        : (langData['manage'] || 'Manage');
+}
 function csActionButtonsTs(row) {
     const deleteBtn = row.item_scope === 'custom'
         ? `<button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-custom-item" data-id="${row.statutory_item_id}" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>`
         : '';
     return `<div class="d-flex gap-1 justify-content-center">
         <button type="button" class="btn btn-link btn-circle-action text-secondary btn-view-sr-current" data-id="${row.statutory_item_id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
-        <button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-sr" data-id="${row.statutory_item_id}" title="${langData['manage'] || 'Manage'}"><i class="fa-solid fa-sliders"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-sr" data-id="${row.statutory_item_id}" title="${csManageButtonTitleTs(row)}"><i class="fa-solid fa-sliders"></i></button>
         ${deleteBtn}
     </div>`;
 }
@@ -736,7 +750,13 @@ function openStatutoryRateModal(row, readOnly) {
     // (or ANY item at all in View mode, which never shows Details -- see just above).
     const hideNav = readOnly || (!isNew && scope === 'master');
     $('#statutoryRateModalTabs').toggleClass('d-none', hideNav);
-    $('#sr-history-pane, #sr-details-pane').removeClass('show active');
+    // 2026-09-11, real bug fixed: this used to strip `active`/`show` off ONLY the panes here, never
+    // off the matching trigger buttons (#sr-details-tab/#sr-history-tab) -- see resetModalTabs()'s
+    // own docblock in app.js for the full root cause (a stale `.active` left on the BUTTON from an
+    // earlier open makes bootstrap's own Tab.show() a silent no-op, so the pane this line had just
+    // de-activated by hand was never re-activated on the 2nd+ open). resetModalTabs() resets both
+    // together, always as a pair, before the branches below decide which one to actually show.
+    resetModalTabs($('#statutoryRateModal'));
 
     // Blank the right-side form + clear any stale selection immediately (list+form are both always
     // visible now, unlike the old separate-view swap) -- loadSrVersionList()'s own auto-select
