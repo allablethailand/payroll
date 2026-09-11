@@ -4,6 +4,10 @@
 - Never run git commit, git add, git stash, git checkout, or git reset.
 - Edit files, then stop and report: files changed + `git status` + `git diff --stat`.
 - The developer reviews and commits manually.
+- `.git/COMMIT_MSG_NEXT` must describe the ENTIRE uncommitted diff (`git diff HEAD`), not just the
+  latest round. If a file already has uncommitted work from an earlier round sitting in it, write
+  ONE combined message covering all of it, titled after the main/most recent task — never a message
+  that only covers what changed in this round while leaving out what's already there uncommitted.
 
 ## Database
 - Schema changes always go in `database/migrations/<date>_<desc>.sql` with UP and DOWN sections

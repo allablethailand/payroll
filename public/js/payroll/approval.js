@@ -232,7 +232,7 @@ $(document).on('click', '.btn-timeline-revert-to', function () {
     let title, message;
     if (isPending) {
         title = langData['confirm_revert_title'] || 'Send this payroll run back for revision?';
-        message = langData['confirm_revert_message'] || 'It will return to draft so the submitter can make changes.';
+        message = langData['confirm_revert_to_draft_message'] || 'It will return to draft so the submitter can make changes.';
     } else {
         const meta = REVERT_TARGET_META_AP[toState];
         title = langData['confirm_revert_to_title'] || 'Change this run\'s status?';

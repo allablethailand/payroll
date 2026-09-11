@@ -233,3 +233,41 @@ a draft run that already has `employee_count > 0`, show a message telling the ad
 Recalculate themselves. No silent auto-recalc, no schema/backend change.
 
 **Source:** Batch 3C item 4 decision 2 follow-up, explicit instruction (2026-09-11).
+
+---
+
+## Remittance Breakdown modal: consider DataTable if rows exceed 5
+
+Batch 3C item 6 confirmed (via AskUserQuestion) that the Remittance Breakdown modal stays a plain
+`<table>`, not a DataTable, alongside the Attendance sub-tab's 7-row edit grid, Calculation
+Breakdown modal's 3 tables, and Raw Sync Data modal -- all 4 are per-employee drill-downs opened
+from a modal, not top-level tabs of the Detail page itself, and typically show few rows. This one
+specifically was flagged as a softer case than the other 3: a company with many loan/remittance
+creditors on one employee could genuinely exceed a handful of rows, unlike the others which are
+fixed-field forms with no realistic growth. Deferred as a logic-only item to the phase design pass
+(style/UX pass, not a bug) rather than converting pre-emptively with no evidence it's needed.
+
+**Fix, when picked up:** if real usage shows a company with several remittance rows per employee,
+wire this modal's table through the same `initSharedDataTable()` helper (app.js, added this same
+batch) used for the 4 tabs converted this round.
+
+**Source:** Batch 3C item 6, explicit instruction (2026-09-11).
+
+---
+
+## Phase design: review row-action icon/tooltip clarity app-wide
+
+Batch 4 item 2b fixed one specific instance -- Tax & Statutory's row-level "Manage" button
+(sliders icon) already opens an editable form for a company's own custom item, but its tooltip
+only ever said "Manage," giving no hint that it also functions as Edit. Fixed there via a
+scope-aware tooltip (`sr_edit_or_manage_rates`, custom rows only) rather than adding a second
+button, since T046 had deliberately merged Edit + Manage Rates into that one button already.
+
+**Not investigated elsewhere yet**: the same kind of icon/tooltip ambiguity (an icon that reads as
+one action but silently does more, or a tooltip that doesn't name what actually happens on click)
+may exist on other tables' own row-action buttons across the app -- this was fixed as a targeted
+bug report for ONE page, not a full audit. A phase design pass should review row-action
+icons/tooltips system-wide for this same clarity gap, Tax & Statutory's Manage button included (to
+confirm the fix holds up once real design/UX attention is applied, not just a functional patch).
+
+**Source:** Batch 4 item 2b, explicit instruction (2026-09-11).
