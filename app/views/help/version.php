@@ -18,4 +18,4 @@
 
     <div id="versionList" class="version-list"></div>
 </div>
-<script src="<?=BASE_URL?>/public/js/setup/changelog.js"></script>
+<script src="<?=asset('public/js/setup/changelog.js')?>"></script>

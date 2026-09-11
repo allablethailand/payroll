@@ -68,14 +68,14 @@ include __DIR__ . '/modals.php';
     </div>
     <div class="help-drawer-panel-body" id="helpDrawerPanelBody"></div>
 </div>
-<script src="<?=BASE_URL?>/public/js/setup/terms-and-conditions.js"></script>
-<script src="<?=BASE_URL?>/public/js/setup/help-drawer.js"></script>
+<script src="<?=asset('public/js/setup/terms-and-conditions.js')?>"></script>
+<script src="<?=asset('public/js/setup/help-drawer.js')?>"></script>
 <!-- 2026-09-07, real bug found and fixed (explicit report: "ประวัติการเข้าใช้งานระบบ จาก Profile ไม่มี
      ข้อมูลในตาราง") -- this file existed and was fully correct (confirmed the backend endpoint,
      model query, and controller all return real data end-to-end via direct PHP-CLI calls) but was
      never actually included on any page, so its `show.bs.modal` handler for #systemAccessHistoryModal
      (opened from the header Profile dropdown, present on every page) never registered -- the modal
      just opened empty every time, silently, since it was written 2026-09-05 (Backlog Phase 13). -->
-<script src="<?=BASE_URL?>/public/js/setup/system-access-history.js"></script>
+<script src="<?=asset('public/js/setup/system-access-history.js')?>"></script>
 </body>
 </html>

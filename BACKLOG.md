@@ -53,23 +53,6 @@ count mentioned verbally rather than silently forcing it to match.)
 
 ---
 
-## Cache-bust `<script src>` for JS files and lang JSON
-
-None of the JS `<script src="...">` tags (app.js, payroll-process files, or any other page script)
-carry a version query string, and the lang JSON fetch (`loadLang()` in app.js) busts cache via
-`?v=${Date.now()}` — which forces a full network fetch on every single page load (no caching benefit
-at all). A stale browser cache serving a pre-fix copy of `index.js`/`app.js` was the actual cause of
-a false "still broken" report in Batch 2 (item 0) right after the langReady race fix shipped.
-
-**Fix direction (explicit instruction, not yet decided in detail):** use a stable version string from
-app config (e.g. `APP_VERSION`, bumped on deploy) for cache-busting — **not** `Date.now()`, which
-would defeat caching entirely rather than just busting it across deploys. Apply to every JS
-`<script src>` (not just app.js/payroll-process) and to the lang JSON fetch's own `?v=` param.
-
-**Source:** Batch 2, item 0 (first flagged), reconfirmed as backlog after item 0's fix.
-
----
-
 ## Consolidate apvApproverSubstepHtml* (Rd/Pr/Ap) into app.js
 
 `apvAvatarHtml*`/`apvPersonLineHtml*`/`apvIconHtml*`/`apvBadgeHtml*`/`APV_COLORS_*`/

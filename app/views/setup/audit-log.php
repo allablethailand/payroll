@@ -85,4 +85,4 @@
         </table>
     </div>
 </div>
-<script src="<?=BASE_URL?>/public/js/setup/audit-log.js"></script>
+<script src="<?=asset('public/js/setup/audit-log.js')?>"></script>
