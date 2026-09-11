@@ -119,19 +119,16 @@ function employeeDisplayNameRd(row) {
     const name = currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`;
     return name.trim();
 }
-// Sync/Manual badge (2026-08-21, explicit request: "ต้องมีสัญลักษณ์ว่า ใคร Sync มา เพิ่มเข้ามาแบบ
-// Manual") -- own dedicated "Source" column (2026-08-21, explicit request: "แยก Column Manual หรือ
-// Sync ออกมาอีก Column" -- was previously appended inline next to the employee name, only on a
-// sync-based run). Now that it has its own labeled header, always render the actual data_source
-// (a plain cycle/off-cycle run showing "Manual" for every row is correct information, not noise,
-// once it has a column of its own). row.data_source reflects payroll_run_details.data_source,
-// wired in recalculate() instead of the hard-coded 'manual' literal it used to always be.
-function dataSourceBadgeRd(row) {
-    const isSync = row.data_source === 'sync';
-    const cls = isSync ? 'bg-info-subtle text-info' : 'bg-secondary-subtle text-secondary';
-    const label = langData[isSync ? 'data_source_sync' : 'data_source_manual'] || (isSync ? 'Sync' : 'Manual');
-    return `<span class="badge ${cls}">${label}</span>`;
+// 2026-09-11, Batch 3C item 7 -- same th/en-pick-with-fallback convention used throughout this file
+// (employeeDisplayNameRd() above, etc.). '-' for an employee with no department set, same convention
+// as the Employee Quick View modal's own #empQuickViewDepartment.
+function departmentNameRd(row) {
+    return (currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || row.department_name_en || '-';
 }
+// 2026-09-11, Batch 3C item 7, explicit instruction: "ตัดคอลัมน์ แหล่งที่มา ออก (ย้ายไปเป็น filter pill)"
+// -- the dedicated "Source" column (2026-08-21) is retired, replaced by a filter pill above the
+// table (see registerDataSourceSearchFilter()/#rdDataSourceFilterWrap). dataSourceBadgeRd() (the old
+// per-row badge renderer this column used) is gone with it -- it had no other caller.
 function personDisplayNameRd(row, prefix) {
     const th = row[prefix + '_name_th'];
     const en = row[prefix + '_name_en'];
@@ -2491,6 +2488,29 @@ $(document).on('change', '#filterPaymentBank, #filterPaymentCash', function () {
     if (tb_run_detail) tb_run_detail.draw();
 });
 
+// 2026-09-11, Batch 3C item 7, explicit instruction: "ตัดคอลัมน์ แหล่งที่มา ออก (ย้ายไปเป็น filter pill
+// 'ที่มา: ทั้งหมด/Sync/เพิ่มเอง' เหนือตาราง ถ้ายังต้องกรอง)" -- same registered-once-per-table-id guard as
+// registerPaymentMethodSearchFilter() above, filtering on row.data_source ('sync'/'manual', same
+// field the old Source column's badge used to render) against the 3-way radio pill instead of a
+// per-column dropdown. #rdDataSourceFilterWrap's own visibility (hidden for a run that never brings
+// base salary into the calculation, since data_source doesn't apply there either) is still owned by
+// initRunDetailTable() -- see its own showDataSourceFilter comment.
+let dataSourceSearchFilterRegistered = false;
+let currentRdDataSourceFilter = 'all';
+function registerDataSourceSearchFilter() {
+    if (dataSourceSearchFilterRegistered) return;
+    dataSourceSearchFilterRegistered = true;
+    $.fn.dataTable.ext.search.push(function (settings, searchData, dataIndex, rowData) {
+        if (!settings.nTable || settings.nTable.id !== 'tb_run_detail') return true;
+        if (currentRdDataSourceFilter === 'all') return true;
+        return (rowData && rowData.data_source) === currentRdDataSourceFilter;
+    });
+}
+$(document).on('change', '.rd-data-source-filter-radio', function () {
+    currentRdDataSourceFilter = $(this).val();
+    if (tb_run_detail) tb_run_detail.draw();
+});
+
 // 2026-08-31: raw per-employee rows kept module-level (was also read by the now-removed Payment
 // Method Summary tab, see the 2026-09-02 removal note above initRunDetailTable()).
 let currentRunDetails = [];
@@ -2505,6 +2525,7 @@ let currentRunDetails = [];
 function initRunDetailTable(details) {
     currentRunDetails = details;
     registerPaymentMethodSearchFilter();
+    registerDataSourceSearchFilter();
     // 2026-09-09: no longer called directly here with the FULL, unfiltered `details` array -- see
     // updateSummaryCardsFromTable()'s own docblock (called from drawCallback below instead, which
     // also fires right after this function's own initial construction/reload, so the first paint is
@@ -2526,19 +2547,18 @@ function initRunDetailTable(details) {
     // 2026-09-10, explicit request: "ซ่อน column แหล่งที่มา...เมื่อรอบไม่นำฐานเงินเดือนมาคำนวณ" -- a
     // RUN-LEVEL condition (same run_purpose='incentive' + include_base_salary=0 flag item 2's own
     // base_salary_excluded is derived from at calc time, see PayrollRunModel::isBaseSalaryExcluded()'s
-    // own docblock), NOT the per-employee base_salary_excluded flag -- this hides the WHOLE column
-    // for every row on the run, not row-by-row (data_source genuinely doesn't apply to a run that
-    // never brings base salary into the calculation at all).
-    const showDataSourceColumn = !currentRun || currentRun.run_purpose !== 'incentive' || !!currentRun.include_base_salary;
+    // own docblock), NOT the per-employee base_salary_excluded flag -- data_source genuinely doesn't
+    // apply to a run that never brings base salary into the calculation at all.
+    // 2026-09-11, Batch 3C item 7: the column this used to gate is gone (see the retirement comment
+    // above dataSourceBadgeRd()'s old location) -- this same condition now gates the FILTER PILL's
+    // own visibility instead, right below.
+    const showDataSourceFilter = !currentRun || currentRun.run_purpose !== 'incentive' || !!currentRun.include_base_salary;
+    $('#rdDataSourceFilterWrap').toggleClass('d-none', !showDataSourceFilter);
     if ($.fn.DataTable.isDataTable('#tb_run_detail')) {
         const existingApi = $('#tb_run_detail').DataTable();
         const existingCheckboxColumn = existingApi.column(0);
         if (existingCheckboxColumn.visible() !== showCheckboxColumn) {
             existingCheckboxColumn.visible(showCheckboxColumn, false);
-        }
-        const existingDataSourceColumn = existingApi.column(3);
-        if (existingDataSourceColumn.visible() !== showDataSourceColumn) {
-            existingDataSourceColumn.visible(showDataSourceColumn, false);
         }
         existingApi.clear().rows.add(details).draw();
         return;
@@ -2595,7 +2615,16 @@ function initRunDetailTable(details) {
                 display: (d, t, row) => apvPersonLineHtml(employeeDisplayNameRd(row), 24, row.profile_photo_path, { employeeId: row.employee_id }),
                 filter: (d, t, row) => employeeDisplayNameRd(row),
             } },
-            { data: null, className: 'text-center', visible: showDataSourceColumn, render: (d, t, row) => dataSourceBadgeRd(row) },
+            // 2026-09-11, Batch 3C item 7, explicit instruction: "เพิ่มคอลัมน์ แผนก ถัดจากชื่อ...แผนกมาจาก
+            // employee record ณ ตอนดึงเข้ารอบ" -- department_name_th/en come from a LEFT JOIN onto the
+            // employee's CURRENT structure_departments row (PayrollRunModel::getDetails(), same "live
+            // employee record" source every other employee-identity column on this row already reads
+            // from -- there's no separate department snapshot table for run rows to freeze against).
+            { data: null, render: {
+                display: (d, t, row) => escapeHtml(departmentNameRd(row)),
+                sort: (d, t, row) => departmentNameRd(row),
+                filter: (d, t, row) => departmentNameRd(row),
+            } },
             // 2026-09-02, explicit request: "ในตารางพนักงานให้เพิ่ม Column รับเงินผ่านบัญชี หรือเงินสด" --
             // same badge markup the (since-removed) Payment Method Summary tab used, reused here for
             // a consistent look.
@@ -2766,10 +2795,13 @@ function initRunDetailTable(details) {
             // 2026-09-10, Batch 2 item 7: filter icon restricted to genuinely-filterable columns
             // with multiple discrete values (data source/payment method/calc status/verify status)
             // -- dropped from the 4 numeric amount columns and the name column per explicit request.
+            // 2026-09-11, Batch 3C item 7: index 3's key changed from 'data_source' (retired, now a
+            // filter pill instead -- see registerDataSourceSearchFilter()) to 'department' (the new
+            // column in that same slot) -- same index, no shift.
             initExcelColumnFilters(this.api(), {
                 mode: 'client',
                 columns: [
-                    { index: 3, key: 'data_source' },
+                    { index: 3, key: 'department' },
                     { index: 4, key: 'payment_method_code' },
                     { index: 9, key: 'calc_status' },
                     { index: 10, key: 'verify_status' },
