@@ -3168,7 +3168,7 @@ class PayrollRunModel {
                     // query per-branch instead (see the "Ad-hoc per-employee adjustments" comment
                     // further down, same SQL as this branch's own manual-lines query below).
                     if ($includeStandingItems) {
-                        $stmtPed = $this->db->prepare("SELECT eed.id AS assignment_id, i.id AS installment_id, i.amount,
+                        $stmtPed = $this->db->prepare("SELECT eed.id AS assignment_id, i.id AS installment_id, i.amount, i.principal_amount, i.interest_amount,
                                 eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.is_other, eed.payee_employee_id, eed.payee_type, eed.destination_id, eed.bank_account_id,
                                 pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                             FROM `employee_earning_deductions` eed
@@ -3194,6 +3194,15 @@ class PayrollRunModel {
                                 'name_th' => $resolved['name_th'],
                                 'name_en' => $resolved['name_en'],
                                 'amount' => (float)$ped['amount'],
+                                // 2026-09-11, Batch 3B item 4: read straight off the ALREADY-PERSISTED
+                                // installment row (EmployeeEarningDeductionModel::save() computed
+                                // and stored this once, at save time) -- never recomputed here, so a
+                                // slip/report showing this breakdown can never drift from what the
+                                // Employee Detail modal itself already showed when the assignment
+                                // was created/edited. NULL for an installment saved before this
+                                // column existed (legacy data) -- never guessed.
+                                'principal_amount' => $ped['principal_amount'] !== null ? (float)$ped['principal_amount'] : null,
+                                'interest_amount' => $ped['interest_amount'] !== null ? (float)$ped['interest_amount'] : null,
                                 'is_custom' => $resolved['is_custom'],
                                 'is_other' => $resolved['is_other'],
                                 'payee_employee_id' => $ped['payee_employee_id'] !== null ? (int)$ped['payee_employee_id'] : null,
@@ -3327,7 +3336,7 @@ class PayrollRunModel {
                     // custom-item assignment out of the actual payroll calculation, even though it
                     // saved fine and showed up on the Employee Detail Salary tab). Resolved the same
                     // way as payroll_run_manual_lines' own custom items, via resolveManualLineRow().
-                    $stmtPed = $this->db->prepare("SELECT eed.id AS assignment_id, i.id AS installment_id, i.amount,
+                    $stmtPed = $this->db->prepare("SELECT eed.id AS assignment_id, i.id AS installment_id, i.amount, i.principal_amount, i.interest_amount,
                             eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.is_other, eed.payee_employee_id, eed.payee_type, eed.destination_id, eed.bank_account_id,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `employee_earning_deductions` eed
@@ -3353,6 +3362,10 @@ class PayrollRunModel {
                             'name_th' => $resolved['name_th'],
                             'name_en' => $resolved['name_en'],
                             'amount' => (float)$ped['amount'],
+                            // 2026-09-11, Batch 3B item 4: same "read the persisted value, never
+                            // recompute" rule as the incentive-run branch above.
+                            'principal_amount' => $ped['principal_amount'] !== null ? (float)$ped['principal_amount'] : null,
+                            'interest_amount' => $ped['interest_amount'] !== null ? (float)$ped['interest_amount'] : null,
                             'is_custom' => $resolved['is_custom'],
                             'is_other' => $resolved['is_other'],
                             'payee_employee_id' => $ped['payee_employee_id'] !== null ? (int)$ped['payee_employee_id'] : null,
