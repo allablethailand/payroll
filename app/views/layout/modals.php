@@ -3097,8 +3097,35 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <form id="payrollRunForm" novalidate>
+                <!-- 2026-09-11, Batch 3C item 4 sub-step 4a: merged with the old, separately-maintained
+                     #editRunForm (detail.php) into this ONE form -- Edit populates #run_id (empty =
+                     create; a real id = update) and every other field below via the same shared
+                     app.js functions the Create flow itself uses, instead of a byte-for-byte duplicate
+                     modal/form/JS set. See app.js's own "Payroll Run form (shared Create/Edit)"
+                     section for the consolidated logic. -->
+                <input type="hidden" id="run_id" name="id" value="">
                 <input type="hidden" id="run_sync_process_id" name="sync_process_id" value="">
+                <input type="hidden" id="run_sync_run_kind" value="">
+                <!-- Mirrors this run's sync process attribution_tax_treatment so Create/Edit compute use_flat_tax_rate visibility the same way (never trusted server-side -- see PayrollRunModel::useFlatTaxRateAllowed()). -->
+                <input type="hidden" id="run_attribution_tax_treatment" value="">
                 <div class="modal-body">
+                    <!-- 2026-09-11, Batch 3C item 4 sub-step 4b: mirrors PayrollRunModel::
+                         runFieldLockState()/applyFieldLocks() client-side -- see app.js's own
+                         runFieldLockState()/applyRunFieldLockUi(). One combined summary (not a
+                         separate hint per locked field) explaining why fields are currently disabled;
+                         "source" (how this run originated) is always locked, so this row exists purely
+                         to SHOW that fact -- Edit-only, hidden entirely on Create (no run exists yet to
+                         have a source). Logic-only per this item's own instruction ("ยังไม่แก้
+                         layout/ระยะห่าง") -- no visual design pass. -->
+                    <div class="alert alert-warning small d-none" id="runLockSummary"></div>
+                    <div class="row mb-3 d-none" id="run_source_row">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-1" data-i18n="run_source_label">Source</label>
+                        </div>
+                        <div class="col-sm-9">
+                            <input type="text" class="form-control" id="run_source_display" readonly disabled>
+                        </div>
+                    </div>
                     <!-- 2026-09-02, same-day follow-up, explicit request: "พอมีแค่...ให้ติ๊กออกแล้วค่อยให้เลือก
                          รอบ...ดูงงๆ ช่วยเพิ่มเป็น radio ให้เลือก...ถ้าเลือก option 1 ให้ขึ้นรอบให้เลือก ถ้าเลือก
                          option 2 ไม่ขึ้นให้เลือก" -- the single checkbox (unchecked = "no schedule needed"
@@ -3244,10 +3271,13 @@
                             </div>
                         </div>
                     </div>
-                    <!-- 2026-08-31, same-day follow-up (Origami `attribution` plan's item 3) -- only
-                         ever shown for a supplemental sync process Origami attributed
-                         tax_treatment='separate' (see public/js/payroll/index.js's own
-                         setSupplementalPullMode() docblock), pre-checked when shown. Uses the
+                    <!-- 2026-09-11, Batch 3C item 4c (Decision 1) -- shown for any Incentive/partial
+                         payment run whose EFFECTIVE attribution tax treatment isn't 'merge',
+                         regardless of source (manual/off-cycle run or an Origami sync pull) -- see
+                         app.js's own updateComputeStatutoryVisibility()/PayrollRunModel::
+                         useFlatTaxRateAllowed() (server-enforced, this is client render only).
+                         Pre-checked specifically when a supplemental pull's own real attribution said
+                         'separate' -- see setSupplementalPullMode()'s own docblock in app.js. Uses the
                          Payroll Policy tab's own company-configured
                          supplemental_flat_tax_rate_percent -- if that's never been set, this flag is
                          a silent no-op and the normal average/actual PIT calculation runs instead
@@ -3314,8 +3344,11 @@
                                     <input type="radio" name="runMergeTargetMode" id="run_merge_target_mode_future_cycle" value="future_cycle">
                                 </div>
                                 <div id="run_merge_target_existing_wrap">
+                                    <!-- data-exclude-id set/cleared by app.js on modal open (Edit: this
+                                         run's own id, so it never lists itself as a candidate; Create:
+                                         cleared -- there is no run yet to exclude). -->
                                     <select class="form-select select2-remote" id="run_merge_target_id" name="merge_target_run_id"
-                                            data-api="/api/payroll-run.options" data-states="draft,pending_approval,approved,rejected,need_info,paid,locked"></select>
+                                            data-api="/api/payroll-run.options" data-states="draft,pending_approval,approved,rejected,need_info,paid,locked" data-exclude-id=""></select>
                                     <div class="form-text small" data-i18n="run_merge_target_hint">Build this round up normally first (Join Employees / Manage Items) -- once ready, use "Merge into Target" on its own Detail page to fold it into the round selected here.</div>
                                 </div>
                                 <div class="d-none" id="run_merge_target_future_cycle_wrap">
@@ -3368,6 +3401,12 @@
                         </div>
                         <div class="col-sm-9">
                             <select class="form-select select2-remote required" id="run_cycle_id" name="cycle_id" data-api="/api/payroll-cycle.options"></select>
+                            <!-- Edit-only warning (toggled by detail.js's own editRunCycleToggleRiskyRd(),
+                                 a Detail-page-specific check against the already-open run's own
+                                 employee_count/sync_process_id -- see that function's own docblock).
+                                 Stays hidden/unused on the Create flow, which has no existing run to warn
+                                 about. -->
+                            <div class="form-text small text-warning d-none" id="runCycleLockedHint" data-i18n="edit_run_cycle_locked_hint">This run already has calculated employees. Changing the schedule may affect who's included -- recalculate afterward to keep the employee list accurate.</div>
                         </div>
                     </div>
                     <div class="row mb-3">
