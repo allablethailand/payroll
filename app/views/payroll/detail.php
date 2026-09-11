@@ -490,6 +490,25 @@
                     <label class="form-check-label small" for="filterPaymentCash" data-i18n="table_payment_cash">Cash</label>
                 </div>
             </div>
+            <!-- 2026-09-11, Batch 3C item 7, explicit instruction: "ตัดคอลัมน์ แหล่งที่มา ออก (ย้ายไปเป็น
+                 filter pill 'ที่มา: ทั้งหมด/Sync/เพิ่มเอง' เหนือตาราง)" -- 3 mutually-exclusive states, so a
+                 radio-pill group (same .btn-check/btn-group idiom payroll/index.js's own
+                 .sync-item-filter-radio uses) rather than the independent-checkbox shape
+                 #paymentMethodFilterWrap above uses for its own genuinely-independent Bank/Cash
+                 states. Hidden entirely (d-none, toggled in initRunDetailTable()) for the same
+                 run-level condition that used to hide the old Source COLUMN -- see
+                 registerDataSourceSearchFilter()'s own comment in detail.js. -->
+            <div class="d-flex align-items-center gap-2 mb-2" id="rdDataSourceFilterWrap">
+                <span class="small text-muted" data-i18n="table_source">Source</span>
+                <div class="btn-group" role="group" aria-label="employee data source filter">
+                    <input type="radio" class="btn-check rd-data-source-filter-radio" name="rdDataSourceFilter" id="rdSourceFilterAll" value="all" autocomplete="off" checked>
+                    <label class="btn btn-outline-secondary btn-sm" for="rdSourceFilterAll" data-i18n="filter_all">All</label>
+                    <input type="radio" class="btn-check rd-data-source-filter-radio" name="rdDataSourceFilter" id="rdSourceFilterSync" value="sync" autocomplete="off">
+                    <label class="btn btn-outline-secondary btn-sm" for="rdSourceFilterSync" data-i18n="data_source_sync">Sync</label>
+                    <input type="radio" class="btn-check rd-data-source-filter-radio" name="rdDataSourceFilter" id="rdSourceFilterManual" value="manual" autocomplete="off">
+                    <label class="btn btn-outline-secondary btn-sm" for="rdSourceFilterManual" data-i18n="data_source_manual">Manual</label>
+                </div>
+            </div>
             <!-- 2026-08-29, explicit request: "สามารถมี checkbox เลือกได้ทีละหลายคนในการ Verify" -- Lock
                  retired 2026-08-31 (Verify itself now freezes recalculation).
                  2026-09-09, explicit follow-up across 3 rounds -- final layout: "เอาคำนวณใหม่ไปวางต่อ
@@ -526,7 +545,10 @@
                              underneath); split into its own Code column, placed before Name. -->
                         <th class="text-nowrap" data-i18n="employee_no">Employee Code</th>
                         <th class="text-nowrap" data-i18n="table_employee_name">Name</th>
-                        <th class="text-nowrap" data-i18n="table_source">Source</th>
+                        <!-- 2026-09-11, Batch 3C item 7, explicit instruction: "เพิ่มคอลัมน์ แผนก ถัดจากชื่อ"
+                             -- replaces the old "Source" column in this same slot (see the filter pill
+                             above the table instead, #rdDataSourceFilterWrap). -->
+                        <th class="text-nowrap" data-i18n="department">Department</th>
                         <!-- 2026-09-02, explicit request: "ในตารางพนักงานให้เพิ่ม Column รับเงินผ่านบัญชี หรือ
                              เงินสด" -- was only visible on the separate "Payment Method Summary" tab;
                              now also its own column here on the main Details table. -->

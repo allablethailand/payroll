@@ -119,19 +119,16 @@ function employeeDisplayNameRd(row) {
     const name = currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`;
     return name.trim();
 }
-// Sync/Manual badge (2026-08-21, explicit request: "ต้องมีสัญลักษณ์ว่า ใคร Sync มา เพิ่มเข้ามาแบบ
-// Manual") -- own dedicated "Source" column (2026-08-21, explicit request: "แยก Column Manual หรือ
-// Sync ออกมาอีก Column" -- was previously appended inline next to the employee name, only on a
-// sync-based run). Now that it has its own labeled header, always render the actual data_source
-// (a plain cycle/off-cycle run showing "Manual" for every row is correct information, not noise,
-// once it has a column of its own). row.data_source reflects payroll_run_details.data_source,
-// wired in recalculate() instead of the hard-coded 'manual' literal it used to always be.
-function dataSourceBadgeRd(row) {
-    const isSync = row.data_source === 'sync';
-    const cls = isSync ? 'bg-info-subtle text-info' : 'bg-secondary-subtle text-secondary';
-    const label = langData[isSync ? 'data_source_sync' : 'data_source_manual'] || (isSync ? 'Sync' : 'Manual');
-    return `<span class="badge ${cls}">${label}</span>`;
+// 2026-09-11, Batch 3C item 7 -- same th/en-pick-with-fallback convention used throughout this file
+// (employeeDisplayNameRd() above, etc.). '-' for an employee with no department set, same convention
+// as the Employee Quick View modal's own #empQuickViewDepartment.
+function departmentNameRd(row) {
+    return (currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || row.department_name_en || '-';
 }
+// 2026-09-11, Batch 3C item 7, explicit instruction: "ตัดคอลัมน์ แหล่งที่มา ออก (ย้ายไปเป็น filter pill)"
+// -- the dedicated "Source" column (2026-08-21) is retired, replaced by a filter pill above the
+// table (see registerDataSourceSearchFilter()/#rdDataSourceFilterWrap). dataSourceBadgeRd() (the old
+// per-row badge renderer this column used) is gone with it -- it had no other caller.
 function personDisplayNameRd(row, prefix) {
     const th = row[prefix + '_name_th'];
     const en = row[prefix + '_name_en'];
@@ -1064,6 +1061,42 @@ function updateEditRunTypeVisibility() {
 }
 $(document).on('change', '#edit_run_purpose', updateEditRunTypeVisibility);
 
+// 2026-09-11, Batch 3C item 5, explicit instruction: hide the Cash Payments/Bank Account Assignment/
+// Third-Party Remittance tabs entirely when the run has nothing for them to show, rather than
+// leaving them showing an empty "not ready"/"no rows" state -- computed straight off the SAME
+// api/payroll-run.get response renderRunHeader() already has in hand: run.details' own
+// payment_method_code per employee (already sent, no new field needed -- isCashishPaymentMethod()/
+// isBankishPaymentMethod() below are the same 2 helpers registerPaymentMethodSearchFilter() already
+// uses, so "cash-ish"/"bank-ish" can never drift between the filter and this visibility check) for
+// the first two, and the new run.remittance_count field (PayrollRunModel::get(), a real COUNT()
+// query -- remittance rows live in a wholly separate table not reachable from run.details at all)
+// for the third. Called from renderRunHeader() itself, which runs on every full run reload
+// (recalculate/verify/approve/etc. all funnel back through loadRunDetail() -> renderRunHeader() per
+// this page's own established pattern) -- "ประเมินใหม่หลัง recalculate" falls out for free with no
+// extra wiring needed. If the tab that's currently active gets hidden this way, switches to the
+// Employee Breakdown tab (there's always at least one employee row once a run has anything to show
+// at all, so that tab is never itself a candidate for hiding).
+function updateRunDetailTabVisibility(run) {
+    const details = run.details || [];
+    const cashCount = details.filter(d => isCashishPaymentMethod(d.payment_method_code || 'transfer')).length;
+    const transferCount = details.filter(d => isBankishPaymentMethod(d.payment_method_code || 'transfer')).length;
+    const remittanceCount = Number(run.remittance_count || 0);
+    const visibility = [
+        { tabId: 'run-cash-tab', show: cashCount > 0 },
+        { tabId: 'run-bank-account-tab', show: transferCount > 0 },
+        { tabId: 'run-remittance-tab', show: remittanceCount > 0 },
+    ];
+    let activeTabHidden = false;
+    visibility.forEach(function (v) {
+        const $tabBtn = $('#' + v.tabId);
+        $tabBtn.closest('li').toggleClass('d-none', !v.show);
+        if (!v.show && $tabBtn.hasClass('active')) activeTabHidden = true;
+    });
+    if (activeTabHidden) {
+        const $employeeTab = document.getElementById('run-employee-tab');
+        if ($employeeTab) bootstrap.Tab.getOrCreateInstance($employeeTab).show();
+    }
+}
 function renderRunHeader(run) {
     currentRun = run;
     // 2026-09-03, Platform UX review Phase 3: document.title used to be set directly here to JUST
@@ -1125,6 +1158,7 @@ function renderRunHeader(run) {
 
     renderProcessTimeline(run);
     renderSectionButtons(run);
+    updateRunDetailTabVisibility(run);
     loadRunReportsTab();
     loadRunCashTab();
     loadRunBankAccountTab();
@@ -1789,8 +1823,11 @@ function verifyLockButtonsRd(row) {
     const verifyTitle = row.is_verified ? (langData['action_unverify'] || 'Unverify') : (langData['action_verify'] || 'Verify');
     const verifyLabel = row.is_verified ? (langData['verify_status_verified'] || 'Verified') : (langData['action_verify'] || 'Verify');
     const verifyBtnCls = row.is_verified ? 'btn-success' : 'btn-outline-secondary';
+    // 2026-09-11, Batch 3C item 9: data-employee-name feeds the confirm dialog's own "{name}"
+    // placeholder (see the .btn-verify-employee click handler) -- avoids a round trip back through
+    // the DataTable row data at click time.
     return `<div class="d-flex gap-1 justify-content-center">
-        <button type="button" class="btn btn-sm ${verifyBtnCls} rounded-pill btn-verify-employee" data-employee-id="${row.employee_id}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double me-1"></i>${escapeHtml(verifyLabel)}</button>
+        <button type="button" class="btn btn-sm ${verifyBtnCls} rounded-pill btn-verify-employee" data-employee-id="${row.employee_id}" data-employee-name="${escapeAttr(employeeDisplayNameRd(row))}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double me-1"></i>${escapeHtml(verifyLabel)}</button>
     </div>`;
 }
 // Comment always available (any state) -- same reasoning as the Breakdown button (read-only/non-
@@ -2488,6 +2525,29 @@ $(document).on('change', '#filterPaymentBank, #filterPaymentCash', function () {
     if (tb_run_detail) tb_run_detail.draw();
 });
 
+// 2026-09-11, Batch 3C item 7, explicit instruction: "ตัดคอลัมน์ แหล่งที่มา ออก (ย้ายไปเป็น filter pill
+// 'ที่มา: ทั้งหมด/Sync/เพิ่มเอง' เหนือตาราง ถ้ายังต้องกรอง)" -- same registered-once-per-table-id guard as
+// registerPaymentMethodSearchFilter() above, filtering on row.data_source ('sync'/'manual', same
+// field the old Source column's badge used to render) against the 3-way radio pill instead of a
+// per-column dropdown. #rdDataSourceFilterWrap's own visibility (hidden for a run that never brings
+// base salary into the calculation, since data_source doesn't apply there either) is still owned by
+// initRunDetailTable() -- see its own showDataSourceFilter comment.
+let dataSourceSearchFilterRegistered = false;
+let currentRdDataSourceFilter = 'all';
+function registerDataSourceSearchFilter() {
+    if (dataSourceSearchFilterRegistered) return;
+    dataSourceSearchFilterRegistered = true;
+    $.fn.dataTable.ext.search.push(function (settings, searchData, dataIndex, rowData) {
+        if (!settings.nTable || settings.nTable.id !== 'tb_run_detail') return true;
+        if (currentRdDataSourceFilter === 'all') return true;
+        return (rowData && rowData.data_source) === currentRdDataSourceFilter;
+    });
+}
+$(document).on('change', '.rd-data-source-filter-radio', function () {
+    currentRdDataSourceFilter = $(this).val();
+    if (tb_run_detail) tb_run_detail.draw();
+});
+
 // 2026-08-31: raw per-employee rows kept module-level (was also read by the now-removed Payment
 // Method Summary tab, see the 2026-09-02 removal note above initRunDetailTable()).
 let currentRunDetails = [];
@@ -2502,6 +2562,7 @@ let currentRunDetails = [];
 function initRunDetailTable(details) {
     currentRunDetails = details;
     registerPaymentMethodSearchFilter();
+    registerDataSourceSearchFilter();
     // 2026-09-09: no longer called directly here with the FULL, unfiltered `details` array -- see
     // updateSummaryCardsFromTable()'s own docblock (called from drawCallback below instead, which
     // also fires right after this function's own initial construction/reload, so the first paint is
@@ -2523,19 +2584,18 @@ function initRunDetailTable(details) {
     // 2026-09-10, explicit request: "ซ่อน column แหล่งที่มา...เมื่อรอบไม่นำฐานเงินเดือนมาคำนวณ" -- a
     // RUN-LEVEL condition (same run_purpose='incentive' + include_base_salary=0 flag item 2's own
     // base_salary_excluded is derived from at calc time, see PayrollRunModel::isBaseSalaryExcluded()'s
-    // own docblock), NOT the per-employee base_salary_excluded flag -- this hides the WHOLE column
-    // for every row on the run, not row-by-row (data_source genuinely doesn't apply to a run that
-    // never brings base salary into the calculation at all).
-    const showDataSourceColumn = !currentRun || currentRun.run_purpose !== 'incentive' || !!currentRun.include_base_salary;
+    // own docblock), NOT the per-employee base_salary_excluded flag -- data_source genuinely doesn't
+    // apply to a run that never brings base salary into the calculation at all.
+    // 2026-09-11, Batch 3C item 7: the column this used to gate is gone (see the retirement comment
+    // above dataSourceBadgeRd()'s old location) -- this same condition now gates the FILTER PILL's
+    // own visibility instead, right below.
+    const showDataSourceFilter = !currentRun || currentRun.run_purpose !== 'incentive' || !!currentRun.include_base_salary;
+    $('#rdDataSourceFilterWrap').toggleClass('d-none', !showDataSourceFilter);
     if ($.fn.DataTable.isDataTable('#tb_run_detail')) {
         const existingApi = $('#tb_run_detail').DataTable();
         const existingCheckboxColumn = existingApi.column(0);
         if (existingCheckboxColumn.visible() !== showCheckboxColumn) {
             existingCheckboxColumn.visible(showCheckboxColumn, false);
-        }
-        const existingDataSourceColumn = existingApi.column(3);
-        if (existingDataSourceColumn.visible() !== showDataSourceColumn) {
-            existingDataSourceColumn.visible(showDataSourceColumn, false);
         }
         existingApi.clear().rows.add(details).draw();
         return;
@@ -2592,7 +2652,16 @@ function initRunDetailTable(details) {
                 display: (d, t, row) => apvPersonLineHtml(employeeDisplayNameRd(row), 24, row.profile_photo_path, { employeeId: row.employee_id }),
                 filter: (d, t, row) => employeeDisplayNameRd(row),
             } },
-            { data: null, className: 'text-center', visible: showDataSourceColumn, render: (d, t, row) => dataSourceBadgeRd(row) },
+            // 2026-09-11, Batch 3C item 7, explicit instruction: "เพิ่มคอลัมน์ แผนก ถัดจากชื่อ...แผนกมาจาก
+            // employee record ณ ตอนดึงเข้ารอบ" -- department_name_th/en come from a LEFT JOIN onto the
+            // employee's CURRENT structure_departments row (PayrollRunModel::getDetails(), same "live
+            // employee record" source every other employee-identity column on this row already reads
+            // from -- there's no separate department snapshot table for run rows to freeze against).
+            { data: null, render: {
+                display: (d, t, row) => escapeHtml(departmentNameRd(row)),
+                sort: (d, t, row) => departmentNameRd(row),
+                filter: (d, t, row) => departmentNameRd(row),
+            } },
             // 2026-09-02, explicit request: "ในตารางพนักงานให้เพิ่ม Column รับเงินผ่านบัญชี หรือเงินสด" --
             // same badge markup the (since-removed) Payment Method Summary tab used, reused here for
             // a consistent look.
@@ -2763,10 +2832,13 @@ function initRunDetailTable(details) {
             // 2026-09-10, Batch 2 item 7: filter icon restricted to genuinely-filterable columns
             // with multiple discrete values (data source/payment method/calc status/verify status)
             // -- dropped from the 4 numeric amount columns and the name column per explicit request.
+            // 2026-09-11, Batch 3C item 7: index 3's key changed from 'data_source' (retired, now a
+            // filter pill instead -- see registerDataSourceSearchFilter()) to 'department' (the new
+            // column in that same slot) -- same index, no shift.
             initExcelColumnFilters(this.api(), {
                 mode: 'client',
                 columns: [
-                    { index: 3, key: 'data_source' },
+                    { index: 3, key: 'department' },
                     { index: 4, key: 'payment_method_code' },
                     { index: 9, key: 'calc_status' },
                     { index: 10, key: 'verify_status' },
@@ -2848,10 +2920,25 @@ $(document).on('change', '.run-detail-row-check', function () {
 function selectedRunDetailEmployeeIds() {
     return allRunDetailRowCheckboxes().filter(':checked').map(function () { return Number($(this).data('employee-id')); }).get();
 }
-function bulkVerifyLockRd(url, payload, confirmTitle, confirmMessage) {
+// 2026-09-11, Batch 3C item 9 follow-up, explicit instruction: "เพิ่ม confirm ให้ #btnBulkVerify ด้วย
+// ข้อความเดียวกับ verify all แต่ใช้จำนวนที่เลือก...ปุ่มยืนยัน 'ตรวจสอบแล้ว'" -- confirmTitle carries a
+// "{count}" placeholder (see confirm_bulk_verify_title), filled in here from the ACTUAL selection
+// size once known, same {count}/{name} template-replace convention already used throughout this
+// app. Swal.fire() called directly (not showConfirm(), which hardcodes Yes/No) for the same reason
+// as the single-employee .btn-verify-employee handler above -- still the one central SweetAlert2
+// confirm modal, just with a real action label on the confirm button instead of "OK".
+function bulkVerifyLockRd(url, payload, confirmTitle, confirmMessage, confirmButtonText) {
     const employeeIds = selectedRunDetailEmployeeIds();
     if (!employeeIds.length) return;
-    showConfirm(confirmTitle, confirmMessage, function () {
+    Swal.fire({
+        icon: 'info',
+        title: confirmTitle.replace('{count}', employeeIds.length),
+        text: confirmMessage,
+        showCancelButton: true,
+        confirmButtonText: confirmButtonText || (langData.yes || 'Yes'),
+        cancelButtonText: langData['cancel'] || 'Cancel'
+    }).then(function (result) {
+        if (!result.isConfirmed) return;
         $.ajax({
             url: `${BASE_URL}${url}`, method: 'POST', contentType: 'application/json', dataType: 'json',
             data: JSON.stringify(Object.assign({ id: PAYROLL_RUN_ID, employee_ids: employeeIds }, payload)),
@@ -2874,8 +2961,9 @@ function bulkVerifyLockRd(url, payload, confirmTitle, confirmMessage) {
 // same low-stakes direction Lock's own "Unlock" never required a confirm for either.
 $(document).on('click', '#btnBulkVerify', function () {
     bulkVerifyLockRd('/api/payroll-run.employee-verify.bulk', { verified: true },
-        langData['confirm_bulk_verify_title'] || 'Verify selected employees?',
-        langData['confirm_bulk_verify_message'] || 'Verified employees will no longer be recalculated and cannot be edited until unverified.');
+        langData['confirm_bulk_verify_title'] || 'Verify {count} selected employee(s)?',
+        langData['confirm_bulk_verify_message'] || 'Verified employees will no longer be recalculated and cannot be edited until unverified.',
+        langData['verify_status_verified'] || 'Verified');
 });
 function singleVerifyLockRd(url, employeeId, payload, successMsgKey) {
     $.ajax({
@@ -2892,23 +2980,51 @@ function singleVerifyLockRd(url, employeeId, payload, successMsgKey) {
         error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
+// 2026-09-11, Batch 3C item 9, explicit instruction: "กดแล้ว confirm ก่อนทุกครั้ง" -- unverify used to
+// skip confirm entirely (see the 2026-08-31 comment above bulkVerifyLockRd(), now superseded). Both
+// directions confirm now, each with its own wording that names the employee and states the actual
+// action (not a generic "OK") -- Swal.fire() called directly rather than through showConfirm() since
+// showConfirm()'s own confirmButtonText is hardcoded to Yes/No, and the whole point here is a
+// specific action label on that button. Still the SAME central SweetAlert2 confirm modal
+// showConfirm() itself wraps, per the "ใช้ modal confirm กลางของระบบ" instruction -- same pattern
+// already used elsewhere in this app whenever a confirm needs a custom confirm button label (e.g.
+// employee/detail.js's #btnSuspendEmployee).
 $(document).on('click', '.btn-verify-employee', function () {
     const employeeId = $(this).data('employee-id');
+    const employeeName = $(this).data('employee-name') || '';
     const nowVerified = $(this).data('verified') !== true && $(this).data('verified') !== 'true';
-    if (nowVerified) {
-        showConfirm(langData['confirm_verify_employee_title'] || 'Verify this employee?',
-            langData['confirm_verify_employee_message'] || 'This employee will no longer be recalculated and cannot be edited until unverified.',
-            function () { singleVerifyLockRd('/api/payroll-run.employee-verify.save', employeeId, { verified: true }, 'save_success'); });
-    } else {
-        singleVerifyLockRd('/api/payroll-run.employee-verify.save', employeeId, { verified: false }, 'save_success');
-    }
+    const title = (nowVerified
+        ? (langData['confirm_verify_employee_title'] || 'Confirm that {name}\'s data in this run has been verified')
+        : (langData['confirm_unverify_employee_title'] || 'Unverify {name}')
+    ).replace('{name}', employeeName);
+    const message = nowVerified
+        ? (langData['confirm_verify_employee_message'] || 'This employee will no longer be recalculated and cannot be edited until unverified.')
+        : (langData['confirm_unverify_employee_message'] || 'This employee will resume normal recalculation and can be edited again.');
+    const confirmButtonText = nowVerified
+        ? (langData['verify_status_verified'] || 'Verified')
+        : (langData['action_unverify'] || 'Unverify');
+    Swal.fire({
+        icon: 'info',
+        title,
+        text: message,
+        showCancelButton: true,
+        confirmButtonText,
+        cancelButtonText: langData['cancel'] || 'Cancel'
+    }).then(function (result) {
+        if (!result.isConfirmed) return;
+        singleVerifyLockRd('/api/payroll-run.employee-verify.save', employeeId, { verified: nowVerified }, 'save_success');
+    });
 });
 // 2026-08-31, explicit request: "สามารถ Verify ทั้ง Process ได้เลย...ให้ Verify ได้ทั้ง Process ทั้ง Detail
 // และหน้า List" -- verifies every employee currently in the run in one action. Section-header button
 // (see renderSectionButtons()), not part of the selection-scoped bulk bar, so it always needs its own
 // confirm regardless of what (if anything) is currently checked.
 $(document).on('click', '#btnVerifyAllEmployees', function () {
-    showConfirm(langData['confirm_verify_all_title'] || 'Verify all employees in this run?',
+    // 2026-09-11, Batch 3C item 9, explicit instruction: "ให้ confirm พร้อมจำนวนคน" -- currentRun's
+    // own employee_count (loaded whole client-side, not paginated -- see initRunDetailTable()'s own
+    // comment) is the true total, not just however many rows the DataTable happens to have rendered.
+    const empCount = (currentRun && currentRun.employee_count) || 0;
+    showConfirm((langData['confirm_verify_all_title'] || 'Verify all {count} employee(s) in this run?').replace('{count}', empCount),
         langData['confirm_verify_all_message'] || 'Every employee in this run will no longer be recalculated and cannot be edited until unverified.',
         function () {
             $.ajax({
@@ -3141,13 +3257,36 @@ let auditHistoryEntries = [];
 function auditHistoryRowHtmlRd(entry, index, isLast) {
     const meta = auditTimelineMetaRd(entry.action);
     const color = (APV_COLORS[meta.tone] || APV_COLORS.muted).icon;
-    const actor = personDisplayNameRd(entry, 'performed_by');
-    const stateChangeHtml = entry.from_state
-        ? `${stateBadgeRd(entry.from_state)} <i class="fa-solid fa-arrow-right mx-1"></i> ${stateBadgeRd(entry.to_state)}`
-        : (entry.to_state ? stateBadgeRd(entry.to_state) : '');
-    const metaParts = [];
-    if (entry.ip_address) metaParts.push(`<span class="me-3"><i class="fa-solid fa-location-dot me-1"></i>${escapeHtml(entry.ip_address)}</span>`);
-    if (entry.user_agent) metaParts.push(`<span><i class="fa-solid fa-desktop me-1"></i>${escapeHtml(entry.user_agent)}</span>`);
+    // 2026-09-11, Batch 3C item 2, explicit instruction: "ชื่อผู้ทำ -> apvPersonLineHtml (รูป + ชื่อ,
+    // คลิก quick-view ได้) แบบเดียวกับไทม์ไลน์" -- same size (26) the Approval Timeline modal's own
+    // Created/Paid/Locked stages use (app.js's apvCreatedStageHtml() etc.), same {employeeId} option
+    // that wires up the shared .emp-avatar-link click handler.
+    const actorName = personDisplayNameRd(entry, 'performed_by');
+    const actorHtml = apvPersonLineHtml(actorName, 26, entry.performed_by_profile_photo_path, entry.performed_by ? { employeeId: entry.performed_by } : null);
+    // 2026-09-11, Batch 3C item 2, explicit instruction: "from_state -> to_state ถ้าเท่ากัน แสดงครั้ง
+    // เดียว ไม่ใช่ 'กำลังทำรอบ  กำลังทำรอบ'" -- an action that doesn't actually change state (e.g. a
+    // comment/note logged mid-state) used to always render the arrow-transition shape even when both
+    // sides were identical.
+    let stateChangeHtml = '';
+    if (entry.from_state && entry.to_state && entry.from_state !== entry.to_state) {
+        stateChangeHtml = `${stateBadgeRd(entry.from_state)} <i class="fa-solid fa-arrow-right mx-1"></i> ${stateBadgeRd(entry.to_state)}`;
+    } else if (entry.to_state) {
+        stateChangeHtml = stateBadgeRd(entry.to_state);
+    } else if (entry.from_state) {
+        stateChangeHtml = stateBadgeRd(entry.from_state);
+    }
+    // 2026-09-11, Batch 3C item 2, explicit instruction: raw User-Agent parsed into a compact
+    // "Windows 10 · Edge 152" summary (app.js's formatUserAgentSummary(), OS · main browser + major
+    // version only) with the RAW string kept in a tooltip (title attribute), not shown inline
+    // anymore -- IP address moves to its own line right below it, instead of sharing one line.
+    const metaLines = [];
+    if (entry.user_agent) {
+        const uaSummary = formatUserAgentSummary(entry.user_agent) || entry.user_agent;
+        metaLines.push(`<div title="${escapeAttr(entry.user_agent)}"><i class="fa-solid fa-desktop me-1"></i>${escapeHtml(uaSummary)}</div>`);
+    }
+    if (entry.ip_address) {
+        metaLines.push(`<div><i class="fa-solid fa-location-dot me-1"></i>${escapeHtml(entry.ip_address)}</div>`);
+    }
     return `
         <div class="apv-history-row${isLast ? ' apv-history-row-last' : ''}">
             <div class="apv-history-row-marker">
@@ -3159,10 +3298,10 @@ function auditHistoryRowHtmlRd(entry, index, isLast) {
                     <span class="apv-history-row-title">${escapeHtml(auditActionLabel(entry.action))}</span>
                     <span class="apv-history-row-date"><i class="fa-regular fa-clock me-1"></i>${escapeHtml(formatDisplayDateTime(entry.performed_at))}</span>
                 </div>
-                <div class="apv-history-row-actor">${escapeHtml(actor || '-')}</div>
+                <div class="apv-history-row-actor">${actorHtml}</div>
                 ${stateChangeHtml ? `<div class="mt-2">${stateChangeHtml}</div>` : ''}
                 ${entry.note ? `<div class="apv-substep-remark mt-2">${escapeHtml(entry.note)}</div>` : ''}
-                ${metaParts.length ? `<div class="small text-muted mt-2">${metaParts.join('')}</div>` : ''}
+                ${metaLines.length ? `<div class="small text-muted mt-2">${metaLines.join('')}</div>` : ''}
             </div>
         </div>
     `;

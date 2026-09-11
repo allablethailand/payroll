@@ -178,3 +178,29 @@ migration file of an unusual shape, and dev being clear doesn't mean any OTHER e
 4-step first-deploy sequence for exactly that reason.
 
 **Source:** Batch 3B item 0, explicit instruction (2026-09-10).
+
+---
+
+## Snapshot department/position onto the run row at lock (or pull-in) time
+
+Both the Process Detail employee table (`PayrollRunModel::getDetails()`, Batch 3C item 7) and
+`PayrollRegisterReport`'s own Excel/PDF export (`PayrollReportDataModel::getRunDetails()`) resolve
+an employee's Department (and Position, where shown) by joining the employee's **CURRENT**
+`structure_departments`/`structure_positions` row live, at read time -- there is no department/
+position snapshot stored anywhere on `payroll_run_details` itself. A department transfer or
+reorg after a run is paid/locked silently rewrites how that OLD run displays retroactively: an
+employee who was in "Sales" when a January run was paid, then moved to "Marketing" in March, will
+show "Marketing" if that January run's Detail page or Payroll Register export is opened again
+later -- the run no longer reflects what was actually true at the time it was run.
+
+**Fix, when picked up:** snapshot `department_id`/`position_id` (or the resolved name strings
+directly, TBD at design time) onto `payroll_run_details` per employee, either at the moment they're
+pulled into the run (`recalculate()`) or at lock time specifically (whichever better matches what
+"the record as of this run" should mean -- needs a decision, not assumed) -- **needs a migration**
+(new column(s) on `payroll_run_details`, following this project's own migration-file convention)
+and touches both read paths above once the snapshot exists (`getDetails()`/`getRunDetails()` would
+read the snapshot instead of live-joining `employees`/`structure_departments` for any run at/after
+whichever point the snapshot is taken). Scope this as its own task, not a drive-by addition to
+whatever else is in flight when it's picked up.
+
+**Source:** Batch 3C item 7, explicit instruction (2026-09-11).

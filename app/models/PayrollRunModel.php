@@ -272,7 +272,14 @@ class PayrollRunModel {
                     -- exposed here so the UI can warn distinctly instead of showing waiting forever
                     -- for a round that will never come (same category as the Origami-attribution
                     -- target_rejected status, see PayrollSyncModel::attributionTargetStatus()).
-                    mtc.cycle_name AS merge_target_cycle_name, mtc.status AS merge_target_cycle_status
+                    mtc.cycle_name AS merge_target_cycle_name, mtc.status AS merge_target_cycle_status,
+                    -- 2026-09-11, Batch 3C item 5, explicit instruction: the Detail page's Third-
+                    -- Party Remittance tab hides itself entirely when a run has no remittance rows
+                    -- (see updateRunDetailTabVisibility() in detail.js) -- unlike cash/bank-transfer
+                    -- payment counts (already derivable from `r.details`' own payment_method_code
+                    -- per employee, no new field needed there), remittances live in their own table
+                    -- with nothing reachable from getDetails() at all, so this needs a real count.
+                    (SELECT COUNT(*) FROM `payroll_remittances` pr WHERE pr.run_id = r.id) AS remittance_count
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 LEFT JOIN `payroll_sync_processes` sp ON sp.id = r.sync_process_id
@@ -312,6 +319,11 @@ class PayrollRunModel {
                     -- PayrollReportDataModel::getRunDetails() already uses, exposed here as
                     -- payment_method_code (transfer/cash/check/mixed).
                     COALESCE(pmt.code, 'transfer') AS payment_method_code,
+                    -- 2026-09-11, Batch 3C item 7: employee table's new Department column -- the
+                    -- employee's CURRENT department (there is no separate department snapshot on
+                    -- payroll_run_details itself, same live-employee-record source e.department_id
+                    -- above already reads from).
+                    dept.department_name_th, dept.department_name_en,
                     COALESCE(v.is_verified, 0) AS is_verified, v.verified_at,
                     vu.name_th AS verified_by_name_th, vu.name_en AS verified_by_name_en,
                     -- 2026-08-29: comment count shown as a notification badge on the Comment button
@@ -338,6 +350,7 @@ class PayrollRunModel {
                 FROM `payroll_run_details` d
                 JOIN `employees` e ON e.id = d.employee_id
                 LEFT JOIN `master_payment_methods` pmt ON pmt.id = e.payment_method_id
+                LEFT JOIN `structure_departments` dept ON dept.id = e.department_id
                 LEFT JOIN `payroll_run_employee_verifications` v ON v.run_id = d.run_id AND v.employee_id = d.employee_id
                 LEFT JOIN `employees` vu ON vu.id = v.verified_by
                 WHERE d.run_id = :run_id
@@ -548,7 +561,12 @@ class PayrollRunModel {
         if (!$this->get($runId, $compId)) {
             return [];
         }
-        $sql = "SELECT a.*, e.name_th AS performed_by_name_th, e.name_en AS performed_by_name_en
+        // 2026-09-11, Batch 3C item 2, explicit instruction: the Action History tab's own actor line
+        // now renders avatar+name (apvPersonLineHtml(), same as the Approval Timeline modal) instead
+        // of plain text, clickable through to the employee quick-view modal -- needs the photo path
+        // alongside the name fields this query already joined.
+        $sql = "SELECT a.*, e.name_th AS performed_by_name_th, e.name_en AS performed_by_name_en,
+                    e.profile_photo_path AS performed_by_profile_photo_path
                 FROM `payroll_run_audit_logs` a
                 LEFT JOIN `employees` e ON e.id = a.performed_by
                 WHERE a.run_id = :run_id AND a.action != 'view_detail' ORDER BY a.id ASC";

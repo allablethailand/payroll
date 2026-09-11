@@ -688,7 +688,8 @@ function initPayrollRunTable() {
             // form render (this app's own DataTables sort-safety convention) since the display side
             // is now HTML, not plain text -- sort/filter still key off the raw name string.
             { data: null, render: {
-                display: (d, t, row) => apvPersonLineHtml(updatedByNamePr(row), 24, row.updated_by_profile_photo_path, row.updated_by ? { employeeId: row.updated_by } : null),
+                // 2026-09-11, Batch 3C item 3, explicit instruction: "+8px" over the previous 24.
+                display: (d, t, row) => apvPersonLineHtml(updatedByNamePr(row), 32, row.updated_by_profile_photo_path, row.updated_by ? { employeeId: row.updated_by } : null),
                 sort: (d, t, row) => updatedByNamePr(row),
                 filter: (d, t, row) => updatedByNamePr(row),
             } },
