@@ -1584,8 +1584,25 @@ function renderEmployeeQuickViewModal(emp) {
     $('#empQuickViewStatus').text((langData['status_' + emp.employee_status]) || emp.employee_status || '-');
     $('#empQuickViewGoToProfile').attr('href', `${BASE_URL}/employees/${emp.employee_no}`);
 }
-$(document).on('click', '.emp-avatar-link', function () {
-    const employeeId = $(this).data('employee-id');
+// 2026-09-11, Batch 3C item 3, explicit instruction: "ห้าม trigger row click ไปหน้า Detail
+// (stopPropagation ใน handler กลางของ .emp-avatar-link ไม่ใช่แก้รายหน้า)" -- a plain jQuery
+// `$(document).on('click', '.emp-avatar-link', ...)` attaches its real native listener on
+// `document` itself, in the BUBBLE phase. A row-click handler delegated on a closer ancestor
+// (e.g. `#tb_payroll_run tbody`) is physically CLOSER to the click target, so during the native
+// bubble phase it always fires FIRST, regardless of source-code order -- calling
+// `stopPropagation()` from this handler would be too late to stop it (same class of bug already
+// documented/fixed per-page for `.stc-action`/`.btn-quick-submit-run` in payroll/index.js's own
+// row-click handler, which needed its OWN exclusion added there since it fires before this one
+// ever runs). Using the native CAPTURE phase here instead (`addEventListener(..., true)`) makes
+// this the FIRST handler to see the click on ITS way down to the target, before any bubble-phase
+// row-click handler on any page gets a chance -- `stopPropagation()` during capture halts the
+// entire dispatch, bubble phase included, so no per-page row handler needs its own exclusion at
+// all. This is the one central place a `.emp-avatar-link` click is handled anywhere in the app.
+document.addEventListener('click', function (e) {
+    const $link = $(e.target).closest('.emp-avatar-link');
+    if (!$link.length) return;
+    e.stopPropagation();
+    const employeeId = $link.data('employee-id');
     if (!employeeId) return;
     $.ajax({
         url: `${BASE_URL}/api/employee.quick-view`,
@@ -1604,7 +1621,7 @@ $(document).on('click', '.emp-avatar-link', function () {
             if (typeof showWarning === 'function') showWarning((langData && langData['save_failed']) || 'An error occurred while loading the data.');
         }
     });
-});
+}, true);
 // "Created" stage -- always done (a run exists the moment it's created, nothing to wait for), so
 // unlike Paid/Locked below it has no pending state to render.
 function apvCreatedStageHtml(run) {
