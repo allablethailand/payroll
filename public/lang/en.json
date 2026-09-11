@@ -1577,7 +1577,7 @@
     "run_merge_into_label": "Fold this round into another one?",
     "run_merge_into_standalone": "Keep separate",
     "run_merge_into_existing": "Merge into an existing round",
-    "run_merge_into_future_cycle": "Merge into a future round (matched by payment month)",
+    "run_merge_into_future_cycle": "Match to a round created later",
     "run_origin_label": "Origin",
     "run_origin_sync": "Pulled from Origami",
     "run_origin_cycle": "Payroll Schedule",

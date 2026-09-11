@@ -1578,7 +1578,7 @@
     "run_merge_into_label": "การรวมรอบ",
     "run_merge_into_standalone": "แยกเป็นรอบของตัวเอง",
     "run_merge_into_existing": "อ้างอิงรอบที่มีอยู่แล้ว",
-    "run_merge_into_future_cycle": "อ้างอิงรอบในอนาคต (จับคู่ตามเดือนที่จ่ายเงิน)",
+    "run_merge_into_future_cycle": "จับคู่รอบที่จะสร้างภายหลัง",
     "run_origin_label": "ที่มา",
     "run_origin_sync": "ดึงมาจาก Origami",
     "run_origin_cycle": "อ้างอิงรอบการจ่าย",

@@ -3771,15 +3771,84 @@ try {
     checkTrue('fixture employee row present', $fullDetailPaymentType !== false);
     check("payment_method_code defaults to 'transfer' (fixture never set employees.payment_method_id)", $fullDetailPaymentType['payment_method_code'] ?? null, 'transfer');
 
-    // 2026-09-01, explicit request: "ให้สามารถเลือกอ้างอิงรอบได้เหมือนตอน Origami และในหน้า Detail ก็สามารถ
-    // แก้ไขเพิ่มได้ Form เหมือนหน้าสร้างเลยครับ" -- update() now accepts a cycle_id change. Same-day
-    // follow-up (explicit push-back: "เหตุผลอะไรบ้างในหน้า Edit ที่ไม่สามารถแก้ไขได้ ควรเปิดให้แก้ไขได้")
-    // loosened the original blanket employee_count===0 gate down to just the one genuinely risky
-    // transition (a non-sync run toggling between off-cycle and cycle-linked) -- switching between
-    // two DIFFERENT real cycles is unrestricted, and that one risky transition now force-
-    // recalculates instead of being rejected outright (see PayrollRunModel::update()'s own comment).
-    // Own small fixtures below, isolated from $runId/$compId's main fixture above.
-    echo "=== update(): cycle_id is now editable, precisely gated (not a blanket employee_count lock) ===\n";
+    // 2026-09-11, Batch 3C item 4, explicit instruction: field-level lock, not the old blanket
+    // employee_count===0 gate (or its 2026-09-01 loosened "always enabled, force-recalculate for
+    // the one risky toggle" replacement, superseded here) -- cycle_id/period_dates/run_purpose/
+    // merge_target now lock the moment a DRAFT run has ANY employee in it, full stop, regardless of
+    // sync vs manual or which specific transition is attempted. See
+    // PayrollRunModel::runFieldLockState()/checkRunFieldLocks()'s own docblocks for the exact
+    // 3-tier state matrix (source always locked / cycle+period+purpose+merge locked by
+    // draft-with-employees OR non-draft / name+payment_date+flat-tax locked only by non-draft /
+    // notes never locked). Own small fixtures below, isolated from $runId/$compId's main fixture
+    // above.
+    echo "=== runFieldLockState() -- the exact 3-tier state matrix, in isolation ===\n";
+    $lockDraftNoEmp = $runModel->runFieldLockState(['state' => 'draft', 'has_admin_work' => false]);
+    check('draft, no admin work: cycle_id unlocked', $lockDraftNoEmp['cycle_id']['locked'], false);
+    check('draft, no admin work: period_dates unlocked', $lockDraftNoEmp['period_dates']['locked'], false);
+    check('draft, no admin work: run_purpose unlocked', $lockDraftNoEmp['run_purpose']['locked'], false);
+    check('draft, no admin work: merge_target unlocked', $lockDraftNoEmp['merge_target']['locked'], false);
+    check('draft, no admin work: run_name unlocked', $lockDraftNoEmp['run_name']['locked'], false);
+    check('draft, no admin work: payment_date unlocked', $lockDraftNoEmp['payment_date']['locked'], false);
+    check('draft, no admin work: use_flat_tax_rate unlocked', $lockDraftNoEmp['use_flat_tax_rate']['locked'], false);
+    checkTrue('draft, no admin work: source is ALWAYS locked regardless', $lockDraftNoEmp['source']['locked']);
+    check('draft, no admin work: notes never locked', $lockDraftNoEmp['notes']['locked'], false);
+
+    $lockDraftHasEmp = $runModel->runFieldLockState(['state' => 'draft', 'has_admin_work' => true]);
+    checkTrue('draft, has admin work: cycle_id locked', $lockDraftHasEmp['cycle_id']['locked']);
+    check('draft, has admin work: cycle_id reason is has_admin_work', $lockDraftHasEmp['cycle_id']['reason'], 'has_admin_work');
+    checkTrue('draft, has admin work: period_dates locked', $lockDraftHasEmp['period_dates']['locked']);
+    checkTrue('draft, has admin work: run_purpose locked', $lockDraftHasEmp['run_purpose']['locked']);
+    checkTrue('draft, has admin work: merge_target locked', $lockDraftHasEmp['merge_target']['locked']);
+    check('draft, has admin work: run_name STILL unlocked', $lockDraftHasEmp['run_name']['locked'], false);
+    check('draft, has admin work: payment_date STILL unlocked', $lockDraftHasEmp['payment_date']['locked'], false);
+    check('draft, has admin work: use_flat_tax_rate STILL unlocked', $lockDraftHasEmp['use_flat_tax_rate']['locked'], false);
+    check('draft, has admin work: notes never locked', $lockDraftHasEmp['notes']['locked'], false);
+
+    $lockNotDraft = $runModel->runFieldLockState(['state' => 'pending_approval', 'has_admin_work' => true]);
+    checkTrue('not draft: cycle_id locked', $lockNotDraft['cycle_id']['locked']);
+    checkTrue('not draft: run_name NOW locked too (unlike draft)', $lockNotDraft['run_name']['locked']);
+    checkTrue('not draft: payment_date locked', $lockNotDraft['payment_date']['locked']);
+    checkTrue('not draft: use_flat_tax_rate locked', $lockNotDraft['use_flat_tax_rate']['locked']);
+    check('not draft: run_name reason is not_draft', $lockNotDraft['run_name']['reason'], 'not_draft');
+    check('not draft: notes is the ONE field still unlocked', $lockNotDraft['notes']['locked'], false);
+
+    echo "=== hasAdminWork()/adminWorkSummary() against a REAL run -- manual employee, comment, admin-triggered recalculate ===\n";
+    $adminWorkPeriodStart = (clone $today)->modify('first day of +155 months')->format('Y-m-d');
+    $adminWorkPeriodEnd = (clone $today)->modify('last day of +155 months')->format('Y-m-d');
+    $adminWorkRunRes = $runModel->create($compId, [
+        'run_name' => 'ADMIN_WORK_TEST_' . uniqid(),
+        'period_start_date' => $adminWorkPeriodStart, 'period_end_date' => $adminWorkPeriodEnd, 'payment_date' => $adminWorkPeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: genuine off-cycle run created' . (empty($adminWorkRunRes['status']) ? " ({$adminWorkRunRes['message']})" : ''), $adminWorkRunRes['status']);
+    $adminWorkRunId = $adminWorkRunRes['id'];
+    $adminWorkRun = $runModel->get($adminWorkRunId, $compId);
+    check('get() attaches has_admin_work = false for a genuinely untouched fresh run', $adminWorkRun['has_admin_work'], false);
+    check('hasAdminWork() itself agrees', $runModel->hasAdminWork($adminWorkRun), false);
+    $adminWorkSummaryEmpty = $runModel->adminWorkSummary($adminWorkRun);
+    check('adminWorkSummary(): manual_employee_count starts at 0', $adminWorkSummaryEmpty['manual_employee_count'], 0);
+    check('adminWorkSummary(): admin_recalc_count starts at 0', $adminWorkSummaryEmpty['admin_recalc_count'], 0);
+
+    // Manually joining ONE employee is by itself enough to flip has_admin_work true.
+    $runModel->joinEmployees($adminWorkRunId, $compId, [$employeeFullId], $adminUserId, true);
+    $adminWorkRunAfterJoin = $runModel->get($adminWorkRunId, $compId);
+    checkTrue('get() attaches has_admin_work = true once a manual employee is joined', $adminWorkRunAfterJoin['has_admin_work']);
+    check('adminWorkSummary(): manual_employee_count is now 1', $adminWorkRunAfterJoin['admin_work_summary']['manual_employee_count'], 1);
+
+    // A genuinely off-cycle (non-sync) run's very FIRST recalculate already counts as admin work --
+    // unlike a sync-linked pull, nothing auto-recalculates this one at creation.
+    $adminWorkPeriodStart2 = (clone $today)->modify('first day of +156 months')->format('Y-m-d');
+    $adminWorkPeriodEnd2 = (clone $today)->modify('last day of +156 months')->format('Y-m-d');
+    $adminWorkRunRes2 = $runModel->create($compId, [
+        'run_name' => 'ADMIN_WORK_TEST2_' . uniqid(),
+        'period_start_date' => $adminWorkPeriodStart2, 'period_end_date' => $adminWorkPeriodEnd2, 'payment_date' => $adminWorkPeriodEnd2,
+    ], $adminUserId, true);
+    checkTrue('fixture: 2nd genuine off-cycle run created' . (empty($adminWorkRunRes2['status']) ? " ({$adminWorkRunRes2['message']})" : ''), $adminWorkRunRes2['status']);
+    $adminWorkRunId2 = $adminWorkRunRes2['id'];
+    check('fixture: has_admin_work still false before any recalculate at all', $runModel->get($adminWorkRunId2, $compId)['has_admin_work'], false);
+    $runModel->recalculate($adminWorkRunId2, $compId, $adminUserId, true);
+    checkTrue('a non-sync run\'s own FIRST recalculate already counts as admin work (nothing auto-recalculated it at creation)', $runModel->get($adminWorkRunId2, $compId)['has_admin_work']);
+
+    echo "=== update(): cycle_id/period/run_purpose/merge_target lock once the run has admin work (draft) ===\n";
     $cycle2Res = $cycleModel->save($compId, [
         'cycle_name' => 'TEST_CYCLE2_' . uniqid(), 'payroll_frequency' => 'monthly',
         'cutoff_day_of_month' => 25, 'payment_day_of_month' => 5, 'ot_cutoff_type' => 'same_as_attendance',
@@ -3807,7 +3876,7 @@ try {
     check('fixture: employee_count starts at 0 (nobody joined yet)', (int)$pdo->query("SELECT employee_count FROM payroll_runs WHERE id = {$cycleEditRunId}")->fetchColumn(), 0);
 
     $setCycleRes = $runModel->update($cycleEditRunId, $compId, ['cycle_id' => $cycle2Id], $adminUserId, true);
-    checkTrue('update() with cycle_id succeeds while employee_count=0' . (empty($setCycleRes['status']) ? " ({$setCycleRes['message']})" : ''), $setCycleRes['status']);
+    checkTrue('update() with cycle_id still succeeds while employee_count=0' . (empty($setCycleRes['status']) ? " ({$setCycleRes['message']})" : ''), $setCycleRes['status']);
     $runAfterCycleSet = $runModel->get($cycleEditRunId, $compId);
     check('cycle_id is now the new cycle', (int)$runAfterCycleSet['cycle_id'], $cycle2Id);
     check('run_purpose forced back to payroll now that it is cycle-linked (was incentive)', $runAfterCycleSet['run_purpose'], 'payroll');
@@ -3818,74 +3887,80 @@ try {
     // only usable to re-include a previously-excluded employee) puts the auto-eligible fixture
     // employee into the run -> employee_count becomes > 0.
     $runModel->recalculate($cycleEditRunId, $compId, $adminUserId, true);
-    checkTrue('fixture: employee_count now > 0 (auto-eligible by date range)', (int)$pdo->query("SELECT employee_count FROM payroll_runs WHERE id = {$cycleEditRunId}")->fetchColumn() > 0);
-    // Switching between two DIFFERENT real cycles stays within recalculate()'s SAME eligibility
-    // branch (only the :cycle_id parameter changes) -- unrestricted regardless of employee_count,
-    // same as editing period_start/period_end already is.
+    $empCountAfterRecalc = (int)$pdo->query("SELECT employee_count FROM payroll_runs WHERE id = {$cycleEditRunId}")->fetchColumn();
+    checkTrue('fixture: employee_count now > 0 (auto-eligible by date range)', $empCountAfterRecalc > 0);
+
+    // 2026-09-11 correction: none of these are refused outright any more -- applyFieldLocks() now
+    // SKIPS just the locked field (reverts it, reports it in skipped_fields) and the save still
+    // succeeds, since the client-side lock mirror doesn't exist yet to keep the attempt out of the
+    // payload in the first place. No more "allowed, force-recalculate" escape hatch for the one
+    // transition that used to get one either -- that transition is skipped like everything else here.
     $switchCycleRes = $runModel->update($cycleEditRunId, $compId, ['cycle_id' => $cycleId], $adminUserId, true);
-    checkTrue('update() switching to a DIFFERENT real cycle succeeds even with employees already calculated' . (empty($switchCycleRes['status']) ? " ({$switchCycleRes['message']})" : ''), $switchCycleRes['status']);
-    check('cycle_id actually changed to the new one', (int)$runModel->get($cycleEditRunId, $compId)['cycle_id'], $cycleId);
-    $sameCycleRes = $runModel->update($cycleEditRunId, $compId, ['cycle_id' => $cycleId, 'run_name' => 'CYCLE_EDIT_TEST_RENAMED'], $adminUserId, true);
-    checkTrue('update() with the SAME (unchanged) cycle_id still succeeds even with employees calculated' . (empty($sameCycleRes['status']) ? " ({$sameCycleRes['message']})" : ''), $sameCycleRes['status']);
-    check('run_name change from that same save actually applied', $runModel->get($cycleEditRunId, $compId)['run_name'], 'CYCLE_EDIT_TEST_RENAMED');
+    checkTrue('update() succeeds (skips, not rejects) a cycle_id change attempt once the run has admin work' . (empty($switchCycleRes['status']) ? " ({$switchCycleRes['message']})" : ''), $switchCycleRes['status']);
+    check('cycle_id reported in skipped_fields with reason has_admin_work', $switchCycleRes['skipped_fields'][0]['field'] ?? null, 'cycle_id');
+    check('cycle_id genuinely unchanged after the skipped attempt', (int)$runModel->get($cycleEditRunId, $compId)['cycle_id'], $cycle2Id);
 
-    // The ONE genuinely risky transition (non-sync run toggling off-cycle <-> cycle-linked) with
-    // employees already calculated in: now ALLOWED (not rejected), but force-recalculates
-    // immediately as part of the same save so the employee list can never go stale.
-    $employeesBeforeToggle = $runModel->getDetails($cycleEditRunId, $compId);
-    checkTrue('fixture: run has a real (auto-eligible, never manually-joined) employee before the risky toggle', count($employeesBeforeToggle) > 0);
+    $shiftedPeriodEnd = (clone $today)->modify('first day of +150 months')->modify('+5 days')->format('Y-m-d');
+    $togglePeriodRes = $runModel->update($cycleEditRunId, $compId, ['period_start_date' => $cycleEditPeriodStart, 'period_end_date' => $shiftedPeriodEnd], $adminUserId, true);
+    checkTrue('update() succeeds (skips) a period_end_date change attempt once the run has admin work', $togglePeriodRes['status']);
+    check('period_dates reported in skipped_fields', $togglePeriodRes['skipped_fields'][0]['field'] ?? null, 'period_dates');
+    check('period_end_date genuinely unchanged', $runModel->get($cycleEditRunId, $compId)['period_end_date'], $cycleEditPeriodEnd);
+
     $toggleToOffCycleRes = $runModel->update($cycleEditRunId, $compId, ['cycle_id' => null, 'run_purpose' => 'incentive', 'compute_statutory' => false], $adminUserId, true);
-    checkTrue('update() toggling a cycle-linked run WITH employees to off-cycle now succeeds (was a hard rejection before this same-day follow-up)' . (empty($toggleToOffCycleRes['status']) ? " ({$toggleToOffCycleRes['message']})" : ''), $toggleToOffCycleRes['status']);
-    check('response message reflects the forced recalculate', $toggleToOffCycleRes['message'], 'Updated and recalculated successfully.');
-    $runAfterToggle = $runModel->get($cycleEditRunId, $compId);
-    check('cycle_id is genuinely null now (off-cycle)', $runAfterToggle['cycle_id'], null);
-    check('run_purpose reflects incentive (the off-cycle run-type fields actually applied)', $runAfterToggle['run_purpose'], 'incentive');
-    // This employee was only ever auto-eligible via the cycle branch, never actually inserted into
-    // payroll_run_manual_employees (joinEmployees() is a re-include-only no-op on a pure cycle run,
-    // see the fixture comment above) -- off-cycle's own eligibility branch reads ONLY that table,
-    // so they are correctly DROPPED by the forced recalculate. This is exactly the real risk this
-    // whole mechanism exists to make immediately visible instead of leaving stale data behind.
-    check('employee_count reflects the forced recalculate (0 -- the auto-only employee is genuinely dropped)', (int)$runAfterToggle['employee_count'], 0);
+    checkTrue('update() succeeds (skips both) toggling a cycle-linked run WITH admin work to off-cycle (was allowed-with-forced-recalculate before this item)', $toggleToOffCycleRes['status']);
+    $toggleSkippedNames = array_column($toggleToOffCycleRes['skipped_fields'], 'field');
+    checkTrue('cycle_id AND run_purpose both reported as skipped', in_array('cycle_id', $toggleSkippedNames, true) && in_array('run_purpose', $toggleSkippedNames, true));
+    $runAfterRefusedToggle = $runModel->get($cycleEditRunId, $compId);
+    check('cycle_id genuinely still the cycle (skipped, not silently applied)', (int)$runAfterRefusedToggle['cycle_id'], $cycle2Id);
+    check('run_purpose genuinely still payroll (skipped)', $runAfterRefusedToggle['run_purpose'], 'payroll');
+    check('employee_count genuinely unchanged -- no forced recalculate happened, nothing to force', (int)$runAfterRefusedToggle['employee_count'], $empCountAfterRecalc);
 
-    // Isolated demonstration of the actual risk: an employee who is ONLY auto-eligible via the
-    // cycle branch (date-range match, never manually Joined) genuinely disappears once the run
-    // flips to off-cycle, because that branch reads ONLY payroll_run_manual_employees.
-    $autoOnlyPeriodStart = (clone $today)->modify('first day of +151 months')->format('Y-m-d');
-    $autoOnlyPeriodEnd = (clone $today)->modify('last day of +151 months')->format('Y-m-d');
-    $autoOnlyRunRes = $runModel->create($compId, [
-        'cycle_id' => $cycleId,
-        'run_name' => 'CYCLE_TOGGLE_DROP_TEST_' . uniqid(),
-        // Own distinct period ($today-relative, see $cycleEditPeriodStart's own comment above for
-        // why not a hardcoded literal date) -- $cycleId + $periodStart/$periodEnd already claimed
-        // by this whole file's own main fixture run.
-        'period_start_date' => $autoOnlyPeriodStart, 'period_end_date' => $autoOnlyPeriodEnd, 'payment_date' => $autoOnlyPeriodEnd,
-    ], $adminUserId, true);
-    checkTrue('fixture: 3rd cycle-linked run created' . (empty($autoOnlyRunRes['status']) ? " ({$autoOnlyRunRes['message']})" : ''), $autoOnlyRunRes['status']);
-    $autoOnlyRunId = $autoOnlyRunRes['id'];
-    $runModel->recalculate($autoOnlyRunId, $compId, $adminUserId, true);
-    checkTrue('fixture: auto-eligible employee(s) pulled in by date-range match, none manually Joined', (int)$pdo->query("SELECT employee_count FROM payroll_runs WHERE id = {$autoOnlyRunId}")->fetchColumn() > 0);
-    $dropToggleRes = $runModel->update($autoOnlyRunId, $compId, ['cycle_id' => null], $adminUserId, true);
-    checkTrue('update() toggling this run to off-cycle still succeeds (allowed, not blocked)' . (empty($dropToggleRes['status']) ? " ({$dropToggleRes['message']})" : ''), $dropToggleRes['status']);
-    check('employee_count genuinely drops to 0 -- the forced recalculate makes the real consequence visible immediately instead of leaving stale data behind', (int)$runModel->get($autoOnlyRunId, $compId)['employee_count'], 0);
+    // A genuinely off-cycle run with admin work on it, skipping an attempted merge_target set the same way.
+    $mergeTargetAttemptRes = $runModel->update($cycleEditRunId, $compId, ['merge_target_run_id' => $runId], $adminUserId, true);
+    checkTrue('update() succeeds (skips) setting merge_target_run_id once the run has admin work', $mergeTargetAttemptRes['status']);
+    check('merge_target reported in skipped_fields', $mergeTargetAttemptRes['skipped_fields'][0]['field'] ?? null, 'merge_target');
 
-    // Converting a cycle-linked run back to off-schedule (cycle_id -> null), still while
-    // employee_count=0 on a FRESH run, and confirming Run Purpose becomes editable again. Own
-    // distinct $today-relative period, same "+150+ months, clear of every other offset already
-    // used in this file" precedent as $cycleEditPeriodStart's own comment above.
-    $altPeriodStart = (clone $today)->modify('first day of +152 months')->format('Y-m-d');
-    $altPeriodEnd = (clone $today)->modify('last day of +152 months')->format('Y-m-d');
-    $cycleLinkedRunRes = $runModel->create($compId, [
-        'cycle_id' => $cycleId,
-        'run_name' => 'CYCLE_EDIT_TEST2_' . uniqid(),
-        'period_start_date' => $altPeriodStart, 'period_end_date' => $altPeriodEnd, 'payment_date' => $altPeriodEnd,
+    // But run_name/payment_date/use_flat_tax_rate/notes all stay freely editable regardless of
+    // employee_count while still draft -- and resubmitting the SAME (unchanged) cycle_id alongside
+    // one of them must NOT be treated as an attempted change (the shared form always sends every
+    // field, whether or not the admin actually touched it).
+    $sameCycleRenameRes = $runModel->update($cycleEditRunId, $compId, [
+        'cycle_id' => $cycle2Id, 'run_name' => 'CYCLE_EDIT_TEST_RENAMED', 'payment_date' => $cycleEditPeriodEnd,
+        'use_flat_tax_rate' => true, 'notes' => 'still editable with employees',
     ], $adminUserId, true);
-    checkTrue('fixture: cycle-linked run created' . (empty($cycleLinkedRunRes['status']) ? " ({$cycleLinkedRunRes['message']})" : ''), $cycleLinkedRunRes['status']);
-    $cycleLinkedRunId = $cycleLinkedRunRes['id'];
-    $clearCycleRes = $runModel->update($cycleLinkedRunId, $compId, ['cycle_id' => null, 'run_purpose' => 'incentive', 'compute_statutory' => false], $adminUserId, true);
-    checkTrue('update() clearing cycle_id to null succeeds for a non-sync run' . (empty($clearCycleRes['status']) ? " ({$clearCycleRes['message']})" : ''), $clearCycleRes['status']);
-    $runAfterClear = $runModel->get($cycleLinkedRunId, $compId);
-    check('cycle_id is now null (off-schedule)', $runAfterClear['cycle_id'], null);
-    check('run_purpose is now editable and reflects incentive (no longer forced to payroll)', $runAfterClear['run_purpose'], 'incentive');
+    checkTrue('update() succeeds: unchanged cycle_id + genuinely changed name/payment_date/flat-tax/notes, all while the run has admin work' . (empty($sameCycleRenameRes['status']) ? " ({$sameCycleRenameRes['message']})" : ''), $sameCycleRenameRes['status']);
+    check('skipped_fields is empty -- resubmitting the SAME cycle_id value is never reported as skipped', $sameCycleRenameRes['skipped_fields'], []);
+    $runAfterFreeFields = $runModel->get($cycleEditRunId, $compId);
+    check('run_name change applied', $runAfterFreeFields['run_name'], 'CYCLE_EDIT_TEST_RENAMED');
+    check('notes change applied', $runAfterFreeFields['notes'], 'still editable with employees');
+    check('cycle_id still genuinely unchanged (resubmitting the same value never counted as a change)', (int)$runAfterFreeFields['cycle_id'], $cycle2Id);
+
+    echo "=== update(): once a run leaves draft, only notes can still change (real capability expansion -- was refused entirely before this item) ===\n";
+    $nonDraftPeriodStart = (clone $today)->modify('first day of +151 months')->format('Y-m-d');
+    $nonDraftPeriodEnd = (clone $today)->modify('last day of +151 months')->format('Y-m-d');
+    $nonDraftRunRes = $runModel->create($compId, [
+        'cycle_id' => $cycleId, 'run_name' => 'NOTES_ONLY_EDIT_TEST_' . uniqid(),
+        'period_start_date' => $nonDraftPeriodStart, 'period_end_date' => $nonDraftPeriodEnd, 'payment_date' => $nonDraftPeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: cycle-linked run created' . (empty($nonDraftRunRes['status']) ? " ({$nonDraftRunRes['message']})" : ''), $nonDraftRunRes['status']);
+    $nonDraftRunId = $nonDraftRunRes['id'];
+    $nonDraftOriginalName = $runModel->get($nonDraftRunId, $compId)['run_name'];
+    $runModel->recalculate($nonDraftRunId, $compId, $adminUserId, true);
+    $submitRes2 = $runModel->submit($nonDraftRunId, $compId, $adminUserId, true);
+    checkTrue('fixture: run submitted to pending_approval' . (empty($submitRes2['status']) ? " ({$submitRes2['message']})" : ''), $submitRes2['status']);
+
+    $notesOnlyRes = $runModel->update($nonDraftRunId, $compId, ['notes' => 'added after submission'], $adminUserId, true);
+    checkTrue('update() with ONLY notes changed succeeds even though the run has left draft' . (empty($notesOnlyRes['status']) ? " ({$notesOnlyRes['message']})" : ''), $notesOnlyRes['status']);
+    check('notes change actually applied', $runModel->get($nonDraftRunId, $compId)['notes'], 'added after submission');
+
+    $renameAfterSubmitRes = $runModel->update($nonDraftRunId, $compId, ['run_name' => 'SHOULD NOT APPLY'], $adminUserId, true);
+    checkTrue('update() succeeds (skips) a run_name change attempt once the run has left draft', $renameAfterSubmitRes['status']);
+    check('run_name reported in skipped_fields with reason not_draft', $renameAfterSubmitRes['skipped_fields'][0]['field'] ?? null, 'run_name');
+    check('run_name genuinely unchanged', $runModel->get($nonDraftRunId, $compId)['run_name'], $nonDraftOriginalName);
+    $cycleAfterSubmitRes = $runModel->update($nonDraftRunId, $compId, ['cycle_id' => $cycle2Id], $adminUserId, true);
+    checkTrue('update() succeeds (skips) a cycle_id change attempt once the run has left draft', $cycleAfterSubmitRes['status']);
+    check('cycle_id reported in skipped_fields', $cycleAfterSubmitRes['skipped_fields'][0]['field'] ?? null, 'cycle_id');
+    check('cycle_id genuinely unchanged after the skipped attempt', (int)$runModel->get($nonDraftRunId, $compId)['cycle_id'], $cycleId);
 
     // 2026-09-09, round-creation flow audit Bug 1 (explicit report: an off-cycle/incentive run's
     // use_flat_tax_rate opt-in was silently reset to 0 on ANY edit-save, because the Edit modal never
