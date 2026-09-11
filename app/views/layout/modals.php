@@ -3107,6 +3107,23 @@
                 <input type="hidden" id="run_sync_process_id" name="sync_process_id" value="">
                 <input type="hidden" id="run_sync_run_kind" value="">
                 <div class="modal-body">
+                    <!-- 2026-09-11, Batch 3C item 4 sub-step 4b: mirrors PayrollRunModel::
+                         runFieldLockState()/applyFieldLocks() client-side -- see app.js's own
+                         runFieldLockState()/applyRunFieldLockUi(). One combined summary (not a
+                         separate hint per locked field) explaining why fields are currently disabled;
+                         "source" (how this run originated) is always locked, so this row exists purely
+                         to SHOW that fact -- Edit-only, hidden entirely on Create (no run exists yet to
+                         have a source). Logic-only per this item's own instruction ("ยังไม่แก้
+                         layout/ระยะห่าง") -- no visual design pass. -->
+                    <div class="alert alert-warning small d-none" id="runLockSummary"></div>
+                    <div class="row mb-3 d-none" id="run_source_row">
+                        <div class="col-sm-3 align-self-center">
+                            <label class="form-label mb-1" data-i18n="run_source_label">Source</label>
+                        </div>
+                        <div class="col-sm-9">
+                            <input type="text" class="form-control" id="run_source_display" readonly disabled>
+                        </div>
+                    </div>
                     <!-- 2026-09-02, same-day follow-up, explicit request: "พอมีแค่...ให้ติ๊กออกแล้วค่อยให้เลือก
                          รอบ...ดูงงๆ ช่วยเพิ่มเป็น radio ให้เลือก...ถ้าเลือก option 1 ให้ขึ้นรอบให้เลือก ถ้าเลือก
                          option 2 ไม่ขึ้นให้เลือก" -- the single checkbox (unchecked = "no schedule needed"

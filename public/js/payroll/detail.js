@@ -4688,6 +4688,12 @@ $(document).on('click', '#btnEditRun', function () {
         $('#run_include_attendance_pay').prop('checked', Number(currentRun.include_attendance_pay) === 1);
         $('#run_use_flat_tax_rate').prop('checked', Number(currentRun.use_flat_tax_rate) === 1);
     }
+    // 2026-09-11, Batch 3C item 4 sub-step 4b: disable every field runFieldLockState() (app.js) says
+    // is locked for THIS run + show the Source row/lock summary -- must run after every value above
+    // is already populated (disabling a select2 field before setting its value can leave the wrong
+    // option displayed on some browsers), and after #run_id is set (updateComputeStatutoryVisibility()
+    // itself already reads it, but applyRunFieldLockUi() also uses it for the Source row).
+    applyRunFieldLockUi(currentRun);
     $('.is-invalid').removeClass('is-invalid');
     new bootstrap.Modal(document.getElementById('payrollRunModal')).show();
 });
@@ -4697,6 +4703,29 @@ $(document).on('click', '#btnEditRun', function () {
 // event that shared function fires on success instead.
 $(document).on('payrollRun:saved', function (e, res) {
     showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
+    // 2026-09-11, Batch 3C item 4 sub-step 4b, explicit instruction: warn (never auto-recalculate --
+    // see BACKLOG.md's own entry for why update() itself doesn't) when a calc flag genuinely changed
+    // on a still-draft run that already has employee_count>0 (the exact scenario the hasAdminWork()
+    // correction leaves editable without any admin-work lock -- see PayrollRunModel::
+    // runFieldLockState()'s own docblock). Compares the JUST-SUBMITTED field values (still sitting in
+    // the form's own DOM at this point -- the modal is hidden, not reset, until the next open) against
+    // `currentRun`, which is still the PRE-save snapshot here (loadRunDetail() below hasn't
+    // refetched it yet).
+    if (currentRun && currentRun.state === 'draft' && Number(currentRun.employee_count || 0) > 0) {
+        const submittedPurpose = $('#run_purpose_choice_row').hasClass('d-none') ? 'payroll' : ($('#run_purpose').val() || 'payroll');
+        const calcFlagChanged = submittedPurpose !== (currentRun.run_purpose || 'payroll')
+            || (submittedPurpose === 'incentive' && [
+                ['compute_statutory', '#run_compute_statutory'],
+                ['include_base_salary', '#run_include_base_salary'],
+                ['include_standing_items', '#run_include_standing_items'],
+                ['include_attendance_pay', '#run_include_attendance_pay'],
+            ].some(function (pair) {
+                return ($(pair[1]).is(':checked') ? 1 : 0) !== Number(currentRun[pair[0]] || 0);
+            }));
+        if (calcFlagChanged) {
+            showWarning(langData['run_recalc_needed_after_calc_change'] || 'You changed how this run is calculated -- click Recalculate to update the numbers.');
+        }
+    }
     loadRunDetail();
 });
 $(document).on('click', '#btnSubmitRun', function () {

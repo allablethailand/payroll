@@ -2224,6 +2224,124 @@ function resetRunForm() {
     setMergeChoiceMode('new');
     setMergeTargetMode('existing');
     setOffCycleMode(false);
+    // 2026-09-11, Batch 3C item 4 sub-step 4b: a fresh Create/Pull never has any locked field (no
+    // run exists yet to have admin work on it, or to have left draft) -- re-enables everything and
+    // hides the Source row/lock summary left over from a previous Edit session on the same modal.
+    clearRunFieldLockUi();
+}
+// 2026-09-11, Batch 3C item 4 sub-step 4b -- JS mirror of PayrollRunModel::runFieldLockState().
+// MUST stay in lockstep with that method any time the rule changes there -- see this project's own
+// standing rule against copy-drift (CLAUDE.md's "generalize instead of duplicate"); this one really
+// can't be "generalized away" since PHP and JS can't share one function body, so keeping the two
+// docblocks pointing at each other is the best available substitute. Client-side render only --
+// checkRunFieldLocks()/applyFieldLocks() on the server is the actual enforcement; this never trusts
+// itself as authoritative (a stale/tampered client could send anything regardless of what's disabled
+// here, which is exactly why the server-side check exists independently).
+function runFieldLockState(run) {
+    const isDraft = (run.state || null) === 'draft';
+    const hasAdminWork = !!run.has_admin_work;
+    const lockedNotDraft = !isDraft;
+    const lockedAdminWork = isDraft && hasAdminWork;
+    const tier2Locked = lockedNotDraft || lockedAdminWork;
+    const tier2Reason = lockedNotDraft ? 'not_draft' : (lockedAdminWork ? 'has_admin_work' : null);
+    const tier3Locked = lockedNotDraft;
+    const tier3Reason = lockedNotDraft ? 'not_draft' : null;
+    return {
+        source: { locked: true, reason: 'immutable' },
+        cycle_id: { locked: tier2Locked, reason: tier2Reason },
+        period_dates: { locked: tier2Locked, reason: tier2Reason },
+        run_purpose: { locked: tier2Locked, reason: tier2Reason },
+        merge_target: { locked: tier2Locked, reason: tier2Reason },
+        run_name: { locked: tier3Locked, reason: tier3Reason },
+        payment_date: { locked: tier3Locked, reason: tier3Reason },
+        use_flat_tax_rate: { locked: tier3Locked, reason: tier3Reason },
+        notes: { locked: false, reason: null },
+    };
+}
+// Which actual form control(s) each lock group above disables -- `source` has no selector here
+// (it's a plain read-only display, always disabled in markup already, never toggled).
+const RUN_FIELD_LOCK_GROUP_SELECTORS = {
+    // input[name="runScheduleChoice"] (the "Follow a schedule"/"Off-schedule" radio) is included
+    // here too -- it's the toggle that changes cycle_id between a real cycle and null, so locking
+    // cycle_id itself without also locking this radio would leave the radio clickable while the
+    // select it drives sits disabled underneath, a confusing intermediate state for no benefit
+    // (server-side checkRunFieldLocks() would revert any resulting change on save regardless).
+    cycle_id: ['#run_cycle_id', 'input[name="runScheduleChoice"]'],
+    period_dates: ['#run_period_start', '#run_period_end'],
+    run_purpose: [
+        'input[name="runPurposeChoice"]', '#run_compute_statutory', '#run_include_base_salary',
+        '#run_include_standing_items', '#run_include_attendance_pay',
+    ],
+    merge_target: [
+        'input[name="runMergeInto"]', '#run_merge_target_id', '#run_merge_target_cycle_id',
+        '#run_merge_target_period_start', '#run_merge_target_period_end',
+    ],
+    run_name: ['#run_name'],
+    payment_date: ['#run_payment_date'],
+    use_flat_tax_rate: ['#run_use_flat_tax_rate'],
+};
+// select2-driven fields need their own widget refreshed after toggling the underlying <select>'s
+// `disabled` prop -- Select2 doesn't repaint itself automatically on a plain jQuery .prop() call.
+const RUN_FIELD_LOCK_SELECT2_SELECTORS = ['#run_cycle_id', '#run_merge_target_id', '#run_merge_target_cycle_id'];
+function refreshRunFieldLockSelect2() {
+    RUN_FIELD_LOCK_SELECT2_SELECTORS.forEach(function (sel) {
+        if ($(sel).hasClass('select2-hidden-accessible')) {
+            $(sel).trigger('change.select2');
+        }
+    });
+}
+// Disables every field runFieldLockState(run) says is locked, shows ONE combined summary explaining
+// why (not a separate hint per field, per this sub-step's own design choice -- the admin_work_summary
+// breakdown the server already computes is richer than repeating the same generic sentence under
+// every disabled row), and shows/fills the read-only Source row (Edit-only -- `run.id` distinguishes
+// editing an existing run from creating a new one, same signal updateComputeStatutoryVisibility()
+// already uses).
+function applyRunFieldLockUi(run) {
+    const lockState = runFieldLockState(run);
+    const reasonMessages = {
+        immutable: langData['run_field_lock_reason_immutable'] || 'The source of this payroll run cannot be changed after it was created.',
+        has_admin_work: langData['run_field_lock_reason_has_admin_work'] || 'This field cannot be changed because this run already has admin work on it. Undo that first.',
+        not_draft: langData['run_field_lock_reason_not_draft'] || 'This field can no longer be changed once the run has left draft.',
+    };
+    const lockedMessages = [];
+    Object.keys(RUN_FIELD_LOCK_GROUP_SELECTORS).forEach(function (group) {
+        const info = lockState[group];
+        RUN_FIELD_LOCK_GROUP_SELECTORS[group].forEach(function (sel) {
+            $(sel).prop('disabled', !!info.locked);
+        });
+        if (info.locked) {
+            const msg = reasonMessages[info.reason] || reasonMessages.not_draft;
+            if (lockedMessages.indexOf(msg) === -1) lockedMessages.push(msg);
+        }
+    });
+    refreshRunFieldLockSelect2();
+    const $summary = $('#runLockSummary');
+    if (lockedMessages.length > 0) {
+        $summary.html(lockedMessages.map(function (m) { return `<div>${escapeHtml(m)}</div>`; }).join('')).removeClass('d-none');
+    } else {
+        $summary.addClass('d-none').empty();
+    }
+    const isEditing = !!run.id;
+    $('#run_source_row').toggleClass('d-none', !isEditing);
+    if (isEditing) {
+        const sourceText = run.sync_process_id
+            ? (langData['run_source_origami'] || 'Origami sync process #{id}').replace('{id}', run.sync_process_id)
+            : (langData['run_source_manual'] || 'Created manually');
+        $('#run_source_display').val(sourceText);
+    }
+}
+// Re-enables everything + hides the Source row/lock summary -- called by resetRunForm() (a fresh
+// Create/Pull never has anything locked) so a previous Edit session's disabled state/summary never
+// leaks onto the next Create.
+function clearRunFieldLockUi() {
+    Object.keys(RUN_FIELD_LOCK_GROUP_SELECTORS).forEach(function (group) {
+        RUN_FIELD_LOCK_GROUP_SELECTORS[group].forEach(function (sel) {
+            $(sel).prop('disabled', false);
+        });
+    });
+    refreshRunFieldLockSelect2();
+    $('#runLockSummary').addClass('d-none').empty();
+    $('#run_source_row').addClass('d-none');
 }
 // 2026-09-09, round-creation flow audit Phase 3 -- shared by resetRunForm(), setOffCycleMode(), and
 // #run_purpose_choice_row's own click handler so every place that used to write directly to the old
@@ -2724,6 +2842,23 @@ function submitRunForm(mergeTargetOverrides) {
             if (typeof updateText === 'function') updateText($btn[0]);
             if (res.status) {
                 bootstrap.Modal.getInstance(document.getElementById('payrollRunModal')).hide();
+                // 2026-09-11, Batch 3C item 4 sub-step 4b, explicit instruction: PayrollRunModel::
+                // applyFieldLocks() SKIPS a locked field's attempted change rather than rejecting the
+                // whole save (see that method's own docblock) -- report it here so the admin knows
+                // WHICH of their changes, if any, didn't apply and why, since the shared form always
+                // sends every field regardless of lock state. Shown BEFORE each page's own
+                // 'payrollRun:saved' listener runs its own success toast -- two separate alerts back
+                // to back, not a replacement for that toast.
+                if ((res.skipped_fields || []).length > 0) {
+                    const items = res.skipped_fields.map(function (f) {
+                        return `<li>${escapeHtml(f.message || f.field)}</li>`;
+                    }).join('');
+                    Swal.fire({
+                        icon: 'warning',
+                        title: langData['run_save_partial_title'] || 'Saved, but some fields were not changed',
+                        html: `<ul class="text-start small mb-0">${items}</ul>`,
+                    });
+                }
                 $(document).trigger('payrollRun:saved', [res]);
             } else {
                 showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
