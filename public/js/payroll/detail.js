@@ -1650,7 +1650,7 @@ $(document).on('click', '.btn-tl-revert', function (e) {
     e.stopPropagation();
     const isPending = currentRun && currentRun.state === 'pending_approval';
     const title = isPending ? (langData['confirm_revert_title'] || 'Send this payroll run back for revision?') : (langData['confirm_undo_decision_title'] || 'Undo this decision?');
-    const message = isPending ? (langData['confirm_revert_message'] || 'It will return to draft so the submitter can make changes.') : (langData['confirm_undo_decision_message'] || 'This payroll run will go back to Waiting for Approval.');
+    const message = isPending ? (langData['confirm_revert_to_draft_message'] || 'It will return to draft so the submitter can make changes.') : (langData['confirm_undo_decision_message'] || 'This payroll run will go back to Waiting for Approval.');
     showConfirm(title, message, function () {
         const inst = bootstrap.Modal.getInstance(document.getElementById('runTimelineModal'));
         if (inst) inst.hide();
