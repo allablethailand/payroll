@@ -1061,6 +1061,42 @@ function updateEditRunTypeVisibility() {
 }
 $(document).on('change', '#edit_run_purpose', updateEditRunTypeVisibility);
 
+// 2026-09-11, Batch 3C item 5, explicit instruction: hide the Cash Payments/Bank Account Assignment/
+// Third-Party Remittance tabs entirely when the run has nothing for them to show, rather than
+// leaving them showing an empty "not ready"/"no rows" state -- computed straight off the SAME
+// api/payroll-run.get response renderRunHeader() already has in hand: run.details' own
+// payment_method_code per employee (already sent, no new field needed -- isCashishPaymentMethod()/
+// isBankishPaymentMethod() below are the same 2 helpers registerPaymentMethodSearchFilter() already
+// uses, so "cash-ish"/"bank-ish" can never drift between the filter and this visibility check) for
+// the first two, and the new run.remittance_count field (PayrollRunModel::get(), a real COUNT()
+// query -- remittance rows live in a wholly separate table not reachable from run.details at all)
+// for the third. Called from renderRunHeader() itself, which runs on every full run reload
+// (recalculate/verify/approve/etc. all funnel back through loadRunDetail() -> renderRunHeader() per
+// this page's own established pattern) -- "ประเมินใหม่หลัง recalculate" falls out for free with no
+// extra wiring needed. If the tab that's currently active gets hidden this way, switches to the
+// Employee Breakdown tab (there's always at least one employee row once a run has anything to show
+// at all, so that tab is never itself a candidate for hiding).
+function updateRunDetailTabVisibility(run) {
+    const details = run.details || [];
+    const cashCount = details.filter(d => isCashishPaymentMethod(d.payment_method_code || 'transfer')).length;
+    const transferCount = details.filter(d => isBankishPaymentMethod(d.payment_method_code || 'transfer')).length;
+    const remittanceCount = Number(run.remittance_count || 0);
+    const visibility = [
+        { tabId: 'run-cash-tab', show: cashCount > 0 },
+        { tabId: 'run-bank-account-tab', show: transferCount > 0 },
+        { tabId: 'run-remittance-tab', show: remittanceCount > 0 },
+    ];
+    let activeTabHidden = false;
+    visibility.forEach(function (v) {
+        const $tabBtn = $('#' + v.tabId);
+        $tabBtn.closest('li').toggleClass('d-none', !v.show);
+        if (!v.show && $tabBtn.hasClass('active')) activeTabHidden = true;
+    });
+    if (activeTabHidden) {
+        const $employeeTab = document.getElementById('run-employee-tab');
+        if ($employeeTab) bootstrap.Tab.getOrCreateInstance($employeeTab).show();
+    }
+}
 function renderRunHeader(run) {
     currentRun = run;
     // 2026-09-03, Platform UX review Phase 3: document.title used to be set directly here to JUST
@@ -1122,6 +1158,7 @@ function renderRunHeader(run) {
 
     renderProcessTimeline(run);
     renderSectionButtons(run);
+    updateRunDetailTabVisibility(run);
     loadRunReportsTab();
     loadRunCashTab();
     loadRunBankAccountTab();

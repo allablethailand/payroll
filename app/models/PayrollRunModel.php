@@ -272,7 +272,14 @@ class PayrollRunModel {
                     -- exposed here so the UI can warn distinctly instead of showing waiting forever
                     -- for a round that will never come (same category as the Origami-attribution
                     -- target_rejected status, see PayrollSyncModel::attributionTargetStatus()).
-                    mtc.cycle_name AS merge_target_cycle_name, mtc.status AS merge_target_cycle_status
+                    mtc.cycle_name AS merge_target_cycle_name, mtc.status AS merge_target_cycle_status,
+                    -- 2026-09-11, Batch 3C item 5, explicit instruction: the Detail page's Third-
+                    -- Party Remittance tab hides itself entirely when a run has no remittance rows
+                    -- (see updateRunDetailTabVisibility() in detail.js) -- unlike cash/bank-transfer
+                    -- payment counts (already derivable from `r.details`' own payment_method_code
+                    -- per employee, no new field needed there), remittances live in their own table
+                    -- with nothing reachable from getDetails() at all, so this needs a real count.
+                    (SELECT COUNT(*) FROM `payroll_remittances` pr WHERE pr.run_id = r.id) AS remittance_count
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 LEFT JOIN `payroll_sync_processes` sp ON sp.id = r.sync_process_id
