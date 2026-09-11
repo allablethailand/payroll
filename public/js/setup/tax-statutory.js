@@ -736,7 +736,13 @@ function openStatutoryRateModal(row, readOnly) {
     // (or ANY item at all in View mode, which never shows Details -- see just above).
     const hideNav = readOnly || (!isNew && scope === 'master');
     $('#statutoryRateModalTabs').toggleClass('d-none', hideNav);
-    $('#sr-history-pane, #sr-details-pane').removeClass('show active');
+    // 2026-09-11, real bug fixed: this used to strip `active`/`show` off ONLY the panes here, never
+    // off the matching trigger buttons (#sr-details-tab/#sr-history-tab) -- see resetModalTabs()'s
+    // own docblock in app.js for the full root cause (a stale `.active` left on the BUTTON from an
+    // earlier open makes bootstrap's own Tab.show() a silent no-op, so the pane this line had just
+    // de-activated by hand was never re-activated on the 2nd+ open). resetModalTabs() resets both
+    // together, always as a pair, before the branches below decide which one to actually show.
+    resetModalTabs($('#statutoryRateModal'));
 
     // Blank the right-side form + clear any stale selection immediately (list+form are both always
     // visible now, unlike the old separate-view swap) -- loadSrVersionList()'s own auto-select
