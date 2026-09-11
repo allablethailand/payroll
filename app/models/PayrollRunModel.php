@@ -251,6 +251,12 @@ class PayrollRunModel {
                     sp.run_kind AS sync_run_kind, sp.process_subject AS sync_process_subject,
                     sp.process_start AS sync_process_start, sp.process_end AS sync_process_end,
                     sp.process_paid AS sync_process_paid,
+                    -- 2026-09-11, Batch 3C item 4c (Decision 1): the shared Create/Edit form's own
+                    -- use_flat_tax_rate visibility rule needs this to compute the SAME effective
+                    -- tax treatment client-side that create()/update() enforce server-side -- see
+                    -- useFlatTaxRateAllowed()'s own docblock. NULL for a non-sync-linked run (a
+                    -- genuine manual/off-cycle run has no Origami attribution at all).
+                    sp.attribution_tax_treatment AS sync_attribution_tax_treatment,
                     creator.name_th AS created_by_name_th, creator.name_en AS created_by_name_en,
                     creator.profile_photo_path AS created_by_profile_photo_path,
                     submitter.name_th AS submitted_by_name_th, submitter.name_en AS submitted_by_name_en,
@@ -1751,9 +1757,10 @@ class PayrollRunModel {
         $syncProcessId = null;
         $syncIsSupplemental = false;
         $syncOrigamiProcessId = null;
+        $syncAttributionTaxTreatment = null;
         if (!empty($data['sync_process_id'])) {
             $syncProcessId = (int)$data['sync_process_id'];
-            $stmtSync = $this->db->prepare("SELECT p.id, p.run_kind, p.origami_process_id FROM `payroll_sync_processes` p
+            $stmtSync = $this->db->prepare("SELECT p.id, p.run_kind, p.origami_process_id, p.attribution_tax_treatment FROM `payroll_sync_processes` p
                 LEFT JOIN `payroll_runs` r ON r.sync_process_id = p.id
                 WHERE p.id = :id AND p.comp_id = :comp_id AND r.id IS NULL");
             $stmtSync->execute([':id' => $syncProcessId, ':comp_id' => $compId]);
@@ -1763,6 +1770,7 @@ class PayrollRunModel {
             }
             $syncIsSupplemental = ($syncRow['run_kind'] ?? 'regular') === 'supplemental';
             $syncOrigamiProcessId = $syncRow['origami_process_id'] !== null ? (int)$syncRow['origami_process_id'] : null;
+            $syncAttributionTaxTreatment = $syncRow['attribution_tax_treatment'] ?? null;
             if ($cycleId === null && !$syncIsSupplemental) {
                 return ['status' => false, 'message' => 'A payroll cycle is required when pulling from a regular sync process.'];
             }
@@ -1828,7 +1836,17 @@ class PayrollRunModel {
         // toggles just above; only meaningful for the same incentive/supplemental pull, never a
         // normal 'payroll' run. See PayrollPolicyModel::flatTaxRatePercent()'s own docblock and
         // recalculate()'s own use of this flag for what it actually changes.
-        $useFlatTaxRate = $runPurpose === 'incentive' ? (!empty($data['use_flat_tax_rate']) ? 1 : 0) : 0;
+        // 2026-09-11, Batch 3C item 4c (Decision 1): also gated on useFlatTaxRateAllowed() -- a
+        // request setting this true is rejected (forced to 0) when the run's own effective
+        // attribution tax treatment is 'merge', regardless of what the client's own UI happened to
+        // show/hide (see that method's own docblock). Reported in the response's own skipped_fields
+        // (same shape update() already returns) so the shared form's SweetAlert notice can surface it.
+        $createSkippedFields = [];
+        $useFlatTaxRateAllowedNow = $this->useFlatTaxRateAllowed($runPurpose, $syncAttributionTaxTreatment);
+        if (!empty($data['use_flat_tax_rate']) && !$useFlatTaxRateAllowedNow) {
+            $createSkippedFields[] = $this->flatTaxNotAllowedSkipEntry();
+        }
+        $useFlatTaxRate = ($useFlatTaxRateAllowedNow && !empty($data['use_flat_tax_rate'])) ? 1 : 0;
 
         // Auto-sync Origami HR master data (department/position/shift/employee) right before
         // pulling this process into a run, so the user doesn't have to run "Sync Now" as a
@@ -1903,6 +1921,9 @@ class PayrollRunModel {
         if ($syncSummary !== null) {
             $result['sync_summary'] = $syncSummary;
         }
+        if (!empty($createSkippedFields)) {
+            $result['skipped_fields'] = $createSkippedFields;
+        }
         // A Pending-Pull run's membership is fixed by the sync payload itself (see recalculate()'s
         // sync_process_id branch) -- there's no "pick who's in it" step for the admin to do first,
         // unlike a normal cycle-based run where Recalculate is a deliberate review checkpoint. Left
@@ -1972,6 +1993,41 @@ class PayrollRunModel {
             $result['pending_merges_ready'] = $pendingMergesReady;
         }
         return $result;
+    }
+
+    /**
+     * 2026-09-11, Batch 3C item 4c (Decision 1), explicit instruction: "ใช้กฎ (ค) = โชว์เมื่อ run
+     * เป็น Incentive/partial payment และ tax_treatment = 'separate' ไม่สนที่มา (Origami หรือสร้างเอง)
+     * ทั้ง Create และ Edit ใช้กฎเดียวกัน...PHP ไม่รับค่าถ้าเงื่อนไขไม่เข้า" -- ONE rule, both create() and
+     * update(), server-side enforced (never trust the client's own show/hide alone, same "server is
+     * the actual gate" precedent runFieldLockState()/applyFieldLocks() already established for the
+     * lock system). `$attributionTaxTreatment` is `payroll_sync_processes.attribution_tax_treatment`
+     * for a sync-linked run/pull (NULL for a regular, unattributed process, or for a genuinely
+     * manual/off-cycle run with no sync process at all) -- "ไม่สนที่มา" means a manual run must
+     * satisfy this rule too, so the EFFECTIVE treatment defaults to 'separate' whenever there's no
+     * concrete attribution value to defer to (a manual run was never going to have its tax items
+     * folded into some OTHER run's calc, so 'separate' -- "this run withholds its own tax" -- is the
+     * only sensible default); only a REAL attributed 'merge' value suppresses this flag (that run's
+     * items get folded into a different run's own tax calc instead, so it never withholds anything
+     * of its own to apply a flat rate to).
+     */
+    private function useFlatTaxRateAllowed(string $runPurpose, ?string $attributionTaxTreatment): bool {
+        if ($runPurpose !== 'incentive') {
+            return false;
+        }
+        $effectiveTaxTreatment = $attributionTaxTreatment ?: 'separate';
+        return $effectiveTaxTreatment !== 'merge';
+    }
+
+    // Same {field, reason, message} shape checkRunFieldLocks()/applyFieldLocks() already returns in
+    // skipped_fields -- shared here (not duplicated) since both create() and update() report this
+    // same rejection.
+    private function flatTaxNotAllowedSkipEntry(): array {
+        return [
+            'field' => 'use_flat_tax_rate',
+            'reason' => 'flat_tax_not_allowed',
+            'message' => 'Withholding at the flat rate is only available for an Incentive/partial payment run whose tax isn\'t being folded into another run\'s calculation.',
+        ];
     }
 
     /**
@@ -2373,7 +2429,20 @@ class PayrollRunModel {
                 $includeBaseSalary = array_key_exists('include_base_salary', $data) ? (!empty($data['include_base_salary']) ? 1 : 0) : $includeBaseSalary;
                 $includeStandingItems = array_key_exists('include_standing_items', $data) ? (!empty($data['include_standing_items']) ? 1 : 0) : $includeStandingItems;
                 $includeAttendancePay = array_key_exists('include_attendance_pay', $data) ? (!empty($data['include_attendance_pay']) ? 1 : 0) : $includeAttendancePay;
-                $useFlatTaxRate = array_key_exists('use_flat_tax_rate', $data) ? (!empty($data['use_flat_tax_rate']) ? 1 : 0) : $useFlatTaxRate;
+                // 2026-09-11, Batch 3C item 4c (Decision 1): a genuinely-present, truthy value is
+                // additionally gated on useFlatTaxRateAllowed() -- rejected (forced to 0) when this
+                // run's own effective attribution tax treatment is 'merge'. An ABSENT key still just
+                // preserves the current stored value unchanged (the Bug-1 guard above stays intact) --
+                // this rule only ever refuses a NEW attempted true, never retroactively clears an old
+                // stored value on an unrelated edit. Reported in skipped_fields, same as a locked-field
+                // skip above, so the shared form's SweetAlert notice surfaces this rejection too.
+                $useFlatTaxRateAllowedNow = $this->useFlatTaxRateAllowed($runPurpose, $run['sync_attribution_tax_treatment'] ?? null);
+                if (array_key_exists('use_flat_tax_rate', $data) && !empty($data['use_flat_tax_rate']) && !$useFlatTaxRateAllowedNow) {
+                    $skippedFields[] = $this->flatTaxNotAllowedSkipEntry();
+                }
+                $useFlatTaxRate = array_key_exists('use_flat_tax_rate', $data)
+                    ? (($useFlatTaxRateAllowedNow && !empty($data['use_flat_tax_rate'])) ? 1 : 0)
+                    : $useFlatTaxRate;
             } else {
                 $computeStatutory = 1;
                 $includeBaseSalary = 1;

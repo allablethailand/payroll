@@ -4022,6 +4022,87 @@ try {
     checkTrue('update() converting this run to cycle-linked (payroll-purpose) succeeds' . (empty($toPayrollRes['status']) ? " ({$toPayrollRes['message']})" : ''), $toPayrollRes['status']);
     check('use_flat_tax_rate forced back to 0 -- a payroll-purpose run can never carry this flag, unchanged by this fix', (int)$runModel->get($flatTaxRunId, $compId)['use_flat_tax_rate'], 0);
 
+    echo "=== use_flat_tax_rate visibility rule, Batch 3C item 4c (Decision 1): effective attribution tax treatment gates it, not source ===\n";
+    // A manual/off-cycle run has no Origami attribution at all -- effective treatment defaults to
+    // 'separate' ("ไม่สนที่มา" -- a manual run was never going to fold into some other run's calc).
+    // Already implicitly proven by the fixture at the top of this section (a plain off-cycle run,
+    // no sync_process_id) reaching use_flat_tax_rate=1 -- re-confirmed explicitly here as this rule's
+    // own dedicated test, with its own isolated fixture.
+    $d1ManualPeriodStart = (clone $today)->modify('first day of +170 months')->format('Y-m-d');
+    $d1ManualPeriodEnd = (clone $today)->modify('last day of +170 months')->format('Y-m-d');
+    $d1ManualRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'use_flat_tax_rate' => true,
+        'run_name' => 'DECISION1_MANUAL_' . uniqid(),
+        'period_start_date' => $d1ManualPeriodStart, 'period_end_date' => $d1ManualPeriodEnd, 'payment_date' => $d1ManualPeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: manual off-cycle incentive run created' . (empty($d1ManualRes['status']) ? " ({$d1ManualRes['message']})" : ''), $d1ManualRes['status']);
+    check('create(): a manual/off-cycle run (no attribution at all) -- use_flat_tax_rate ALLOWED (defaults to effectively separate)', (int)$runModel->get($d1ManualRes['id'], $compId)['use_flat_tax_rate'], 1);
+
+    // A supplemental sync process Origami explicitly attributed 'merge' -- REJECTED (forced to 0)
+    // even though the run is genuinely incentive/eligible, because that run's own items fold into a
+    // DIFFERENT run's tax calc, so it never withholds anything of its own.
+    $d1MergePeriodStart = (clone $today)->modify('first day of +171 months')->format('Y-m-d');
+    $d1MergePeriodEnd = (clone $today)->modify('last day of +171 months')->format('Y-m-d');
+    $stmtD1Merge = $pdo->prepare("INSERT INTO `payroll_sync_processes` (comp_id, process_no, origami_process_id, run_kind, status, attribution_tax_treatment) VALUES (:comp_id, :process_no, :origami_process_id, 'supplemental', 'pulled', 'merge')");
+    $stmtD1Merge->execute([':comp_id' => $compId, ':process_no' => 'DECISION1_MERGE_' . uniqid(), ':origami_process_id' => mt_rand(900000001, 999999999)]);
+    $d1MergeSyncProcessId = (int)$pdo->lastInsertId();
+    $d1MergeRes = $runModel->create($compId, [
+        'sync_process_id' => $d1MergeSyncProcessId, 'run_purpose' => 'incentive', 'use_flat_tax_rate' => true,
+        'run_name' => 'DECISION1_MERGE_RUN_' . uniqid(),
+        'period_start_date' => $d1MergePeriodStart, 'period_end_date' => $d1MergePeriodEnd, 'payment_date' => $d1MergePeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: merge-attributed supplemental pull created' . (empty($d1MergeRes['status']) ? " ({$d1MergeRes['message']})" : ''), $d1MergeRes['status']);
+    check('create(): use_flat_tax_rate=true is REJECTED for a merge-attributed supplemental pull', (int)$runModel->get($d1MergeRes['id'], $compId)['use_flat_tax_rate'], 0);
+    check('create(): the rejection is reported in skipped_fields', $d1MergeRes['skipped_fields'][0]['field'] ?? null, 'use_flat_tax_rate');
+    check('create(): skipped_fields reason is flat_tax_not_allowed', $d1MergeRes['skipped_fields'][0]['reason'] ?? null, 'flat_tax_not_allowed');
+    $d1MergeUpdateRes = $runModel->update($d1MergeRes['id'], $compId, [
+        'run_purpose' => 'incentive', 'use_flat_tax_rate' => true,
+    ], $adminUserId, true);
+    checkTrue('update() itself still succeeds on this same run (rejection is per-field, not a whole-save failure)' . (empty($d1MergeUpdateRes['status']) ? " ({$d1MergeUpdateRes['message']})" : ''), $d1MergeUpdateRes['status']);
+    check('update(): use_flat_tax_rate=true is STILL rejected on the same merge-attributed run', (int)$runModel->get($d1MergeRes['id'], $compId)['use_flat_tax_rate'], 0);
+    check('update(): the rejection is ALSO reported in skipped_fields', $d1MergeUpdateRes['skipped_fields'][0]['field'] ?? null, 'use_flat_tax_rate');
+    check('update(): skipped_fields reason is flat_tax_not_allowed', $d1MergeUpdateRes['skipped_fields'][0]['reason'] ?? null, 'flat_tax_not_allowed');
+
+    // The allowed manual-run path (above) must NOT report any skipped_fields entry at all --
+    // confirms this new rejection reporting doesn't false-positive on a genuinely-allowed save.
+    check('create(): a manual run where use_flat_tax_rate was genuinely allowed reports no skipped_fields', $d1ManualRes['skipped_fields'] ?? [], []);
+
+    // A supplemental sync process Origami explicitly attributed 'separate' -- ALLOWED.
+    $d1SeparatePeriodStart = (clone $today)->modify('first day of +172 months')->format('Y-m-d');
+    $d1SeparatePeriodEnd = (clone $today)->modify('last day of +172 months')->format('Y-m-d');
+    $stmtD1Separate = $pdo->prepare("INSERT INTO `payroll_sync_processes` (comp_id, process_no, origami_process_id, run_kind, status, attribution_tax_treatment) VALUES (:comp_id, :process_no, :origami_process_id, 'supplemental', 'pulled', 'separate')");
+    $stmtD1Separate->execute([':comp_id' => $compId, ':process_no' => 'DECISION1_SEPARATE_' . uniqid(), ':origami_process_id' => mt_rand(800000001, 899999999)]);
+    $d1SeparateSyncProcessId = (int)$pdo->lastInsertId();
+    $d1SeparateRes = $runModel->create($compId, [
+        'sync_process_id' => $d1SeparateSyncProcessId, 'run_purpose' => 'incentive', 'use_flat_tax_rate' => true,
+        'run_name' => 'DECISION1_SEPARATE_RUN_' . uniqid(),
+        'period_start_date' => $d1SeparatePeriodStart, 'period_end_date' => $d1SeparatePeriodEnd, 'payment_date' => $d1SeparatePeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: separate-attributed supplemental pull created' . (empty($d1SeparateRes['status']) ? " ({$d1SeparateRes['message']})" : ''), $d1SeparateRes['status']);
+    check('create(): use_flat_tax_rate=true is ALLOWED for a separate-attributed supplemental pull', (int)$runModel->get($d1SeparateRes['id'], $compId)['use_flat_tax_rate'], 1);
+    check('create(): a separate-attributed pull where use_flat_tax_rate was genuinely allowed reports no skipped_fields', $d1SeparateRes['skipped_fields'] ?? [], []);
+
+    // A supplemental sync process with NO attribution at all (plain, unattributed pull) -- effective
+    // treatment defaults to 'separate' same as a manual run -- ALLOWED ("ไม่สนที่มา").
+    $d1NoAttrPeriodStart = (clone $today)->modify('first day of +173 months')->format('Y-m-d');
+    $d1NoAttrPeriodEnd = (clone $today)->modify('last day of +173 months')->format('Y-m-d');
+    $stmtD1NoAttr = $pdo->prepare("INSERT INTO `payroll_sync_processes` (comp_id, process_no, origami_process_id, run_kind, status) VALUES (:comp_id, :process_no, :origami_process_id, 'supplemental', 'pulled')");
+    $stmtD1NoAttr->execute([':comp_id' => $compId, ':process_no' => 'DECISION1_NOATTR_' . uniqid(), ':origami_process_id' => mt_rand(700000001, 799999999)]);
+    $d1NoAttrSyncProcessId = (int)$pdo->lastInsertId();
+    $d1NoAttrRes = $runModel->create($compId, [
+        'sync_process_id' => $d1NoAttrSyncProcessId, 'run_purpose' => 'incentive', 'use_flat_tax_rate' => true,
+        'run_name' => 'DECISION1_NOATTR_RUN_' . uniqid(),
+        'period_start_date' => $d1NoAttrPeriodStart, 'period_end_date' => $d1NoAttrPeriodEnd, 'payment_date' => $d1NoAttrPeriodEnd,
+    ], $adminUserId, true);
+    checkTrue('fixture: unattributed supplemental pull created' . (empty($d1NoAttrRes['status']) ? " ({$d1NoAttrRes['message']})" : ''), $d1NoAttrRes['status']);
+    check('create(): use_flat_tax_rate=true ALLOWED for an unattributed supplemental pull (defaults to effectively separate, same as a manual run)', (int)$runModel->get($d1NoAttrRes['id'], $compId)['use_flat_tax_rate'], 1);
+
+    // get() exposes sync_attribution_tax_treatment correctly -- the frontend's own JS mirror of this
+    // rule (updateComputeStatutoryVisibility() in app.js) reads this same field.
+    check('get() exposes sync_attribution_tax_treatment=merge', $runModel->get($d1MergeRes['id'], $compId)['sync_attribution_tax_treatment'], 'merge');
+    check('get() exposes sync_attribution_tax_treatment=separate', $runModel->get($d1SeparateRes['id'], $compId)['sync_attribution_tax_treatment'], 'separate');
+    check('get() exposes sync_attribution_tax_treatment=null for an unattributed pull', $runModel->get($d1NoAttrRes['id'], $compId)['sync_attribution_tax_treatment'], null);
+
     // 2026-09-09, round-creation flow audit Bug 2 (explicit report: resolveMergeTargetSpec()'s own
     // future-cycle auto-match silently picks the earliest-period run whenever 2+ candidates already
     // exist for the same cycle+payment-month, with zero visible indication of which one). Own isolated

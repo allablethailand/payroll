@@ -190,3 +190,46 @@ whichever point the snapshot is taken). Scope this as its own task, not a drive-
 whatever else is in flight when it's picked up.
 
 **Source:** Batch 3C item 7, explicit instruction (2026-09-11).
+
+---
+
+## `payroll_run_audit_logs` has no auto/admin trigger-type distinction for `recalculate`
+
+`PayrollRunModel::adminRecalculateCount()` (Batch 3C item 4, decision 2's `hasAdminWork()`) counts a
+run's own `action='recalculate'` audit-log rows and subtracts 1 whenever `sync_process_id` is set,
+to exclude the ONE automatic recalculate `create()` itself fires synchronously for any sync-linked
+pull. Confirmed via reading `logAudit()`'s own INSERT columns (`run_id`/`from_state`/`to_state`/
+`action`/`note`/`performed_by`/`ip_address`/`user_agent`) that there is no way to distinguish an
+auto-triggered recalculate from a genuinely admin-clicked one any other way -- both `create()`'s own
+internal call and a real "Recalculate" button click on Detail go through the exact same
+`recalculate()` method, log identically, and even carry the SAME `performed_by` (the user who
+initiated the pull, passed straight through). The "count then subtract 1" heuristic only works
+because there is currently at most one auto-recalculate per run ever (at creation); it would silently
+undercount if a future feature ever added a second automatic recalculate somewhere else in the run's
+lifecycle.
+
+**Fix, when picked up:** add a trigger-type column to `payroll_run_audit_logs` (e.g.
+`trigger_type enum('auto','admin')`, needs a migration) and have every internal auto-recalculate call
+site set it explicitly, so `adminRecalculateCount()` can filter on it directly instead of subtracting
+a count. Low priority while there's only ever one auto-recalculate per run to account for.
+
+**Source:** Batch 3C item 4 decision 2, user question during commit review (2026-09-11).
+
+---
+
+## `PayrollRunModel::update()` doesn't auto-recalculate after a cycle_id/period/run_purpose change on a no-admin-work draft
+
+Decision was made (Batch 3C item 4, decision 2's `hasAdminWork()` correction) that a draft run with
+NO admin work yet still allows changing `cycle_id`/`period_dates`/`run_purpose`(+flags)/
+`merge_target` through — same as before this item — but `update()` itself never re-runs
+`recalculate()` afterward the way `create()` does for a fresh pull. The run's `payroll_run_details`
+keep reflecting whatever was last calculated (under the OLD cycle_id/period/purpose) until the admin
+explicitly hits Recalculate again — a real staleness gap, though a low-risk one since there's no
+admin work yet to silently invalidate.
+
+**Decided NOT to auto-recalculate here** — instead, item 4's own sub-step 4b (JS mirror of
+`runFieldLockState()`) adds a client-side warning after a successful save: if a calc flag changed on
+a draft run that already has `employee_count > 0`, show a message telling the admin to hit
+Recalculate themselves. No silent auto-recalc, no schema/backend change.
+
+**Source:** Batch 3C item 4 decision 2 follow-up, explicit instruction (2026-09-11).
