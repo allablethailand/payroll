@@ -2377,16 +2377,37 @@
                             <label class="form-label mb-1" data-i18n="installment_amounts">Amount per Installment</label>
                         </div>
                         <div class="col-sm-9">
+                            <!-- 2026-09-11, Batch 3B item 4: widened from 2 columns (#/Amount) to the
+                                 4 columns requested (#/Principal/Interest-or-Fee/Total) + a <tfoot>
+                                 summary row -- Principal/Interest are READ-ONLY display columns
+                                 (computed by the SAME preview call that already fills Amount, or
+                                 read back from what was actually persisted on Edit/View -- never a
+                                 second, hand-rolled copy of the formula); Amount stays the ONLY
+                                 editable cell, unchanged from before this round. Both new columns
+                                 are hidden entirely for chargeType='none' (nothing to break out --
+                                 principal already IS the total then, same reasoning
+                                 #eedAmountBreakdownRow's own comment above already gives). -->
                             <div class="table-responsive eed-installment-table-wrap">
                                 <table class="table table-sm table-striped align-middle mb-0" id="eedInstallmentTable">
                                     <thead>
                                         <tr>
                                             <th class="text-muted small" style="width:15%;" data-i18n="installment_no_col">#</th>
+                                            <th class="text-muted small d-none" id="eedInstallmentPrincipalHeader" data-i18n="installment_principal_col">Principal</th>
+                                            <th class="text-muted small d-none" id="eedInstallmentInterestHeader" data-i18n="installment_interest_col">Interest</th>
                                             <th class="text-muted small" data-i18n="installment_amount_col">Amount</th>
                                             <th class="text-muted small d-none" id="eedInstallmentStatusHeader" data-i18n="installment_status_col">Status</th>
                                         </tr>
                                     </thead>
                                     <tbody id="eedInstallmentTableBody"></tbody>
+                                    <tfoot class="d-none" id="eedInstallmentTableFoot">
+                                        <tr class="fw-bold">
+                                            <td class="text-muted small" data-i18n="installment_total_row">Total</td>
+                                            <td class="small" id="eedInstallmentFootPrincipal"></td>
+                                            <td class="small" id="eedInstallmentFootInterest"></td>
+                                            <td class="small" id="eedInstallmentFootAmount"></td>
+                                            <td class="d-none" id="eedInstallmentFootStatusPad"></td>
+                                        </tr>
+                                    </tfoot>
                                 </table>
                             </div>
                         </div>

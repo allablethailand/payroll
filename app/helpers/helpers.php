@@ -1,13 +1,15 @@
 <?php
+    /** 2026-09-11, extracted out of asset() below so header.php can get the SAME cache-busting
+     *  version number for a file that isn't loaded via a <script>/<link> tag (public/lang/*.json,
+     *  fetched by app.js's own loadLang() -- see that function's own comment) without duplicating
+     *  this filemtime/fallback logic a second time. */
+    function assetVersion(string $path): int {
+        $fullPath = $_SERVER['DOCUMENT_ROOT'] . '/' . ltrim($path, '/');
+        return file_exists($fullPath) ? filemtime($fullPath) : time();
+    }
     function asset($path) {
         $base = rtrim(BASE_URL, '/');
-        $fullPath = $_SERVER['DOCUMENT_ROOT'] . '/' . ltrim($path, '/');
-        if (file_exists($fullPath)) {
-            $version = filemtime($fullPath);
-        } else {
-            $version = time();
-        }
-        return $base . '/' . ltrim($path, '/') . '?v=' . $version;
+        return $base . '/' . ltrim($path, '/') . '?v=' . assetVersion($path);
     }
     // 2026-08-30, Phase 7 (T038): server-side-authoritative idle timeout. Originally 30 minutes,
     // widened to 1 hour on 2026-08-31 per explicit request -- deliberately NOT the same knob as

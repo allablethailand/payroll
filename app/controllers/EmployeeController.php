@@ -843,8 +843,13 @@ class EmployeeController extends Controller {
         $feeBase = isset($_GET['fee_base']) ? (string)$_GET['fee_base'] : null;
         $baseSalaryForFee = isset($_GET['base_salary_for_fee']) && is_numeric($_GET['base_salary_for_fee']) ? (float)$_GET['base_salary_for_fee'] : null;
         try {
-            $amounts = $this->earningDeductionModel->computeInstallmentSchedule($principal, $totalInstallments, $interestType, $interestRate, $feePercent, $feeBase, $baseSalaryForFee);
-            $this->json(['status' => true, 'data' => ['amounts' => $amounts]]);
+            // 2026-09-11, Batch 3B item 4: `breakdown` (amount+principal+interest per row) added
+            // alongside the existing `amounts` (kept for backward compat -- amounts === array_column
+            // (breakdown, 'amount') always) so the modal's table can render Principal/Interest
+            // columns without a second endpoint or duplicating the formula client-side.
+            $breakdown = $this->earningDeductionModel->computeInstallmentBreakdown($principal, $totalInstallments, $interestType, $interestRate, $feePercent, $feeBase, $baseSalaryForFee);
+            $amounts = array_column($breakdown, 'amount');
+            $this->json(['status' => true, 'data' => ['amounts' => $amounts, 'breakdown' => $breakdown]]);
         } catch (InvalidArgumentException $e) {
             http_response_code(422);
             $this->json(['status' => false, 'message' => $e->getMessage()]);

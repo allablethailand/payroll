@@ -28,4 +28,4 @@
 
     <div id="sgChecklist" class="sg-checklist"></div>
 </div>
-<script src="<?=BASE_URL?>/public/js/setup/setup-guide.js"></script>
+<script src="<?=asset('public/js/setup/setup-guide.js')?>"></script>

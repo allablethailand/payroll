@@ -290,6 +290,7 @@ $(document).on('click', '#btnClearAnnouncementFilter', function () {
     if (annTable) annTable.draw();
 });
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     if ($('#tb_announcement').length) {
         // 2026-09-04, Backlog Phase 11, T066 -- this page had no filter at all. Client-side
         // DataTable (small, bounded per-company list -- see this file's own top-of-file comment),
@@ -327,4 +328,5 @@ $(document).ready(function () {
         initSelect2('#announcement_filter_status');
         initSelect2('#announcement_filter_accept_required');
     }
+    });
 });

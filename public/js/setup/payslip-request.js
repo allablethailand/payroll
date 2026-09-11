@@ -162,8 +162,10 @@ $(document).on('click', '.btn-view-payslip-request', function () {
 });
 
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     initPayslipRequestTable();
     $('#payslipRequestTabBtn').on('shown.bs.tab', function () {
         initPayslipRequestTable();
+    });
     });
 });

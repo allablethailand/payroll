@@ -51,7 +51,9 @@
     };
 
     $(document).ready(function () {
+        (window.langReady || Promise.resolve()).then(function () {
         if (!$('#sgChecklist').length) return;
         loadChecklist();
+        });
     });
 })();

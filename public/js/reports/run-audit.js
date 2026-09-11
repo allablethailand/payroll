@@ -202,6 +202,7 @@ $(document).on('click', '#runAuditExportBtn', function () {
 });
 
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     if (!$('#tb_run_audit_list').length) return;
     runAuditDiffModal = new bootstrap.Modal(document.getElementById('runAuditDiffModal'));
     if (typeof initDatepicker === 'function') {
@@ -210,4 +211,5 @@ $(document).ready(function () {
     }
     registerRunAuditStationSearchFilter();
     initRunAuditTable();
+    });
 });

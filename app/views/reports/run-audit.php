@@ -167,4 +167,4 @@
     </div>
 </div>
 
-<script src="<?=BASE_URL?>/public/js/reports/run-audit.js"></script>
+<script src="<?=asset('public/js/reports/run-audit.js')?>"></script>

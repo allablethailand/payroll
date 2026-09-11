@@ -69,6 +69,7 @@ $(document).on('shown.bs.tab', '#employeeTopTabs button[data-bs-toggle="tab"]', 
     }
 });
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     // 2026-08-31, explicit request: "Filter ในหน้า Employee List การจ่ายเงินเดือน ให้เลือกเป็นทำจ่าย
     // เงินเดือนเป็น Default" -- app.js's own generic '.select2-static' sweep (runs earlier, before
     // this page's own ready handler) already initialized this field with no explicit value, which
@@ -92,6 +93,7 @@ $(document).ready(function () {
     refreshEmployeeStationCounts();
     activateEmployeeTopTabFromHash();
     initRcMobileIti();
+    });
 });
 let tb_employee;
 // 2026-08-29, explicit request: "ในหน้า List เพิ่ม checkbox ด้านหน้า เพื่อให้เลือกหลายรายการแล้วกด Sync
@@ -803,9 +805,11 @@ function currentEmployeeRecheckFilters() {
 // "before this table's own first ajax load" precedent as #employee_filter_payroll_participant above,
 // so this doesn't silently depend on option order alone.
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     if (typeof initSelect2 === 'function') {
         initSelect2('#employee_recheck_filter_view', { mode: 'static', selectedValue: 'participant' });
     }
+    });
 });
 function updateClearEmployeeRecheckFilterVisibility() {
     const f = currentEmployeeRecheckFilters();

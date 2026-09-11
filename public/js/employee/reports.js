@@ -126,7 +126,9 @@ function initEmployeeSummaryTable() {
 // still lazy-init on their own shown.bs.tab exactly as before, since they're still real nested
 // Bootstrap tabs within this one page.
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     initEmployeeSummaryTable();
+    });
 });
 $(document).on('click', '#employeeSummaryStationFilterToggle', function () {
     const $filter = $('#employeeSummaryStationFilter').toggleClass('collapsed');

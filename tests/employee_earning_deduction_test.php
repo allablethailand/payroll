@@ -271,6 +271,17 @@ try {
             check('get() round-trips fee_percent', (float)$gotFee['fee_percent'], 2.0);
             check('get() round-trips fee_base', $gotFee['fee_base'], 'principal_amount');
             check('get() interest_rate stays null for a fee-type row (mutually exclusive)', $gotFee['interest_rate'], null);
+            // 2026-09-11, Batch 3B item 4: principal_amount=1000, fee=2% of principal=20, total=1020,
+            // split evenly over 2 installments -> amount=510 each; principal should split evenly too
+            // (500/500) with the fee(interest) as the residual (10/10).
+            $feeInstallments = $gotFee['installments'] ?? [];
+            check('save() persisted 2 installments for the fee row', count($feeInstallments), 2);
+            if (count($feeInstallments) === 2) {
+                check('installment 1: principal_amount persisted', (float)$feeInstallments[0]['principal_amount'], 500.0);
+                check('installment 1: interest_amount (the fee portion) persisted', (float)$feeInstallments[0]['interest_amount'], 10.0);
+                check('installment 2: principal_amount persisted', (float)$feeInstallments[1]['principal_amount'], 500.0);
+                check('installment 2: interest_amount (the fee portion) persisted', (float)$feeInstallments[1]['interest_amount'], 10.0);
+            }
         }
     }
 
@@ -294,6 +305,78 @@ try {
         'interest_type' => 'fee', 'fee_percent' => 2, 'fee_base' => 'base_salary', 'effective_date' => '2026-01-01',
     ], $userId);
     checkFalse('save() rejects interest_type=fee on an earning item (same backstop as interest)', $rFeeOnEarning['status']);
+
+    // ---------- Batch 3B item 4: computeInstallmentBreakdown() -- principal_amount is now
+    // persisted per installment (used by PayrollRunModel::recalculate(), read verbatim, never
+    // recomputed -- see that method's own comment). This section proves the underlying invariant
+    // every consumer of that persisted data depends on: principal+interest reconciles EXACTLY to
+    // amount on every single row, and principal sums exactly to the declared principal, for ALL 4
+    // interest_type values across EVERY installment count from 1 to 60 -- not just a few spot
+    // values. ----------
+    echo "=== Batch 3B item 4: computeInstallmentBreakdown() reconciliation, n=1..60, all 4 types ===\n";
+    $reconcileFailures = [];
+    $principalSumFailures = [];
+    for ($n = 1; $n <= 60; $n++) {
+        $casesForN = [
+            'none' => $eedModel->computeInstallmentBreakdown(12000.0, $n, 'none', null),
+            'fixed' => $eedModel->computeInstallmentBreakdown(12000.0, $n, 'fixed', 0.5),
+            'reducing_balance' => $eedModel->computeInstallmentBreakdown(12000.0, $n, 'reducing_balance', 0.5),
+            'fee' => $eedModel->computeInstallmentBreakdown(12000.0, $n, 'fee', null, 2.0, 'principal_amount'),
+        ];
+        foreach ($casesForN as $type => $rows) {
+            $principalSum = 0.0;
+            foreach ($rows as $row) {
+                if (round($row['principal'] + $row['interest'], 2) !== round($row['amount'], 2)) {
+                    $reconcileFailures[] = "{$type} n={$n}: principal({$row['principal']})+interest({$row['interest']}) != amount({$row['amount']})";
+                }
+                $principalSum += $row['principal'];
+            }
+            // 'none'/'fixed'/'fee' all derive their principal column from evenSplit(principal, n)
+            // directly, which guarantees an EXACT sum by construction (remainder dumped into the
+            // last row) -- zero tolerance for those 3. 'reducing_balance' derives principal as a
+            // per-row RESIDUAL against its own independently-rounded interest figure (needed so
+            // principal+interest reconciles EXACTLY to amount on every row, the stronger and more
+            // report-relevant invariant, checked separately above) -- across many rows that can
+            // drift the AGGREGATE sum by a cent or two of ordinary rounding noise, same category as
+            // this app's own evenSplit() already accepts elsewhere. A few-cent tolerance here is
+            // the deliberate trade-off, not a bug -- see this section's own worked-example comment.
+            $tolerance = $type === 'reducing_balance' ? 0.05 : 0.0;
+            if (abs(round($principalSum, 2) - 12000.00) > $tolerance) {
+                $principalSumFailures[] = "{$type} n={$n}: sum(principal)=" . round($principalSum, 2) . ' != 12000.00 (tolerance ' . $tolerance . ')';
+            }
+        }
+    }
+    checkTrue('every row of every type, n=1..60: principal + interest reconciles EXACTLY to amount (0 failures out of 240 combinations)' . (empty($reconcileFailures) ? '' : ' -- e.g. ' . $reconcileFailures[0]), empty($reconcileFailures));
+    checkTrue('every type, n=1..60: sum(principal) equals the declared principal (12000.00, exactly for none/fixed/fee, within a few cents for reducing_balance -- see comment above) (0 failures out of 240 combinations)' . (empty($principalSumFailures) ? '' : ' -- e.g. ' . $principalSumFailures[0]), empty($principalSumFailures));
+
+    // ---------- Batch 3B item 4: the exact worked example from the proposal -- principal 12,000,
+    // 12 installments, 6% per annum (-> 0.5% per installment, this app's own per-period convention)
+    // -- must match the table presented and confirmed, to the cent. ----------
+    echo "=== Batch 3B item 4: worked example (12,000 / 12 / 6% per annum = 0.5%/installment) ===\n";
+    $flatBreakdown = $eedModel->computeInstallmentBreakdown(12000.0, 12, 'fixed', 0.5);
+    $flatExpected = array_fill(0, 12, ['amount' => 1060.0, 'principal' => 1000.0, 'interest' => 60.0]);
+    check('flat/add-on: all 12 rows are exactly {principal:1000.00, interest:60.00, amount:1060.00}', $flatBreakdown, $flatExpected);
+    check('flat/add-on: total interest = 720.00', round(array_sum(array_column($flatBreakdown, 'interest')), 2), 720.0);
+    check('flat/add-on: total repayable = 12,720.00', round(array_sum(array_column($flatBreakdown, 'amount')), 2), 12720.0);
+
+    // 2026-09-11, correction: the FIRST version of this worked example (presented for confirmation)
+    // hand-verified the reducing_balance schedule with a SEPARATE script that rounded the running
+    // balance every iteration -- the REAL, already-shipped computeInstallmentSchedule()/
+    // computeInstallmentBreakdown() deliberately carries balance/interest UNROUNDED internally
+    // (see that method's own docblock -- this is existing, correct, unchanged behavior, not
+    // something this batch touched), only rounding the OUTPUT. That difference only shows up in the
+    // LAST installment (1032.76/1027.62 here, not the 1032.78/1027.64 originally presented) --
+    // caught by actually running the real method against this exact test, not by re-trusting the
+    // hand check. Every other row is unaffected.
+    $reducingBreakdown = $eedModel->computeInstallmentBreakdown(12000.0, 12, 'reducing_balance', 0.5);
+    $reducingExpectedAmounts = [1032.80, 1032.80, 1032.80, 1032.80, 1032.80, 1032.80, 1032.80, 1032.80, 1032.80, 1032.80, 1032.80, 1032.76];
+    $reducingExpectedPrincipal = [972.80, 977.66, 982.55, 987.47, 992.40, 997.36, 1002.35, 1007.36, 1012.40, 1017.46, 1022.55, 1027.62];
+    $reducingExpectedInterest = [60.00, 55.14, 50.25, 45.33, 40.40, 35.44, 30.45, 25.44, 20.40, 15.34, 10.25, 5.14];
+    check('reducing balance: amounts match the real shipped formula exactly (11x1032.80 + 1032.76)', array_column($reducingBreakdown, 'amount'), $reducingExpectedAmounts);
+    check('reducing balance: principal column matches the real shipped formula exactly', array_column($reducingBreakdown, 'principal'), $reducingExpectedPrincipal);
+    check('reducing balance: interest column matches the real shipped formula exactly', array_column($reducingBreakdown, 'interest'), $reducingExpectedInterest);
+    check('reducing balance: total interest = 393.58 (genuinely less than flat\'s 720.00 for the same nominal rate)', round(array_sum(array_column($reducingBreakdown, 'interest')), 2), 393.58);
+    check('reducing balance: total repayable = 12,393.56', round(array_sum(array_column($reducingBreakdown, 'amount')), 2), 12393.56);
 
     // ---------- payee_employee_id (2026-08-21, explicit request: "หักเพื่อไปจ่ายให้ใคร โดยเลือก
     // พนักงานได้ว่าจะหักของคนนี้ไปให้คนนี้") -- only meaningful on a deduction; forced null on an

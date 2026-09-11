@@ -2378,6 +2378,7 @@ $(document).on('click', '#pstPreviewBtn', function () {
 /* ---------- Page init -- this file serves 2 host pages: the list (Payslip Settings' 1st tab,
    `#tb_pst_template`) and the standalone editor page (`#pstPage`, opened in its own tab). ---------- */
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     if ($('#pstPage').length) {
         $.ajax({
             url: `${BASE_URL}/api/payslip-template.field-options`,
@@ -2423,5 +2424,6 @@ $(document).ready(function () {
             }
         });
     }
+    });
 });
 })();

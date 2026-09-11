@@ -45,7 +45,9 @@
     };
 
     $(document).ready(function () {
+        (window.langReady || Promise.resolve()).then(function () {
         if (!$('#versionList').length) return;
         loadChangelog();
+        });
     });
 })();

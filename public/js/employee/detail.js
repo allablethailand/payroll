@@ -1468,6 +1468,7 @@ function renderEmployeeTabsMoreMenu(hiddenItems) {
 }
 $(window).on('resize', typeof debounce === 'function' ? debounce(layoutEmployeeTabs, 150) : layoutEmployeeTabs);
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     layoutEmployeeTabs();
     const tabsEl = document.getElementById('employeeTabs');
     if (tabsEl && typeof MutationObserver !== 'undefined') {
@@ -1490,6 +1491,7 @@ $(document).ready(function () {
         });
         edtTabsObserver.observe(tabsEl, { attributes: true, attributeFilter: ['class'], subtree: true });
     }
+    });
 });
 
 const DOCUMENT_INPUT_MAP = {
@@ -2715,22 +2717,62 @@ function eedInstallmentStatusBadge(status, processedAt) {
 // on Edit/View), and every cell stays a plain editable <input> unless $readOnly. $installmentsData
 // (the real employee_earning_deduction_installments rows, only present on Edit/View) additionally
 // overlays a Status column; a brand-new Add has no installments yet so that column is hidden.
-function renderInstallmentTable(amounts, installmentsData, readOnly) {
+// 2026-09-11, Batch 3B item 4: $breakdown (optional) is the live preview endpoint's own
+// amount+principal+interest rows, used ONLY when $installmentsData doesn't already carry a real
+// persisted principal_amount/interest_amount per row (Edit/View always prefers the real persisted
+// value over a fresh recompute -- see this function's own per-row branch below). Never a client-
+// side reimplementation of the interest/fee formula either way.
+function renderInstallmentTable(amounts, installmentsData, readOnly, breakdown) {
     const $body = $('#eedInstallmentTableBody');
     $body.empty();
     const hasStatus = Array.isArray(installmentsData) && installmentsData.length > 0;
     $('#eedInstallmentStatusHeader').toggleClass('d-none', !hasStatus);
+    const { chargeType } = eedInterestState();
+    const showBreakdown = chargeType !== 'none';
+    const interestHeaderKey = chargeType === 'fee' ? 'installment_fee_col' : 'installment_interest_col';
+    $('#eedInstallmentPrincipalHeader').toggleClass('d-none', !showBreakdown);
+    $('#eedInstallmentInterestHeader').toggleClass('d-none', !showBreakdown)
+        .attr('data-i18n', interestHeaderKey).text(langData[interestHeaderKey] || (chargeType === 'fee' ? 'Fee' : 'Interest'));
+    const fmt = n => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    let sumPrincipal = 0, sumInterest = 0, sumAmount = 0, rowsWithBreakdown = 0;
     (amounts || []).forEach(function (amount, idx) {
         const inst = hasStatus ? installmentsData[idx] : null;
         const statusCell = hasStatus ? `<td>${eedInstallmentStatusBadge(inst ? inst.status : 'pending', inst ? inst.processed_at : null)}</td>` : '';
+        let principal = null, interest = null;
+        if (inst && inst.principal_amount !== undefined && inst.principal_amount !== null) {
+            principal = parseFloat(inst.principal_amount);
+            interest = parseFloat(inst.interest_amount || 0);
+        } else if (Array.isArray(breakdown) && breakdown[idx]) {
+            principal = parseFloat(breakdown[idx].principal);
+            interest = parseFloat(breakdown[idx].interest);
+        }
+        const hasBreakdown = principal !== null && !isNaN(principal);
+        if (hasBreakdown) {
+            rowsWithBreakdown++;
+            sumPrincipal += principal;
+            sumInterest += interest;
+        }
+        const numAmount = parseFloat(amount);
+        if (!isNaN(numAmount)) sumAmount += numAmount;
+        const principalCell = showBreakdown ? `<td class="text-muted small">${hasBreakdown ? fmt(principal) : '-'}</td>` : '';
+        const interestCell = showBreakdown ? `<td class="text-muted small">${hasBreakdown ? fmt(interest) : '-'}</td>` : '';
         $body.append(`
             <tr>
                 <td class="text-muted">${idx + 1}</td>
+                ${principalCell}
+                ${interestCell}
                 <td><input type="number" step="0.01" min="0" class="form-control form-control-sm eed-installment-amount required" value="${amount !== '' && amount !== undefined ? amount : ''}"${readOnly ? ' disabled' : ''}></td>
                 ${statusCell}
             </tr>
         `);
     });
+    const showFooter = showBreakdown && rowsWithBreakdown > 0 && (amounts || []).length > 0;
+    $('#eedInstallmentTableFoot').toggleClass('d-none', !showFooter);
+    if (showFooter) {
+        $('#eedInstallmentFootPrincipal').text(fmt(sumPrincipal));
+        $('#eedInstallmentFootInterest').text(fmt(sumInterest));
+        $('#eedInstallmentFootAmount').text(fmt(sumAmount));
+    }
     updateEedAmountBreakdown(amounts);
 }
 // 2026-09-03, Platform UX review Phase 4 -- see modals.php's own comment on #eedAmountBreakdownRow
@@ -2817,7 +2859,7 @@ function fetchEedInstallmentPreview() {
         dataType: 'json',
         success: function (res) {
             if (res.status && res.data && res.data.amounts) {
-                renderInstallmentTable(res.data.amounts, null, false);
+                renderInstallmentTable(res.data.amounts, null, false, res.data.breakdown);
             }
         }
     });

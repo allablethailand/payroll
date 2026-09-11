@@ -66,6 +66,13 @@ if ($userThemePref === 'dark') {
 <link rel="stylesheet" href="<?=asset('public/css/style.css')?>">
 <script>
     const BASE_URL = "<?=BASE_URL?>";
+    // 2026-09-11, real cache-busting fix (was `?v=${Date.now()}` in app.js's own loadLang() --
+    // busted the browser cache on EVERY single load, the opposite problem from no cache-busting at
+    // all) -- same filemtime()-based version this app's own asset() helper already uses for every
+    // <script src>/<link href>, extracted into assetVersion() so this doesn't duplicate that logic.
+    // Per-language (not one shared number) so editing th.json doesn't force en.json's cache to bust
+    // too, matching asset()'s own per-file granularity.
+    const LANG_VERSION = { th: <?=assetVersion('public/lang/th.json')?>, en: <?=assetVersion('public/lang/en.json')?> };
     // 2026-08-29: the logged-in user's own employee id, exposed so a page editing an employee record
     // (Employee Detail) can tell whether it's currently editing the LOGGED-IN USER's own record --
     // used to live-refresh the nav profile photo (#navProfilePhoto above) right after a photo
