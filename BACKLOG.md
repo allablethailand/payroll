@@ -233,3 +233,22 @@ a draft run that already has `employee_count > 0`, show a message telling the ad
 Recalculate themselves. No silent auto-recalc, no schema/backend change.
 
 **Source:** Batch 3C item 4 decision 2 follow-up, explicit instruction (2026-09-11).
+
+---
+
+## Remittance Breakdown modal: consider DataTable if rows exceed 5
+
+Batch 3C item 6 confirmed (via AskUserQuestion) that the Remittance Breakdown modal stays a plain
+`<table>`, not a DataTable, alongside the Attendance sub-tab's 7-row edit grid, Calculation
+Breakdown modal's 3 tables, and Raw Sync Data modal -- all 4 are per-employee drill-downs opened
+from a modal, not top-level tabs of the Detail page itself, and typically show few rows. This one
+specifically was flagged as a softer case than the other 3: a company with many loan/remittance
+creditors on one employee could genuinely exceed a handful of rows, unlike the others which are
+fixed-field forms with no realistic growth. Deferred as a logic-only item to the phase design pass
+(style/UX pass, not a bug) rather than converting pre-emptively with no evidence it's needed.
+
+**Fix, when picked up:** if real usage shows a company with several remittance rows per employee,
+wire this modal's table through the same `initSharedDataTable()` helper (app.js, added this same
+batch) used for the 4 tabs converted this round.
+
+**Source:** Batch 3C item 6, explicit instruction (2026-09-11).
