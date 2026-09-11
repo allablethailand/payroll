@@ -2194,6 +2194,7 @@ function resetRunForm() {
     $('.is-invalid').removeClass('is-invalid');
     $('#run_id').val('');
     $('#run_sync_run_kind').val('');
+    $('#run_attribution_tax_treatment').val('');
     $('#run_cycle_id').val('').trigger('change');
     $('#run_sync_process_id').val('');
     setRunFormExcludeId(null);
@@ -2663,6 +2664,17 @@ $(document).on('change', 'input[name="runScheduleChoice"]', function () {
 // taxTreatment ('merge'/'separate'/'') -- only a 'separate'-attributed supplemental process ever
 // shows the flat-tax-rate opt-in row at all (see #run_use_flat_tax_rate_row's own comment in
 // modals.php). Pre-checked (not just shown) when Origami explicitly said "separate".
+// `taxTreatment` is the sync process's own real attributed value ('merge'/'separate'/'') -- the
+// caller (.btn-pull-sync's own handler) must set #run_attribution_tax_treatment to this SAME value
+// BEFORE calling this function, since syncRunPurposeChoiceUi('incentive') below fires #run_purpose's
+// own 'change' -> updateComputeStatutoryVisibility() (app.js), which reads that hidden field to
+// compute visibility (see that function's own docblock, Decision 1). This function's own remaining
+// job on top of that shared visibility computation is the ONE thing it doesn't do on its own: a
+// one-time pre-check of use_flat_tax_rate specifically when Origami said 'separate' -- pre-checked
+// (not just shown) per the same "use what Origami already sent instead of re-entering by hand"
+// precedent #run_period_start/etc. already established. updateComputeStatutoryVisibility() itself
+// deliberately never auto-CHECKS this box (only ever un-checks+hides), so a later manual uncheck
+// during this same session is never silently re-ticked just because run_purpose gets toggled again.
 function setSupplementalPullMode(isSupplemental, taxTreatment) {
     $('#run_cycle_id').toggleClass('required', !isSupplemental);
     $('#run_purpose_choice_row').toggleClass('d-none', !isSupplemental);
@@ -2674,37 +2686,36 @@ function setSupplementalPullMode(isSupplemental, taxTreatment) {
         // here, still fully editable afterward same as every other Pull-derived field on this form.
         syncRunPurposeChoiceUi('incentive');
     }
-    const showFlatTax = isSupplemental && taxTreatment === 'separate';
-    $('#run_use_flat_tax_rate_row').toggleClass('d-none', !showFlatTax);
-    $('#run_use_flat_tax_rate').prop('checked', showFlatTax);
-    updateComputeStatutoryVisibility();
+    if (isSupplemental && taxTreatment === 'separate') {
+        $('#run_use_flat_tax_rate').prop('checked', true);
+    }
 }
 // Compute Statutory/Include Base Salary/Include Standing Items only matter (and only show) once
 // Incentive/Other Payment is actually selected -- a normal Payroll run always includes all three,
 // no choice to offer.
 //
-// 2026-09-11, Batch 3C item 4 sub-step 4a: the ONE place this consolidation kept a genuine
-// create-vs-edit behavior difference, because the two forms' pre-existing rules for
-// #run_use_flat_tax_rate_row's own visibility actually disagree (confirmed via the grep/read
-// comparison this sub-step started with) and unifying them is Decision 1 of this same item, not yet
-// done -- picking either rule now would be a silent behavior change on whichever side didn't already
-// have it. `isEditing` (a real, existing run open for edit) keeps BOTH prior behaviors intact:
-// Create only ever shows this row via setSupplementalPullMode()'s own taxTreatment==='separate'
-// check above; Edit has always shown it whenever incentive is selected, regardless of source
-// (2026-09-09 fix, see modals.php's own #run_use_flat_tax_rate_row history). Decision 1 will
-// collapse this branch into one shared rule -- do not add a 3rd branch here without revisiting that
-// decision first.
+// 2026-09-11, Batch 3C item 4c (Decision 1), explicit instruction: "โชว์เมื่อ run เป็น Incentive/
+// partial payment และ tax_treatment = 'separate' ไม่สนที่มา...ทั้ง Create และ Edit ใช้กฎเดียวกัน" --
+// ONE rule now, replacing the create-vs-edit branch this function used to need (that branch existed
+// only because the two forms' PRE-EXISTING rules genuinely disagreed -- see sub-step 4a's own
+// docblock here, now removed since there's nothing left to disagree about). Mirrors
+// PayrollRunModel::useFlatTaxRateAllowed() exactly -- keep the two in lockstep; see that method's own
+// docblock for why the effective treatment defaults to 'separate' when there's no concrete Origami
+// attribution value at all (a manual run, or a plain unattributed sync pull). Never trusts itself as
+// authoritative -- create()/update() reject the value server-side regardless of what this shows/hides.
 function updateComputeStatutoryVisibility() {
     const isIncentive = $('#run_purpose').val() === 'incentive';
     $('#run_compute_statutory_row, #run_include_base_salary_row, #run_include_standing_items_row, #run_include_attendance_pay_row').toggleClass('d-none', !isIncentive);
-    const isEditing = !!$('#run_id').val();
-    if (isEditing) {
-        $('#run_use_flat_tax_rate_row').toggleClass('d-none', !isIncentive);
-        if (!isIncentive) {
-            $('#run_use_flat_tax_rate').prop('checked', false);
-        }
-    } else if (!isIncentive) {
-        $('#run_use_flat_tax_rate_row').addClass('d-none');
+    const attributionTaxTreatment = $('#run_attribution_tax_treatment').val() || '';
+    const effectiveTaxTreatment = attributionTaxTreatment || 'separate';
+    const showFlatTax = isIncentive && effectiveTaxTreatment !== 'merge';
+    $('#run_use_flat_tax_rate_row').toggleClass('d-none', !showFlatTax);
+    // "ถ้าเปลี่ยน tax_treatment ไปเป็นรวมคำนวณ ให้ซ่อนและ reset use_flat_tax_rate = 0" -- hiding always
+    // resets to unchecked; this function never auto-CHECKS it on its own (only ever un-checks), so a
+    // later manual uncheck during the same session is never silently re-ticked just because this ran
+    // again (e.g. toggling run_purpose back and forth) -- pre-checking on first reveal is
+    // setSupplementalPullMode()'s own one-time job instead, see that function's own comment.
+    if (!showFlatTax) {
         $('#run_use_flat_tax_rate').prop('checked', false);
     }
 }
@@ -2850,8 +2861,13 @@ function submitRunForm(mergeTargetOverrides) {
                 // 'payrollRun:saved' listener runs its own success toast -- two separate alerts back
                 // to back, not a replacement for that toast.
                 if ((res.skipped_fields || []).length > 0) {
+                    // Prefers the i18n-translated reason (run_field_lock_reason_<reason>, the same
+                    // keys applyRunFieldLockUi()'s own lock summary already uses) over the server's
+                    // own hardcoded English message, which stays as a fallback for any reason code
+                    // without a translated key yet.
                     const items = res.skipped_fields.map(function (f) {
-                        return `<li>${escapeHtml(f.message || f.field)}</li>`;
+                        const i18nMsg = f.reason ? langData['run_field_lock_reason_' + f.reason] : null;
+                        return `<li>${escapeHtml(i18nMsg || f.message || f.field)}</li>`;
                     }).join('');
                     Swal.fire({
                         icon: 'warning',

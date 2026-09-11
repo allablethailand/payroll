@@ -3106,6 +3106,8 @@
                 <input type="hidden" id="run_id" name="id" value="">
                 <input type="hidden" id="run_sync_process_id" name="sync_process_id" value="">
                 <input type="hidden" id="run_sync_run_kind" value="">
+                <!-- Mirrors this run's sync process attribution_tax_treatment so Create/Edit compute use_flat_tax_rate visibility the same way (never trusted server-side -- see PayrollRunModel::useFlatTaxRateAllowed()). -->
+                <input type="hidden" id="run_attribution_tax_treatment" value="">
                 <div class="modal-body">
                     <!-- 2026-09-11, Batch 3C item 4 sub-step 4b: mirrors PayrollRunModel::
                          runFieldLockState()/applyFieldLocks() client-side -- see app.js's own
@@ -3269,10 +3271,13 @@
                             </div>
                         </div>
                     </div>
-                    <!-- 2026-08-31, same-day follow-up (Origami `attribution` plan's item 3) -- only
-                         ever shown for a supplemental sync process Origami attributed
-                         tax_treatment='separate' (see public/js/payroll/index.js's own
-                         setSupplementalPullMode() docblock), pre-checked when shown. Uses the
+                    <!-- 2026-09-11, Batch 3C item 4c (Decision 1) -- shown for any Incentive/partial
+                         payment run whose EFFECTIVE attribution tax treatment isn't 'merge',
+                         regardless of source (manual/off-cycle run or an Origami sync pull) -- see
+                         app.js's own updateComputeStatutoryVisibility()/PayrollRunModel::
+                         useFlatTaxRateAllowed() (server-enforced, this is client render only).
+                         Pre-checked specifically when a supplemental pull's own real attribution said
+                         'separate' -- see setSupplementalPullMode()'s own docblock in app.js. Uses the
                          Payroll Policy tab's own company-configured
                          supplemental_flat_tax_rate_percent -- if that's never been set, this flag is
                          a silent no-op and the normal average/actual PIT calculation runs instead

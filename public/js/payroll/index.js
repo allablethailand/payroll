@@ -1473,7 +1473,12 @@ $(document).on('click', '.btn-pull-sync', function () {
         $('#run_cycle_id').empty().append(new Option(matchedCycleName || ('#' + matchedCycleId), matchedCycleId, true, true)).trigger('change.select2');
     }
 
-    setSupplementalPullMode(runKind === 'supplemental', ($btn.data('tax-treatment') || '').toString());
+    // 2026-09-11, Batch 3C item 4c (Decision 1): set BEFORE calling setSupplementalPullMode() below
+    // -- that call fires #run_purpose's own 'change' -> updateComputeStatutoryVisibility() (app.js),
+    // which reads this hidden field to compute use_flat_tax_rate's own visibility.
+    const pullTaxTreatment = ($btn.data('tax-treatment') || '').toString();
+    $('#run_attribution_tax_treatment').val(pullTaxTreatment);
+    setSupplementalPullMode(runKind === 'supplemental', pullTaxTreatment);
     new bootstrap.Modal(document.getElementById('payrollRunModal')).show();
 });
 // 2026-09-11, Batch 3C item 4 sub-step 4a: the runScheduleChoice/#run_cycle_id/#run_purpose change

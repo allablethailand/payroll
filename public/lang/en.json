@@ -1562,6 +1562,7 @@
     "run_field_lock_reason_immutable": "The source of this payroll run cannot be changed after it was created.",
     "run_field_lock_reason_has_admin_work": "This field cannot be changed because this run already has admin work on it (manual employees, adjustments, verified employees, comments, or a manual recalculate). Undo that first.",
     "run_field_lock_reason_not_draft": "This field can no longer be changed once the run has left draft.",
+    "run_field_lock_reason_flat_tax_not_allowed": "Withholding at the flat rate is only available for an Incentive/partial payment run whose tax isn't being folded into another run's calculation.",
     "run_save_partial_title": "Saved, but some fields were not changed",
     "run_recalc_needed_after_calc_change": "You changed how this run is calculated -- click Recalculate to update the numbers.",
     "offcycle_run_label": "Off-schedule run",
