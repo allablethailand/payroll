@@ -148,6 +148,13 @@ class PayrollRunEmployeeBankAccountModel {
                 'employee_no' => $d['employee_no'] ?? '',
                 'name_th' => $d['name_th'] ?? '', 'surname_th' => $d['surname_th'] ?? '',
                 'name_en' => $d['name_en'] ?? '', 'surname_en' => $d['surname_en'] ?? '',
+                // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) needs these for the
+                // Bank Account Assignment modal's own header card -- already available on $d via
+                // PayrollReportDataModel::getRunDetails()'s own JOINs, just never copied through
+                // this method's own hand-picked row shape before now.
+                'profile_photo_path' => $d['profile_photo_path'] ?? null,
+                'department_name_th' => $d['department_name_th'] ?? null, 'department_name_en' => $d['department_name_en'] ?? null,
+                'position_name_th' => $d['position_name_th'] ?? null, 'position_name_en' => $d['position_name_en'] ?? null,
                 'bank_account_id' => $accId,
                 'bank_account_name' => $label['account_name'] ?? null,
                 'bank_name_th' => $label['bank_name_th'] ?? null,

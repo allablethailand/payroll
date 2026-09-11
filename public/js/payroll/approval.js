@@ -148,96 +148,16 @@ let currentTimelineRun = null;
 // apvAvatarHtmlAp/apvPersonLineHtmlAp moved to app.js's own APV_COLORS/apvBadgeHtml()/
 // apvIconHtml()/apvAvatarImgError()/apvAvatarHtml()/apvPersonLineHtml() -- confirmed byte-identical
 // across index.js/detail.js/approval.js before merging.
-function apvApproverToneAp(status) {
-    return { approved: 'done', rejected: 'rejected', need_info: 'info', pending: 'pending', not_applicable: 'muted' }[status] || 'muted';
-}
-function apvApproverLabelAp(status) {
-    const key = { approved: 'status_approved', rejected: 'status_rejected', need_info: 'state_need_info', pending: 'status_pending' }[status];
-    return (key && langData[key]) || status;
-}
-function apvApproverSubstepHtmlAp(a) {
-    const name = (currentLang === 'th' ? a.name_th : a.name_en) || a.name_th || a.name_en || a.employee_no;
-    const tone = apvApproverToneAp(a.status);
-    return `<div class="apv-substep">
-        <div class="apv-substep-head">
-            <span class="apv-substep-label">${apvAvatarHtml(name, 22, a.profile_photo_path)}${escapeHtml(name)}</span>
-            ${apvBadgeHtml(tone, apvApproverLabelAp(a.status))}
-        </div>
-        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtml(a.acted_at)}</div>` : ''}
-        ${a.note ? `<div class="apv-substep-remark">${escapeHtml(a.note)}</div>` : ''}
-    </div>`;
-}
-// 2026-09-10, Batch 3A item 2: moved to app.js's own apvApprovalStageInfo() (shared with
-// index.js/detail.js's own identical copies).
-// 2026-08-30, explicit follow-up ("ยังไม่ได้ปรับ UI...ให้แสดงหลาย step ที่ actionable พร้อมกันแบบจุดๆ ว่า
-// ตัวเองอยู่ตำแหน่งไหน และตำแหน่งก่อนหน้านั้นอนุมัติหรือยัง") -- see index.js's own equivalent comment for
-// the full reasoning (mirrored here per this file's own "duplicate, don't share across pages" convention).
-function apvStepDotToneAp(step) {
-    if (!step.unlocked) return 'apv-step-dot-locked';
-    if (step.status === 'approved') return 'apv-step-dot-approved';
-    if (step.status === 'rejected') return 'apv-step-dot-rejected';
-    return 'apv-step-dot-pending';
-}
-function apvStepDotsHtmlAp(steps) {
-    return `<div class="apv-step-dots">` + steps.map((s, i) => {
-        const lockIcon = !s.unlocked ? `<span class="apv-step-dot-lock-icon"><i class="fa-solid fa-lock"></i></span>` : '';
-        const icon = s.status === 'approved' ? '<i class="fa-solid fa-check"></i>' : (s.status === 'rejected' ? '<i class="fa-solid fa-xmark"></i>' : s.step_order);
-        const connector = i < steps.length - 1 ? `<div class="apv-step-dot-connector${s.status === 'approved' ? ' apv-step-dot-connector-done' : ''}"></div>` : '';
-        return `<div class="apv-step-dot-wrap" title="${escapeHtml(s.step_name || '')}">
-            <div class="apv-step-dot ${apvStepDotToneAp(s)}">${icon}</div>
-            ${lockIcon}
-        </div>${connector}`;
-    }).join('') + `</div>`;
-}
-function apvStepGroupHtmlAp(step) {
-    const badgeHtml = !step.unlocked
-        ? `<span class="apv-badge" style="background:#f1f5f9;color:#64748b;"><i class="fa-solid fa-lock me-1"></i>${langData['step_locked'] || 'Locked'}</span>`
-        : apvBadgeHtml(apvApproverToneAp(step.status), apvApproverLabelAp(step.status));
-    const stepLabel = (langData['step_label'] || 'Step {n}').replace('{n}', step.step_order);
-    const approversHtml = step.approvers.length
-        ? step.approvers.map(apvApproverSubstepHtmlAp).join('')
-        : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`;
-    return `<div class="apv-step-group">
-        <div class="apv-step-group-head">
-            <span class="apv-step-group-title">${escapeHtml(stepLabel)}${step.step_name ? ': ' + escapeHtml(step.step_name) : ''}</span>
-            ${badgeHtml}
-        </div>
-        <div class="apv-step-group-body">${approversHtml}</div>
-    </div>`;
-}
-function apvApprovalStageHtmlAp(run) {
-    const info = apvApprovalStageInfo(run.state);
-    const steps = (run.approval_flow && run.approval_flow.steps) || null;
-    const approvers = (run.approval_flow && run.approval_flow.approvers) || [];
-    const bodyHtml = (steps && steps.length)
-        ? apvStepDotsHtmlAp(steps) + steps.map(apvStepGroupHtmlAp).join('')
-        : (approvers.length
-            ? approvers.map(apvApproverSubstepHtmlAp).join('')
-            : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`);
-    return `
-        <div class="apv-stage">
-            <div class="apv-stage-marker">${apvIconHtml(info.tone, info.icon)}<div class="apv-stage-line"></div></div>
-            <div class="apv-stage-content">
-                <div class="apv-stage-head">
-                    <span class="apv-stage-title">${langData['approval_flow_title'] || 'Approval'}</span>
-                    ${apvBadgeHtml(info.tone, info.label)}
-                </div>
-                <div class="apv-stage-body">${bodyHtml}</div>
-            </div>
-        </div>
-    `;
-}
-// 2026-09-10, Batch 3A item 3: apvPaidStageHtmlAp()/apvCreatedStageHtmlAp() moved to app.js's own
-// apvPaidStageHtml()/apvLockedStageHtml() (the old merged Paid/Locked box split in 2) and
-// apvCreatedStageHtml() -- see renderApprovalTimelineModal() below for the new call sites.
-// 2026-09-10: moved to app.js as auditActionLabel() -- shared with detail.js/index.js's own Timeline
-// modals. Real bug fixed in the process: this file's own copy mapped 'lock' to 'action_lock' ("Lock")
-// while detail.js/index.js already used 'action_verify_run' ("Verify") for the SAME action code since
-// the 2026-08-31 rename -- the shared table now uses 'action_verify_run' everywhere, matching the
-// other 2 pages.
-// 2026-09-10: renderAuditTimelineAp() removed -- this modal's "History" section is gone (duplicated
-// the Detail page's own Action History tab, see renderApprovalTimelineModal() below); auditActionLabel()
-// itself (app.js) is untouched, still used by detail.js's own tab.
+// 2026-09-11, Batch 3C item 1, explicit instruction: "รวม render ทั้งหมดเป็น function เดียวใน app.js
+// ที่ทุกหน้าเรียก" -- apvApproverToneAp()/apvApproverLabelAp()/apvApproverSubstepHtmlAp()/
+// apvStepDotToneAp()/apvStepDotsHtmlAp()/apvStepGroupHtmlAp()/apvApprovalStageHtmlAp() (confirmed
+// byte-identical to detail.js's/index.js's own Rd/Pr copies before merging) moved to app.js's own
+// unsuffixed apvApproverTone()/apvApproverLabel()/apvApproverSubstepHtml()/apvStepDotTone()/
+// apvStepDotsHtml()/apvStepGroupHtml()/apvApprovalStageHtml() -- see renderApprovalTimelineModal()
+// below, now built entirely from app.js's own renderApprovalTimelineBody(). apvPaidStageHtmlAp()/
+// apvCreatedStageHtmlAp() had already moved the same way (see the 2026-09-10 note this replaces).
+// auditActionLabel() (app.js) is untouched, still used by detail.js's own Action History tab --
+// renderAuditTimelineAp() (this modal's own "History" section) was already removed 2026-09-10.
 /* Target status => {label langData key/fallback, icon, button color} for the "revert a DECIDED
    run to a CHOSEN other status" buttons (2026-08-24, explicit request -- see
    PayrollRunModel::revert()'s own docblock: any of these 3 except the run's CURRENT status). */
@@ -273,15 +193,8 @@ function renderApprovalTimelineModal(data) {
     // Modal Footer") -- action buttons render in the modal FOOTER now, not floated above the stage
     // spine in the body.
     $('#approvalTimelineModalActions').html(actionsHtml);
-    const lifecycle = runLifecycleSteps(data, { showDates: true });
-    $('#approvalTimelineModalBody').html(`
-        <div class="apv-timeline">
-            ${apvLockedStageHtml(data, lifecycle)}
-            ${apvPaidStageHtml(data, lifecycle)}
-            ${apvApprovalStageHtmlAp(data)}
-            ${apvCreatedStageHtml(data)}
-        </div>
-    `);
+    // 2026-09-11, Batch 3C item 1: body is now app.js's own shared renderApprovalTimelineBody().
+    $('#approvalTimelineModalBody').html(renderApprovalTimelineBody(data));
 }
 function openApprovalTimeline(id) {
     $.ajax({

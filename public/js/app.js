@@ -1639,6 +1639,28 @@ function renderEmployeeQuickViewModal(emp) {
     $('#empQuickViewStatus').text((langData['status_' + emp.employee_status]) || emp.employee_status || '-');
     $('#empQuickViewGoToProfile').attr('href', `${BASE_URL}/employees/${emp.employee_no}`);
 }
+// 2026-09-11, Batch 3C item 8, explicit instruction: shared header card for the FIRST block of
+// every modal-body opened from an employee row (Detail's Calculation Breakdown/Raw Sync Data/
+// Manage Items/Comments/Adjustments/Bank Account Assignment) -- avatar (clickable through to the
+// same employee quick-view modal every other avatar on this page already opens), name, code,
+// department, position. Field names match renderEmployeeQuickViewModal() just above (same
+// name_th/surname_th/.../profile_photo_path/department_name_th/en/position_name_th/en convention)
+// so a caller can pass a PayrollRunModel::getDetails() row straight through with no reshaping.
+// Markup/class only for now, no styling pass -- explicit instruction ("ยังไม่จัดสไตล์การ์ด" -- design
+// phase comes later): ONE class, `.emp-header-card`, on the outer wrapper only.
+function employeeHeaderCardHtml(employee) {
+    const emp = employee || {};
+    const name = (currentLang === 'th' ? `${emp.name_th || ''} ${emp.surname_th || ''}` : `${emp.name_en || emp.name_th || ''} ${emp.surname_en || emp.surname_th || ''}`).trim() || '-';
+    const department = (currentLang === 'th' ? emp.department_name_th : emp.department_name_en) || emp.department_name_th || emp.department_name_en || '-';
+    const position = (currentLang === 'th' ? emp.position_name_th : emp.position_name_en) || emp.position_name_th || emp.position_name_en || '-';
+    return `<div class="emp-header-card">
+        ${apvAvatarHtml(name, 48, emp.profile_photo_path, emp.employee_id ? { employeeId: emp.employee_id } : null)}
+        <div>
+            <div>${escapeHtml(name)}</div>
+            <div>${escapeHtml(emp.employee_no || '-')} &middot; ${escapeHtml(department)} &middot; ${escapeHtml(position)}</div>
+        </div>
+    </div>`;
+}
 // 2026-09-11, Batch 3C item 3, explicit instruction: "ห้าม trigger row click ไปหน้า Detail
 // (stopPropagation ใน handler กลางของ .emp-avatar-link ไม่ใช่แก้รายหน้า)" -- a plain jQuery
 // `$(document).on('click', '.emp-avatar-link', ...)` attaches its real native listener on
@@ -1707,6 +1729,38 @@ function apvCreatedStageHtml(run) {
 function apvStageByKey(lifecycle, key) {
     return lifecycle.steps.find(function (s) { return s.key === key; }) || { cls: '', label: '' };
 }
+// 2026-09-11, Batch 3C item 1, explicit instruction: "เพิ่ม station 'ส่งอนุมัติ' ระหว่าง สร้างรายการ
+// กับ การอนุมัติ: ใครส่ง + เมื่อไหร่ (จาก audit action submit หรือ submitted_by/submitted_at) ใช้
+// runLifecycleSteps ที่มี ไม่สร้าง mapping ใหม่" -- runLifecycleSteps() already carries this exact
+// station (its 'pending_approval' entry -- confusingly named after the STATE that follows it, but
+// its own labels/dateField are genuinely about the SUBMIT action: step_submit_pending/
+// step_submit_done/submitted_at, and runLifecycleStepDate() already reads the 'submit' audit action
+// first when present) for the HORIZONTAL mini-timeline/process-timeline -- this just gives the
+// VERTICAL apv-stage modal the same station those already show, via the exact same shared
+// `lifecycle` object every other stage here already reads from (apvStageByKey(), same pattern as
+// apvPaidStageHtml()/apvLockedStageHtml() below) -- no new date/action mapping anywhere.
+function apvSubmittedStageHtml(run, lifecycle) {
+    const step = apvStageByKey(lifecycle, 'pending_approval');
+    const done = step.cls === 'done';
+    const tone = done ? 'done' : 'muted';
+    const submitter = (currentLang === 'th' ? run.submitted_by_name_th : run.submitted_by_name_en) || run.submitted_by_name_th || run.submitted_by_name_en || '';
+    const bodyHtml = done
+        ? apvPersonLineHtml(submitter, 26, run.submitted_by_profile_photo_path, { employeeId: run.submitted_by })
+        : `<span class="apv-muted-text">${langData['waiting_to_be_submitted'] || 'Not yet submitted for approval.'}</span>`;
+    return `
+        <div class="apv-stage">
+            <div class="apv-stage-marker">${apvIconHtml(tone, done ? 'fa-paper-plane' : 'fa-flag')}<div class="apv-stage-line"></div></div>
+            <div class="apv-stage-content">
+                <div class="apv-stage-head">
+                    <span class="apv-stage-title">${langData['stage_submitted'] || 'Submitted'}</span>
+                    ${apvBadgeHtml(tone, step.label)}
+                </div>
+                ${done && step.date ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(step.date) : escapeHtml(step.date)}</div>` : ''}
+                <div class="apv-stage-body">${bodyHtml}</div>
+            </div>
+        </div>
+    `;
+}
 function apvPaidStageHtml(run, lifecycle) {
     const step = apvStageByKey(lifecycle, 'paid');
     const done = step.cls === 'done';
@@ -1748,6 +1802,110 @@ function apvLockedStageHtml(run, lifecycle) {
                 ${done && step.date ? `<div class="apv-stage-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(step.date) : escapeHtml(step.date)}</div>` : ''}
                 <div class="apv-stage-body">${bodyHtml}</div>
             </div>
+        </div>
+    `;
+}
+// 2026-09-11, Batch 3C item 1, explicit instruction: "รวม render ทั้งหมดเป็น function เดียวใน app.js
+// ที่ทุกหน้าเรียก" -- apvApproverTone{Rd,Ap,Pr}()/apvApproverLabel{Rd,Ap,Pr}()/
+// apvApproverSubstepHtml{Rd,Ap,Pr}()/apvStepDotTone{Rd,Ap,Pr}()/apvStepDotsHtml{Rd,Ap,Pr}()/
+// apvStepGroupHtml{Rd,Ap,Pr}()/apvApprovalStageHtml{Rd,Ap,Pr}() were confirmed byte-for-byte
+// identical across index.js/detail.js/approval.js (aside from the suffix itself) before merging --
+// same verification standard as apvApprovalStageInfo()/apvAvatarHtml() above, not just assumed
+// similar. Resolves the BACKLOG.md entry "Consolidate apvApproverSubstepHtml* (Rd/Pr/Ap) into
+// app.js" (Batch 2 item 2) as a side effect -- that item's own scope turned out to be a strict
+// subset of what this one needed anyway.
+function apvApproverTone(status) {
+    return { approved: 'done', rejected: 'rejected', need_info: 'info', pending: 'pending', not_applicable: 'muted' }[status] || 'muted';
+}
+function apvApproverLabel(status) {
+    const key = { approved: 'status_approved', rejected: 'status_rejected', need_info: 'state_need_info', pending: 'status_pending' }[status];
+    return (key && langData[key]) || status;
+}
+function apvApproverSubstepHtml(a) {
+    const name = (currentLang === 'th' ? a.name_th : a.name_en) || a.name_th || a.name_en || a.employee_no;
+    return `<div class="apv-substep">
+        <div class="apv-substep-head">
+            <span class="apv-substep-label">${apvAvatarHtml(name, 22, a.profile_photo_path)}${escapeHtml(name)}</span>
+            ${apvBadgeHtml(apvApproverTone(a.status), apvApproverLabel(a.status))}
+        </div>
+        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtml(a.acted_at)}</div>` : ''}
+        ${a.note ? `<div class="apv-substep-remark">${escapeHtml(a.note)}</div>` : ''}
+    </div>`;
+}
+function apvStepDotTone(step) {
+    if (!step.unlocked) return 'apv-step-dot-locked';
+    if (step.status === 'approved') return 'apv-step-dot-approved';
+    if (step.status === 'rejected') return 'apv-step-dot-rejected';
+    return 'apv-step-dot-pending';
+}
+function apvStepDotsHtml(steps) {
+    return `<div class="apv-step-dots">` + steps.map((s, i) => {
+        const lockIcon = !s.unlocked ? `<span class="apv-step-dot-lock-icon"><i class="fa-solid fa-lock"></i></span>` : '';
+        const icon = s.status === 'approved' ? '<i class="fa-solid fa-check"></i>' : (s.status === 'rejected' ? '<i class="fa-solid fa-xmark"></i>' : s.step_order);
+        const connector = i < steps.length - 1 ? `<div class="apv-step-dot-connector${s.status === 'approved' ? ' apv-step-dot-connector-done' : ''}"></div>` : '';
+        return `<div class="apv-step-dot-wrap" title="${escapeHtml(s.step_name || '')}">
+            <div class="apv-step-dot ${apvStepDotTone(s)}">${icon}</div>
+            ${lockIcon}
+        </div>${connector}`;
+    }).join('') + `</div>`;
+}
+function apvStepGroupHtml(step) {
+    const badgeHtml = !step.unlocked
+        ? `<span class="apv-badge" style="background:#f1f5f9;color:#64748b;"><i class="fa-solid fa-lock me-1"></i>${langData['step_locked'] || 'Locked'}</span>`
+        : apvBadgeHtml(apvApproverTone(step.status), apvApproverLabel(step.status));
+    const stepLabel = (langData['step_label'] || 'Step {n}').replace('{n}', step.step_order);
+    const approversHtml = step.approvers.length
+        ? step.approvers.map(apvApproverSubstepHtml).join('')
+        : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`;
+    return `<div class="apv-step-group">
+        <div class="apv-step-group-head">
+            <span class="apv-step-group-title">${escapeHtml(stepLabel)}${step.step_name ? ': ' + escapeHtml(step.step_name) : ''}</span>
+            ${badgeHtml}
+        </div>
+        <div class="apv-step-group-body">${approversHtml}</div>
+    </div>`;
+}
+function apvApprovalStageHtml(run) {
+    const info = apvApprovalStageInfo(run.state);
+    const steps = (run.approval_flow && run.approval_flow.steps) || null;
+    const approvers = (run.approval_flow && run.approval_flow.approvers) || [];
+    const bodyHtml = (steps && steps.length)
+        ? apvStepDotsHtml(steps) + steps.map(apvStepGroupHtml).join('')
+        : (approvers.length
+            ? approvers.map(apvApproverSubstepHtml).join('')
+            : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`);
+    return `
+        <div class="apv-stage">
+            <div class="apv-stage-marker">${apvIconHtml(info.tone, info.icon)}<div class="apv-stage-line"></div></div>
+            <div class="apv-stage-content">
+                <div class="apv-stage-head">
+                    <span class="apv-stage-title">${langData['approval_flow_title'] || 'Approval'}</span>
+                    ${apvBadgeHtml(info.tone, info.label)}
+                </div>
+                <div class="apv-stage-body">${bodyHtml}</div>
+            </div>
+        </div>
+    `;
+}
+// 2026-09-11, Batch 3C item 1, explicit instruction: "ให้รวม render ทั้งหมดเป็น function เดียวใน app.js
+// ที่ทุกหน้าเรียก" -- the ONE function Detail/Approval Queue/Process List's own Approval Timeline
+// modals all call for their `.apv-timeline` body now (replacing 3 near-identical inline template
+// literals). Order top-to-bottom in the DOM is newest-first (matches every other reversed-log
+// convention on this page) -- "ลำดับ station จากล่างขึ้นบน: สร้าง -> ส่งอนุมัติ -> การอนุมัติ -> จ่ายเงิน ->
+// ปิดรอบ" (bottom-to-top) means Created renders LAST (bottom, apv-stage-last) and Locked renders
+// FIRST (top) in this same string. `lifecycle` is computed ONCE by the caller (runLifecycleSteps(),
+// showDates:true) and passed through to Locked/Paid/Submitted, exactly the existing convention those
+// 3 already followed before this consolidation -- Approval/Created don't need it (their own
+// tone/date logic reads run.approval_flow/run.created_at directly, unchanged).
+function renderApprovalTimelineBody(run) {
+    const lifecycle = runLifecycleSteps(run, { showDates: true });
+    return `
+        <div class="apv-timeline">
+            ${apvLockedStageHtml(run, lifecycle)}
+            ${apvPaidStageHtml(run, lifecycle)}
+            ${apvApprovalStageHtml(run)}
+            ${apvSubmittedStageHtml(run, lifecycle)}
+            ${apvCreatedStageHtml(run)}
         </div>
     `;
 }
