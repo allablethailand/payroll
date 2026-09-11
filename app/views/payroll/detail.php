@@ -613,10 +613,17 @@
             <div class="modal-dialog modal-dialog-scrollable">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <h5 class="modal-title text-secondary"><i class="fa-solid fa-comments me-2 text-brand"></i><span data-i18n="employee_comment_timeline_title">Comments</span> - <span id="employeeCommentModalEmployeeName"></span></h5>
+                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
+                             ชื่อ modal ไม่มีชื่อพนักงานซ้ำ" -- #employeeCommentModalEmployeeName
+                             removed, the employee's name now shows once, inside the new header card
+                             in the body. -->
+                        <h5 class="modal-title text-secondary"><i class="fa-solid fa-comments me-2 text-brand"></i><span data-i18n="employee_comment_timeline_title">Comments</span></h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
+                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: employeeHeaderCardHtml()
+                             (app.js) as the first block in modal-body. -->
+                        <div id="employeeCommentHeaderCard"></div>
                         <div id="employeeCommentTimeline" class="apv-comment-list"></div>
                         <div id="employeeCommentEmpty" class="text-center text-muted small py-3 d-none" data-i18n="employee_comment_timeline_empty">No comments yet.</div>
                     </div>
@@ -877,10 +884,11 @@
                     </div>
                     <div class="modal-body">
                         <input type="hidden" id="bankAccountAssignEmployeeId">
-                        <div class="mb-2">
-                            <div class="text-muted small" data-i18n="employee">Employee</div>
-                            <div class="fw-bold" id="bankAccountAssignEmployeeName">-</div>
-                        </div>
+                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: employeeHeaderCardHtml()
+                             (app.js) as the first block in modal-body -- replaces the old plain
+                             "Employee: {name}" line (#bankAccountAssignEmployeeName), now redundant
+                             since the card shows the name too. -->
+                        <div id="bankAccountAssignHeaderCard" class="mb-2"></div>
                         <div class="mb-2">
                             <label class="form-label mb-1" data-i18n="bank_account">Bank Account</label>
                             <select class="form-select select2-remote" id="bankAccountAssignSelect" data-api="/api/payroll-cycle.bank-account.options" allow-clear="true"></select>
@@ -1437,12 +1445,17 @@
                         <h5 class="modal-title text-secondary mb-0" id="manageLinesModalLabel">
                             <i class="fa-solid fa-list-check me-1"></i><span data-i18n="manage_items_title">Manage Payment Items</span>
                         </h5>
-                        <div class="text-muted small" id="manageLinesEmployeeName"></div>
+                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
+                             ชื่อ modal ไม่มีชื่อพนักงานซ้ำ" -- #manageLinesEmployeeName removed, the
+                             employee's name now shows once, inside the new header card in the body. -->
                         <div class="text-muted small" id="manageLinesHint"></div>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <!-- 2026-09-11, Batch 3C item 8, explicit instruction: employeeHeaderCardHtml()
+                         (app.js) as the first block in modal-body. -->
+                    <div id="manageLinesHeaderCard"></div>
                     <!-- 2026-08-21, explicit request ("Modal Manage Payment Items อยากให้ปรับรูปแบบให้
                          ใช้งานง่ายขึ้น") -- was 5 sections stacked in one long scroll (heaviest on a
                          sync-based run, which showed all 5). Split into tabs, same nav-tabs/tab-content
@@ -1837,7 +1850,9 @@
                         <h5 class="modal-title text-secondary mb-0" id="runDetailBreakdownModalLabel">
                             <i class="fa-solid fa-list-check me-1"></i><span data-i18n="breakdown_title">Calculation Breakdown</span>
                         </h5>
-                        <div class="text-muted small" id="breakdownEmployeeName"></div>
+                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
+                             ชื่อ modal ไม่มีชื่อพนักงานซ้ำ" -- #breakdownEmployeeName removed, the
+                             employee's name now shows once, inside the new header card in the body. -->
                         <!-- 2026-09-06, explicit request: display Origami's opt-in TOTAL_DAYS
                              item_values entry (calendar-based day count) when present -- hidden
                              entirely for a run/employee with no data (cycle-based/off-cycle run, or
@@ -1847,7 +1862,15 @@
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body" id="breakdownModalBody"></div>
+                <div class="modal-body">
+                    <!-- 2026-09-11, Batch 3C item 8, explicit instruction: employeeHeaderCardHtml()
+                         (app.js) as the first block -- a static sibling of #breakdownModalBody (that
+                         div's own content is still fully replaced via .html() on every open, see
+                         renderBreakdownModal() in detail.js) so this card doesn't get wiped along
+                         with it. -->
+                    <div id="breakdownHeaderCard"></div>
+                    <div id="breakdownModalBody"></div>
+                </div>
                 <!-- Net Pay pinned in the footer (2026-08-20, explicit request) -- with
                      modal-dialog-scrollable above, the body scrolls internally while this stays
                      visible, so a long Earnings/Deductions/Statutory list never pushes it out of
@@ -1876,11 +1899,16 @@
                         <h5 class="modal-title text-secondary mb-0" id="empAdjustmentsModalLabel">
                             <i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="emp_adjustments_modal_title">Adjusted Items</span>
                         </h5>
-                        <div class="text-muted small" id="empAdjustmentsEmployeeName"></div>
+                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
+                             ชื่อ modal ไม่มีชื่อพนักงานซ้ำ" -- #empAdjustmentsEmployeeName removed, the
+                             employee's name now shows once, inside the new header card in the body. -->
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <!-- 2026-09-11, Batch 3C item 8, explicit instruction: employeeHeaderCardHtml()
+                         (app.js) as the first block in modal-body. -->
+                    <div id="empAdjustmentsHeaderCard"></div>
                     <div class="fw-semibold small text-uppercase text-muted mb-1" data-i18n="emp_adjustments_overrides_section">Overridden Items</div>
                     <div id="empAdjustmentsOverrideList" class="mb-3"></div>
                     <div class="fw-semibold small text-uppercase text-muted mb-1" data-i18n="emp_adjustments_manual_lines_section">Added Items</div>
@@ -1904,11 +1932,16 @@
                         <h5 class="modal-title text-secondary mb-0" id="rawSyncDataModalLabel">
                             <i class="fa-solid fa-file-code me-1"></i><span data-i18n="raw_sync_data_title">Raw Sync Data</span>
                         </h5>
-                        <div class="text-muted small" id="rawSyncDataEmployeeName"></div>
+                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
+                             ชื่อ modal ไม่มีชื่อพนักงานซ้ำ" -- #rawSyncDataEmployeeName removed, the
+                             employee's name now shows once, inside the new header card in the body. -->
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <!-- 2026-09-11, Batch 3C item 8, explicit instruction: employeeHeaderCardHtml()
+                         (app.js) as the first block in modal-body. -->
+                    <div id="rawSyncDataHeaderCard"></div>
                     <!-- 2026-08-29: the per-run tax/SSO Settings card that used to live here moved to
                          the "Tax & SSO" tab of the universal Manage Items modal (this modal's own
                          Items button, .btn-manage-manual-lines) -- it needed to be reachable for

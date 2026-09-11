@@ -329,6 +329,10 @@ class PayrollRunModel {
                     -- payroll_run_details itself, same live-employee-record source e.department_id
                     -- above already reads from).
                     dept.department_name_th, dept.department_name_en,
+                    -- 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js, the card shown
+                    -- atop every modal opened from an employee row) needs Position alongside
+                    -- Department -- same live-employee-record source, no snapshot table for it either.
+                    posi.position_name_th, posi.position_name_en,
                     COALESCE(v.is_verified, 0) AS is_verified, v.verified_at,
                     vu.name_th AS verified_by_name_th, vu.name_en AS verified_by_name_en,
                     -- 2026-08-29: comment count shown as a notification badge on the Comment button
@@ -356,6 +360,7 @@ class PayrollRunModel {
                 JOIN `employees` e ON e.id = d.employee_id
                 LEFT JOIN `master_payment_methods` pmt ON pmt.id = e.payment_method_id
                 LEFT JOIN `structure_departments` dept ON dept.id = e.department_id
+                LEFT JOIN `structure_positions` posi ON posi.id = e.position_id
                 LEFT JOIN `payroll_run_employee_verifications` v ON v.run_id = d.run_id AND v.employee_id = d.employee_id
                 LEFT JOIN `employees` vu ON vu.id = v.verified_by
                 WHERE d.run_id = :run_id

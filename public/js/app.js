@@ -1639,6 +1639,28 @@ function renderEmployeeQuickViewModal(emp) {
     $('#empQuickViewStatus').text((langData['status_' + emp.employee_status]) || emp.employee_status || '-');
     $('#empQuickViewGoToProfile').attr('href', `${BASE_URL}/employees/${emp.employee_no}`);
 }
+// 2026-09-11, Batch 3C item 8, explicit instruction: shared header card for the FIRST block of
+// every modal-body opened from an employee row (Detail's Calculation Breakdown/Raw Sync Data/
+// Manage Items/Comments/Adjustments/Bank Account Assignment) -- avatar (clickable through to the
+// same employee quick-view modal every other avatar on this page already opens), name, code,
+// department, position. Field names match renderEmployeeQuickViewModal() just above (same
+// name_th/surname_th/.../profile_photo_path/department_name_th/en/position_name_th/en convention)
+// so a caller can pass a PayrollRunModel::getDetails() row straight through with no reshaping.
+// Markup/class only for now, no styling pass -- explicit instruction ("ยังไม่จัดสไตล์การ์ด" -- design
+// phase comes later): ONE class, `.emp-header-card`, on the outer wrapper only.
+function employeeHeaderCardHtml(employee) {
+    const emp = employee || {};
+    const name = (currentLang === 'th' ? `${emp.name_th || ''} ${emp.surname_th || ''}` : `${emp.name_en || emp.name_th || ''} ${emp.surname_en || emp.surname_th || ''}`).trim() || '-';
+    const department = (currentLang === 'th' ? emp.department_name_th : emp.department_name_en) || emp.department_name_th || emp.department_name_en || '-';
+    const position = (currentLang === 'th' ? emp.position_name_th : emp.position_name_en) || emp.position_name_th || emp.position_name_en || '-';
+    return `<div class="emp-header-card">
+        ${apvAvatarHtml(name, 48, emp.profile_photo_path, emp.employee_id ? { employeeId: emp.employee_id } : null)}
+        <div>
+            <div>${escapeHtml(name)}</div>
+            <div>${escapeHtml(emp.employee_no || '-')} &middot; ${escapeHtml(department)} &middot; ${escapeHtml(position)}</div>
+        </div>
+    </div>`;
+}
 // 2026-09-11, Batch 3C item 3, explicit instruction: "ห้าม trigger row click ไปหน้า Detail
 // (stopPropagation ใน handler กลางของ .emp-avatar-link ไม่ใช่แก้รายหน้า)" -- a plain jQuery
 // `$(document).on('click', '.emp-avatar-link', ...)` attaches its real native listener on

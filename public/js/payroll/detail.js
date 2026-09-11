@@ -125,6 +125,14 @@ function employeeDisplayNameRd(row) {
 function departmentNameRd(row) {
     return (currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || row.department_name_en || '-';
 }
+// 2026-09-11, Batch 3C item 8 -- generalized out of 4 identical copies of this exact expression
+// (.btn-view-breakdown/.btn-view-emp-adjustments/.btn-raw-sync-data/.btn-manage-manual-lines' own
+// click handlers, each independently re-deriving "find this employee's row in the currently-loaded
+// table data") rather than adding a 5th copy for .btn-comment-employee -- per this project's own
+// "generalize, don't mirror-copy" convention.
+function runDetailRowByEmployeeId(employeeId) {
+    return (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(employeeId));
+}
 // 2026-09-11, Batch 3C item 7, explicit instruction: "ตัดคอลัมน์ แหล่งที่มา ออก (ย้ายไปเป็น filter pill)"
 // -- the dedicated "Source" column (2026-08-21) is retired, replaced by a filter pill above the
 // table (see registerDataSourceSearchFilter()/#rdDataSourceFilterWrap). dataSourceBadgeRd() (the old
@@ -546,8 +554,10 @@ $(document).on('click', '.btn-bank-account-edit', function () {
     const row = rdBankAccountRows.find(r => Number(r.employee_id) === Number(employeeId));
     if (!row) return;
     $('#bankAccountAssignEmployeeId').val(employeeId);
-    const name = (currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim();
-    $('#bankAccountAssignEmployeeName').text(`${row.employee_no} - ${name}`);
+    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) replaces the old plain
+    // "Employee: {name}" line -- rdBankAccountRows' own rows already carry profile_photo_path/
+    // department_name_*/position_name_* (PayrollRunEmployeeBankAccountModel::listForRun()).
+    $('#bankAccountAssignHeaderCard').html(employeeHeaderCardHtml(row));
     $('#bankAccountAssignNote').val('');
     const $select = $('#bankAccountAssignSelect').empty();
     if (row.bank_account_id) {
@@ -1738,12 +1748,14 @@ function verifyLockButtonsRd(row) {
 // now includes it per employee). Re-rendered after every add/edit/delete via loadRunDetail(), same
 // refresh pattern every other mutating action on this page already uses.
 function commentButtonRd(row) {
-    const label = `${escapeAttr(row.employee_no)} - ${escapeAttr(employeeDisplayNameRd(row))}`;
     const count = Number(row.comment_count || 0);
     const countBadge = count > 0
         ? `<span class="badge rounded-pill bg-danger ms-2">${count}</span>`
         : '';
-    return `<li><button type="button" class="dropdown-item btn-comment-employee" data-employee-id="${row.employee_id}" data-employee-label="${label}"><i class="fa-solid fa-comments text-warning me-2"></i>${langData['action_comments'] || 'Comments'}${countBadge}</button></li>`;
+    // 2026-09-11, Batch 3C item 8: data-employee-label removed -- the click handler now looks up the
+    // full row (runDetailRowByEmployeeId()) to build employeeHeaderCardHtml() instead of reading a
+    // plain name string off the button, so this attribute had no other reader left.
+    return `<li><button type="button" class="dropdown-item btn-comment-employee" data-employee-id="${row.employee_id}"><i class="fa-solid fa-comments text-warning me-2"></i>${langData['action_comments'] || 'Comments'}${countBadge}</button></li>`;
 }
 // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
 // ".btn-circle-action" section) replace the old adjacent .btn-group/border-start convention this
@@ -2043,7 +2055,10 @@ function breakdownSectionHtml(iconCls, colorCls, titleKey, titleFallback, rawRow
     `;
 }
 function renderBreakdownModal(row) {
-    $('#breakdownEmployeeName').text(`${row.employee_no} - ${employeeDisplayNameRd(row)}`);
+    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
+    // name in the modal-header (#breakdownEmployeeName removed from the view -- see this modal's
+    // own markup comment).
+    $('#breakdownHeaderCard').html(employeeHeaderCardHtml(row));
     // 2026-09-06, explicit request: Origami's opt-in TOTAL_DAYS item_values entry (calendar-based
     // day count) -- row.total_days is null (see PayrollRunModel::getDetails()'s own docblock) for
     // every run/employee with no data, never 0, so a plain truthiness-adjacent null check is
@@ -2086,7 +2101,7 @@ function renderBreakdownModal(row) {
 }
 $(document).on('click', '.btn-view-breakdown', function () {
     const employeeId = $(this).data('employee-id');
-    const rowData = (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(employeeId));
+    const rowData = runDetailRowByEmployeeId(employeeId);
     if (!rowData) return;
     renderBreakdownModal(rowData);
     new bootstrap.Modal(document.getElementById('runDetailBreakdownModal')).show();
@@ -2162,8 +2177,10 @@ function loadEmpAdjustmentsModal(employeeId) {
 }
 $(document).on('click', '.btn-view-emp-adjustments', function () {
     const employeeId = $(this).data('employee-id');
-    const rowData = (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(employeeId));
-    $('#empAdjustmentsEmployeeName').text(rowData ? `${rowData.employee_no} - ${employeeDisplayNameRd(rowData)}` : '');
+    const rowData = runDetailRowByEmployeeId(employeeId);
+    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
+    // name in the modal-header (#empAdjustmentsEmployeeName removed from the view).
+    $('#empAdjustmentsHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
     loadEmpAdjustmentsModal(employeeId);
     new bootstrap.Modal(document.getElementById('empAdjustmentsModal')).show();
 });
@@ -2319,8 +2336,10 @@ let rawSyncDataEmployeeId = null;
 // again, matching its original single purpose (a sync-only row's raw Origami payload).
 $(document).on('click', '.btn-raw-sync-data', function () {
     rawSyncDataEmployeeId = $(this).data('employee-id');
-    const rowData = (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(rawSyncDataEmployeeId));
-    $('#rawSyncDataEmployeeName').text(rowData ? `${rowData.employee_no} - ${employeeDisplayNameRd(rowData)}` : '');
+    const rowData = runDetailRowByEmployeeId(rawSyncDataEmployeeId);
+    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
+    // name in the modal-header (#rawSyncDataEmployeeName removed from the view).
+    $('#rawSyncDataHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.raw-sync-data-for-employee`,
         method: 'GET',
@@ -3034,7 +3053,10 @@ function commentsReadOnlyRd() {
 }
 $(document).on('click', '.btn-comment-employee', function () {
     employeeCommentEmployeeId = $(this).data('employee-id');
-    $('#employeeCommentModalEmployeeName').text($(this).data('employee-label') || '');
+    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
+    // name in the modal-header (#employeeCommentModalEmployeeName removed from the view).
+    const rowData = runDetailRowByEmployeeId(employeeCommentEmployeeId);
+    $('#employeeCommentHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
     resetEmployeeCommentForm();
     const readOnly = commentsReadOnlyRd();
     $('#employeeCommentFormArea, #btnAddEmployeeComment').toggleClass('d-none', readOnly);
@@ -4140,8 +4162,10 @@ $(document).on('click', '#manualLineModeToggle button', function () {
 });
 $(document).on('click', '.btn-manage-manual-lines', function () {
     manageLinesEmployeeId = $(this).data('employee-id');
-    const rowData = (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(manageLinesEmployeeId));
-    $('#manageLinesEmployeeName').text(rowData ? `${rowData.employee_no} - ${employeeDisplayNameRd(rowData)}` : '');
+    const rowData = runDetailRowByEmployeeId(manageLinesEmployeeId);
+    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
+    // name in the modal-header (#manageLinesEmployeeName removed from the view).
+    $('#manageLinesHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
     const isIncentive = currentRun && currentRun.run_purpose === 'incentive';
     // 2026-08-27: an incentive run's manual lines are no longer necessarily the ONLY thing
     // counted -- once include_base_salary/include_standing_items is on for this run (see
