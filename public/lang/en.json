@@ -1349,6 +1349,7 @@
     "sr_promote_item_btn": "Promote to System Default",
     "sr_promote_override_btn": "Promote to System Default",
     "add_bracket_version": "Add Rate Version",
+    "sr_edit_or_manage_rates": "Edit / Manage Rates",
     "sr_calc_method_locked_hint": "Can't be changed after the item has rate history -- delete and recreate if genuinely needed.",
     "sr_promote_item_confirm_title": "Promote this item to system default?",
     "sr_promote_item_confirm_message": "This item becomes visible to EVERY company in this country from now on. This cannot be undone.",
