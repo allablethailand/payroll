@@ -254,6 +254,11 @@ class PayrollRunModel {
                     creator.name_th AS created_by_name_th, creator.name_en AS created_by_name_en,
                     creator.profile_photo_path AS created_by_profile_photo_path,
                     submitter.name_th AS submitted_by_name_th, submitter.name_en AS submitted_by_name_en,
+                    -- 2026-09-11, Batch 3C item 1: the Approval Timeline's new Submitted station
+                    -- (apvSubmittedStageHtml(), between Created and Approval) needs who+photo, same
+                    -- as creator/payer/locker already have -- submitted_by never had a photo joined
+                    -- before since nothing rendered an avatar for it until now.
+                    submitter.profile_photo_path AS submitted_by_profile_photo_path,
                     -- 2026-09-10, Batch 3A item 3: the Approval Timeline modal's own Paid/Locked
                     -- stations need who+photo, same as creator/approvers already have -- paid_by/
                     -- locked_by were never JOINed before (the old merged Paid/Locked stage box only
@@ -293,7 +298,19 @@ class PayrollRunModel {
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row ?: null;
+        if (!$row) {
+            return null;
+        }
+        // 2026-09-11, Batch 3C item 4, explicit instruction: "hasAdminWork คำนวณฝั่ง server ส่งมากับ
+        // get() ใช้ทั้ง render และ validate" -- every caller of get() (this method is the one shared
+        // read path nearly everything else in this class already goes through) gets the SAME
+        // has_admin_work/admin_work_summary this run's own runFieldLockState() needs, computed once
+        // here rather than re-derived per caller. See adminWorkSummary()'s own docblock for the
+        // itemized breakdown this flattens onto the row.
+        $adminWork = $this->adminWorkSummary($row);
+        $row['has_admin_work'] = $adminWork['has_admin_work'];
+        $row['admin_work_summary'] = $adminWork;
+        return $row;
     }
 
     public function getDetails(int $runId, int $compId): array {
@@ -324,6 +341,10 @@ class PayrollRunModel {
                     -- payroll_run_details itself, same live-employee-record source e.department_id
                     -- above already reads from).
                     dept.department_name_th, dept.department_name_en,
+                    -- 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js, the card shown
+                    -- atop every modal opened from an employee row) needs Position alongside
+                    -- Department -- same live-employee-record source, no snapshot table for it either.
+                    posi.position_name_th, posi.position_name_en,
                     COALESCE(v.is_verified, 0) AS is_verified, v.verified_at,
                     vu.name_th AS verified_by_name_th, vu.name_en AS verified_by_name_en,
                     -- 2026-08-29: comment count shown as a notification badge on the Comment button
@@ -351,6 +372,7 @@ class PayrollRunModel {
                 JOIN `employees` e ON e.id = d.employee_id
                 LEFT JOIN `master_payment_methods` pmt ON pmt.id = e.payment_method_id
                 LEFT JOIN `structure_departments` dept ON dept.id = e.department_id
+                LEFT JOIN `structure_positions` posi ON posi.id = e.position_id
                 LEFT JOIN `payroll_run_employee_verifications` v ON v.run_id = d.run_id AND v.employee_id = d.employee_id
                 LEFT JOIN `employees` vu ON vu.id = v.verified_by
                 WHERE d.run_id = :run_id
@@ -1952,6 +1974,263 @@ class PayrollRunModel {
         return $result;
     }
 
+    /**
+     * 2026-09-11, Batch 3C item 4, follow-up correction: the FIRST version of this rule locked
+     * cycle_id/period/run_purpose/merge_target the moment `employee_count > 0` -- but a sync-linked
+     * run's own employee_count is already > 0 the instant it's CREATED (create() auto-recalculates
+     * synchronously for any pull, see that method's own comment), which would have locked a
+     * supplemental pull's run_purpose/flags before the admin ever got a chance to adjust them on
+     * Edit -- directly breaking that already-shipped, already-tested capability. Explicit correction:
+     * lock is now keyed on whether the run has any genuine ADMIN-DONE work that a locked-field change
+     * would silently invalidate, not the raw employee count (an auto-populated roster with nothing
+     * else touched is NOT "admin work" -- changing cycle_id/period/run_purpose there is allowed
+     * through, same as it always was before this item; NOTE update() itself does NOT re-run
+     * recalculate() afterward -- the run's payroll_run_details keep reflecting whatever was last
+     * calculated, under the OLD cycle_id/period, until the admin explicitly hits Recalculate again.
+     * This is a known, pre-existing gap this item did not introduce and was not asked to close).
+     *
+     * "Admin work" (`hasAdminWork()` below) is true when ANY of: a manually-joined employee, an
+     * ad-hoc manual line, a line override, an attendance override, a tax/SSO exemption, at least one
+     * VERIFIED employee, at least one employee comment, or a genuinely admin-triggered Recalculate
+     * (excluding the ONE automatic recalculate create() itself fires for a sync pull -- see that
+     * method's own docblock) is present for this run. Computed once by get() and attached to the run
+     * row it returns (`has_admin_work` + the itemized `admin_work_summary` breakdown the shared
+     * form's own helper text reads from) so this function and its JS mirror never need a second
+     * round trip to render or validate against it.
+     */
+    public function hasAdminWork(array $run): bool {
+        $runId = (int)($run['id'] ?? 0);
+        if ($runId <= 0) {
+            return false;
+        }
+        $existsChecks = [
+            "SELECT 1 FROM `payroll_run_manual_employees` WHERE run_id = :run_id LIMIT 1",
+            "SELECT 1 FROM `payroll_run_manual_lines` WHERE run_id = :run_id LIMIT 1",
+            "SELECT 1 FROM `payroll_run_line_overrides` WHERE run_id = :run_id LIMIT 1",
+            "SELECT 1 FROM `payroll_run_sync_item_overrides` WHERE run_id = :run_id LIMIT 1",
+            "SELECT 1 FROM `payroll_run_employee_exemptions` WHERE run_id = :run_id AND (tax_calculate_override != 'inherit' OR sso_calculate_override != 'inherit') LIMIT 1",
+            "SELECT 1 FROM `payroll_run_employee_verifications` WHERE run_id = :run_id AND is_verified = 1 LIMIT 1",
+            "SELECT 1 FROM `payroll_run_employee_comments` WHERE run_id = :run_id LIMIT 1",
+        ];
+        foreach ($existsChecks as $sql) {
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([':run_id' => $runId]);
+            if ($stmt->fetch()) {
+                return true;
+            }
+        }
+        return $this->adminRecalculateCount($run) > 0;
+    }
+
+    /** How many of this run's own 'recalculate' audit-log entries were genuinely admin-triggered --
+     *  excludes the single automatic one create() fires synchronously for a sync-linked pull (a
+     *  sync-linked run only counts once recalculated a 2ND time; a manual/off-cycle run, never
+     *  auto-recalculated at creation, counts from its very first). Shared by hasAdminWork() (just
+     *  needs >0) and adminWorkSummary() below (surfaces the real count for the helper text). */
+    private function adminRecalculateCount(array $run): int {
+        $runId = (int)($run['id'] ?? 0);
+        $stmt = $this->db->prepare("SELECT COUNT(*) FROM `payroll_run_audit_logs` WHERE run_id = :run_id AND action = 'recalculate'");
+        $stmt->execute([':run_id' => $runId]);
+        $totalRecalcCount = (int)$stmt->fetchColumn();
+        $autoRecalcAtCreate = !empty($run['sync_process_id']) ? 1 : 0;
+        return max(0, $totalRecalcCount - $autoRecalcAtCreate);
+    }
+
+    /**
+     * Itemized breakdown behind hasAdminWork() above -- explicit instruction: "helper บอกว่าติดเพราะ
+     * อะไร เช่น 'มีรายการที่ปรับด้วยมือ 3 รายการ / ตรวจสอบแล้ว 5 คน'". `adjusted_count` groups manual
+     * lines + line overrides + attendance overrides + exemptions together (all read as "an
+     * adjustment was made" from the admin's own point of view, same grouping the Detail page's own
+     * "Adjusted N" row badge already uses) -- verified/comment/manual-employee/recalculate counts
+     * stay their own distinct numbers since each reads as its own distinct sentence.
+     */
+    public function adminWorkSummary(array $run): array {
+        $runId = (int)($run['id'] ?? 0);
+        $count = function (string $sql) use ($runId): int {
+            $stmt = $this->db->prepare($sql);
+            $stmt->execute([':run_id' => $runId]);
+            return (int)$stmt->fetchColumn();
+        };
+        $manualEmployeeCount = $runId > 0 ? $count("SELECT COUNT(*) FROM `payroll_run_manual_employees` WHERE run_id = :run_id") : 0;
+        $manualLineCount = $runId > 0 ? $count("SELECT COUNT(*) FROM `payroll_run_manual_lines` WHERE run_id = :run_id") : 0;
+        $lineOverrideCount = $runId > 0 ? $count("SELECT COUNT(*) FROM `payroll_run_line_overrides` WHERE run_id = :run_id") : 0;
+        $attendanceOverrideCount = $runId > 0 ? $count("SELECT COUNT(*) FROM `payroll_run_sync_item_overrides` WHERE run_id = :run_id") : 0;
+        $exemptionCount = $runId > 0 ? $count("SELECT COUNT(*) FROM `payroll_run_employee_exemptions` WHERE run_id = :run_id AND (tax_calculate_override != 'inherit' OR sso_calculate_override != 'inherit')") : 0;
+        $verifiedCount = $runId > 0 ? $count("SELECT COUNT(*) FROM `payroll_run_employee_verifications` WHERE run_id = :run_id AND is_verified = 1") : 0;
+        $commentCount = $runId > 0 ? $count("SELECT COUNT(*) FROM `payroll_run_employee_comments` WHERE run_id = :run_id") : 0;
+        $adminRecalcCount = $runId > 0 ? $this->adminRecalculateCount($run) : 0;
+        $adjustedCount = $manualLineCount + $lineOverrideCount + $attendanceOverrideCount + $exemptionCount;
+        return [
+            'has_admin_work' => ($manualEmployeeCount + $adjustedCount + $verifiedCount + $commentCount + $adminRecalcCount) > 0,
+            'manual_employee_count' => $manualEmployeeCount,
+            'adjusted_count' => $adjustedCount,
+            'verified_count' => $verifiedCount,
+            'comment_count' => $commentCount,
+            'admin_recalc_count' => $adminRecalcCount,
+        ];
+    }
+
+    /**
+     * 2026-09-11, Batch 3C item 4, explicit instruction: "field ที่แก้ไม่ได้หลังสร้าง...ให้ disabled
+     * พร้อม helper...ทำเป็น function เดียว runFieldLockState(run) คืน map field -> {locked, reason}
+     * ใช้ทั้ง render และ validate ฝั่ง server" -- ONE function, used by (a) the shared Create/Edit
+     * form's own client-side render (app.js's own byte-identical JS mirror of this exact method --
+     * keep the two in lockstep any time this rule changes) to disable fields + show the matching
+     * helper text, and (b) applyFieldLocks() below, the actual server-side enforcement (never trust
+     * the client's own `disabled` attribute alone).
+     *
+     * Rule (the user's own exact state matrix, explicit instruction, `has_admin_work` correction):
+     *  - `source` (how this run originated -- manual vs a specific Origami sync process): locked
+     *    UNCONDITIONALLY, always, the instant a run exists. Nothing ever changes it after creation.
+     *  - `cycle_id`/`period_dates`/`run_purpose` (+ its 4 dependent calc-flag checkboxes)/
+     *    `merge_target`: locked once EITHER the run has left draft, OR it's still draft but
+     *    `$run['has_admin_work']` is true (see hasAdminWork()'s own docblock -- NOT a raw
+     *    employee_count check, which would lock a freshly-auto-populated sync pull immediately).
+     *    Editable again only once the run is draft AND that admin work is genuinely undone.
+     *  - `run_name`/`payment_date`/`use_flat_tax_rate`: locked only once the run has left draft --
+     *    freely editable throughout draft regardless of admin work (renaming a run or nudging its
+     *    payment date doesn't invalidate anything already calculated).
+     *  - `notes`: never locked, at any state -- the ONE field still editable even after a run has
+     *    left draft entirely (a genuine capability expansion this item adds -- update() used to
+     *    refuse ANY edit at all once state left draft; see that method's own docblock).
+     */
+    public function runFieldLockState(array $run): array {
+        $isDraft = ($run['state'] ?? null) === 'draft';
+        $hasAdminWork = !empty($run['has_admin_work']);
+        $lockedNotDraft = !$isDraft;
+        $lockedAdminWork = $isDraft && $hasAdminWork;
+        $tier2Locked = $lockedNotDraft || $lockedAdminWork;
+        $tier2Reason = $lockedNotDraft ? 'not_draft' : ($lockedAdminWork ? 'has_admin_work' : null);
+        $tier3Locked = $lockedNotDraft;
+        $tier3Reason = $lockedNotDraft ? 'not_draft' : null;
+        return [
+            'source' => ['locked' => true, 'reason' => 'immutable'],
+            'cycle_id' => ['locked' => $tier2Locked, 'reason' => $tier2Reason],
+            'period_dates' => ['locked' => $tier2Locked, 'reason' => $tier2Reason],
+            'run_purpose' => ['locked' => $tier2Locked, 'reason' => $tier2Reason],
+            'merge_target' => ['locked' => $tier2Locked, 'reason' => $tier2Reason],
+            'run_name' => ['locked' => $tier3Locked, 'reason' => $tier3Reason],
+            'payment_date' => ['locked' => $tier3Locked, 'reason' => $tier3Reason],
+            'use_flat_tax_rate' => ['locked' => $tier3Locked, 'reason' => $tier3Reason],
+            'notes' => ['locked' => false, 'reason' => null],
+        ];
+    }
+
+    /**
+     * Server-side enforcement of runFieldLockState() above -- never trusts the client's own
+     * `disabled` attribute alone (explicit instruction: "server ต้องปฏิเสธถ้าส่ง field ที่ lock มา
+     * ไม่พึ่ง disabled ฝั่ง client อย่างเดียว").
+     *
+     * 2026-09-11 correction: the FIRST version of this method REJECTED THE WHOLE SAVE (returned an
+     * error, nothing written) the instant any one locked field was attempted-changed. Changed to
+     * SKIP just that field group instead -- reverts $data (by reference) back to the run's own
+     * current stored value for that group, so the rest of update() below treats it as untouched,
+     * and every OTHER, non-locked change in the same request still applies normally. Reason: the
+     * shared Create/Edit form's own client-side JS mirror of runFieldLockState() (which would
+     * disable a locked field before it can ever be included in what's submitted) does not exist yet
+     * -- until it does, EVERY save from that form resends every field regardless of lock state, so a
+     * hard whole-request rejection would make the form unusable the instant a run has any admin work
+     * on it (every single save, even one only touching `notes`, would be refused outright because the
+     * unchanged-but-still-present locked fields would... actually wouldn't trigger this at all, since
+     * an UNCHANGED value never counts as a violation below -- but a form that doesn't yet know which
+     * fields are locked also doesn't know to leave them exactly byte-identical, e.g. a date field
+     * round-tripped through a different string format. Skip-and-report is the safer default until
+     * the client-side lock state exists to prevent the attempt in the first place).
+     *
+     * Compares each submitted field against $run's OWN current stored value, so resubmitting a
+     * field's UNCHANGED value (the shared form always sends every field, whether or not the admin
+     * actually touched it) is never reported as skipped -- only a GENUINE attempted change to a
+     * locked field is reverted and reported. Returns [] when nothing locked was actually changed, or
+     * a list of {field, reason, message} for every locked group where a genuine change was reverted.
+     */
+    private function applyFieldLocks(array $run, array &$data, array $lockState): array {
+        $reasonMessages = [
+            'immutable' => 'The source of this payroll run cannot be changed after it was created.',
+            'has_admin_work' => 'This field cannot be changed because this run already has admin work on it (manual employees, adjustments, verified employees, comments, or a manual recalculate). Undo that first.',
+            'not_draft' => 'This field can no longer be changed once the run has left draft.',
+        ];
+        $skipped = [];
+        $skip = function (string $group) use ($lockState, $reasonMessages, &$skipped): void {
+            $reason = $lockState[$group]['reason'] ?? null;
+            $skipped[] = ['field' => $group, 'reason' => $reason, 'message' => $reasonMessages[$reason] ?? 'This field can no longer be changed.'];
+        };
+        if (!empty($lockState['cycle_id']['locked']) && array_key_exists('cycle_id', $data)) {
+            $newCycleId = !empty($data['cycle_id']) ? (int)$data['cycle_id'] : null;
+            $curCycleId = $run['cycle_id'] !== null ? (int)$run['cycle_id'] : null;
+            if ($newCycleId !== $curCycleId) {
+                $skip('cycle_id');
+                unset($data['cycle_id']);
+            }
+        }
+        if (!empty($lockState['period_dates']['locked'])) {
+            $changed = (!empty($data['period_start_date']) && (string)$data['period_start_date'] !== (string)$run['period_start_date'])
+                || (!empty($data['period_end_date']) && (string)$data['period_end_date'] !== (string)$run['period_end_date']);
+            if ($changed) {
+                $skip('period_dates');
+                unset($data['period_start_date'], $data['period_end_date']);
+            }
+        }
+        if (!empty($lockState['run_purpose']['locked'])) {
+            $changed = false;
+            if (array_key_exists('run_purpose', $data)) {
+                $newPurpose = (string)($data['run_purpose'] ?? '') === 'incentive' ? 'incentive' : 'payroll';
+                if ($newPurpose !== $run['run_purpose']) {
+                    $changed = true;
+                }
+            }
+            foreach (['compute_statutory', 'include_base_salary', 'include_standing_items', 'include_attendance_pay'] as $flag) {
+                if (array_key_exists($flag, $data) && (!empty($data[$flag]) ? 1 : 0) !== (int)$run[$flag]) {
+                    $changed = true;
+                }
+            }
+            if ($changed) {
+                $skip('run_purpose');
+                unset($data['run_purpose'], $data['compute_statutory'], $data['include_base_salary'], $data['include_standing_items'], $data['include_attendance_pay']);
+            }
+        }
+        if (!empty($lockState['merge_target']['locked'])) {
+            $changed = false;
+            if (array_key_exists('merge_target_run_id', $data)) {
+                $newId = !empty($data['merge_target_run_id']) ? (int)$data['merge_target_run_id'] : null;
+                $curId = $run['merge_target_run_id'] !== null ? (int)$run['merge_target_run_id'] : null;
+                if ($newId !== $curId) {
+                    $changed = true;
+                }
+            }
+            if (array_key_exists('merge_target_cycle_id', $data)) {
+                $newId = !empty($data['merge_target_cycle_id']) ? (int)$data['merge_target_cycle_id'] : null;
+                $curId = $run['merge_target_cycle_id'] !== null ? (int)$run['merge_target_cycle_id'] : null;
+                if ($newId !== $curId) {
+                    $changed = true;
+                }
+            }
+            if (!empty($data['merge_target_period_start_date']) && (string)$data['merge_target_period_start_date'] !== (string)$run['merge_target_period_start_date']) {
+                $changed = true;
+            }
+            if (!empty($data['merge_target_period_end_date']) && (string)$data['merge_target_period_end_date'] !== (string)$run['merge_target_period_end_date']) {
+                $changed = true;
+            }
+            if ($changed) {
+                $skip('merge_target');
+                unset($data['merge_target_run_id'], $data['merge_target_cycle_id'], $data['merge_target_period_start_date'], $data['merge_target_period_end_date']);
+            }
+        }
+        if (!empty($lockState['run_name']['locked']) && !empty($data['run_name']) && trim((string)$data['run_name']) !== (string)$run['run_name']) {
+            $skip('run_name');
+            unset($data['run_name']);
+        }
+        if (!empty($lockState['payment_date']['locked']) && !empty($data['payment_date']) && (string)$data['payment_date'] !== (string)$run['payment_date']) {
+            $skip('payment_date');
+            unset($data['payment_date']);
+        }
+        if (!empty($lockState['use_flat_tax_rate']['locked']) && array_key_exists('use_flat_tax_rate', $data)
+            && (!empty($data['use_flat_tax_rate']) ? 1 : 0) !== (int)($run['use_flat_tax_rate'] ?? 0)) {
+            $skip('use_flat_tax_rate');
+            unset($data['use_flat_tax_rate']);
+        }
+        return $skipped;
+    }
+
     public function update(int $id, int $compId, array $data, int $userId, bool $isAdmin): array {
         if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
@@ -1960,9 +2239,33 @@ class PayrollRunModel {
         if (!$run) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
+        // 2026-09-11, Batch 3C item 4, explicit instruction -- REPLACES the old blanket
+        // "if ($run['state'] !== 'draft') return error" gate below with per-field locking
+        // (runFieldLockState()/applyFieldLocks() above). This is also what SUPERSEDES cycle_id's
+        // own 2026-09-01 "always enabled regardless of admin work, force-recalculate for the one
+        // risky toggle" decision -- that decision's own reasoning no longer applies once the run has
+        // genuine admin work on it (locks cycle_id/period/run_purpose/merge_target outright), so the
+        // forced-recalculate safety net it introduced is dead code below this point and removed
+        // rather than left unreachable.
+        //
+        // applyFieldLocks() SKIPS (reverts to the run's current value) any locked field that was
+        // genuinely attempted-changed, rather than rejecting the whole save -- see that method's own
+        // docblock for why. $skippedFields is threaded through to every success return below so the
+        // caller can tell the admin which of their changes, if any, didn't apply.
+        $lockState = $this->runFieldLockState($run);
+        $skippedFields = $this->applyFieldLocks($run, $data, $lockState);
+
+        // Once a run has left draft, only `notes` can still change (every other field's lock was
+        // already reverted above if a change to it was attempted) -- a genuine capability
+        // expansion this item adds; update() used to refuse ANY edit at all past draft.
         if ($run['state'] !== 'draft') {
-            return ['status' => false, 'message' => 'Only a draft payroll run can be edited.'];
+            $notes = array_key_exists('notes', $data) ? (trim((string)$data['notes']) ?: null) : $run['notes'];
+            $stmt = $this->db->prepare("UPDATE `payroll_runs` SET notes = :notes, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
+            $stmt->execute([':notes' => $notes, ':updated_by' => $userId, ':id' => $id]);
+            $this->logAudit($id, $run['state'], $run['state'], 'update', $userId);
+            return ['status' => true, 'message' => 'Updated successfully.', 'skipped_fields' => $skippedFields];
         }
+
         $runName = !empty($data['run_name']) ? trim((string)$data['run_name']) : $run['run_name'];
         $start = !empty($data['period_start_date']) ? (string)$data['period_start_date'] : $run['period_start_date'];
         $end = !empty($data['period_end_date']) ? (string)$data['period_end_date'] : $run['period_end_date'];
@@ -1972,55 +2275,16 @@ class PayrollRunModel {
         }
         $notes = array_key_exists('notes', $data) ? (trim((string)$data['notes']) ?: null) : $run['notes'];
 
-        // 2026-09-01, explicit request: "ในการดึงข้อมูลมาทำรอบที่ส่งมาจาก Origami รวมถึงการสร้างเอง ให้
-        // สามารถเลือกอ้างอิงรอบได้เหมือนตอน Origami และในหน้า Detail ก็สามารถแก้ไขเพิ่มได้ Form เหมือนหน้า
-        // สร้างเลยครับ" -- create() has always let cycle_id be picked, but update() never allowed
-        // changing it afterward at all. Confirmed via AskUserQuestion: cycle_id is NOT a soft
-        // reference label -- recalculate()'s own cycle-based eligibility query keys off it (which
-        // employees are automatically pulled into this run), so changing it is a REAL, calculation-
-        // affecting edit, not cosmetic.
-        //
-        // 2026-09-01, same-day follow-up (explicit push-back: "ก็น่าจะเพิ่มให้สามารถตั้งค่าได้เหมือนกัน
-        // ...เหตุผลอะไรบ้างในหน้า Edit ที่ไม่สามารถแก้ไขได้ ควรเปิดให้แก้ไขได้") -- re-examined
-        // recalculate()'s own 3 eligibility branches (see its own big comment starting "Pulled from
-        // Pending Pull") and found the FIRST version's blanket employee_count===0 gate was broader
-        // than the real risk actually requires:
-        //   - A sync-linked run's eligibility branch (checked FIRST, before cycle_id is even
-        //     considered) never reads cycle_id at all -- changing it there can't affect who gets
-        //     pulled in, full stop. Free to change regardless of employee_count.
-        //   - Switching between two DIFFERENT real cycles on an already cycle-linked run stays
-        //     within the exact same eligibility branch (same query shape, just a different
-        //     :cycle_id parameter) -- no different in kind from editing period_start/period_end,
-        //     which this same method has ALWAYS allowed with zero gating despite having the exact
-        //     same "changes who's eligible on the next Recalculate" effect. Free to change
-        //     regardless of employee_count, for consistency with that existing precedent.
-        //   - The ONE genuinely risky case: a non-sync run flipping cycle_id between null
-        //     (off-cycle) and a real id (cycle-linked). recalculate()'s off-cycle branch reads
-        //     ONLY payroll_run_manual_employees; its cycle-based branch reads ONLY the date-range/
-        //     employees.cycle_id match and never joins payroll_run_manual_employees at all -- so
-        //     flipping that toggle on a run that already has anyone in it (auto-included OR
-        //     manually joined) can leave STALE data behind if nobody remembers to click
-        //     Recalculate afterward: submit()'s own safety net (assertCalculationClean() + an
-        //     employee_count>0 check) never actually detects "the employee list no longer matches
-        //     this run's current cycle_id" -- every existing row would still read calc_status=
-        //     'calculated' from before the toggle. Rather than hard-blocking this transition (the
-        //     first version here did, before this same-day follow-up), this save now forces one
-        //     real recalculate() itself immediately after, in the SAME transaction, whenever this
-        //     specific toggle happens on a run that already has employees -- same "auto-recalculate"
-        //     precedent PayrollRunModel::setAutoRecalculate() already established elsewhere on this
-        //     page, applied unconditionally here (not gated on that per-run opt-in flag) because
-        //     THIS transition can never be allowed to save without also becoming internally
-        //     consistent -- there is no safe "edit now, remember to recalculate later" path for it
-        //     the way there is for every other field this method touches.
-        $forceRecalculateAfterSave = false;
+        // A genuinely NEW cycle_id value is only ever reachable here when cycle_id isn't locked
+        // (applyFieldLocks() above already reverted $data['cycle_id'] to $run['cycle_id'] otherwise,
+        // so array_key_exists() below is either absent or already matches $cycleId) -- the
+        // active-cycle validation and "a regular sync-linked run can never go cycle-less" rule below
+        // are unrelated to that lock (they apply regardless of admin-work state) and stay exactly as
+        // create() itself enforces.
         $cycleId = $run['cycle_id'] !== null ? (int)$run['cycle_id'] : null;
         if (array_key_exists('cycle_id', $data)) {
             $newCycleId = !empty($data['cycle_id']) ? (int)$data['cycle_id'] : null;
             if ($newCycleId !== $cycleId) {
-                $isNonSyncOffCycleToggle = $run['sync_process_id'] === null && ($newCycleId === null) !== ($cycleId === null);
-                if ($isNonSyncOffCycleToggle && (int)($run['employee_count'] ?? 0) > 0) {
-                    $forceRecalculateAfterSave = true;
-                }
                 if ($newCycleId !== null) {
                     $stmtCycle = $this->db->prepare("SELECT id FROM `payroll_cycles` WHERE id = :id AND comp_id = :comp_id AND status = 'active' AND deleted_at IS NULL");
                     $stmtCycle->execute([':id' => $newCycleId, ':comp_id' => $compId]);
@@ -2152,22 +2416,11 @@ class PayrollRunModel {
             ':updated_by' => $userId, ':id' => $id,
         ]);
         $this->logAudit($id, 'draft', 'draft', 'update', $userId);
-        if ($forceRecalculateAfterSave) {
-            // Same "own transaction if not already inside one" pattern this whole file uses
-            // everywhere (runSettingsSave() already returns recalculate()'s own result the same
-            // way) -- runs inside the SAME transaction as the cycle_id UPDATE above, so
-            // recalculate()'s own fresh $this->get($id, $compId) sees the just-saved new cycle_id,
-            // not a stale pre-update read.
-            $recalcResult = $this->recalculate($id, $compId, $userId, $isAdmin);
-            if (empty($recalcResult['status'])) {
-                // Extremely unlikely (recalculate() only fails on permission/state, both already
-                // checked above in this same method) -- surfaced as-is rather than silently
-                // swallowed, since a failure here means the save itself is NOT actually consistent.
-                return $recalcResult;
-            }
-            return ['status' => true, 'message' => 'Updated and recalculated successfully.', 'employee_count' => $recalcResult['employee_count'] ?? null];
-        }
-        return ['status' => true, 'message' => 'Updated successfully.'];
+        // 2026-09-11, Batch 3C item 4: the forced-recalculate-after-save branch that used to live
+        // here (for the one non-sync off-cycle<->cycle-linked toggle allowed with employees already
+        // present) is gone -- applyFieldLocks() above now reverts that whole scenario outright instead
+        // (cycle_id is locked while the run has admin work), so it's never reachable.
+        return ['status' => true, 'message' => 'Updated successfully.', 'skipped_fields' => $skippedFields];
     }
 
     // 2026-08-28, explicit request: "Process ที่ Cancel ให้สามารถลบข้อมูลออกไปได้" -- a cancelled run

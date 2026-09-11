@@ -125,6 +125,14 @@ function employeeDisplayNameRd(row) {
 function departmentNameRd(row) {
     return (currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || row.department_name_en || '-';
 }
+// 2026-09-11, Batch 3C item 8 -- generalized out of 4 identical copies of this exact expression
+// (.btn-view-breakdown/.btn-view-emp-adjustments/.btn-raw-sync-data/.btn-manage-manual-lines' own
+// click handlers, each independently re-deriving "find this employee's row in the currently-loaded
+// table data") rather than adding a 5th copy for .btn-comment-employee -- per this project's own
+// "generalize, don't mirror-copy" convention.
+function runDetailRowByEmployeeId(employeeId) {
+    return (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(employeeId));
+}
 // 2026-09-11, Batch 3C item 7, explicit instruction: "ตัดคอลัมน์ แหล่งที่มา ออก (ย้ายไปเป็น filter pill)"
 // -- the dedicated "Source" column (2026-08-21) is retired, replaced by a filter pill above the
 // table (see registerDataSourceSearchFilter()/#rdDataSourceFilterWrap). dataSourceBadgeRd() (the old
@@ -546,8 +554,10 @@ $(document).on('click', '.btn-bank-account-edit', function () {
     const row = rdBankAccountRows.find(r => Number(r.employee_id) === Number(employeeId));
     if (!row) return;
     $('#bankAccountAssignEmployeeId').val(employeeId);
-    const name = (currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim();
-    $('#bankAccountAssignEmployeeName').text(`${row.employee_no} - ${name}`);
+    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) replaces the old plain
+    // "Employee: {name}" line -- rdBankAccountRows' own rows already carry profile_photo_path/
+    // department_name_*/position_name_* (PayrollRunEmployeeBankAccountModel::listForRun()).
+    $('#bankAccountAssignHeaderCard').html(employeeHeaderCardHtml(row));
     $('#bankAccountAssignNote').val('');
     const $select = $('#bankAccountAssignSelect').empty();
     if (row.bank_account_id) {
@@ -1450,107 +1460,17 @@ $(document).on('click', '#btnSaveRunSettings', function () {
 // APV_COLORS_RD/apvBadgeHtmlRd/apvIconHtmlRd moved to app.js's own apvAvatarImgError()/
 // apvAvatarHtml()/apvPersonLineHtml()/APV_COLORS/apvBadgeHtml()/apvIconHtml() -- confirmed
 // byte-identical across index.js/detail.js/approval.js before merging.
-function apvApproverToneRd(status) {
-    return { approved: 'done', rejected: 'rejected', need_info: 'info', pending: 'pending', not_applicable: 'muted' }[status] || 'muted';
-}
-function apvApproverLabelRd(status) {
-    const key = { approved: 'status_approved', rejected: 'status_rejected', need_info: 'state_need_info', pending: 'status_pending' }[status];
-    return (key && langData[key]) || status;
-}
-function apvApproverSubstepHtmlRd(a) {
-    const name = (currentLang === 'th' ? a.name_th : a.name_en) || a.name_th || a.name_en || a.employee_no;
-    return `<div class="apv-substep">
-        <div class="apv-substep-head">
-            <span class="apv-substep-label">${apvAvatarHtml(name, 22, a.profile_photo_path)}${escapeHtml(name)}</span>
-            ${apvBadgeHtml(apvApproverToneRd(a.status), apvApproverLabelRd(a.status))}
-        </div>
-        ${a.acted_at ? `<div class="apv-substep-date"><i class="fa-regular fa-calendar"></i> ${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(a.acted_at) : escapeHtml(a.acted_at)}</div>` : ''}
-        ${a.note ? `<div class="apv-substep-remark">${escapeHtml(a.note)}</div>` : ''}
-    </div>`;
-}
-// 2026-09-10, Batch 3A item 2: moved to app.js's own apvApprovalStageInfo() (shared with
-// index.js/approval.js's own identical copies).
-// 2026-08-30, explicit follow-up ("ยังไม่ได้ปรับ UI...ให้แสดงหลาย step ที่ actionable พร้อมกันแบบจุดๆ ว่า
-// ตัวเองอยู่ตำแหน่งไหน และตำแหน่งก่อนหน้านั้นอนุมัติหรือยัง") -- see index.js's own equivalent comment for
-// the full reasoning (mirrored here per this file's own "duplicate, don't share across pages" convention).
-function apvStepDotToneRd(step) {
-    if (!step.unlocked) return 'apv-step-dot-locked';
-    if (step.status === 'approved') return 'apv-step-dot-approved';
-    if (step.status === 'rejected') return 'apv-step-dot-rejected';
-    return 'apv-step-dot-pending';
-}
-function apvStepDotsHtmlRd(steps) {
-    return `<div class="apv-step-dots">` + steps.map((s, i) => {
-        const lockIcon = !s.unlocked ? `<span class="apv-step-dot-lock-icon"><i class="fa-solid fa-lock"></i></span>` : '';
-        const icon = s.status === 'approved' ? '<i class="fa-solid fa-check"></i>' : (s.status === 'rejected' ? '<i class="fa-solid fa-xmark"></i>' : s.step_order);
-        const connector = i < steps.length - 1 ? `<div class="apv-step-dot-connector${s.status === 'approved' ? ' apv-step-dot-connector-done' : ''}"></div>` : '';
-        return `<div class="apv-step-dot-wrap" title="${escapeHtml(s.step_name || '')}">
-            <div class="apv-step-dot ${apvStepDotToneRd(s)}">${icon}</div>
-            ${lockIcon}
-        </div>${connector}`;
-    }).join('') + `</div>`;
-}
-function apvStepGroupHtmlRd(step) {
-    const badgeHtml = !step.unlocked
-        ? `<span class="apv-badge" style="background:#f1f5f9;color:#64748b;"><i class="fa-solid fa-lock me-1"></i>${langData['step_locked'] || 'Locked'}</span>`
-        : apvBadgeHtml(apvApproverToneRd(step.status), apvApproverLabelRd(step.status));
-    const stepLabel = (langData['step_label'] || 'Step {n}').replace('{n}', step.step_order);
-    const approversHtml = step.approvers.length
-        ? step.approvers.map(apvApproverSubstepHtmlRd).join('')
-        : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`;
-    return `<div class="apv-step-group">
-        <div class="apv-step-group-head">
-            <span class="apv-step-group-title">${escapeHtml(stepLabel)}${step.step_name ? ': ' + escapeHtml(step.step_name) : ''}</span>
-            ${badgeHtml}
-        </div>
-        <div class="apv-step-group-body">${approversHtml}</div>
-    </div>`;
-}
-function apvApprovalStageHtmlRd(run) {
-    const info = apvApprovalStageInfo(run.state);
-    const steps = (run.approval_flow && run.approval_flow.steps) || null;
-    const approvers = (run.approval_flow && run.approval_flow.approvers) || [];
-    const bodyHtml = (steps && steps.length)
-        ? apvStepDotsHtmlRd(steps) + steps.map(apvStepGroupHtmlRd).join('')
-        : (approvers.length
-            ? approvers.map(apvApproverSubstepHtmlRd).join('')
-            : `<span class="apv-muted-text">${langData['no_approvers_configured'] || 'No employee currently holds approval permission for payroll runs.'}</span>`);
-    return `
-        <div class="apv-stage">
-            <div class="apv-stage-marker">${apvIconHtml(info.tone, info.icon)}<div class="apv-stage-line"></div></div>
-            <div class="apv-stage-content">
-                <div class="apv-stage-head">
-                    <span class="apv-stage-title">${langData['approval_flow_title'] || 'Approval'}</span>
-                    ${apvBadgeHtml(info.tone, info.label)}
-                </div>
-                <div class="apv-stage-body">${bodyHtml}</div>
-            </div>
-        </div>
-    `;
-}
-// 2026-09-10, Batch 3A item 3: apvPaidStageHtmlRd() (a single merged Paid/Locked box that never
-// showed who paid/locked) split into app.js's own apvPaidStageHtml()/apvLockedStageHtml(), each
-// pulling tone/label/date from runLifecycleSteps() (item 2) instead of re-deriving run.state here.
-// apvCreatedStageHtmlRd() also moved to app.js's own apvCreatedStageHtml() -- see
-// renderRunTimelineModal() below for the new call sites.
-function renderAuditTimelineRd(logs) {
-    if (!logs || !logs.length) {
-        return `<div class="text-secondary small">${langData['no_history_yet'] || 'No action has been taken on this request yet.'}</div>`;
-    }
-    const ordered = logs.slice().reverse(); // newest first at the top, oldest at the bottom
-    return ordered.map(l => {
-        const actor = personDisplayNameRd(l, 'performed_by');
-        const metaParts = [];
-        if (l.ip_address) metaParts.push(`<i class="fa-solid fa-location-dot"></i> ${escapeHtml(l.ip_address)}`);
-        if (l.user_agent) metaParts.push(`<i class="fa-solid fa-desktop"></i> ${escapeHtml(l.user_agent)}`);
-        return `<div class="apv-log-entry">
-            <div class="apv-log-date">${typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(l.performed_at) : escapeHtml(l.performed_at)}</div>
-            <div class="apv-log-action">${escapeHtml(auditActionLabel(l.action))} <span class="text-secondary fw-normal">(${escapeHtml(actor)})</span></div>
-            ${metaParts.length ? `<div class="apv-log-meta">${metaParts.join(' &nbsp; ')}</div>` : ''}
-            ${l.note ? `<div class="apv-log-note">${escapeHtml(l.note)}</div>` : ''}
-        </div>`;
-    }).join('');
-}
+// 2026-09-11, Batch 3C item 1, explicit instruction: "รวม render ทั้งหมดเป็น function เดียวใน app.js
+// ที่ทุกหน้าเรียก" -- apvApproverToneRd()/apvApproverLabelRd()/apvApproverSubstepHtmlRd()/
+// apvStepDotToneRd()/apvStepDotsHtmlRd()/apvStepGroupHtmlRd()/apvApprovalStageHtmlRd() (the Ap/Pr
+// twins in approval.js/index.js were confirmed byte-identical before merging) moved to app.js's own
+// unsuffixed apvApproverTone()/apvApproverLabel()/apvApproverSubstepHtml()/apvStepDotTone()/
+// apvStepDotsHtml()/apvStepGroupHtml()/apvApprovalStageHtml() -- see renderRunTimelineModal() below,
+// now built entirely from app.js's own renderApprovalTimelineBody(). renderAuditTimelineRd() (this
+// modal's own condensed "History" section) is gone too, per the same instruction ("ตัด section
+// ประวัติออกจากทุกที่ (ประวัติอยู่ใน tab ของ Detail ที่เดียว)") -- it duplicated this exact tab's own
+// Action History section (auditHistoryRowHtmlRd() below), which is now the ONLY place this run's
+// action history renders anywhere in the app.
 /* 2026-08-23, explicit request ("ในหน้า Process Detail ส่วนของปุ่มดำเนินการ หรือกด View อยากให้แสดงใน
    ช่องของ Timeline นั้นๆ เช่นปุ่มดึงกลับหรือปุ่มอนุมัติให้อยู่ตรงกับ Timeline ที่สามารถดำเนินการได้ และหาก
    มีสิทธิ์อนุมัติให้ขึ้นปุ่มอนุมัติที่สามารถกดได้ให้ตรงกับ Timeline เลย") -- the old standalone
@@ -1595,21 +1515,11 @@ function renderRunTimelineModal(run) {
     // 2026-08-23, explicit request ("ในหน้า Approve Modal Approval Timeline พวกปุ่มที่กด อยากให้มาอยู่ที่
     // Modal Footer") -- same footer relocation as the Approval Queue page's own Timeline modal.
     $('#runTimelineModalActions').html(buttons.join(''));
-    // 2026-09-10, Batch 3A item 3: 2 new stations (Locked, on top since it's the newest event --
-    // same newest-first ordering the other stages already use) -- lifecycle computed ONCE and
-    // passed to both Paid/Locked so they don't each re-derive the 5-step progress.
-    const lifecycle = runLifecycleSteps(run, { showDates: true });
-    $('#runTimelineModalBody').html(`
-        <div class="apv-timeline">
-            ${apvLockedStageHtml(run, lifecycle)}
-            ${apvPaidStageHtml(run, lifecycle)}
-            ${apvApprovalStageHtmlRd(run)}
-            ${apvCreatedStageHtml(run)}
-        </div>
-        <hr>
-        <h6 class="fw-bold small text-uppercase text-secondary">${langData['approval_history'] || 'History'}</h6>
-        <div class="apv-timeline-log">${renderAuditTimelineRd(run.audit_log)}</div>
-    `);
+    // 2026-09-11, Batch 3C item 1: body is now app.js's own shared renderApprovalTimelineBody() --
+    // see that function's own docblock for the station order/lifecycle-reuse reasoning. The
+    // "History" section that used to follow it (renderAuditTimelineRd()) is gone -- see this file's
+    // own comment above apvApproverTone() for why.
+    $('#runTimelineModalBody').html(renderApprovalTimelineBody(run));
 }
 $(document).on('click', '.btn-tl-view-timeline', function (e) {
     e.stopPropagation();
@@ -1838,12 +1748,14 @@ function verifyLockButtonsRd(row) {
 // now includes it per employee). Re-rendered after every add/edit/delete via loadRunDetail(), same
 // refresh pattern every other mutating action on this page already uses.
 function commentButtonRd(row) {
-    const label = `${escapeAttr(row.employee_no)} - ${escapeAttr(employeeDisplayNameRd(row))}`;
     const count = Number(row.comment_count || 0);
     const countBadge = count > 0
         ? `<span class="badge rounded-pill bg-danger ms-2">${count}</span>`
         : '';
-    return `<li><button type="button" class="dropdown-item btn-comment-employee" data-employee-id="${row.employee_id}" data-employee-label="${label}"><i class="fa-solid fa-comments text-warning me-2"></i>${langData['action_comments'] || 'Comments'}${countBadge}</button></li>`;
+    // 2026-09-11, Batch 3C item 8: data-employee-label removed -- the click handler now looks up the
+    // full row (runDetailRowByEmployeeId()) to build employeeHeaderCardHtml() instead of reading a
+    // plain name string off the button, so this attribute had no other reader left.
+    return `<li><button type="button" class="dropdown-item btn-comment-employee" data-employee-id="${row.employee_id}"><i class="fa-solid fa-comments text-warning me-2"></i>${langData['action_comments'] || 'Comments'}${countBadge}</button></li>`;
 }
 // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
 // ".btn-circle-action" section) replace the old adjacent .btn-group/border-start convention this
@@ -2143,7 +2055,10 @@ function breakdownSectionHtml(iconCls, colorCls, titleKey, titleFallback, rawRow
     `;
 }
 function renderBreakdownModal(row) {
-    $('#breakdownEmployeeName').text(`${row.employee_no} - ${employeeDisplayNameRd(row)}`);
+    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
+    // name in the modal-header (#breakdownEmployeeName removed from the view -- see this modal's
+    // own markup comment).
+    $('#breakdownHeaderCard').html(employeeHeaderCardHtml(row));
     // 2026-09-06, explicit request: Origami's opt-in TOTAL_DAYS item_values entry (calendar-based
     // day count) -- row.total_days is null (see PayrollRunModel::getDetails()'s own docblock) for
     // every run/employee with no data, never 0, so a plain truthiness-adjacent null check is
@@ -2186,7 +2101,7 @@ function renderBreakdownModal(row) {
 }
 $(document).on('click', '.btn-view-breakdown', function () {
     const employeeId = $(this).data('employee-id');
-    const rowData = (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(employeeId));
+    const rowData = runDetailRowByEmployeeId(employeeId);
     if (!rowData) return;
     renderBreakdownModal(rowData);
     new bootstrap.Modal(document.getElementById('runDetailBreakdownModal')).show();
@@ -2262,8 +2177,10 @@ function loadEmpAdjustmentsModal(employeeId) {
 }
 $(document).on('click', '.btn-view-emp-adjustments', function () {
     const employeeId = $(this).data('employee-id');
-    const rowData = (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(employeeId));
-    $('#empAdjustmentsEmployeeName').text(rowData ? `${rowData.employee_no} - ${employeeDisplayNameRd(rowData)}` : '');
+    const rowData = runDetailRowByEmployeeId(employeeId);
+    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
+    // name in the modal-header (#empAdjustmentsEmployeeName removed from the view).
+    $('#empAdjustmentsHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
     loadEmpAdjustmentsModal(employeeId);
     new bootstrap.Modal(document.getElementById('empAdjustmentsModal')).show();
 });
@@ -2419,8 +2336,10 @@ let rawSyncDataEmployeeId = null;
 // again, matching its original single purpose (a sync-only row's raw Origami payload).
 $(document).on('click', '.btn-raw-sync-data', function () {
     rawSyncDataEmployeeId = $(this).data('employee-id');
-    const rowData = (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(rawSyncDataEmployeeId));
-    $('#rawSyncDataEmployeeName').text(rowData ? `${rowData.employee_no} - ${employeeDisplayNameRd(rowData)}` : '');
+    const rowData = runDetailRowByEmployeeId(rawSyncDataEmployeeId);
+    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
+    // name in the modal-header (#rawSyncDataEmployeeName removed from the view).
+    $('#rawSyncDataHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.raw-sync-data-for-employee`,
         method: 'GET',
@@ -3134,7 +3053,10 @@ function commentsReadOnlyRd() {
 }
 $(document).on('click', '.btn-comment-employee', function () {
     employeeCommentEmployeeId = $(this).data('employee-id');
-    $('#employeeCommentModalEmployeeName').text($(this).data('employee-label') || '');
+    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
+    // name in the modal-header (#employeeCommentModalEmployeeName removed from the view).
+    const rowData = runDetailRowByEmployeeId(employeeCommentEmployeeId);
+    $('#employeeCommentHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
     resetEmployeeCommentForm();
     const readOnly = commentsReadOnlyRd();
     $('#employeeCommentFormArea, #btnAddEmployeeComment').toggleClass('d-none', readOnly);
@@ -3212,11 +3134,11 @@ $(document).on('click', '#btnAddEmployeeComment', function () {
 // 2026-08-27, explicit request: "ในหน้า Process Detail Tab Action History ปรับจากตารางเป็น Timeline
 // สวยๆ" -- reuses the SAME `.apv-stage` circular-marker/connector-line component this page's own
 // Timeline modal/status card already builds with (app.js's own apvIconHtml()/apvBadgeHtml()/
-// apvCreatedStageHtml()) instead of inventing a second timeline design on the same page. Distinct from the plainer `renderAuditTimelineRd()` (left-border list, `.apv-log-entry`)
-// already used inside the Timeline modal's own condensed "History" section further down -- that one
-// stays untouched (it's a summary inside a modal, not this tab), this is the full, richer rendering
-// for the tab's own dedicated space. Newest first, matching renderAuditTimelineRd()'s own ordering
-// convention on this same page.
+// apvCreatedStageHtml()).
+// 2026-09-11, Batch 3C item 1: the Timeline modal's own condensed "History" section
+// (renderAuditTimelineRd()) is gone entirely now -- this tab is the ONLY place this run's action
+// history renders anywhere in the app, not just the "fuller" rendering of a summary that duplicated
+// it elsewhere.
 const AUDIT_TIMELINE_META_RD = {
     create: { tone: 'done', icon: 'fa-plus' },
     submit: { tone: 'info', icon: 'fa-paper-plane' },
@@ -4240,8 +4162,10 @@ $(document).on('click', '#manualLineModeToggle button', function () {
 });
 $(document).on('click', '.btn-manage-manual-lines', function () {
     manageLinesEmployeeId = $(this).data('employee-id');
-    const rowData = (tb_run_detail ? tb_run_detail.rows().data().toArray() : []).find(r => Number(r.employee_id) === Number(manageLinesEmployeeId));
-    $('#manageLinesEmployeeName').text(rowData ? `${rowData.employee_no} - ${employeeDisplayNameRd(rowData)}` : '');
+    const rowData = runDetailRowByEmployeeId(manageLinesEmployeeId);
+    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
+    // name in the modal-header (#manageLinesEmployeeName removed from the view).
+    $('#manageLinesHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
     const isIncentive = currentRun && currentRun.run_purpose === 'incentive';
     // 2026-08-27: an incentive run's manual lines are no longer necessarily the ONLY thing
     // counted -- once include_base_salary/include_standing_items is on for this run (see

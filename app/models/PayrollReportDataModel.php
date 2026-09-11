@@ -177,6 +177,10 @@ class PayrollReportDataModel {
         // PayrollRunModel::getDetails() itself uses, so PayrollRegisterReport's Excel/PDF export of
         // this exact table can never disagree with the on-screen one on which rows are excluded.
         $sql = "SELECT d.*, e.employee_no, e.title, e.name_th, e.surname_th, e.name_en, e.surname_en,
+                    -- 2026-09-11, Batch 3C item 8: PayrollRunEmployeeBankAccountModel::listForRun()
+                    -- (the only current consumer of THIS field from here) needs it for the Bank
+                    -- Account Assignment modal's own employeeHeaderCardHtml() avatar.
+                    e.profile_photo_path,
                     e.tax_id_no, e.sso_no, e.id_card_no, e.key_version, e.department_id, e.branch_id, e.position_id,
                     e.bank_id, e.bank_account_no, e.bank_account_name,
                     e.payment_method_id, mpm.code AS payment_method_code,
