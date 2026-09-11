@@ -727,9 +727,21 @@ function srRateVersionCalcPreviewFormulaStepsHtml(formula) {
  * `hidden.bs.modal` handler on #srAddVersionModal in initStatutoryRateModalUI() below, which covers
  * Save-success, Cancel, the × button, Esc, and a backdrop click identically (Bootstrap fires the
  * same event for all of them).
+ *
+ * 2026-09-11, same-day follow-up, real bug fixed: relocating #srRateVersionFormWrap OUT left
+ * #srRateVersionFormAnchor genuinely empty (0 height), so #statutoryRateModal's right column
+ * collapsed to nothing for as long as the add-version modal was open -- looked broken, not just
+ * "temporarily empty". Measures the wrap's own outerHeight() BEFORE moving it, locks that as the
+ * anchor's own min-height, and fills it with a centered placeholder line so the collapse is gone
+ * AND the empty space reads as intentional ("adding a new version above"), not a glitch.
  */
 function openAddVersionModal() {
-    $('#srRateVersionFormWrap').appendTo('#srAddVersionModalBody');
+    const $wrap = $('#srRateVersionFormWrap');
+    $('#srRateVersionFormAnchor')
+        .css('min-height', $wrap.outerHeight())
+        .addClass('d-flex align-items-center justify-content-center text-muted small')
+        .text(langData['sr_add_version_in_progress_hint'] || 'Adding a new version in the window above…');
+    $wrap.appendTo('#srAddVersionModalBody');
     showSrHistoryEditView(null);
     new bootstrap.Modal(document.getElementById('srAddVersionModal')).show();
 }
@@ -745,6 +757,12 @@ function openAddVersionModal() {
  */
 function closeAddVersionModalAndRestoreForm() {
     $('#srRateVersionFormWrap').insertAfter('#srRateVersionFormAnchor');
+    // Undoes openAddVersionModal()'s own placeholder-collapse fix above -- min-height/text/classes
+    // only ever apply while this modal is open, never left behind once the form is back home.
+    $('#srRateVersionFormAnchor')
+        .css('min-height', '')
+        .removeClass('d-flex align-items-center justify-content-center text-muted small')
+        .empty();
     if (srAddVersionJustSavedId) {
         const newId = srAddVersionJustSavedId;
         srAddVersionJustSavedId = null;
