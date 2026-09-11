@@ -2622,6 +2622,7 @@ $(document).on('click', '#ectPreviewBtn', function () {
 // below is guarded by which of those elements/globals actually exist, so loading this file on
 // either page only runs that page's own init.
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     if ($('#ectPage').length) {
         $.ajax({
             url: `${BASE_URL}/api/employment-certificate-template.field-options`,
@@ -2686,5 +2687,6 @@ $(document).ready(function () {
             }
         });
     }
+    });
 });
 })();

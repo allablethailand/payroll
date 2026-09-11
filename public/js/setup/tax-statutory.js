@@ -1124,6 +1124,7 @@ function initStatutoryRateModalUI() {
 }
 
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     // 2026-09-03, Backlog Phase 9, T044 -- Company Settings ("Statutory Rates") is now the sole/
     // FIRST tab (was 2nd, gated behind a shown.bs.tab click before this), so it's initialized
     // directly here instead of waiting for a tab-click event that never fires for an
@@ -1188,6 +1189,7 @@ $(document).ready(function () {
             $('#srHistoryModalFooter').removeClass('d-none');
         }
         $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+    });
     });
 });
 

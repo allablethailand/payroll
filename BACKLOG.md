@@ -5,68 +5,36 @@ Format: Title / 1-2 line detail / Source (which batch).
 
 ---
 
-## Defer langReady-gating to 28 files outside payroll-process
+## langReady-gating not applied to 7 files (bind-only ready handlers, no initial langData render)
 
-`public/js/app.js` now exposes `window.langReady` (a Promise that resolves once `langData` is
-populated) so a page can defer its own initial render until translations are actually loaded. Only
-the 3 payroll-process files (`detail.js`/`index.js`/`approval.js`) were updated to wait on it. The
-following 28 files each have their own `$(document).ready(function () {...})` calling an initial
-load/render directly, not gated behind `window.langReady` — same latent race condition is possible
-in any of them (not confirmed reproduced in each one individually, just the same pattern):
+Batch 2 item 0's original list (re-grepped 2026-09-10) was actually 29 files, not 28 as counted
+verbally — noting the discrepancy rather than silently forcing it to match, same convention as
+that entry's own earlier note.
+
+**2026-09-11: 22 of the 29 wrapped in the same `(window.langReady || Promise.resolve()).then(...)`
+pattern payroll-process (`detail.js`/`index.js`/`approval.js`) already used** — every ready handler
+whose body actually renders text sourced from `langData`/`getLangValue()` (select2 static/ajax
+option labels, DataTable initial load, fetched-and-rendered content, etc). Done in one pass, one
+report; see that commit's own message for the full per-file list.
+
+**7 deliberately left UNCHANGED** — their `$(document).ready(...)` body only binds a `shown.bs.tab`
+handler (or, for 2 of them, does layout/count work with no langData-dependent render at all) and
+renders nothing itself at initial page load, so there's no race to fix:
 
 ```
-public/js/dashboard.js
-public/js/employee/detail.js
-public/js/employee/list.js
-public/js/employee/login-history.js
-public/js/employee/reports.js
-public/js/input.js
-public/js/notifications.js
-public/js/quick-links.js
-public/js/reports/annual-summary.js
-public/js/reports/index.js
-public/js/reports/run-audit.js
-public/js/setup/announcements.js
-public/js/setup/approval-workflow.js
-public/js/setup/audit-log.js
-public/js/setup/changelog.js
-public/js/setup/company-profile.js
-public/js/setup/document-numbering.js
-public/js/setup/email-queue-log.js
-public/js/setup/employment-certificate-request.js
-public/js/setup/employment-certificate-template.js
-public/js/setup/help-drawer.js
-public/js/setup/payroll-configuration.js
-public/js/setup/payslip-delivery-log.js
-public/js/setup/payslip-distribution.js
-public/js/setup/payslip-request.js
-public/js/setup/payslip-template.js
-public/js/setup/setup-guide.js
-public/js/setup/tax-statutory.js
-public/js/setup/terms-and-conditions.js
+public/js/input.js                                   -- textarea auto-expand only, no lang render
+public/js/notifications.js                            -- unread-count badge + click bind only
+public/js/setup/document-numbering.js                 -- binds shown.bs.tab only, no immediate render
+public/js/setup/email-queue-log.js                    -- binds shown.bs.tab only, no immediate render
+public/js/setup/employment-certificate-request.js     -- binds shown.bs.tab only, no immediate render
+public/js/setup/payslip-delivery-log.js                -- binds shown.bs.tab only, no immediate render
+public/js/setup/payslip-distribution.js                -- binds shown.bs.tab only, no immediate render
 ```
 
-(Re-grepped 2026-09-10 to confirm this list: 28 files, not 29 — noting the discrepancy from the
-count mentioned verbally rather than silently forcing it to match.)
+If any of these 7 later grow an immediate (not tab-gated) langData-dependent render, apply the same
+wrapper then — not preemptively.
 
-**Source:** Batch 2, item 0.
-
----
-
-## Cache-bust `<script src>` for JS files and lang JSON
-
-None of the JS `<script src="...">` tags (app.js, payroll-process files, or any other page script)
-carry a version query string, and the lang JSON fetch (`loadLang()` in app.js) busts cache via
-`?v=${Date.now()}` — which forces a full network fetch on every single page load (no caching benefit
-at all). A stale browser cache serving a pre-fix copy of `index.js`/`app.js` was the actual cause of
-a false "still broken" report in Batch 2 (item 0) right after the langReady race fix shipped.
-
-**Fix direction (explicit instruction, not yet decided in detail):** use a stable version string from
-app config (e.g. `APP_VERSION`, bumped on deploy) for cache-busting — **not** `Date.now()`, which
-would defeat caching entirely rather than just busting it across deploys. Apply to every JS
-`<script src>` (not just app.js/payroll-process) and to the lang JSON fetch's own `?v=` param.
-
-**Source:** Batch 2, item 0 (first flagged), reconfirmed as backlog after item 0's fix.
+**Source:** Batch 2, item 0 (original list); resolved Batch 3B backlog item 2 (2026-09-11).
 
 ---
 
@@ -199,9 +167,14 @@ looks like a no-op success, but the schema gap remains. Run `php scripts/migrate
 manually cross-check the 38 listed filenames against the target database before trusting `up`
 covered everything on a NEW environment (not just local dev, which is already known-current).
 
-**Fix, if this becomes a real problem**: either widen the detector to recognize a few more DDL
-shapes (`DROP TABLE`/`MODIFY COLUMN`/etc.), or add a `mark-applied <file>` command so a human who's
-manually verified one of the 38 can record it without `migrate.php` needing to re-derive that on
-its own. Neither was in this task's own scope (status/up/down only).
+**Update (2026-09-10, same batch, item 3 follow-up): the escape hatch this entry asked for now
+exists.** `mark <file>` (single) and `mark-all-unknown --reason="..." --yes` (bulk, refuses without
+`--yes`/a reason/while anything is genuinely pending) both record a human's own review without
+`migrate.php` needing to re-derive it. Dev's own 38 files were reviewed and marked this way on
+2026-09-10 (`status` now shows 0 unknown, 0 pending on dev). **Left open, not closed**: the
+underlying detector limitation (only 2 DDL shapes recognized) is still real for any FUTURE
+migration file of an unusual shape, and dev being clear doesn't mean any OTHER environment
+(production especially) has been reviewed -- see `docs/releases/2026-09-11-batch3b.md`'s own
+4-step first-deploy sequence for exactly that reason.
 
 **Source:** Batch 3B item 0, explicit instruction (2026-09-10).

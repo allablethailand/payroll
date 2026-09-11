@@ -791,6 +791,7 @@ $(document).on('shown.bs.tab', '#ais-monthly-pit-tab', function () {
 });
 
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     if (typeof initSelect2 === 'function') {
         initSelect2('#aisFilterDepartment', { mode: 'ajax', allowClear: true });
         initSelect2('#aisFilterTeam', { mode: 'ajax', allowClear: true });
@@ -799,4 +800,5 @@ $(document).ready(function () {
         initSelect2('#aisFilterStatus', { mode: 'static' });
     }
     loadAisFiscalYears();
+    });
 });

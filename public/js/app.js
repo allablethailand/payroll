@@ -1020,7 +1020,15 @@ $(document).on('click', '#btnSaveUserSettings', function () {
 });
 async function loadLang(lang) {
     try {
-        const res = await fetch(`${BASE_URL}/public/lang/${lang}.json?v=${Date.now()}`);
+        // 2026-09-11, real bug fixed: was `?v=${Date.now()}` -- a fresh, never-cacheable value on
+        // EVERY single call, defeating browser caching entirely on every page load/language switch.
+        // LANG_VERSION (header.php, filemtime()-based, same mechanism as this app's own asset()
+        // helper) only changes when that language file's own content actually changes -- the
+        // browser can now cache this fetch indefinitely in between. Falls back to Date.now() only
+        // if LANG_VERSION is somehow missing (e.g. a page that doesn't load header.php), so this
+        // never regresses to "never busts cache at all" in that edge case.
+        const langVersion = (typeof LANG_VERSION !== 'undefined' && LANG_VERSION[lang]) ? LANG_VERSION[lang] : Date.now();
+        const res = await fetch(`${BASE_URL}/public/lang/${lang}.json?v=${langVersion}`);
         if (!res.ok) throw new Error('Language file missing');
         langData = await res.json();
         applyLanguage(lang);

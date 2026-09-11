@@ -143,12 +143,14 @@
     }
 
     $(document).ready(function () {
+        (window.langReady || Promise.resolve()).then(function () {
         // Login-gate check -- fires on every page load; a no-op (res.data.accepted === true, or no
         // active T&C at all) the overwhelming majority of the time.
         $.get(`${BASE_URL}/api/terms.get`).done(function (res) {
             if (res && res.status && res.data && !res.data.accepted) {
                 openTermsModal(true);
             }
+        });
         });
     });
 

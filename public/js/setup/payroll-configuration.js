@@ -435,6 +435,7 @@ function collectPedTypeFormData() {
     };
 }
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     initEarningTypeTable();
     initPayrollCycleTable();
     initPayrollCycleUI();
@@ -480,6 +481,7 @@ $(document).ready(function () {
             loadProbationSets();
         }
         $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+    });
     });
 });
 

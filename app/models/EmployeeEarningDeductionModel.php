@@ -182,6 +182,31 @@ class EmployeeEarningDeductionModel {
      *  $baseSalaryForFee is REQUIRED (and only used) when $feeBase='base_salary', since this pure
      *  method has no DB access of its own to look the employee up. */
     public function computeInstallmentSchedule(float $principal, int $totalInstallments, string $interestType, ?float $interestRatePercent, ?float $feePercent = null, ?string $feeBase = null, ?float $baseSalaryForFee = null): array {
+        return array_column($this->computeInstallmentBreakdown($principal, $totalInstallments, $interestType, $interestRatePercent, $feePercent, $feeBase, $baseSalaryForFee), 'amount');
+    }
+
+    /**
+     * 2026-09-11, Batch 3B item 4: same calculation as computeInstallmentSchedule() above (that
+     * method is now a thin wrapper over this one -- `array_column(..., 'amount')` -- kept
+     * byte-for-byte identical in its own return shape/values so its existing callers/tests are
+     * completely untouched), but returns the full per-installment breakdown
+     * (`['amount'=>, 'principal'=>, 'interest'=>]` per row) instead of just the flat amount --
+     * persisted onto employee_earning_deduction_installments going forward (see that table's own
+     * migration comment). `interest` is reused for interest_type='fee' rows too (labeled "Fee" not
+     * "Interest" by the UI/report layer, same column).
+     *
+     * Every branch derives `principal` as its OWN evenly-split/walked share and `interest` as the
+     * RESIDUAL (`amount - principal`), never as a second independently-rounded quantity -- this is
+     * what guarantees `principal + interest` reconciles EXACTLY to `amount` on every single row,
+     * including the last one where a rounding remainder lands (same principle
+     * computeInstallmentSchedule()'s own evenSplit() already applies to `amount` itself, just
+     * carried one level deeper). The reducing_balance walk's own INTERNAL balance tracking
+     * (`$balance`/`$principalPortion` inside the loop) is deliberately left using the SAME
+     * unrounded intermediate arithmetic the original loop always used -- only rounded at output
+     * time for display/storage -- so the resulting `amount` sequence is identical to before this
+     * method existed, not just "close".
+     */
+    public function computeInstallmentBreakdown(float $principal, int $totalInstallments, string $interestType, ?float $interestRatePercent, ?float $feePercent = null, ?string $feeBase = null, ?float $baseSalaryForFee = null): array {
         if ($principal <= 0) {
             throw new InvalidArgumentException('principal must be greater than zero.');
         }
@@ -192,7 +217,8 @@ class EmployeeEarningDeductionModel {
             throw new InvalidArgumentException('Invalid interest_type.');
         }
         if ($interestType === 'none') {
-            return $this->evenSplit($principal, $totalInstallments);
+            $amounts = $this->evenSplit($principal, $totalInstallments);
+            return array_map(fn($a) => ['amount' => $a, 'principal' => $a, 'interest' => 0.0], $amounts);
         }
         if ($interestType === 'fee') {
             if ($feePercent === null || $feePercent <= 0) {
@@ -209,7 +235,9 @@ class EmployeeEarningDeductionModel {
             } else {
                 $feeAmount = $principal * ($feePercent / 100);
             }
-            return $this->evenSplit($principal + $feeAmount, $totalInstallments);
+            $amounts = $this->evenSplit($principal + $feeAmount, $totalInstallments);
+            $principalSplit = $this->evenSplit($principal, $totalInstallments);
+            return $this->zipAmountPrincipal($amounts, $principalSplit);
         }
         if ($interestRatePercent === null || $interestRatePercent <= 0) {
             throw new InvalidArgumentException('interest_rate must be greater than zero when interest_type is not none.');
@@ -218,22 +246,45 @@ class EmployeeEarningDeductionModel {
 
         if ($interestType === 'fixed') {
             $totalInterest = $principal * $r * $totalInstallments;
-            return $this->evenSplit($principal + $totalInterest, $totalInstallments);
+            $amounts = $this->evenSplit($principal + $totalInterest, $totalInstallments);
+            $principalSplit = $this->evenSplit($principal, $totalInstallments);
+            return $this->zipAmountPrincipal($amounts, $principalSplit);
         }
 
-        // reducing_balance
+        // reducing_balance -- SAME internal walk as computeInstallmentSchedule() used to run
+        // directly (unrounded $installmentInterest/$principalPortion, $balance carried at full
+        // float precision) -- only the OUTPUT rows are rounded, via the same amount-minus-rounded-
+        // interest residual trick described in this method's own docblock.
         $payment = $principal * $r / (1 - (1 + $r) ** (-$totalInstallments));
-        $amounts = [];
+        $rows = [];
         $balance = $principal;
         for ($i = 0; $i < $totalInstallments - 1; $i++) {
             $installmentInterest = $balance * $r;
             $roundedPayment = round($payment, 2);
             $principalPortion = $roundedPayment - $installmentInterest;
             $balance -= $principalPortion;
-            $amounts[] = $roundedPayment;
+            $interestDisplay = round($installmentInterest, 2);
+            $principalDisplay = round($roundedPayment - $interestDisplay, 2);
+            $rows[] = ['amount' => $roundedPayment, 'principal' => $principalDisplay, 'interest' => $interestDisplay];
         }
-        $amounts[] = round($balance + ($balance * $r), 2);
-        return $amounts;
+        $lastAmount = round($balance + ($balance * $r), 2);
+        $lastInterest = round($balance * $r, 2);
+        $lastPrincipal = round($lastAmount - $lastInterest, 2);
+        $rows[] = ['amount' => $lastAmount, 'principal' => $lastPrincipal, 'interest' => $lastInterest];
+        return $rows;
+    }
+
+    /** Shared by the 'fee'/'fixed' branches above -- $principalSplit is that same total's OWN
+     *  evenSplit() (its own remainder lands on ITS OWN last row), and interest/fee is derived as
+     *  the residual against $amounts so every row reconciles exactly, per this method's own
+     *  docblock on computeInstallmentBreakdown(). */
+    private function zipAmountPrincipal(array $amounts, array $principalSplit): array {
+        $rows = [];
+        foreach ($amounts as $i => $amount) {
+            $principal = $principalSplit[$i];
+            $rows[] = ['amount' => $amount, 'principal' => $principal, 'interest' => round($amount - $principal, 2)];
+        }
+        return $rows;
     }
 
     public function save(int $employeeId, int $compId, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {
@@ -457,6 +508,41 @@ class EmployeeEarningDeductionModel {
 
         $installmentAmounts = $this->buildInstallmentAmounts($amountMode, $totalAmount, $totalInstallments, $customAmounts);
 
+        // 2026-09-11, Batch 3B item 4: per-installment principal/interest breakdown, persisted
+        // alongside `amount` (never replacing it -- `amount` stays the single source of truth for
+        // what's actually deducted, same as before this feature existed). For interest_type='none'
+        // there's no ambiguity at all (principal IS the amount, interest is 0). For every other
+        // type, the THEORETICAL schedule (computeInstallmentBreakdown(), using this assignment's own
+        // declared principal/rate/fee -- the exact same inputs the preview endpoint already
+        // validated against) supplies the interest portion per row; principal is then the RESIDUAL
+        // against whatever `amount` actually ended up being for that row (capped at the theoretical
+        // interest so it can never exceed either the theoretical figure or the row's own real
+        // amount) -- this guarantees principal+interest reconciles EXACTLY to `amount` on every row
+        // even in the one case where the two can genuinely disagree: amount_mode='custom_per_
+        // installment' lets an admin hand-edit a row's total after the preview auto-filled it, and
+        // a stale/inconsistent breakdown would be worse for a slip/report than a slightly-capped one.
+        if ($interestType === 'none') {
+            $installmentBreakdown = array_map(fn($a) => ['principal' => $a, 'interest' => 0.0], $installmentAmounts);
+        } else {
+            $baseSalaryForFee = null;
+            if ($interestType === 'fee' && $feeBase === 'base_salary') {
+                $stmtBaseSalary = $this->db->prepare("SELECT base_salary_amount FROM `employees` WHERE id = :id");
+                $stmtBaseSalary->execute([':id' => $employeeId]);
+                $baseSalaryForFee = (float)($stmtBaseSalary->fetchColumn() ?: 0);
+            }
+            try {
+                $theoretical = $this->computeInstallmentBreakdown($principalAmount, $totalInstallments, $interestType, $interestRate, $feePercent, $feeBase, $baseSalaryForFee ?: null);
+            } catch (InvalidArgumentException $e) {
+                $theoretical = null; // e.g. base salary genuinely unknown/zero -- degrade gracefully below, don't fail the whole save over a breakdown display detail.
+            }
+            $installmentBreakdown = [];
+            foreach ($installmentAmounts as $idx => $amount) {
+                $theoreticalInterest = $theoretical[$idx]['interest'] ?? 0.0;
+                $interestForRow = max(0.0, min($theoreticalInterest, $amount));
+                $installmentBreakdown[] = ['principal' => round($amount - $interestForRow, 2), 'interest' => round($interestForRow, 2)];
+            }
+        }
+
         $own = !$this->db->inTransaction();
         try {
             if ($own) {
@@ -558,12 +644,14 @@ class EmployeeEarningDeductionModel {
                 $assignmentId = (int)$this->db->lastInsertId();
             }
 
-            $insStmt = $this->db->prepare("INSERT INTO `employee_earning_deduction_installments` (assignment_id, installment_no, amount, status) VALUES (:assignment_id, :installment_no, :amount, 'pending')");
+            $insStmt = $this->db->prepare("INSERT INTO `employee_earning_deduction_installments` (assignment_id, installment_no, amount, principal_amount, interest_amount, status) VALUES (:assignment_id, :installment_no, :amount, :principal_amount, :interest_amount, 'pending')");
             foreach ($installmentAmounts as $idx => $amount) {
                 $insStmt->execute([
                     ':assignment_id' => $assignmentId,
                     ':installment_no' => $idx + 1,
                     ':amount' => $amount,
+                    ':principal_amount' => $installmentBreakdown[$idx]['principal'] ?? null,
+                    ':interest_amount' => $installmentBreakdown[$idx]['interest'] ?? null,
                 ]);
             }
 
