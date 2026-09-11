@@ -199,9 +199,14 @@ looks like a no-op success, but the schema gap remains. Run `php scripts/migrate
 manually cross-check the 38 listed filenames against the target database before trusting `up`
 covered everything on a NEW environment (not just local dev, which is already known-current).
 
-**Fix, if this becomes a real problem**: either widen the detector to recognize a few more DDL
-shapes (`DROP TABLE`/`MODIFY COLUMN`/etc.), or add a `mark-applied <file>` command so a human who's
-manually verified one of the 38 can record it without `migrate.php` needing to re-derive that on
-its own. Neither was in this task's own scope (status/up/down only).
+**Update (2026-09-10, same batch, item 3 follow-up): the escape hatch this entry asked for now
+exists.** `mark <file>` (single) and `mark-all-unknown --reason="..." --yes` (bulk, refuses without
+`--yes`/a reason/while anything is genuinely pending) both record a human's own review without
+`migrate.php` needing to re-derive it. Dev's own 38 files were reviewed and marked this way on
+2026-09-10 (`status` now shows 0 unknown, 0 pending on dev). **Left open, not closed**: the
+underlying detector limitation (only 2 DDL shapes recognized) is still real for any FUTURE
+migration file of an unusual shape, and dev being clear doesn't mean any OTHER environment
+(production especially) has been reviewed -- see `docs/releases/2026-09-11-batch3b.md`'s own
+4-step first-deploy sequence for exactly that reason.
 
 **Source:** Batch 3B item 0, explicit instruction (2026-09-10).
