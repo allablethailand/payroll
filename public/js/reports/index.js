@@ -860,6 +860,7 @@ $(document).on('click', '#btnExportHistoryClearFilter', function () {
 });
 
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     loadReportList();
     loadCycleRunsMatrix();
     loadAvailableYears();
@@ -878,5 +879,6 @@ $(document).ready(function () {
             initExportHistoryTable();
         }
         $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+    });
     });
 });

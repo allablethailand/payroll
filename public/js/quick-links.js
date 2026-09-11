@@ -224,7 +224,9 @@ $(document).on('click', '#btnSaveQuickLinks', function () {
 });
 
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     layoutQuickLinks();
+    });
 });
 // Image intrinsic sizes/webfont metrics can still shift .nav-left's real width slightly after
 // `ready()` fires -- one more pass once everything (including images) has actually finished loading

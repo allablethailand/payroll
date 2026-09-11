@@ -101,8 +101,10 @@ function initLoginHistoryOverviewTable() {
 // standalone page (/payroll/employees/login-history), visible from first paint, so that concern no
 // longer applies -- inits directly on page load instead.
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     loadLoginHistoryOverviewFilterOptions();
     initLoginHistoryOverviewTable();
+    });
 });
 $(document).on('click', '#employeeLoginHistoryStationFilterToggle', function () {
     const $filter = $('#employeeLoginHistoryStationFilter').toggleClass('collapsed');

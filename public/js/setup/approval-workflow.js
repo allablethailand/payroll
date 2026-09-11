@@ -520,5 +520,7 @@ $(document).on('click', '#approvalFlowDocTypeTabs .nav-link', function () {
 });
 
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     loadFlow(currentDocType);
+    });
 });

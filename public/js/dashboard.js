@@ -697,6 +697,8 @@ function renderDepartmentChart(rows) {
 }
 
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     loadDashboardSummary();
     dashCheckPendingAnnouncements();
+    });
 });

@@ -53,7 +53,9 @@
     };
 
     $(document).ready(function () {
+        (window.langReady || Promise.resolve()).then(function () {
         loadDrawerContent();
+        });
     });
 
     $(document).on('click', '#helpDrawerToggleBtn', function () {

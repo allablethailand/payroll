@@ -1468,6 +1468,7 @@ function renderEmployeeTabsMoreMenu(hiddenItems) {
 }
 $(window).on('resize', typeof debounce === 'function' ? debounce(layoutEmployeeTabs, 150) : layoutEmployeeTabs);
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     layoutEmployeeTabs();
     const tabsEl = document.getElementById('employeeTabs');
     if (tabsEl && typeof MutationObserver !== 'undefined') {
@@ -1490,6 +1491,7 @@ $(document).ready(function () {
         });
         edtTabsObserver.observe(tabsEl, { attributes: true, attributeFilter: ['class'], subtree: true });
     }
+    });
 });
 
 const DOCUMENT_INPUT_MAP = {

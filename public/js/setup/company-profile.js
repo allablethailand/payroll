@@ -1,8 +1,10 @@
 let COUNTRY_MASTER_CONFIG = null;
 const $pane = $('#setup-pane');
 $(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
     loadCountryConfig(function () {
         initPage('p1');
+    });
     });
 });
 $(document).on('click', '.setup-tabs .setup-menu', function () {
