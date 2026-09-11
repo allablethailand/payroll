@@ -3257,13 +3257,36 @@ let auditHistoryEntries = [];
 function auditHistoryRowHtmlRd(entry, index, isLast) {
     const meta = auditTimelineMetaRd(entry.action);
     const color = (APV_COLORS[meta.tone] || APV_COLORS.muted).icon;
-    const actor = personDisplayNameRd(entry, 'performed_by');
-    const stateChangeHtml = entry.from_state
-        ? `${stateBadgeRd(entry.from_state)} <i class="fa-solid fa-arrow-right mx-1"></i> ${stateBadgeRd(entry.to_state)}`
-        : (entry.to_state ? stateBadgeRd(entry.to_state) : '');
-    const metaParts = [];
-    if (entry.ip_address) metaParts.push(`<span class="me-3"><i class="fa-solid fa-location-dot me-1"></i>${escapeHtml(entry.ip_address)}</span>`);
-    if (entry.user_agent) metaParts.push(`<span><i class="fa-solid fa-desktop me-1"></i>${escapeHtml(entry.user_agent)}</span>`);
+    // 2026-09-11, Batch 3C item 2, explicit instruction: "ชื่อผู้ทำ -> apvPersonLineHtml (รูป + ชื่อ,
+    // คลิก quick-view ได้) แบบเดียวกับไทม์ไลน์" -- same size (26) the Approval Timeline modal's own
+    // Created/Paid/Locked stages use (app.js's apvCreatedStageHtml() etc.), same {employeeId} option
+    // that wires up the shared .emp-avatar-link click handler.
+    const actorName = personDisplayNameRd(entry, 'performed_by');
+    const actorHtml = apvPersonLineHtml(actorName, 26, entry.performed_by_profile_photo_path, entry.performed_by ? { employeeId: entry.performed_by } : null);
+    // 2026-09-11, Batch 3C item 2, explicit instruction: "from_state -> to_state ถ้าเท่ากัน แสดงครั้ง
+    // เดียว ไม่ใช่ 'กำลังทำรอบ  กำลังทำรอบ'" -- an action that doesn't actually change state (e.g. a
+    // comment/note logged mid-state) used to always render the arrow-transition shape even when both
+    // sides were identical.
+    let stateChangeHtml = '';
+    if (entry.from_state && entry.to_state && entry.from_state !== entry.to_state) {
+        stateChangeHtml = `${stateBadgeRd(entry.from_state)} <i class="fa-solid fa-arrow-right mx-1"></i> ${stateBadgeRd(entry.to_state)}`;
+    } else if (entry.to_state) {
+        stateChangeHtml = stateBadgeRd(entry.to_state);
+    } else if (entry.from_state) {
+        stateChangeHtml = stateBadgeRd(entry.from_state);
+    }
+    // 2026-09-11, Batch 3C item 2, explicit instruction: raw User-Agent parsed into a compact
+    // "Windows 10 · Edge 152" summary (app.js's formatUserAgentSummary(), OS · main browser + major
+    // version only) with the RAW string kept in a tooltip (title attribute), not shown inline
+    // anymore -- IP address moves to its own line right below it, instead of sharing one line.
+    const metaLines = [];
+    if (entry.user_agent) {
+        const uaSummary = formatUserAgentSummary(entry.user_agent) || entry.user_agent;
+        metaLines.push(`<div title="${escapeAttr(entry.user_agent)}"><i class="fa-solid fa-desktop me-1"></i>${escapeHtml(uaSummary)}</div>`);
+    }
+    if (entry.ip_address) {
+        metaLines.push(`<div><i class="fa-solid fa-location-dot me-1"></i>${escapeHtml(entry.ip_address)}</div>`);
+    }
     return `
         <div class="apv-history-row${isLast ? ' apv-history-row-last' : ''}">
             <div class="apv-history-row-marker">
@@ -3275,10 +3298,10 @@ function auditHistoryRowHtmlRd(entry, index, isLast) {
                     <span class="apv-history-row-title">${escapeHtml(auditActionLabel(entry.action))}</span>
                     <span class="apv-history-row-date"><i class="fa-regular fa-clock me-1"></i>${escapeHtml(formatDisplayDateTime(entry.performed_at))}</span>
                 </div>
-                <div class="apv-history-row-actor">${escapeHtml(actor || '-')}</div>
+                <div class="apv-history-row-actor">${actorHtml}</div>
                 ${stateChangeHtml ? `<div class="mt-2">${stateChangeHtml}</div>` : ''}
                 ${entry.note ? `<div class="apv-substep-remark mt-2">${escapeHtml(entry.note)}</div>` : ''}
-                ${metaParts.length ? `<div class="small text-muted mt-2">${metaParts.join('')}</div>` : ''}
+                ${metaLines.length ? `<div class="small text-muted mt-2">${metaLines.join('')}</div>` : ''}
             </div>
         </div>
     `;

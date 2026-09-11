@@ -561,7 +561,12 @@ class PayrollRunModel {
         if (!$this->get($runId, $compId)) {
             return [];
         }
-        $sql = "SELECT a.*, e.name_th AS performed_by_name_th, e.name_en AS performed_by_name_en
+        // 2026-09-11, Batch 3C item 2, explicit instruction: the Action History tab's own actor line
+        // now renders avatar+name (apvPersonLineHtml(), same as the Approval Timeline modal) instead
+        // of plain text, clickable through to the employee quick-view modal -- needs the photo path
+        // alongside the name fields this query already joined.
+        $sql = "SELECT a.*, e.name_th AS performed_by_name_th, e.name_en AS performed_by_name_en,
+                    e.profile_photo_path AS performed_by_profile_photo_path
                 FROM `payroll_run_audit_logs` a
                 LEFT JOIN `employees` e ON e.id = a.performed_by
                 WHERE a.run_id = :run_id AND a.action != 'view_detail' ORDER BY a.id ASC";
