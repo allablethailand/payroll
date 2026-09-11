@@ -38,20 +38,6 @@ wrapper then — not preemptively.
 
 ---
 
-## Consolidate apvApproverSubstepHtml* (Rd/Pr/Ap) into app.js
-
-`apvAvatarHtml*`/`apvPersonLineHtml*`/`apvIconHtml*`/`apvBadgeHtml*`/`APV_COLORS_*`/
-`apvCreatedStageHtml*` were consolidated into app.js in Batch 3A item 3 (byte-identical across all
-3 pages, confirmed before merging). **Still duplicated 3x, not yet done**: `apvApproverSubstepHtmlRd`/
-`Pr`/`Ap` (the per-approver row inside the Approval stage's own step-group body) — same
-`auditActionLabel()` consolidation precedent, not folded into item 3 since it wasn't part of that
-item's explicit scope.
-
-**Source:** Batch 2, item 2 (originally flagged) — `apvAvatarHtml*` half done in Batch 3A item 3
-(2026-09-10); `apvApproverSubstepHtml*` still pending.
-
----
-
 ## 8 modals outside payroll-process whose footer behavior changed (Batch 1 selector fix)
 
 Batch 1, item 1 fixed `app.js`'s global `show.bs.modal` handler (`.find('> .modal-footer')` →

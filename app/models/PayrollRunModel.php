@@ -254,6 +254,11 @@ class PayrollRunModel {
                     creator.name_th AS created_by_name_th, creator.name_en AS created_by_name_en,
                     creator.profile_photo_path AS created_by_profile_photo_path,
                     submitter.name_th AS submitted_by_name_th, submitter.name_en AS submitted_by_name_en,
+                    -- 2026-09-11, Batch 3C item 1: the Approval Timeline's new Submitted station
+                    -- (apvSubmittedStageHtml(), between Created and Approval) needs who+photo, same
+                    -- as creator/payer/locker already have -- submitted_by never had a photo joined
+                    -- before since nothing rendered an avatar for it until now.
+                    submitter.profile_photo_path AS submitted_by_profile_photo_path,
                     -- 2026-09-10, Batch 3A item 3: the Approval Timeline modal's own Paid/Locked
                     -- stations need who+photo, same as creator/approvers already have -- paid_by/
                     -- locked_by were never JOINed before (the old merged Paid/Locked stage box only
