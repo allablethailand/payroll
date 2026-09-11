@@ -790,6 +790,61 @@ function formatDisplayDateTime(value) {
     const pad = n => String(n).padStart(2, '0');
     return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
+// 2026-09-11, Batch 3C item 2: mirrors EmployeeLoginLogModel::parseUserAgent()'s own PHP regex
+// logic (same check order, same OS/browser labels) -- Edge/Opera MUST be checked before Chrome/
+// Safari (both embed "Chrome"/"Safari" tokens in their own UA string), same well-known UA-sniffing
+// gotcha the PHP version's own docblock already documents. A SEPARATE client-side copy exists here
+// (not shared code with that PHP method) because this page renders raw `user_agent` strings sent
+// straight from PayrollRunModel::getAuditLog() (never parsed server-side for this particular
+// table), unlike Employee Login History, which parses once at WRITE time and stores structured
+// columns instead -- kept in lockstep with the PHP version's own regex/labels deliberately, so the
+// same real UA never reads "Chrome" on one page and "Edge" on another.
+function parseUserAgent(ua) {
+    ua = ua || '';
+    const result = { device_type: 'unknown', os_name: null, os_version: null, browser_name: null, browser_version: null };
+    if (!ua) return result;
+    if (/bot|crawl|spider|slurp/i.test(ua)) result.device_type = 'bot';
+    else if (/tablet|ipad/i.test(ua)) result.device_type = 'tablet';
+    else if (/mobile|android|iphone/i.test(ua)) result.device_type = 'mobile';
+    else result.device_type = 'desktop';
+
+    let m;
+    if ((m = ua.match(/Windows NT ([\d.]+)/i))) {
+        const winVersions = { '10.0': '10/11', '6.3': '8.1', '6.2': '8', '6.1': '7' };
+        result.os_name = 'Windows';
+        result.os_version = winVersions[m[1]] || m[1];
+    } else if ((m = ua.match(/Mac OS X ([\d_]+)/i))) {
+        result.os_name = 'macOS';
+        result.os_version = m[1].replace(/_/g, '.');
+    } else if ((m = ua.match(/Android ([\d.]+)/i))) {
+        result.os_name = 'Android';
+        result.os_version = m[1];
+    } else if ((m = ua.match(/OS ([\d_]+) like Mac OS X/i))) {
+        result.os_name = 'iOS';
+        result.os_version = m[1].replace(/_/g, '.');
+    } else if (/Linux/i.test(ua)) {
+        result.os_name = 'Linux';
+    }
+
+    if ((m = ua.match(/Edg\/([\d.]+)/i))) { result.browser_name = 'Edge'; result.browser_version = m[1]; }
+    else if ((m = ua.match(/OPR\/([\d.]+)/i))) { result.browser_name = 'Opera'; result.browser_version = m[1]; }
+    else if ((m = ua.match(/Firefox\/([\d.]+)/i))) { result.browser_name = 'Firefox'; result.browser_version = m[1]; }
+    else if ((m = ua.match(/CriOS\/([\d.]+)/i))) { result.browser_name = 'Chrome'; result.browser_version = m[1]; }
+    else if ((m = ua.match(/Chrome\/([\d.]+)/i))) { result.browser_name = 'Chrome'; result.browser_version = m[1]; }
+    else if ((m = ua.match(/Version\/([\d.]+).*Safari/i))) { result.browser_name = 'Safari'; result.browser_version = m[1]; }
+    return result;
+}
+// 2026-09-11, Batch 3C item 2, explicit instruction: raw IP/User-Agent in the Action History tab's
+// own timeline should read as "Windows 10 · Edge 152" (OS · main browser + its MAJOR version only,
+// not the full build string) -- built on top of parseUserAgent() above. The raw UA itself is never
+// shown inline (still available via a tooltip at the call site) -- only this compact summary.
+function formatUserAgentSummary(ua) {
+    const p = parseUserAgent(ua);
+    const osLabel = p.os_name ? (p.os_version ? `${p.os_name} ${p.os_version}` : p.os_name) : '';
+    const browserMajor = p.browser_version ? p.browser_version.split('.')[0] : '';
+    const browserLabel = p.browser_name ? (browserMajor ? `${p.browser_name} ${browserMajor}` : p.browser_name) : '';
+    return [osLabel, browserLabel].filter(Boolean).join(' · ');
+}
 async function changeLanguage(lang) {
     if (currentLang === lang) return;
     currentLang = lang;
@@ -1584,8 +1639,25 @@ function renderEmployeeQuickViewModal(emp) {
     $('#empQuickViewStatus').text((langData['status_' + emp.employee_status]) || emp.employee_status || '-');
     $('#empQuickViewGoToProfile').attr('href', `${BASE_URL}/employees/${emp.employee_no}`);
 }
-$(document).on('click', '.emp-avatar-link', function () {
-    const employeeId = $(this).data('employee-id');
+// 2026-09-11, Batch 3C item 3, explicit instruction: "ห้าม trigger row click ไปหน้า Detail
+// (stopPropagation ใน handler กลางของ .emp-avatar-link ไม่ใช่แก้รายหน้า)" -- a plain jQuery
+// `$(document).on('click', '.emp-avatar-link', ...)` attaches its real native listener on
+// `document` itself, in the BUBBLE phase. A row-click handler delegated on a closer ancestor
+// (e.g. `#tb_payroll_run tbody`) is physically CLOSER to the click target, so during the native
+// bubble phase it always fires FIRST, regardless of source-code order -- calling
+// `stopPropagation()` from this handler would be too late to stop it (same class of bug already
+// documented/fixed per-page for `.stc-action`/`.btn-quick-submit-run` in payroll/index.js's own
+// row-click handler, which needed its OWN exclusion added there since it fires before this one
+// ever runs). Using the native CAPTURE phase here instead (`addEventListener(..., true)`) makes
+// this the FIRST handler to see the click on ITS way down to the target, before any bubble-phase
+// row-click handler on any page gets a chance -- `stopPropagation()` during capture halts the
+// entire dispatch, bubble phase included, so no per-page row handler needs its own exclusion at
+// all. This is the one central place a `.emp-avatar-link` click is handled anywhere in the app.
+document.addEventListener('click', function (e) {
+    const $link = $(e.target).closest('.emp-avatar-link');
+    if (!$link.length) return;
+    e.stopPropagation();
+    const employeeId = $link.data('employee-id');
     if (!employeeId) return;
     $.ajax({
         url: `${BASE_URL}/api/employee.quick-view`,
@@ -1604,7 +1676,7 @@ $(document).on('click', '.emp-avatar-link', function () {
             if (typeof showWarning === 'function') showWarning((langData && langData['save_failed']) || 'An error occurred while loading the data.');
         }
     });
-});
+}, true);
 // "Created" stage -- always done (a run exists the moment it's created, nothing to wait for), so
 // unlike Paid/Locked below it has no pending state to render.
 function apvCreatedStageHtml(run) {
