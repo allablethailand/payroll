@@ -1789,8 +1789,11 @@ function verifyLockButtonsRd(row) {
     const verifyTitle = row.is_verified ? (langData['action_unverify'] || 'Unverify') : (langData['action_verify'] || 'Verify');
     const verifyLabel = row.is_verified ? (langData['verify_status_verified'] || 'Verified') : (langData['action_verify'] || 'Verify');
     const verifyBtnCls = row.is_verified ? 'btn-success' : 'btn-outline-secondary';
+    // 2026-09-11, Batch 3C item 9: data-employee-name feeds the confirm dialog's own "{name}"
+    // placeholder (see the .btn-verify-employee click handler) -- avoids a round trip back through
+    // the DataTable row data at click time.
     return `<div class="d-flex gap-1 justify-content-center">
-        <button type="button" class="btn btn-sm ${verifyBtnCls} rounded-pill btn-verify-employee" data-employee-id="${row.employee_id}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double me-1"></i>${escapeHtml(verifyLabel)}</button>
+        <button type="button" class="btn btn-sm ${verifyBtnCls} rounded-pill btn-verify-employee" data-employee-id="${row.employee_id}" data-employee-name="${escapeAttr(employeeDisplayNameRd(row))}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double me-1"></i>${escapeHtml(verifyLabel)}</button>
     </div>`;
 }
 // Comment always available (any state) -- same reasoning as the Breakdown button (read-only/non-
@@ -2848,10 +2851,25 @@ $(document).on('change', '.run-detail-row-check', function () {
 function selectedRunDetailEmployeeIds() {
     return allRunDetailRowCheckboxes().filter(':checked').map(function () { return Number($(this).data('employee-id')); }).get();
 }
-function bulkVerifyLockRd(url, payload, confirmTitle, confirmMessage) {
+// 2026-09-11, Batch 3C item 9 follow-up, explicit instruction: "เพิ่ม confirm ให้ #btnBulkVerify ด้วย
+// ข้อความเดียวกับ verify all แต่ใช้จำนวนที่เลือก...ปุ่มยืนยัน 'ตรวจสอบแล้ว'" -- confirmTitle carries a
+// "{count}" placeholder (see confirm_bulk_verify_title), filled in here from the ACTUAL selection
+// size once known, same {count}/{name} template-replace convention already used throughout this
+// app. Swal.fire() called directly (not showConfirm(), which hardcodes Yes/No) for the same reason
+// as the single-employee .btn-verify-employee handler above -- still the one central SweetAlert2
+// confirm modal, just with a real action label on the confirm button instead of "OK".
+function bulkVerifyLockRd(url, payload, confirmTitle, confirmMessage, confirmButtonText) {
     const employeeIds = selectedRunDetailEmployeeIds();
     if (!employeeIds.length) return;
-    showConfirm(confirmTitle, confirmMessage, function () {
+    Swal.fire({
+        icon: 'info',
+        title: confirmTitle.replace('{count}', employeeIds.length),
+        text: confirmMessage,
+        showCancelButton: true,
+        confirmButtonText: confirmButtonText || (langData.yes || 'Yes'),
+        cancelButtonText: langData['cancel'] || 'Cancel'
+    }).then(function (result) {
+        if (!result.isConfirmed) return;
         $.ajax({
             url: `${BASE_URL}${url}`, method: 'POST', contentType: 'application/json', dataType: 'json',
             data: JSON.stringify(Object.assign({ id: PAYROLL_RUN_ID, employee_ids: employeeIds }, payload)),
@@ -2874,8 +2892,9 @@ function bulkVerifyLockRd(url, payload, confirmTitle, confirmMessage) {
 // same low-stakes direction Lock's own "Unlock" never required a confirm for either.
 $(document).on('click', '#btnBulkVerify', function () {
     bulkVerifyLockRd('/api/payroll-run.employee-verify.bulk', { verified: true },
-        langData['confirm_bulk_verify_title'] || 'Verify selected employees?',
-        langData['confirm_bulk_verify_message'] || 'Verified employees will no longer be recalculated and cannot be edited until unverified.');
+        langData['confirm_bulk_verify_title'] || 'Verify {count} selected employee(s)?',
+        langData['confirm_bulk_verify_message'] || 'Verified employees will no longer be recalculated and cannot be edited until unverified.',
+        langData['verify_status_verified'] || 'Verified');
 });
 function singleVerifyLockRd(url, employeeId, payload, successMsgKey) {
     $.ajax({
@@ -2892,23 +2911,51 @@ function singleVerifyLockRd(url, employeeId, payload, successMsgKey) {
         error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 }
+// 2026-09-11, Batch 3C item 9, explicit instruction: "กดแล้ว confirm ก่อนทุกครั้ง" -- unverify used to
+// skip confirm entirely (see the 2026-08-31 comment above bulkVerifyLockRd(), now superseded). Both
+// directions confirm now, each with its own wording that names the employee and states the actual
+// action (not a generic "OK") -- Swal.fire() called directly rather than through showConfirm() since
+// showConfirm()'s own confirmButtonText is hardcoded to Yes/No, and the whole point here is a
+// specific action label on that button. Still the SAME central SweetAlert2 confirm modal
+// showConfirm() itself wraps, per the "ใช้ modal confirm กลางของระบบ" instruction -- same pattern
+// already used elsewhere in this app whenever a confirm needs a custom confirm button label (e.g.
+// employee/detail.js's #btnSuspendEmployee).
 $(document).on('click', '.btn-verify-employee', function () {
     const employeeId = $(this).data('employee-id');
+    const employeeName = $(this).data('employee-name') || '';
     const nowVerified = $(this).data('verified') !== true && $(this).data('verified') !== 'true';
-    if (nowVerified) {
-        showConfirm(langData['confirm_verify_employee_title'] || 'Verify this employee?',
-            langData['confirm_verify_employee_message'] || 'This employee will no longer be recalculated and cannot be edited until unverified.',
-            function () { singleVerifyLockRd('/api/payroll-run.employee-verify.save', employeeId, { verified: true }, 'save_success'); });
-    } else {
-        singleVerifyLockRd('/api/payroll-run.employee-verify.save', employeeId, { verified: false }, 'save_success');
-    }
+    const title = (nowVerified
+        ? (langData['confirm_verify_employee_title'] || 'Confirm that {name}\'s data in this run has been verified')
+        : (langData['confirm_unverify_employee_title'] || 'Unverify {name}')
+    ).replace('{name}', employeeName);
+    const message = nowVerified
+        ? (langData['confirm_verify_employee_message'] || 'This employee will no longer be recalculated and cannot be edited until unverified.')
+        : (langData['confirm_unverify_employee_message'] || 'This employee will resume normal recalculation and can be edited again.');
+    const confirmButtonText = nowVerified
+        ? (langData['verify_status_verified'] || 'Verified')
+        : (langData['action_unverify'] || 'Unverify');
+    Swal.fire({
+        icon: 'info',
+        title,
+        text: message,
+        showCancelButton: true,
+        confirmButtonText,
+        cancelButtonText: langData['cancel'] || 'Cancel'
+    }).then(function (result) {
+        if (!result.isConfirmed) return;
+        singleVerifyLockRd('/api/payroll-run.employee-verify.save', employeeId, { verified: nowVerified }, 'save_success');
+    });
 });
 // 2026-08-31, explicit request: "สามารถ Verify ทั้ง Process ได้เลย...ให้ Verify ได้ทั้ง Process ทั้ง Detail
 // และหน้า List" -- verifies every employee currently in the run in one action. Section-header button
 // (see renderSectionButtons()), not part of the selection-scoped bulk bar, so it always needs its own
 // confirm regardless of what (if anything) is currently checked.
 $(document).on('click', '#btnVerifyAllEmployees', function () {
-    showConfirm(langData['confirm_verify_all_title'] || 'Verify all employees in this run?',
+    // 2026-09-11, Batch 3C item 9, explicit instruction: "ให้ confirm พร้อมจำนวนคน" -- currentRun's
+    // own employee_count (loaded whole client-side, not paginated -- see initRunDetailTable()'s own
+    // comment) is the true total, not just however many rows the DataTable happens to have rendered.
+    const empCount = (currentRun && currentRun.employee_count) || 0;
+    showConfirm((langData['confirm_verify_all_title'] || 'Verify all {count} employee(s) in this run?').replace('{count}', empCount),
         langData['confirm_verify_all_message'] || 'Every employee in this run will no longer be recalculated and cannot be edited until unverified.',
         function () {
             $.ajax({
