@@ -4602,6 +4602,8 @@ $(document).on('click', '#btnEditRun', function () {
     $('#run_id').val(currentRun.id);
     $('#run_sync_process_id').val(currentRun.sync_process_id || '');
     $('#run_sync_run_kind').val(currentRun.sync_run_kind || '');
+    // Must be set before syncRunPurposeChoiceUi()/updateEditRunTypeSectionRd() below trigger updateComputeStatutoryVisibility() (app.js), which reads this field.
+    $('#run_attribution_tax_treatment').val(currentRun.sync_attribution_tax_treatment || '');
     $('#run_name').val(currentRun.run_name);
     $('#run_period_start').val(toDisplayDateRd(currentRun.period_start_date));
     $('#run_period_end').val(toDisplayDateRd(currentRun.period_end_date));
