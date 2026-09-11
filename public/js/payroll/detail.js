@@ -999,10 +999,16 @@ function renderSectionButtons(run) {
     // opposed to shown/hidden) is a separate concern owned by updateRunDetailBulkBar() instead --
     // untouched here.
     $('#btnJoinEmployees, #btnRecalculate, #btnBulkVerify, #btnVerifyAllEmployees').addClass('d-none');
+    // 2026-09-11, Batch 3C item 4 sub-step 4d, explicit instruction: #btnEditRun is no longer
+    // draft-only -- applyRunFieldLockUi() (app.js) already handles a non-draft run correctly (locks
+    // everything except notes, shows a summary explaining why), so there was never a reason a
+    // non-draft run should have NO way at all to reach that one still-editable field. Moved above the
+    // early return below -- everything else in this function (Join/Recalculate/Bulk Verify/Verify
+    // All, the auto-recalculate checkbox/reminder banner) stays draft-only, unchanged.
+    $editWrap.append(`<button type="button" id="btnEditRun" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="action_edit">${langData['action_edit'] || 'Edit'}</span></button>`);
     if (run.state !== 'draft') {
         return;
     }
-    $editWrap.append(`<button type="button" id="btnEditRun" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="action_edit">${langData['action_edit'] || 'Edit'}</span></button>`);
     // 2026-09-09, explicit request across 3 follow-up rounds -- final layout: "เอาคำนวณใหม่ไปวางต่อ
     // search แล้วตามด้วย ปุ่ม Add พนักงาน...แล้วเอาปุ่ม Verify All มาไว้ต่อจาก ตรวจสอบแล้ว" --
     // #btnJoinEmployees/#btnRecalculate/#btnBulkVerify/#btnVerifyAllEmployees no longer live in this
@@ -4705,17 +4711,24 @@ $(document).on('click', '#btnEditRun', function () {
 // event that shared function fires on success instead.
 $(document).on('payrollRun:saved', function (e, res) {
     showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
-    // 2026-09-11, Batch 3C item 4 sub-step 4b, explicit instruction: warn (never auto-recalculate --
-    // see BACKLOG.md's own entry for why update() itself doesn't) when a calc flag genuinely changed
-    // on a still-draft run that already has employee_count>0 (the exact scenario the hasAdminWork()
-    // correction leaves editable without any admin-work lock -- see PayrollRunModel::
-    // runFieldLockState()'s own docblock). Compares the JUST-SUBMITTED field values (still sitting in
-    // the form's own DOM at this point -- the modal is hidden, not reset, until the next open) against
+    // 2026-09-11, Batch 3C item 4 sub-step 4b (widened at 4d, explicit instruction) -- warn (never
+    // auto-recalculate -- see BACKLOG.md's own entry for why update() itself doesn't) when
+    // cycle_id/period dates/run_purpose/its 4 calc flags genuinely changed on a still-draft run that
+    // already has employee_count>0 -- the exact scenario the hasAdminWork() correction leaves
+    // editable without any admin-work lock (all 3 groups share the same tier2 lock, see
+    // PayrollRunModel::runFieldLockState()'s own docblock, so they're the same set of fields this
+    // warning needs to watch). Compares the JUST-SUBMITTED field values (still sitting in the form's
+    // own DOM at this point -- the modal is hidden, not reset, until the next open) against
     // `currentRun`, which is still the PRE-save snapshot here (loadRunDetail() below hasn't
     // refetched it yet).
     if (currentRun && currentRun.state === 'draft' && Number(currentRun.employee_count || 0) > 0) {
+        const normId = function (v) { return (v === null || v === undefined || v === '') ? '' : String(v); };
+        const submittedCycleId = $('#run_cycle_row').hasClass('d-none') ? '' : normId($('#run_cycle_id').val());
+        const cycleChanged = submittedCycleId !== normId(currentRun.cycle_id);
+        const periodChanged = toIsoDateRd($('#run_period_start').val()) !== (currentRun.period_start_date || '')
+            || toIsoDateRd($('#run_period_end').val()) !== (currentRun.period_end_date || '');
         const submittedPurpose = $('#run_purpose_choice_row').hasClass('d-none') ? 'payroll' : ($('#run_purpose').val() || 'payroll');
-        const calcFlagChanged = submittedPurpose !== (currentRun.run_purpose || 'payroll')
+        const purposeOrFlagsChanged = submittedPurpose !== (currentRun.run_purpose || 'payroll')
             || (submittedPurpose === 'incentive' && [
                 ['compute_statutory', '#run_compute_statutory'],
                 ['include_base_salary', '#run_include_base_salary'],
@@ -4724,7 +4737,7 @@ $(document).on('payrollRun:saved', function (e, res) {
             ].some(function (pair) {
                 return ($(pair[1]).is(':checked') ? 1 : 0) !== Number(currentRun[pair[0]] || 0);
             }));
-        if (calcFlagChanged) {
+        if (cycleChanged || periodChanged || purposeOrFlagsChanged) {
             showWarning(langData['run_recalc_needed_after_calc_change'] || 'You changed how this run is calculated -- click Recalculate to update the numbers.');
         }
     }
