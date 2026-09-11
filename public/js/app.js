@@ -1496,6 +1496,30 @@ $(document).on('hidden.bs.modal', '.modal', function () {
         document.body.style.paddingRight = `${scrollbarWidth}px`;
     }
 });
+// 2026-09-11, Batch 4 item 2c -- companion fix to the stacked-modal scroll-lock re-apply just above
+// (same "more than one real Bootstrap Modal instance open at once" problem family, so it lives right
+// alongside it): Bootstrap 5's own CSS gives EVERY `.modal`/`.modal-backdrop` the exact same fixed
+// z-index (1055/1050, confirmed in the bundled bootstrap.css) regardless of how many are open --
+// there is no built-in per-instance increment for two genuinely separate, independently-dismissible
+// Modal instances stacked on top of each other (as opposed to e.g. a SweetAlert2 confirm on top of a
+// Bootstrap modal, which already works fine since SweetAlert2 manages its own, much higher z-index
+// range). Without this, whichever of the two modals happens to sit LATER in the page's static HTML
+// source order wins the z-index tie by DOM order alone -- fragile, and wrong whenever the visually
+// "inner" modal's own markup happens to sit earlier in modals.php than the "outer" one it's meant to
+// stack on top of. Generic on purpose (not scoped to any one modal pair) -- bumps whichever modal is
+// NOT the first one open, plus its own just-appended backdrop, using the same technique Bootstrap's
+// own docs have long recommended for nested modals. A single modal opening alone (the normal case,
+// ~100+ other modals in this app) hits the `stackLevel <= 0` guard and is untouched.
+$(document).on('shown.bs.modal', '.modal', function () {
+    const openModals = document.querySelectorAll('.modal.show');
+    const stackLevel = openModals.length - 1;
+    if (stackLevel <= 0) return;
+    const baseZ = 1055 + stackLevel * 20;
+    this.style.zIndex = String(baseZ + 10);
+    const backdrops = document.querySelectorAll('.modal-backdrop');
+    const thisBackdrop = backdrops[backdrops.length - 1];
+    if (thisBackdrop) thisBackdrop.style.zIndex = String(baseZ);
+});
 // 2026-09-10, real bug found and fixed (explicit report: raw action codes like "employee_verified"
 // showing in Payroll Process's own Approval Timeline modal "History" list) -- was 3 separate, drifted
 // copies of this same lookup (detail.js/index.js/approval.js each had their own, none with the same
