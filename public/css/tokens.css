@@ -43,3 +43,60 @@
   --radius-pill: 999px;             /* badge เท่านั้น */
   --shadow-modal: 0 8px 24px rgba(0, 0, 0, .12);   /* modal/dropdown เท่านั้น -- การ์ดในหน้าไม่มีเงา */
 }
+
+/* ==========================================================================
+   Dark mode (Round 2 item 1b, docs/design/rules.md §1's own decision this round: "token มี 2
+   ชุด light/dark ใน tokens.css เท่านั้น component ห้ามมี dark override ของตัวเอง"). Overrides ONLY the
+   --c-* color tokens above -- --sp-*/--fs-*/--radius*/--font-*/--lh/--shadow-modal (shadow value
+   unchanged in spirit, just re-tuned for a dark surface below) are NOT theme-dependent, untouched
+   here.
+   Selector convention is the EXACT one Backlog Phase 11 T069 already established for this app's own
+   --app-* tokens (style.css, search "3-state model") -- reused verbatim, not reinvented, so --c-*
+   and --app-* stay in lockstep under the same 2 real selectors / 3 logical states:
+   - [data-bs-theme="dark"]: explicit Dark choice (stamped server-side by layout/header.php)
+   - @media (prefers-color-scheme: dark) { :root:not([data-bs-theme="light"]) { ... } }: explicit
+     System choice on a dark-OS browser (header.php stamps nothing for this case, so the media query
+     is the only rule left to catch it) -- the :not([data-bs-theme="light"]) guard stops this from
+     ALSO firing for someone who explicitly chose Light on a dark-OS browser.
+   - Explicit Light choice, and "never configured" (2026-09-05 migration default), both get
+     data-bs-theme="light" stamped -- matches NEITHER selector below, correctly always light.
+   --c-primary itself is INTENTIONALLY UNCHANGED across themes (same "brand accent color stays
+   fixed, only its tint/shade pairing needs a dark-safe alternative" reasoning T069's own comment
+   already gives for --app-accent-soft-bg/-text -- confirmed consistent, not a new decision) --
+   only --c-primary-hover/--c-primary-soft get real dark-tuned values. */
+[data-bs-theme="dark"] {
+    --c-text: #E6E8EB;
+    --c-text-muted: #9AA3AE;
+    --c-text-faint: #6B7480;
+    --c-border: #2A2F36;
+    --c-border-strong: #3A414A;
+    --c-bg: #15181C;
+    --c-bg-subtle: #1C2026;
+    --c-bg-hover: #232830;
+    --c-primary-hover: #FFAD33;
+    --c-primary-soft: #3A2A10;
+    --c-danger: #F97066;      --c-danger-soft: #3B1A18;
+    --c-warning: #F5B14C;     --c-warning-soft: #3A2A12;
+    --c-success: #4ADE80;     --c-success-soft: #12301E;
+    --c-info: #9AA3AE;        --c-info-soft: #232830;
+    --shadow-modal: 0 8px 24px rgba(0, 0, 0, .6);
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-bs-theme="light"]) {
+        --c-text: #E6E8EB;
+        --c-text-muted: #9AA3AE;
+        --c-text-faint: #6B7480;
+        --c-border: #2A2F36;
+        --c-border-strong: #3A414A;
+        --c-bg: #15181C;
+        --c-bg-subtle: #1C2026;
+        --c-bg-hover: #232830;
+        --c-primary-hover: #FFAD33;
+        --c-primary-soft: #3A2A10;
+        --c-danger: #F97066;      --c-danger-soft: #3B1A18;
+        --c-warning: #F5B14C;     --c-warning-soft: #3A2A12;
+        --c-success: #4ADE80;     --c-success-soft: #12301E;
+        --c-info: #9AA3AE;        --c-info-soft: #232830;
+        --shadow-modal: 0 8px 24px rgba(0, 0, 0, .6);
+    }
+}

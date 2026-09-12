@@ -21,6 +21,17 @@
 
 ไฟล์: `public/css/tokens.css` (โหลดก่อน style.css ทุกหน้า) — **ห้ามมี hex/rgb ใหม่ที่อื่น** ทั้ง CSS/PHP/JS
 
+**Dark mode มีที่เดียว — `tokens.css` เท่านั้น** (ตัดสินใจแล้วรอบ 2 item 1b): token สี (`--c-*`) มี 2 ชุด
+light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่าน selector convention เดียวกับที่ Backlog Phase 11 T069 ใช้อยู่แล้ว
+กับ `--app-*` ของตัวเอง (`style.css`, ค้นคำว่า "3-state model") — ไม่ประดิษฐ์ selector ใหม่:
+`[data-bs-theme="dark"]` (เลือก Dark ตรงๆ) + `@media (prefers-color-scheme: dark) { :root:not([data-bs-theme="light"]) { ... } }`
+(เลือก System บน OS ที่เป็น dark) — **ห้าม component ไหนมี dark override ของตัวเองแยกต่างหาก** (เช่น
+`.btn-primary[data-bs-theme="dark"] { ... }`) ทุก component ต้องอ้าง `var(--c-*)` เท่านั้น แล้วให้
+`tokens.css`'s 2 ชุดนี้เป็นคนตัดสินค่าจริงให้เอง — ถ้า component ไหนต้องการสีที่เปลี่ยนตาม theme แต่ยังไม่มี token
+ให้เพิ่ม token ใหม่ใน `tokens.css` (ทั้ง light และ dark) ก่อน ไม่ใช่เขียน dark-mode CSS แยกที่ตัว component
+`--c-primary` เป็นข้อยกเว้นที่ตั้งใจ: **ค่าเดียวกันทั้ง 2 theme** (สีแบรนด์คงที่ ไม่ปรับตาม theme) — มีแค่
+`--c-primary-hover`/`--c-primary-soft` ที่ต้องมีค่า dark แยก (ต้องปรับความสว่าง/ทึบให้ยังคุมกับพื้นมืด)
+
 ```css
 :root {
   /* brand — ใช้ได้ 3 ที่เท่านั้น: ปุ่มหลัก, tab ที่เลือก, step ปัจจุบัน */

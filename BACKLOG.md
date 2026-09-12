@@ -439,3 +439,55 @@ still links to `setup/notification` specifically and that link should keep worki
 choosing which.
 
 **Source:** Phase Design Round 1 audit, incidental finding (2026-09-12).
+
+---
+
+## Quill announcement editor's dark-mode CSS uses the wrong attribute name (`data-theme`, not `data-bs-theme`) — never actually applies
+
+Found while implementing Phase Design Round 2 item 1b (dark-mode tokens, checking every existing
+`[data-bs-theme="dark"]`-style block in `style.css` before adding `tokens.css`'s own). 4 rules at
+`style.css` lines ~8108–8114 (the `.ann-rich-content`/`.ann-quill-wrap` announcement rich-text
+editor's icon/picker theming) are scoped to `:root:not([data-theme="light"])` — **`data-theme`, not
+`data-bs-theme`**. `public/js/app.js` (`applyTheme()`) only ever sets/removes the `data-bs-theme`
+attribute on `<html>` — it never sets a plain `data-theme` attribute at all, on this or any other
+element. These 4 rules can therefore never match anything in this app, on any theme, ever — the
+Quill editor's stroke/fill/picker colors have been silently stuck at their light-mode values in dark
+mode since T069 shipped. Every OTHER dark-mode selector in the file correctly uses `data-bs-theme`
+(confirmed by listing all 16 occurrences of the pattern in the file) — this is the one-off exception,
+not a wider naming split.
+
+**Not fixed this round** — Phase Design rounds don't fix logic/CSS-selector bugs per rules.md §0.7
+("phase design ห้ามแก้ logic...ให้จดลง BACKLOG.md แล้วทำต่อ"), even though the fix itself is trivial
+(rename `data-theme` → `data-bs-theme` in those 4 selectors).
+
+**Fix, when picked up:** `sed -i 's/data-theme="light"/data-bs-theme="light"/' public/css/style.css`
+scoped to just those 4 lines (or open them individually) — one-line-per-rule fix, no JS/schema change
+needed at all.
+
+**Source:** Phase Design Round 2 item 1b, incidental finding (2026-09-12).
+
+---
+
+## `.text-primary-emphasis`/`.bg-primary-border-subtle` (Bootstrap utility classes) have no dark-mode variant
+
+Found during Phase Design Round 2 item 1b's own check ("ตรวจว่า override ราย-component จากข้อ 1
+อ้าง var ทั้งหมด ไม่มี hex ค้างที่ทำให้ dark เพี้ยน"). `style.css`'s Bootstrap-override `:root` block
+(Round 2 item 1) sets `--bs-primary-text-emphasis: #b45f00` and `--bs-primary-border-subtle: #ffd699`
+as static literals — Bootstrap-derived tint/shade variants with no equivalent token in
+`docs/design/rules.md` §1's own token list, so they were deliberately left un-tokenized rather than
+inventing a new token unasked. Confirmed 2 real consumers exist: `public/js/payroll/detail.js` and
+`public/js/setup/changelog.js` both use `.text-primary-emphasis`/`.bg-primary-border-subtle` — these
+2 static, light-mode-tuned colors will render exactly as-is in dark mode too (no adaptation), likely
+reading as a washed-out/wrong-contrast amber against a dark surface at both call sites.
+
+**Not fixed this round** — per the same "report count, don't fix, round 4" instruction Round 2 item
+1b gave for any other T069/dark-mode overlap found during this check.
+
+**Fix, when picked up:** either (a) add a genuine `--c-primary-text-emphasis`/`--c-primary-border-
+subtle` pair to `tokens.css` (both light AND dark values) if this tint/shade pairing is worth
+promoting to a real rules.md §1 token, or (b) give `--bs-primary-text-emphasis`/
+`--bs-primary-border-subtle` their own dark-mode values directly in `style.css`'s existing
+`[data-bs-theme="dark"]`/`@media` blocks (next to `--app-*`'s own dark overrides) if it's not worth a
+new token — a design call, not decided here. Check both real call sites render correctly either way.
+
+**Source:** Phase Design Round 2 item 1b, incidental finding (2026-09-12).
