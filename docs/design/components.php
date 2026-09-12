@@ -539,8 +539,8 @@ $cpStats = [
 
 <div class="cp-section">
     <h2>Stepper (ข้อ 6)</h2>
-    <p class="cp-section-note"><code>status-stepper.php</code> + <code>renderStatusStepper()</code> (§6)</p>
-    <div class="cp-empty">ยังไม่ทำ -- รอข้อ 6</div>
+    <p class="cp-section-note"><code>app/views/partials/status-stepper.php</code> + JS <code>renderStatusStepper(steps, current)</code> (<code>app.js</code>) -- render อย่างเดียว ไม่มี state-machine/ปุ่ม/วันที่/ไอคอน branch แบบ <code>runLifecycleSteps()</code> ตัวจริง (โลจิกขั้นยังอยู่ที่เดิม -- <code>payroll/detail.js</code>'s <code>renderProcessTimeline()</code>/<code>payroll/index.js</code>'s mini-timeline ยังไม่ถูกแตะรอบนี้ ตามกฎ "ห้ามแตะหน้าจริง" §13, ย้ายมาใช้จริงเป็นงานรอบ 4). ด้านล่างคือ 5 ขั้นจริงของรอบเงินเดือน (สร้างรายการ → ส่งอนุมัติ → อนุมัติ → จ่ายเงิน → ปิดรอบ) ที่ 3 สถานะจริง: <b>draft</b> (ยังไม่ส่งอนุมัติ -- ปัจจุบัน = "ส่งอนุมัติ"), <b>approved</b> (อนุมัติแล้ว รอจ่าย -- ปัจจุบัน = "จ่ายเงิน"), <b>paid</b> (จ่ายแล้ว รอปิดรอบ -- ปัจจุบัน = "ปิดรอบ") -- <code>current</code> คำนวณตามกฎเดียวกับ <code>runLifecycleSteps()</code> จริง (<code>currentIndex = reachedIdx + 1</code>) เสร็จ = วงกลมเทา + ✓ ตัวหนังสือจาง, ปัจจุบัน = วงกลมส้มตัน ตัวหนังสือเข้ม+หนา, ถัดไป = วงกลมขอบเทาว่าง, เส้นเชื่อมสีเทาเดียวกันทุกช่วงไม่ว่าขั้นไหนจะเสร็จแล้วหรือยัง ไม่มีสีพาสเทล 5 สี ไม่มีกล่อง/การ์ดต่อขั้น (สลับ theme มุมขวาบนดู dark mode ด้วย).</p>
+    <div id="cpStepperShowcase" class="d-flex flex-column gap-4"></div>
 </div>
 
 <div class="cp-section">
@@ -686,6 +686,25 @@ $(function () {
     $cpUnmappedChip.append(statusBadgeHtml('unmapped_demo', 'run_state'));
     $cpUnmappedRow.find('.d-flex').append($cpUnmappedChip);
     $cpBadgeShowcase.append($cpUnmappedRow);
+
+    // Stepper (ข้อ 6) -- 5 ขั้นจริงของรอบเงินเดือน (ชื่อขั้นตรงกับ app.js's own RUN_LIFECYCLE_STEPS'
+    // doneKey labels: step_draft_done/step_submit_done/state_approved/state_paid/state_locked) --
+    // พิมพ์ตรงๆ ที่นี่แทนอ่านจาก langData เพราะหน้านี้ไม่มี i18n fetch จริง (ดู comment ด้านบนเรื่อง
+    // app.js's own $(document).ready() ที่ทำอะไรไม่ได้บนหน้านี้). `current` ต่อ state ตามกฎเดียวกับ
+    // runLifecycleSteps() ของจริง (currentIndex = reachedIdx + 1): draft (reachedIdx=0) -> current=1,
+    // approved (reachedIdx=2) -> current=3, paid (reachedIdx=3) -> current=4.
+    const CP_STEPPER_LABELS = ['สร้างรายการ', 'ส่งอนุมัติ', 'อนุมัติ', 'จ่ายเงิน', 'ปิดรอบ'];
+    const $cpStepperShowcase = $('#cpStepperShowcase');
+    [
+        { title: 'draft', current: 1 },
+        { title: 'approved', current: 3 },
+        { title: 'paid', current: 4 },
+    ].forEach(function (demo) {
+        const $block = $('<div></div>');
+        $block.append($('<div class="fw-semibold small text-uppercase text-muted mb-2"></div>').text(demo.title));
+        $block.append(renderStatusStepper(CP_STEPPER_LABELS, demo.current));
+        $cpStepperShowcase.append($block);
+    });
 });
 </script>
 <script>

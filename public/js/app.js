@@ -1212,6 +1212,33 @@ function statusBadgeHtml(enumValue, context) {
     const label = getLangValue(entry.label_key) || entry.label_key;
     return `<span class="badge badge-${tone}" data-badge="status" data-i18n="${escapeHtml(entry.label_key)}">${escapeHtml(label)}</span>`;
 }
+// Status stepper (§6, Round 2 item 6) -- JS twin of app/views/partials/status-stepper.php, same 2
+// plain arguments, byte-identical markup. Deliberately dumb: done/current/next is derived purely
+// from each step's POSITION relative to `current` -- no state-machine awareness, no per-step action
+// buttons/dates/branch icons. That richer logic stays exactly where it already lives, this file's
+// own RUN_LIFECYCLE_STEPS/runLifecycleSteps()/computeRunLifecycleProgress() further below -- the
+// real payroll run spine (payroll/detail.js's renderProcessTimeline(), payroll/index.js's
+// mini-timeline) is NOT migrated onto this generic stepper this round (Round 2 does not touch real
+// page templates -- see rules.md §13); that's a round-4 decision, not made here.
+function renderStatusStepper(steps, current) {
+    let html = '<ul class="status-stepper">';
+    (steps || []).forEach(function (label, i) {
+        let stateClass = 'status-stepper-step--next';
+        let inner = '';
+        if (i < current) {
+            stateClass = 'status-stepper-step--done';
+            inner = '<i class="fa-solid fa-check"></i>';
+        } else if (i === current) {
+            stateClass = 'status-stepper-step--current';
+        }
+        html += `<li class="status-stepper-step ${stateClass}">
+            <span class="status-stepper-circle">${inner}</span>
+            <span class="status-stepper-label">${escapeHtml(label)}</span>
+        </li>`;
+    });
+    html += '</ul>';
+    return html;
+}
 // 2026-08-26, explicit request: "Format วันที่การแสดงผลทั้งหมดของระบบให้เป็น dd/mm/yyyy" (make every date
 // display in the system dd/mm/yyyy). Several pages already had their OWN local helper doing exactly
 // this (employee/detail.js's own toDisplayDate(), payroll/approval.js's toDisplayDateAp(), payroll/

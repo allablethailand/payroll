@@ -3042,6 +3042,84 @@ th.col-money div.dt-column-header .dt-column-title {
     font-weight: 400;
 }
 
+/* status-stepper.php + renderStatusStepper() (§6, Round 2 item 6) -- a plain, generic N-step
+   progress indicator. NOT a re-skin of the payroll run spine -- that keeps its own
+   action-button/date/branch-icon-aware rendering in app.js's own runLifecycleSteps()/
+   computeRunLifecycleProgress(), untouched this round; migrating it onto this generic component is
+   a round-4 decision. Horizontal row of circle+label columns joined by a single-color connecting
+   line -- no per-step pastel colors, no box/card per step (§6). */
+.status-stepper {
+    list-style: none;
+    display: flex;
+    margin: 0;
+    padding: 0;
+}
+.status-stepper-step {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1 1 0;
+    text-align: center;
+}
+/* One --c-border line through the row, drawn on every step except the last, from this circle's own
+   center to the next one's (equal-width flex columns make "100% of this column's width, starting at
+   its own center" land exactly on the next column's center) -- always this one color, never
+   recolored by done/not-done state (§6: "เส้นเชื่อมสีเดียว --c-border"). */
+.status-stepper-step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    width: 100%;
+    height: 1px;
+    background: var(--c-border);
+    z-index: 0;
+}
+.status-stepper-circle {
+    position: relative;
+    z-index: 1;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--fs-sm);
+    margin-bottom: var(--sp-2);
+    background: var(--c-bg);
+    border: 1px solid var(--c-border-strong);
+    color: var(--c-text-muted);
+}
+.status-stepper-label {
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+}
+/* Done: gray circle (--c-border-strong fill) + checkmark, muted label -- the fill/icon-color pair is
+   deliberately swapped light vs. dark (--c-border-strong is light gray in light mode, dark gray in
+   dark mode; --c-text-muted inverts the same way), so the checkmark stays legible against its own
+   circle in both themes without a separate dark override. */
+.status-stepper-step--done .status-stepper-circle {
+    background: var(--c-border-strong);
+    border-color: var(--c-border-strong);
+    color: var(--c-text-muted);
+}
+/* Current: solid --c-primary circle, no icon -- label reads --c-text (not muted) and bold. */
+.status-stepper-step--current .status-stepper-circle {
+    background: var(--c-primary);
+    border-color: var(--c-primary);
+}
+.status-stepper-step--current .status-stepper-label {
+    color: var(--c-text);
+    font-weight: 600;
+}
+/* Next: empty circle, outline only -- same as the base rule above, restated here for clarity only
+   (no visual change from the default). */
+.status-stepper-step--next .status-stepper-circle {
+    background: var(--c-bg);
+    border-color: var(--c-border-strong);
+}
+
 /* ==========================================================================
    2026-09-04, Backlog Phase 11, T069 (dark mode), Step 1 of 3 -- foundation only. Scope
    deliberately Tier B minus the 2 canvas designers (Payslip Template/Employment Certificate

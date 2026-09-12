@@ -278,10 +278,22 @@ approved → ...) ไม่ใช่สลับหน้า)
   เหมือนกัน — ตารางที่เป็น serverSide ต้องยิง server เสมอ ตารางที่โหลดครบแล้วนับ client-side ถูกกว่า) —
   ไม่มีการแก้หน้าจริงในรอบนี้ (รอบ 2 ไม่แตะหน้า) เป็นข้อเสนอสำหรับรอบ 4
 
-**Stepper** (ไทม์ไลน์ 5 ขั้นของรอบ)
-- partial เดียว `status-stepper.php` + JS `renderStatusStepper(steps, current)` (แทน `runLifecycleSteps()` render ส่วน HTML — logic ขั้นยังอยู่ที่เดิม)
-- เสร็จแล้ว: วงกลมเทา + ✓, ตัวหนังสือ `--c-text-muted`; ปัจจุบัน: วงกลม `--c-primary` ตัวหนังสือ `--c-text` หนา; ถัดไป: วงกลมขอบ `--c-border-strong` ว่าง
-- **ไม่มีสีพาสเทล 5 สี ไม่มีกล่องต่อขั้น** — เส้นเชื่อมสีเดียว `--c-border`
+**Stepper** (ไทม์ไลน์ 5 ขั้นของรอบ) — **ตัดสินใจแล้ว/เสร็จแล้ว รอบ 2 item 6**
+- partial `app/views/partials/status-stepper.php` (`$steps` = list ของ label ที่ resolve แล้ว, `$current`
+  = index ปัจจุบัน) + JS twin `renderStatusStepper(steps, current)` (`app.js`) — render markup
+  เดียวกันเป๊ะจาก argument 2 ตัวแบบเดียวกัน (แทน `runLifecycleSteps()` render ส่วน HTML — **logic การคำนวณ
+  ขั้น/branch (rejected/need_info/cancelled) ยังอยู่ที่ `runLifecycleSteps()`/`computeRunLifecycleProgress()`
+  เดิมทั้งหมด ไม่ถูกแตะ**) component นี้ "โง่โดยตั้งใจ": done/current/next ตัดสินจาก**ตำแหน่ง**เทียบกับ
+  `$current`/`current` เท่านั้น ไม่มี action button/วันที่/ไอคอน branch ต่อขั้นเหมือนของจริง —
+  `payroll/detail.js`'s `renderProcessTimeline()`/`payroll/index.js`'s mini-timeline **ยังไม่ถูกย้ายมาใช้
+  partial นี้รอบนี้** (ห้ามแตะหน้าจริง §13) เป็นการตัดสินใจของรอบ 4 ถ้าจะทำ
+- เสร็จแล้ว: วงกลมเทา (fill `--c-border-strong`) + ✓ (ไอคอน `--c-text-muted`), ตัวหนังสือ `--c-text-muted`;
+  ปัจจุบัน: วงกลมตัน `--c-primary` (ไม่มีไอคอน), ตัวหนังสือ `--c-text` หนา; ถัดไป: วงกลมขอบ
+  `--c-border-strong` ว่าง (ไม่มี fill/ไอคอน)
+- **ไม่มีสีพาสเทล 5 สี ไม่มีกล่องต่อขั้น** — เส้นเชื่อมสีเดียว `--c-border` เสมอ ไม่เปลี่ยนสีตามขั้นที่เสร็จ/ไม่เสร็จ
+- Demo จริงใน `docs/design/components.php` ("Stepper (ข้อ 6)"): 5 ขั้นจริงของรอบเงินเดือน (สร้างรายการ →
+  ส่งอนุมัติ → อนุมัติ → จ่ายเงิน → ปิดรอบ) ที่ 3 สถานะจริง (`draft`/`approved`/`paid`) — `current` คำนวณตาม
+  กฎเดียวกับ `runLifecycleSteps()` จริง (`currentIndex = reachedIdx + 1`)
 
 **Filter bar** (ตัดสินใจแล้วรอบ 2 item 4, แก้ไขรอบเดียวกันหลัง feedback)
 - partial `filter-bar.php`: ปิด (ยุบ) โดย default; ปุ่ม secondary "ตัวกรอง (N)" แสดงจำนวนที่ active; ปุ่ม tertiary "ล้าง" โผล่เมื่อ N > 0
@@ -400,7 +412,7 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 | `page-header.php` | `app/views/partials/` | การ์ดหัวหน้าทุกหน้า |
 | `stat-card.php` | partials | การ์ดตัวเลขขอบสี |
 | `filter-bar.php` | partials | filter กางค้าง |
-| `status-stepper.php` + `renderStatusStepper()` | partials + app.js | กล่อง 5 สี |
+| `status-stepper.php` + `renderStatusStepper()` (ใหม่, item 6 — เสร็จแล้ว; render อย่างเดียว ตำแหน่งเทียบ `current` เท่านั้น ไม่มี action/วันที่/branch icon แบบของจริง — logic ขั้นยังอยู่ที่ `runLifecycleSteps()` เดิม, ยังไม่ย้ายหน้าจริงมาใช้ รอรอบ 4 — ดู §6) | `app/views/partials/` + `app.js` | กล่อง 5 สี |
 | `status-tabs.php` + `initStatusTabs()` (ใหม่, item 4b — chevron pipeline เดิม**ยังคงรูปแบบไว้**, retokenize เท่านั้น; **ตัดสินใจแล้ว**: เคยมี variant `path` ให้เทียบคู่กัน ลบออกทั้งหมดแล้ว) | partials + app.js | markup ที่เคยซ้ำ 2 ไฟล์ของ `.station-row`/`.station-card` |
 | `statusBadge()` / `statusBadgeHtml()` + `status_map.php` (ใหม่, item 5 — เสร็จแล้ว; map มีที่เดียวคือ `status_map.php`, JS ไม่มี copy ของตัวเอง อ่านจาก `window.STATUS_MAP` ที่ `layout/header.php` inject ให้ — ยกเว้นกฎ "ห้ามแตะหน้าจริง" เฉพาะจุดนี้จุดเดียว; rename `payroll-configuration.js`'s local `statusBadge(row)` → `pcRowStatusBadge(row)` ทำก่อนเขียนแล้วตามแผน — ดู §5) | `app/helpers/helpers.php` + `app.js` + `app/config/status_map.php` + `layout/header.php` (inject จุดเดียว) | map สถานะกระจาย |
 | `initSharedDataTable()` (ขยาย: layout, export, fixed column, columnDefs alignment) | app.js | init ตรงทุกหน้า |
