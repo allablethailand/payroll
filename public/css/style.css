@@ -7352,8 +7352,10 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .ais-total-value { font-weight: 700; color: #b45f00; }
 /* 2026-08-30, explicit request: "ในแต่ละช่องถ้ามีข้อมูลให้สามารถกดดู Detail ได้ด้วยครับ" -- a plain
    <button> reset to look identical to the old non-clickable cell content at rest, with just a
-   hover affordance to signal it's now interactive. */
-.ais-cell-clickable {
+   hover affordance to signal it's now interactive. 2026-09-12: extended to .ais-annual-total-
+   clickable (Batch 5 item 6's Annual Total column button) instead of duplicating this rule --
+   same reset/hover, different JS click-handler class so the two never fire each other's handler. */
+.ais-cell-clickable, .ais-annual-total-clickable {
     display: block;
     width: 100%;
     background: none;
@@ -7364,7 +7366,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     border-radius: 6px;
     cursor: pointer;
 }
-.ais-cell-clickable:hover { background: rgba(255, 153, 0, .08); }
+.ais-cell-clickable:hover, .ais-annual-total-clickable:hover { background: rgba(255, 153, 0, .08); }
 .ais-table td:last-child { background: #fffaf1; }
 .ais-table thead th:last-child { background: #fff1db; }
 
@@ -7404,6 +7406,13 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .ais-legend-swatch.ais-month-past_missing { background: #fdecec; border: 1px solid #f3b4ac; }
 .ais-legend-swatch.ais-month-current { background: #dbeafe; border: 1px solid #93c5fd; }
 .ais-legend-swatch.ais-month-future { background: #f8fafc; border: 1px solid #e2e8f0; }
+
+/* 2026-09-12, Batch 5 item 6 -- income/deduction display toggle (Tab 1 only), toggled on
+   #tb_annual_summary itself (applyAisColumnDisplayToggle()). Hides the SAME 2 marker classes every
+   month cell, the Annual Total column, AND the footer's own grand-total cell already share --
+   scoping to the table reaches all 3 automatically, nothing else needed. */
+#tb_annual_summary.ais-hide-income .ais-cell-sub:not(.ais-cell-deduction) { display: none; }
+#tb_annual_summary.ais-hide-deduction .ais-cell-sub.ais-cell-deduction { display: none; }
 
 /* Employee "Recheck Data" table (2026-09-08, explicit request: "อยากให้ column รหัสพนักงาน และชื่อพนักงาน
    fixed อยู่กับที่ฝั่งซ้าย...และ column Action อยากให้ fixed อยู่ขวาตลอด ส่วน Column ส่วนกลางๆ อยากให้ใช้เมาส์

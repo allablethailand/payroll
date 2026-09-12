@@ -97,6 +97,27 @@
     </div>
 </div>
 
+<!-- 2026-09-12, Batch 5 item 6 -- Annual Total column click-through: that row's own Jan-Dec
+     breakdown (12 fixed rows, plain table -- not a DataTable, see annual-summary.js's own
+     aisRenderAnnualDetail() docblock) + 3 summary stats. A month row here re-opens
+     #aisCellDetailModal above for that specific month's own line-item drill-down -- Bootstrap 5
+     stacks modals natively (both are plain siblings here), no extra z-index/backdrop wiring
+     needed. -->
+<div class="modal fade" id="aisAnnualDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="aisAnnualDetailModalTitle">-</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="aisAnnualDetailBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ===== Global (app/views/layout/header.php) ===== -->
 <div class="modal fade" id="userSettingsModal" tabindex="-1" aria-labelledby="userSettingsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -1573,6 +1594,17 @@
                                 <ul class="list-group sr-version-list" id="sr_version_list"></ul>
                             </div>
                             <div class="col-lg-8 ps-lg-4">
+                                <!-- 2026-09-11, Batch 4 item 2c -- stable, empty placeholder marking this
+                                     form's PERMANENT home position. openAddVersionModal()/tax-statutory.js
+                                     relocates #srRateVersionFormWrap (below) OUT of here into
+                                     #srAddVersionModalBody while adding a brand-new version (so the left
+                                     list's own selection is never disturbed), then back via
+                                     `.insertAfter('#srRateVersionFormAnchor')` once that modal closes --
+                                     same DOM-relocation technique as the Payslip/Employment Certificate
+                                     Template canvas editors' own Fullscreen-modal anchor, chosen specifically
+                                     so no field id anywhere in this block ever needs to change/duplicate. -->
+                                <div id="srRateVersionFormAnchor"></div>
+                                <div id="srRateVersionFormWrap">
                                 <!-- "เปิดครั้งแรกให้ เปิด Version Default" -- filled in by selectSrHistoryRow()/
                                      showSrHistoryEditView() (tax-statutory.js) the moment the version
                                      list finishes loading, so there's always a clear "New Version" vs
@@ -1711,6 +1743,7 @@
                                     </div>
                                     </fieldset>
                                 </form>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1729,6 +1762,51 @@
                 </button>
                 <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 <button type="submit" form="srRateVersionForm" class="btn btn-primary" id="srRateVersionSaveBtn">
+                    <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 2026-09-11, Batch 4 item 2c, explicit instruction: "กด + เปิด modal ตัวที่สอง...ซ้อนบน modal เดิม"
+     -- stacks on top of #statutoryRateModal (opened from #srAddRateVersionBtn, see
+     openAddVersionModal()/tax-statutory.js). Deliberately NO data-bs-backdrop="static"/
+     data-bs-keyboard="false" here (unlike the outer modal) -- explicit requirement: Esc / the ×
+     button / clicking this modal's OWN backdrop must all close ONLY this inner modal and go
+     through the "cancel" path (restore the form to #statutoryRateModal, re-select whichever
+     version was already selected there before) -- Bootstrap's default backdrop/keyboard dismissal
+     already does exactly that (fires this modal's own `hidden.bs.modal` regardless of which of the
+     3 triggered it), no extra JS needed to distinguish them. Normal (non-static) backdrop is
+     intentional too -- makes #statutoryRateModal genuinely dark/unclickable underneath while this
+     is open; correct stacking order (this modal + its own backdrop both above the outer modal's
+     own) is handled generically for ANY stacked-modal pair by app.js's own shown.bs.modal z-index
+     fix, not anything specific to this modal. data-footer="form" so app.js's own generic
+     show.bs.modal handler never tries to inject a second Close button (it already skips that the
+     moment ANY .modal-footer exists at all, but the attribute is set for consistency with this
+     project's own footer-prop convention). -->
+<div class="modal fade" id="srAddVersionModal" data-footer="form" tabindex="-1" aria-labelledby="srAddVersionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="srAddVersionModalLabel">
+                    <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_bracket_version">Add Rate Version</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <!-- #srRateVersionFormWrap (the SAME single instance normally living in
+                 #statutoryRateModal's own Rate Versions pane -- see #srRateVersionFormAnchor's own
+                 comment there) is relocated in here while this modal is open. Never has its own
+                 markup here -- nothing to keep in sync if that form's fields ever change. -->
+            <div class="modal-body" id="srAddVersionModalBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <!-- Submits the SAME #srRateVersionForm via the HTML5 `form` attribute (works
+                     regardless of that form's current DOM parent) -- a second SUBMIT TRIGGER for
+                     one shared form, not a second copy of it. #srRateVersionSaveBtn (the original,
+                     living in #statutoryRateModal's own footer) stays hidden behind this modal the
+                     whole time and is never the one the user actually clicks in this flow. -->
+                <button type="submit" form="srRateVersionForm" class="btn btn-primary" id="srAddVersionSaveBtn">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
             </div>

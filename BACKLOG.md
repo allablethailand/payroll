@@ -271,3 +271,152 @@ icons/tooltips system-wide for this same clarity gap, Tax & Statutory's Manage b
 confirm the fix holds up once real design/UX attention is applied, not just a functional patch).
 
 **Source:** Batch 4 item 2b, explicit instruction (2026-09-11).
+
+---
+
+## Origami sync writes `employees.sso_*` via raw SQL, bypassing EmployeeModel::save()'s new SSO/PVD gate
+
+Batch 4 item 3 added a 2-axis gate to `EmployeeModel::save()` (employee-level `sso_enrolled`/
+`pvd_enrolled` AND company-level `company_statutory_settings` effective_status) that silently
+discards SSO/PVD dependent field values when either axis fails, preserving existing data rather
+than deleting it. `EmployeeSyncer::pull()` (Origami sync) writes `sso_enrolled`/`sso_no`/
+`sso_start_date` directly via its own raw `UPDATE`/`INSERT` SQL (`app/services/sync/
+EmployeeSyncer.php`, ~lines 1102-1366) -- a completely separate write path from
+`EmployeeModel::save()` that this gate never touches. A sync pull can therefore still write
+`sso_no`/`sso_enrolled` for an employee even when the company has TH_SSO switched off, or write a
+value with no regard to whether it should be discarded -- the exact case the gate was built to
+prevent everywhere else.
+
+**Not touched this round** -- explicit instruction (Batch 4 item 3: "sync path...ไม่แตะรอบนี้").
+
+**Fix, when picked up:** decide whether `EmployeeSyncer` should honor the SAME company-level gate
+(likely yes -- a company that's turned SSO off presumably doesn't want it silently re-populated by
+a sync pull either) before writing `sso_enrolled`/`sso_no`/`sso_start_date`, reusing
+`CompanyStatutorySettingModel::effectiveStatusForItemCode()` (added this same batch) rather than a
+new check. `EmployeeSyncer` only ever touches these 3 SSO columns currently -- it does not write
+any PVD field, so PVD is unaffected either way.
+
+**Source:** Batch 4 item 3, explicit instruction (2026-09-12).
+
+---
+
+## Employee Recheck tab has no filter for SSO status (`sso_status`)
+
+Batch 4 item 4's column/filter audit of `/employees#employee-recheck-top-tab` identified
+`sso_status` (the Social Security Fund column -- computed as `not_enrolled`/`enrolled_missing_no`/
+`enrolled_complete` in `EmployeeModel::recheckList()`, not a raw column) as a real enum-shaped
+value with no filter, same category as `is_ready` (also computed, not a raw column). Unlike
+`is_ready`, which turned out to have a persisted, SQL-filterable column (`employees.
+is_payroll_ready`) to reuse, `sso_status` has **no equivalent persisted column** -- it's derived
+purely at read time from `sso_enrolled`/`sso_no` (ciphertext presence check), never written back
+to the row. Explicitly skipped this round ("SSO status filter: ข้าม เข้า BACKLOG").
+
+**Fix, when picked up:** filtering on this would need a real SQL WHERE expressing the same
+3-way logic `recheckList()`'s own PHP branch uses (`sso_enrolled=0` -> not_enrolled;
+`sso_enrolled=1 AND sso_no IS NULL` -> enrolled_missing_no; `sso_enrolled=1 AND sso_no IS NOT NULL`
+-> enrolled_complete) added as its own block in `EmployeeModel::buildListWhere()` -- there is no
+column to equality-match against directly, so this is a small CASE-shaped WHERE, not a 1-line
+addition like the 6 filters this round added. Confirm the exact 3 values the UI dropdown should
+offer before writing it (mirror the 3 badge states `recheckSsoStatusHtml()` in `list.js` already
+renders, not new wording).
+
+**Source:** Batch 4 item 4, explicit instruction (2026-09-12).
+
+---
+
+## `employees.is_payroll_ready` drifts from live readiness for employee-master writes that bypass EmployeeModel::save() (Origami sync)
+
+Investigated as a direct follow-up to the "Ready" filter above (its own WHERE reuses this SAME
+persisted column). Confirmed via full read-through of both write paths, not guessed:
+
+**1. Which sync-written fields are actually inside `missingPayrollFields()`'s own definition, and
+does either sync path recompute `is_payroll_ready`?**
+- `EmployeeSyncer::upsertItem()` (Origami candidates.php / employee-master sync) writes
+  `employee_type` and `branch_id` UNCONDITIONALLY on every UPDATE (`branch_id` specifically via
+  `$links['branch_id'] ?? null` -- can genuinely null out an existing value). `title`/`nationality`
+  are conditional-write (add-only, never null out an existing value -- safe direction). Per its own
+  docblock, `payment_method_id`/`salary_type`/`base_salary_amount`/`salary_effective_date`/
+  `tax_calculation_method`/bank fields are explicitly insert-only, never touched on UPDATE.
+  `department_id`/`position_id`/`personal_email`/`mobile_no`/`name_th`/`name_en`/`date_of_birth`/
+  `employment_date`/`employment_status` are also written every UPDATE but are validated/defaulted
+  so they structurally can't become blank via sync (not a drift risk for the presence check
+  specifically, though placeholder defaults like `sync-pending-...@placeholder.local`/
+  `0000000000`/`1900-01-01` DO satisfy the presence check without being real data -- a separate,
+  pre-existing characteristic of `missingPayrollFields()` itself, not something this investigation
+  introduced).
+  Note: the user's own example (`sso_*`) is actually **not** part of `missingPayrollFields()`/
+  `is_payroll_ready` at all -- `sso_enrolled`/`sso_no` only feed the separate `completenessColumns()`
+  / `calculateCompleteness()` percentage metric, unrelated to this Ready filter or to
+  `PayrollRunModel::recalculate()`'s own readiness gate.
+- `PayrollSyncModel::applyOneEmployeeMasterFields()` (the OTHER Origami integration,
+  PAYROLL_SYNC_API) is the bigger risk: on every "mapped" row of every regular payroll sync pull
+  (`applyEmployeeMasterFields()`, not a rare/admin-only path) it writes `payment_method_id`/
+  `bank_id`/`bank_account_no` UNCONDITIONALLY whenever the payload carries a `pay_type` --
+  including explicitly NULLing `bank_id`/`bank_account_no` when `pay_type='transfer'` but no
+  `pay_bank_no` was sent. It also conditionally writes `department_id`/`position_id`.
+  **Neither path calls `isPayrollReady()`/updates `is_payroll_ready` anywhere.**
+
+**2. Attempted fix, wiring reverted -- method KEPT for Batch 5.** Added
+`EmployeeModel::recomputeIsPayrollReady($employeeId, $compId)` (~20 lines: re-select the row,
+decrypt only `base_salary_amount` -- every other encrypted column `missingPayrollFields()` touches
+only needs a null/non-null presence check, and `EncryptionService::encrypt()` always stores NULL
+ciphertext for null/empty plaintext, so raw ciphertext is a valid proxy without decrypting -- then
+call the SAME private `isPayrollReady()` save() uses, then
+`UPDATE employees SET is_payroll_ready = ...`), then wired it into 3 call sites (both sync UPDATE
+branches + EmployeeSyncer's INSERT branch, 1 line each). Reused the existing definition exactly as
+instructed, no second readiness rule. **The wiring (the 3 call sites) was reverted; the method
+itself stays in `EmployeeModel.php`, unwired/uncalled, for Batch 5 to pick up** once the decision
+below is made -- see its own docblock ("NOT CALLED ANYWHERE YET").
+
+**Reverted after `tests/payroll_sync_attribution_test.php` broke (23 failures)**, root-caused (not
+guessed) to: that test's own fixture employee is inserted via raw SQL with NO `department_id`/
+`position_id`/`branch_id`/`payment_method_id` at all (all genuinely NULL, matching Origami payloads
+that legitimately send `dept_id`/`posi_id`/`branch_id` as `null`) -- meaning this employee has
+**never** actually satisfied `requiredColumns()`. It only ever appeared "ready" because
+`employees.is_payroll_ready` schema-defaults to **1** (`tinyint(1) NOT NULL DEFAULT 1`, confirmed
+in `database/migrations/2026-08-28_4_comprehensive_schema_catchup.sql`) and nothing had ever
+recomputed it. The moment recompute ran, it correctly flipped to 0, which then made
+`PayrollRunModel::submit()`/`markPaid()` start refusing with
+`calc_errors='profile_incomplete'` -- breaking the merge/revert scheduling flow that test actually
+exercises (unrelated to readiness).
+
+**Why this is a BACKLOG item, not a quick retry:** the test fixture isn't uniquely wrong -- it
+mirrors a real, plausible production shape (an Origami-synced employee whose department/position/
+branch/payment method were never resolved, e.g. a genuinely `null` payload field). Turning on this
+recompute for real would very likely flip a nontrivial number of REAL synced employees, company-
+wide, from a false `is_payroll_ready=1` (never checked before) to the true 0 -- which would newly
+start blocking their payroll run's submit/pay step in production. That is a business-behavior
+change requiring a deliberate decision (and likely a company-wide audit/notification plan for
+newly-surfaced incomplete profiles), not a safe drop-in bugfix alongside a filter-UI feature.
+
+**3. Does the readiness definition itself depend on anything outside the employee row (e.g.
+company settings)?** No -- `missingPayrollFields()`/`isPayrollReady()` read only `requiredColumns()`
+values off the employee row itself, plus `$isThCompany` (`companies.registered_country === 'TH'`,
+looked up once per call) purely to relax 2 TH-only required fields for non-TH companies. A company
+changing its `registered_country` is not a realistic/supported scenario elsewhere in this codebase
+(no UI to edit it after creation was found), so this is a theoretical, not practical, staleness
+vector -- noted per the question asked, not treated as a real risk to chase further.
+
+**Also pulled back before commit:** the Recheck tab's "Ready/Not Ready" filter UI itself
+(`#employee_recheck_filter_ready` in `list.php` + its wiring in `list.js`) was removed for the same
+reason -- exposing a filter on a column known to be unreliable for sync-written employees would let
+an admin "narrow to Ready" and silently miss/misjudge employees that are actually incomplete (or
+the reverse). `EmployeeModel::buildListWhere()`'s own `is_ready` WHERE clause and
+`tests/employee_recheck_filters_test.php`'s coverage of it stay in place -- backend-only, unused by
+any UI, ready to reconnect once the column itself is trustworthy.
+
+**Fix, when picked up:** needs a product decision first (should sync-written employees missing
+department/position/branch/payment method actually block payroll the way a manually-created
+incomplete profile does, or should the Recheck tab / PayrollRunModel treat "still being resolved by
+sync" as its own state?) before re-attempting `recomputeIsPayrollReady()`'s wiring. If proceeding:
+(a) fix `tests/payroll_sync_attribution_test.php`'s fixture to be genuinely complete (or accept its
+readiness flipping and adjust its own assertions), (b) audit every OTHER sync-adjacent test fixture
+across the suite for the same "relies on the untouched schema default" shortcut before trusting a
+clean test run, (c) consider running the recompute once, offline, as a one-time backfill script
+first to see the real-world scale of the flip on the actual dev DB before wiring it into the live
+sync path, (d) **reopen the UI "Ready" filter in `list.php`/`list.js`** (the 2 blocks pulled out
+this round, `is_ready`-related code in `currentEmployeeRecheckFilters()`/
+`updateClearEmployeeRecheckFilterVisibility()`/the change+Clear Filter handlers) once
+`is_payroll_ready` is trustworthy for sync-written employees.
+
+**Source:** Batch 4 item 4, explicit instruction (2026-09-12).

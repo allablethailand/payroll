@@ -80,6 +80,9 @@ class AnnualIncomeSummaryController extends Controller {
             'role_id' => $_GET['role_id'] ?? null,
             'employee_status' => $_GET['employee_status'] ?? null,
             'search' => $_GET['search'] ?? null,
+            // 2026-09-12, Batch 5 item 5 step 2 -- "รอบเงินเดือน" filter, forwarded straight to
+            // AnnualIncomeSummaryModel::runFilterClause() (the one shared run-side WHERE builder).
+            'cycle_id' => $_GET['cycle_id'] ?? null,
         ];
         $this->json(['status' => true, 'data' => $this->model->summary($compId, $fiscalYear, $fsm, $filters)]);
     }
@@ -106,6 +109,9 @@ class AnnualIncomeSummaryController extends Controller {
             'role_id' => $_GET['role_id'] ?? null,
             'employee_status' => $_GET['employee_status'] ?? null,
             'search' => $_GET['search'] ?? null,
+            // 2026-09-12, Batch 5 item 5 step 2 -- "รอบเงินเดือน" filter, forwarded straight to
+            // AnnualIncomeSummaryModel::runFilterClause() (the one shared run-side WHERE builder).
+            'cycle_id' => $_GET['cycle_id'] ?? null,
         ];
         $this->json(['status' => true, 'data' => $this->model->annualPitSummary($compId, $fiscalYear, $fsm, $filters)]);
     }
@@ -131,6 +137,9 @@ class AnnualIncomeSummaryController extends Controller {
             'role_id' => $_GET['role_id'] ?? null,
             'employee_status' => $_GET['employee_status'] ?? null,
             'search' => $_GET['search'] ?? null,
+            // 2026-09-12, Batch 5 item 5 step 2 -- "รอบเงินเดือน" filter, forwarded straight to
+            // AnnualIncomeSummaryModel::runFilterClause() (the one shared run-side WHERE builder).
+            'cycle_id' => $_GET['cycle_id'] ?? null,
         ];
         $this->json(['status' => true, 'data' => $this->model->annualSsoSummary($compId, $fiscalYear, $fsm, $filters)]);
     }
@@ -158,6 +167,9 @@ class AnnualIncomeSummaryController extends Controller {
             'role_id' => $_GET['role_id'] ?? null,
             'employee_status' => $_GET['employee_status'] ?? null,
             'search' => $_GET['search'] ?? null,
+            // 2026-09-12, Batch 5 item 5 step 2 -- "รอบเงินเดือน" filter, forwarded straight to
+            // AnnualIncomeSummaryModel::runFilterClause() (the one shared run-side WHERE builder).
+            'cycle_id' => $_GET['cycle_id'] ?? null,
         ];
         $this->json(['status' => true, 'data' => $this->model->monthlyPitDetail($compId, $year, $month, $filters)]);
     }
@@ -184,6 +196,9 @@ class AnnualIncomeSummaryController extends Controller {
             $this->json(['status' => false, 'message' => 'Missing employee_id/year/month.']);
             return;
         }
-        $this->json(['status' => true, 'data' => $this->model->cellDetail($compId, $employeeId, $year, $month)]);
+        // 2026-09-12, Batch 5 item 5 step 2 -- so a cell drill-down never surfaces a run the table's
+        // own "รอบเงินเดือน" filter is currently excluding.
+        $filters = ['cycle_id' => $_GET['cycle_id'] ?? null];
+        $this->json(['status' => true, 'data' => $this->model->cellDetail($compId, $employeeId, $year, $month, $filters)]);
     }
 }
