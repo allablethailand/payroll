@@ -114,6 +114,34 @@ for this audit, broken down per file this time.
   `notification/index.php`, which works fine. Out of scope for a design-only round (rules.md §0.7 —
   logic bugs go to BACKLOG.md, not fixed here); noting it here since it surfaced during route-mapping
   for this audit.
+- **[ADDENDUM, added during Round 2 item 3's own follow-up testing] "ตารางไม่เต็มขอบ" (§2/§7) has a
+  library-level root cause, NOT a per-page markup problem — already fixed centrally, no round-4 work
+  needed for this specific issue.** A real browser check of Round 2's own DataTable demo
+  (`docs/design/components.php`) found the symptom this section's own §6 note already anticipated in
+  passing, traced properly this time: `node_modules/datatables.net-bs5`'s own bundled JS overrides
+  `DataTable.ext.classes.layout.cell` to `"d-md-flex justify-content-between align-items-center"`,
+  and `node_modules/datatables.net`'s own core `layout._` builder applies that class
+  UNCONDITIONALLY to every layout cell div it creates — including the one wrapping the actual
+  `<table>` element, which additionally gets `col-12 dt-layout-full col-md` mixed in (full class:
+  `d-md-flex ... col-12 dt-layout-full col-md`). Bootstrap's `d-flex` default (`flex:0 1 auto`, i.e.
+  shrink-to-content) is what actually caused the table to render narrower than its container — this
+  is baked into EVERY DataTable this app builds via the bs5 skin, regardless of `layout`/`dom`
+  config, and was true in production before this phase-design initiative ever started, not something
+  `initSharedDataTable()`/`sticky-table-columns.js`/any page's own markup introduced this round.
+  Checked whether any REAL page additionally wraps its own `<table>` in a hand-written
+  `.d-flex`/`.d-md-flex` container (a proximity grep across every `app/views/**/*.php` for a
+  `<table>` with a flex-class ancestor within 4 lines above it) — **0 genuine occurrences**: the only
+  4 candidate hits (`layout/modals.php`, `setup-rules/index.php`, their shared Org-Structure-Sync/
+  Holiday-Sync template) were all false positives, a `.d-flex` header row that closes BEFORE the
+  table starts (a sibling, not a wrapping ancestor). Fixed with one new central rule in style.css
+  (`.dt-container .dt-layout-full { flex:1 1 100%; min-width:0; width:100%; }`, scoped precisely to
+  the table's own cell since `dt-layout-start`/`dt-layout-end` — the search/length/pagination toolbar
+  cells — never carry `dt-layout-full`) — this reaches every one of the ~75 raw `.DataTable(`/
+  `.dataTable(` call sites (SC5) automatically once this CSS ships, with no page-by-page migration
+  required for the width problem itself (SC5's own DataTable-migration work in round 4 is still
+  needed for everything ELSE `initSharedDataTable()` brings — sticky columns, column filters, export,
+  class-driven alignment — just not for this one specific width symptom, which is already
+  universally fixed).
 
 ---
 

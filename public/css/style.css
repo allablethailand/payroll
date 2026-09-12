@@ -1618,21 +1618,16 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    each <select> in its own .adr-scope-target-wrap <div> and toggling Bootstrap's .d-none on THAT
    wrapper instead (payroll-configuration.js) -- no new CSS needed, .d-none already works correctly on
    a plain wrapping <div>, this comment just documents why the wrapper exists. */
-.nav-tabs .nav-link {
-    color: #6c757d;
-    border: none;
-    border-bottom: 3px solid transparent;
-}
-.nav-tabs .nav-link.active {
-    color: var(--c-primary) !important;
-    border-none: none;
-    border-bottom: 3px solid var(--c-primary) !important;
-    background: transparent;
-}
-.nav-tabs .nav-link:hover {
-    border-color: transparent;
-    color: var(--c-primary);
-}
+/* 2026-09-13, follow-up -- a real, pre-existing bug found while checking "why does the active tab
+   still look orange": this exact spot used to carry its own `.nav-tabs .nav-link`/`.active`/`:hover`
+   rules (hardcoded `#6c757d`, 3px underline, `color: var(--c-primary) !important` on `.active`) that
+   PREDATE Round 2 item 1's own tokenized `.nav-tabs` override further down this file (search for
+   the plain `.nav-tabs` selector) -- item 1 added the correct, complete replacement (text `--c-text`, underline
+   `--c-primary`, per §3/§6) but never removed this older block, so its `!important` on `.active`
+   silently kept winning over the newer, `!important`-free rule regardless of which one is declared
+   later, for every `.nav-tabs` on every real page in the app, not just this demo. Deleted outright --
+   completely superseded, kept nothing worth preserving (the 3px underline width and the invalid
+   `border-none: none` typo were never referenced by name anywhere). */
 .payroll-breadcrumb {
     display: flex;
     align-items: center;
@@ -1741,8 +1736,20 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 
 /* Select2 — brand orange theme (applies app-wide, all Select2 instances share this design system) */
+/* 2026-09-12, Phase Design Round 2 Select2 audit -- the ONE genuinely missing focus-ring piece found
+   after re-checking this whole block against the theme's own CSS: the search box INSIDE an open
+   dropdown never got its own focus ring, only the closed selection box below did -- added into this
+   SAME selector group since it's the same "actively engaged" state family. Every other
+   resting/highlighted/selected color the theme hardcodes was found to already be covered by T069's
+   dark-mode pass further down (search "T069 Step 3") via --app-* tokens -- intentionally NOT
+   duplicated here with --c-* tokens, which would silently fight that already-shipped, tested styling
+   on cascade order alone for zero benefit (--c-primary is safe to reuse as-is only because it's the
+   literal same brand-orange value in both token systems, by design -- see tokens.css's own
+   "--c-primary itself is INTENTIONALLY UNCHANGED" note). The single-select down-arrow SVG (further
+   below) is the other genuine gap -- it has no dark-mode variant at all in either token system. */
 .select2-container--bootstrap-5.select2-container--focus .select2-selection,
-.select2-container--bootstrap-5.select2-container--open .select2-selection {
+.select2-container--bootstrap-5.select2-container--open .select2-selection,
+.select2-container--bootstrap-5 .select2-dropdown .select2-search .select2-search__field:focus {
     border-color: var(--c-primary);
     box-shadow: 0 0 0 .25rem rgba(var(--bs-primary-rgb), .25);
 }
@@ -2469,6 +2476,580 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     background-color: var(--c-bg-subtle);
     color: var(--c-text);
 }
+/* Select2 (select2-bootstrap-5-theme) -- 2026-09-12, Phase Design Round 2 audit, checked directly
+   against the installed theme's own CSS: every RESTING/highlighted/selected/dropdown-border color in
+   it is a hardcoded literal (#fff/#212529/#ced4da/#0d6efd/#86b7fe/...), never a var(--bs-*)
+   reference -- but ALL of those are already overridden app-wide by T069 Step 3 below (search that
+   marker) using this app's own --app-* tokens, added 2026-09-05 before tokens.css's --c-* system
+   existed. Deliberately NOT re-overridden here with --c-* tokens -- doing so would silently fight
+   that already-shipped, tested dark-mode styling on cascade order alone (this rule loads later in
+   the same file) for zero real benefit, and diverge two token systems on the exact same selectors.
+   Real, non-duplicate gaps found and fixed instead: the search field's own focus ring (folded into
+   the existing "brand orange theme" rule above, since it's the same state family) and the
+   single-select down-arrow SVG below, which has no dark-mode variant in either token system.
+   Also checked: the clear (×) button's icon is an embedded SVG data-URI already neutral gray
+   (#676a6d resting, #000 hover) -- never blue to begin with, genuinely nothing to fix there. */
+
+/* Dark mode -- the single-select down-arrow (.select2-selection--single's own background-image) is
+   a SEPARATE concern from the resting-color tokens above: it's an embedded SVG data-URI with a
+   hardcoded stroke color, which (unlike a plain CSS color property) cannot reference a CSS custom
+   property at all -- a dark-mode-specific data-URI with a lighter stroke is the only way to keep it
+   visible against a dark surface. Same 2-selector convention as every other dark-mode rule in this
+   file (T069's own "3-state model") -- see tokens.css's own comment block for the full reasoning. */
+[data-bs-theme="dark"] .select2-container--bootstrap-5 .select2-selection--single {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%239AA3AE' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-bs-theme="light"]) .select2-container--bootstrap-5 .select2-selection--single {
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%239AA3AE' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
+    }
+}
+/* DataTable width -- §7's own "ตาราง เต็มความกว้าง container" (docs/design/audit.md's own SC/§2
+   "ตารางไม่เต็มขอบ" systemic finding). 2 independent causes found via the components.php demo table,
+   traced to source (not guessed) -- both fixed here, neither is a bug in this app's own helper/
+   markup:
+   1. DataTables' own default `autoWidth:true` measures column content and sets explicit INLINE
+      pixel widths on <table>/<col>, which win over any CSS width:100% regardless of container size
+      -- app.js's own initSharedDataTable() now defaults `autoWidth:false` (Round 2 item 3
+      follow-up) to stop that; `!important` below is still needed as a belt-and-suspenders CSS-level
+      backstop for a caller that re-enables `autoWidth:true` via its own dtOptions.
+   2. Traced deeper (2nd real browser check): the actual visible symptom was `d-md-flex` shrinking
+      the table's own container. Confirmed via reading BOTH node_modules/datatables.net-bs5/js/
+      dataTables.bootstrap5.min.js (which overrides `DataTable.ext.classes.layout.cell` to
+      `"d-md-flex justify-content-between align-items-center"`) AND node_modules/datatables.net/js/
+      dataTables.js's own `layout._` builder (~line 13456: every layout cell div's class is always
+      `classes.cell + ' ' + klass`, unconditionally -- the cell wrapping the actual <table> ALSO
+      gets `classes.tableCell` ('col-12') + `classes.full` ('dt-layout-full col-md') mixed in, so its
+      full class list ends up `d-md-flex ... col-12 dt-layout-full col-md`) -- this is baked into
+      EVERY DataTable table.dataTable/.dt-container this app builds via the bs5 skin, unconditionally,
+      regardless of `layout`/`dom` config. NOT something initSharedDataTable(), sticky-table-
+      columns.js, or any page's own markup introduced -- a vendor-library default, confirmed by
+      grepping ~30 real view files for a `<table>` with a `d-flex`/`d-md-flex` ancestor actually
+      written into the page's own markup: 0 genuine occurrences found (4 candidates from a proximity
+      grep were all false positives -- a SIBLING `.d-flex` header row above the table, not an actual
+      wrapping ancestor, in `layout/modals.php`'s and `setup-rules/index.php`'s own Org-Structure-Sync/
+      Holiday-Sync templates). Since the real cause is generated by the vendor library at runtime (never
+      present in server-rendered HTML), a per-page markup fix was never going to be possible anyway --
+      `.dt-layout-full` (present ONLY on the table's own cell -- confirmed 'start'/'end' toolbar cells
+      never get it) is overridden below to stretch instead of shrink -- this ONE central rule fixes
+      EVERY DataTable in the app at once, with no round-4 per-page migration needed for this specific
+      issue (unlike most other §7/§12 findings in docs/design/audit.md).
+   `.dataTables_wrapper`/`.dt-container` themselves (confirmed via reading the bundled
+   dataTables.bootstrap5.css directly) carry no side margin/padding of their own -- nothing else to
+   fix there. */
+table.dataTable {
+    width: 100% !important;
+}
+/* 2026-09-12, follow-up correction (real DevTools inspection caught this) -- the FIRST version of
+   this rule fixed the wrong layer. Real DOM chain: .dt-layout-full(d-md-flex) > div.table-
+   responsive.tbl-drag-scroll (initTableDragScroll()'s own wrapper, sticky-table-columns.js) >
+   table.dataTable. `.dt-layout-full` itself carries Bootstrap's `d-md-flex` (display:flex) --
+   that's what needs to stop, since `.dt-layout-full` never has more than the ONE child
+   (`.table-responsive`) to lay out, it never needed flex display for ITS OWN children in the first
+   place. `flex:1 1 100%; min-width:0;` stay -- those control how `.dt-layout-full` ITSELF behaves
+   as a flex ITEM of its OWN parent (`.dt-layout-row`, Bootstrap's `.row` -- a real flex CONTAINER in
+   Bootstrap 5's grid), a completely separate concern from what `display` value `.dt-layout-full`
+   uses for laying out ITS OWN children -- both can be true at once, not a contradiction. */
+.dt-container .dt-layout-full {
+    display: block !important;
+    flex: 1 1 100%;
+    min-width: 0;
+    width: 100%;
+}
+.dt-container .dt-layout-full > .table-responsive {
+    width: 100%;
+}
+/* Toolbar row (§7 item 3b) -- checked the bs5 skin's own bundled CSS/JS directly before writing a
+   selector: DataTables CORE's own default class for this row is `dt-layout-row`, but this app's
+   installed datatables.net-bs5 skin REPLACES that class name entirely (not appends to it) with
+   `"row mt-2 justify-content-between"` -- confirmed by reading dataTables.bootstrap5.min.js's own
+   `ext.classes` override directly. No element in the real DOM carries a class literally named
+   `dt-layout-row` in this app; `.dt-container > .row` (Bootstrap's own grid row class, scoped to
+   direct children of `.dt-container` so this never touches an unrelated `.row` elsewhere on the
+   page) is the selector that actually matches. Bootstrap's `.row` is already `display:flex` (Bootstrap
+   5's own grid) with `flex-wrap:wrap` -- `align-items:center` (Bootstrap's own row defaults to
+   `stretch`, which can visually misalign a text input against a <select> against a button, each with
+   a slightly different natural height) and `gap` are genuinely new properties this app's row didn't
+   already set, not overrides of anything. */
+.dt-container > .row {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+/* Search/length rows -- real bug found on docs/design/components.php: the search box's own <label>
+   and <input> (and the length control's own <label>/<select>) were stacking vertically instead of
+   sitting on one line, plus the export dropdown (dtInjectExportDropdown() in app.js) dropped to its
+   own line below the search box. Root cause on that demo page specifically was a missing <link> --
+   `node_modules/datatables.net-bs5/css/dataTables.bootstrap5.min.css` was never loaded there (only
+   its .js was) -- but this rule is added centrally anyway, not just fixed on the demo page: the
+   vendor skin's own approach (`display:inline-block` on each child individually, confirmed by
+   reading dataTables.bootstrap5.css directly) is more fragile than owning the container's own layout
+   outright, so this app now guarantees it explicitly rather than depending entirely on a 3rd-party
+   stylesheet loading correctly on every future page. `white-space:nowrap` on the label stops a
+   narrow container from ever wrapping "Search:"/"Show" onto 2 lines. */
+.dt-container .dt-search,
+.dt-container .dt-length {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+}
+.dt-container .dt-search label,
+.dt-container .dt-length label {
+    white-space: nowrap;
+}
+/* Sortable right-aligned header text crowding its own sort arrow (§7's own .num/.col-money right-
+   align convention) -- DataTables' native header structure is `div.dt-column-header { display:flex;
+   justify-content:space-between; gap:4px; }` wrapping `.dt-column-title` (flex-grow:1) +
+   `.dt-column-order` (a fixed 12px icon box) -- confirmed by reading dataTables.bootstrap5.css
+   directly. Right-aligning `.dt-column-title`'s own text (needed so the header visually lines up
+   with the right-aligned .num body cells below it) pushes that text right up against the 12px icon
+   box with only the flex gap's 4px of breathing room -- reads as crowded, especially on a short
+   label like "%" or a compact `.table-sm` row height. Extra padding-right on the title itself (on
+   top of, not instead of, the flex gap) fixes this without touching the icon's own box/positioning
+   at all. */
+th.num div.dt-column-header .dt-column-title,
+th.col-money div.dt-column-header .dt-column-title {
+    text-align: right;
+    padding-right: 4px;
+}
+/* Row-action icon buttons (§7 "≤ 2 action: ปุ่มไอคอน .btn.btn-sm.btn-icon เทา ... ไม่มีพื้น ไม่มีขอบ,
+   hover พื้น --c-bg-hover") -- real bug found on the components.php demo: a delete/remove icon had
+   `.text-danger` stacked on top, rendering red -- §7 is explicit that row-action icons are NEVER
+   colored by what they do (delete included); only the tooltip/confirm dialog communicates that.
+   `!important` here is deliberate, not accidental scope creep -- Bootstrap's own `.text-danger`/
+   `.text-success`/etc. utilities are themselves declared with `!important` (confirmed by reading
+   bootstrap.css directly), so a plain declaration here would silently lose to one of those if a
+   future edit ever stacks one onto a `.btn-icon` again; this makes "row action icons are always
+   neutral" a real, unbreakable guarantee at the CSS level, not just a convention to remember. */
+.btn-icon {
+    color: var(--c-text-muted) !important;
+    background: none;
+    border: none;
+    padding: .25rem .5rem;
+    border-radius: var(--radius);
+    line-height: 1;
+}
+.btn-icon:hover,
+.btn-icon:focus {
+    color: var(--c-text) !important;
+    background-color: var(--c-bg-hover);
+}
+
+/* ==========================================================================
+   Phase Design Round 2 item 4 -- CSS for the 3 new partials (app/views/partials/page-header.php,
+   stat-card.php, filter-bar.php). No page uses these yet (round 4's job) -- this section exists so
+   docs/design/components.php's own live examples render correctly, same as every other component
+   this round has added. */
+
+/* page-header.php (§2) -- "ไม่มี card ครอบ ไม่มีไอคอนหน้า ไม่มีพื้นหลังสี", breadcrumb+H1 own separate
+   lines/weights so they never read as saying the same thing twice. */
+.ph-header {
+    margin-bottom: var(--sp-5);
+}
+.ph-breadcrumb {
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+    margin-bottom: var(--sp-2);
+}
+.ph-breadcrumb-link {
+    color: var(--c-text-muted);
+    text-decoration: none;
+}
+.ph-breadcrumb-link:hover {
+    color: var(--c-text);
+    text-decoration: underline;
+}
+.ph-breadcrumb-sep {
+    margin: 0 var(--sp-1);
+    color: var(--c-text-faint);
+}
+.ph-breadcrumb-current {
+    color: var(--c-text-muted);
+}
+.ph-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    flex-wrap: wrap;
+}
+/* Holds $secondary_actions (up to 2, .btn-outline-secondary) + $primary_action (.btn-primary), in
+   that order left-to-right -- secondary_actions render first in the queue so they land to the LEFT
+   of primary automatically, no separate ordering logic needed in CSS. */
+.ph-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+}
+.ph-title {
+    font-size: var(--fs-xl);
+    font-weight: 700;
+    color: var(--c-text);
+    margin: 0;
+}
+.ph-description {
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+    margin: var(--sp-1) 0 0;
+}
+
+/* stat-card.php (§2), class `.stat` (deliberately NOT `.stat-card` -- see rules.md §2's own decision
+   to kill the old colored+iconed class rather than extend it) -- plain white/bordered/no shadow, no
+   colored edge, exactly the opposite of what `.stat-card` looked like. REVISED after explicit
+   follow-up: an OPTIONAL single-color icon is now allowed (was "no icon at all") -- still never a
+   colored background/border on the CARD itself, only the icon glyph + its own plain neutral gray
+   circle get any visual treatment. A second layout (icon bare top-right, no circle) existed
+   alongside this one for an explicit A/B comparison in components.php -- decided, THIS one won, the
+   other's own `.stat-a`/`.stat-head`/`.stat-icon` rules have been deleted outright, not left as
+   dead/unused CSS. `height:100%` + flex column here is what makes "ทุกการ์ดในแถวสูงเท่ากันเสมอ" actually
+   work: the CALLER's row is a plain Bootstrap `.row`, which already stretches every column to the
+   row's tallest child by default (no extra CSS needed for that part) -- `.stat` just needs to fill
+   that stretched height, and `.stat-footer`'s own `margin-top:auto` (see below) is what pins the
+   bottom slot to the same edge on every card regardless of how tall the icon+label+value block above
+   it happens to be. */
+.stat {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: var(--sp-4);
+}
+.stat-label {
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+    margin-bottom: 2px;
+}
+.stat-value {
+    font-size: var(--fs-xl);
+    font-weight: 700;
+    color: var(--c-text);
+}
+/* Icon (optional) sits inside a neutral gray circle to the left of a stacked label+value block --
+   `--c-text-muted` for the glyph itself, since it's sitting on a visible `--c-bg-subtle` disc rather
+   than bare on the card's own surface (a plainer/fainter tone read as too washed-out there). When no
+   icon is given, `.stat-icon-circle` is simply never rendered (see stat-card.php) -- `.stat-body`
+   itself has no fixed indent reserved for it, so `.stat-text` sits flush left exactly like a plain
+   card with nothing missing, per the explicit "เลือกไม่เว้น" decision. */
+.stat-body {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+}
+.stat-icon-circle {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--c-bg-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.stat-icon-circle i {
+    font-size: 16px;
+    color: var(--c-text-muted);
+}
+.stat-text {
+    min-width: 0;
+}
+/* Bottom slot -- ALWAYS rendered (even with nothing in it, see `.stat-footer-empty`) so it reserves
+   the exact same height whether a card has a sub/badge/link or not; `margin-top:auto` pushes it down
+   to the bottom edge of the (flex-column) card regardless of how tall the header/value block above
+   it is, so every card's footer lines up on the same baseline across a row even when their icons/
+   labels don't take up identical space. `min-height` is one `--fs-sm` line at this app's own `--lh`
+   line-height (13px * 1.5 ≈ 20px, rounded) -- big enough for a badge/link/sub text line, same whether
+   populated or empty. */
+.stat-footer {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    min-height: 20px;
+    margin-top: auto;
+    padding-top: var(--sp-2);
+}
+.stat-sub {
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+}
+.stat-link {
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+    text-decoration: none;
+}
+.stat-link:hover {
+    color: var(--c-text);
+    text-decoration: underline;
+}
+
+/* filter-bar.php (§6), revised same round after explicit feedback -- flat bar, NOT the old
+   `.station-filter`'s fieldset/legend look (a bordered box with "ตัวกรอง" floating over the top edge
+   as a corner label) -- one flat strip (--c-bg-subtle background, --c-border border) that grows
+   downward to show the caller's own field grid when expanded, collapsing back to just the toolbar
+   row via the SAME plain max-height-transition mechanism `.station-filter-body` already used (kept
+   identical on purpose -- "ตอนกาง = grid แบบ .station-filter เดิมเป๊ะ" applies to the COLLAPSE
+   MECHANISM too, not just the field grid's own markup). initFilterBar() (app.js) owns all of the
+   count/visibility/chip-content/expand-collapse LOGIC; these rules are purely the shell's own static
+   layout plus the chip's own look. */
+.filter-bar {
+    background: var(--c-bg-subtle);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    margin-bottom: var(--sp-4);
+}
+/* 2026-09-13, follow-up -- initFilterBar()'s own `toolbarTarget` option relocates `.filter-bar-
+   toolbar` OUT of `.filter-bar` entirely (e.g. into a status-tabs row) -- leaving ONLY the
+   collapsible field panel behind. While collapsed (max-height:0), an empty `.filter-bar` box would
+   otherwise still render its own background/border as a thin visible sliver even at 0 content
+   height -- hide that chrome entirely for the relocated+collapsed combination only; the DEFAULT
+   (toolbar-still-inside) look is completely untouched by this rule. */
+.filter-bar--toolbar-relocated.collapsed {
+    background: transparent;
+    border-color: transparent;
+    margin-bottom: 0;
+}
+/* The relocated toolbar becomes a flex ITEM of whatever row it's appended into (a status-tabs row,
+   `align-items:stretch` by default) -- `margin-left:auto` pushes it flush right against the row's
+   own edge (the row's tabs stay left-packed), `align-self:center` keeps its own natural button
+   height instead of stretching to match the tallest chevron card in the row. Scoped to this exact
+   parent-child relationship so it only ever applies once actually relocated -- the toolbar's DEFAULT
+   position (a plain block inside `.filter-bar`) is untouched. */
+.status-tabs > .filter-bar-toolbar {
+    margin-left: auto;
+    align-self: center;
+}
+.filter-bar-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+}
+.filter-bar-body {
+    overflow: hidden;
+    max-height: 500px;
+    transition: max-height .3s ease;
+}
+.filter-bar.collapsed .filter-bar-body {
+    max-height: 0;
+}
+/* Padding lives on the caller's OWN top-level element inside .filter-bar-body would be one option,
+   but that would require the caller's markup to know it's inside this partial -- instead this
+   :first-child selector reaches whatever single top-level wrapper the caller's own
+   $filter_fields_html happens to render (almost always one `<div class="row ...">`, per this app's
+   own existing `.station-filter-body` convention) without needing the caller to add a class of its
+   own for it, keeping the "copy verbatim" migration promise in the partial's own docblock intact. */
+.filter-bar-body > :first-child {
+    padding: 0 var(--sp-3) var(--sp-3);
+}
+.filter-bar-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-1);
+}
+.filter-bar-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    color: var(--c-text-muted);
+    border-radius: var(--radius-pill);
+    padding: 2px var(--sp-3);
+    font-size: var(--fs-xs);
+}
+.filter-bar-chip-remove {
+    display: inline-flex;
+    align-items: center;
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--c-text-muted);
+    font-size: var(--fs-xs);
+}
+.filter-bar-chip-remove:hover {
+    color: var(--c-text);
+}
+
+/* status-tabs.php (§6, item 4b) -- REVISED after live review: reverted from a plain nav-tabs
+   underline shape back to the original chevron pipeline (.station-row/.station-card), retokenized --
+   "คงรูปแบบ chevron pipeline ตามที่ approve แล้ว" -- lighter than the old .station-card (36px tall vs
+   38px, 8px notch vs 12px, no border/shadow). A second, flat "path" visual variant (no colored card,
+   breadcrumb-style) existed alongside this one for an explicit A/B comparison in components.php --
+   decided, chevron won, every `.status-tabs-path`/`.status-tab-path*` rule that variant needed has
+   been deleted outright, not left as dead/unused CSS. `:not(.badge)` on the idle pill rule below is
+   deliberate, not decorative: JS only ever adds `.badge.badge-{tone}` to an IDLE pill (never an
+   active one -- see initStatusTabs()'s own comment), but the idle-pill selector's specificity ties
+   with `.badge.badge-{tone}`'s -- without `:not(.badge)` here, whichever rule is declared LATER in
+   this file would silently win the tie regardless of which one is semantically correct, the exact
+   same specificity-tie bug class already documented once in this project (v11's Symbol-dropdown).
+   Excluding `.badge` here sidesteps the tie entirely instead of depending on declaration order. */
+.status-tab-count:not(.badge) {
+    display: inline-block;
+    min-width: 16px;
+    margin-left: var(--sp-1);
+    padding: 1px 7px;
+    border-radius: var(--radius-pill);
+    background: var(--c-bg-hover);
+    color: var(--c-text-muted);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    text-align: center;
+    vertical-align: middle;
+}
+.status-tab-count.badge {
+    vertical-align: middle;
+}
+.status-tabs {
+    display: flex;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+.status-tab-col {
+    display: flex;
+    align-items: stretch;
+    flex: 0 0 auto;
+}
+
+/* Chevron pipeline (arrow/notch shape). `::before`/`::after` draw the notch the same border-triangle
+   trick `.station-card` always used -- `::before`'s notch color matches the PAGE/card surface behind
+   the row (`--c-bg`, so it reads as a cut chevron point, not a colored wedge); `::after`'s notch color
+   matches this tab's OWN idle background (`--c-bg-subtle`) so consecutive idle tabs blend into one
+   continuous shape. */
+.status-tabs-chevron {
+    gap: 2px;
+    padding: 2px 2px 6px;
+}
+.status-tab-chevron {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    min-width: 110px;
+    padding: 0 14px 0 18px;
+    background: var(--c-bg-subtle);
+    color: var(--c-text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    white-space: nowrap;
+    border: none;
+    cursor: pointer;
+    user-select: none;
+    transition: background-color .15s ease, color .15s ease;
+}
+.status-tab-chevron::before,
+.status-tab-chevron::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    width: 0;
+    height: 0;
+    border-top: 18px solid transparent;
+    border-bottom: 18px solid transparent;
+}
+.status-tab-chevron::before {
+    left: 0;
+    border-left: 8px solid var(--c-bg);
+}
+.status-tab-chevron::after {
+    left: 100%;
+    border-left: 8px solid var(--c-bg-subtle);
+    z-index: 1;
+}
+.status-tab-chevron:hover {
+    background: var(--c-bg-hover);
+}
+.status-tab-chevron:hover::after {
+    border-left-color: var(--c-bg-hover);
+}
+.status-tab-chevron.active {
+    background: var(--c-primary);
+    color: #fff;
+}
+.status-tab-chevron.active::after {
+    border-left-color: var(--c-primary);
+}
+.status-tab-chevron.active .status-tab-count {
+    background: rgba(255, 255, 255, .3);
+    color: #fff;
+}
+/* Back (reversed/exception) group -- rejected/need-info/cancelled-style -- forms its own group at
+   the tail of the row, one `--sp-4` gap after the last forward step (the sibling selector stops that
+   gap from stacking between two back steps sitting next to each other, so the group itself stays
+   tight). Every back step's whole card is rotated 180deg so its notches point LEFT instead of right
+   ("ลูกศรชี้กลับ" -- reads as a path backward, not a continuation of the forward flow, same trick
+   `.station-card--reject` always used); `.status-tab-btn-inner` is counter-rotated so its own
+   text/count still read normally. */
+.status-tab-col--back {
+    margin-left: var(--sp-4);
+}
+.status-tab-col--back ~ .status-tab-col--back {
+    margin-left: 0;
+}
+.status-tab-chevron.status-tab-btn--back {
+    transform: rotate(180deg);
+}
+.status-tab-chevron.status-tab-btn--back .status-tab-btn-inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transform: rotate(180deg);
+}
+/* Active BACK step takes a TONE color instead of brand orange -- the whole card, matching the old
+   .station-card--reject/--needinfo's own per-tone active color. Uses 'tone' when it's warning/
+   danger, but initStatusTabs() itself falls back to danger when 'tone' is neutral/success (e.g.
+   cancelled) before ever adding this class -- so by the time either rule below matches, the class
+   name IS the color to use, no extra fallback logic needed in CSS. A forward step never gets this
+   treatment regardless of its own tone (JS only ever adds this class when direction==='back'). */
+.status-tab-chevron.active.status-tab-tone-warning {
+    background: var(--c-warning);
+}
+.status-tab-chevron.active.status-tab-tone-warning::after {
+    border-left-color: var(--c-warning);
+}
+.status-tab-chevron.active.status-tab-tone-danger {
+    background: var(--c-danger);
+}
+.status-tab-chevron.active.status-tab-tone-danger::after {
+    border-left-color: var(--c-danger);
+}
+
+/* .badge.badge-{tone} (§5's own documented convention) -- built here, ahead of item 5's own
+   statusBadge()/statusBadgeHtml() HELPER functions, because status-tabs.php's own count badge needs
+   real CSS to render today. Item 5 reuses these SAME classes for its shared helper rather than
+   defining a second, conflicting set -- confirmed no `.badge-neutral`/`.badge-warning`/
+   `.badge-danger`/`.badge-success` class exists anywhere in this file before this addition. */
+.badge.badge-neutral {
+    background: var(--c-info-soft);
+    color: var(--c-info);
+    border-radius: var(--radius-pill);
+    font-weight: 400;
+}
+.badge.badge-warning {
+    background: var(--c-warning-soft);
+    color: var(--c-warning);
+    border-radius: var(--radius-pill);
+    font-weight: 400;
+}
+.badge.badge-danger {
+    background: var(--c-danger-soft);
+    color: var(--c-danger);
+    border-radius: var(--radius-pill);
+    font-weight: 400;
+}
+.badge.badge-success {
+    background: var(--c-success-soft);
+    color: var(--c-success);
+    border-radius: var(--radius-pill);
+    font-weight: 400;
+}
+
 /* ==========================================================================
    2026-09-04, Backlog Phase 11, T069 (dark mode), Step 1 of 3 -- foundation only. Scope
    deliberately Tier B minus the 2 canvas designers (Payslip Template/Employment Certificate

@@ -89,16 +89,29 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 │          │ H1 หน้า                              [ปุ่มหลัก ส้ม 1 ตัว] │
 │          │ คำอธิบาย 1 บรรทัด (ถ้าจำเป็นจริง)                       │
 │          ├────────────────────────────────────────────────────────┤
-│          │ Stat cards (ถ้ามี) — แถวเดียว การ์ดเท่ากัน ไม่มีสี/ไอคอน  │
+│          │ Stat cards (ถ้ามี) — แถวเดียว การ์ดเท่ากัน ไม่มีสีพื้น    │
 │          │ Tabs (ไม่มีไอคอน)                                       │
 │          │ Filter bar (ยุบ, มีป้ายจำนวน filter ที่ใช้)               │
 │          │ ตาราง / เนื้อหา                                          │
 └──────────┴────────────────────────────────────────────────────────┘
 ```
 
-- **Page header = partial เดียว** `app/views/partials/page-header.php` รับ `title`, `breadcrumb[]`, `primary_action` (label + id/href + icon optional), `description` — **ไม่มี card ครอบ ไม่มีไอคอนหน้า ไม่มีพื้นหลังสี** (ของเดิม "การ์ดหัวหน้า + ไอคอน" ทุกหน้าให้แทนด้วย partial นี้)
+- **Page header = partial เดียว** `app/views/partials/page-header.php` รับ `title`, `breadcrumb[]`, `secondary_actions[]` (ไม่เกิน 2, label + id/href + icon optional, render `.btn-outline-secondary`, วางซ้ายของ `primary_action` เสมอ — ตัดสินใจแล้วรอบ 2 item 4), `primary_action` (label + id/href + icon optional), `description` — **ไม่มี card ครอบ ไม่มีไอคอนหน้า ไม่มีพื้นหลังสี** (ของเดิม "การ์ดหัวหน้า + ไอคอน" ทุกหน้าให้แทนด้วย partial นี้)
+- **Action วางที่ไหน (ตัดสินใจแล้วรอบ 2 item 4, กฎบังคับทั้งระบบ)**:
+  - **Page header** (`primary_action`/`secondary_actions`) = action ระดับ**หน้า** เท่านั้น — ไม่ขึ้นกับว่ามีแถวไหนถูกเลือกอยู่ไหม เช่น "สร้าง/เพิ่ม", "ดึงข้อมูล" (ซิงค์จาก Origami, นำเข้า Excel), "ดูประวัติ"
+  - **Toolbar ของตาราง ฝั่งซ้าย หลัง length** = action ที่ทำกับ**แถวที่เลือกไว้** (bulk) เท่านั้น เช่น "ซิงค์ที่เลือก", "ลบที่เลือก" — ไม่ใช่ page header (เพราะพิมพ์ผิดที่ผู้ใช้ทั่วไปจะกดตอนไม่ได้เลือกอะไรเลย ปุ่มควรโผล่/ใช้งานได้เฉพาะตอนมี selection)
+  - **Toolbar ของตาราง ฝั่งขวา** = **เฉพาะ**ค้นหา + ส่งออกเท่านั้น (§7) ห้ามใส่ action อื่นแทรก
 - Breadcrumb กับ H1 ห้ามพูดซ้ำกัน — H1 คือชื่อหน้า breadcrumb คือทาง
-- **Stat card** = partial `stat-card.php` (label, value, sub, optional link) render ด้วย **class ใหม่ `.stat`** (ไม่ใช่ `.stat-card`) — ตัดสินใจแล้วว่า **ทุบสี/ไอคอนของ `.stat-card` เดิมทิ้งจริง** (ของเดิมมี 7 tone สี + ไอคอนเสมอ ใช้อยู่ 5 ไฟล์ ณ ตอนตัดสินใจนี้ — ตรงข้ามกับกฎนี้โดยสิ้นเชิง ไม่ใช่ต่อยอด) พื้นขาว ขอบ `--c-border` **ไม่มีขอบซ้ายสี ไม่มีไอคอน** ตัวเลข `.num` ขนาด `--fs-xl` — ถ้าค่าเป็นสถานะที่ต้องตัดสินใจ (เช่น "รออนุมัติ 3") ใช้ badge ใน sub ไม่ใช่เปลี่ยนสีทั้งการ์ด
+- **Stat card** = partial `stat-card.php` render ด้วย **class ใหม่ `.stat`** (ไม่ใช่ `.stat-card`) — ตัดสินใจแล้วว่า **ทุบสีของ `.stat-card` เดิมทิ้งจริง** (ของเดิมมี 7 tone สี ขอบซ้ายสี ใช้อยู่ 5 ไฟล์ ณ ตอนตัดสินใจนี้ — ตรงข้ามกับกฎนี้โดยสิ้นเชิง ไม่ใช่ต่อยอด) พื้นขาว ขอบ `--c-border` **ไม่มีขอบซ้ายสี ไม่มีพื้นสี** ตัวเลข `.num` ขนาด `--fs-xl` ตัวหนา — ถ้าค่าเป็นสถานะที่ต้องตัดสินใจ (เช่น "รออนุมัติ 3") ใช้ badge จาก `status_map.php` (ข้อ 5) ใน slot ล่างเท่านั้น (ผ่าน field `badge` ของ `$stat` แยกจาก `sub`) ไม่ใช่เปลี่ยนสีทั้งการ์ด
+  - **แก้ไข (รอบ 2 follow-up): อนุญาตไอคอน (optional) 1 ตัว/การ์ด** (เดิมห้ามไอคอนเลย) — ยังคง
+    **ห้ามพื้นสี/ขอบสีบนตัวการ์ด**เหมือนเดิม การอนุญาตไอคอนไม่ใช่การเปิดทางกลับไปหา `.stat-card` เดิม —
+    **ตัดสินใจแล้ว: ใช้แบบเดียว** (เคยมี 2 variant ให้เทียบกันใน components.php ก่อนตัดสินใจ — แบบ
+    ไอคอนมุมขวาบนไม่มีวงกลม ถูกลบออกจาก partial/CSS/components.php ทั้งหมดแล้ว ไม่เหลือ dead code) —
+    ไอคอนอยู่ในวงกลม 40px พื้น `--c-bg-subtle` ไอคอนสี `--c-text-muted` (เข้มกว่า `--c-text-faint` ปกติ
+    โดยตั้งใจ เพราะนั่งอยู่บนพื้นวงกลมที่เห็นชัด ไม่ใช่ลอยอยู่บนพื้นการ์ดเปล่าๆ) อยู่ซ้าย ข้อความ (label บน
+    ตัวเลขล่าง) ชิดขวาของวงกลม — **ถ้าไม่ส่งไอคอนมา ไม่เว้นพื้นที่วงกลมไว้** (ตัดสินใจแล้ว: "เลือกไม่เว้น")
+    ข้อความชิดซ้ายปกติเหมือนการ์ดที่ไม่มีไอคอนเลย ไม่ใช่เยื้องขวาค้างไว้เผื่อไอคอนที่ไม่มี
+  - **ทุกการ์ดในแถวสูงเท่ากันเสมอ** — caller ครอบด้วย Bootstrap `.row` ธรรมดา (ยืด column เท่ากันเป็น default อยู่แล้ว ไม่ต้องเพิ่ม CSS) `.stat` เอง `height:100%` + เป็น flex column — **slot ล่างคงที่สำหรับ sub/badge/link เสมอ** (มี `min-height` แม้ไม่มีเนื้อหาอะไรเลย ก็ยังเว้นพื้นที่เท่ากับการ์ดที่มีครบทั้ง 3 อย่าง) และ `margin-top:auto` ดันลงชิดขอบล่างเสมอ ไม่ว่า header/ไอคอนด้านบนจะสูงแค่ไหน
   - **Migration**: รอบ 2 สร้าง `.stat`/`stat-card.php` ใหม่เท่านั้น **ไม่แตะ 5 ไฟล์ที่ใช้ `.stat-card` เดิม**; รอบ 4 ย้ายทีละหน้า (หน้าไหนมี stat card ก็ย้ายเป็นส่วนหนึ่งของการทำหน้านั้นให้ clean ไม่ใช่ commit แยก) เมื่อย้ายครบ 5 ไฟล์แล้วให้ลบ CSS ของ `.stat-card`/`.stat-card-*` (`style.css`) ทิ้งเป็นขั้นตอนสุดท้าย — ห้ามลบ CSS เดิมก่อนไฟล์ล่าสุดที่ใช้มันย้ายเสร็จ
 - Dashboard: ไม่มี welcome card, ไม่มีกราฟที่มีข้อมูลแท่งเดียว — เนื้อหาต้องเป็น "งานที่ต้องทำ" ก่อน (รออนุมัติ/อนุมัติแล้วรอทำต่อ/ค้างนาน) ตามด้วยตัวเลขสรุป
 - ปุ่ม `?` ลอย: เอาออก — ความช่วยเหลือให้อยู่ใน helper text หรือลิงก์ "วิธีใช้" ใน page header เท่านั้น
@@ -156,23 +169,83 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 
 ---
 
-## 6. Tabs, Stepper, Filter bar
+## 6. Tabs, Status tabs, Stepper, Filter bar
 
-**Tabs** (`.nav-tabs` ที่ override แล้ว)
+**Tabs** (`.nav-tabs` ที่ override แล้ว) — top-level page tab (สลับ "หน้า" ทั้งหน้า เช่น Generate Reports / Annual Summary)
 - ไม่มีไอคอนใน tab ทุกหน้า (เอาออกทั้งหมด รวม tab รายงาน)
 - ไม่มี chevron / ลูกศร
 - tab ที่เลือก: ตัวหนังสือ `--c-text` + เส้นใต้ 2px `--c-primary`; ไม่เลือก: `--c-text-muted`
 - จำนวนที่ต้องแสดง (เช่น "รออนุมัติ 3") ใช้ตัวเลขเทาในวงเล็บหลังชื่อ tab ไม่ใช่ badge สี
+
+**Status tabs** (ตัดสินใจแล้วรอบ 2 item 4b, **แก้ไขหลัง review**: คนละ component กับ "Tabs" ด้านบน แม้
+หน้าตาคล้ายกัน — อันนี้ใช้ **กรองตาราง** ตาม status ที่**เป็นลำดับ/workflow** (draft → pending_approval →
+approved → ...) ไม่ใช่สลับหน้า)
+- **chevron/ลูกศรใช้ได้เฉพาะ component นี้เท่านั้น** ("Tabs" ทั่วไปด้านบน — top-level page tab หรือ tab
+  อื่นใดที่ไม่ได้แสดงลำดับ workflow — **ห้ามมีลูกศร/chevron เด็ดขาด**) — รอบแรกของ item 4b เคยเปลี่ยน
+  status tabs ไปใช้เส้นใต้แบบ "Tabs" ธรรมดา ถูก**ถอนกลับแล้ว**หลัง review: chevron pipeline เดิม
+  (`.station-row`/`.station-card` ของ Employee List/Payroll Process) ที่ approve ไว้แต่แรก**ยังคงรูปแบบเดิม**
+  งานของ partial นี้คือรวม markup ที่เคยซ้ำกัน 2 ไฟล์ให้เป็นชิ้นเดียว + แทน hex เดิมด้วย token เท่านั้น
+  ไม่ใช่เปลี่ยนรูปแบบภาพ — เบาลงกว่าของเดิมเล็กน้อย: สูง 36px (เดิม 38px), รอยบากลึก 8px (เดิม 12px),
+  ไม่มีเงา/ขอบ, ระยะห่างระหว่างขั้น 2px
+- partial `status-tabs.php` + JS `initStatusTabs(el, {onChange})` — คืน `{ update(counts) }` ให้ caller
+  เรียกทุกครั้งที่มี count ใหม่ (โหลดครั้งแรก/หลัง redraw/หลัง sync ฯลฯ) — **ตัดสินใจแล้ว**: เคยมีอีก
+  variant หนึ่ง (`path`, ไม่มีพื้นสีเลย label+pill ในแถบเดียวคั่นด้วย `›`) ให้เทียบคู่กันใน
+  components.php ก่อนตัดสินใจ **เลือก chevron แล้ว ลบ `path` ออกจาก partial/JS/CSS/components.php
+  ทั้งหมด ไม่เหลือ dead code**
+- **สี**: ไม่ถูกเลือก = พื้น `--c-bg-subtle` ตัวหนังสือ `--c-text-muted`, pill จำนวนพื้น `--c-bg-hover`;
+  ถูกเลือก (ไม่ใช่สถานะย้อนกลับ) = ทั้งการ์ดเป็นส้ม `--c-primary` ตัวหนังสือขาวเสมอ ไม่ว่า `tone` จะเป็นอะไร
+- **กลุ่ม "ย้อนกลับ"** (ไม่อนุมัติ/ส่งกลับแก้ไข, ขอข้อมูลเพิ่มเติม, ยกเลิก) — ตั้ง `'direction' => 'back'`
+  ต่อ tab (default `'forward'` ถ้าไม่ตั้ง) **มาจาก `status_map.php` เท่านั้น ห้าม hardcode/เดาใน view**
+  — แยกเป็น**กลุ่มที่สองท้ายแถว** เว้นช่อง `--sp-4` จากกลุ่มเดินหน้า (เว้นช่องแค่ครั้งเดียวก่อนตัวแรกของ
+  กลุ่ม ไม่ใช่ทุกคู่ในกลุ่มเดียวกัน) และหมุนการ์ดกลุ่มนี้ 180° ให้ลูกศรชี้ซ้าย (◀) สื่อว่าเป็นทางย้อน
+  (label/count หมุนกลับให้อ่านออกตามปกติ)
+  - **ถูกเลือก + อยู่กลุ่มย้อนกลับ**: ทั้งการ์ดใช้ tone color แทนส้มเสมอ — `tone` เป็น `warning`/`danger`
+    ใช้ตรงๆ (rejected→danger, need_info→warning); `tone` เป็น `neutral`/`success` (เช่น cancelled)
+    **fallback เป็น danger** — เหตุผล: สถานะย้อนกลับที่กำลังดูอยู่ตรงๆ ควรอ่านเป็นสีจริงจังเสมอ ต่อให้
+    ตอนไม่ถูกเลือกจะไม่มีอะไรต้องทำ (ดูข้อถัดไป) ก็ตาม
+  - **จำนวน (ทุก tab ไม่ว่าอยู่กลุ่มไหน)**: ไม่ถูกเลือก + `tone` เป็น `warning`/`danger` + จำนวน > 0 ให้
+    pill เป็น badge จริง (`.badge.badge-{tone}`, §5) — เหตุผล: สถานะที่ "ต้องทำอะไรสักอย่าง" ควรเด่นขึ้นมา
+    เมื่อมีของจริงให้ทำ ไม่ใช่ทุกครั้งที่เห็น (ไม่ถูกเลือก + `tone` neutral/success หรือจำนวน = 0 → pill
+    เทาธรรมดา) — **`tone` ในกฎนี้ใช้ค่าจริงตรงๆ ไม่มี fallback แบบข้อบน**: "ยกเลิก" ตั้ง `tone` เป็น
+    `neutral` ใน `status_map` (คนละความหมายกับสีตอนถูกเลือกด้านบน) เพื่อไม่ให้ pill เตือนแม้จำนวนจะสูง
+    แค่ไหน เพราะไม่มีอะไรต้องทำต่อแล้วเมื่อ run ถูกยกเลิกไปแล้ว
+- **ตัดเส้นส้มหนาใต้ pipeline ออก** — ของเดิมเคยห่อด้วย `.nav.nav-tabs` (Bootstrap) ซึ่งวาดเส้นขอบล่าง
+  ของทั้งแถวมาด้วยเสมอ ซ้ำกับสีของ tab ที่เลือกเอง — partial ใหม่เลิกใช้ `.nav`/`.nav-tabs`/`.nav-link`
+  ทั้งหมด ใช้ class ของตัวเอง (`.status-tabs`/`.status-tab-btn`/...) แทน ปัญหานี้จึงไม่มีอยู่แล้ว
+- ลำดับ/รายชื่อสถานะที่ส่งเข้า `$tabs` **มาจาก `status_map.php` (ข้อ 5) + ลำดับ workflow ที่
+  `runLifecycleSteps()`/PHP equivalent ในอนาคตรู้อยู่แล้ว ห้าม hardcode ลำดับ/label ซ้ำในตัว view เอง**
+  เมื่อย้ายมาใช้จริงในรอบ 4 — partial เองไม่ยุ่งกับลำดับ แค่ render `$tabs` ตามที่ส่งมา
+- **ตรวจสอบแล้ว (ตัดสินใจรอบนี้): Employee List กับ Payroll Process ใช้ shape/แหล่งที่มาของ counts
+  ไม่ตรงกันเลย** — Employee List ยิง server 1 ครั้ง (`POST api/employee.station-counts`) ได้
+  `{active, probation, permanent, resigned}` เพราะตารางเป็น `serverSide:true`; Payroll Process **ไม่ยิง
+  server เลย**สำหรับเกือบทุกสถานะ (`updateStationCounts()` นับจาก row ที่โหลดมาแล้วในตาราง client-side)
+  ได้ `{draft, pending_approval, approved, paid, locked, rejected, need_info, cancelled}` — ส่วน
+  `pending_sync` มาจากกลไกแยกไปเลยคนละที่ — **shape เดียวที่เสนอ**: object แบนธรรมดา `{key: count}` ส่งเข้า
+  `update()` เท่านั้น (ทั้งสองหน้าอยู่แล้วลงเอยที่ shape นี้เหมือนกัน ต่างแค่ "ได้มายังไง" ซึ่งไม่ต้องบังคับให้
+  เหมือนกัน — ตารางที่เป็น serverSide ต้องยิง server เสมอ ตารางที่โหลดครบแล้วนับ client-side ถูกกว่า) —
+  ไม่มีการแก้หน้าจริงในรอบนี้ (รอบ 2 ไม่แตะหน้า) เป็นข้อเสนอสำหรับรอบ 4
 
 **Stepper** (ไทม์ไลน์ 5 ขั้นของรอบ)
 - partial เดียว `status-stepper.php` + JS `renderStatusStepper(steps, current)` (แทน `runLifecycleSteps()` render ส่วน HTML — logic ขั้นยังอยู่ที่เดิม)
 - เสร็จแล้ว: วงกลมเทา + ✓, ตัวหนังสือ `--c-text-muted`; ปัจจุบัน: วงกลม `--c-primary` ตัวหนังสือ `--c-text` หนา; ถัดไป: วงกลมขอบ `--c-border-strong` ว่าง
 - **ไม่มีสีพาสเทล 5 สี ไม่มีกล่องต่อขั้น** — เส้นเชื่อมสีเดียว `--c-border`
 
-**Filter bar**
+**Filter bar** (ตัดสินใจแล้วรอบ 2 item 4, แก้ไขรอบเดียวกันหลัง feedback)
 - partial `filter-bar.php`: ปิด (ยุบ) โดย default; ปุ่ม secondary "ตัวกรอง (N)" แสดงจำนวนที่ active; ปุ่ม tertiary "ล้าง" โผล่เมื่อ N > 0
-- filter ที่ active แสดงเป็น chips เทาใต้ปุ่ม (ปิดได้ทีละตัว) — ผู้ใช้เห็นว่ากรองอะไรอยู่โดยไม่ต้องกาง
+- filter ที่ active แสดงเป็น chips ใต้ปุ่ม (ปิดได้ทีละตัว) — ผู้ใช้เห็นว่ากรองอะไรอยู่โดยไม่ต้องกาง — chips แสดงตลอดไม่ว่าจะยุบหรือกาง (chips อยู่ใน toolbar แถวเดียวกับปุ่ม ไม่ได้อยู่ใต้ collapse)
+- **ตอนกาง = ใช้ grid ของ `.station-filter` เดิมเป๊ะ** (คอลัมน์/ขนาดช่อง/ลำดับเหมือนเดิมทุกอย่าง) — `filter-bar.php` เป็น**แค่ wrapper** ไม่บังคับ grid/gutter class ของตัวเอง `$filter_fields_html` ต้องเป็น markup เดิมของ `.station-filter-body` คัดลอกมาแบบคำต่อคำ (รวม `<div class="row g-X">` ของมันเอง) — ย้ายเข้า partial นี้ในรอบ 4 โดยไม่ต้องเขียน field ใหม่เลย
+- **ไม่มีไอคอนหน้า label ของ field ใดๆ ทั้งสิ้น** (ของเดิมมี เช่น `.station-filter-body`'s `<label><i class="fa-solid fa-calendar">...` — ยืนยันแล้วมีจริง ~140 จุดใน 18 ไฟล์ทั่วแอป เป็นงาน migrate ของรอบ 4 — ตัดไอคอนออกตอนย้าย ไม่ใช่คัดลอกมาด้วย) และ**ไม่มี fieldset/legend look แบบเดิม** ("ตัวกรอง" เป็น corner label ลอยทับขอบกรอบ) — เปลี่ยนเป็นแถบเรียบแบนแทน (พื้น `--c-bg-subtle` ขอบ `--c-border`) ไม่มีคำว่า "ตัวกรอง" ซ้ำอยู่ในกล่อง (ปุ่ม toggle เองมีคำนี้อยู่แล้ว)
+- **จำสถานะกาง/ยุบต่อหน้าได้** ผ่าน `localStorage['filterbar:' + pageKey]` — partial รับ `$pageKey` (optional); ถ้าไม่ส่งมา ไม่จำสถานะเลย เริ่มยุบเสมอ
+- collapse ใช้กลไกเดิมของ `.station-filter-body` (CSS class `.collapsed` + `max-height` transition ธรรมดา) **ไม่ใช่** Bootstrap `.collapse` component — เพื่อให้ "เหมือนเดิมเป๊ะ" ตามที่ตัดสินใจ
 - ควบคุมทั้งหมดใช้ `.form-select-sm` / select2 ขนาดเดียว ปุ่มขนาด `.btn-sm`
+- **หน้าที่มี Status Tabs อยู่ด้วย: ปุ่ม "ตัวกรอง (N)" + chips + "ล้าง" ต้องอยู่ขวาสุดของแถว Status Tabs
+  เดียวกัน (align ขวา) ไม่ใช่แถวแยกของตัวเอง** — `initFilterBar(bar, {toolbarTarget})` (JS option,
+  ไม่ใช่ PHP param ของ partial) รับ selector ของแถว Status Tabs แล้ว**ย้าย** DOM node ของ
+  `.filter-bar-toolbar` เข้าไปในแถวนั้นจริง (`.appendTo()`, ไม่ใช่ clone — ไม่มีปุ่มซ้ำเหลืออยู่ที่เดิม)
+  ส่วนแผงฟิลด์ (`.filter-bar-body`) ยังอยู่ที่เดิมตามตำแหน่งที่ include partial ไว้ (กางลงมาใต้ pipeline
+  ตามปกติ) — `.filter-bar--toolbar-relocated.collapsed` ซ่อนพื้น/ขอบกล่องของ `.filter-bar` เอง (ไม่งั้น
+  จะเหลือเป็นเส้นบางๆ ว่างเปล่าใต้แถว Status Tabs ตอนแผงยุบอยู่) ใช้เฉพาะกรณี relocate เท่านั้น
+  ไม่กระทบรูปแบบ default (toolbar อยู่ในกล่องเดิม) เลย
 
 ---
 
@@ -182,9 +255,13 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 
 **Per-column sort/filter (ช่องว่างที่พบรอบ 0, ตัดสินแล้ว)**: CLAUDE.md's Table convention เดิมบังคับว่าทุก `<th>` ที่มีข้อมูลจริงต้องเรียก **`initExcelColumnFilters(dt, options)`** (`public/js/table-column-filter.js`) เอง ต่อตาราง ใน `initComplete` — กฎนั้นยังใช้อยู่ ไม่ถูกยกเลิก แต่ **`initSharedDataTable()` ต้องครอบหน้าที่นี้ให้เองจากรอบ 2 เป็นต้นไป** (อ่าน `columnDefs`/`columns` ที่ caller ส่งมา แล้วเรียก `initExcelColumnFilters()` ให้อัตโนมัติตาม mode ที่เหมาะกับตาราง client/server — หน้าเรียกทีเดียวผ่าน `initSharedDataTable()` ไม่ต้องเรียก `initExcelColumnFilters()` แยกเองอีก) รายละเอียด mode/exemption ตาม CLAUDE.md's Table convention เดิม (`mode:'client'`/`mode:'server'`, exempt คอลัมน์ปุ่ม/widget ภาพ/ตารางที่มี top-level filter อยู่แล้ว) — รายละเอียดการ implement (จะ auto-detect คอลัมน์ที่ควร filter ยังไง) ตัดสินตอนรอบ 2
 
-**Layout มาตรฐาน** (helper จัด `layout`/`dom` ให้เอง หน้าไม่ต้องกำหนด):
+**Layout มาตรฐาน** (helper จัด `layout`/`dom` ให้เอง หน้าไม่ต้องกำหนด — ตัดสินใจแล้วรอบ 2 item 3b,
+แก้ไขอีกครั้งวันเดียวกัน (รอบก่อนเขียนกลับด้าน): ซ้าย = length เดี่ยวๆ (`layout.topStart:'pageLength'`
+— ค่า default ของ DataTables เองอยู่แล้ว ตั้งให้ชัดเจนไว้กันค่า default เปลี่ยนในอนาคต), ขวา = ค้นหา +
+ส่งออก ติดกันในแถวเดียว (`layout.topEnd:'search'`, ส่งออก append เข้า `.dt-search` เป็น sibling ของ
+input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 ```
-[ค้นหา…            ]                     [แสดง 25 ▾] [ส่งออก ▾]
+[แสดง 25 ▾ รายการ]                                     [ค้นหา… ] [ส่งออก ▾]
 ┌────────────────────────────────────────────────────────────────┐
 │ หัวตาราง (พื้น --c-bg-subtle, ตัวหนังสือ --c-text-muted, ไม่หนา) │
 │ … แถว …                                                          │
@@ -192,7 +269,9 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 แสดง 1–25 จาก 130                                   ‹ 1 2 3 ›
 ```
 - toolbar (ค้นหา/length/ส่งออก) **อยู่กับที่** ไม่เลื่อนตามตาราง; ตารางที่กว้างเกิน scroll แนวนอนภายในตัวเอง + **fix คอลัมน์แรก (พนักงาน) และหัวตาราง** + ลากเลื่อนได้ — ตาม pattern `/employees#employee-recheck-top-tab` ที่ตกลงเป็นต้นแบบ
-- ส่งออก: dropdown secondary ตัวเดียว (Excel / PDF) ต่อจากช่องค้นหา — helper เปิดให้เมื่อ `export: true`
+- ส่งออก: dropdown secondary ตัวเดียว (Excel / PDF) — helper append เข้า `.dt-search` เป็น sibling ของ
+  ช่องค้นหาตรงๆ (`d-inline-block`, ไม่ใช่ block ใหม่ที่จะตกลงบรรทัดถัดไป) เปิดให้เมื่อ `export: true` —
+  ติดกับช่องค้นหาเสมอ (ฝั่งขวาตาม layout ปัจจุบัน)
 - แถวน้อย (≤ threshold ของ helper): ไม่มีค้นหา/paging (ทำอยู่แล้ว)
 - ตาราง **เต็มความกว้าง** container ไม่มี padding รอบ (`.table-responsive` ไม่มี margin)
 
@@ -269,6 +348,7 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 | `stat-card.php` | partials | การ์ดตัวเลขขอบสี |
 | `filter-bar.php` | partials | filter กางค้าง |
 | `status-stepper.php` + `renderStatusStepper()` | partials + app.js | กล่อง 5 สี |
+| `status-tabs.php` + `initStatusTabs()` (ใหม่, item 4b — chevron pipeline เดิม**ยังคงรูปแบบไว้**, retokenize เท่านั้น; **ตัดสินใจแล้ว**: เคยมี variant `path` ให้เทียบคู่กัน ลบออกทั้งหมดแล้ว) | partials + app.js | markup ที่เคยซ้ำ 2 ไฟล์ของ `.station-row`/`.station-card` |
 | `statusBadge()` / `statusBadgeHtml()` + `status_map.php` (rename `payroll-configuration.js`'s local `statusBadge(row)` → `pcRowStatusBadge(row)` ก่อนประกาศ global — ดู §5) | helpers + app.js + config | map สถานะกระจาย |
 | `initSharedDataTable()` (ขยาย: layout, export, fixed column, columnDefs alignment) | app.js | init ตรงทุกหน้า |
 | `fmtMoney()` (ใหม่) / `fmtNum()` (มีแล้ว, `format-helpers.js` — **ไม่สร้าง `formatMoney()` ใหม่**, ตัดสินใจแล้วรอบ 2 — ดู §8) / `initMoneyInputs()` (ใหม่) | helpers + app.js | number_format กระจาย |

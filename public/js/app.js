@@ -872,6 +872,30 @@ function initSharedDataTable(selector, options) {
         lengthMenu: lengthMenu,
         ordering: true,
         searching: rowCount > searchThreshold,
+        // 2026-09-12, Round 2 item 3 follow-up -- real bug found via the components.php demo table
+        // (§2's own "ตารางไม่เต็มขอบ" symptom, already logged once in docs/design/audit.md as a
+        // systemic finding): DataTables' own default `autoWidth:true` MEASURES each column's content
+        // and sets explicit inline pixel widths on <table>/<col> from that measurement -- those
+        // inline widths win over the table's own CSS `width:100%` (`.table`/`.w-100` class, or
+        // table.dataTable's own width rule in style.css) regardless of how wide the container
+        // actually is, so a table with modest content renders narrower than its container instead of
+        // stretching to fill it. `autoWidth:false` stops DataTables from setting those inline widths
+        // at all, letting plain CSS own the table's width the way this app already intends everywhere
+        // else -- a caller can still override back to `autoWidth:true` via its own `dtOptions` if a
+        // specific table genuinely needs DataTables' own column-width measurement.
+        autoWidth: false,
+        // 2026-09-12, Round 2 item 3b, corrected same day (§7's own toolbar layout: length on the
+        // LEFT, search+export together on the RIGHT) -- this is actually DataTables' OWN built-in
+        // default already (topStart:'pageLength', topEnd:'search'), confirmed by reading its own
+        // defaults object directly -- an earlier version of this same line swapped it the OTHER way
+        // (search left/length right), which was itself the mistake this correction fixes. Still set
+        // explicitly (not left implicit) so a future change to DataTables' own default can't
+        // silently change this app's intended layout. The export dropdown
+        // (dtInjectExportDropdown() above) targets `.dt-search` specifically wherever it ends up, so
+        // it always lands next to search regardless of which side that is. None of the 8 existing
+        // callers pass their own `layout` option (confirmed via grep) -- ships automatically via
+        // this shared config, no page edit needed, same mechanism as item 1's button/tab recolor.
+        layout: { topStart: 'pageLength', topEnd: 'search' },
     }, options.dtOptions || {});
     dtOptions.language = Object.assign({}, getTableLang(), dtOptions.language || {});
     // 2026-09-12, Round 2 item 3 -- auto columnDefs from marker classes (§7), prepended so an
@@ -906,13 +930,242 @@ function initSharedDataTable(selector, options) {
             const dt = this.api();
             if (options.columnFilters) initExcelColumnFilters(dt, options.columnFilters);
             if (options.stickyColumns) {
+                // 2026-09-12, real bug found (header/body column misalignment on the components.php
+                // demo): initStickyColumns() measures each frozen column's CURRENT rendered
+                // outerWidth() via jQuery -- if that measurement runs before the page's own webfont
+                // (Sarabun) has actually swapped in, the offset gets computed against the FALLBACK
+                // font's metrics, which can differ from Sarabun's real glyph widths once it loads a
+                // moment later -- the header cell then visibly drifts out of alignment with the body
+                // cells below it as soon as the swap happens, with nothing re-triggering a recalc.
+                // `dt.columns.adjust()` first (DataTables' own column-width recompute, cheap even
+                // when it's a no-op under autoWidth:false) then one more initStickyColumns() call
+                // once `document.fonts.ready` genuinely resolves -- a no-op immediately if fonts were
+                // already loaded (the promise resolves instantly), and the actual fix for the race
+                // when they weren't. Kept IN ADDITION to (not instead of) the calls already firing
+                // synchronously here and in drawCallback -- this only ever ADDS one more, later,
+                // guaranteed-correct recalc, never removes the immediate one a fonts-already-loaded
+                // page still needs for its very first paint.
                 initStickyColumns(selector, options.stickyColumns);
                 initTableDragScroll(selector);
+                dt.columns.adjust();
+                if (window.document && document.fonts && document.fonts.ready) {
+                    document.fonts.ready.then(function () {
+                        initStickyColumns(selector, options.stickyColumns);
+                    });
+                }
             }
             if (options.export) dtInjectExportDropdown($table, options.export);
         };
     }
     return $table.DataTable(dtOptions);
+}
+// 2026-09-12, Phase Design Round 2 item 4 (docs/design/rules.md §6), revised same round after
+// explicit feedback -- pairs with app/views/partials/filter-bar.php. Reads every real <select>
+// inside that partial's own `.filter-bar-body` (select2-enhanced or plain -- select2 is just a UI
+// layer on the same underlying <select>, .val()/change events work identically either way, no
+// special-casing needed) -- NOT a dedicated `.filter-bar-fields` marker div, which the first version
+// of this function required; the partial itself no longer wraps the caller's fields in any class of
+// its own at all (decided this round: "ให้ partial ครอบเป็นแค่ wrapper"), so this function scopes
+// directly to `.filter-bar-body` instead. Derives everything else (the "(N)" count, the Clear
+// button's visibility, one removable chip per active filter, and now also the expanded/collapsed
+// state) purely from CURRENT values/localStorage -- this function owns no filter state of its own
+// beyond that expand/collapse preference, it only reflects what the <select>s already say.
+// "Active" = a value that is neither '' nor 'all' -- this app's own 2 established "no filter"
+// sentinel values (confirmed against the existing .station-filter convention this partial replaces).
+// options.onChange() fires once per actual value change (including a chip's own remove button, or
+// the bar-level Clear button even when it resets several selects in one click -- see the debounced
+// scheduleNotify() below for why that specific case needed one) -- the caller's own reload/filter
+// logic is never this function's concern.
+function initFilterBar(bar, options) {
+    options = options || {};
+    const $bar = $(bar);
+    if (!$bar.length) return;
+    const $fields = $bar.find('.filter-bar-body');
+    const $count = $bar.find('.filter-bar-count');
+    const $clearBtn = $bar.find('.filter-bar-clear');
+    const $chips = $bar.find('.filter-bar-chips');
+    const $toggleBtn = $bar.find('.filter-bar-toggle');
+    // 2026-09-13, follow-up: `options.toolbarTarget` (a selector) RELOCATES the whole
+    // `.filter-bar-toolbar` row (toggle button + count + clear + chips) into an existing container
+    // elsewhere on the page -- e.g. the status-tabs row, so "ตัวกรอง (N)"/chips/"ล้าง" sit flush right
+    // of the pipeline instead of in their own row. This MOVES the real DOM node (`.appendTo()`, not a
+    // clone) -- every jQuery reference captured above (`$count`/`$clearBtn`/`$chips`/`$toggleBtn`)
+    // still points at the same live elements afterward, wherever they end up living in the DOM, so
+    // nothing below needs to change to account for this. `.filter-bar--toolbar-relocated` lets
+    // style.css hide the now-toolbar-less `.filter-bar` box's own background/border while collapsed
+    // (it would otherwise render as an empty bordered sliver under the status-tabs row) without
+    // touching the DEFAULT (non-relocated) look at all.
+    if (options.toolbarTarget) {
+        const $toolbarTarget = $(options.toolbarTarget);
+        if ($toolbarTarget.length) {
+            $bar.find('.filter-bar-toolbar').appendTo($toolbarTarget);
+            $bar.addClass('filter-bar--toolbar-relocated');
+        }
+    }
+    // 2026-09-12, Round 2 item 4 revision -- expand/collapse persistence (§6 decision 4). Uses the
+    // SAME plain CSS-class collapse mechanism the OLD `.station-filter` already used
+    // (`.collapsed` + a max-height transition in style.css) rather than Bootstrap's own `.collapse`
+    // component, per "ตอนกาง = grid แบบ .station-filter เดิมเป๊ะ" -- no `data-bs-toggle` wiring needed.
+    // `pageKey` (optional, read from the partial's own `data-page-key` attribute) scopes the
+    // localStorage key so 2 different filter bars on 2 different pages -- or 2 tabs' worth on the
+    // SAME page, each with its own `$id`/`$pageKey` -- never clobber each other's remembered state.
+    // No `pageKey` at all = never persisted, always starts collapsed (the partial's own static
+    // markup already renders with the `.collapsed` class by default).
+    const pageKey = $bar.data('page-key');
+    const storageKey = pageKey ? ('filterbar:' + pageKey) : null;
+    if (storageKey) {
+        let saved = null;
+        try { saved = localStorage.getItem(storageKey); } catch (e) {}
+        if (saved === 'expanded') $bar.removeClass('collapsed');
+        else if (saved === 'collapsed') $bar.addClass('collapsed');
+        // saved === null (never toggled before) -- leave the partial's own static default alone.
+    }
+    $toggleBtn.on('click', function () {
+        $bar.toggleClass('collapsed');
+        if (storageKey) {
+            try { localStorage.setItem(storageKey, $bar.hasClass('collapsed') ? 'collapsed' : 'expanded'); } catch (e) {}
+        }
+    });
+
+    function isActive($select) {
+        const val = $select.val();
+        return val !== null && val !== '' && val !== 'all';
+    }
+    function resetSelect($select) {
+        const $firstOption = $select.find('option').first();
+        // .trigger('change') (not '.select2') is deliberate -- select2 itself listens for the plain
+        // native 'change' event to refresh its own displayed text, the same convention this app's
+        // language switcher already relies on elsewhere; it is also what re-fires the delegated
+        // handler below, which is the ONE place refresh()/onChange() actually get called from (see
+        // scheduleNotify()) -- resetSelect() itself never calls either directly.
+        $select.val($firstOption.length ? $firstOption.val() : '').trigger('change');
+    }
+    function refresh() {
+        const $active = $fields.find('select').filter(function () { return isActive($(this)); });
+        $count.text($active.length);
+        $clearBtn.toggleClass('d-none', $active.length === 0);
+        $chips.empty().toggleClass('d-none', $active.length === 0);
+        $active.each(function () {
+            const $select = $(this);
+            const label = (($select.find('option:selected').text() || '').trim()) || String($select.val());
+            const $chip = $(`<span class="filter-bar-chip">${escapeHtml(label)}<button type="button" class="filter-bar-chip-remove" aria-label="Remove filter"><i class="fa-solid fa-xmark"></i></button></span>`);
+            $chip.find('.filter-bar-chip-remove').on('click', function () { resetSelect($select); });
+            $chips.append($chip);
+        });
+    }
+    // Debounced via setTimeout(0): the Clear button resets every active <select> in one synchronous
+    // loop, each call to resetSelect() firing its own native 'change' event -- without collapsing
+    // those into a single tick, options.onChange() (typically "reload the table") would fire once
+    // PER select cleared instead of once for the whole Clear action.
+    let notifyTimer = null;
+    function scheduleNotify() {
+        clearTimeout(notifyTimer);
+        notifyTimer = setTimeout(function () {
+            refresh();
+            if (typeof options.onChange === 'function') options.onChange();
+        }, 0);
+    }
+    $fields.on('change', 'select', scheduleNotify);
+    $clearBtn.on('click', function () {
+        $fields.find('select').each(function () { resetSelect($(this)); });
+    });
+    refresh();
+}
+// 2026-09-12, Phase Design Round 2 item 4b (docs/design/rules.md §6) -- pairs with
+// app/views/partials/status-tabs.php. Replaces the DUPLICATED chevron pipeline markup
+// (.station-row/.station-card) Employee List (#employeeStationRow) and Payroll Process (#stationRow)
+// both hand-roll today with ONE shared partial+helper -- the chevron VISUAL itself is kept (retokenized,
+// not replaced with plain underline tabs -- an earlier version of this function did that, reverted
+// after review: "คงรูปแบบ chevron pipeline ตามที่ approve แล้ว").
+//
+// Investigated first (explicit instruction), not assumed: the 2 pages' CURRENT count sources do NOT
+// share one shape or mechanism --
+//   - Employee List: 1 server round trip, POST api/employee.station-counts, returns a flat
+//     {active, probation, permanent, resigned} object -- required because #tb_employee is
+//     serverSide:true, so the client never holds every row to count client-side.
+//   - Payroll Process: NO server call for most states at all -- updateStationCounts()
+//     (public/js/payroll/index.js) counts client-side from tb_payroll_run's own already-loaded rows
+//     (that table is NOT serverSide) into {draft, pending_approval, approved, paid, locked, rejected,
+//     need_info, cancelled}; `pending_sync` specifically is populated from a SEPARATE mechanism
+//     entirely (loadPendingSyncCount()/its own bulk-pull list), since sync-pending items were never
+//     part of tb_payroll_run's own dataset to begin with.
+// Proposed single shape (not enforced by changing either page this round -- round 2 doesn't touch
+// real pages): both pages' FINAL result already naturally reduces to the exact same thing, a flat
+// {key: count} object -- they only differ in HOW they arrive at it (a server aggregate is the only
+// option for a serverSide:true table; a client-side tally is strictly cheaper when the table already
+// holds every row). This function's own update() method is the ONE shared contract going forward --
+// it accepts that same flat shape regardless of which path a given page used to build it, so neither
+// page needs to change ITS OWN counting mechanism to adopt this component, only the rendering.
+//
+// initStatusTabs(el, {onChange}) wires click-to-select (toggles `.active` among every
+// `.status-tab-btn` inside `el`) and returns { update(counts) } for the caller to push fresh counts
+// into any time (load/redraw/after sync/...). A second, flat "path" visual variant existed alongside
+// the chevron shape for an explicit A/B comparison in components.php -- decided, chevron won, 'path'
+// removed entirely (status-tabs.php/style.css/components.php) -- this function needed no change for
+// that removal since it was already variant-agnostic (reads only data attributes, never a CSS class).
+//
+// Color rules applied by applyStateClasses() (see status-tabs.php's own docblock for the full
+// reasoning) -- shared by BOTH update() and the click handler (see the real bug this fixes, below):
+//   - idle + tone neutral/success, OR idle + count===0: plain gray pill, no extra class.
+//   - idle + tone warning/danger + count>0: pill becomes a real `.badge.badge-{tone}` (§5) --
+//     "something to act on" should stand out even while that step isn't the one being viewed. This
+//     is the ONLY place 'tone' drives idle rendering -- 'cancelled' with tone='neutral' NEVER gets a
+//     colored idle pill no matter its count, on purpose (nothing left to act on once cancelled).
+//   - active + direction 'forward': no tone class added at all -- CSS renders the plain brand-orange
+//     "selected" look regardless of this tab's own tone (a forward step never turns red/amber just
+//     because it happens to carry a warning tone).
+//   - active + direction 'back' (rejected/need-info/cancelled-style exception step): adds
+//     `.status-tab-tone-{tone}` to the button, using 'tone' when it's warning/danger, but FALLING
+//     BACK to danger when 'tone' is neutral/success (cancelled -> danger even though its own idle
+//     'tone' is neutral -- a reversed step you're actively looking at should always read as serious,
+//     even one whose idle badge is deliberately muted). 'chevron' variant CSS recolors the WHOLE
+//     card to that tone instead of orange; 'path' variant CSS recolors only the count pill (the
+//     label text stays plain bold `--c-text`).
+//
+// Real bug fixed here: an earlier version only ever computed the active-tone class inside update(),
+// which runs once when the caller pushes counts -- clicking a DIFFERENT tab afterward only toggled
+// `.active` and never re-ran that logic, so a reversed step you just clicked into stayed brand-orange
+// instead of turning red/amber until the NEXT update() call happened to fire. Fixed by factoring the
+// per-tab class logic into applyStateClasses() (reads a closure-cached `lastCounts`) and calling it
+// from both update() AND the click handler, so clicking alone is always enough to reflect the correct
+// color immediately.
+function initStatusTabs(el, options) {
+    options = options || {};
+    const $tabs = $(el);
+    if (!$tabs.length) return { update: function () {} };
+    let lastCounts = {};
+    function applyStateClasses() {
+        $tabs.find('.status-tab-btn').each(function () {
+            const $btn = $(this);
+            const key = $btn.data('status-key');
+            const tone = $btn.data('tone') || 'neutral';
+            const isBack = $btn.data('direction') === 'back';
+            const isActive = $btn.hasClass('active');
+            const count = lastCounts[key] || 0;
+            const $count = $btn.find('.status-tab-count');
+            $count.text(count);
+            $count.removeClass('badge badge-warning badge-danger');
+            $btn.removeClass('status-tab-tone-warning status-tab-tone-danger');
+            if (!isActive && count > 0 && (tone === 'warning' || tone === 'danger')) {
+                $count.addClass('badge badge-' + tone);
+            }
+            if (isActive && isBack) {
+                const activeTone = (tone === 'warning' || tone === 'danger') ? tone : 'danger';
+                $btn.addClass('status-tab-tone-' + activeTone);
+            }
+        });
+    }
+    $tabs.find('.status-tab-btn').on('click', function () {
+        $tabs.find('.status-tab-btn').removeClass('active');
+        $(this).addClass('active');
+        applyStateClasses();
+        if (typeof options.onChange === 'function') options.onChange($(this).data('status-key'));
+    });
+    function update(counts) {
+        lastCounts = counts || {};
+        applyStateClasses();
+    }
+    return { update: update };
 }
 // 2026-08-26, explicit request: "Format วันที่การแสดงผลทั้งหมดของระบบให้เป็น dd/mm/yyyy" (make every date
 // display in the system dd/mm/yyyy). Several pages already had their OWN local helper doing exactly
