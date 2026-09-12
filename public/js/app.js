@@ -769,7 +769,20 @@ function initSharedDataTable(selector, options) {
     if (typeof options.renderRows === 'function') {
         options.renderRows();
     }
-    const rowCount = $table.find('tbody tr').length;
+    // 2026-09-12, Batch 5 item 5 step 3 (step 4 follow-up: read from the ONE place DataTables
+    // itself actually uses, not a second copy) -- a data:/columns:-driven table (rows supplied via
+    // options.dtOptions.data, not written into the DOM by this function's own renderRows above) has
+    // an EMPTY tbody at this exact point -- DataTables itself only populates it once .DataTable()
+    // below actually runs -- so counting `tbody tr` here would always read 0 for that shape,
+    // wrongly hiding the search box below the threshold regardless of how many rows the table is
+    // about to show. `options.dtOptions.data` (when present) is that exact same array reference the
+    // `dtOptions` build below hands to `.DataTable()` -- Object.assign() only shallow-copies the key,
+    // never clones the array -- so reading it here needs no separate/duplicate `options.data` from
+    // the caller. A DOM-sourced caller (renderRows fills the tbody directly -- the 4 existing
+    // callers in payroll/detail.js, none of which pass a `data` key in `dtOptions` either) never
+    // hits this branch at all, so it falls through to the tbody count exactly as before --
+    // unaffected by this change.
+    const rowCount = options.dtOptions && Array.isArray(options.dtOptions.data) ? options.dtOptions.data.length : $table.find('tbody tr').length;
     const searchThreshold = options.searchThreshold != null ? options.searchThreshold : 10;
     // `language` is merged one level deep on top of getTableLang() (not just Object.assign'd whole)
     // so a caller passing e.g. { language: { emptyTable: '...' } } (a localized empty-state message
@@ -1495,6 +1508,30 @@ $(document).on('hidden.bs.modal', '.modal', function () {
     if (scrollbarWidth > 0) {
         document.body.style.paddingRight = `${scrollbarWidth}px`;
     }
+});
+// 2026-09-11, Batch 4 item 2c -- companion fix to the stacked-modal scroll-lock re-apply just above
+// (same "more than one real Bootstrap Modal instance open at once" problem family, so it lives right
+// alongside it): Bootstrap 5's own CSS gives EVERY `.modal`/`.modal-backdrop` the exact same fixed
+// z-index (1055/1050, confirmed in the bundled bootstrap.css) regardless of how many are open --
+// there is no built-in per-instance increment for two genuinely separate, independently-dismissible
+// Modal instances stacked on top of each other (as opposed to e.g. a SweetAlert2 confirm on top of a
+// Bootstrap modal, which already works fine since SweetAlert2 manages its own, much higher z-index
+// range). Without this, whichever of the two modals happens to sit LATER in the page's static HTML
+// source order wins the z-index tie by DOM order alone -- fragile, and wrong whenever the visually
+// "inner" modal's own markup happens to sit earlier in modals.php than the "outer" one it's meant to
+// stack on top of. Generic on purpose (not scoped to any one modal pair) -- bumps whichever modal is
+// NOT the first one open, plus its own just-appended backdrop, using the same technique Bootstrap's
+// own docs have long recommended for nested modals. A single modal opening alone (the normal case,
+// ~100+ other modals in this app) hits the `stackLevel <= 0` guard and is untouched.
+$(document).on('shown.bs.modal', '.modal', function () {
+    const openModals = document.querySelectorAll('.modal.show');
+    const stackLevel = openModals.length - 1;
+    if (stackLevel <= 0) return;
+    const baseZ = 1055 + stackLevel * 20;
+    this.style.zIndex = String(baseZ + 10);
+    const backdrops = document.querySelectorAll('.modal-backdrop');
+    const thisBackdrop = backdrops[backdrops.length - 1];
+    if (thisBackdrop) thisBackdrop.style.zIndex = String(baseZ);
 });
 // 2026-09-10, real bug found and fixed (explicit report: raw action codes like "employee_verified"
 // showing in Payroll Process's own Approval Timeline modal "History" list) -- was 3 separate, drifted

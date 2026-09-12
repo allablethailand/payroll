@@ -1350,6 +1350,7 @@
     "sr_promote_override_btn": "เลื่อนเป็นค่ากลางระบบ",
     "add_bracket_version": "เพิ่มเวอร์ชันอัตรา",
     "sr_edit_or_manage_rates": "แก้ไข / จัดการเวอร์ชันอัตรา",
+    "sr_add_version_in_progress_hint": "กำลังเพิ่มเวอร์ชันใหม่ในหน้าต่างด้านบน…",
     "sr_calc_method_locked_hint": "เปลี่ยนไม่ได้หลังจากรายการมีประวัติอัตราแล้ว -- ลบแล้วสร้างใหม่หากจำเป็นจริงๆ",
     "sr_promote_item_confirm_title": "เลื่อนรายการนี้เป็นค่ากลางระบบ?",
     "sr_promote_item_confirm_message": "รายการนี้จะมองเห็นได้โดยทุกบริษัทในประเทศนี้ตั้งแต่นี้ไป การดำเนินการนี้ไม่สามารถย้อนกลับได้",
@@ -2860,6 +2861,10 @@
     "ais_legend_current": "เดือนปัจจุบัน",
     "ais_legend_future": "ยังไม่ถึง",
     "ais_no_data": "ไม่พบข้อมูลเงินเดือนสำหรับปีบัญชีนี้",
+    "ais_display_columns_label": "แสดง:",
+    "ais_avg_per_month": "เฉลี่ยต่อเดือน",
+    "ais_months_unit": "เดือน",
+    "ais_highest_month": "เดือนสูงสุด",
     "generate_reports": "สร้างรายงาน",
     "sync_source_label": "แหล่งที่มา Origami",
     "sync_run_kind_supplemental": "รอบพิเศษ",
@@ -2987,5 +2992,9 @@
     "announcement_no_cover_uploaded": "ยังไม่มีภาพหน้าปก",
     "upload_image": "อัปโหลดรูปภาพ",
     "upload_failed": "อัปโหลดไฟล์ไม่สำเร็จ",
-    "required_fields_missing": "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน"
+    "required_fields_missing": "กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน",
+    "sso_not_configured_for_company": "บริษัทยังไม่เปิดใช้งานประกันสังคม ตั้งค่าได้ที่ ภาษีและกองทุนตามกฎหมาย",
+    "sso_not_available_for_country": "ไม่มีรายการประกันสังคมสำหรับประเทศของบริษัท",
+    "pvd_not_configured_for_company": "บริษัทยังไม่เปิดใช้งานกองทุนสำรองเลี้ยงชีพ ตั้งค่าได้ที่ ภาษีและกองทุนตามกฎหมาย",
+    "pvd_not_available_for_country": "ไม่มีรายการกองทุนสำรองเลี้ยงชีพสำหรับประเทศของบริษัท"
 }

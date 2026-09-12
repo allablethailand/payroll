@@ -1324,11 +1324,16 @@
                      "Reason" above (that one is a general HR record; this one is the specific coded
                      reason the form itself requires). Reuses this SAME block's visibility toggle
                      (applyEmploymentEndFieldsVisibility() in detail.js) -- no new JS needed for
-                     show/hide. -->
-                <div class="col-sm-2 mt-3">
+                     show/hide.
+                     2026-09-12, Batch 4 item 3: additionally gated by SSO enrollment/company-active
+                     (AND-ed on top of the resigned/terminated condition above, confirmed with the
+                     user) -- `sso-leave-reason-field` is a JS-targeting marker only (no CSS rule
+                     reads it), toggled by applySsoGateVisibility() in detail.js so a value can't
+                     survive/resubmit while ineligible on either axis. -->
+                <div class="col-sm-2 mt-3 sso-leave-reason-field">
                     <label class="form-label mb-1"><span data-i18n="sso_leave_reason_code">SSO Leaving Reason (สปส.6-09)</span></label>
                 </div>
-                <div class="col-sm-10 mt-3">
+                <div class="col-sm-10 mt-3 sso-leave-reason-field">
                     <select class="form-select select2-static" name="sso_leave_reason_code" id="sso_leave_reason_code"
                             data-option-keys="sso_leave_reason_1,sso_leave_reason_2,sso_leave_reason_3,sso_leave_reason_4,sso_leave_reason_5,sso_leave_reason_6,sso_leave_reason_7"
                             data-option-values="1,2,3,4,5,6,7">
@@ -2047,6 +2052,17 @@
                         <label class="label label-head bg-head-first rounded-2 text-white">1</label>
                         <span data-i18n="social_security_fund">Social Security Fund (SSO)</span>
                     </h6>
+                    <!-- 2026-09-12, Batch 4 item 3: shown INSTEAD of #ssoColumnBody below when this
+                         company's own effective_status for TH_SSO isn't 'active' (see detail.js's
+                         own applySsoGateVisibility(), driven by STATUTORY_ENROLLMENT_GATE below) --
+                         text set from that same object so it can distinguish "your company hasn't
+                         turned this on yet" from "not applicable to your company's country" (2 real,
+                         different wordings, confirmed with the user -- not guessed). -->
+                    <div class="text-muted small d-none" id="ssoNotAvailableMsg">
+                        <span class="d-none" id="ssoNotAvailableMsgCompanyOff" data-i18n="sso_not_configured_for_company">Your company hasn't enabled Social Security (SSO) yet. Configure it under Tax &amp; Statutory Settings.</span>
+                        <span class="d-none" id="ssoNotAvailableMsgCountryNa" data-i18n="sso_not_available_for_country">No Social Security (SSO) item is configured for your company's country.</span>
+                    </div>
+                    <div id="ssoColumnBody">
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="enrolled_in_sso">Enrolled in Social Security Fund</span></label>
                         <!-- Yes/No radio instead of a bare checkbox (2026-08-19, explicit request):
@@ -2104,18 +2120,23 @@
                             <input type="number" step="0.01" class="form-control" name="sso_employer_contribution_rate" id="sso_employer_contribution_rate" placeholder="5.00">
                             <div class="text-muted small" id="ssoEmployerRateHint" data-i18n="sso_rate_override_hint">Leave blank to use the company/standard rate.</div>
                         </div>
+                        <!-- 2026-09-10, Batch 3A item 7b: UN-hidden -- was informational-only ("doesn't
+                             affect the SSO contribution amount"), but a real hospital IS now a genuine
+                             data point (สปส.1-03 requires selecting one) and there's a real place to pick
+                             from (a per-company Select2 "tags" list, see CompanyLookupListModel's own
+                             docblock -- no real government hospital master list exists to seed here). Not
+                             read by StatutoryCalculationEngine (unchanged -- purely a record-keeping
+                             field, same as before).
+                             2026-09-12, Batch 4 item 3: MOVED inside #ssoDetailFields (was its own
+                             sibling block right after this div's old closing tag, never actually
+                             hidden by the "Enrolled" toggle -- a real gap: Hospital stayed visible/
+                             editable even with "Enrolled in Social Security Fund" set to No). -->
+                        <div class="mt-3">
+                            <label class="form-label d-block mb-1"><span data-i18n="sso_hospital">Hospital</span></label>
+                            <select class="form-select select2-remote-tags" name="sso_hospital_id" id="sso_hospital_id" data-api="/api/hospital.get" data-type="hospital">
+                            </select>
+                        </div>
                     </div>
-                    <!-- 2026-09-10, Batch 3A item 7b: UN-hidden -- was informational-only ("doesn't
-                         affect the SSO contribution amount"), but a real hospital IS now a genuine
-                         data point (สปส.1-03 requires selecting one) and there's a real place to pick
-                         from (a per-company Select2 "tags" list, see CompanyLookupListModel's own
-                         docblock -- no real government hospital master list exists to seed here). Not
-                         read by StatutoryCalculationEngine (unchanged -- purely a record-keeping
-                         field, same as before). -->
-                    <div class="mt-3">
-                        <label class="form-label d-block mb-1"><span data-i18n="sso_hospital">Hospital</span></label>
-                        <select class="form-select select2-remote-tags" name="sso_hospital_id" id="sso_hospital_id" data-api="/api/hospital.get" data-type="hospital">
-                        </select>
                     </div>
                 </div>
                 <div class="col-sm-6">
@@ -2123,6 +2144,13 @@
                         <label class="label label-head bg-head-first rounded-2 text-white">2</label>
                         <span data-i18n="provident_fund">Provident Fund (PVD)</span>
                     </h6>
+                    <!-- 2026-09-12, Batch 4 item 3: same company-gate message pattern as SSO's own
+                         #ssoNotAvailableMsg above, for TH_PVD. -->
+                    <div class="text-muted small d-none" id="pvdNotAvailableMsg">
+                        <span class="d-none" id="pvdNotAvailableMsgCompanyOff" data-i18n="pvd_not_configured_for_company">Your company hasn't enabled the Provident Fund (PVD) yet. Configure it under Tax &amp; Statutory Settings.</span>
+                        <span class="d-none" id="pvdNotAvailableMsgCountryNa" data-i18n="pvd_not_available_for_country">No Provident Fund (PVD) item is configured for your company's country.</span>
+                    </div>
+                    <div id="pvdColumnBody">
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="enrolled_in_pvd">Enrolled in Provident Fund</span></label>
                         <div class="btn-group btn-group-sm" role="group" id="pvdEnrolledToggle">
@@ -2131,6 +2159,12 @@
                         </div>
                         <input type="checkbox" class="d-none" name="pvd_enrolled" id="pvd_enrolled">
                     </div>
+                    <!-- 2026-09-12, Batch 4 item 3: NEW wrapper -- none of the fields below were ever
+                         actually hidden by the "Enrolled" toggle before this (a real gap: pvd_enrolled
+                         had no equivalent of SSO's own #ssoDetailFields at all, see detail.js's own
+                         #pvd_enrolled change handler before this fix). Toggled the same way
+                         #ssoDetailFields is (applyPvdGateVisibility() in detail.js). -->
+                    <div id="pvdDetailFields" class="d-none">
                     <!-- 2026-09-10, Batch 3A item 7b: UN-hidden (was deferred here from item 7a's own
                          comment) -- fund name/manager/member no./investment plan are still not read
                          by StatutoryCalculationEngine or any report (unchanged, purely record-
@@ -2193,6 +2227,8 @@
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="pvd_end_reason">Reason for Ending Membership</span></label>
                         <input type="text" class="form-control" name="pvd_end_reason" id="pvd_end_reason" maxlength="255">
+                    </div>
+                    </div>
                     </div>
                 </div>
             </div>
@@ -2613,4 +2649,10 @@
 <!-- eedModal / recurringEarningModal / empSignaturePadModal / empMapPinModal moved to
      app/views/layout/modals.php (2026-08-30, modal consolidation). -->
 <input type="hidden" id="employee_no" value="<?= htmlspecialchars($employee_no ?? '', ENT_QUOTES, 'UTF-8') ?>">
+<script>
+    // 2026-09-12, Batch 4 item 3 -- single source of truth for the SSO/PVD tab gate (see
+    // EmployeeModel::statutoryEnrollmentGateInfo()'s own docblock); detail.js reads this instead of
+    // hardcoding its own copy of the dependent-field list or the enrollment-flag column mapping.
+    const STATUTORY_ENROLLMENT_GATE = <?=json_encode($statutoryEnrollmentGate ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)?>;
+</script>
 <script src="<?=asset('public/js/employee/detail.js')?>"></script>

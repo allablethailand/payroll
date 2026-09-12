@@ -19,8 +19,11 @@ class StatutoryCalculationEngine {
      * not per-country branching logic — items with no entry here are always applicable
      * (matches pre-fix behavior; SG/MY/US employees have no analogous per-employee columns
      * yet, so their items are unaffected until those columns/tables exist).
+     * 2026-09-12, Batch 4 item 3: made PUBLIC so EmployeeModel::save()/statutoryEnrollmentGateInfo()
+     * (Employee Detail's SSO/PVD tab gating) reuse this SAME map instead of declaring a second copy
+     * -- see EmployeeModel's own STATUTORY_DEPENDENT_FIELDS docblock.
      */
-    private const ITEM_ENROLLMENT_FLAG = [
+    public const ITEM_ENROLLMENT_FLAG = [
         'TH_SSO' => 'sso_enrolled',
         'TH_PVD' => 'pvd_enrolled',
     ];

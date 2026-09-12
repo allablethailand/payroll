@@ -254,6 +254,13 @@ function masterRateDisplayTs(row) {
 // item). `id: null` means "not yet saved" (a brand-new custom item mid-creation) -- Rate History
 // stays unreachable until the item itself has a real id (see openStatutoryRateModal()).
 let currentSrItem = null;
+// 2026-09-11, Batch 4 item 2c -- set by #srRateVersionForm's own submit handler the instant a save
+// succeeds WHILE #srAddVersionModal is open (the new version's own real id from the save
+// response), read once by #srAddVersionModal's own `hidden.bs.modal` handler to decide which
+// version to auto-select back in the restored form -- the newly created one, not whatever
+// `loadSrVersionList()`'s own default (newest EFFECTIVE_DATE, not necessarily newest CREATED)
+// would otherwise auto-select. `null` at every other time, including right after being read.
+let srAddVersionJustSavedId = null;
 
 /* ---------- Item Details tab (custom items only, T046) ---------- */
 function resetSrDetailsForm() {
@@ -478,7 +485,12 @@ function renderSrVersionList(rows) {
 // and, per explicit request ("เปิดครั้งแรกให้ เปิด Version Default และฝั่ง List ก็ขึ้น active"),
 // auto-selects the first (= current) one into the form -- via a REAL get() fetch, not the raw list
 // row, since list responses have no `brackets` array for a progressive_bracket item.
-function loadSrVersionList() {
+// 2026-09-11, Batch 4 item 2c: optional `onDone(rows)` callback -- when given, this SKIPS its own
+// default "auto-select rows[0]" and lets the caller decide instead (needed by #srAddVersionModal's
+// own save-success path: the version just created is NOT reliably rows[0] -- e.g. a backdated
+// effective_date -- so it must be selected by its own real id, not by list position). Every
+// existing caller keeps passing nothing, so default behavior is completely unchanged.
+function loadSrVersionList(onDone) {
     const isMaster = currentSrItem && currentSrItem.scope === 'master';
     $.ajax({
         url: isMaster ? `${BASE_URL}/api/company-rate-version.list` : `${BASE_URL}/api/statutory-item.rate-history.list`,
@@ -488,7 +500,9 @@ function loadSrVersionList() {
         success: function (res) {
             const rows = (res && res.status && Array.isArray(res.data)) ? res.data : [];
             renderSrVersionList(rows);
-            if (rows.length > 0) {
+            if (typeof onDone === 'function') {
+                onDone(rows);
+            } else if (rows.length > 0) {
                 fetchAndSelectSrHistoryRow(rows[0].id);
             } else {
                 selectSrHistoryRow(null, null);
@@ -700,6 +714,70 @@ function srRateVersionCalcPreviewFormulaStepsHtml(formula) {
     return html;
 }
 
+/**
+ * 2026-09-11, Batch 4 item 2c -- opens #srAddVersionModal stacked on top of #statutoryRateModal to
+ * add a brand-new rate version, WITHOUT touching #sr_version_list's own current selection (unlike
+ * the old behavior this replaces, which blanked the always-visible right-side form in place and
+ * silently deselected whatever version was active on the left -- confusing since nothing else
+ * about the list changed). Relocates #srRateVersionFormWrap -- the ONE shared instance of the
+ * form, never copied -- out of its home in #statutoryRateModal (leaving #srRateVersionFormAnchor
+ * behind as the empty placeholder to return to) into #srAddVersionModalBody, blanks it via
+ * showSrHistoryEditView(null) (existing function, unchanged), then shows the modal. The reverse
+ * relocation happens in exactly ONE place regardless of how this modal closes -- see the
+ * `hidden.bs.modal` handler on #srAddVersionModal in initStatutoryRateModalUI() below, which covers
+ * Save-success, Cancel, the × button, Esc, and a backdrop click identically (Bootstrap fires the
+ * same event for all of them).
+ *
+ * 2026-09-11, same-day follow-up, real bug fixed: relocating #srRateVersionFormWrap OUT left
+ * #srRateVersionFormAnchor genuinely empty (0 height), so #statutoryRateModal's right column
+ * collapsed to nothing for as long as the add-version modal was open -- looked broken, not just
+ * "temporarily empty". Measures the wrap's own outerHeight() BEFORE moving it, locks that as the
+ * anchor's own min-height, and fills it with a centered placeholder line so the collapse is gone
+ * AND the empty space reads as intentional ("adding a new version above"), not a glitch.
+ */
+function openAddVersionModal() {
+    const $wrap = $('#srRateVersionFormWrap');
+    $('#srRateVersionFormAnchor')
+        .css('min-height', $wrap.outerHeight())
+        .addClass('d-flex align-items-center justify-content-center text-muted small')
+        .text(langData['sr_add_version_in_progress_hint'] || 'Adding a new version in the window above…');
+    $wrap.appendTo('#srAddVersionModalBody');
+    showSrHistoryEditView(null);
+    new bootstrap.Modal(document.getElementById('srAddVersionModal')).show();
+}
+/**
+ * 2026-09-11, Batch 4 item 2c -- the one place #srRateVersionFormWrap ever moves back to its home
+ * in #statutoryRateModal, and the one place that decides which version the restored form should
+ * show. `srAddVersionJustSavedId` (module-level, set by #srRateVersionForm's own submit handler
+ * the instant a save succeeds while this modal is open, read+cleared here) means "a new version
+ * was actually created -- select THAT one, by its real id, not whatever loadSrVersionList()'s own
+ * default (newest effective_date) would pick". Anything else reaching this function (Cancel/×/Esc/
+ * backdrop click -- the left list was never touched in any of those paths) means: nothing changed,
+ * so just re-populate the form for whichever version is STILL marked selected on the left.
+ */
+function closeAddVersionModalAndRestoreForm() {
+    $('#srRateVersionFormWrap').insertAfter('#srRateVersionFormAnchor');
+    // Undoes openAddVersionModal()'s own placeholder-collapse fix above -- min-height/text/classes
+    // only ever apply while this modal is open, never left behind once the form is back home.
+    $('#srRateVersionFormAnchor')
+        .css('min-height', '')
+        .removeClass('d-flex align-items-center justify-content-center text-muted small')
+        .empty();
+    if (srAddVersionJustSavedId) {
+        const newId = srAddVersionJustSavedId;
+        srAddVersionJustSavedId = null;
+        // loadSrVersionList() already calls renderSrVersionList(rows) itself before invoking this
+        // callback -- nothing to redo here, just select the version by its own real id.
+        loadSrVersionList(function () { fetchAndSelectSrHistoryRow(newId); });
+        return;
+    }
+    const previousId = $('#sr_version_list .sr-selected').data('id');
+    if (previousId) {
+        fetchAndSelectSrHistoryRow(previousId);
+    } else {
+        selectSrHistoryRow(null, null);
+    }
+}
 /**
  * 2026-09-03, Backlog Phase 9, T046 -- main entry point for the merged modal (replaces
  * openCompanySettingModal()'s old "one modal, one purpose" shape). `row` is null for "Add Custom
@@ -985,9 +1063,18 @@ function initStatutoryRateModalUI() {
     });
 
     /* ---- Rate History tab (both scopes) ---- */
-    // "Add Rate Version" clears the current selection (list+form are both always visible now, no
-    // more separate list/edit view to switch between) and blanks the form for a new entry.
-    $(document).on('click', '#srAddRateVersionBtn', function () { selectSrHistoryRow(null, null); });
+    // 2026-09-11, Batch 4 item 2c, real UX bug fixed (explicit report: clicking this used to blank
+    // the ALWAYS-VISIBLE right-side form in place -- which also deselected whatever version was
+    // active on the left, confusing since nothing else about the list changed) -- "Add Rate
+    // Version" now opens #srAddVersionModal, stacked ON TOP of #statutoryRateModal, and never
+    // touches the left list's own selection at all. See openAddVersionModal()'s own docblock.
+    $(document).on('click', '#srAddRateVersionBtn', openAddVersionModal);
+    // 2026-09-11, Batch 4 item 2c -- the ONE place this modal's own close is handled, covering
+    // Save-success (submit handler below calls .hide() itself), Cancel, the × button, Esc, and a
+    // backdrop click all identically -- Bootstrap fires this exact event for every one of them, no
+    // way (and no need) to tell them apart here; closeAddVersionModalAndRestoreForm() itself
+    // branches on srAddVersionJustSavedId to know whether a save actually happened.
+    $(document).on('hidden.bs.modal', '#srAddVersionModal', closeAddVersionModalAndRestoreForm);
     // 2026-09-08, explicit request: "ปุ่มแก้ไขตัดออก กดแล้วให้แสดง form แก้ไขเลย" -- there is no separate
     // Edit action anymore, clicking the `<li>` itself loads it into the form (excluding a click on
     // the li's own Delete button, handled separately just below -- stopPropagation() there keeps
@@ -1109,11 +1196,22 @@ function initStatutoryRateModalUI() {
         e.preventDefault();
         const payload = collectSrRateVersionFormData();
         const isMaster = currentSrItem && currentSrItem.scope === 'master';
+        // 2026-09-11, Batch 4 item 2c -- this same form now submits from 2 different physical
+        // locations (its normal home in #statutoryRateModal, OR temporarily relocated into
+        // #srAddVersionModal while adding a new version -- see openAddVersionModal()'s own
+        // docblock) with 2 different SAVE BUTTONS (#srRateVersionSaveBtn / #srAddVersionSaveBtn,
+        // each `form="srRateVersionForm"` -- 2 submit triggers for one shared form, never 2 copies
+        // of it). `.closest()` on the form's OWN current DOM parent (not a stored flag) so this
+        // always reflects reality even if something else ever moves it around.
+        const isInAddModal = $('#srRateVersionForm').closest('#srAddVersionModal').length > 0;
         // 2026-09-08, explicit request: Save moved to the modal footer -- #srRateVersionSaveBtn is
         // now OUTSIDE this <form> (associated via its own `form="srRateVersionForm"` attribute), so
         // it can no longer be found via a `#srRateVersionForm button[type="submit"]` descendant
         // selector (that would silently match nothing now) -- selected by its own id instead.
-        const $btn = $('#srRateVersionSaveBtn');
+        // 2026-09-11, Batch 4 item 2c: picks whichever of the 2 save buttons is actually the
+        // user-visible/clickable one right now, so the disabled+spinner double-submit guard below
+        // is never applied to the WRONG (hidden) button while the other one stays clickable.
+        const $btn = isInAddModal ? $('#srAddVersionSaveBtn') : $('#srRateVersionSaveBtn');
         const originalHtml = $btn.html();
         $btn.prop('disabled', true).html(`<i class="fa-solid fa-spinner fa-spin me-1"></i> <span>${langData['saving'] || 'Saving...'}</span>`);
         $.ajax({
@@ -1125,11 +1223,20 @@ function initStatutoryRateModalUI() {
                 if (typeof updateText === 'function') updateText($btn[0]);
                 if (res.status) {
                     showSuccess(langData['save_success'] || 'Saved successfully.');
-                    // Re-fetches the version list AND re-auto-selects the current (top) version --
-                    // no separate "go back to the list" step needed anymore since list+form are
-                    // always both visible.
-                    loadSrVersionList();
                     if (tb_company_setting) tb_company_setting.ajax.reload(null, false);
+                    if (isInAddModal) {
+                        // Stash the new version's own real id, then just close #srAddVersionModal --
+                        // its own `hidden.bs.modal` handler (closeAddVersionModalAndRestoreForm())
+                        // does the relocation-back + re-select from here, the ONE place that logic
+                        // lives regardless of how this modal ends up closing.
+                        srAddVersionJustSavedId = res.id;
+                        bootstrap.Modal.getInstance(document.getElementById('srAddVersionModal')).hide();
+                    } else {
+                        // Unchanged from before this item: re-fetches the version list AND
+                        // re-auto-selects the current (top) version -- no separate "go back to the
+                        // list" step needed since list+form are always both visible.
+                        loadSrVersionList();
+                    }
                 } else {
                     showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
                 }

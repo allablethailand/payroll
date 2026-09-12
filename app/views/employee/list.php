@@ -293,9 +293,32 @@
                         <label class="form-label mb-1"><i class="fa-solid fa-eye me-1 text-muted"></i><span data-i18n="view">View</span></label>
                         <select class="form-select select2-static" id="employee_recheck_filter_view" data-option-keys="recheck_view_in_payroll,recheck_view_not_in_payroll" data-option-values="participant,excluded"></select>
                     </div>
+                    <!-- 2026-09-12, Batch 4 item 4 -- Status/Employment Status/Position/Nationality/
+                         Tax Method/Payment Method added; EmployeeModel::buildListWhere() (shared by
+                         this tab and the main Employee tab's own list()) already supports
+                         status/employment_status, and gained position_id/nationality/
+                         tax_calculation_method/payment_method_id this same round -- see that method's
+                         own comments. "All" needs the same `data-option-values` sentinel ('all',
+                         mapped back to '' before hitting the backend) the Payroll Participation
+                         filter above (main Employee tab) already established, since a genuinely
+                         blank value in that attribute misaligns keys<->values by index (initSelect2's
+                         own static-mode parsing, see that filter's own comment). Option keys reuse
+                         the SAME canonical labels the real employee_status/employment_status fields
+                         on Employee Detail already use (status_active/status_probation/etc. and
+                         probation/permanent/contract/etc. respectively), not the shorter bare keys
+                         the station-row pipeline cards use elsewhere on this page.
+                         NOTE: a "Ready/Not Ready" (is_payroll_ready) filter was built here too but
+                         pulled back OUT of the UI before commit -- buildListWhere()'s own `is_ready`
+                         WHERE clause + tests/employee_recheck_filters_test.php stay in place
+                         (backend-only, unused by any UI yet) until employees.is_payroll_ready itself
+                         is trustworthy for sync-written employees (see BACKLOG.md). -->
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-user-tag me-1 text-muted"></i><span data-i18n="role">Role</span></label>
-                        <select class="form-select select2-remote" id="employee_recheck_filter_role" data-api="/api/role.get" data-type="role"></select>
+                        <label class="form-label mb-1"><i class="fa-solid fa-toggle-on me-1 text-muted"></i><span data-i18n="status">Status</span></label>
+                        <select class="form-select select2-static" id="employee_recheck_filter_status" data-option-keys="filter_all,status_active,status_probation,status_suspended,status_resigned,status_terminated" data-option-values="all,active,probation,suspended,resigned,terminated"></select>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1"><i class="fa-solid fa-id-badge me-1 text-muted"></i><span data-i18n="employment_status">Employment Status</span></label>
+                        <select class="form-select select2-static" id="employee_recheck_filter_employment_status" data-option-keys="filter_all,probation,permanent,contract,resigned,terminated" data-option-values="all,probation,permanent,contract,resigned,terminated"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
                         <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
@@ -306,12 +329,32 @@
                         <select class="form-select select2-remote" id="employee_recheck_filter_team" data-api="/api/team.get" data-type="team"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-clock me-1 text-muted"></i><span data-i18n="shift">Shift</span></label>
-                        <select class="form-select select2-remote" id="employee_recheck_filter_shift" data-api="/api/shift.options" data-type="shift"></select>
+                        <label class="form-label mb-1"><i class="fa-solid fa-briefcase me-1 text-muted"></i><span data-i18n="position">Position</span></label>
+                        <select class="form-select select2-remote" id="employee_recheck_filter_position" data-api="/api/position.get" data-type="position"></select>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
                         <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
                         <select class="form-select select2-remote" id="employee_recheck_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1"><i class="fa-solid fa-clock me-1 text-muted"></i><span data-i18n="shift">Shift</span></label>
+                        <select class="form-select select2-remote" id="employee_recheck_filter_shift" data-api="/api/shift.options" data-type="shift"></select>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1"><i class="fa-solid fa-user-tag me-1 text-muted"></i><span data-i18n="role">Role</span></label>
+                        <select class="form-select select2-remote" id="employee_recheck_filter_role" data-api="/api/role.get" data-type="role"></select>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1"><i class="fa-solid fa-earth-asia me-1 text-muted"></i><span data-i18n="nationality">Nationality</span></label>
+                        <select class="form-select select2-remote" id="employee_recheck_filter_nationality" data-api="/api/nationality.get" data-type="nationality"></select>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1"><i class="fa-solid fa-calculator me-1 text-muted"></i><span data-i18n="tax_calculation_method">Tax Calculation Method</span></label>
+                        <select class="form-select select2-static" id="employee_recheck_filter_tax_calculation_method" data-option-keys="filter_all,average_method,actual_method" data-option-values="all,average,actual"></select>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label mb-1"><i class="fa-solid fa-credit-card me-1 text-muted"></i><span data-i18n="payment_type">Payment Type</span></label>
+                        <select class="form-select select2-remote" id="employee_recheck_filter_payment_method" data-api="/api/payment-method.options"></select>
                     </div>
                 </div>
             </div>

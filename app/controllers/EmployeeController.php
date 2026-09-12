@@ -90,7 +90,14 @@ class EmployeeController extends Controller {
     }
 
     public function create() {
-        $this->view('employee/detail', ['employee_no' => null, 'canManagePermissionOverrides' => $this->canManagePermissionOverrides()]);
+        $this->view('employee/detail', [
+            'employee_no' => null,
+            'canManagePermissionOverrides' => $this->canManagePermissionOverrides(),
+            // Batch 4 item 3: SSO/PVD tab gating (see EmployeeModel::statutoryEnrollmentGateInfo()'s
+            // own docblock) -- same info needed on create as on edit, a brand-new employee's tab is
+            // gated by the COMPANY side of the rule from the very first render.
+            'statutoryEnrollmentGate' => $this->model->statutoryEnrollmentGateInfo((int)getCompId()),
+        ]);
     }
     public function detail($data = null) {
         $employee_no = $data;
@@ -99,7 +106,11 @@ class EmployeeController extends Controller {
             echo '404 - Not Found';
             return;
         }
-        $this->view('employee/detail', ['employee_no' => $employee_no, 'canManagePermissionOverrides' => $this->canManagePermissionOverrides()]);
+        $this->view('employee/detail', [
+            'employee_no' => $employee_no,
+            'canManagePermissionOverrides' => $this->canManagePermissionOverrides(),
+            'statutoryEnrollmentGate' => $this->model->statutoryEnrollmentGateInfo((int)getCompId()),
+        ]);
     }
     public function list(){
         $compId = getCompId();
@@ -319,6 +330,15 @@ class EmployeeController extends Controller {
             'team_id' => $_POST['team_id'] ?? '',
             'shift_id' => $_POST['shift_id'] ?? '',
             'branch_id' => $_POST['branch_id'] ?? '',
+            // 2026-09-12, Batch 4 item 4 -- forwarded to the SAME EmployeeModel::buildListWhere()
+            // the 5 filters above already go through, not a new filter-plumbing mechanism.
+            'position_id' => $_POST['position_id'] ?? '',
+            'nationality' => $_POST['nationality'] ?? '',
+            'payment_method_id' => $_POST['payment_method_id'] ?? '',
+            'status' => $_POST['status'] ?? '',
+            'employment_status' => $_POST['employment_status'] ?? '',
+            'is_ready' => $_POST['is_ready'] ?? '',
+            'tax_calculation_method' => $_POST['tax_calculation_method'] ?? '',
         ];
         $search = (string)($_POST['search']['value'] ?? '');
         $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');

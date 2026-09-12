@@ -215,6 +215,102 @@ function applyPayrollParticipantVisibility(isParticipant) {
 function applyEmploymentEndFieldsVisibility() {
     const status = $('#employment_status').val();
     $('#employmentEndFields').toggleClass('d-none', status !== 'resigned' && status !== 'terminated');
+    // 2026-09-12, Batch 4 item 3: sso_leave_reason_code (inside #employmentEndFields) carries 2 MORE
+    // AND conditions on top of this one -- see updateSsoLeaveReasonVisibility()'s own docblock.
+    updateSsoLeaveReasonVisibility();
+}
+// 2026-09-12, Batch 4 item 3 -- clears a single dependent field's DOM value regardless of control
+// type, used whenever applySsoGateVisibility()/applyPvdGateVisibility()/
+// updateSsoLeaveReasonVisibility() below hide a field: collectEmployeeFormData() collects EVERY
+// [name] under #employeeTabsContent regardless of .d-none (see that function's own docblock), so a
+// value left behind in a hidden field would still be submitted -- hiding alone is not enough.
+// Select2 fields (sso_hospital_id/pvd_plan_id, both 'select2-remote-tags') need
+// .val(null).trigger('change') for the widget itself to visually clear, not a plain .val('').
+function clearStatutoryFieldValue(name) {
+    const $field = $(`#employeeTabsContent [name="${name}"]`);
+    if (!$field.length) return;
+    if ($field.hasClass('select2-hidden-accessible')) {
+        $field.val(null).trigger('change');
+    } else if ($field.hasClass('datepicker')) {
+        $field.val('').datepicker('update');
+    } else {
+        $field.val('');
+    }
+}
+// 2026-09-12, Batch 4 item 3 -- gates the ENTIRE SSO column (Employee Detail's "ประกันสังคม" side)
+// on 2 independent axes, driven by STATUTORY_ENROLLMENT_GATE['TH_SSO'] (server-computed the SAME
+// way StatutoryCalculationEngine::calculateItem() resolves effective_status -- see
+// EmployeeModel::statutoryEnrollmentGateInfo()'s own docblock, never re-derived here):
+//   1. Company gate (`company_status`) -- when NOT 'active', the WHOLE column (including the
+//      Enrolled Yes/No toggle itself) is replaced by a message instead (explicit instruction:
+//      "ไม่แสดงส่วนนั้นใน Employee เลย"). `company_status === null` (this company's own country has
+//      no TH_SSO item at all) shows different wording than `company_status === 'inactive'` (item
+//      exists, company switched it off) -- 2 distinct, confirmed messages, not one generic string.
+//   2. Employee gate (#sso_enrolled) -- only matters once the company gate above passes; hides/
+//      clears #ssoDetailFields (sso_no/sso_start_date/rate overrides/Hospital -- Hospital moved
+//      INSIDE this wrapper in this same round, see the view's own comment on why it never used to
+//      be covered) and un-.required's sso_no/sso_start_date so a hidden field can't block Save
+//      (validateEmployeeForm() has no .d-none skip, per this function's own pre-existing comment
+//      just above).
+function applySsoGateVisibility() {
+    const gate = (window.STATUTORY_ENROLLMENT_GATE || {})['TH_SSO'] || {};
+    const companyStatus = gate.company_status; // 'active' | 'inactive' | null/undefined
+    const companyActive = companyStatus === 'active';
+    const countryNa = !companyActive && (companyStatus === null || companyStatus === undefined);
+    $('#ssoColumnBody').toggleClass('d-none', !companyActive);
+    $('#ssoNotAvailableMsg').toggleClass('d-none', companyActive);
+    $('#ssoNotAvailableMsgCompanyOff').toggleClass('d-none', companyActive || countryNa);
+    $('#ssoNotAvailableMsgCountryNa').toggleClass('d-none', companyActive || !countryNa);
+
+    const enrolled = $('#sso_enrolled').is(':checked');
+    const eligible = companyActive && enrolled;
+    $('#ssoDetailFields').toggleClass('d-none', !eligible);
+    $('#sso_no, #sso_start_date').toggleClass('required', eligible);
+    if (!eligible) {
+        $('#sso_no, #sso_start_date').removeClass('is-invalid');
+        (gate.dependent_fields || []).forEach(clearStatutoryFieldValue);
+    }
+    updateSsoLeaveReasonVisibility();
+}
+// 2026-09-12, Batch 4 item 3 -- sso_leave_reason_code (`.sso-leave-reason-field`, inside
+// #employmentEndFields on the Employment tab) is visible/acceptable only when ALL 3 hold at once:
+// employment_status is resigned/terminated (existing #employmentEndFields rule, unchanged) AND the
+// employee is SSO-enrolled AND the company has TH_SSO active -- explicit instruction, confirmed
+// with the user. Called from BOTH applyEmploymentEndFieldsVisibility() (status changes) and
+// applySsoGateVisibility() (either SSO axis changes), so whichever changes last still re-evaluates
+// the full AND correctly.
+function updateSsoLeaveReasonVisibility() {
+    const gate = (window.STATUTORY_ENROLLMENT_GATE || {})['TH_SSO'] || {};
+    const companyActive = gate.company_status === 'active';
+    const enrolled = $('#sso_enrolled').is(':checked');
+    const status = $('#employment_status').val();
+    const resignedOrTerminated = status === 'resigned' || status === 'terminated';
+    const eligible = companyActive && enrolled && resignedOrTerminated;
+    $('.sso-leave-reason-field').toggleClass('d-none', !eligible);
+    if (!eligible) {
+        clearStatutoryFieldValue('sso_leave_reason_code');
+    }
+}
+// 2026-09-12, Batch 4 item 3 -- same 2-axis gate as applySsoGateVisibility() above, for TH_PVD.
+// Before this, #pvdDetailFields didn't exist at all (every PVD detail field was permanently
+// visible/editable regardless of "Enrolled in Provident Fund" -- a real gap, see the view's own
+// comment on #pvdDetailFields).
+function applyPvdGateVisibility() {
+    const gate = (window.STATUTORY_ENROLLMENT_GATE || {})['TH_PVD'] || {};
+    const companyStatus = gate.company_status;
+    const companyActive = companyStatus === 'active';
+    const countryNa = !companyActive && (companyStatus === null || companyStatus === undefined);
+    $('#pvdColumnBody').toggleClass('d-none', !companyActive);
+    $('#pvdNotAvailableMsg').toggleClass('d-none', companyActive);
+    $('#pvdNotAvailableMsgCompanyOff').toggleClass('d-none', companyActive || countryNa);
+    $('#pvdNotAvailableMsgCountryNa').toggleClass('d-none', companyActive || !countryNa);
+
+    const enrolled = $('#pvd_enrolled').is(':checked');
+    const eligible = companyActive && enrolled;
+    $('#pvdDetailFields').toggleClass('d-none', !eligible);
+    if (!eligible) {
+        (gate.dependent_fields || []).forEach(clearStatutoryFieldValue);
+    }
 }
 // 2026-08-31, explicit request: "ใน Tab เงินเดือน...ตอนเลือกประเภท Type ให้เลือก Set ได้จากตรงนั้น เห็น Form
 // แยกกันไปเลย" -- #employment_type itself lives on the Employment tab, not this one, so
@@ -708,6 +804,18 @@ function populateEmployeeForm(data) {
     $('#search_address_register').val((currentLang === 'th' ? data.address_display_th_register : data.address_display_en_register) || '');
     $('#search_address_contact').val((currentLang === 'th' ? data.address_display_th_contact : data.address_display_en_contact) || '');
     updateAllAddressMatchIndicators();
+    // 2026-09-12, Batch 4 item 3 -- re-applied here, AFTER every populate call above (incl.
+    // sso_hospital_id/pvd_plan_id just above and employment_status via the generic loop earlier in
+    // this same function): server-side preservation (EmployeeModel::save()'s own
+    // applyStatutoryEnrollmentGate()) deliberately keeps an ineligible dependent field's EXISTING
+    // value in the DB rather than deleting it (explicit instruction, point 4), so a re-load of an
+    // employee who is CURRENTLY ineligible can still come back from the API with a non-empty
+    // sso_hospital_id/pvd_plan_id/etc. -- the generic loop's own .trigger('change') mid-populate
+    // would otherwise be silently overwritten by this function's own LATER populateSelect2Field()
+    // calls. Calling the gate again here, last, guarantees the final on-screen state always matches
+    // the current gate regardless of populate ordering above.
+    applySsoGateVisibility();
+    applyPvdGateVisibility();
     isLoadingEmployeeForm = false;
 }
 // Scoped to the tab-pane the Save button lives in (2026-08-19, explicit request: each tab must be
@@ -1282,28 +1390,25 @@ $(function () {
     // toggle (#ssoEnrolledToggle) in sync with the real (now hidden) checkbox, in both directions --
     // this handler reacts to the checkbox changing (data load, or the toggle click below), and the
     // toggle's own click handler is what actually changes the checkbox in the first place.
-    // 2026-08-20, explicit request ("Tab ประกันสังคม ถ้าตอบใช่ให้บังคับกรอก"): SSO No./Start Date
-    // become .required exactly when the detail fields become visible -- same toggle-the-class-
-    // on/off pattern applyEmployeeTypeRequired() already uses (validateEmployeeForm() has no
-    // .d-none skip, so a hidden-but-still-.required field would otherwise wrongly block Save).
-    // is-invalid is cleared on hide so a previously-flagged field doesn't stay marked invalid
-    // once it's no longer required.
+    // 2026-09-12, Batch 4 item 3: the actual gating (company-level + employee-level + the
+    // sso_leave_reason_code AND condition) moved into applySsoGateVisibility()/
+    // updateSsoLeaveReasonVisibility() below -- this handler just keeps the toggle button in sync
+    // and re-runs that gate.
     $('#sso_enrolled').on('change', function () {
         const checked = $(this).is(':checked');
-        $('#ssoDetailFields').toggleClass('d-none', !checked);
         $('#ssoEnrolledToggle button').removeClass('active').filter(`[data-value="${checked ? 'yes' : 'no'}"]`).addClass('active');
-        $('#sso_no, #sso_start_date').toggleClass('required', checked);
-        if (!checked) $('#sso_no, #sso_start_date').removeClass('is-invalid');
+        applySsoGateVisibility();
     }).trigger('change');
     $('#ssoEnrolledToggle button').on('click', function () {
         $('#sso_enrolled').prop('checked', $(this).data('value') === 'yes').trigger('change');
     });
-    // Same Yes/No toggle pattern for PVD -- no detail-fields visibility tied to it (that section is
-    // entirely hidden already, see the Provident Fund column's own "Hidden 2026-08-19" comment), just
-    // keeping the toggle and the real checkbox in sync.
+    // Same Yes/No toggle pattern for PVD -- gating itself moved into applyPvdGateVisibility() below
+    // (2026-09-12, Batch 4 item 3; before this, PVD's detail fields had NO visibility gate at all --
+    // a real gap, see #pvdDetailFields' own comment in the view).
     $('#pvd_enrolled').on('change', function () {
         const checked = $(this).is(':checked');
         $('#pvdEnrolledToggle button').removeClass('active').filter(`[data-value="${checked ? 'yes' : 'no'}"]`).addClass('active');
+        applyPvdGateVisibility();
     }).trigger('change');
     $('#pvdEnrolledToggle button').on('click', function () {
         $('#pvd_enrolled').prop('checked', $(this).data('value') === 'yes').trigger('change');

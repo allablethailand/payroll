@@ -344,6 +344,91 @@ try {
     foreach ($monthlyAugust['employees'] as $e) { if ($e['employee_id'] === $emp1) $monthlyAugustEmp1 = $e; }
     checkTrue('monthlyPitDetail(August 2026): the cross-month run correctly appears here instead', $monthlyAugustEmp1 !== null);
 
+    /* ---------- 2026-09-12, Batch 5 item 5 step 2: "รอบเงินเดือน" (cycle_id) filter -- one shared
+       runFilterClause() reused by summary()/annualPitSummary()/monthlyPitDetail()/cellDetail() alike.
+       Re-cycles the cross-month August run (created just above) onto a SECOND payroll cycle via raw
+       SQL (this is a filter-behavior test, not a run-creation test -- no need to go through a real
+       create()/recalculate() cycle just to change which cycle a run belongs to), leaving every OTHER
+       run (April/February/March, all still on the ORIGINAL $cycleId) untouched, so filtering by
+       EITHER cycle id has a genuinely different, verifiable employee-1 row shape. ---------- */
+    echo "=== 2026-09-12, Batch 5 item 5 step 2: cycle_id filter (\"รอบเงินเดือน\") ===\n";
+    $cycleSave2 = $cycleModel->save($compId, [
+        'cycle_name' => 'AIS_TEST_CYCLE2_' . uniqid(), 'payroll_frequency' => 'monthly',
+        'cutoff_day_of_month' => 25, 'payment_day_of_month' => 5, 'ot_cutoff_type' => 'same_as_attendance',
+        'bank_file_format_id' => 1, 'status' => 'active',
+    ], $userId);
+    checkTrue('fixture: second test cycle created' . (empty($cycleSave2['status']) ? " ({$cycleSave2['message']})" : ''), $cycleSave2['status']);
+    $cycleId2 = $cycleSave2['id'];
+    $pdo->prepare("UPDATE payroll_runs SET cycle_id = :cycle2 WHERE comp_id = :comp_id AND period_start_date = '2026-07-26'")
+        ->execute([':cycle2' => $cycleId2, ':comp_id' => $compId]);
+
+    $cycle1Result = $model->summary($compId, 2026, 4, ['cycle_id' => $cycleId]);
+    $cycle1Emp1 = null;
+    foreach ($cycle1Result['employees'] as $e) { if ($e['employee_id'] === $emp1) $cycle1Emp1 = $e; }
+    check('summary(cycle_id=original): August (index 4) net is 0 -- that run moved to the OTHER cycle', (float)$cycle1Emp1['months'][4]['net'], 0.0);
+    checkTrue('summary(cycle_id=original): April (index 0) net is UNCHANGED -- that run is still on this cycle', abs((float)$cycle1Emp1['months'][0]['net'] - $realNetApril) < 0.01);
+
+    $cycle2Result = $model->summary($compId, 2026, 4, ['cycle_id' => $cycleId2]);
+    $cycle2Emp1 = null;
+    foreach ($cycle2Result['employees'] as $e) { if ($e['employee_id'] === $emp1) $cycle2Emp1 = $e; }
+    check('summary(cycle_id=second): April (index 0) net is 0 -- that run is NOT on this cycle', (float)$cycle2Emp1['months'][0]['net'], 0.0);
+    checkTrue('summary(cycle_id=second): August (index 4) net matches the re-cycled run', abs((float)$cycle2Emp1['months'][4]['net'] - $realNetAugust) < 0.01);
+
+    // Company-wide month-state coloring (buildMonthMeta(), also filtered) must agree: April is
+    // "past_done" for cycle 1 (a finalized run of ITS OWN exists that month) but August is not
+    // (its own finalized run moved away) -- and vice versa for cycle 2.
+    check('cycle_id=original: April month state is still past_done', $cycle1Result['months'][0]['state'], 'past_done');
+    check('cycle_id=original: August month state is now past_missing (its run moved to the other cycle)', $cycle1Result['months'][4]['state'], 'past_missing');
+    check('cycle_id=second: April month state is past_missing (no run of ITS OWN that month)', $cycle2Result['months'][0]['state'], 'past_missing');
+    check('cycle_id=second: August month state is past_done (the re-cycled run)', $cycle2Result['months'][4]['state'], 'past_done');
+
+    $cyclePit1 = $model->annualPitSummary($compId, 2026, 4, ['cycle_id' => $cycleId]);
+    $cyclePit1Emp1 = null;
+    foreach ($cyclePit1['employees'] as $e) { if ($e['employee_id'] === $emp1) $cyclePit1Emp1 = $e; }
+    check('annualPitSummary(cycle_id=original): August (index 4) tax_withheld is 0', (float)$cyclePit1Emp1['months'][4], 0.0);
+    $cyclePit2 = $model->annualPitSummary($compId, 2026, 4, ['cycle_id' => $cycleId2]);
+    $cyclePit2Emp1 = null;
+    foreach ($cyclePit2['employees'] as $e) { if ($e['employee_id'] === $emp1) $cyclePit2Emp1 = $e; }
+    checkTrue('annualPitSummary(cycle_id=second): August (index 4) tax_withheld matches the re-cycled run', abs((float)$cyclePit2Emp1['months'][4] - $realPitAugust) < 0.01);
+
+    $monthlyAugustCycle1 = $model->monthlyPitDetail($compId, 2026, 8, ['cycle_id' => $cycleId]);
+    check('monthlyPitDetail(August 2026, cycle_id=original): zero employees -- the run is on the OTHER cycle', count($monthlyAugustCycle1['employees']), 0);
+    $monthlyAugustCycle2 = $model->monthlyPitDetail($compId, 2026, 8, ['cycle_id' => $cycleId2]);
+    checkTrue('monthlyPitDetail(August 2026, cycle_id=second): employee 1 appears', count(array_filter($monthlyAugustCycle2['employees'], fn($e) => $e['employee_id'] === $emp1)) === 1);
+
+    $cellCycle1 = $model->cellDetail($compId, $emp1, 2026, 8, ['cycle_id' => $cycleId]);
+    check('cellDetail(August 2026, cycle_id=original): zero runs -- the run is on the OTHER cycle', count($cellCycle1), 0);
+    $cellCycle2 = $model->cellDetail($compId, $emp1, 2026, 8, ['cycle_id' => $cycleId2]);
+    check('cellDetail(August 2026, cycle_id=second): exactly 1 run (the re-cycled one)', count($cellCycle2), 1);
+    $cellNoFilter = $model->cellDetail($compId, $emp1, 2026, 8);
+    check('cellDetail() with NO filters (default param) still works -- backward compatible', count($cellNoFilter), 1);
+
+    /* ---------- 2026-09-12, Batch 5 item 5 step 2: profile_photo_path round-trips into every
+       employee row (Employee column's avatar, apvAvatarHtml()/apvPersonLineHtml() in app.js). ---------- */
+    echo "=== 2026-09-12, Batch 5 item 5 step 2: profile_photo_path passthrough ===\n";
+    $photoPath = 'public/uploads/employee_photos/' . $compId . '/test_photo.jpg';
+    $pdo->prepare("UPDATE employees SET profile_photo_path = :p WHERE id = :id")->execute([':p' => $photoPath, ':id' => $emp1]);
+    $photoResult = $model->summary($compId, 2026, 4, []);
+    $photoEmp1 = null;
+    foreach ($photoResult['employees'] as $e) { if ($e['employee_id'] === $emp1) $photoEmp1 = $e; }
+    check('summary(): profile_photo_path is carried through onto the employee row', $photoEmp1['profile_photo_path'] ?? null, $photoPath);
+    $photoPitResult = $model->annualPitSummary($compId, 2026, 4, []);
+    $photoPitEmp1 = null;
+    foreach ($photoPitResult['employees'] as $e) { if ($e['employee_id'] === $emp1) $photoPitEmp1 = $e; }
+    check('annualPitSummary(): profile_photo_path is carried through too', $photoPitEmp1['profile_photo_path'] ?? null, $photoPath);
+    $photoMonthlyResult = $model->monthlyPitDetail($compId, 2026, 4, []);
+    $photoMonthlyEmp1 = null;
+    foreach ($photoMonthlyResult['employees'] as $e) { if ($e['employee_id'] === $emp1) $photoMonthlyEmp1 = $e; }
+    check('monthlyPitDetail(): profile_photo_path is carried through too', $photoMonthlyEmp1['profile_photo_path'] ?? null, $photoPath);
+    $emp3RowForPhoto = null;
+    foreach ($photoResult['employees'] as $e) { if ($e['employee_id'] === $emp3NoData) $emp3RowForPhoto = $e; }
+    // array_key_exists(), not ?? -- the key genuinely being PRESENT with a null value (no photo) is
+    // the thing being verified here; ?? can't distinguish that from the key being absent entirely
+    // (isset() semantics -- both look "falsy" to ??), which would make this assertion trivially pass
+    // for the wrong reason (a genuinely missing key) just as easily as the right one.
+    checkTrue('summary(): an employee with no photo still carries the profile_photo_path KEY (value null, not a missing key)', $emp3RowForPhoto !== null && array_key_exists('profile_photo_path', $emp3RowForPhoto));
+    check('summary(): ...and that value is genuinely null, not some other falsy placeholder', $emp3RowForPhoto['profile_photo_path'], null);
+
     echo "\n--------------------------------------------------\n";
     echo "Passed: {$passes}, Failed: {$failures}\n";
     if ($failures > 0) {
