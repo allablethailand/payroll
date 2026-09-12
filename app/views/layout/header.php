@@ -73,6 +73,16 @@ if ($userThemePref === 'dark') {
     // Per-language (not one shared number) so editing th.json doesn't force en.json's cache to bust
     // too, matching asset()'s own per-file granularity.
     const LANG_VERSION = { th: <?=assetVersion('public/lang/th.json')?>, en: <?=assetVersion('public/lang/en.json')?> };
+    // 2026-09-13, Phase Design Round 2 item 5 (docs/design/rules.md §5) -- app/config/status_map.php
+    // is the ONLY source of status label-key/tone data; this is the ONE exception to Round 2's own
+    // "ห้ามแตะหน้าจริง" rule, explicitly approved for this exact spot (the same place BASE_URL/
+    // LANG_VERSION already bridge PHP config to JS) specifically so JS never needs its own
+    // hand-kept copy of that file's data -- an earlier version of this DID duplicate the whole map as
+    // a JS literal in app.js, which was reverted in favor of this single-source approach the moment
+    // an in-scope way to inject it was made available. statusBadgeHtml() (app.js) reads
+    // `window.STATUS_MAP` with its own guard for a page that doesn't load this file at all (falls
+    // back to an empty map + a console.warn(), same as any other missing-entry case).
+    window.STATUS_MAP = <?=json_encode(loadStatusMap())?>;
     // 2026-08-29: the logged-in user's own employee id, exposed so a page editing an employee record
     // (Employee Detail) can tell whether it's currently editing the LOGGED-IN USER's own record --
     // used to live-refresh the nav profile photo (#navProfilePhoto above) right after a photo

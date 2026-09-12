@@ -20,6 +20,11 @@ if (!in_array($__remote, ['127.0.0.1', '::1'], true)) {
     echo "Design component preview -- dev only (localhost access required).\n";
     exit;
 }
+// 2026-09-13, item 5 -- stat-card.php's own 'badge' field now calls the shared statusBadge()
+// helper internally (app/helpers/helpers.php), which this standalone page needs explicitly since it
+// deliberately skips the app's normal bootstrap (see docblock above) -- helpers.php itself has no
+// dependency on config.php/BASE_URL/a session, safe to require in isolation like this.
+require_once __DIR__ . '/../../app/helpers/helpers.php';
 ?>
 <!doctype html>
 <html lang="th">
@@ -180,21 +185,37 @@ if (!in_array($__remote, ['127.0.0.1', '::1'], true)) {
 // clicking "ยกเลิก" below still shows red despite this tone value. `cancelled`'s count is set to 4
 // (not 0) specifically so this demo actually PROVES the idle-pill exception, not just trivially
 // shows gray because there's nothing to show.
-$cpProcessStatusTabs = [
-    ['key' => 'pending_sync', 'label' => 'รอดึงข้อมูล', 'tone' => 'neutral', 'active' => false],
-    ['key' => 'draft', 'label' => 'ฉบับร่าง', 'tone' => 'neutral', 'active' => true],
-    ['key' => 'pending_approval', 'label' => 'รออนุมัติ', 'tone' => 'warning', 'active' => false],
-    ['key' => 'approved', 'label' => 'อนุมัติแล้ว', 'tone' => 'neutral', 'active' => false],
-    ['key' => 'paid', 'label' => 'จ่ายแล้ว', 'tone' => 'success', 'active' => false],
-    ['key' => 'locked', 'label' => 'ปิดรอบ', 'tone' => 'neutral', 'active' => false],
-    ['key' => 'rejected', 'label' => 'ถูกปฏิเสธ', 'tone' => 'danger', 'active' => false, 'direction' => 'back'],
-    ['key' => 'need_info', 'label' => 'ขอข้อมูลเพิ่ม', 'tone' => 'warning', 'active' => false, 'direction' => 'back'],
-    ['key' => 'cancelled', 'label' => 'ยกเลิก', 'tone' => 'neutral', 'active' => false, 'direction' => 'back'],
+// 2026-09-13, item 5 -- tone/direction are no longer hand-typed here at all: each key's own entry is
+// looked up from app/config/status_map.php's 'payroll_process_tab' context via statusMapEntry()
+// (app/helpers/helpers.php), so this demo can never drift out of sync with the shared map. Only the
+// Thai LABEL text stays hand-typed -- status-tabs.php's own $tabs shape has no data-i18n mechanism
+// for labels yet (unchanged from the prior round, out of scope for item 5).
+$cpProcessStatusTabLabels = [
+    'pending_sync' => 'รอดึงข้อมูล',
+    'draft' => 'ฉบับร่าง',
+    'pending_approval' => 'รออนุมัติ',
+    'approved' => 'อนุมัติแล้ว',
+    'paid' => 'จ่ายแล้ว',
+    'locked' => 'ปิดรอบ',
+    'rejected' => 'ถูกปฏิเสธ',
+    'need_info' => 'ขอข้อมูลเพิ่ม',
+    'cancelled' => 'ยกเลิก',
 ];
+$cpProcessStatusTabs = [];
+foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
+    $cpEntry = statusMapEntry($cpKey, 'payroll_process_tab');
+    $cpProcessStatusTabs[] = [
+        'key' => $cpKey,
+        'label' => $cpLabel,
+        'tone' => $cpEntry['tone'] ?? 'neutral',
+        'direction' => $cpEntry['direction'] ?? 'forward',
+        'active' => $cpKey === 'draft',
+    ];
+}
 ?>
 <div class="cp-section">
     <h2>Status Tabs (§6, item 4b) — ตัดสินใจแล้ว: chevron</h2>
-    <p class="cp-section-note"><code>app/views/partials/status-tabs.php</code> + JS <code>initStatusTabs()</code> -- คง chevron pipeline เดิม (<code>.station-row</code>/<code>.station-card</code>) ไว้ตามที่ approve แล้ว รอบนี้แค่รวม markup ที่ซ้ำกัน 2 ไฟล์ + แทน hex ด้วย token เท่านั้น. เคยมี variant ที่สอง (<code>path</code>, ไม่มีพื้นสี) ให้เทียบคู่กัน -- <b>ตัดสินใจแล้วเลือก chevron</b>, ลบ <code>path</code> ออกจาก partial/JS/CSS ทั้งหมดแล้ว ไม่เหลือ dead code. กลุ่ม "ย้อนกลับ" (ถูกปฏิเสธ/ขอข้อมูลเพิ่ม/ยกเลิก) แยกเป็นกลุ่มที่ 2 ท้ายแถว เว้นช่อง <code>--sp-4</code> จากกลุ่มเดินหน้า และลูกศรชี้กลับ -- ทั้งหมดมาจาก <code>direction: 'back'</code> ต่อ tab ไม่ hardcode ในตัว view. สังเกต <b>"รออนุมัติ"/"ขอข้อมูลเพิ่ม"</b> (tone warning, ไม่ถูกเลือก, จำนวน &gt; 0) เป็น badge เตือน, <b>"ถูกปฏิเสธ"</b> (ย้อนกลับ, ไม่ถูกเลือก, จำนวน &gt; 0) เป็น badge แดง, ส่วน <b>"ยกเลิก"</b> (ย้อนกลับ, tone neutral, จำนวน = 4 &gt; 0) <b>ยังคงเป็นข้อความเทาธรรมดา</b> -- ไม่มีอะไรต้องทำต่อแม้จำนวนจะไม่ใช่ 0 -- <b>ลองคลิก "ถูกปฏิเสธ" แล้ว "ขอข้อมูลเพิ่ม" แล้วก็ "ยกเลิก"</b> ดูสี: ถูกปฏิเสธ/ยกเลิก = แดงทั้งการ์ด, ขอข้อมูลเพิ่ม = ส้ม/เหลืองอำพันทั้งการ์ด แทนส้มปกติ ตัวหนังสือขาวเสมอ (สลับ theme มุมขวาบนเพื่อดู dark mode ด้วย).</p>
+    <p class="cp-section-note"><code>app/views/partials/status-tabs.php</code> + JS <code>initStatusTabs()</code> -- คง chevron pipeline เดิม (<code>.station-row</code>/<code>.station-card</code>) ไว้ตามที่ approve แล้ว รอบนี้แค่รวม markup ที่ซ้ำกัน 2 ไฟล์ + แทน hex ด้วย token เท่านั้น. เคยมี variant ที่สอง (<code>path</code>, ไม่มีพื้นสี) ให้เทียบคู่กัน -- <b>ตัดสินใจแล้วเลือก chevron</b>, ลบ <code>path</code> ออกจาก partial/JS/CSS ทั้งหมดแล้ว ไม่เหลือ dead code. กลุ่ม "ย้อนกลับ" (ถูกปฏิเสธ/ขอข้อมูลเพิ่ม/ยกเลิก) แยกเป็นกลุ่มที่ 2 ท้ายแถว เว้นช่อง <code>--sp-4</code> จากกลุ่มเดินหน้า และลูกศรชี้กลับ -- ทั้งหมดมาจาก <code>direction: 'back'</code> ต่อ tab ไม่ hardcode ในตัว view. **ตอนนี้ tone/direction ของทุก tab มาจาก <code>statusMapEntry($enum, 'payroll_process_tab')</code> จริง (ข้อ 5)** ไม่ใช่ค่าที่พิมพ์เองในไฟล์นี้อีกแล้ว. สังเกต <b>"รออนุมัติ"/"ขอข้อมูลเพิ่ม"</b> (tone warning, ไม่ถูกเลือก, จำนวน &gt; 0) เป็น badge เตือน, <b>"ถูกปฏิเสธ"</b> (ย้อนกลับ, ไม่ถูกเลือก, จำนวน &gt; 0) เป็น badge แดง, ส่วน <b>"ยกเลิก"</b> (ย้อนกลับ, tone neutral, จำนวน = 4 &gt; 0) <b>ยังคงเป็นข้อความเทาธรรมดา</b> -- ไม่มีอะไรต้องทำต่อแม้จำนวนจะไม่ใช่ 0 -- <b>ลองคลิก "ถูกปฏิเสธ" แล้ว "ขอข้อมูลเพิ่ม" แล้วก็ "ยกเลิก"</b> ดูสี: ถูกปฏิเสธ/ยกเลิก = แดงทั้งการ์ด, ขอข้อมูลเพิ่ม = ส้ม/เหลืองอำพันทั้งการ์ด แทนส้มปกติ ตัวหนังสือขาวเสมอ (สลับ theme มุมขวาบนเพื่อดู dark mode ด้วย).</p>
     <?php
     $id = 'cpStatusTabsChevron';
     $tabs = $cpProcessStatusTabs;
@@ -338,7 +359,8 @@ $cpProcessStatusTabs = [
     <h2>DataTable (§7)</h2>
     <p class="cp-section-note">30 แถว mock ครบทุกชนิดคอลัมน์ตามตาราง §7: checkbox / avatar / ข้อความ / วันที่
         (<code>.col-date</code>) / เงิน (<code>.num.col-money</code>) / ตัวเลข (<code>.num</code>) / สถานะ (badge
-        ธรรมดา -- ยังไม่ผ่าน <code>statusBadge()</code> เพราะข้อ 5 ยังไม่ทำ) / action (<code>.col-actions</code>).
+        ธรรมดา -- 3 ค่านี้เป็น mock ที่ไม่มีใน <code>status_map.php</code> จริง จึงยังไม่ผ่าน <code>statusBadgeHtml()</code>
+        ในตารางนี้โดยเจตนา ดู section "Badge / สถานะ (ข้อ 5)" ด้านล่างสำหรับตัวอย่างที่ผ่าน <code>statusBadgeHtml()</code> จริงทุก context) / action (<code>.col-actions</code>).
         เรียกผ่าน <code>initSharedDataTable(selector, { stickyColumns:{left:2,right:1}, columnFilters:{...},
         export:{onSelect}, dtOptions:{} })</code> -- ไม่ต้องเขียน <code>drawCallback</code>/<code>initComplete</code>/
         <code>initExcelColumnFilters()</code> เองอีกเลย ทุกอย่างมาจาก class บน <code>&lt;th&gt;</code> + option 3 ตัวนี้
@@ -414,16 +436,18 @@ $cpProcessStatusTabs = [
 // Deliberately covers every combination the partial's own footer slot supports: no footer at all,
 // sub-only, badge+link together, and badge-only with a danger tone -- proving the fixed-height
 // bottom slot lines up across all 4 regardless of what's actually inside it.
+// 'badge' is now {enum, context} (item 5) -- stat-card.php itself calls statusBadge() with these,
+// forcing every badge shown here through the real app/config/status_map.php, not a hand-typed label.
 $cpStats = [
     ['label' => 'พนักงานทั้งหมด', 'value' => '128', 'icon' => 'fa-solid fa-users', 'sub' => null, 'badge' => null, 'link' => null],
     ['label' => 'เงินเดือนรวม (บาท)', 'value' => number_format(2456000, 2), 'icon' => 'fa-solid fa-sack-dollar', 'sub' => 'เดือนนี้', 'badge' => null, 'link' => null],
-    ['label' => 'รออนุมัติ', 'value' => '3', 'icon' => 'fa-solid fa-hourglass-half', 'sub' => null, 'badge' => ['label' => 'ต้องดำเนินการ', 'tone' => 'warning'], 'link' => ['label' => 'ดูทั้งหมด', 'href' => '#']],
-    ['label' => 'ค้างนาน', 'value' => '2', 'icon' => 'fa-solid fa-triangle-exclamation', 'sub' => null, 'badge' => ['label' => 'เกิน 7 วัน', 'tone' => 'danger'], 'link' => null],
+    ['label' => 'รออนุมัติ', 'value' => '3', 'icon' => 'fa-solid fa-hourglass-half', 'sub' => null, 'badge' => ['enum' => 'pending_approval', 'context' => 'run_state'], 'link' => ['label' => 'ดูทั้งหมด', 'href' => '#']],
+    ['label' => 'ค้างนาน (ถูกปฏิเสธ)', 'value' => '2', 'icon' => 'fa-solid fa-triangle-exclamation', 'sub' => null, 'badge' => ['enum' => 'rejected', 'context' => 'run_state'], 'link' => null],
 ];
 ?>
 <div class="cp-section">
-    <h2>Stat Card (§2) — ตัดสินใจแล้ว: ไอคอนวงกลมซ้าย</h2>
-    <p class="cp-section-note"><code>app/views/partials/stat-card.php</code>, class <code>.stat</code> -- พื้นขาว ขอบเทา ไม่มีสีพื้น/ขอบสี (ตรงข้าม <code>.stat-card</code> เดิมทุกประการ) แต่**อนุญาตไอคอน (optional) 1 ตัว/การ์ด** ในวงกลม 40px พื้น <code>--c-bg-subtle</code> ไอคอนสี <code>--c-text-muted</code> อยู่ซ้ายของ label/ตัวเลข -- เคยมี variant ที่สอง (ไอคอนมุมขวาบนแบบไม่มีวงกลม) ให้เทียบคู่กัน **ตัดสินใจแล้วเลือกวงกลมซ้าย**, ลบอีกแบบออกจาก partial/CSS/components.php ทั้งหมดแล้ว ไม่เหลือ dead code. แถวเดียว การ์ดเท่ากันเสมอ (caller ครอบ <code>.row.g-3</code> เอง, Bootstrap row เองยืด column เท่ากันให้อยู่แล้ว) โดยมี slot ล่างคงที่สำหรับ sub/badge/link -- สังเกตการ์ด <b>"พนักงานทั้งหมด"</b> (ไม่มี footer เลย) กับ <b>"รออนุมัติ"</b> (badge+link พร้อมกัน) สูงเท่ากันเป๊ะทั้งที่เนื้อหาต่างกันมาก เพราะ slot ล่างเว้นพื้นที่ไว้เท่ากันเสมอ (ใช้ <code>margin-top:auto</code> ดันลงขอบล่าง). สถานะที่ต้องตัดสินใจ (รออนุมัติ/ค้างนาน) ใช้ <code>.badge.badge-{tone}</code> (§5) ใน slot ล่างเท่านั้น -- **การ์ดทั้งใบไม่เปลี่ยนสี** แม้แต่การ์ด "ค้างนาน" ที่ badge เป็น tone danger (สลับ theme มุมขวาบนดู dark mode ด้วย).</p>
+    <h2>Stat Card (§2) — ตัดสินใจแล้ว (แก้กลับ): ไอคอนมุมขวาบน</h2>
+    <p class="cp-section-note"><code>app/views/partials/stat-card.php</code>, class <code>.stat</code> -- พื้นขาว ขอบเทา ไม่มีสีพื้น/ขอบสี (ตรงข้าม <code>.stat-card</code> เดิมทุกประการ) แต่**อนุญาตไอคอน (optional) 1 ตัว/การ์ด** ที่มุมขวาบน ขนาด 20px สี <code>--c-text-faint</code> ไม่มีวงกลม/พื้นของตัวเอง, label เทาเล็กซ้ายบน, ตัวเลข <code>--fs-xl</code> ตัวหนา -- เคยตัดสินใจเลือกแบบไอคอนวงกลมซ้าย 40px ไปรอบก่อน **ตอนนี้แก้กลับมาเป็นแบบนี้แทน**, ลบ CSS/markup ของแบบวงกลมออกจาก partial/CSS/components.php ทั้งหมดแล้วรอบที่ 2 ไม่เหลือ dead code. แถวเดียว การ์ดเท่ากันเสมอ (caller ครอบ <code>.row.g-3</code> เอง, Bootstrap row เองยืด column เท่ากันให้อยู่แล้ว) โดยมี slot ล่างคงที่สำหรับ sub/badge/link -- สังเกตการ์ด <b>"พนักงานทั้งหมด"</b> (ไม่มี footer เลย) กับ <b>"รออนุมัติ"</b> (badge+link พร้อมกัน) สูงเท่ากันเป๊ะทั้งที่เนื้อหาต่างกันมาก เพราะ slot ล่างเว้นพื้นที่ไว้เท่ากันเสมอ (ใช้ <code>margin-top:auto</code> ดันลงขอบล่าง). <code>badge</code> เป็น <code>{enum, context}</code> จริง (ข้อ 5) -- การ์ด "รออนุมัติ" ส่ง <code>{enum:'pending_approval', context:'run_state'}</code>, การ์ด "ค้างนาน" ส่ง <code>{enum:'rejected', context:'run_state'}</code> -- <code>stat-card.php</code> เรียก PHP <code>statusBadge()</code> เองข้างใน ไม่มีทางส่ง label/สีดิบเข้ามาแทนได้อีกแล้ว -- **การ์ดทั้งใบไม่เปลี่ยนสี** แม้แต่การ์ด "ค้างนาน" ที่ badge เป็น tone danger (สลับ theme มุมขวาบนดู dark mode ด้วย).</p>
     <div class="row g-3">
         <?php foreach ($cpStats as $stat): ?>
         <div class="col-md-3">
@@ -431,7 +455,7 @@ $cpStats = [
         </div>
         <?php endforeach; ?>
     </div>
-    <p class="cp-section-note mt-3">ไม่ส่ง <code>icon</code>: ไม่เว้นพื้นที่วงกลมไว้ -- ข้อความชิดซ้ายปกติเหมือนการ์ดทั่วไป (เทียบกับการ์ดที่มีไอคอนด้านขวา ให้เห็นว่าไม่มีช่องว่างเยื้องซ้ายเหลืออยู่).</p>
+    <p class="cp-section-note mt-3">ไม่ส่ง <code>icon</code>: ไม่เว้นที่มุมขวาบนไว้ -- label ยังชิดซ้ายปกติเหมือนการ์ดทั่วไป (เทียบกับการ์ดที่มีไอคอนมุมขวา ให้เห็นว่าไม่มีช่องว่างเหลืออยู่ฝั่งขวา).</p>
     <div class="row g-3">
         <div class="col-md-3">
             <?php $stat = ['label' => 'สาขาทั้งหมด', 'value' => '4', 'icon' => null, 'sub' => null, 'badge' => null, 'link' => null]; include __DIR__ . '/../../app/views/partials/stat-card.php'; ?>
@@ -509,8 +533,8 @@ $cpStats = [
 
 <div class="cp-section">
     <h2>Badge / สถานะ (ข้อ 5)</h2>
-    <p class="cp-section-note"><code>status_map.php</code>, PHP <code>statusBadge()</code> / JS <code>statusBadgeHtml()</code> (§5)</p>
-    <div class="cp-empty">ยังไม่ทำ -- รอข้อ 5</div>
+    <p class="cp-section-note"><code>app/config/status_map.php</code> (data เดียวที่มา, ที่เดียวจริงๆ) + PHP <code>statusBadge($enum, $context)</code> (<code>app/helpers/helpers.php</code>) + JS <code>statusBadgeHtml(enum, context)</code> (<code>app.js</code>). <code>layout/header.php</code> (จุดเดียวกับที่ inject <code>BASE_URL</code>/<code>LANG_VERSION</code> อยู่แล้ว, ยกเว้นจากกฎ "ห้ามแตะหน้าจริง" เฉพาะบรรทัดนี้) ใส่ <code>window.STATUS_MAP = &lt;?=json_encode(loadStatusMap())?&gt;;</code> จาก PHP ตรงๆ ทุกหน้า -- <code>app.js</code> อ่านจาก <code>window.STATUS_MAP</code> เท่านั้น (ไม่มี copy ของตัวเองแล้ว ไม่มีความเสี่ยงเรื่อง drift อีกต่อไป) หน้านี้เองก็ใส่บรรทัดเดียวกันจาก <code>loadStatusMap()</code> จริงที่ require ไว้ตอนต้นไฟล์. ทุก context/enum ด้านล่าง render จริงผ่าน <code>statusBadgeHtml()</code> (ไม่ใช่ hardcode) -- enum ที่ไม่มีใน map จะเห็น badge เทา + label ดิบ + <code>console.warn()</code> (ลองเปิด console ดู "unmapped_demo" ท้ายสุด). <code>tone</code> ของ <code>run_state.approved</code> เป็น <code>warning</code> (ไม่ใช่ success) เพราะ "อนุมัติแล้ว" สำหรับคนทำเงินเดือนคือ "ต้องไปจ่ายต่อ" -- คนละความหมายกับ <code>approval_status.approved</code> ที่เป็น success (คำขอจบแล้ว) ตั้งใจให้ต่างกัน ไม่ใช่ bug. <code>data_source</code> ไม่ใช่สถานะจริง (§5) ใส่ไว้ชั่วคราวเป็น neutral ทั้งหมดเพื่อไม่พังตอน migrate รอบ 4.</p>
+    <div id="cpBadgeShowcase"></div>
 </div>
 
 <div class="cp-section">
@@ -555,6 +579,11 @@ $cpStats = [
     var BASE_URL = window.location.origin + window.location.pathname.replace(/\/docs\/design\/components\.php$/, '');
     var LANG_VERSION = { th: 1, en: 1 };
     var COMPANY_CURRENCY_CODE = 'THB';
+    // Same single line layout/header.php now injects on every real page (§5) -- from the REAL
+    // app/config/status_map.php via the same loadStatusMap() this page already required at the top,
+    // not a hand-typed copy. Must run before app.js loads below (app.js's own top-level `const
+    // STATUS_MAP = ...` reads window.STATUS_MAP at parse time).
+    window.STATUS_MAP = <?=json_encode(loadStatusMap())?>;
 </script>
 <script src="../../public/js/format-helpers.js"></script>
 <script src="../../public/js/input.js"></script>
@@ -622,6 +651,41 @@ $(function () {
     // collapsible field panel itself stays put, right under the pipeline.
     initFilterBar('#cpFullFilterBar', { toolbarTarget: '#cpFullStatusTabs', onChange: function () {} });
     initSharedDataTable('#cpFullTable', { searchThreshold: 0 });
+
+    // Badge (ข้อ 5) -- builds itself directly off the REAL STATUS_MAP (app.js), one row per context,
+    // one statusBadgeHtml() call per enum value -- so this showcase can never go stale/hand-typed out
+    // of sync with the actual map; adding a context/enum to STATUS_MAP later shows up here for free.
+    // One extra, deliberately UNMAPPED context/enum pair at the end demonstrates the missing-entry
+    // fallback (gray badge + raw label + a console.warn()) -- open devtools to see the warning fire.
+    const $cpBadgeShowcase = $('#cpBadgeShowcase');
+    Object.keys(STATUS_MAP).sort().forEach(function (context) {
+        const $row = $(
+            '<div class="mb-3">' +
+                '<div class="fw-semibold small text-uppercase text-muted mb-1"></div>' +
+                '<div class="d-flex flex-wrap gap-2 align-items-center"></div>' +
+            '</div>'
+        );
+        $row.find('.text-uppercase').text(context);
+        const $chips = $row.find('.d-flex');
+        Object.keys(STATUS_MAP[context]).forEach(function (enumValue) {
+            const $chip = $('<span class="d-inline-flex align-items-center gap-1 border rounded-2 px-2 py-1"></span>');
+            $chip.append($('<code class="small text-muted"></code>').text(enumValue));
+            $chip.append(statusBadgeHtml(enumValue, context));
+            $chips.append($chip);
+        });
+        $cpBadgeShowcase.append($row);
+    });
+    const $cpUnmappedRow = $(
+        '<div class="mb-3">' +
+            '<div class="fw-semibold small text-uppercase text-muted mb-1">(unmapped -- demonstrates the missing-entry fallback)</div>' +
+            '<div class="d-flex flex-wrap gap-2 align-items-center"></div>' +
+        '</div>'
+    );
+    const $cpUnmappedChip = $('<span class="d-inline-flex align-items-center gap-1 border rounded-2 px-2 py-1"></span>');
+    $cpUnmappedChip.append($('<code class="small text-muted"></code>').text('unmapped_demo'));
+    $cpUnmappedChip.append(statusBadgeHtml('unmapped_demo', 'run_state'));
+    $cpUnmappedRow.find('.d-flex').append($cpUnmappedChip);
+    $cpBadgeShowcase.append($cpUnmappedRow);
 });
 </script>
 <script>

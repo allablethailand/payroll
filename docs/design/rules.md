@@ -102,15 +102,16 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
   - **Toolbar ของตาราง ฝั่งซ้าย หลัง length** = action ที่ทำกับ**แถวที่เลือกไว้** (bulk) เท่านั้น เช่น "ซิงค์ที่เลือก", "ลบที่เลือก" — ไม่ใช่ page header (เพราะพิมพ์ผิดที่ผู้ใช้ทั่วไปจะกดตอนไม่ได้เลือกอะไรเลย ปุ่มควรโผล่/ใช้งานได้เฉพาะตอนมี selection)
   - **Toolbar ของตาราง ฝั่งขวา** = **เฉพาะ**ค้นหา + ส่งออกเท่านั้น (§7) ห้ามใส่ action อื่นแทรก
 - Breadcrumb กับ H1 ห้ามพูดซ้ำกัน — H1 คือชื่อหน้า breadcrumb คือทาง
-- **Stat card** = partial `stat-card.php` render ด้วย **class ใหม่ `.stat`** (ไม่ใช่ `.stat-card`) — ตัดสินใจแล้วว่า **ทุบสีของ `.stat-card` เดิมทิ้งจริง** (ของเดิมมี 7 tone สี ขอบซ้ายสี ใช้อยู่ 5 ไฟล์ ณ ตอนตัดสินใจนี้ — ตรงข้ามกับกฎนี้โดยสิ้นเชิง ไม่ใช่ต่อยอด) พื้นขาว ขอบ `--c-border` **ไม่มีขอบซ้ายสี ไม่มีพื้นสี** ตัวเลข `.num` ขนาด `--fs-xl` ตัวหนา — ถ้าค่าเป็นสถานะที่ต้องตัดสินใจ (เช่น "รออนุมัติ 3") ใช้ badge จาก `status_map.php` (ข้อ 5) ใน slot ล่างเท่านั้น (ผ่าน field `badge` ของ `$stat` แยกจาก `sub`) ไม่ใช่เปลี่ยนสีทั้งการ์ด
+- **Stat card** = partial `stat-card.php` render ด้วย **class ใหม่ `.stat`** (ไม่ใช่ `.stat-card`) — ตัดสินใจแล้วว่า **ทุบสีของ `.stat-card` เดิมทิ้งจริง** (ของเดิมมี 7 tone สี ขอบซ้ายสี ใช้อยู่ 5 ไฟล์ ณ ตอนตัดสินใจนี้ — ตรงข้ามกับกฎนี้โดยสิ้นเชิง ไม่ใช่ต่อยอด) พื้นขาว ขอบ `--c-border` **ไม่มีขอบซ้ายสี ไม่มีพื้นสี** ตัวเลข `.num` ขนาด `--fs-xl` ตัวหนา — ถ้าค่าเป็นสถานะที่ต้องตัดสินใจ (เช่น "รออนุมัติ 3") ใช้ badge จาก `status_map.php` (ข้อ 5) ใน slot ล่างเท่านั้น ไม่ใช่เปลี่ยนสีทั้งการ์ด — **field `badge` ของ `$stat` คือ `{enum, context}` เท่านั้น (ข้อ 5, ไม่ใช่ `{label, tone}` ดิบอีกต่อไป)**: partial เรียก `statusBadge($enum, $context)` เองข้างใน ไม่มีทางส่ง label/สีที่ไม่ผ่าน `status_map.php` เข้ามาได้อีกแล้ว
   - **แก้ไข (รอบ 2 follow-up): อนุญาตไอคอน (optional) 1 ตัว/การ์ด** (เดิมห้ามไอคอนเลย) — ยังคง
     **ห้ามพื้นสี/ขอบสีบนตัวการ์ด**เหมือนเดิม การอนุญาตไอคอนไม่ใช่การเปิดทางกลับไปหา `.stat-card` เดิม —
-    **ตัดสินใจแล้ว: ใช้แบบเดียว** (เคยมี 2 variant ให้เทียบกันใน components.php ก่อนตัดสินใจ — แบบ
-    ไอคอนมุมขวาบนไม่มีวงกลม ถูกลบออกจาก partial/CSS/components.php ทั้งหมดแล้ว ไม่เหลือ dead code) —
-    ไอคอนอยู่ในวงกลม 40px พื้น `--c-bg-subtle` ไอคอนสี `--c-text-muted` (เข้มกว่า `--c-text-faint` ปกติ
-    โดยตั้งใจ เพราะนั่งอยู่บนพื้นวงกลมที่เห็นชัด ไม่ใช่ลอยอยู่บนพื้นการ์ดเปล่าๆ) อยู่ซ้าย ข้อความ (label บน
-    ตัวเลขล่าง) ชิดขวาของวงกลม — **ถ้าไม่ส่งไอคอนมา ไม่เว้นพื้นที่วงกลมไว้** (ตัดสินใจแล้ว: "เลือกไม่เว้น")
-    ข้อความชิดซ้ายปกติเหมือนการ์ดที่ไม่มีไอคอนเลย ไม่ใช่เยื้องขวาค้างไว้เผื่อไอคอนที่ไม่มี
+    **ตัดสินใจแล้ว (แก้กลับรอบที่ 2): ใช้ไอคอนมุมขวาบน** (เคยมี 2 variant ให้เทียบกันใน components.php —
+    ตัดสินใจครั้งแรกเลือกไอคอนวงกลมซ้าย 40px, **แก้กลับมาเป็นมุมขวาบนในรอบนี้แทน** — วงกลมซ้ายถูกลบออกจาก
+    partial/CSS/components.php ทั้งหมดแล้วเป็นครั้งที่สอง ไม่เหลือ dead code ทั้งสองรอบ): ไอคอนมุมขวาบน
+    ขนาด 20px สี `--c-text-faint` ไม่มีวงกลม/พื้นของตัวเอง, label เล็กสีเทาซ้ายบน, ตัวเลข `--fs-xl` ตัวหนา
+    ด้านล่าง — **ถ้าไม่ส่งไอคอนมา ไม่เว้นที่ไว้** (ตัดสินใจเดิม ยังคงไว้ไม่เปลี่ยนข้ามทั้ง 2 รอบ:
+    "เลือกไม่เว้น"/"ไม่มีไอคอน = ไม่เว้นที่") — label เป็นสมาชิกเดียวในแถว flex (label+ไอคอน,
+    `justify-content:space-between`) จึงชิดซ้ายเองโดยธรรมชาติเมื่อไม่มีไอคอน ไม่ต้องเขียนโค้ดพิเศษกันที่ว่าง
   - **ทุกการ์ดในแถวสูงเท่ากันเสมอ** — caller ครอบด้วย Bootstrap `.row` ธรรมดา (ยืด column เท่ากันเป็น default อยู่แล้ว ไม่ต้องเพิ่ม CSS) `.stat` เอง `height:100%` + เป็น flex column — **slot ล่างคงที่สำหรับ sub/badge/link เสมอ** (มี `min-height` แม้ไม่มีเนื้อหาอะไรเลย ก็ยังเว้นพื้นที่เท่ากับการ์ดที่มีครบทั้ง 3 อย่าง) และ `margin-top:auto` ดันลงชิดขอบล่างเสมอ ไม่ว่า header/ไอคอนด้านบนจะสูงแค่ไหน
   - **Migration**: รอบ 2 สร้าง `.stat`/`stat-card.php` ใหม่เท่านั้น **ไม่แตะ 5 ไฟล์ที่ใช้ `.stat-card` เดิม**; รอบ 4 ย้ายทีละหน้า (หน้าไหนมี stat card ก็ย้ายเป็นส่วนหนึ่งของการทำหน้านั้นให้ clean ไม่ใช่ commit แยก) เมื่อย้ายครบ 5 ไฟล์แล้วให้ลบ CSS ของ `.stat-card`/`.stat-card-*` (`style.css`) ทิ้งเป็นขั้นตอนสุดท้าย — ห้ามลบ CSS เดิมก่อนไฟล์ล่าสุดที่ใช้มันย้ายเสร็จ
 - Dashboard: ไม่มี welcome card, ไม่มีกราฟที่มีข้อมูลแท่งเดียว — เนื้อหาต้องเป็น "งานที่ต้องทำ" ก่อน (รออนุมัติ/อนุมัติแล้วรอทำต่อ/ค้างนาน) ตามด้วยตัวเลขสรุป
@@ -160,12 +161,64 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 ## 5. Badge / สถานะ
 
 - Badge = สถานะเท่านั้น ไม่ใช่ label ทั่วไป (ประเภท, หมวด, ที่มา → เป็นข้อความธรรมดาหรือคอลัมน์)
-- helper เดียว: PHP `statusBadge($enum, $context)` / JS **`statusBadgeHtml(enum, context)`** (ชื่อ global JS ยืนยันแล้วรอบ 0 — ต้องมี suffix `Html` เสมอ ห้ามประกาศ global เปล่าชื่อ `statusBadge`) อ่าน map จาก `app/config/status_map.php` ที่เดียว (label i18n + tone) — **ห้ามเขียน map ใน view/JS**
-  - **ก่อนประกาศ global `statusBadgeHtml()` (รอบ 2): ต้อง rename `function statusBadge(row)` local ที่มีอยู่แล้วใน `public/js/setup/payroll-configuration.js` เป็น `pcRowStatusBadge(row)` ก่อน** (ตัดสินใจแล้วรอบ 0) — ชื่อชนกันตรงๆ ในสภาพแวดล้อม non-module script ที่ global function ประกาศซ้ำชื่อไม่ error แต่ผลลัพธ์ fragile ขึ้นกับลำดับโหลดไฟล์ (บั๊กคลาสเดียวกับที่เจอจริงมาแล้วใน Payslip/ECT Template's double-declared `let` — ดู `project_payslip_template_canvas_rebuild` memory)
+- helper เดียว: PHP `statusBadge($enum, $context)` (`app/helpers/helpers.php`) / JS
+  **`statusBadgeHtml(enum, context)`** (`public/js/app.js`, ชื่อ global ยืนยันแล้วรอบ 0 — ต้องมี
+  suffix `Html` เสมอ ห้ามประกาศ global เปล่าชื่อ `statusBadge`) อ่าน map จาก
+  `app/config/status_map.php` ที่เดียว (label i18n key + tone) — **ห้ามเขียน map ใน view/JS**
+  - ✅ **rename เสร็จแล้ว (ก่อนเขียนโค้ดจริงตามที่ตัดสินใจไว้รอบ 0)**: `function statusBadge(row)`
+    local ใน `public/js/setup/payroll-configuration.js` → `pcRowStatusBadge(row)` — ชื่อชนกันตรงๆ ใน
+    สภาพแวดล้อม non-module script ที่ global function ประกาศซ้ำชื่อไม่ error แต่ผลลัพธ์ fragile ขึ้นกับ
+    ลำดับโหลดไฟล์ (บั๊กคลาสเดียวกับที่เจอจริงมาแล้วใน Payslip/ECT Template's double-declared `let`)
+  - **`app/config/status_map.php` เป็นแหล่งเดียวจริงๆ ไม่มี copy ที่ไหนอีก** — **ยกเว้นกฎ "ห้ามแตะหน้าจริง"
+    เฉพาะจุดเดียว**: `layout/header.php` (ตรงจุดเดียวกับที่ inject `BASE_URL`/`LANG_VERSION` ให้ JS
+    อยู่แล้ว) ใส่ `window.STATUS_MAP = <?=json_encode(loadStatusMap())?>;` ตรงจาก PHP ทุกหน้า — JS
+    `statusBadgeHtml()` อ่านจาก `window.STATUS_MAP` เท่านั้น (มี guard: ถ้าไม่มี — หน้าที่ไม่โหลด
+    header.php — warn ครั้งเดียวแล้ว fallback เป็น map ว่าง ทุก enum จะ render เป็น badge เทา+label ดิบ
+    ตามกลไก missing-entry เดิม) `docs/design/components.php` เองก็ใส่บรรทัดเดียวกันจาก `loadStatusMap()`
+    จริง (require ไว้แล้วตอนต้นไฟล์) ไม่ใช่ก็อบปี้ค่าเอง — **แก้ครั้งแรกใช้วิธี duplicate array เต็มเป็น JS
+    literal ใน app.js (แบบเดียวกับ `PAGE_SIZES_MM`), ถูกถอดออกและแทนที่ด้วยวิธีนี้แล้ว** เพราะผู้ใช้
+    อนุมัติข้อยกเว้นจุดนี้โดยตรง ไม่ต้อง duplicate ข้อมูลอีกต่อไป
+  - **PHP กับ JS render ข้อความ label ต่างวิธีกัน โดยตั้งใจ**: PHP ไม่รู้ภาษาที่ผู้ใช้เลือกอยู่ (view ฝั่ง
+    server ไม่เคยรู้ ตาม convention เดิมของแอปทั้งหมด) จึง render fallback ภาษาอังกฤษ (อ่านจาก
+    `public/lang/en.json` ตรงๆ กันข้อความเพี้ยนจากของที่พิมพ์ซ้ำ) + `data-i18n="{label_key}"` ให้
+    `updateText()` (มีอยู่แล้ว) สลับเป็นภาษาที่ถูกต้องหลังโหลด — JS รู้ `langData` ปัจจุบันอยู่แล้วจึงเรียก
+    `getLangValue(label_key)` ตรงได้เลย (ยังใส่ `data-i18n` ไว้ด้วยเพื่อให้สลับภาษาสดได้ผ่าน
+    `updateText()` เหมือนกัน ไม่ใช่เพราะจำเป็นต่อการ render ครั้งแรก)
+  - **enum ที่ไม่มีใน map**: badge เทา (`badge-neutral`) + label เป็นค่า enum ดิบ (ไม่มี `data-i18n`
+    เพราะไม่มี key จริงให้สลับ) — PHP บันทึกผ่าน `error_log()`, JS ผ่าน `console.warn()` ไม่ throw/พังหน้า
 - Tone มี 4 ค่า: `neutral` (เทา), `warning`, `danger`, `success` — เลือกจากคำถาม "ผู้ใช้ต้องทำอะไรกับสถานะนี้ไหม": ต้องทำ → warning/danger, จบแล้ว → success, แค่รู้ → neutral
 - รูปแบบเดียว: `.badge.badge-{tone}` พื้น `--c-{tone}-soft` ตัวหนังสือ `--c-{tone}` `--radius-pill` ไม่มีไอคอน ไม่มีขอบ
 - ไม่แสดง badge ซ้ำในทุกแถวถ้าค่าเหมือนกันทั้งตาราง (เช่น "Origami" ทุกแถว) → ย้ายไปเป็น filter หรือหัวตาราง
 - ป้ายในหัว modal (ธง + ไอคอน + badge "รายการของบริษัทคุณ"): เหลือ**ชื่อ modal อย่างเดียว** ข้อมูลประกอบย้ายไปบรรทัดรอง (`--c-text-muted`) ใต้ชื่อ
+
+**Context ที่มีใน `status_map.php` ตอนนี้ (ยืนยัน tone กับผู้ใช้ครบก่อนเขียนโค้ด — ดู commit message
+ของรอบนี้สำหรับรายการเต็มว่าค่าไหนเปลี่ยนจากสีเดิมที่ใช้อยู่ก่อนหน้า และทำไม)**:
+
+| Context | ใช้กับ | หมายเหตุ tone ที่ไม่ตรงสามัญสำนึก |
+|---|---|---|
+| `run_state` | `payroll_runs.state` | `approved`=**warning** (ยังต้องไปจ่ายต่อ ไม่ใช่ success) |
+| `payroll_process_tab` | status-tabs.php บนหน้า Payroll Process (มี `direction`) | derive มาจาก `run_state` เสมอ ไม่พิมพ์ tone ซ้ำ |
+| `approval_status` | `approval_requests`/`leave_requests`/`overtime_records` | `approved`=success (คำขอจบแล้ว — คนละความหมายกับ `run_state.approved` โดยตั้งใจ) |
+| `payslip_request_status` | `payslip_requests.status` | = `approval_status` + `sent`/`send_failed` |
+| `employment_certificate_request_status` | `employment_certificate_requests.status` | = `approval_status` + `issued`/`issue_failed` |
+| `employee_status` | `employees.employee_status` | แยกจาก `employment_status` ตั้งใจ (คนละคอลัมน์คนละคำถาม) |
+| `employment_status` | `employees.employment_status` | เช่นกัน — label key ใช้ร่วมกับ `employee_status` ที่ค่าซ้ำ แต่ map แยก |
+| `document_delivery_status` | payslip/certificate delivery outcome (union) | |
+| `sync_batch_status` | `sync_batches.status` | `running`=**warning** (ไม่ใช่ neutral — "กำลังทำงาน" ต้องรอ) |
+| `payroll_calc_status` | `payroll_run_details.calc_status` | |
+| `eed_status` | `employee_earning_deductions.status` (แผนผ่อนจ่าย) | `completed`=**neutral** (ไม่ใช่ success) |
+| `eed_installment_status` | `employee_earning_deduction_installments.status` (รายงวด) | |
+| `remittance_status` | `payroll_remittances.status` | `transferred`=**warning** (ยังไม่ยืนยันรับ) |
+| `attendance_status` | `attendance_records.status` | `holiday`=**neutral** (ไม่ใช่ฟ้า — แค่ข้อมูล) |
+| `recurring_earning_status` | `employee_recurring_earnings`' `is_suspended_now` | คนละ context กับ `employee_status.suspended` (คนละความหมาย) |
+| `data_source` | `manual`/`sync`/`import` | **ไม่ใช่สถานะจริง** (§5 บนสุด) — ใส่ไว้ชั่วคราว neutral ทั้งหมด กันพังตอน migrate, รอบ 4 ควรเลิกใช้ badge กับอันนี้ไปเลย |
+
+**ยังไม่ใส่ใน map รอบนี้ (ตัดสินใจแล้ว — รอมีหน้าใช้จริงก่อน)**: sync attribution
+(resolved/pending_fold_in), pending-pull row status, blocked sync update, master-data mapping
+(mapped/unmapped), attendance bonus ledger (`status_passed`/`status_failed` ของ ledger — คนละ key กับ
+`document_delivery_status` แม้ชื่อจะคล้ายกัน). **นอก scope ถาวร**: generic soft-delete
+(`active`/`inactive`/`deleted`) และ `publish_status` (`draft`/`public`) — ทั้งคู่ render เป็น toggle
+switch ไม่เคยเป็น badge เลยที่ไหนในแอป
 
 ---
 
@@ -349,7 +402,7 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 | `filter-bar.php` | partials | filter กางค้าง |
 | `status-stepper.php` + `renderStatusStepper()` | partials + app.js | กล่อง 5 สี |
 | `status-tabs.php` + `initStatusTabs()` (ใหม่, item 4b — chevron pipeline เดิม**ยังคงรูปแบบไว้**, retokenize เท่านั้น; **ตัดสินใจแล้ว**: เคยมี variant `path` ให้เทียบคู่กัน ลบออกทั้งหมดแล้ว) | partials + app.js | markup ที่เคยซ้ำ 2 ไฟล์ของ `.station-row`/`.station-card` |
-| `statusBadge()` / `statusBadgeHtml()` + `status_map.php` (rename `payroll-configuration.js`'s local `statusBadge(row)` → `pcRowStatusBadge(row)` ก่อนประกาศ global — ดู §5) | helpers + app.js + config | map สถานะกระจาย |
+| `statusBadge()` / `statusBadgeHtml()` + `status_map.php` (ใหม่, item 5 — เสร็จแล้ว; map มีที่เดียวคือ `status_map.php`, JS ไม่มี copy ของตัวเอง อ่านจาก `window.STATUS_MAP` ที่ `layout/header.php` inject ให้ — ยกเว้นกฎ "ห้ามแตะหน้าจริง" เฉพาะจุดนี้จุดเดียว; rename `payroll-configuration.js`'s local `statusBadge(row)` → `pcRowStatusBadge(row)` ทำก่อนเขียนแล้วตามแผน — ดู §5) | `app/helpers/helpers.php` + `app.js` + `app/config/status_map.php` + `layout/header.php` (inject จุดเดียว) | map สถานะกระจาย |
 | `initSharedDataTable()` (ขยาย: layout, export, fixed column, columnDefs alignment) | app.js | init ตรงทุกหน้า |
 | `fmtMoney()` (ใหม่) / `fmtNum()` (มีแล้ว, `format-helpers.js` — **ไม่สร้าง `formatMoney()` ใหม่**, ตัดสินใจแล้วรอบ 2 — ดู §8) / `initMoneyInputs()` (ใหม่) | helpers + app.js | number_format กระจาย |
 | `apvAvatarHtml()` / `apvPersonLineHtml()` | app.js (มีแล้ว) | avatar เขียนเอง |
@@ -393,3 +446,9 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 | 4 ไล่หน้า | ตามลำดับจาก audit ทีละหน้า: หน้า = 1 commit, ท้ายไฟล์ mark `design:clean`, lint ผ่าน | ทุกหน้า clean | รวมหลายหน้าใน commit |
 
 กฎรายงานทุกรอบ: ก่อน/หลัง เป็นรายการจุดที่เปลี่ยน (อ้าง §) + สิ่งที่ยังไม่แน่ใจ + lint count ก่อน/หลัง — ไม่มีการอธิบายว่า "สวยขึ้น" ต้องอ้างกฎเสมอ
+
+**ข้อยกเว้นเดียวของ "ห้าม: แตะหน้าจริง" ในรอบ 2 (item 5, ยืนยันโดยผู้ใช้โดยตรง)**: `layout/header.php`
+บรรทัดเดียว (ตรงจุดที่ inject `BASE_URL`/`LANG_VERSION` ให้ JS อยู่แล้ว) เพิ่ม
+`window.STATUS_MAP = <?=json_encode(loadStatusMap())?>;` เพื่อให้ `app/config/status_map.php` เป็น
+แหล่งข้อมูลเดียวจริงๆ ไม่ต้องมี JS copy ของตัวเอง (ดู §5, §11) — **ไม่ใช่การเปิดทางให้แก้ header.php
+เพิ่มเติมได้อีกในรอบนี้** ยกเว้นเฉพาะบรรทัดนี้บรรทัดเดียวที่ขอ/อนุมัติไว้ชัดเจนแล้วเท่านั้น

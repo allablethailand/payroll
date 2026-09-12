@@ -2696,18 +2696,18 @@ th.col-money div.dt-column-header .dt-column-title {
 
 /* stat-card.php (§2), class `.stat` (deliberately NOT `.stat-card` -- see rules.md §2's own decision
    to kill the old colored+iconed class rather than extend it) -- plain white/bordered/no shadow, no
-   colored edge, exactly the opposite of what `.stat-card` looked like. REVISED after explicit
-   follow-up: an OPTIONAL single-color icon is now allowed (was "no icon at all") -- still never a
-   colored background/border on the CARD itself, only the icon glyph + its own plain neutral gray
-   circle get any visual treatment. A second layout (icon bare top-right, no circle) existed
-   alongside this one for an explicit A/B comparison in components.php -- decided, THIS one won, the
-   other's own `.stat-a`/`.stat-head`/`.stat-icon` rules have been deleted outright, not left as
-   dead/unused CSS. `height:100%` + flex column here is what makes "ทุกการ์ดในแถวสูงเท่ากันเสมอ" actually
-   work: the CALLER's row is a plain Bootstrap `.row`, which already stretches every column to the
-   row's tallest child by default (no extra CSS needed for that part) -- `.stat` just needs to fill
-   that stretched height, and `.stat-footer`'s own `margin-top:auto` (see below) is what pins the
-   bottom slot to the same edge on every card regardless of how tall the icon+label+value block above
-   it happens to be. */
+   colored edge, exactly the opposite of what `.stat-card` looked like. REVISED TWICE after explicit
+   follow-ups: an OPTIONAL single-color icon is now allowed (was "no icon at all") -- still never a
+   colored background/border on the CARD itself, only the icon glyph gets any color. Two layouts were
+   compared side by side in components.php -- icon top-right bare (this one) vs. icon in a 40px
+   `--c-bg-subtle` circle to the left. First decided the circle layout, THEN REVERSED back to this
+   one on a second look -- every circle-only rule (`.stat-body`/`.stat-icon-circle`/`.stat-text`) has
+   been deleted outright a second time, not left as dead CSS either round. `height:100%` + flex
+   column here is what makes "ทุกการ์ดในแถวสูงเท่ากันเสมอ" actually work: the CALLER's row is a plain
+   Bootstrap `.row`, which already stretches every column to the row's tallest child by default (no
+   extra CSS needed for that part) -- `.stat` just needs to fill that stretched height, and
+   `.stat-footer`'s own `margin-top:auto` (see below) is what pins the bottom slot to the same edge on
+   every card regardless of how tall the icon+label+value block above it happens to be. */
 .stat {
     display: flex;
     flex-direction: column;
@@ -2720,40 +2720,32 @@ th.col-money div.dt-column-header .dt-column-title {
 .stat-label {
     font-size: var(--fs-sm);
     color: var(--c-text-muted);
-    margin-bottom: 2px;
+    margin-bottom: var(--sp-1);
 }
 .stat-value {
     font-size: var(--fs-xl);
     font-weight: 700;
     color: var(--c-text);
 }
-/* Icon (optional) sits inside a neutral gray circle to the left of a stacked label+value block --
-   `--c-text-muted` for the glyph itself, since it's sitting on a visible `--c-bg-subtle` disc rather
-   than bare on the card's own surface (a plainer/fainter tone read as too washed-out there). When no
-   icon is given, `.stat-icon-circle` is simply never rendered (see stat-card.php) -- `.stat-body`
-   itself has no fixed indent reserved for it, so `.stat-text` sits flush left exactly like a plain
-   card with nothing missing, per the explicit "เลือกไม่เว้น" decision. */
-.stat-body {
+/* Icon (optional) sits bare, top-right, no circle/background of its own -- a single flat color,
+   `--c-text-faint` (this app's own faintest text token, since it's purely decorative here, not
+   informational). `.stat-head` is a plain 2-item flex row (label left, icon right,
+   `justify-content:space-between`) -- when no icon is given, the label is the row's ONLY child, which
+   naturally sits flush left with no gap reserved on the icon's side (a flex row with one child never
+   leaves space for an absent sibling), per the explicit "เลือกไม่เว้น"/"ไม่มีไอคอน = ไม่เว้นที่"
+   decision (confirmed twice, unchanged across both layout reversals). */
+.stat-head {
     display: flex;
-    align-items: center;
-    gap: var(--sp-3);
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-1);
 }
-.stat-icon-circle {
+.stat-icon {
+    font-size: 20px;
+    line-height: 1;
+    color: var(--c-text-faint);
     flex: 0 0 auto;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: var(--c-bg-subtle);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-.stat-icon-circle i {
-    font-size: 16px;
-    color: var(--c-text-muted);
-}
-.stat-text {
-    min-width: 0;
 }
 /* Bottom slot -- ALWAYS rendered (even with nothing in it, see `.stat-footer-empty`) so it reserves
    the exact same height whether a card has a sub/badge/link or not; `margin-top:auto` pushes it down

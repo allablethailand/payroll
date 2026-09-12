@@ -205,3 +205,84 @@
     function getCompId() {
         return $_SESSION['user']['company_id'] ?? null;
     }
+
+    // 2026-09-13, Phase Design Round 2 item 5 (docs/design/rules.md §5) -- the ONE PHP entry point
+    // that reads app/config/status_map.php. Also called directly from layout/header.php, which
+    // json_encode()s this function's own return value straight into a "window.STATUS_MAP = ...;"
+    // assignment (the ONE approved exception to Round 2's own "ห้ามแตะหน้าจริง" rule) to hand this
+    // exact same array to JS's own statusBadgeHtml() -- there is no second, hand-kept copy of this
+    // data anywhere; JS reads whatever this function returns, injected as-is. (NOTE: this comment
+    // block twice broke every function declared below it, app-wide, by literally spelling out the
+    // PHP short-echo open tag followed by its own closing delimiter as plain text -- PHP's lexer
+    // switches out of PHP mode the instant it sees that 2-character sequence ANYWHERE in the file,
+    // comments included, printing everything after it as raw output instead of parsing it. Avoid
+    // ever typing that exact sequence again in a comment in this file, including describing it.)
+    // loadStatusMap() itself reads the file once per request (a static var, not a global -- this
+    // file has no class to hang it off of) since it's a small, static array with no reason to
+    // re-parse it on every single badge rendered in a page with dozens of table rows.
+    function loadStatusMap(): array {
+        static $map = null;
+        if ($map === null) {
+            $map = require __DIR__ . '/../config/status_map.php';
+        }
+        return $map;
+    }
+
+    /**
+     * Raw lookup -- returns the status_map.php entry ({label_key, tone, direction?}) for one
+     * enum value in one context, or null if that context/enum combination isn't mapped. Exists as
+     * its own function (not just inlined into statusBadge() below) because status-tabs.php's own
+     * caller needs the raw tone/direction pair to build its own $tabs array -- it has no use for a
+     * fully rendered `<span class="badge">` HTML string, since its own pill markup is a plain colored
+     * number, not a label+badge.
+     */
+    function statusMapEntry(string $enum, string $context): ?array {
+        $map = loadStatusMap();
+        return $map[$context][$enum] ?? null;
+    }
+
+    // PHP has no client-side "currently active language" to render against (this app's own
+    // established convention -- see any existing `<span data-i18n="key">English text</span>` --
+    // server-rendered text is ALWAYS the English fallback, swapped client-side by app.js's own
+    // updateText() once langData loads, regardless of which language ends up showing). Reading
+    // en.json directly (once per request, cached) keeps that fallback text byte-identical to the
+    // real translation file instead of hand-typing an English string a second time that could drift
+    // out of sync with it.
+    function statusEnLabelFallback(string $labelKey): string {
+        static $enLang = null;
+        if ($enLang === null) {
+            $path = __DIR__ . '/../../public/lang/en.json';
+            $raw = file_exists($path) ? file_get_contents($path) : false;
+            $enLang = $raw !== false ? (json_decode($raw, true) ?: []) : [];
+        }
+        return $enLang[$labelKey] ?? $labelKey;
+    }
+
+    /**
+     * The ONE PHP way to render a status badge -- docs/design/rules.md §5. Returns a full
+     * `<span class="badge badge-{tone}" data-badge="status" data-i18n="{label_key}">{English
+     * fallback}</span>`, matching this app's own established data-i18n convention exactly (server
+     * renders English, app.js's updateText() swaps it to the active language once langData loads --
+     * no different from any other server-rendered i18n span already in this codebase).
+     * `data-badge="status"` is the marker §12's own lint rule #8 checks for (`<span class="badge"`
+     * with no such marker = didn't come through this function) -- present from day one so lint rule
+     * #8 (item 8, not built yet) has something to actually find once it exists, instead of every
+     * badge this round produces needing a retrofit later.
+     *
+     * An enum/context combination NOT found in status_map.php renders as a plain neutral badge with
+     * the RAW enum value as its label (no data-i18n -- there's no real key to swap to -- but STILL
+     * carries data-badge="status", since it genuinely did come through this function) and logs the
+     * gap via error_log() so it surfaces in the server's own error log rather than failing silently
+     * or fatally -- a missing map entry should never be the thing that breaks a page render.
+     */
+    function statusBadge(string $enum, string $context): string {
+        $entry = statusMapEntry($enum, $context);
+        if ($entry === null) {
+            error_log("status_map: missing enum '{$enum}' for context '{$context}'");
+            return '<span class="badge badge-neutral" data-badge="status">' . htmlspecialchars($enum) . '</span>';
+        }
+        $tone = htmlspecialchars($entry['tone'] ?? 'neutral');
+        $labelKey = $entry['label_key'];
+        $label = statusEnLabelFallback($labelKey);
+        return '<span class="badge badge-' . $tone . '" data-badge="status" data-i18n="' . htmlspecialchars($labelKey) . '">' . htmlspecialchars($label) . '</span>';
+    }

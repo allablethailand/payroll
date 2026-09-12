@@ -1167,6 +1167,51 @@ function initStatusTabs(el, options) {
     }
     return { update: update };
 }
+// 2026-09-13, Phase Design Round 2 item 5 (docs/design/rules.md §5) -- app/config/status_map.php is
+// the ONE AND ONLY source of this data now. An earlier version of this had a full hand-kept JS COPY
+// of that file's array here (since JS can't `require` a PHP file, and Round 2's own file scope
+// otherwise rules out touching a real page template like layout/header.php) -- reverted in favor of
+// this single-source approach the moment an in-scope exception was explicitly approved: header.php
+// (the same spot that already bridges BASE_URL/LANG_VERSION from PHP to JS) now injects
+// `window.STATUS_MAP = <?php echo json_encode(loadStatusMap()) ?>;` directly from the real
+// status_map.php on every page, so there is no second copy left anywhere to drift out of sync.
+// A page that doesn't load header.php at all (or loads app.js before that script runs) falls back
+// to an empty map -- every lookup then misses, which getStatusMapEntry()/statusBadgeHtml() already
+// treat as "render neutral + warn" on their own, so nothing here needs a special empty-map branch
+// beyond this one console.warn() flagging WHY every badge on that page is about to look unmapped.
+const STATUS_MAP = (typeof window !== 'undefined' && window.STATUS_MAP) ? window.STATUS_MAP : (function () {
+    console.warn('STATUS_MAP is missing (window.STATUS_MAP was not set) -- this page likely does not load layout/header.php, or loads app.js before that script runs. Every statusBadgeHtml() call on this page will fall back to a neutral badge with the raw enum as its label.');
+    return {};
+})();
+// Raw lookup -- mirrors PHP's own statusMapEntry(), same reason it exists as its own function
+// separate from statusBadgeHtml() below: status-tabs.php's own caller needs the raw tone/direction
+// pair to build its $tabs array, not a rendered `<span class="badge">` (its pill is a plain colored
+// number, no label text to duplicate).
+function getStatusMapEntry(enumValue, context) {
+    return (STATUS_MAP[context] && STATUS_MAP[context][enumValue]) || null;
+}
+// The ONE JS way to render a status badge -- docs/design/rules.md §5. Unlike PHP's statusBadge()
+// (which can only ever render a static English fallback -- see that function's own docblock), this
+// resolves the CURRENTLY ACTIVE language directly via getLangValue() (already loaded into `langData`
+// by the time any caller would run this, same as every other JS-rendered i18n string in this app) --
+// still carries `data-i18n` on the span too, purely so a LIVE language switch (no page reload) picks
+// it up via updateText()'s own DOM re-scan, consistent with how every other i18n span in this app
+// already behaves, not because this function itself needs it to render correctly the first time.
+// An enum/context combination not found in STATUS_MAP renders as a plain neutral badge with the RAW
+// enum value as its label and a console.warn() so the gap is visible to whoever's looking, without
+// throwing and breaking whatever table/card row it was rendering for. `data-badge="status"` (both
+// branches) is the marker §12's own lint rule #8 checks for -- present from day one, see PHP's
+// statusBadge() own docblock for the full reasoning (identical here).
+function statusBadgeHtml(enumValue, context) {
+    const entry = getStatusMapEntry(enumValue, context);
+    if (!entry) {
+        console.warn(`status_map: missing enum '${enumValue}' for context '${context}'`);
+        return `<span class="badge badge-neutral" data-badge="status">${escapeHtml(enumValue)}</span>`;
+    }
+    const tone = entry.tone || 'neutral';
+    const label = getLangValue(entry.label_key) || entry.label_key;
+    return `<span class="badge badge-${tone}" data-badge="status" data-i18n="${escapeHtml(entry.label_key)}">${escapeHtml(label)}</span>`;
+}
 // 2026-08-26, explicit request: "Format วันที่การแสดงผลทั้งหมดของระบบให้เป็น dd/mm/yyyy" (make every date
 // display in the system dd/mm/yyyy). Several pages already had their OWN local helper doing exactly
 // this (employee/detail.js's own toDisplayDate(), payroll/approval.js's toDisplayDateAp(), payroll/

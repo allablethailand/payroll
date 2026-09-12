@@ -13,35 +13,39 @@
  * which don't -- see `.stat-footer`'s own comment in style.css for how the bottom slot stays
  * reserved (and pinned to the bottom edge) either way.
  *
- * REVISED after explicit follow-up -- the original version of this partial (and rules.md §2's
+ * REVISED TWICE after explicit follow-ups -- the original version of this partial (and rules.md §2's
  * original wording) said "no icon at all." That's been loosened: an OPTIONAL icon is now allowed per
  * card, always a single flat color, never a colored background/border on the CARD itself (that
- * constraint is unchanged). Two layout variants ('a': icon top-right, bare; 'b': icon in a 40px
- * `--c-bg-subtle` circle to the left) were compared side by side in components.php -- **decided,
- * variant 'b' won** -- 'a' and its own `$variant` switch were removed entirely, not left as dead
- * code. If a future round wants to revisit that decision, see git history for
- * `docs/design/rules.md`/this file rather than resurrecting it speculatively.
+ * constraint is unchanged). Two layout variants were compared side by side in components.php --
+ * 'a' (icon top-right corner, bare, 20px `--c-text-faint`) and 'b' (icon in a 40px `--c-bg-subtle`
+ * circle to the left). First decided 'b', THEN REVERSED back to 'a' after a second look -- 'a' is
+ * the one this file now renders, unconditionally, no `$variant` switch left at all. Every 'b'-only
+ * CSS rule (`.stat-body`/`.stat-icon-circle`/`.stat-text`) has been deleted outright a second time,
+ * not left as dead code either round. If a future round wants to revisit this again, see git history
+ * for `docs/design/rules.md`/this file rather than resurrecting either layout speculatively.
  *
  * Variables the calling view must set BEFORE including this file:
  *
  * @var array $stat Required. Shape:
  *     ['label' => string, 'value' => string|int|float, 'icon' => string|null,
- *      'sub' => string|null, 'badge' => ['label'=>string,'tone'=>'neutral'|'warning'|'danger'|'success']|null,
+ *      'sub' => string|null, 'badge' => ['enum'=>string,'context'=>string]|null,
  *      'link' => ['label'=>string,'href'=>string]|null]
  *   - 'icon' is an optional Font Awesome class string (e.g. 'fa-solid fa-users') -- at most one,
- *     rendered inside a 40px `--c-bg-subtle` circle (`--c-text-muted` icon color) to the left of the
- *     label+value block. **When omitted, no circle is reserved at all** -- the label+value block
- *     sits flush left like any plain card, not indented to leave empty space where a circle would
- *     have been (explicit decision: "เลือกไม่เว้น — ข้อความชิดซ้ายปกติ").
+ *     rendered top-right, bare (no circle/background of its own), 20px, `--c-text-faint`. **When
+ *     omitted, no space is reserved for it at all** -- the label simply sits alone in that row (a
+ *     flex row with only one child never leaves a gap on the side the missing sibling would have
+ *     occupied), exactly like a plain card with nothing missing (explicit decision, both times this
+ *     was asked: "เลือกไม่เว้น — ข้อความชิดซ้ายปกติ"/"ไม่มีไอคอน = ไม่เว้นที่ (เหมือนเดิม)").
  *   - 'value' is rendered through `.num` (tabular-nums) -- pass it pre-formatted (e.g. already run
  *     through fmtMoney()) if it's money; this partial does not format it itself.
  *   - 'sub' is a plain one-line string, muted gray text -- NOT where a status badge goes (see
  *     'badge' below). Renders inside the same fixed-height bottom slot as 'badge'/'link'.
  *   - 'badge' is how a status that needs a decision (§2: "ถ้าค่าเป็นสถานะที่ต้องตัดสินใจ เช่น 'รออนุมัติ 3'
- *     ใช้ badge...ไม่ใช่เปลี่ยนสีทั้งการ์ด") gets flagged -- `{label, tone}`, rendered as a real
- *     `.badge.badge-{tone}` (§5) INSIDE the bottom slot only, never as a color applied to the card
- *     itself. `tone` should come from `status_map.php` (item 5, not built yet) once it exists -- this
- *     partial has zero dependency on that file existing today, the caller passes tone directly.
+ *     ใช้ badge...ไม่ใช่เปลี่ยนสีทั้งการ์ด") gets flagged -- `{enum, context}` (item 5): this partial calls
+ *     the shared `statusBadge($enum, $context)` (app/helpers/helpers.php, §5) itself and echoes its
+ *     return value directly, so every stat-card badge is FORCED to come from
+ *     `app/config/status_map.php` -- there is no way to pass an ad-hoc label/color that bypasses the
+ *     shared map.
  *   - 'link' is optional (e.g. "ดูทั้งหมด" -- rendered as a tertiary/text link, never a button).
  *   - 'badge' and 'link' (and even 'sub') can all be present at once -- the bottom slot lays out
  *     whichever of the three exist, in that order, and reserves the SAME height whether 0, 1, 2, or
@@ -52,7 +56,7 @@
  *   foreach ($stats as $stat) { include __DIR__ . '/../partials/stat-card.php'; }
  *   // $stats = [
  *   //     ['label' => 'พนักงานทั้งหมด', 'value' => 128, 'icon' => 'fa-solid fa-users', 'sub' => null, 'badge' => null, 'link' => null],
- *   //     ['label' => 'รออนุมัติ', 'value' => 3, 'icon' => 'fa-solid fa-hourglass-half', 'sub' => null, 'badge' => ['label' => 'ต้องดำเนินการ', 'tone' => 'warning'], 'link' => ['label' => 'ดูทั้งหมด', 'href' => '#']],
+ *   //     ['label' => 'รออนุมัติ', 'value' => 3, 'icon' => 'fa-solid fa-hourglass-half', 'sub' => null, 'badge' => ['enum' => 'pending_approval', 'context' => 'run_state'], 'link' => ['label' => 'ดูทั้งหมด', 'href' => '#']],
  *   // ];
  */
 $stIcon = $stat['icon'] ?? null;
@@ -62,15 +66,13 @@ $stLink = $stat['link'] ?? null;
 $stHasFooter = $stSub || $stBadge || $stLink;
 ?>
 <div class="stat">
-    <div class="stat-body">
-        <?php if ($stIcon): ?><div class="stat-icon-circle"><i class="<?=htmlspecialchars($stIcon)?>"></i></div><?php endif; ?>
-        <div class="stat-text">
-            <div class="stat-label"><?=htmlspecialchars($stat['label'])?></div>
-            <div class="stat-value num"><?=htmlspecialchars((string)$stat['value'])?></div>
-        </div>
+    <div class="stat-head">
+        <div class="stat-label"><?=htmlspecialchars($stat['label'])?></div>
+        <?php if ($stIcon): ?><i class="<?=htmlspecialchars($stIcon)?> stat-icon"></i><?php endif; ?>
     </div>
+    <div class="stat-value num"><?=htmlspecialchars((string)$stat['value'])?></div>
     <div class="stat-footer<?=$stHasFooter ? '' : ' stat-footer-empty'?>">
-        <?php if ($stBadge): ?><span class="badge badge-<?=htmlspecialchars($stBadge['tone'] ?? 'neutral')?>"><?=htmlspecialchars($stBadge['label'])?></span><?php endif; ?>
+        <?php if ($stBadge): ?><?=statusBadge($stBadge['enum'], $stBadge['context'])?><?php endif; ?>
         <?php if ($stSub): ?><span class="stat-sub"><?=htmlspecialchars($stSub)?></span><?php endif; ?>
         <?php if ($stLink): ?><a href="<?=htmlspecialchars($stLink['href'])?>" class="stat-link"><?=htmlspecialchars($stLink['label'])?></a><?php endif; ?>
     </div>
