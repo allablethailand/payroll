@@ -90,7 +90,14 @@ class EmployeeController extends Controller {
     }
 
     public function create() {
-        $this->view('employee/detail', ['employee_no' => null, 'canManagePermissionOverrides' => $this->canManagePermissionOverrides()]);
+        $this->view('employee/detail', [
+            'employee_no' => null,
+            'canManagePermissionOverrides' => $this->canManagePermissionOverrides(),
+            // Batch 4 item 3: SSO/PVD tab gating (see EmployeeModel::statutoryEnrollmentGateInfo()'s
+            // own docblock) -- same info needed on create as on edit, a brand-new employee's tab is
+            // gated by the COMPANY side of the rule from the very first render.
+            'statutoryEnrollmentGate' => $this->model->statutoryEnrollmentGateInfo((int)getCompId()),
+        ]);
     }
     public function detail($data = null) {
         $employee_no = $data;
@@ -99,7 +106,11 @@ class EmployeeController extends Controller {
             echo '404 - Not Found';
             return;
         }
-        $this->view('employee/detail', ['employee_no' => $employee_no, 'canManagePermissionOverrides' => $this->canManagePermissionOverrides()]);
+        $this->view('employee/detail', [
+            'employee_no' => $employee_no,
+            'canManagePermissionOverrides' => $this->canManagePermissionOverrides(),
+            'statutoryEnrollmentGate' => $this->model->statutoryEnrollmentGateInfo((int)getCompId()),
+        ]);
     }
     public function list(){
         $compId = getCompId();

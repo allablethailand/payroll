@@ -271,3 +271,29 @@ icons/tooltips system-wide for this same clarity gap, Tax & Statutory's Manage b
 confirm the fix holds up once real design/UX attention is applied, not just a functional patch).
 
 **Source:** Batch 4 item 2b, explicit instruction (2026-09-11).
+
+---
+
+## Origami sync writes `employees.sso_*` via raw SQL, bypassing EmployeeModel::save()'s new SSO/PVD gate
+
+Batch 4 item 3 added a 2-axis gate to `EmployeeModel::save()` (employee-level `sso_enrolled`/
+`pvd_enrolled` AND company-level `company_statutory_settings` effective_status) that silently
+discards SSO/PVD dependent field values when either axis fails, preserving existing data rather
+than deleting it. `EmployeeSyncer::pull()` (Origami sync) writes `sso_enrolled`/`sso_no`/
+`sso_start_date` directly via its own raw `UPDATE`/`INSERT` SQL (`app/services/sync/
+EmployeeSyncer.php`, ~lines 1102-1366) -- a completely separate write path from
+`EmployeeModel::save()` that this gate never touches. A sync pull can therefore still write
+`sso_no`/`sso_enrolled` for an employee even when the company has TH_SSO switched off, or write a
+value with no regard to whether it should be discarded -- the exact case the gate was built to
+prevent everywhere else.
+
+**Not touched this round** -- explicit instruction (Batch 4 item 3: "sync path...ไม่แตะรอบนี้").
+
+**Fix, when picked up:** decide whether `EmployeeSyncer` should honor the SAME company-level gate
+(likely yes -- a company that's turned SSO off presumably doesn't want it silently re-populated by
+a sync pull either) before writing `sso_enrolled`/`sso_no`/`sso_start_date`, reusing
+`CompanyStatutorySettingModel::effectiveStatusForItemCode()` (added this same batch) rather than a
+new check. `EmployeeSyncer` only ever touches these 3 SSO columns currently -- it does not write
+any PVD field, so PVD is unaffected either way.
+
+**Source:** Batch 4 item 3, explicit instruction (2026-09-12).

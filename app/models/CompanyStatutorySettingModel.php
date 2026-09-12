@@ -134,6 +134,26 @@ class CompanyStatutorySettingModel {
         return null;
     }
 
+    /**
+     * 2026-09-12, Batch 4 item 3 -- generalized out of list()'s own per-row effective_status
+     * computation above so a caller OUTSIDE the calculation engine (Employee Detail's SSO/PVD tab
+     * gating, EmployeeModel::save()/statutoryEnrollmentGateInfo()) can ask "is this ONE item on for
+     * this company" without re-deriving the active/inactive/default_is_active fallback rule itself
+     * -- StatutoryCalculationEngine::calculateItem() already reads the exact same `effective_status`
+     * this returns, so the two can never disagree.
+     * Returns null (not 'inactive') when this company's own country has no such item at all (e.g.
+     * asking for 'TH_SSO' on a SG/MY/US company) -- a real "not applicable here" distinct from a TH
+     * company that has the item but switched it off, so callers can show different wording for each.
+     */
+    public function effectiveStatusForItemCode(int $compId, string $itemCode): ?string {
+        foreach ($this->list($compId) as $row) {
+            if ($row['code'] === $itemCode) {
+                return $row['effective_status'];
+            }
+        }
+        return null;
+    }
+
     // 2026-09-02, Platform Hardening Phase 1.1 -- shared status toggle switch. Genuinely more than a
     // plain UPDATE ... SET status like every other converted table's own toggleStatus(): the value
     // shown/toggled in the UI is `effective_status` (see list()'s own computed fallback), a company

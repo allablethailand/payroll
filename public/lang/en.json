@@ -2988,5 +2988,9 @@
     "announcement_no_cover_uploaded": "No cover image uploaded",
     "upload_image": "Upload Image",
     "upload_failed": "Failed to upload file.",
-    "required_fields_missing": "Please fill in all required fields."
+    "required_fields_missing": "Please fill in all required fields.",
+    "sso_not_configured_for_company": "Your company hasn't enabled Social Security (SSO) yet. Configure it under Tax & Statutory Settings.",
+    "sso_not_available_for_country": "No Social Security (SSO) item is configured for your company's country.",
+    "pvd_not_configured_for_company": "Your company hasn't enabled the Provident Fund (PVD) yet. Configure it under Tax & Statutory Settings.",
+    "pvd_not_available_for_country": "No Provident Fund (PVD) item is configured for your company's country."
 }

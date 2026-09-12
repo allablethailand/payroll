@@ -120,6 +120,12 @@ try {
 
     $saveRes = $employeeModel->save($compL, [
         'id' => $emp['id'], 'employee_no' => $emp['employee_no'],
+        // 2026-09-12, Batch 4 item 3: EmployeeModel::save() now gates every one of these dependent
+        // fields on sso_enrolled/pvd_enrolled (AND the company's own effective_status) -- see
+        // tests/employee_statutory_enrollment_gate_test.php for that gate's own dedicated coverage.
+        // Explicitly enrolled here so THIS test keeps exercising resolveOrCreate()'s own dedup
+        // mechanics (what it actually tests), not the gate's discard path.
+        'sso_enrolled' => true, 'pvd_enrolled' => true, 'employment_status' => 'resigned',
         'sso_hospital_id' => 'โรงพยาบาลศิริราช',
         'pvd_plan_id' => 'แผนผสมความเสี่ยงต่ำ',
         'sso_leave_reason_code' => 3,
@@ -148,6 +154,7 @@ try {
         echo "\n-- re-saving with the SAME hospital name (different casing/spacing) must NOT create a duplicate --\n";
         $saveRes2 = $employeeModel->save($compL, [
             'id' => $emp['id'], 'employee_no' => $emp['employee_no'],
+            'sso_enrolled' => true,
             'sso_hospital_id' => '  โรงพยาบาลศิริราช  ',
         ], $userId);
         checkTrue('re-save succeeds', $saveRes2['status'] === true);

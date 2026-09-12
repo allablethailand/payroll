@@ -6,6 +6,8 @@ require_once __DIR__ . '/EmployeePaymentMethodModel.php';
 require_once __DIR__ . '/EmployeeForeignWorkerDetailModel.php';
 require_once __DIR__ . '/AuditLogModel.php';
 require_once __DIR__ . '/CompanyLookupListModel.php';
+require_once __DIR__ . '/CompanyStatutorySettingModel.php';
+require_once __DIR__ . '/../services/StatutoryCalculationEngine.php';
 class EmployeeModel {
     private $db;
     private AuditLogModel $auditLog;
@@ -164,6 +166,55 @@ class EmployeeModel {
                 'master_address_id_register', 'master_address_id_contact', 'employment_type_id',
                 'profile_photo_file_size', 'signature_file_size',
                 'sso_leave_reason_code', 'pvd_plan_id'];
+    }
+
+    /**
+     * 2026-09-12, Batch 4 item 3 -- employee columns that only make sense once the employee is
+     * actually enrolled in the given statutory item (StatutoryCalculationEngine::
+     * ITEM_ENROLLMENT_FLAG's own `employees` column, reused directly here -- NOT re-declared) AND
+     * the company itself has that item's effective_status = 'active'
+     * (CompanyStatutorySettingModel::effectiveStatusForItemCode(), the SAME resolution
+     * StatutoryCalculationEngine::calculateItem() already uses for payroll calculation).
+     * This is the ONE place both save()'s own applyStatutoryEnrollmentGate() (server-side strip) and
+     * statutoryEnrollmentGateInfo() (sent to the view as JSON so detail.js clears the SAME fields
+     * client-side) read from -- never duplicate this list anywhere else.
+     * `sso_leave_reason_code` sits in the TH_SSO bucket (still gated by SSO enrollment/company-
+     * active first) but ALSO carries one more AND condition applied separately in
+     * applyStatutoryEnrollmentGate(): employment_status must be resigned/terminated, mirroring
+     * #employmentEndFields' own existing visibility rule in the view (explicit instruction, not
+     * assumed).
+     */
+    private const STATUTORY_DEPENDENT_FIELDS = [
+        'TH_SSO' => ['sso_no', 'sso_start_date', 'sso_contribution_rate', 'sso_employer_contribution_rate', 'sso_hospital_id', 'sso_leave_reason_code'],
+        'TH_PVD' => ['pvd_fund_name', 'pvd_fund_manager', 'pvd_member_no', 'pvd_plan_id', 'pvd_start_date', 'pvd_employee_rate', 'pvd_employer_rate', 'pvd_end_date', 'pvd_end_reason'],
+    ];
+
+    /**
+     * 2026-09-12, Batch 4 item 3 -- everything Employee Detail's view/JS need to gate the SSO/PVD
+     * tab, computed the exact same way save()'s own applyStatutoryEnrollmentGate() decides
+     * eligibility (same STATUTORY_DEPENDENT_FIELDS list, same
+     * CompanyStatutorySettingModel::effectiveStatusForItemCode() call), so the two can never
+     * disagree. `company_status` is 'active'/'inactive'/null (null = this company's own country has
+     * no such item at all -- see that method's own docblock) -- kept as the raw tri-state rather
+     * than a boolean so the view can show a different message for "your company hasn't turned this
+     * on" vs. "not applicable to your country" (confirmed distinct wording, not guessed).
+     * @return array<string, array{enrollment_flag:string, dependent_fields:string[], company_status:?string}>
+     */
+    public function statutoryEnrollmentGateInfo(int $compId): array {
+        $settingModel = new CompanyStatutorySettingModel($this->db);
+        $result = [];
+        foreach (self::STATUTORY_DEPENDENT_FIELDS as $itemCode => $fields) {
+            $flagCol = StatutoryCalculationEngine::ITEM_ENROLLMENT_FLAG[$itemCode] ?? null;
+            if ($flagCol === null) {
+                continue;
+            }
+            $result[$itemCode] = [
+                'enrollment_flag' => $flagCol,
+                'dependent_fields' => $fields,
+                'company_status' => $settingModel->effectiveStatusForItemCode($compId, $itemCode),
+            ];
+        }
+        return $result;
     }
 
     /**
@@ -2253,16 +2304,46 @@ class EmployeeModel {
                 $plainBaseSalaryForReadyCheck = self::decryptSalaryValue($existingEncryptedBaseSalary, isset($existingSalaryRow['key_version']) ? (int)$existingSalaryRow['key_version'] : null);
             }
         }
+        // 2026-09-12, Batch 4 item 3 -- computed BEFORE the Select2 "tags" resolveOrCreate() calls
+        // below, so an ineligible sso_hospital_id/pvd_plan_id submission never even creates a stray
+        // company_hospitals/company_pvd_plans lookup row for a value that's about to be discarded
+        // anyway (see the post-loop override further down that actually discards it). Uses $data
+        // directly (raw submission), not $values (not built yet at this point).
+        $companySettingModel = new CompanyStatutorySettingModel($this->db);
+        $statutoryIneligibleFields = [];
+        foreach (self::STATUTORY_DEPENDENT_FIELDS as $statutoryItemCode => $statutoryFields) {
+            $enrollmentFlagCol = StatutoryCalculationEngine::ITEM_ENROLLMENT_FLAG[$statutoryItemCode] ?? null;
+            if ($enrollmentFlagCol === null) {
+                continue;
+            }
+            $employeeEnrolledInItem = !empty($data[$enrollmentFlagCol]);
+            $companyHasItemActive = $companySettingModel->effectiveStatusForItemCode($compId, $statutoryItemCode) === 'active';
+            if (!$employeeEnrolledInItem || !$companyHasItemActive) {
+                $statutoryIneligibleFields = array_merge($statutoryIneligibleFields, $statutoryFields);
+            }
+        }
+        // sso_leave_reason_code's own extra AND condition, independent of TH_SSO's gate above:
+        // employment_status must be resigned/terminated, mirroring #employmentEndFields' existing
+        // visibility rule in the view (explicit instruction, confirmed with the user).
+        if (!in_array((string)($data['employment_status'] ?? ''), ['resigned', 'terminated'], true)) {
+            $statutoryIneligibleFields[] = 'sso_leave_reason_code';
+        }
+        $statutoryIneligibleFields = array_values(array_unique($statutoryIneligibleFields));
+
         // 2026-09-10, Batch 3A item 7b: Select2 "tags" fields (sso_hospital_id, pvd_plan_id) submit
         // EITHER an existing row's numeric id (HR picked one) OR free-typed text (a brand-new tag) --
         // resolved into a real int (or null) here, BEFORE the generic column loop below, so that
         // loop's own intColumns() branch (`(int)$data[$col]`) never has to special-case these 2
         // fields. CompanyLookupListModel::resolveOrCreate() does the case-insensitive dedup/auto-
         // create; see that class's own docblock.
-        if (array_key_exists('sso_hospital_id', $data)) {
+        if (in_array('sso_hospital_id', $statutoryIneligibleFields, true)) {
+            $data['sso_hospital_id'] = null;
+        } elseif (array_key_exists('sso_hospital_id', $data)) {
             $data['sso_hospital_id'] = $this->lookupListModel->resolveOrCreate('company_hospitals', $compId, $data['sso_hospital_id'], $userId);
         }
-        if (array_key_exists('pvd_plan_id', $data)) {
+        if (in_array('pvd_plan_id', $statutoryIneligibleFields, true)) {
+            $data['pvd_plan_id'] = null;
+        } elseif (array_key_exists('pvd_plan_id', $data)) {
             $data['pvd_plan_id'] = $this->lookupListModel->resolveOrCreate('company_pvd_plans', $compId, $data['pvd_plan_id'], $userId);
         }
         foreach ($this->allColumns() as $col) {
@@ -2315,6 +2396,33 @@ class EmployeeModel {
         }
         if ($encryptedAny) {
             $values['key_version'] = EncryptionService::currentKeyVersion();
+        }
+        // 2026-09-12, Batch 4 item 3 -- existing data must never be DELETED just because the gate
+        // closed (explicit instruction, point 4: "ไม่ลบ แค่ไม่แสดง/ไม่รับใหม่"). Overwrites $values
+        // (not $data) so this always wins over whatever the generic loop above just wrote from this
+        // submission, and preserves sso_no's ciphertext/hash pair AS-IS (never re-run through
+        // EncryptionService::encrypt(), which would double-encrypt an already-encrypted string over
+        // the real value -- the exact bug class base_salary_amount's own 'XXXX' mask-preservation
+        // guard above exists to avoid). A brand-new employee ($id === null) has no existing row to
+        // preserve, so these columns simply stay null -- "not accepted", nothing to keep either.
+        if (!empty($statutoryIneligibleFields)) {
+            $existingStatutoryValues = [];
+            if ($id !== null) {
+                $selectCols = $statutoryIneligibleFields;
+                if (in_array('sso_no', $selectCols, true)) {
+                    $selectCols[] = 'sso_no_hash';
+                }
+                $colList = implode(', ', array_map(fn($c) => "`{$c}`", array_unique($selectCols)));
+                $stmtExistingStatutory = $this->db->prepare("SELECT {$colList} FROM `employees` WHERE id = :id AND comp_id = :comp_id");
+                $stmtExistingStatutory->execute([':id' => $id, ':comp_id' => $compId]);
+                $existingStatutoryValues = $stmtExistingStatutory->fetch(PDO::FETCH_ASSOC) ?: [];
+            }
+            foreach ($statutoryIneligibleFields as $ineligibleField) {
+                $values[$ineligibleField] = $existingStatutoryValues[$ineligibleField] ?? null;
+            }
+            if (in_array('sso_no', $statutoryIneligibleFields, true)) {
+                $values['sso_no_hash'] = $existingStatutoryValues['sso_no_hash'] ?? null;
+            }
         }
         // "Verify Status" (2026-08-19, explicit request): is_payroll_ready is now computed fresh on
         // every save from whatever the form currently holds across ALL tabs, instead of hardcoded to
