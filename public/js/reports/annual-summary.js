@@ -53,6 +53,7 @@ function aisEmployeeMonthCellHtml(row, cell, month) {
 function aisCurrentFilters() {
     return {
         fiscal_year: $('#aisFiscalYear').val(),
+        cycle_id: $('#aisFilterCycle').val() || '',
         department_id: $('#aisFilterDepartment').val() || '',
         team_id: $('#aisFilterTeam').val() || '',
         branch_id: $('#aisFilterBranch').val() || '',
@@ -62,7 +63,7 @@ function aisCurrentFilters() {
 }
 function aisUpdateClearFilterVisibility() {
     const f = aisCurrentFilters();
-    const hasFilter = !!(f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
+    const hasFilter = !!(f.cycle_id || f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
     $('#aisFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 
@@ -176,9 +177,21 @@ function aisRenderTable(data) {
     $('#tb_annual_summary tfoot').html(footHtml);
 
     // ---- columns ----
+    // 2026-09-12, Batch 5 item 5 step 2 -- Employee column now shows the SAME avatar+name treatment
+    // Process Detail's own "Updated By" column already uses (apvPersonLineHtml(), app.js -- no
+    // second avatar function). Object-form render (not plain render:) since embedding the avatar's
+    // <img>/initial-span markup directly into `display` would otherwise make DataTables sort/search
+    // against that raw HTML string instead of the employee's own name.
     const columns = [
         { data: null, render: (row) => `<span class="ais-employee-no">${escapeHtml(row.employee_no)}</span>` },
-        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '') },
+        {
+            data: null,
+            render: {
+                display: (row) => apvPersonLineHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '', 32, row.profile_photo_path, row.employee_id ? { employeeId: row.employee_id } : null),
+                sort: (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '',
+                filter: (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '',
+            }
+        },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
@@ -209,63 +222,73 @@ function aisRenderTable(data) {
         }
     });
 
-    aisTable = $('#tb_annual_summary').DataTable({
-        data: employees,
-        columns: columns,
-        destroy: true,
-        paging: false,
-        info: false,
-        order: [],
-        language: getTableLang(),
-        // 2026-09-08, explicit follow-up request ("column ทั้ง 3 Tab พนักงาน fixed และ column รวมทั้งปี
-        // fixed ขวา ส่วนของเดือนใช้เมาส์ลากดูได้เหมือนหน้า employee tab ตรวจสอบข้อมูล") -- was DataTables'
-        // own core `scrollX`+`scrollY`+the FixedColumns extension (`fixedColumns: {left:4, right:1}`),
-        // confirmed BROKEN app-wide for 2 independent reasons (see public/js/sticky-table-columns.js's
-        // own docblock): FixedColumns itself throws on load (missing `DataTable.Dom` in the installed
-        // `datatables.net` core), and `scrollX`/`scrollY` need CSS this app never actually loads
-        // (the base `datatables.net` skin's own stylesheet, only its bs5 skin was ever installed) --
-        // so neither the frozen columns nor the vertical 60vh cap were ever actually working, despite
-        // being configured. Rebuilt on the SAME plain-CSS-position:sticky pattern Employee Recheck
-        // Data already uses -- `initStickyColumns()` freezes columns on the left/right,
-        // `initTableDragScroll()` wraps the table in `.table-responsive` and adds real click-and-drag
-        // panning for the columns in between. The old `scrollY:'60vh'` vertical cap is NOT replaced --
-        // it was never actually capping anything either (same missing-CSS reason), so dropping it is
-        // not a real behavior change.
-        // 2026-09-08, same-day follow-up ("แยก code กับ ชื่อพนักงานเป็นคนละ column กันครับ แผนก ทีม ตำแหน่ง
-        // ไม่ต้อง fixed column ครับ ให้เลื่อนได้เหมือนเดือน") -- left dropped from 4 to 2 (Employee No.+
-        // Employee only, now that they're 2 real columns instead of 1 combined one -- see the head/
-        // columns above) -- Department/Team/Position are no longer part of the frozen group at all,
-        // they scroll together with the month columns now.
-        drawCallback: function () { initStickyColumns('#tb_annual_summary', { left: 2, right: 1 }); },
-        // 2026-09-04, Backlog Phase 11, T067 -- Department/Team/Position are genuinely categorical
-        // (a small, real distinct-value set), the confirmed real gap in this table. Employee (name+
-        // no, effectively unique per row) and the 12 month/annual-total money columns are
-        // deliberately NOT included -- they already sort/filter correctly via their own object-form
-        // {display,sort,filter} render (CLAUDE.md's own formatted-column convention, already
-        // correct here), but a discrete Excel-style checkbox list of every distinct MONEY amount
-        // across all employees has no real user value the way it does for a handful of department
-        // names -- same "widget/no-single-filterable-value" exemption spirit CLAUDE.md's own Table
-        // convention already carves out elsewhere (mini-timeline/progress-bar/avatar columns), even
-        // though a money column isn't literally named in that list. Re-applied on every rebuild
-        // (destroy:true + initComplete, not a one-time init) since this table's own column set/data
-        // changes on every filter/year change -- initComplete fires again each time.
-        // 2026-09-08: indices shifted 1,2,3 -> 2,3,4 now that Employee No./Employee are 2 separate
-        // columns instead of 1.
-        initComplete: function () {
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 2, key: 'department' },
-                    { index: 3, key: 'team' },
-                    { index: 4, key: 'position' },
-                ],
-            });
-            // Re-run AFTER initExcelColumnFilters rebuilds the header cells' own inner markup (sort
-            // arrow + filter icon), which can nudge their rendered width slightly -- drawCallback's
-            // own call above (which fires BEFORE initComplete on the very first draw) would otherwise
-            // compute the left offsets from marginally-stale widths.
-            initStickyColumns('#tb_annual_summary', { left: 2, right: 1 });
-            initTableDragScroll('#tb_annual_summary');
+    // 2026-09-12, Batch 5 item 5 step 1 (step 3/4 follow-up) -- routed through the shared
+    // initSharedDataTable() helper (app.js, Batch 3C item 6) for the common bits (language/
+    // pageLength/lengthMenu/ordering defaults, row-count-based `searching`) while every option this
+    // table's OWN shape genuinely needs (data/columns, paging:false, info:false, order:[],
+    // drawCallback/initComplete) is passed as an explicit override -- the helper itself gained ONE
+    // fix (step 3/4: prefer `options.dtOptions.data.length` -- the SAME array DataTables itself
+    // ends up using, no separate/duplicate `data` needed here -- over an always-empty-at-that-point
+    // tbody count) rather than forcing `searching` true here, so this table's own search-box
+    // visibility now follows the SAME row-count threshold every other table using this helper
+    // already does.
+    aisTable = initSharedDataTable('#tb_annual_summary', {
+        dtOptions: {
+            data: employees,
+            columns: columns,
+            paging: false,
+            info: false,
+            order: [],
+            // 2026-09-08, explicit follow-up request ("column ทั้ง 3 Tab พนักงาน fixed และ column รวมทั้งปี
+            // fixed ขวา ส่วนของเดือนใช้เมาส์ลากดูได้เหมือนหน้า employee tab ตรวจสอบข้อมูล") -- was DataTables'
+            // own core `scrollX`+`scrollY`+the FixedColumns extension (`fixedColumns: {left:4, right:1}`),
+            // confirmed BROKEN app-wide for 2 independent reasons (see public/js/sticky-table-columns.js's
+            // own docblock): FixedColumns itself throws on load (missing `DataTable.Dom` in the installed
+            // `datatables.net` core), and `scrollX`/`scrollY` need CSS this app never actually loads
+            // (the base `datatables.net` skin's own stylesheet, only its bs5 skin was ever installed) --
+            // so neither the frozen columns nor the vertical 60vh cap were ever actually working, despite
+            // being configured. Rebuilt on the SAME plain-CSS-position:sticky pattern Employee Recheck
+            // Data already uses -- `initStickyColumns()` freezes columns on the left/right,
+            // `initTableDragScroll()` wraps the table in `.table-responsive` and adds real click-and-drag
+            // panning for the columns in between. The old `scrollY:'60vh'` vertical cap is NOT replaced --
+            // it was never actually capping anything either (same missing-CSS reason), so dropping it is
+            // not a real behavior change.
+            // 2026-09-08, same-day follow-up ("แยก code กับ ชื่อพนักงานเป็นคนละ column กันครับ แผนก ทีม ตำแหน่ง
+            // ไม่ต้อง fixed column ครับ ให้เลื่อนได้เหมือนเดือน") -- left dropped from 4 to 2 (Employee No.+
+            // Employee only, now that they're 2 real columns instead of 1 combined one -- see the head/
+            // columns above) -- Department/Team/Position are no longer part of the frozen group at all,
+            // they scroll together with the month columns now.
+            drawCallback: function () { initStickyColumns('#tb_annual_summary', { left: 2, right: 1 }); },
+            // 2026-09-04, Backlog Phase 11, T067 -- Department/Team/Position are genuinely categorical
+            // (a small, real distinct-value set), the confirmed real gap in this table. Employee (name+
+            // no, effectively unique per row) and the 12 month/annual-total money columns are
+            // deliberately NOT included -- they already sort/filter correctly via their own object-form
+            // {display,sort,filter} render (CLAUDE.md's own formatted-column convention, already
+            // correct here), but a discrete Excel-style checkbox list of every distinct MONEY amount
+            // across all employees has no real user value the way it does for a handful of department
+            // names -- same "widget/no-single-filterable-value" exemption spirit CLAUDE.md's own Table
+            // convention already carves out elsewhere (mini-timeline/progress-bar/avatar columns), even
+            // though a money column isn't literally named in that list. Re-applied on every rebuild
+            // (destroy:true + initComplete, not a one-time init) since this table's own column set/data
+            // changes on every filter/year change -- initComplete fires again each time.
+            // 2026-09-08: indices shifted 1,2,3 -> 2,3,4 now that Employee No./Employee are 2 separate
+            // columns instead of 1.
+            initComplete: function () {
+                initExcelColumnFilters(this.api(), {
+                    mode: 'client',
+                    columns: [
+                        { index: 2, key: 'department' },
+                        { index: 3, key: 'team' },
+                        { index: 4, key: 'position' },
+                    ],
+                });
+                // Re-run AFTER initExcelColumnFilters rebuilds the header cells' own inner markup (sort
+                // arrow + filter icon), which can nudge their rendered width slightly -- drawCallback's
+                // own call above (which fires BEFORE initComplete on the very first draw) would otherwise
+                // compute the left offsets from marginally-stale widths.
+                initStickyColumns('#tb_annual_summary', { left: 2, right: 1 });
+                initTableDragScroll('#tb_annual_summary');
+            },
         },
     });
     updateText($('#tb_annual_summary')[0]);
@@ -340,12 +363,12 @@ $(document).on('click', '#aisStationFilterToggle', function () {
     const collapsed = $filter.hasClass('collapsed');
     $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
 });
-$(document).on('change', '#aisFiscalYear, #aisFilterDepartment, #aisFilterTeam, #aisFilterBranch, #aisFilterRole, #aisFilterStatus', function () {
+$(document).on('change', '#aisFiscalYear, #aisFilterCycle, #aisFilterDepartment, #aisFilterTeam, #aisFilterBranch, #aisFilterRole, #aisFilterStatus', function () {
     aisUpdateClearFilterVisibility();
     loadAisSummary();
 });
 $(document).on('click', '#aisClearFilterBtn', function () {
-    $('#aisFilterDepartment, #aisFilterTeam, #aisFilterBranch, #aisFilterRole').val(null).trigger('change.select2');
+    $('#aisFilterCycle, #aisFilterDepartment, #aisFilterTeam, #aisFilterBranch, #aisFilterRole').val(null).trigger('change.select2');
     $('#aisFilterStatus').val('').trigger('change');
 });
 
@@ -363,6 +386,7 @@ let aisPitLoaded = false;
 function aisPitCurrentFilters() {
     return {
         fiscal_year: $('#aisPitFiscalYear').val(),
+        cycle_id: $('#aisPitFilterCycle').val() || '',
         department_id: $('#aisPitFilterDepartment').val() || '',
         team_id: $('#aisPitFilterTeam').val() || '',
         branch_id: $('#aisPitFilterBranch').val() || '',
@@ -372,7 +396,7 @@ function aisPitCurrentFilters() {
 }
 function aisPitUpdateClearFilterVisibility() {
     const f = aisPitCurrentFilters();
-    const hasFilter = !!(f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
+    const hasFilter = !!(f.cycle_id || f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
     $('#aisPitFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function loadAisPitFiscalYears() {
@@ -442,9 +466,19 @@ function aisRenderPitTable(data) {
     footHtml += `<td class="text-end"><span class="ais-total-value">${aisFmt(data.totals.annual_tax_withheld)}</span></td></tr>`;
     $('#tb_ais_pit tfoot').html(footHtml);
 
+    // 2026-09-12, Batch 5 item 5 step 2 -- same avatar+name Employee column as Tab 1's own aisTable
+    // above (apvPersonLineHtml(), app.js -- no second avatar function), object-form render for the
+    // same sort/search-safety reason.
     const columns = [
         { data: null, render: (row) => `<span class="ais-employee-no">${escapeHtml(row.employee_no)}</span>` },
-        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '') },
+        {
+            data: null,
+            render: {
+                display: (row) => apvPersonLineHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '', 32, row.profile_photo_path, row.employee_id ? { employeeId: row.employee_id } : null),
+                sort: (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '',
+                filter: (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '',
+            }
+        },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
@@ -460,15 +494,19 @@ function aisRenderPitTable(data) {
         render: { display: (row) => `<span class="ais-total-value">${aisFmt(row.annual_tax_withheld)}</span>`, sort: (row) => row.annual_tax_withheld, filter: (row) => row.annual_tax_withheld }
     });
 
-    aisPitTable = $('#tb_ais_pit').DataTable({
-        data: employees, columns: columns, destroy: true, paging: false, info: false, order: [],
-        language: getTableLang(),
-        // 2026-09-08, same fix as Tab 1's own aisTable above -- see that DataTable's own comment for
-        // the full "scrollX/FixedColumns confirmed broken app-wide" reasoning, unchanged here. left:2
-        // (Employee No.+Employee only, not Department/Team/Position) matches Tab 1's own same-day
-        // follow-up too.
-        drawCallback: function () { initStickyColumns('#tb_ais_pit', { left: 2, right: 1 }); },
-        initComplete: function () { initTableDragScroll('#tb_ais_pit'); },
+    // 2026-09-12, Batch 5 item 5 step 1 (step 3 follow-up) -- routed through the shared
+    // initSharedDataTable() helper, same reasoning as Tab 1's own aisTable above -- the helper reads
+    // the row count straight from `dtOptions.data` below (the same array DataTables itself uses).
+    aisPitTable = initSharedDataTable('#tb_ais_pit', {
+        dtOptions: {
+            data: employees, columns: columns, paging: false, info: false, order: [],
+            // 2026-09-08, same fix as Tab 1's own aisTable above -- see that DataTable's own comment for
+            // the full "scrollX/FixedColumns confirmed broken app-wide" reasoning, unchanged here. left:2
+            // (Employee No.+Employee only, not Department/Team/Position) matches Tab 1's own same-day
+            // follow-up too.
+            drawCallback: function () { initStickyColumns('#tb_ais_pit', { left: 2, right: 1 }); },
+            initComplete: function () { initTableDragScroll('#tb_ais_pit'); },
+        },
     });
     updateText($('#tb_ais_pit')[0]);
 }
@@ -486,6 +524,7 @@ let aisSsoLoaded = false;
 function aisSsoCurrentFilters() {
     return {
         fiscal_year: $('#aisSsoFiscalYear').val(),
+        cycle_id: $('#aisSsoFilterCycle').val() || '',
         department_id: $('#aisSsoFilterDepartment').val() || '',
         team_id: $('#aisSsoFilterTeam').val() || '',
         branch_id: $('#aisSsoFilterBranch').val() || '',
@@ -495,7 +534,7 @@ function aisSsoCurrentFilters() {
 }
 function aisSsoUpdateClearFilterVisibility() {
     const f = aisSsoCurrentFilters();
-    const hasFilter = !!(f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
+    const hasFilter = !!(f.cycle_id || f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
     $('#aisSsoFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function loadAisSsoFiscalYears() {
@@ -563,9 +602,18 @@ function aisRenderSsoTable(data) {
     footHtml += `<td class="text-end"><span class="ais-total-value">${aisFmt(data.totals.annual_sso_amount)}</span></td></tr>`;
     $('#tb_ais_sso tfoot').html(footHtml);
 
+    // 2026-09-12, Batch 5 item 5 step 2 -- same avatar+name Employee column as Tab 1/2 above
+    // (apvPersonLineHtml(), app.js -- no second avatar function).
     const columns = [
         { data: null, render: (row) => `<span class="ais-employee-no">${escapeHtml(row.employee_no)}</span>` },
-        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '') },
+        {
+            data: null,
+            render: {
+                display: (row) => apvPersonLineHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '', 32, row.profile_photo_path, row.employee_id ? { employeeId: row.employee_id } : null),
+                sort: (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '',
+                filter: (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '',
+            }
+        },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
         { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
@@ -581,11 +629,14 @@ function aisRenderSsoTable(data) {
         render: { display: (row) => `<span class="ais-total-value">${aisFmt(row.annual_sso_amount)}</span>`, sort: (row) => row.annual_sso_amount, filter: (row) => row.annual_sso_amount }
     });
 
-    aisSsoTable = $('#tb_ais_sso').DataTable({
-        data: employees, columns: columns, destroy: true, paging: false, info: false, order: [],
-        language: getTableLang(),
-        drawCallback: function () { initStickyColumns('#tb_ais_sso', { left: 2, right: 1 }); },
-        initComplete: function () { initTableDragScroll('#tb_ais_sso'); },
+    // 2026-09-12, Batch 5 item 5 step 1 (step 3/4 follow-up) -- routed through the shared
+    // initSharedDataTable() helper, same reasoning as Tab 1/2 above.
+    aisSsoTable = initSharedDataTable('#tb_ais_sso', {
+        dtOptions: {
+            data: employees, columns: columns, paging: false, info: false, order: [],
+            drawCallback: function () { initStickyColumns('#tb_ais_sso', { left: 2, right: 1 }); },
+            initComplete: function () { initTableDragScroll('#tb_ais_sso'); },
+        },
     });
     updateText($('#tb_ais_sso')[0]);
 }
@@ -602,15 +653,19 @@ function aisMonthlyCurrentFilters() {
     return {
         year: $('#aisMonthlyYear').val(),
         month: $('#aisMonthlyMonth').val(),
+        cycle_id: $('#aisMonthlyFilterCycle').val() || '',
         department_id: $('#aisMonthlyFilterDepartment').val() || '',
         team_id: $('#aisMonthlyFilterTeam').val() || '',
         branch_id: $('#aisMonthlyFilterBranch').val() || '',
         role_id: $('#aisMonthlyFilterRole').val() || '',
+        // 2026-09-12, Batch 5 item 5 step 2 -- genuinely missing before this (Branch above already
+        // existed; Status did not -- see the view's own comment on this correction).
+        employee_status: $('#aisMonthlyFilterStatus').val() || '',
     };
 }
 function aisMonthlyUpdateClearFilterVisibility() {
     const f = aisMonthlyCurrentFilters();
-    const hasFilter = !!(f.department_id || f.team_id || f.branch_id || f.role_id);
+    const hasFilter = !!(f.cycle_id || f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
     $('#aisMonthlyFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function loadAisMonthlyYears() {
@@ -668,43 +723,57 @@ function aisRenderMonthlyTable(employees) {
     }
     $('#aisMonthlyTableEmpty').addClass('d-none');
     $aisMonthlyHideTarget.removeClass('d-none');
-    aisMonthlyTable = $('#tb_ais_monthly').DataTable({
-        data: employees,
-        destroy: true,
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        // 2026-09-08, explicit follow-up request: "แยก code กับ ชื่อพนักงานเป็นคนละ column กันครับ แผนก ทีม
-        // ตำแหน่ง ไม่ต้อง fixed column" -- same split as Tab 1/2; Department/Team/Position were never
-        // part of this tab's own frozen group anyway (only Employee was, see left:1 below).
-        columns: [
-            { data: null, render: (row) => `<span class="ais-employee-no">${escapeHtml(row.employee_no)}</span>` },
-            { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '') },
-            { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
-            { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
-            { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
-            { data: 'gross_amount', className: 'text-end', render: (v) => aisFmt(v) },
-            { data: 'total_deduction_amount', className: 'text-end', render: (v) => aisFmt(v) },
-            { data: 'net_amount', className: 'text-end', render: (v) => aisFmt(v) },
-            { data: 'tax_withheld', className: 'text-end', render: (v) => `<span class="fw-semibold">${aisFmt(v)}</span>` },
-        ],
-        language: getTableLang(),
-        // 2026-09-08, explicit follow-up request ("ทั้ง 3 Tab พนักงาน fixed...ใช้เมาส์ลากดูได้เหมือนหน้า
-        // employee tab ตรวจสอบข้อมูล") -- this tab has no month matrix/Annual Total column (a single
-        // calendar-month snapshot, not a 12-month spread), so only Employee No.+Employee are frozen
-        // (left:2, no right) -- the same drag-scroll/sticky-column mechanism as Tab 1/2 above, applied
-        // for consistency across all 3 tabs of this page even though 9 plain columns rarely need
-        // horizontal scroll on a typical desktop width. `pt-2` on the new wrapper (initTableDragScroll's
-        // 2nd param) matches the top padding the STATIC `.table-responsive` wrapper this table used to
-        // sit in (removed from the view -- see that file's own comment) already had -- `p-3`'s own
-        // left/right component was dropped same-day (explicit follow-up: "เอา p-3 ออกครับ ความกว้าง
-        // ตารางไม่ตรงกับ header"): it inset this wrapper an extra layer beyond the filter/stat-card rows
-        // above it, which don't have that same extra inset.
-        drawCallback: function () { initStickyColumns('#tb_ais_monthly', { left: 2 }); },
-        // 2026-09-08: 'mb-5' added to the dynamically-created wrapper's own classes now that the
-        // outer `.card-surface p-0 mb-5` this table used to sit in is gone from the view (explicit
-        // request: "card-surface p-0 mb-5 ไม่เอาครับ") -- keeps the same spacing before whatever
-        // section follows without needing that wrapper back.
-        initComplete: function () { initTableDragScroll('#tb_ais_monthly', 'pt-2 mb-5'); },
+    // 2026-09-12, Batch 5 item 5 step 1 (step 3/4 follow-up) -- routed through the shared
+    // initSharedDataTable() helper, same reasoning as Tab 1/2/3 above -- pageLength/lengthMenu (this
+    // tab's own paginated shape, unlike Tab 1/2/3's paging:false) passed as explicit overrides too,
+    // even though they happen to match the helper's own defaults, per this table's "keep its own
+    // real paging option visible at its own call site" requirement.
+    // 2026-09-12, step 2 -- same avatar+name Employee column as Tab 1/2/3 above (apvPersonLineHtml(),
+    // app.js -- no second avatar function).
+    aisMonthlyTable = initSharedDataTable('#tb_ais_monthly', {
+        dtOptions: {
+            data: employees,
+            pageLength: pageLength,
+            lengthMenu: lengthMenu,
+            // 2026-09-08, explicit follow-up request: "แยก code กับ ชื่อพนักงานเป็นคนละ column กันครับ แผนก ทีม
+            // ตำแหน่ง ไม่ต้อง fixed column" -- same split as Tab 1/2; Department/Team/Position were never
+            // part of this tab's own frozen group anyway (only Employee was, see left:1 below).
+            columns: [
+                { data: null, render: (row) => `<span class="ais-employee-no">${escapeHtml(row.employee_no)}</span>` },
+                {
+                    data: null,
+                    render: {
+                        display: (row) => apvPersonLineHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '', 32, row.profile_photo_path, row.employee_id ? { employeeId: row.employee_id } : null),
+                        sort: (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '',
+                        filter: (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '',
+                    }
+                },
+                { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
+                { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
+                { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
+                { data: 'gross_amount', className: 'text-end', render: (v) => aisFmt(v) },
+                { data: 'total_deduction_amount', className: 'text-end', render: (v) => aisFmt(v) },
+                { data: 'net_amount', className: 'text-end', render: (v) => aisFmt(v) },
+                { data: 'tax_withheld', className: 'text-end', render: (v) => `<span class="fw-semibold">${aisFmt(v)}</span>` },
+            ],
+            // 2026-09-08, explicit follow-up request ("ทั้ง 3 Tab พนักงาน fixed...ใช้เมาส์ลากดูได้เหมือนหน้า
+            // employee tab ตรวจสอบข้อมูล") -- this tab has no month matrix/Annual Total column (a single
+            // calendar-month snapshot, not a 12-month spread), so only Employee No.+Employee are frozen
+            // (left:2, no right) -- the same drag-scroll/sticky-column mechanism as Tab 1/2 above, applied
+            // for consistency across all 3 tabs of this page even though 9 plain columns rarely need
+            // horizontal scroll on a typical desktop width. `pt-2` on the new wrapper (initTableDragScroll's
+            // 2nd param) matches the top padding the STATIC `.table-responsive` wrapper this table used to
+            // sit in (removed from the view -- see that file's own comment) already had -- `p-3`'s own
+            // left/right component was dropped same-day (explicit follow-up: "เอา p-3 ออกครับ ความกว้าง
+            // ตารางไม่ตรงกับ header"): it inset this wrapper an extra layer beyond the filter/stat-card rows
+            // above it, which don't have that same extra inset.
+            drawCallback: function () { initStickyColumns('#tb_ais_monthly', { left: 2 }); },
+            // 2026-09-08: 'mb-5' added to the dynamically-created wrapper's own classes now that the
+            // outer `.card-surface p-0 mb-5` this table used to sit in is gone from the view (explicit
+            // request: "card-surface p-0 mb-5 ไม่เอาครับ") -- keeps the same spacing before whatever
+            // section follows without needing that wrapper back.
+            initComplete: function () { initTableDragScroll('#tb_ais_monthly', 'pt-2 mb-5'); },
+        },
     });
     updateText($('#tb_ais_monthly')[0]);
 }
@@ -714,12 +783,12 @@ $(document).on('click', '#aisPitStationFilterToggle', function () {
     const collapsed = $filter.hasClass('collapsed');
     $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
 });
-$(document).on('change', '#aisPitFiscalYear, #aisPitFilterDepartment, #aisPitFilterTeam, #aisPitFilterBranch, #aisPitFilterRole, #aisPitFilterStatus', function () {
+$(document).on('change', '#aisPitFiscalYear, #aisPitFilterCycle, #aisPitFilterDepartment, #aisPitFilterTeam, #aisPitFilterBranch, #aisPitFilterRole, #aisPitFilterStatus', function () {
     aisPitUpdateClearFilterVisibility();
     loadAisPitSummary();
 });
 $(document).on('click', '#aisPitClearFilterBtn', function () {
-    $('#aisPitFilterDepartment, #aisPitFilterTeam, #aisPitFilterBranch, #aisPitFilterRole').val(null).trigger('change.select2');
+    $('#aisPitFilterCycle, #aisPitFilterDepartment, #aisPitFilterTeam, #aisPitFilterBranch, #aisPitFilterRole').val(null).trigger('change.select2');
     $('#aisPitFilterStatus').val('').trigger('change');
 });
 
@@ -728,12 +797,12 @@ $(document).on('click', '#aisSsoStationFilterToggle', function () {
     const collapsed = $filter.hasClass('collapsed');
     $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
 });
-$(document).on('change', '#aisSsoFiscalYear, #aisSsoFilterDepartment, #aisSsoFilterTeam, #aisSsoFilterBranch, #aisSsoFilterRole, #aisSsoFilterStatus', function () {
+$(document).on('change', '#aisSsoFiscalYear, #aisSsoFilterCycle, #aisSsoFilterDepartment, #aisSsoFilterTeam, #aisSsoFilterBranch, #aisSsoFilterRole, #aisSsoFilterStatus', function () {
     aisSsoUpdateClearFilterVisibility();
     loadAisSsoSummary();
 });
 $(document).on('click', '#aisSsoClearFilterBtn', function () {
-    $('#aisSsoFilterDepartment, #aisSsoFilterTeam, #aisSsoFilterBranch, #aisSsoFilterRole').val(null).trigger('change.select2');
+    $('#aisSsoFilterCycle, #aisSsoFilterDepartment, #aisSsoFilterTeam, #aisSsoFilterBranch, #aisSsoFilterRole').val(null).trigger('change.select2');
     $('#aisSsoFilterStatus').val('').trigger('change');
 });
 
@@ -742,12 +811,13 @@ $(document).on('click', '#aisMonthlyStationFilterToggle', function () {
     const collapsed = $filter.hasClass('collapsed');
     $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
 });
-$(document).on('change', '#aisMonthlyYear, #aisMonthlyMonth, #aisMonthlyFilterDepartment, #aisMonthlyFilterTeam, #aisMonthlyFilterBranch, #aisMonthlyFilterRole', function () {
+$(document).on('change', '#aisMonthlyYear, #aisMonthlyMonth, #aisMonthlyFilterCycle, #aisMonthlyFilterDepartment, #aisMonthlyFilterTeam, #aisMonthlyFilterBranch, #aisMonthlyFilterRole, #aisMonthlyFilterStatus', function () {
     aisMonthlyUpdateClearFilterVisibility();
     loadAisMonthlySummary();
 });
 $(document).on('click', '#aisMonthlyClearFilterBtn', function () {
-    $('#aisMonthlyFilterDepartment, #aisMonthlyFilterTeam, #aisMonthlyFilterBranch, #aisMonthlyFilterRole').val(null).trigger('change.select2');
+    $('#aisMonthlyFilterCycle, #aisMonthlyFilterDepartment, #aisMonthlyFilterTeam, #aisMonthlyFilterBranch, #aisMonthlyFilterRole').val(null).trigger('change.select2');
+    $('#aisMonthlyFilterStatus').val('').trigger('change');
 });
 
 // Lazy-init every non-default tab (including the SSO tab added in Batch 2, item 6) on first
@@ -757,6 +827,7 @@ $(document).on('shown.bs.tab', '#ais-pit-tab', function () {
     if (aisPitLoaded) return;
     aisPitLoaded = true;
     if (typeof initSelect2 === 'function') {
+        initSelect2('#aisPitFilterCycle', { mode: 'ajax', allowClear: true });
         initSelect2('#aisPitFilterDepartment', { mode: 'ajax', allowClear: true });
         initSelect2('#aisPitFilterTeam', { mode: 'ajax', allowClear: true });
         initSelect2('#aisPitFilterBranch', { mode: 'ajax', allowClear: true });
@@ -769,6 +840,7 @@ $(document).on('shown.bs.tab', '#ais-sso-tab', function () {
     if (aisSsoLoaded) return;
     aisSsoLoaded = true;
     if (typeof initSelect2 === 'function') {
+        initSelect2('#aisSsoFilterCycle', { mode: 'ajax', allowClear: true });
         initSelect2('#aisSsoFilterDepartment', { mode: 'ajax', allowClear: true });
         initSelect2('#aisSsoFilterTeam', { mode: 'ajax', allowClear: true });
         initSelect2('#aisSsoFilterBranch', { mode: 'ajax', allowClear: true });
@@ -781,11 +853,13 @@ $(document).on('shown.bs.tab', '#ais-monthly-pit-tab', function () {
     if (aisMonthlyLoaded) return;
     aisMonthlyLoaded = true;
     if (typeof initSelect2 === 'function') {
+        initSelect2('#aisMonthlyFilterCycle', { mode: 'ajax', allowClear: true });
         initSelect2('#aisMonthlyFilterDepartment', { mode: 'ajax', allowClear: true });
         initSelect2('#aisMonthlyFilterTeam', { mode: 'ajax', allowClear: true });
         initSelect2('#aisMonthlyFilterBranch', { mode: 'ajax', allowClear: true });
         initSelect2('#aisMonthlyFilterRole', { mode: 'ajax', allowClear: true });
         initSelect2('#aisMonthlyMonth', { mode: 'static' });
+        initSelect2('#aisMonthlyFilterStatus', { mode: 'static' });
     }
     loadAisMonthlyYears();
 });
@@ -793,6 +867,7 @@ $(document).on('shown.bs.tab', '#ais-monthly-pit-tab', function () {
 $(document).ready(function () {
     (window.langReady || Promise.resolve()).then(function () {
     if (typeof initSelect2 === 'function') {
+        initSelect2('#aisFilterCycle', { mode: 'ajax', allowClear: true });
         initSelect2('#aisFilterDepartment', { mode: 'ajax', allowClear: true });
         initSelect2('#aisFilterTeam', { mode: 'ajax', allowClear: true });
         initSelect2('#aisFilterBranch', { mode: 'ajax', allowClear: true });

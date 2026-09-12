@@ -27,6 +27,25 @@ class AnnualIncomeSummaryModel {
         $this->db = $pdo ?? Database::getInstance()->pdo;
     }
 
+    /**
+     * 2026-09-12, Batch 5 item 5 step 2 -- ONE shared run-side filter fragment (currently just
+     * cycle_id, "รอบเงินเดือน") appended to every query in this class that reads payroll_runs/
+     * payroll_run_details (summary()'s own stmtAgg, cellDetail(), rawDeductionRows(),
+     * buildMonthMeta()) -- a new run-level filter is written HERE once, never copied into each
+     * query's own WHERE by hand. Returns a SQL fragment starting with "AND ..." (empty string when
+     * no run-level filter is active) plus the positional params it needs, in the order they appear
+     * in that fragment -- callers append the fragment wherever their own WHERE ends (before GROUP
+     * BY/ORDER BY if either is present) and append the params at the matching position in their own
+     * execute() array.
+     * @return array{0: string, 1: array}
+     */
+    private function runFilterClause(array $filters): array {
+        if (empty($filters['cycle_id'])) {
+            return ['', []];
+        }
+        return [' AND r.cycle_id = ?', [(int)$filters['cycle_id']]];
+    }
+
     private function fiscalYearBounds(int $fiscalYear, int $fiscalStartMonth): array {
         $start = sprintf('%04d-%02d-01', $fiscalYear, $fiscalStartMonth);
         $endYear = $fiscalStartMonth === 1 ? $fiscalYear : $fiscalYear + 1;
@@ -94,6 +113,7 @@ class AnnualIncomeSummaryModel {
         $monthDefs = $this->monthsInFiscalYear($fiscalYear, $fiscalStartMonth);
 
         // ---------- per-employee, per-month aggregation ----------
+        [$cycleSql, $cycleParams] = $this->runFilterClause($filters);
         $placeholders = implode(',', array_fill(0, count(self::ALLOWED_STATES), '?'));
         $stmtAgg = $this->db->prepare(
             "SELECT d.employee_id, YEAR(r.payment_date) AS y, MONTH(r.payment_date) AS m,
@@ -102,10 +122,10 @@ class AnnualIncomeSummaryModel {
              INNER JOIN payroll_runs r ON r.id = d.run_id
              WHERE r.comp_id = ? AND r.status = 'active' AND r.deleted_at IS NULL
                AND r.state IN ({$placeholders})
-               AND r.payment_date >= ? AND r.payment_date <= ?
+               AND r.payment_date >= ? AND r.payment_date <= ?{$cycleSql}
              GROUP BY d.employee_id, y, m"
         );
-        $stmtAgg->execute(array_merge([$compId], self::ALLOWED_STATES, [$fyStart, $fyEnd]));
+        $stmtAgg->execute(array_merge([$compId], self::ALLOWED_STATES, [$fyStart, $fyEnd], $cycleParams));
         $byEmployee = [];
         foreach ($stmtAgg->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $empId = (int)$row['employee_id'];
@@ -145,6 +165,7 @@ class AnnualIncomeSummaryModel {
                 'name_th' => trim(($emp['name_th'] ?? '') . ' ' . ($emp['surname_th'] ?? '')),
                 'name_en' => trim(($emp['name_en'] ?? '') . ' ' . ($emp['surname_en'] ?? '')),
                 'employee_status' => $emp['employee_status'],
+                'profile_photo_path' => $emp['profile_photo_path'],
                 'department_name_th' => $emp['department_name_th'],
                 'department_name_en' => $emp['department_name_en'],
                 'team_name_th' => $emp['team_name_th'],
@@ -163,7 +184,7 @@ class AnnualIncomeSummaryModel {
         }
 
         return [
-            'months' => $this->buildMonthMeta($monthDefs, $compId, $fyStart, $fyEnd),
+            'months' => $this->buildMonthMeta($monthDefs, $compId, $fyStart, $fyEnd, $filters),
             'employees' => $employees,
             'totals' => $totals,
         ];
@@ -176,8 +197,12 @@ class AnnualIncomeSummaryModel {
      * than one run can genuinely land in the same calendar month (a regular run plus an off-cycle
      * incentive run, say) -- returns one entry PER RUN found, not a single flattened total, so the
      * modal can show "which run contributed what" rather than silently merging them.
+     * @param array $filters { cycle_id?: int } -- same runFilterClause() as every other query in
+     *        this class; the cell click passes through whatever cycle filter the table itself is
+     *        currently scoped to, so a drill-down never shows a run the table itself has filtered out.
      */
-    public function cellDetail(int $compId, int $employeeId, int $year, int $month): array {
+    public function cellDetail(int $compId, int $employeeId, int $year, int $month, array $filters = []): array {
+        [$cycleSql, $cycleParams] = $this->runFilterClause($filters);
         $placeholders = implode(',', array_fill(0, count(self::ALLOWED_STATES), '?'));
         $stmt = $this->db->prepare(
             "SELECT d.base_salary_amount, d.earning_breakdown, d.deduction_breakdown, d.statutory_breakdown,
@@ -187,10 +212,10 @@ class AnnualIncomeSummaryModel {
              INNER JOIN payroll_runs r ON r.id = d.run_id
              WHERE r.comp_id = ? AND d.employee_id = ? AND r.status = 'active' AND r.deleted_at IS NULL
                AND r.state IN ({$placeholders})
-               AND YEAR(r.payment_date) = ? AND MONTH(r.payment_date) = ?
+               AND YEAR(r.payment_date) = ? AND MONTH(r.payment_date) = ?{$cycleSql}
              ORDER BY r.payment_date ASC"
         );
-        $stmt->execute(array_merge([$compId, $employeeId], self::ALLOWED_STATES, [$year, $month]));
+        $stmt->execute(array_merge([$compId, $employeeId], self::ALLOWED_STATES, [$year, $month], $cycleParams));
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         $runs = [];
         foreach ($rows as $row) {
@@ -236,6 +261,7 @@ class AnnualIncomeSummaryModel {
         }
         $stmtEmp = $this->db->prepare(
             "SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en, e.employee_status,
+                    e.profile_photo_path,
                     dep.department_name_th, dep.department_name_en,
                     tm.team_name_th, tm.team_name_en,
                     p.position_name_th, p.position_name_en
@@ -276,8 +302,10 @@ class AnnualIncomeSummaryModel {
      * key 'amount' -- callers that need a specific key name (e.g. monthlyPitDetail() below, via
      * rawPitRows()'s own thin-wrapper rename) remap it themselves, so this shared method's own
      * output shape never has to change to fit a second caller's naming.
+     * @param array $filters { cycle_id?: int } -- runFilterClause(), same as every other query here.
      */
-    private function rawDeductionRows(string $statutoryCode, int $compId, string $dateFrom, string $dateTo): array {
+    private function rawDeductionRows(string $statutoryCode, int $compId, string $dateFrom, string $dateTo, array $filters = []): array {
+        [$cycleSql, $cycleParams] = $this->runFilterClause($filters);
         $placeholders = implode(',', array_fill(0, count(self::ALLOWED_STATES), '?'));
         $stmt = $this->db->prepare(
             "SELECT d.employee_id, YEAR(r.payment_date) AS y, MONTH(r.payment_date) AS m,
@@ -286,9 +314,9 @@ class AnnualIncomeSummaryModel {
              INNER JOIN payroll_runs r ON r.id = d.run_id
              WHERE r.comp_id = ? AND r.status = 'active' AND r.deleted_at IS NULL
                AND r.state IN ({$placeholders})
-               AND r.payment_date >= ? AND r.payment_date <= ?"
+               AND r.payment_date >= ? AND r.payment_date <= ?{$cycleSql}"
         );
-        $stmt->execute(array_merge([$compId], self::ALLOWED_STATES, [$dateFrom, $dateTo]));
+        $stmt->execute(array_merge([$compId], self::ALLOWED_STATES, [$dateFrom, $dateTo], $cycleParams));
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
         foreach ($rows as &$row) {
             $amount = 0.0;
@@ -306,8 +334,8 @@ class AnnualIncomeSummaryModel {
     /** Thin wrapper over rawDeductionRows('TH_PIT', ...) that renames the neutral 'amount' key back
      *  to 'tax_withheld' -- monthlyPitDetail() below (this method's OTHER caller, not just
      *  annualPitSummary()) reads that exact key name, so it stays untouched by this consolidation. */
-    private function rawPitRows(int $compId, string $dateFrom, string $dateTo): array {
-        $rows = $this->rawDeductionRows('TH_PIT', $compId, $dateFrom, $dateTo);
+    private function rawPitRows(int $compId, string $dateFrom, string $dateTo, array $filters = []): array {
+        $rows = $this->rawDeductionRows('TH_PIT', $compId, $dateFrom, $dateTo, $filters);
         foreach ($rows as &$row) {
             $row['tax_withheld'] = $row['amount'];
         }
@@ -332,7 +360,7 @@ class AnnualIncomeSummaryModel {
         $monthDefs = $this->monthsInFiscalYear($fiscalYear, $fiscalStartMonth);
 
         $byEmployee = [];
-        foreach ($this->rawDeductionRows($statutoryCode, $compId, $fyStart, $fyEnd) as $row) {
+        foreach ($this->rawDeductionRows($statutoryCode, $compId, $fyStart, $fyEnd, $filters) as $row) {
             $empId = (int)$row['employee_id'];
             $key = $row['y'] . '-' . $row['m'];
             $byEmployee[$empId][$key] = ($byEmployee[$empId][$key] ?? 0.0) + (float)$row['amount'];
@@ -361,6 +389,7 @@ class AnnualIncomeSummaryModel {
                 'name_th' => trim(($emp['name_th'] ?? '') . ' ' . ($emp['surname_th'] ?? '')),
                 'name_en' => trim(($emp['name_en'] ?? '') . ' ' . ($emp['surname_en'] ?? '')),
                 'employee_status' => $emp['employee_status'],
+                'profile_photo_path' => $emp['profile_photo_path'],
                 'department_name_th' => $emp['department_name_th'],
                 'department_name_en' => $emp['department_name_en'],
                 'team_name_th' => $emp['team_name_th'],
@@ -375,7 +404,7 @@ class AnnualIncomeSummaryModel {
         }
 
         return [
-            'months' => $this->buildMonthMeta($monthDefs, $compId, $fyStart, $fyEnd),
+            'months' => $this->buildMonthMeta($monthDefs, $compId, $fyStart, $fyEnd, $filters),
             'employees' => $employees,
             'totals' => ['months' => $totalsMonths, $amountField => $annualTotal, 'employee_count' => $employeeCount],
         ];
@@ -409,7 +438,7 @@ class AnnualIncomeSummaryModel {
         $dateTo = date('Y-m-t', strtotime($dateFrom));
 
         $byEmployee = [];
-        foreach ($this->rawPitRows($compId, $dateFrom, $dateTo) as $row) {
+        foreach ($this->rawPitRows($compId, $dateFrom, $dateTo, $filters) as $row) {
             $empId = (int)$row['employee_id'];
             if (!isset($byEmployee[$empId])) {
                 $byEmployee[$empId] = ['gross' => 0.0, 'deduction' => 0.0, 'net' => 0.0, 'tax_withheld' => 0.0];
@@ -438,6 +467,7 @@ class AnnualIncomeSummaryModel {
                 'name_th' => trim(($emp['name_th'] ?? '') . ' ' . ($emp['surname_th'] ?? '')),
                 'name_en' => trim(($emp['name_en'] ?? '') . ' ' . ($emp['surname_en'] ?? '')),
                 'employee_status' => $emp['employee_status'],
+                'profile_photo_path' => $emp['profile_photo_path'],
                 'department_name_th' => $emp['department_name_th'],
                 'department_name_en' => $emp['department_name_en'],
                 'team_name_th' => $emp['team_name_th'],
@@ -472,15 +502,16 @@ class AnnualIncomeSummaryModel {
      *  runs at all -- likely a gap worth flagging), 'current', or 'future'. Company-wide (not
      *  per-employee) since "ทำ/ไม่ได้ทำ" reads as "was payroll processed that month at all", not
      *  "did this one person get paid". */
-    private function buildMonthMeta(array $monthDefs, int $compId, string $fyStart, string $fyEnd): array {
+    private function buildMonthMeta(array $monthDefs, int $compId, string $fyStart, string $fyEnd, array $filters = []): array {
+        [$cycleSql, $cycleParams] = $this->runFilterClause($filters);
         $placeholders = implode(',', array_fill(0, count(self::ALLOWED_STATES), '?'));
         $stmt = $this->db->prepare(
             "SELECT DISTINCT YEAR(payment_date) AS y, MONTH(payment_date) AS m
-             FROM payroll_runs
+             FROM payroll_runs AS r
              WHERE comp_id = ? AND status = 'active' AND deleted_at IS NULL AND state IN ({$placeholders})
-               AND payment_date >= ? AND payment_date <= ?"
+               AND payment_date >= ? AND payment_date <= ?{$cycleSql}"
         );
-        $stmt->execute(array_merge([$compId], self::ALLOWED_STATES, [$fyStart, $fyEnd]));
+        $stmt->execute(array_merge([$compId], self::ALLOWED_STATES, [$fyStart, $fyEnd], $cycleParams));
         $done = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $done[$row['y'] . '-' . $row['m']] = true;

@@ -70,6 +70,14 @@
                         <label class="form-label small mb-1"><i class="fa-solid fa-calendar me-1 text-muted"></i><span data-i18n="fiscal_year">Fiscal Year</span></label>
                         <select class="form-select" id="aisFiscalYear"></select>
                     </div>
+                    <!-- 2026-09-12, Batch 5 item 5 step 2 -- "รอบเงินเดือน" filter, same select2-remote
+                         pattern as Department right after it. Reuses the SAME endpoint the Payroll
+                         Process page's own cycle filter (#filter_run_cycle) already uses -- no new
+                         backend endpoint needed. -->
+                    <div class="col-sm-2">
+                        <label class="form-label small mb-1"><i class="fa-solid fa-calendar-check me-1 text-muted"></i><span data-i18n="payroll_cycle">Payroll Cycle</span></label>
+                        <select class="form-select select2-remote" id="aisFilterCycle" data-api="/api/payroll-cycle.options"></select>
+                    </div>
                     <div class="col-sm-2">
                         <label class="form-label small mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                         <select class="form-select select2-remote" id="aisFilterDepartment" data-api="/api/department.get" data-type="department"></select>
@@ -179,6 +187,10 @@
                         <select class="form-select" id="aisPitFiscalYear"></select>
                     </div>
                     <div class="col-sm-2">
+                        <label class="form-label small mb-1"><i class="fa-solid fa-calendar-check me-1 text-muted"></i><span data-i18n="payroll_cycle">Payroll Cycle</span></label>
+                        <select class="form-select select2-remote" id="aisPitFilterCycle" data-api="/api/payroll-cycle.options"></select>
+                    </div>
+                    <div class="col-sm-2">
                         <label class="form-label small mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                         <select class="form-select select2-remote" id="aisPitFilterDepartment" data-api="/api/department.get" data-type="department"></select>
                     </div>
@@ -259,6 +271,10 @@
                         <select class="form-select" id="aisSsoFiscalYear"></select>
                     </div>
                     <div class="col-sm-2">
+                        <label class="form-label small mb-1"><i class="fa-solid fa-calendar-check me-1 text-muted"></i><span data-i18n="payroll_cycle">Payroll Cycle</span></label>
+                        <select class="form-select select2-remote" id="aisSsoFilterCycle" data-api="/api/payroll-cycle.options"></select>
+                    </div>
+                    <div class="col-sm-2">
                         <label class="form-label small mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                         <select class="form-select select2-remote" id="aisSsoFilterDepartment" data-api="/api/department.get" data-type="department"></select>
                     </div>
@@ -337,6 +353,10 @@
                         <select class="form-select select2-static" id="aisMonthlyMonth" data-option-keys="month_1,month_2,month_3,month_4,month_5,month_6,month_7,month_8,month_9,month_10,month_11,month_12" data-option-values="1,2,3,4,5,6,7,8,9,10,11,12"></select>
                     </div>
                     <div class="col-sm-2">
+                        <label class="form-label small mb-1"><i class="fa-solid fa-calendar-check me-1 text-muted"></i><span data-i18n="payroll_cycle">Payroll Cycle</span></label>
+                        <select class="form-select select2-remote" id="aisMonthlyFilterCycle" data-api="/api/payroll-cycle.options"></select>
+                    </div>
+                    <div class="col-sm-2">
                         <label class="form-label small mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
                         <select class="form-select select2-remote" id="aisMonthlyFilterDepartment" data-api="/api/department.get" data-type="department"></select>
                     </div>
@@ -351,6 +371,14 @@
                     <div class="col-sm-2">
                         <label class="form-label small mb-1"><i class="fa-solid fa-user-tag me-1 text-muted"></i><span data-i18n="role">Role</span></label>
                         <select class="form-select select2-remote" id="aisMonthlyFilterRole" data-api="/api/role.get" data-type="role"></select>
+                    </div>
+                    <!-- 2026-09-12, Batch 5 item 5 step 2 -- genuinely missing (confirmed against the
+                         real pre-existing markup, correcting step 1's own report: Branch above was
+                         ALREADY here, only Status was actually absent) -- same select2-static pattern
+                         as Tab 1/2/3's own #ais*FilterStatus. -->
+                    <div class="col-sm-2">
+                        <label class="form-label small mb-1"><i class="fa-solid fa-toggle-on me-1 text-muted"></i><span data-i18n="status">Status</span></label>
+                        <select class="form-select" id="aisMonthlyFilterStatus" data-option-keys="status_all,status_active,status_probation,status_resigned,status_terminated" data-option-values=",active,probation,resigned,terminated"></select>
                     </div>
                 </div>
             </div>

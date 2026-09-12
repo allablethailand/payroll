@@ -769,7 +769,20 @@ function initSharedDataTable(selector, options) {
     if (typeof options.renderRows === 'function') {
         options.renderRows();
     }
-    const rowCount = $table.find('tbody tr').length;
+    // 2026-09-12, Batch 5 item 5 step 3 (step 4 follow-up: read from the ONE place DataTables
+    // itself actually uses, not a second copy) -- a data:/columns:-driven table (rows supplied via
+    // options.dtOptions.data, not written into the DOM by this function's own renderRows above) has
+    // an EMPTY tbody at this exact point -- DataTables itself only populates it once .DataTable()
+    // below actually runs -- so counting `tbody tr` here would always read 0 for that shape,
+    // wrongly hiding the search box below the threshold regardless of how many rows the table is
+    // about to show. `options.dtOptions.data` (when present) is that exact same array reference the
+    // `dtOptions` build below hands to `.DataTable()` -- Object.assign() only shallow-copies the key,
+    // never clones the array -- so reading it here needs no separate/duplicate `options.data` from
+    // the caller. A DOM-sourced caller (renderRows fills the tbody directly -- the 4 existing
+    // callers in payroll/detail.js, none of which pass a `data` key in `dtOptions` either) never
+    // hits this branch at all, so it falls through to the tbody count exactly as before --
+    // unaffected by this change.
+    const rowCount = options.dtOptions && Array.isArray(options.dtOptions.data) ? options.dtOptions.data.length : $table.find('tbody tr').length;
     const searchThreshold = options.searchThreshold != null ? options.searchThreshold : 10;
     // `language` is merged one level deep on top of getTableLang() (not just Object.assign'd whole)
     // so a caller passing e.g. { language: { emptyTable: '...' } } (a localized empty-state message
