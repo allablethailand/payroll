@@ -1,0 +1,45 @@
+/* Design tokens -- Origami Payroll Phase Design, Round 2 item 1 (docs/design/rules.md §1).
+ * Single source of color/spacing/type/shape for the whole app. Loaded before style.css via an
+ * @import at the top of style.css (not a <link> in layout/header.php -- round 2's own scope is
+ * limited to tokens.css/style.css/app.js/format-helpers.js/partials/status_map.php/components.php/
+ * lint script, not real page/layout templates; @import satisfies "โหลดก่อน style.css ทุกหน้า"
+ * without touching header.php at all). No hex/rgb literal anywhere else in the app is allowed to be
+ * NEW from this point forward (existing ones are round 4's migration job, tracked in docs/design/audit.md). */
+:root {
+  /* brand -- ใช้ได้ 3 ที่เท่านั้น: ปุ่มหลัก, tab ที่เลือก, step ปัจจุบัน (+ focus ring ตาม §3) */
+  --c-primary: #FF9900;
+  --c-primary-hover: #E68A00;
+  --c-primary-soft: #FFF4E0;        /* พื้นหลังอ่อนของ step/tab ปัจจุบัน เท่านั้น */
+
+  /* neutral -- ทุกอย่างที่ไม่ใช่ brand/status */
+  --c-text: #1F2328;
+  --c-text-muted: #6B7280;
+  --c-text-faint: #9CA3AF;
+  --c-border: #E5E7EB;
+  --c-border-strong: #D1D5DB;
+  --c-bg: #FFFFFF;
+  --c-bg-subtle: #F7F8FA;           /* แถบหัวตาราง, filter bar, พื้น modal footer */
+  --c-bg-hover: #F1F3F5;
+
+  /* status -- ใช้เฉพาะ "สถานะที่ผู้ใช้ต้องตัดสินใจ/ระวัง" ไม่ใช้ตกแต่ง */
+  --c-danger: #D92D20;  --c-danger-soft: #FEE4E2;
+  --c-warning: #B54708; --c-warning-soft: #FEF0C7;
+  --c-success: #067647; --c-success-soft: #DCFAE6;
+  --c-info: #6B7280;    --c-info-soft: #F1F3F5;   /* "info" = เทา ไม่ใช่ฟ้า */
+
+  /* type */
+  --font-sans: "Sarabun", system-ui, sans-serif;   /* ฟอนต์เดียวทั้งระบบ -- ตรงกับ layout/header.php's
+                                                       existing Google Fonts <link> อยู่แล้ว (round 1
+                                                       audit confirmed, ไม่ต้องแก้ header.php) */
+  --font-num: var(--font-sans);     /* ตัวเลข: เปิด font-variant-numeric: tabular-nums เสมอ */
+  --fs-xs: 12px; --fs-sm: 13px; --fs-base: 14px; --fs-md: 16px; --fs-lg: 20px; --fs-xl: 24px;
+  --lh: 1.5;
+
+  /* space (4px grid) */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
+
+  /* shape */
+  --radius: 6px;                    /* ค่าเดียวทั้งระบบ */
+  --radius-pill: 999px;             /* badge เท่านั้น */
+  --shadow-modal: 0 8px 24px rgba(0, 0, 0, .12);   /* modal/dropdown เท่านั้น -- การ์ดในหน้าไม่มีเงา */
+}

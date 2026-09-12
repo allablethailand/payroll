@@ -1,3 +1,10 @@
+/* Phase Design Round 2 item 1 (docs/design/rules.md §1) -- @import must be the very first statement
+   in the file (CSS spec: only preceded by comments/whitespace) so tokens.css's :root vars are
+   defined before anything below reads them. This is how tokens.css loads "before style.css" without
+   touching layout/header.php (out of this round's allowed scope) -- both files still reach the
+   browser via the ONE existing <link> to style.css. */
+@import url("tokens.css");
+
 /* Employment Certificate Template canvas fonts (2026-08-24, bug fix: "เลือก Font แล้วการแสดงในหน้าขาว
    ไม่เปลี่ยน Font ตาม แต่ใน PDF ขึ้น Font ถูก") -- the canvas preview sets font-family:'TH Sarabun New'/
    'DejaVu Sans' (see employment-certificate-template.js's applyElementStyle()) but neither is an
@@ -415,7 +422,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .nav-quicklinks-more-menu li button i {
     width: 16px;
     text-align: center;
-    color: #FF9900;
+    color: var(--c-primary);
 }
 .nav-quicklinks-more-menu-divider {
     margin: 6px 0;
@@ -467,7 +474,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     transition: background-color .12s ease;
 }
 .qlc-item:hover {
-    background-color: rgba(255, 153, 0, .06);
+    background-color: rgba(var(--bs-primary-rgb), .06);
 }
 .qlc-item .form-check-input {
     float: none;
@@ -605,7 +612,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     grid-template-columns: repeat(3, 1fr);
     /* Firefox scrollbar */
     scrollbar-width: thin;
-    scrollbar-color: #FF9900 rgba(255, 153, 0, 0.1);
+    scrollbar-color: var(--c-primary) rgba(var(--bs-primary-rgb), 0.1);
 }
 .nav-hub-menu.active {
     display: grid;
@@ -668,15 +675,15 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     width: 6px;
 }
 .nav-hub-menu::-webkit-scrollbar-track {
-    background: rgba(255, 153, 0, 0.1);
+    background: rgba(var(--bs-primary-rgb), 0.1);
     border-radius: 10px;
 }
 .nav-hub-menu::-webkit-scrollbar-thumb {
-    background: #FF9900;
+    background: var(--c-primary);
     border-radius: 10px;
 }
 .nav-hub-menu::-webkit-scrollbar-thumb:hover {
-    background: #e68a00;
+    background: var(--c-primary-hover);
 }
 /* 2026-08-29, explicit request: "บน header มี icon noti อยู่ ช่วยวางระบบการแจ้งเตือนพร้อมทั้ง Design การ
    มองเห็นหน่อยครับ" -- same active-class-toggle dropdown shape/glassmorphism surface as
@@ -741,7 +748,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .nav-notif-menu-header button {
     background: none; border: none;
-    color: #FF9900;
+    color: var(--c-primary);
     font-size: 0.9583rem;
     font-weight: 600;
     cursor: pointer;
@@ -752,17 +759,17 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     max-height: 340px;
     overflow-y: auto;
     scrollbar-width: thin;
-    scrollbar-color: #FF9900 rgba(255, 153, 0, 0.1);
+    scrollbar-color: var(--c-primary) rgba(var(--bs-primary-rgb), 0.1);
 }
 .nav-notif-menu-list::-webkit-scrollbar { width: 6px; }
-.nav-notif-menu-list::-webkit-scrollbar-thumb { background: #FF9900; border-radius: 10px; }
+.nav-notif-menu-list::-webkit-scrollbar-thumb { background: var(--c-primary); border-radius: 10px; }
 .nav-notif-empty {
     padding: 30px 16px;
     text-align: center;
     color: #9ca3af;
     font-size: 1.0833rem;
 }
-.nav-notif-loading { text-align: center; padding: 12px; color: #FF9900; font-size: 1.1667rem; }
+.nav-notif-loading { text-align: center; padding: 12px; color: var(--c-primary); font-size: 1.1667rem; }
 .nav-notif-item {
     display: flex;
     align-items: flex-start;
@@ -773,8 +780,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     position: relative;
     transition: background-color .12s ease;
 }
-.nav-notif-item:hover { background: rgba(255, 153, 0, .06); }
-.nav-notif-item-unread { background: rgba(255, 153, 0, .04); }
+.nav-notif-item:hover { background: rgba(var(--bs-primary-rgb), .06); }
+.nav-notif-item-unread { background: rgba(var(--bs-primary-rgb), .04); }
 /* .nav-notif-item-icon removed 2026-08-30 -- superseded by the shared .row-type-icon component (see
    its own definition above + notifications.js's 2026-08-30 comment); this class is no longer
    referenced anywhere in the app. */
@@ -786,7 +793,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     flex: none;
     width: 8px; height: 8px;
     border-radius: 50%;
-    background: #FF9900;
+    background: var(--c-primary);
     margin-top: 6px;
 }
 /* 2026-08-29, same-day follow-up: /payroll/notifications rebuilt as a DataTable -- see
@@ -795,14 +802,14 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    the dot's own flex-layout margin-top corrected for inline usage next to a title instead of stacked
    in a flex column. */
 #tb_notification .nav-notif-item-dot { margin-top: 0; display: inline-block; vertical-align: middle; }
-#tb_notification tr.notif-row-unread { background: rgba(255, 153, 0, .04); }
+#tb_notification tr.notif-row-unread { background: rgba(var(--bs-primary-rgb), .04); }
 .nav-notif-menu-footer {
     text-align: center;
     padding: 10px;
     border-top: 1px solid #eef0f2;
 }
 .nav-notif-menu-footer a {
-    color: #FF9900;
+    color: var(--c-primary);
     font-weight: 600;
     font-size: 1.0417rem;
     text-decoration: none;
@@ -865,7 +872,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .nav-profile-menu li a i {
     width: 16px;
     text-align: center;
-    color: #FF9900;
+    color: var(--c-primary);
 }
 /* 2026-09-07, real bug found and fixed (explicit report: "แต่ละ Card แสดง Content ไม่ครบครับตอนส่วน
    ท้ายไปทั้งหมดเลยตอนนี้" -- each Card's content not showing completely, the tail end missing
@@ -891,10 +898,10 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     padding: 0 4px;
 }
 .user-settings-font-slider-wrap .form-range::-webkit-slider-thumb {
-    background: #FF9900;
+    background: var(--c-primary);
 }
 .user-settings-font-slider-wrap .form-range::-moz-range-thumb {
-    background: #FF9900;
+    background: var(--c-primary);
 }
 .user-settings-font-slider-labels {
     display: flex;
@@ -941,13 +948,13 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     font-size: 1.1rem;
 }
 .user-settings-theme-option:hover {
-    border-color: #FF9900;
-    color: #FF9900;
+    border-color: var(--c-primary);
+    color: var(--c-primary);
 }
 .user-settings-theme-option.active {
-    border-color: #FF9900;
-    background-color: #fff4e0;
-    color: #FF9900;
+    border-color: var(--c-primary);
+    background-color: var(--c-primary-soft);
+    color: var(--c-primary);
     font-weight: 600;
 }
 /* .user-settings-lang-* rules removed 2026-08-29 (same-day follow-up: "ตัวเปลี่ยนภาษาตัดออกจากใน
@@ -979,7 +986,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     transition: background-color 0.15s ease;
 }
 .nav-hub-tile a:hover {
-    background-color: rgba(255, 153, 0, 0.1);
+    background-color: rgba(var(--bs-primary-rgb), 0.1);
     color: #1a202c;
 }
 .nav-hub-tile-icon {
@@ -1018,7 +1025,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     width: 42px;
     height: 42px;
     border-radius: 50%;
-    border: 2px solid #FF9900;
+    border: 2px solid var(--c-primary);
     overflow: hidden;
     display: flex;
     align-items: center;
@@ -1134,7 +1141,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .menu-link:hover {
     background-color: #f8fafc;
-    color: #ff9900;
+    color: var(--c-primary);
 }
 .menu-icon {
     display: inline-flex;
@@ -1165,7 +1172,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .menu-item.open .menu-arrow {
     transform: rotate(180deg);
-    color: #ff9900;
+    color: var(--c-primary);
 }
 .submenu {
     list-style: none;
@@ -1185,7 +1192,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     box-sizing: border-box;
 }
 .submenu-link:hover {
-    color: #ff9900;
+    color: var(--c-primary);
     background-color: #f1f5f9;
 }
 .submenu-icon {
@@ -1272,12 +1279,12 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     padding: 0.5em 0.7em;
 }
 /* 2026-08-30 (Phase 3, T025, explicit request: "แก้สีที่แย่งกัน") -- was #ec6622, a visibly
-   different/darker orange from this app's real brand color #FF9900 (used everywhere else on the
+   different/darker orange from this app's real brand color var(--c-primary) (used everywhere else on the
    same pages this class appears on: buttons, active nav states, the avatar/icon gradients). Shared
    by every numbered section-header badge across the app (Employee Detail, Payroll Process Detail,
    several modals in layout/modals.php) -- one shared class, one fix covers all of them. */
 .bg-head-first {
-    background-color: #FF9900;
+    background-color: var(--c-primary);
 }
 /* Company Profile — Logo upload card (2026-08-24, explicit request: "ปรับให้ Logo Upload อยู่ยนสุดของ
    Form ขอ Design สวยๆ รวมถึงมี Preview ด้วย") -- own section at the bottom of the form, replacing the
@@ -1307,8 +1314,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     transition: border-color .15s ease, background .15s ease;
 }
 .cp-logo-upload-card:hover {
-    border-color: rgba(255, 153, 0, .5);
-    background: rgba(255, 153, 0, .03);
+    border-color: rgba(var(--bs-primary-rgb), .5);
+    background: rgba(var(--bs-primary-rgb), .03);
 }
 .cp-logo-preview-box {
     flex: none;
@@ -1366,12 +1373,12 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .bulk-import-dropzone:hover,
 .bulk-import-dropzone.bulk-import-dropzone-filled {
-    border-color: rgba(255, 153, 0, .5);
-    background: rgba(255, 153, 0, .03);
+    border-color: rgba(var(--bs-primary-rgb), .5);
+    background: rgba(var(--bs-primary-rgb), .03);
 }
 .bulk-import-dropzone i {
     font-size: 1.8rem;
-    color: #FF9900;
+    color: var(--c-primary);
 }
 .bulk-import-dropzone .bulk-import-dropzone-filename {
     font-weight: 600;
@@ -1398,18 +1405,18 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     align-items: flex-start;
     gap: .75rem;
     padding: .9rem 1.25rem;
-    background: linear-gradient(135deg, rgba(255, 153, 0, .1), rgba(255, 153, 0, .03));
+    background: linear-gradient(135deg, rgba(var(--bs-primary-rgb), .1), rgba(var(--bs-primary-rgb), .03));
     border-bottom: 1px solid var(--app-border);
 }
 .settings-info-card-header i {
-    color: #FF9900;
+    color: var(--c-primary);
     font-size: 1.1rem;
     flex: none;
     margin-top: .15rem;
 }
 /* Attendance Deduction Rule's event cards put a .row-type-icon badge (own white-on-gradient icon,
    style.css above) directly inside .settings-info-card-header -- without this override, the generic
-   `.settings-info-card-header i { color: #FF9900 }` rule above (equal specificity, a plain descendant
+   `.settings-info-card-header i { color: var(--c-primary) }` rule above (equal specificity, a plain descendant
    selector on `i`) would win over .row-type-icon's own color via inheritance (inheritance carries NO
    specificity, so ANY direct rule on `i` itself beats it), turning the badge's icon orange instead of
    white. Scoped narrowly so it only fires where a .row-type-icon badge is actually used this way. */
@@ -1471,7 +1478,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    late/absent/unpaid_leave/leave_pending, so the color language matches the icon shown in the header.
    Each event card's BODY lists that event's rule variants (company-wide default + any team/
    department-scoped overrides) as compact rows, not nested cards -- avoids excessive visual nesting. */
-.settings-info-card-header.adr-hdr-1 { background: linear-gradient(135deg, rgba(255, 153, 0, .12), rgba(255, 153, 0, .03)); }
+.settings-info-card-header.adr-hdr-1 { background: linear-gradient(135deg, rgba(var(--bs-primary-rgb), .12), rgba(var(--bs-primary-rgb), .03)); }
 .settings-info-card-header.adr-hdr-3 { background: linear-gradient(135deg, rgba(99, 102, 241, .12), rgba(99, 102, 241, .03)); }
 .settings-info-card-header.adr-hdr-4 { background: linear-gradient(135deg, rgba(240, 68, 56, .12), rgba(240, 68, 56, .03)); }
 .settings-info-card-header.adr-hdr-5 { background: linear-gradient(135deg, rgba(11, 165, 236, .12), rgba(11, 165, 236, .03)); }
@@ -1617,14 +1624,14 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     border-bottom: 3px solid transparent;
 }
 .nav-tabs .nav-link.active {
-    color: #ff9900 !important;
+    color: var(--c-primary) !important;
     border-none: none;
-    border-bottom: 3px solid #ff9900 !important;
+    border-bottom: 3px solid var(--c-primary) !important;
     background: transparent;
 }
 .nav-tabs .nav-link:hover {
     border-color: transparent;
-    color: #ff9900;
+    color: var(--c-primary);
 }
 .payroll-breadcrumb {
     display: flex;
@@ -1645,7 +1652,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .bc-current {
     background-color: rgb(255, 153, 0, 0.12);
-    color: #ff9900;
+    color: var(--c-primary);
     padding: 4px 12px;
     border-radius: 10px;
     font-weight: 600;
@@ -1658,7 +1665,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
        so this was always a no-op here. #profilePreview's own rule below is the one that actually
        matters. Left here unchanged in case another page ever puts this class directly on an <img>. */
     object-fit: cover;
-    border: 2px dashed rgba(255, 153, 0, .35) !important;
+    border: 2px dashed rgba(var(--bs-primary-rgb), .35) !important;
     background: linear-gradient(135deg, #fff8ee, #fff1dc) !important;
     transition: border-color .15s ease, box-shadow .15s ease;
 }
@@ -1677,11 +1684,11 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     object-position: center top;
 }
 .profile-upload-circle:hover {
-    border-color: #FF9900 !important;
-    box-shadow: 0 0 0 .2rem rgba(255, 153, 0, .15);
+    border-color: var(--c-primary) !important;
+    box-shadow: 0 0 0 .2rem rgba(var(--bs-primary-rgb), .15);
 }
 .profile-upload-circle #profilePlaceholder i {
-    color: #FF9900;
+    color: var(--c-primary);
 }
 .profile-upload-badge {
     width: 26px;
@@ -1692,40 +1699,16 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     box-shadow: 0 2px 6px rgba(0, 0, 0, .18);
 }
 
-/* .btn-outline-brand / .bg-brand — used across Employee Detail (type/gender/payment-type toggles,
-   the profile-photo camera badge, Add Dependent/Parent buttons) but never actually defined anywhere
-   in this file, so they rendered as plain unstyled Bootstrap buttons/badge (no border, no checked
-   state, no brand color at all) -- this is the "radio ยังดูไม่มีธีม" gap. NOT the same as
-   .btn-outline-primary/.bg-primary: this codebase's Bootstrap build hardcodes #0d6efd into those
-   classes' own --bs-btn-* custom properties rather than referencing the global --bs-primary token,
-   so the :root recolor above (search "Bootstrap primary recolor") does not actually reach them --
-   defining brand-specific classes here, hardcoded to #FF9900 like the rest of this file already
-   does, sidesteps that gap rather than depending on it.  */
-.btn-outline-brand {
-    color: #FF9900;
-    border-color: #FF9900;
-    background-color: #fff;
-}
-.btn-outline-brand:hover {
-    color: #fff;
-    background-color: #FF9900;
-    border-color: #FF9900;
-}
-.btn-check:checked + .btn-outline-brand,
-.btn-check:active + .btn-outline-brand,
-.btn-outline-brand:active,
-.btn-outline-brand.active {
-    color: #fff;
-    background-color: #FF9900;
-    border-color: #FF9900;
-    box-shadow: none;
-}
-.btn-check:focus + .btn-outline-brand,
-.btn-outline-brand:focus {
-    box-shadow: 0 0 0 .25rem rgba(255, 153, 0, .25);
-}
+/* .btn-outline-brand -- Phase Design Round 2 item 1 (docs/design/rules.md §1's own decision): this
+   used to be a standalone hardcoded-orange definition (see git history) -- superseded by the
+   ".btn-outline-secondary, .btn-outline-brand" alias in the consolidated Bootstrap-override section
+   below (search "Bootstrap recolor"), where it now shares one token-driven definition with the new
+   .btn-outline-secondary instead of a second hardcoded copy. Temporary until round 4 migrates every
+   .btn-outline-brand call site to .btn-outline-secondary directly, at which point the alias (and
+   this comment) is deleted. .bg-brand is UNCHANGED/out of scope for this round (not named in the
+   round 2 item 1 decision) -- still hardcoded below, own migration decision deferred. */
 .bg-brand {
-    background-color: #FF9900 !important;
+    background-color: var(--c-primary) !important;
     color: #fff;
 }
 .scrollable-tabs {
@@ -1749,22 +1732,22 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     padding: 0.4rem 1rem;
 }
 .structure-tabs-wrap .structure-tabs .nav-link.active {
-    background-color: #FF9900;
+    background-color: var(--c-primary);
     color: #fff;
     font-weight: 600;
 }
 .structure-tabs-wrap .structure-tabs .nav-link:hover:not(.active) {
-    background-color: rgba(255, 153, 0, 0.12);
+    background-color: rgba(var(--bs-primary-rgb), 0.12);
 }
 
 /* Select2 — brand orange theme (applies app-wide, all Select2 instances share this design system) */
 .select2-container--bootstrap-5.select2-container--focus .select2-selection,
 .select2-container--bootstrap-5.select2-container--open .select2-selection {
-    border-color: #FF9900;
-    box-shadow: 0 0 0 .25rem rgba(255, 153, 0, .25);
+    border-color: var(--c-primary);
+    box-shadow: 0 0 0 .25rem rgba(var(--bs-primary-rgb), .25);
 }
 .select2-container--bootstrap-5 .select2-results__options .select2-results__option.select2-results__option--highlighted {
-    background-color: rgba(255, 153, 0, .12);
+    background-color: rgba(var(--bs-primary-rgb), .12);
     /* was a hardcoded #212529 -- on a translucent-orange tint sitting over --app-surface-bg this
        needs to flip to a light color in dark mode too, same fix as the datepicker "today" cell
        below. --app-heading (not --app-text) since a highlighted option is the more prominent state. */
@@ -1772,7 +1755,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .select2-container--bootstrap-5 .select2-results__options .select2-results__option.select2-results__option--selected,
 .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option[aria-selected="true"]:not(.select2-results__option--highlighted) {
-    background-color: #FF9900;
+    background-color: var(--c-primary);
     color: #fff;
 }
 /* 2026-09-05, T069 Step 3 -- select2-bootstrap-5-theme has ZERO Bootstrap-variable usage and ZERO
@@ -1826,7 +1809,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .datepicker.datepicker-dropdown {
     border-radius: 0.5rem;
     box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, .15);
-    border: 1px solid rgba(255, 153, 0, .25);
+    border: 1px solid rgba(var(--bs-primary-rgb), .25);
     padding: 0.5rem;
     /* 2026-09-05, T069 Step 3 -- the library's own base CSS has no dark-mode awareness at all and
        this app never gave the dropdown panel an explicit background/text color before (it only ever
@@ -1853,14 +1836,14 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .datepicker table tr td.active:hover.active,
 .datepicker table tr td.selected,
 .datepicker table tr td.selected:hover {
-    background-color: #FF9900 !important;
+    background-color: var(--c-primary) !important;
     background-image: none;
     color: #fff;
     text-shadow: none;
 }
 .datepicker table tr td.today,
 .datepicker table tr td.today:hover {
-    background-color: rgba(255, 153, 0, .18) !important;
+    background-color: rgba(var(--bs-primary-rgb), .18) !important;
     background-image: none;
     /* was a hardcoded #212529 -- same fix as Select2's highlighted-option rule above, same reason:
        illegible on a translucent-orange-over-dark-surface tint without it. */
@@ -1868,19 +1851,19 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .datepicker table tr td:hover,
 .datepicker table tr th:hover {
-    background-color: rgba(255, 153, 0, .12);
+    background-color: rgba(var(--bs-primary-rgb), .12);
     cursor: pointer;
 }
 /* 2026-09-03, Platform Hardening Phase 2 -- Clear button row (clearBtn:true, public/js/input.js's
    initDatepicker()), styled to match this datepicker's own brand theme instead of the library's
    plain default text. */
 .datepicker tfoot tr th.clear {
-    color: #FF9900;
+    color: var(--c-primary);
     font-weight: 600;
     cursor: pointer;
 }
 .datepicker tfoot tr th.clear:hover {
-    background-color: rgba(255, 153, 0, .12);
+    background-color: rgba(var(--bs-primary-rgb), .12);
     text-decoration: underline;
 }
 /* ==========================================================================
@@ -1934,7 +1917,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     padding: 0;
     font-size: 1.5rem;
     line-height: 1;
-    color: #FF9900;
+    color: var(--c-primary);
     cursor: pointer;
     transition: color 0.15s ease, transform 0.2s ease;
 }
@@ -1985,7 +1968,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     border-radius: 10px;
 }
 .station-row::-webkit-scrollbar-thumb {
-    background: #FF9900;
+    background: var(--c-primary);
     border-radius: 10px;
 }
 .station-col {
@@ -2043,11 +2026,11 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     border-left-color: #e2e8f0;
 }
 .station-card.active {
-    background: #FF9900;
+    background: var(--c-primary);
     color: #ffffff;
 }
 .station-card.active::after {
-    border-left-color: #FF9900;
+    border-left-color: var(--c-primary);
 }
 .station-count {
     display: inline-block;
@@ -2134,8 +2117,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 
 .sync-summary-card {
-    background: rgba(255, 153, 0, 0.06);
-    border: 1px solid rgba(255, 153, 0, 0.2);
+    background: rgba(var(--bs-primary-rgb), 0.06);
+    border: 1px solid rgba(var(--bs-primary-rgb), 0.2);
     border-radius: 14px;
     margin-left: 0;
     margin-right: 0;
@@ -2154,7 +2137,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 153, 0, 0.15);
+    background: rgba(var(--bs-primary-rgb), 0.15);
     color: #ec6622;
     font-size: 1.05rem;
 }
@@ -2251,7 +2234,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 
 .datepicker table tr td.day.focused,
 .datepicker table tr td.day:focus {
-    background-color: rgba(255, 153, 0, .12);
+    background-color: rgba(var(--bs-primary-rgb), .12);
 }
 
 /* ==========================================================================
@@ -2319,41 +2302,172 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 
 /* ==========================================================================
-   Bootstrap "primary" recolor -- brand orange (#FF9900), not Bootstrap's stock blue.
-   The project convention (CLAUDE.md) has always required primary buttons to be brand
-   orange, but nothing in this file was actually overriding Bootstrap's own --bs-primary
-   token before now (only .btn-primary usages happened to exist without a matching
-   override) -- found and fixed while building the Payroll Run Detail timeline below,
-   whose whole "the ONE primary action is visually obvious" point depends on this actually
-   being orange. Root-level so .text-primary/.bg-primary-subtle/etc. follow via Bootstrap
-   5.3's own CSS variable system.
-   2026-08-20 correction: the above was only ever half-true. Verified against the compiled
-   node_modules/bootstrap/dist/css/bootstrap.min.css -- .btn-primary hardcodes
-   --bs-btn-bg:#0d6efd etc. directly on the class itself instead of reading --bs-primary, so
-   this :root override never actually reached buttons (only .text-primary-style utilities,
-   which do reference var(--bs-primary-rgb), were ever affected). Exact same gap
-   .btn-outline-brand/.bg-brand below were created to work around -- found while doing a
-   color-consistency pass on Employee Detail (its "Next"/"Save" buttons were all
-   .btn-warning, some hacked orange via an inline style, because .btn-primary silently
-   wasn't orange). Fixed for real below with an explicit .btn-primary override using the
-   same per-component --bs-btn-* token technique as .btn-outline-brand. */
+   Bootstrap recolor -- rewritten for Phase Design Round 2 item 1 (docs/design/rules.md §1/§3/§4)
+   to read from tokens.css instead of repeating hex literals, and widened to every component this
+   app actually uses that Bootstrap 5.3 hardcodes per-component rather than reading the root
+   --bs-primary/--bs-danger/etc. token (confirmed empirically against the compiled
+   node_modules/bootstrap/dist/css/bootstrap.css for EACH component below before writing its
+   override -- not assumed uniform across all of Bootstrap: .btn-primary/.btn-danger/
+   .dropdown-item.active both hardcode their own color per-component exactly like the
+   already-documented .btn-primary gap; .form-control/.nav-tabs/.btn-link genuinely DO reference
+   root vars via var(), so those need root-level overrides only, confirmed by reading the actual
+   rule bodies, not guessed).
+   History kept: this block used to be a comment-only 2026-08-20 postmortem about .btn-primary
+   specifically -- that history is preserved in git log for this file; superseded by this version
+   since the postmortem's own root-var-not-enough finding is exactly what round 2 acted on. */
 :root {
-    --bs-primary: #FF9900;
+    /* Utilities that DO read the root token via var() -- one override each covers every derived
+       utility class Bootstrap builds from these (.text-primary, .bg-primary-subtle, plain <a>
+       links, .form-control's resting border, .nav-tabs's border/background, modal & dropdown
+       corner radius and shadow). */
+    --bs-primary: var(--c-primary);
+    /* --bs-*-rgb below: NOT a new color -- a mechanical comma-separated RGB-triplet decomposition
+       of the hex token directly above (Bootstrap's OWN variable contract for several native rules,
+       e.g. rgba(var(--bs-primary-rgb), .25) focus rings -- CSS has no built-in hex-to-rgb()
+       function, so this can't be var()-derived without a preprocessor). Documented exception to
+       §12.1 -- round 2 item 8's lint script must allowlist this exact `--bs-*-rgb:` pattern rather
+       than flag it as a stray color literal. --bs-primary-text-emphasis/--bs-primary-border-subtle
+       are Bootstrap-derived tint/shade variants with no equivalent token in rules.md §1's own list
+       either -- kept as literals for the same reason, not part of the 3 allowed brand-orange uses
+       in §3 (they only ever feed .text-primary-emphasis/.bg-primary-border-subtle utility classes,
+       not buttons/tabs/steppers/focus rings). */
     --bs-primary-rgb: 255, 153, 0;
     --bs-primary-text-emphasis: #b45f00;
-    --bs-primary-bg-subtle: #fff3e0;
+    --bs-primary-bg-subtle: var(--c-primary-soft);
     --bs-primary-border-subtle: #ffd699;
+    --bs-danger: var(--c-danger);
+    --bs-danger-rgb: 217, 45, 32;
+    --bs-body-color: var(--c-text);
+    --bs-body-bg: var(--c-bg);
+    --bs-border-color: var(--c-border);
+    --bs-border-color-translucent: var(--c-border);
+    --bs-border-radius: var(--radius);
+    --bs-border-radius-lg: var(--radius);   /* §1: "รัศมี -- ค่าเดียวทั้งระบบ", no separate lg radius */
+    --bs-secondary-color: var(--c-text-muted);
+    --bs-emphasis-color: var(--c-text);
+    --bs-tertiary-bg: var(--c-bg-subtle);
+    --bs-link-color: var(--c-text);         /* §3: "ลิงก์ = --c-text + underline on hover" */
+    --bs-link-hover-color: var(--c-text);
+    --bs-link-color-rgb: 31, 35, 40;
+    --bs-link-hover-color-rgb: 31, 35, 40;
+    --bs-box-shadow: var(--shadow-modal);   /* §1: "modal/dropdown เท่านั้น" -- these 2 are the only
+                                                Bootstrap components that read this root shadow var */
+    --bs-box-shadow-sm: var(--shadow-modal);
 }
 .btn-primary {
-    --bs-btn-bg: #FF9900;
-    --bs-btn-border-color: #FF9900;
-    --bs-btn-hover-bg: #e68a00;
-    --bs-btn-hover-border-color: #e68a00;
-    --bs-btn-active-bg: #cc7a00;
-    --bs-btn-active-border-color: #cc7a00;
-    --bs-btn-disabled-bg: #FF9900;
-    --bs-btn-disabled-border-color: #FF9900;
+    --bs-btn-bg: var(--c-primary);
+    --bs-btn-border-color: var(--c-primary);
+    --bs-btn-hover-bg: var(--c-primary-hover);
+    --bs-btn-hover-border-color: var(--c-primary-hover);
+    --bs-btn-active-bg: var(--c-primary-hover);
+    --bs-btn-active-border-color: var(--c-primary-hover);
+    --bs-btn-disabled-bg: var(--c-primary);
+    --bs-btn-disabled-border-color: var(--c-primary);
     --bs-btn-focus-shadow-rgb: 255, 153, 0;
+}
+/* §4: Danger tier -- "เฉพาะปุ่มยืนยันใน SweetAlert confirm ของการลบ/ยกเลิกที่ย้อนไม่ได้" -- same
+   per-component gap as .btn-primary (Bootstrap hardcodes #dc3545 directly on .btn-danger, verified
+   the same way). */
+.btn-danger {
+    /* rules.md's token list has no --c-danger-hover/-active (unlike --c-primary, which does) --
+       derived via color-mix() instead of a new hex literal, so §12.1's "no hex/rgb outside
+       tokens.css" rule stays honest rather than needing a per-line exception for a shade Bootstrap
+       itself would otherwise force as a hardcoded hex. */
+    --bs-btn-bg: var(--c-danger);
+    --bs-btn-border-color: var(--c-danger);
+    --bs-btn-hover-bg: color-mix(in srgb, var(--c-danger) 85%, black);
+    --bs-btn-hover-border-color: color-mix(in srgb, var(--c-danger) 85%, black);
+    --bs-btn-active-bg: color-mix(in srgb, var(--c-danger) 70%, black);
+    --bs-btn-active-border-color: color-mix(in srgb, var(--c-danger) 70%, black);
+    --bs-btn-disabled-bg: var(--c-danger);
+    --bs-btn-disabled-border-color: var(--c-danger);
+    --bs-btn-focus-shadow-rgb: 217, 45, 32;
+}
+/* §4: Secondary tier -- "ขอบเทา ตัวหนังสือ --c-text" -- Bootstrap has no stock "secondary" outline
+   variant styled this specific way (its own .btn-outline-secondary reads a mid-gray --bs-secondary
+   token, not this app's tokens), so this is a genuine new per-component definition, not a
+   root-var-is-enough case. Active/checked state intentionally reuses the exact §9 segmented-toggle
+   spec (--c-bg-subtle bg, --c-border-strong border) -- ONE definition serving both "plain secondary
+   button" and "toggle button, selected" per §0's "ซ้ำ=shared" principle, not two.
+   .btn-outline-brand is a TEMPORARY alias sharing every declaration verbatim (docs/design/rules.md
+   §1's own decision) -- every existing .btn-outline-brand call site keeps its current visual
+   result (now genuinely token-driven instead of hardcoded orange) until round 4 migrates each one
+   to .btn-outline-secondary directly, at which point this alias block is deleted. */
+.btn-outline-secondary,
+.btn-outline-brand {
+    --bs-btn-color: var(--c-text);
+    --bs-btn-border-color: var(--c-border-strong);
+    --bs-btn-hover-color: var(--c-text);
+    --bs-btn-hover-bg: var(--c-bg-hover);
+    --bs-btn-hover-border-color: var(--c-border-strong);
+    --bs-btn-active-color: var(--c-text);
+    --bs-btn-active-bg: var(--c-bg-subtle);
+    --bs-btn-active-border-color: var(--c-border-strong);
+    --bs-btn-disabled-color: var(--c-text-faint);
+    --bs-btn-disabled-border-color: var(--c-border);
+    --bs-btn-focus-shadow-rgb: 255, 153, 0;
+}
+.btn-check:checked + .btn-outline-secondary,
+.btn-check:checked + .btn-outline-brand,
+.btn-check:active + .btn-outline-secondary,
+.btn-check:active + .btn-outline-brand,
+.btn-outline-secondary:active,
+.btn-outline-brand:active,
+.btn-outline-secondary.active,
+.btn-outline-brand.active {
+    color: var(--c-text);
+    background-color: var(--c-bg-subtle);
+    border-color: var(--c-border-strong);
+}
+/* Form controls -- .form-control/.form-select already reference --bs-border-color/--bs-border-radius/
+   --bs-body-color via var() at rest (root override above already reaches them), but BOTH hardcode
+   their own focus ring directly (#86b7fe border + rgba(13,110,253,...) shadow) -- confirmed by
+   reading the compiled rule bodies, not assumed. §3: focus ring is one of the 3 allowed uses of
+   brand orange. */
+.form-control:focus,
+.form-select:focus {
+    border-color: var(--c-primary);
+    box-shadow: 0 0 0 .25rem rgba(var(--bs-primary-rgb), .25);
+}
+/* Tabs -- §6: "tab ที่เลือก: ตัวหนังสือ --c-text + เส้นใต้ 2px --c-primary; ไม่มีไอคอน; ไม่มี chevron".
+   Bootstrap's stock .nav-tabs is a "folder tab" box shape (border on 3 sides, matches page bg on the
+   4th) -- a different SHAPE than the flat underline this app's own .setup-tabs/.structure-tabs
+   convention already uses visually today (per CLAUDE.md's Tab section), not just a color mismatch,
+   so this needs a real shape override, not only token substitution. Scoped to plain `.nav-tabs` so
+   it reaches every page still using bare Bootstrap tabs without touching `.setup-tabs`/
+   `.structure-tabs`'s own existing CSS (those already look like this and are NOT overridden a
+   second time here -- confirmed no conflicting selector specificity issue since they're separate,
+   additive classes). */
+.nav-tabs {
+    border-bottom: 1px solid var(--c-border);
+}
+.nav-tabs .nav-link {
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    color: var(--c-text-muted);
+    margin-bottom: -1px;
+}
+.nav-tabs .nav-link:hover,
+.nav-tabs .nav-link:focus {
+    border-color: transparent;
+    color: var(--c-text);
+    isolation: isolate;
+}
+.nav-tabs .nav-link.active,
+.nav-tabs .nav-item.show .nav-link {
+    background: transparent;
+    border-color: transparent transparent var(--c-primary);
+    color: var(--c-text);
+    font-weight: 600;
+}
+/* Dropdown -- border/radius/shadow already reach it via the root vars above; the one thing that
+   doesn't is the SELECTED/active item background, which Bootstrap hardcodes to #0d6efd directly on
+   .dropdown-item.active/:active (confirmed) -- §3: ฟ้าไม่ใช้เลย. */
+.dropdown-item.active,
+.dropdown-item:active {
+    background-color: var(--c-bg-subtle);
+    color: var(--c-text);
 }
 /* ==========================================================================
    2026-09-04, Backlog Phase 11, T069 (dark mode), Step 1 of 3 -- foundation only. Scope
@@ -2366,7 +2480,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    --app-border are the 4 fundamental colors nearly every custom component in this app's own CSS
    ultimately reduces to. Deliberately did NOT add a dark redefinition of the --bs-primary/
    --bs-btn-* brand-orange block directly above -- the brand accent color is intentionally the
-   SAME in both themes (a deliberate design choice, not a gap: #FF9900 already has enough contrast
+   SAME in both themes (a deliberate design choice, not a gap: --c-primary's brand orange already has enough contrast
    against both a light and a dark surface to stay legible/on-brand either way).
 
    3-state model, 2 real CSS selectors (not 3) -- [data-bs-theme="dark"] fires for an employee who
@@ -2402,7 +2516,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     --app-text-muted: #8a939e;
     /* .page-header-card-icon's own soft-orange-tint treatment (light peachy bg + dark-orange text)
        -- reused wherever this exact "tinted brand-accent icon box" pattern repeats. The brand hue
-       itself (#FF9900, used directly elsewhere e.g. .page-header-card's own left border) stays
+       itself (var(--c-primary), used directly elsewhere e.g. .page-header-card's own left border) stays
        fixed across themes per this file's own T069 Step 1 note; only ITS tint/on-tint pairing needs
        a dark-safe alternative, since the light version's own peachy bg would look washed-out/wrong
        floating on a near-black surface. */
@@ -2593,10 +2707,10 @@ html, body {
     color: #198754;
 }
 .process-timeline .tl-step.current .tl-icon {
-    border-color: #FF9900;
-    background: linear-gradient(135deg, #ffab26, #FF9900);
+    border-color: var(--c-primary);
+    background: linear-gradient(135deg, #ffab26, var(--c-primary));
     color: #fff;
-    box-shadow: 0 3px 8px rgba(255, 153, 0, .35);
+    box-shadow: 0 3px 8px rgba(var(--bs-primary-rgb), .35);
     animation: process-tl-pulse 1.8s infinite;
 }
 .process-timeline .tl-step.rejected .tl-icon {
@@ -2681,9 +2795,9 @@ html, body {
     white-space: normal;
 }
 @keyframes process-tl-pulse {
-    0% { box-shadow: 0 0 0 0 rgba(255, 153, 0, .45); }
-    70% { box-shadow: 0 0 0 8px rgba(255, 153, 0, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(255, 153, 0, 0); }
+    0% { box-shadow: 0 0 0 0 rgba(var(--bs-primary-rgb), .45); }
+    70% { box-shadow: 0 0 0 8px rgba(var(--bs-primary-rgb), 0); }
+    100% { box-shadow: 0 0 0 0 rgba(var(--bs-primary-rgb), 0); }
 }
 /* Stack vertically on narrow screens instead of squeezing 5 columns into a phone width. */
 @media (max-width: 576px) {
@@ -2831,10 +2945,10 @@ html, body {
 .mini-timeline .mt-step.current .mt-dot {
     width: 19px;
     height: 19px;
-    border-color: #FF9900;
-    background: #FF9900;
+    border-color: var(--c-primary);
+    background: var(--c-primary);
     color: #fff;
-    box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(255, 153, 0, .3);
+    box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(var(--bs-primary-rgb), .3);
     animation: process-tl-pulse 1.8s infinite;
 }
 .mini-timeline .mt-step.rejected .mt-dot {
@@ -2867,7 +2981,7 @@ html, body {
     margin: 14px 0 0;
     padding: 10px 16px;
     background: #fff8ec;
-    border-left: 3px solid #FF9900;
+    border-left: 3px solid var(--c-primary);
     border-radius: 6px;
     font-size: 0.85rem;
     color: #7a5200;
@@ -3112,7 +3226,7 @@ html, body {
     font-size: 1rem;
     transition: background .12s ease, color .12s ease;
 }
-.apv-comment-action-btn:hover { background: #f3f4f6; color: #FF9900; }
+.apv-comment-action-btn:hover { background: #f3f4f6; color: var(--c-primary); }
 .apv-comment-action-btn.text-danger:hover { background: #fef2f2; color: #dc2626 !important; }
 .apv-comment-body { font-size: 1.0833rem; color: #374151; line-height: 1.55; margin-top: 4px; white-space: pre-line; }
 .apv-comment-date { font-size: 0.9167rem; color: #9ca3af; margin-top: 8px; }
@@ -3220,7 +3334,7 @@ html, body {
 .art-stage-approve .art-stage-marker { background: #16a34a; }
 .art-stage-reject .art-stage-marker { background: #dc3545; }
 .art-stage-cancel .art-stage-marker { background: #9ca3af; }
-.art-stage-pending .art-stage-marker { background: #FF9900; }
+.art-stage-pending .art-stage-marker { background: var(--c-primary); }
 .art-stage-line {
     position: absolute; top: 34px; bottom: -26px; left: 16px; width: 2px;
     background: #e5e7eb; z-index: 1;
@@ -3241,7 +3355,7 @@ html, body {
 .art-badge-approved { background: #16a34a; }
 .art-badge-rejected { background: #dc3545; }
 .art-badge-cancelled { background: #9ca3af; }
-.art-badge-pending { background: #FF9900; }
+.art-badge-pending { background: var(--c-primary); }
 
 /* ==========================================================================
    Payroll Run Detail — colored stat cards (Employees/Gross/Deductions/Net Pay), replacing
@@ -3304,7 +3418,7 @@ html, body {
 .stat-card-success .stat-card-icon { background: linear-gradient(135deg, #e8f6ee, #c3ead4); color: #198754; }
 .stat-card-danger { border-left-color: #dc3545; }
 .stat-card-danger .stat-card-icon { background: linear-gradient(135deg, #fdecea, #f8cdd1); color: #dc3545; }
-.stat-card-primary { border-left-color: #FF9900; }
+.stat-card-primary { border-left-color: var(--c-primary); }
 .stat-card-primary .stat-card-icon { background: linear-gradient(135deg, #ffe9c2, #ffd591); color: #b45f00; }
 .stat-card-primary .stat-card-value { color: #b45f00; }
 /* 2026-08-31: 2 new tones for the Process Detail page's payment-method summary cards (Bank
@@ -3373,7 +3487,7 @@ html, body {
     color: #fff;
     flex: none;
 }
-.row-type-icon.rt-1 { background: linear-gradient(135deg, #FF9900, #ffb84d); }
+.row-type-icon.rt-1 { background: linear-gradient(135deg, var(--c-primary), #ffb84d); }
 .row-type-icon.rt-2 { background: linear-gradient(135deg, #12b76a, #6ee7b7); }
 .row-type-icon.rt-3 { background: linear-gradient(135deg, #6366f1, #a5b4fc); }
 .row-type-icon.rt-4 { background: linear-gradient(135deg, #f04438, #fda29b); }
@@ -3413,7 +3527,7 @@ html, body {
 .calc-preview-result .calc-preview-amount {
     font-size: 1.15rem;
     font-weight: 700;
-    color: #FF9900;
+    color: var(--c-primary);
 }
 .calc-preview-result .calc-preview-step {
     font-size: .85rem;
@@ -3460,8 +3574,8 @@ html, body {
     background: var(--app-hover-bg);
 }
 .sr-version-item.sr-selected {
-    background: rgba(255, 153, 0, .10);
-    border-left-color: #FF9900;
+    background: rgba(var(--bs-primary-rgb), .10);
+    border-left-color: var(--c-primary);
 }
 /* Delete now only appears on hover/selection (was always visible at reduced opacity) -- a quieter
    default state now that this list is denser (narrower column, more rows fit on screen at once). */
@@ -3554,7 +3668,7 @@ html, body {
     gap: 1rem;
     background: var(--app-surface-bg);
     border: 1px solid var(--app-border);
-    border-left: 4px solid #FF9900;
+    border-left: 4px solid var(--c-primary);
     border-radius: 8px;
     padding: 1rem 1.3rem;
 }
@@ -3608,7 +3722,7 @@ html, body {
     gap: .5rem;
     background: var(--app-accent-soft-bg);
     color: var(--app-accent-soft-text);
-    border: 1px solid rgba(255, 153, 0, .25);
+    border: 1px solid rgba(var(--bs-primary-rgb), .25);
     border-radius: 10px;
     padding: .5rem .8rem;
     font-size: .85rem;
@@ -3616,7 +3730,7 @@ html, body {
     white-space: nowrap;
 }
 .dash-period-picker-btn:hover {
-    border-color: rgba(255, 153, 0, .5);
+    border-color: rgba(var(--bs-primary-rgb), .5);
 }
 /* Green = "right now" (live), amber = a past period is being viewed -- same live/historical
    distinction the old .dash-historical-badge used to spell out in text, now a quiet dot instead of
@@ -3690,12 +3804,12 @@ html, body {
     text-overflow: ellipsis;
 }
 .dash-period-picker-month-btn:hover {
-    border-color: rgba(255, 153, 0, .5);
+    border-color: rgba(var(--bs-primary-rgb), .5);
     background: var(--app-accent-soft-bg);
 }
 .dash-period-picker-month-btn.active {
-    background: #FF9900;
-    border-color: #FF9900;
+    background: var(--c-primary);
+    border-color: var(--c-primary);
     color: #fff;
 }
 .dash-period-picker-today-link {
@@ -3710,7 +3824,7 @@ html, body {
     background: transparent;
     font-size: .78rem;
     font-weight: 600;
-    color: #FF9900;
+    color: var(--c-primary);
 }
 .dash-period-picker-today-link:hover {
     color: #b45f00;
@@ -3758,7 +3872,7 @@ html, body {
 .dash-calendar-nav-btn:hover {
     background: var(--app-accent-soft-bg);
     color: #b45f00;
-    border-color: rgba(255, 153, 0, .4);
+    border-color: rgba(var(--bs-primary-rgb), .4);
 }
 
 /* ==========================================================================
@@ -3789,7 +3903,7 @@ html, body {
     color: #fff;
     font-size: 0.95rem;
 }
-.rd-report-tile-orange { background: #FF9900; }
+.rd-report-tile-orange { background: var(--c-primary); }
 .rd-report-tile-purple { background: #6f5fd6; }
 .rd-report-tile-green { background: #17c88b; }
 #runDetailTabs .nav-link.active {
@@ -3961,7 +4075,7 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #ffab26, #FF9900);
+    background: linear-gradient(135deg, #ffab26, var(--c-primary));
     color: #fff;
     font-size: .85rem;
     flex: none;
@@ -3987,7 +4101,7 @@ html, body {
     transition: box-shadow .15s ease, border-color .15s ease;
 }
 .awf-step-card:hover {
-    border-color: rgba(255, 153, 0, .35);
+    border-color: rgba(var(--bs-primary-rgb), .35);
     box-shadow: 0 4px 14px rgba(16, 24, 40, .07);
 }
 .awf-step-card.sortable-ghost {
@@ -4004,14 +4118,14 @@ html, body {
     width: 30px;
     height: 30px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #ffab26, #FF9900);
+    background: linear-gradient(135deg, #ffab26, var(--c-primary));
     color: #fff;
     font-weight: 700;
     font-size: .85rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 2px 6px rgba(255, 153, 0, .35);
+    box-shadow: 0 2px 6px rgba(var(--bs-primary-rgb), .35);
 }
 .awf-step-connector {
     width: 2px;
@@ -4057,7 +4171,7 @@ html, body {
     align-items: center;
     justify-content: center;
     flex: none;
-    background: rgba(255, 153, 0, .12);
+    background: rgba(var(--bs-primary-rgb), .12);
     color: #b45f00;
     font-size: .75rem;
 }
@@ -4090,8 +4204,8 @@ html, body {
     cursor: pointer;
 }
 .awf-seq-switch .form-check-input:checked {
-    background-color: #FF9900;
-    border-color: #FF9900;
+    background-color: var(--c-primary);
+    border-color: var(--c-primary);
 }
 .awf-step-remove {
     flex: none;
@@ -4258,8 +4372,8 @@ html, body {
     transition: border-color .15s ease, background .15s ease, transform .1s ease;
 }
 .ect-palette-chip:hover {
-    border-color: rgba(255, 153, 0, .5);
-    background: rgba(255, 153, 0, .04);
+    border-color: rgba(var(--bs-primary-rgb), .5);
+    background: rgba(var(--bs-primary-rgb), .04);
     transform: translateY(-1px);
 }
 .ect-palette-chip:active {
@@ -4269,8 +4383,8 @@ html, body {
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: rgba(255, 153, 0, .12);
-    color: #FF9900;
+    background: rgba(var(--bs-primary-rgb), .12);
+    color: var(--c-primary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -4322,10 +4436,10 @@ html, body {
     transition: background .1s ease;
 }
 .ect-layer-row:hover {
-    background: rgba(255, 153, 0, .08);
+    background: rgba(var(--bs-primary-rgb), .08);
 }
 .ect-layer-row.ect-layer-selected {
-    background: rgba(255, 153, 0, .18);
+    background: rgba(var(--bs-primary-rgb), .18);
     color: #b45f00;
     font-weight: 600;
 }
@@ -4454,13 +4568,13 @@ html, body {
 }
 .ect-lang-tab.active {
     color: #b45f00;
-    border-bottom-color: #FF9900;
+    border-bottom-color: var(--c-primary);
 }
 .ect-lang-tab-dot {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #FF9900;
+    background: var(--c-primary);
     display: inline-block;
 }
 /* 2026-08-25, explicit request: "Tab Thai กับ Eng อยากให้มีรูปธงด้วยครับเหมือนตัวเปลี่ยนภาษา" -- reuses
@@ -4629,7 +4743,7 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #ffab26, #FF9900);
+    background: linear-gradient(135deg, #ffab26, var(--c-primary));
     color: #fff;
     font-size: 1rem;
 }
@@ -4650,8 +4764,8 @@ html, body {
 .ect-editor-title-input:focus {
     outline: none;
     background: #fff;
-    border-color: #FF9900;
-    box-shadow: 0 0 0 3px rgba(255, 153, 0, .15);
+    border-color: var(--c-primary);
+    box-shadow: 0 0 0 3px rgba(var(--bs-primary-rgb), .15);
 }
 /* 2026-08-26: persistently-visible pencil affordance next to the borderless title input above --
    see the markup's own comment for why (the title looked like static text, not an editable field). */
@@ -4671,7 +4785,7 @@ html, body {
 }
 .ect-editor-title-edit-btn:hover {
     background: #fff1de;
-    color: #FF9900;
+    color: var(--c-primary);
 }
 .ect-editor-topbar-fields {
     display: flex;
@@ -4751,7 +4865,7 @@ html, body {
 .ect-margin-preview::after {
     content: '';
     position: absolute;
-    border: 1px dashed #FF9900;
+    border: 1px dashed var(--c-primary);
 }
 .ect-margin-preview-narrow::after { inset: 3px; }
 .ect-margin-preview-normal::after { inset: 6px; }
@@ -4763,17 +4877,17 @@ html, body {
 .ect-el {
     position: absolute;
     box-sizing: border-box;
-    border: 1px dashed rgba(255, 153, 0, .45);
-    background: rgba(255, 153, 0, .03);
+    border: 1px dashed rgba(var(--bs-primary-rgb), .45);
+    background: rgba(var(--bs-primary-rgb), .03);
     cursor: move;
 }
 .ect-el:hover {
-    border-color: #FF9900;
+    border-color: var(--c-primary);
 }
 .ect-el-selected {
-    border: 1.5px solid #FF9900;
-    background: rgba(255, 153, 0, .09);
-    box-shadow: 0 0 0 2px rgba(255, 153, 0, .15);
+    border: 1.5px solid var(--c-primary);
+    background: rgba(var(--bs-primary-rgb), .09);
+    box-shadow: 0 0 0 2px rgba(var(--bs-primary-rgb), .15);
 }
 .ect-el-body {
     width: 100%;
@@ -4819,7 +4933,7 @@ html, body {
     bottom: -5px;
     width: 11px;
     height: 11px;
-    background: #FF9900;
+    background: var(--c-primary);
     border: 2px solid #fff;
     border-radius: 50%;
     cursor: nwse-resize;
@@ -4828,12 +4942,12 @@ html, body {
 /* v2 additions (2026-08-24) -- multi-template picker, preset cards, image library grid, drag-over
    state for native HTML5 drag-and-drop from the palette. */
 .ect-style-btn.active {
-    background: #FF9900;
-    border-color: #FF9900;
+    background: var(--c-primary);
+    border-color: var(--c-primary);
     color: #fff;
 }
 .ect-page.ect-drop-target {
-    outline: 2px dashed #FF9900;
+    outline: 2px dashed var(--c-primary);
     outline-offset: -2px;
 }
 .ect-el.ect-el-selected .ect-quick-delete,
@@ -4881,13 +4995,13 @@ html, body {
     background: #fff;
 }
 .ect-preset-card:hover {
-    border-color: rgba(255, 153, 0, .5);
+    border-color: rgba(var(--bs-primary-rgb), .5);
     transform: translateY(-2px);
     box-shadow: 0 4px 14px rgba(16, 24, 40, .1);
 }
 .ect-preset-card.active {
-    border-color: #FF9900;
-    box-shadow: 0 0 0 2px rgba(255, 153, 0, .25);
+    border-color: var(--c-primary);
+    box-shadow: 0 0 0 2px rgba(var(--bs-primary-rgb), .25);
 }
 .ect-preset-mock {
     position: relative;
@@ -4971,13 +5085,13 @@ html, body {
     object-fit: contain;
 }
 .ect-image-grid-item:hover {
-    border-color: #FF9900;
+    border-color: var(--c-primary);
 }
 /* 2026-08-25, explicit follow-up: "เลือก insert ได้ทีละหลายรูป" -- clicking a tile toggles this class
    instead of inserting immediately; a checkmark badge shows which ones are currently selected. */
 .ect-image-grid-item.selected {
-    border-color: #FF9900;
-    box-shadow: 0 0 0 2px rgba(255, 153, 0, .35);
+    border-color: var(--c-primary);
+    box-shadow: 0 0 0 2px rgba(var(--bs-primary-rgb), .35);
 }
 .ect-image-grid-item .ect-image-selected-badge {
     position: absolute;
@@ -4986,7 +5100,7 @@ html, body {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #FF9900;
+    background: var(--c-primary);
     color: #fff;
     display: none;
     align-items: center;
@@ -5133,8 +5247,8 @@ html, body {
     transition: border-color .15s ease, background .15s ease, transform .1s ease;
 }
 .pst-palette-chip:hover {
-    border-color: rgba(255, 153, 0, .5);
-    background: rgba(255, 153, 0, .04);
+    border-color: rgba(var(--bs-primary-rgb), .5);
+    background: rgba(var(--bs-primary-rgb), .04);
     transform: translateY(-1px);
 }
 .pst-palette-chip:active {
@@ -5144,8 +5258,8 @@ html, body {
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    background: rgba(255, 153, 0, .12);
-    color: #FF9900;
+    background: rgba(var(--bs-primary-rgb), .12);
+    color: var(--c-primary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -5194,10 +5308,10 @@ html, body {
     transition: background .1s ease;
 }
 .pst-layer-row:hover {
-    background: rgba(255, 153, 0, .08);
+    background: rgba(var(--bs-primary-rgb), .08);
 }
 .pst-layer-row.pst-layer-selected {
-    background: rgba(255, 153, 0, .18);
+    background: rgba(var(--bs-primary-rgb), .18);
     color: #b45f00;
     font-weight: 600;
 }
@@ -5312,13 +5426,13 @@ html, body {
 }
 .pst-lang-tab.active {
     color: #b45f00;
-    border-bottom-color: #FF9900;
+    border-bottom-color: var(--c-primary);
 }
 .pst-lang-tab-dot {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #FF9900;
+    background: var(--c-primary);
     display: inline-block;
 }
 
@@ -5456,7 +5570,7 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, #ffab26, #FF9900);
+    background: linear-gradient(135deg, #ffab26, var(--c-primary));
     color: #fff;
     font-size: 1rem;
 }
@@ -5477,8 +5591,8 @@ html, body {
 .pst-editor-title-input:focus {
     outline: none;
     background: #fff;
-    border-color: #FF9900;
-    box-shadow: 0 0 0 3px rgba(255, 153, 0, .15);
+    border-color: var(--c-primary);
+    box-shadow: 0 0 0 3px rgba(var(--bs-primary-rgb), .15);
 }
 /* 2026-08-26: same pencil affordance as .ect-editor-title-edit-btn -- see that rule's own comment. */
 .pst-editor-title-edit-btn {
@@ -5497,7 +5611,7 @@ html, body {
 }
 .pst-editor-title-edit-btn:hover {
     background: #fff1de;
-    color: #FF9900;
+    color: var(--c-primary);
 }
 .pst-editor-topbar-fields {
     display: flex;
@@ -5574,7 +5688,7 @@ html, body {
 .pst-margin-preview::after {
     content: '';
     position: absolute;
-    border: 1px dashed #FF9900;
+    border: 1px dashed var(--c-primary);
 }
 .pst-margin-preview-narrow::after { inset: 3px; }
 .pst-margin-preview-normal::after { inset: 6px; }
@@ -5586,17 +5700,17 @@ html, body {
 .pst-el {
     position: absolute;
     box-sizing: border-box;
-    border: 1px dashed rgba(255, 153, 0, .45);
-    background: rgba(255, 153, 0, .03);
+    border: 1px dashed rgba(var(--bs-primary-rgb), .45);
+    background: rgba(var(--bs-primary-rgb), .03);
     cursor: move;
 }
 .pst-el:hover {
-    border-color: #FF9900;
+    border-color: var(--c-primary);
 }
 .pst-el-selected {
-    border: 1.5px solid #FF9900;
-    background: rgba(255, 153, 0, .09);
-    box-shadow: 0 0 0 2px rgba(255, 153, 0, .15);
+    border: 1.5px solid var(--c-primary);
+    background: rgba(var(--bs-primary-rgb), .09);
+    box-shadow: 0 0 0 2px rgba(var(--bs-primary-rgb), .15);
 }
 .pst-el-body {
     width: 100%;
@@ -5641,7 +5755,7 @@ html, body {
     bottom: -5px;
     width: 11px;
     height: 11px;
-    background: #FF9900;
+    background: var(--c-primary);
     border: 2px solid #fff;
     border-radius: 50%;
     cursor: nwse-resize;
@@ -5649,12 +5763,12 @@ html, body {
 }
 
 .pst-style-btn.active {
-    background: #FF9900;
-    border-color: #FF9900;
+    background: var(--c-primary);
+    border-color: var(--c-primary);
     color: #fff;
 }
 .pst-page.pst-drop-target {
-    outline: 2px dashed #FF9900;
+    outline: 2px dashed var(--c-primary);
     outline-offset: -2px;
 }
 .pst-el.pst-el-selected .pst-quick-delete,
@@ -5700,13 +5814,13 @@ html, body {
     background: #fff;
 }
 .pst-preset-card:hover {
-    border-color: rgba(255, 153, 0, .5);
+    border-color: rgba(var(--bs-primary-rgb), .5);
     transform: translateY(-2px);
     box-shadow: 0 4px 14px rgba(16, 24, 40, .1);
 }
 .pst-preset-card.active {
-    border-color: #FF9900;
-    box-shadow: 0 0 0 2px rgba(255, 153, 0, .25);
+    border-color: var(--c-primary);
+    box-shadow: 0 0 0 2px rgba(var(--bs-primary-rgb), .25);
 }
 .pst-preset-mock {
     position: relative;
@@ -5779,12 +5893,12 @@ html, body {
     object-fit: contain;
 }
 .pst-image-grid-item:hover {
-    border-color: #FF9900;
+    border-color: var(--c-primary);
 }
 
 .pst-image-grid-item.selected {
-    border-color: #FF9900;
-    box-shadow: 0 0 0 2px rgba(255, 153, 0, .35);
+    border-color: var(--c-primary);
+    box-shadow: 0 0 0 2px rgba(var(--bs-primary-rgb), .35);
 }
 .pst-image-grid-item .pst-image-selected-badge {
     position: absolute;
@@ -5793,7 +5907,7 @@ html, body {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    background: #FF9900;
+    background: var(--c-primary);
     color: #fff;
     display: none;
     align-items: center;
@@ -5859,7 +5973,7 @@ html, body {
     flex-wrap: wrap;
     gap: .75rem;
     padding: .7rem 1.1rem;
-    background: linear-gradient(135deg, rgba(255, 153, 0, .1), rgba(255, 153, 0, .03));
+    background: linear-gradient(135deg, rgba(var(--bs-primary-rgb), .1), rgba(var(--bs-primary-rgb), .03));
     border-bottom: 1px solid rgba(0, 0, 0, .06);
 }
 .pst-info-card-title {
@@ -5871,7 +5985,7 @@ html, body {
     font-size: .95rem;
 }
 .pst-info-card-title i {
-    color: #FF9900;
+    color: var(--c-primary);
 }
 /* 2026-08-27, explicit request: "ปรับให้ Change Layout กับ Fullscreen ไปอยู่ติดกันที่มุมขวา" -- one flex
    item (instead of two separately-distributed ones) so .pst-info-card-header's own
@@ -6004,7 +6118,7 @@ html, body {
 }
 .pst-assign-column-header i,
 .ect-assign-column-header i {
-    color: #FF9900;
+    color: var(--c-primary);
 }
 .pst-assign-filter,
 .ect-assign-filter {
@@ -6038,7 +6152,7 @@ html, body {
 .pst-assign-item:hover,
 .ect-assign-item:hover,
 .ada-assign-item:hover {
-    background: rgba(255, 153, 0, .08);
+    background: rgba(var(--bs-primary-rgb), .08);
 }
 .pst-assign-item .form-check-label,
 .ect-assign-item .form-check-label,
@@ -6143,7 +6257,7 @@ html, body {
    inside the editor itself (Payslip Template's existing .pst-info-card, and Employment Certificate
    Template's new equivalent .ect-info-card, see _editor_content.php for both). */
 .ect-info-card {
-    background: linear-gradient(135deg, rgba(255, 153, 0, .06), rgba(255, 153, 0, .01));
+    background: linear-gradient(135deg, rgba(var(--bs-primary-rgb), .06), rgba(var(--bs-primary-rgb), .01));
     border: 1px solid #ffe1b3;
     border-radius: 12px;
     padding: .9rem 1.1rem;
@@ -6181,7 +6295,7 @@ html, body {
     background: rgba(255, 255, 255, .7);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 153, 0, .18);
+    border: 1px solid rgba(var(--bs-primary-rgb), .18);
     border-radius: 20px;
     box-shadow: 0 8px 32px rgba(16, 24, 40, .08);
     padding: 3rem 2.5rem;
@@ -6199,13 +6313,13 @@ html, body {
     justify-content: center;
     font-size: 2rem;
     color: #fff;
-    background: linear-gradient(135deg, #FF9900, #ffb84d);
-    box-shadow: 0 6px 18px rgba(255, 153, 0, .35);
+    background: linear-gradient(135deg, var(--c-primary), #ffb84d);
+    box-shadow: 0 6px 18px rgba(var(--bs-primary-rgb), .35);
 }
 .error-page-code {
     font-weight: 800;
     font-size: 3rem;
-    background: linear-gradient(135deg, #FF9900, #b45f00);
+    background: linear-gradient(135deg, var(--c-primary), #b45f00);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;
@@ -6406,12 +6520,12 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     flex: none;
 }
 .tcf-filter-btn:hover {
-    color: #FF9900;
-    background: rgba(255, 153, 0, .1);
+    color: var(--c-primary);
+    background: rgba(var(--bs-primary-rgb), .1);
 }
 .tcf-filter-btn.tcf-filter-active {
-    color: #FF9900;
-    background: rgba(255, 153, 0, .15);
+    color: var(--c-primary);
+    background: rgba(var(--bs-primary-rgb), .15);
 }
 .tcf-panel {
     position: absolute;
@@ -6484,8 +6598,8 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 }
 .tcf-search-wrap input:focus {
     outline: none;
-    border-color: #FF9900;
-    box-shadow: 0 0 0 2px rgba(255, 153, 0, .15);
+    border-color: var(--c-primary);
+    box-shadow: 0 0 0 2px rgba(var(--bs-primary-rgb), .15);
 }
 .tcf-select-all-row {
     border-bottom: 1px solid var(--app-border);
@@ -6539,8 +6653,8 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     display: flex;
     align-items: center;
     gap: 1rem;
-    background: linear-gradient(135deg, rgba(255, 153, 0, .08), rgba(255, 153, 0, .02));
-    border: 1px solid rgba(255, 153, 0, .18);
+    background: linear-gradient(135deg, rgba(var(--bs-primary-rgb), .08), rgba(var(--bs-primary-rgb), .02));
+    border: 1px solid rgba(var(--bs-primary-rgb), .18);
     border-radius: 14px;
     padding: 1rem 1.25rem;
     flex-wrap: wrap;
@@ -6549,14 +6663,14 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     width: 46px;
     height: 46px;
     border-radius: 50%;
-    background: linear-gradient(135deg, #FF9900, #ffb84d);
+    background: linear-gradient(135deg, var(--c-primary), #ffb84d);
     color: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 1.1rem;
     flex: none;
-    box-shadow: 0 4px 10px rgba(255, 153, 0, .3);
+    box-shadow: 0 4px 10px rgba(var(--bs-primary-rgb), .3);
 }
 .reports-period-bar-body {
     flex: 1;
@@ -6616,7 +6730,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     border-bottom: 1px solid #eef0f2;
 }
 .reports-type-section-title i {
-    color: #FF9900;
+    color: var(--c-primary);
 }
 
 /* ==========================================================================
@@ -6752,7 +6866,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .dash-section-link {
     font-size: .8rem;
     font-weight: 600;
-    color: #FF9900;
+    color: var(--c-primary);
     text-decoration: none;
 }
 .dash-section-link:hover {
@@ -6815,7 +6929,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     white-space: nowrap;
 }
 .milestone-star {
-    color: #FF9900;
+    color: var(--c-primary);
     margin-left: 5px;
 }
 
@@ -7247,21 +7361,21 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 }
 .dash-calendar-today {
     background: var(--app-accent-soft-bg);
-    border-color: rgba(255, 153, 0, .4);
+    border-color: rgba(var(--bs-primary-rgb), .4);
     color: var(--app-accent-soft-text) !important;
     font-weight: 800;
 }
 .dash-calendar-day:hover {
-    border-color: rgba(255, 153, 0, .35);
+    border-color: rgba(var(--bs-primary-rgb), .35);
 }
 .dash-calendar-has-events {
     cursor: pointer;
 }
 .dash-calendar-has-events:hover {
-    background: rgba(255, 153, 0, .12);
+    background: rgba(var(--bs-primary-rgb), .12);
 }
 .dash-calendar-day-selected {
-    outline: 2px solid #FF9900;
+    outline: 2px solid var(--c-primary);
     outline-offset: -2px;
 }
 .dash-cal-dots {
@@ -7366,7 +7480,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     border-radius: 6px;
     cursor: pointer;
 }
-.ais-cell-clickable:hover, .ais-annual-total-clickable:hover { background: rgba(255, 153, 0, .08); }
+.ais-cell-clickable:hover, .ais-annual-total-clickable:hover { background: rgba(var(--bs-primary-rgb), .08); }
 .ais-table td:last-child { background: #fffaf1; }
 .ais-table thead th:last-child { background: #fff1db; }
 
@@ -7379,7 +7493,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 
 .ais-table tfoot td {
     background: #fff7ec;
-    border-top: 2px solid #FF9900;
+    border-top: 2px solid var(--c-primary);
     font-weight: 700;
     color: #b45f00;
 }
@@ -7496,7 +7610,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    (not flattened to a neutral dark surface), per T069 Step 2's own "status/semantic colors stay
    vivid across both themes" principle -- just a translucent green wash over --app-surface-bg instead
    of the light mode's near-white green tint, which would otherwise look like a plain washed-out gray
-   smear on a dark surface. border-left/.rd-net-pill's solid #16a34a/#FF9900 are already vivid,
+   smear on a dark surface. border-left/.rd-net-pill's solid #16a34a/var(--c-primary) are already vivid,
    saturated colors with enough contrast against a dark surface on their own -- left unchanged. */
 [data-bs-theme="dark"] #tb_run_detail tbody tr.rd-row-verified {
     --bs-table-hover-bg: rgba(22, 163, 74, .22);
@@ -7511,8 +7625,8 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .rd-net-pill {
     display: inline-block;
     font-weight: 700;
-    color: #FF9900;
-    background: rgba(255, 153, 0, 0.1);
+    color: var(--c-primary);
+    background: rgba(var(--bs-primary-rgb), 0.1);
     border-radius: 6px;
     padding: 2px 10px;
 }
@@ -7572,7 +7686,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    ให้สวยๆ" -- shared by #payrollRunModal's own runMergeChoice radio (Create/Pull form) and
    #editRunModal's own editRunMergeChoice equivalent (Edit form) -- 2 selectable cards instead of
    plain inline radio buttons, same hover/active brand-orange convention as .ect-preset-card
-   (border rgba(255,153,0,.5) + lift on hover, solid #FF9900 + glow ring when active). Toggled via
+   (border rgba(var(--bs-primary-rgb),.5) + lift on hover, solid var(--c-primary) + glow ring when active). Toggled via
    .active on the <label> itself (setMergeChoiceMode()/its Edit-form mirror in detail.js), the same
    JS that already gates the target picker's own visibility -- one source of truth, not a separate
    CSS :checked-sibling selector duplicating the same logic. */
@@ -7595,18 +7709,18 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     transition: border-color .15s, box-shadow .15s, transform .15s, background .15s;
 }
 .run-choice-card:hover {
-    border-color: rgba(255, 153, 0, .5);
+    border-color: rgba(var(--bs-primary-rgb), .5);
     transform: translateY(-1px);
     box-shadow: 0 4px 14px rgba(16, 24, 40, .08);
 }
 .run-choice-card.active {
-    border-color: #FF9900;
-    background: linear-gradient(135deg, rgba(255, 153, 0, .09), rgba(255, 153, 0, .02));
-    box-shadow: 0 0 0 2px rgba(255, 153, 0, .2);
+    border-color: var(--c-primary);
+    background: linear-gradient(135deg, rgba(var(--bs-primary-rgb), .09), rgba(var(--bs-primary-rgb), .02));
+    box-shadow: 0 0 0 2px rgba(var(--bs-primary-rgb), .2);
 }
 .run-choice-card input[type="radio"] {
     margin: 0;
-    accent-color: #FF9900;
+    accent-color: var(--c-primary);
     flex-shrink: 0;
 }
 .run-choice-card-icon {
@@ -7623,7 +7737,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     transition: background .15s, color .15s;
 }
 .run-choice-card.active .run-choice-card-icon {
-    background: #FF9900;
+    background: var(--c-primary);
     color: #fff;
 }
 .run-choice-card-label {
@@ -7689,7 +7803,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     color: #b45f00;
 }
 .run-subchoice-btn.active {
-    background: #FF9900;
+    background: var(--c-primary);
     color: #fff;
 }
 .run-subchoice-btn input[type="radio"] {
@@ -7703,9 +7817,9 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    "options that appeared because you picked off-schedule" rather than more plain form rows
    indistinguishable from the always-shown fields around them. */
 .run-offcycle-panel {
-    border: 1.5px dashed rgba(255, 153, 0, .35);
+    border: 1.5px dashed rgba(var(--bs-primary-rgb), .35);
     border-radius: 12px;
-    background: rgba(255, 153, 0, .035);
+    background: rgba(var(--bs-primary-rgb), .035);
     padding: 1rem 1.1rem .1rem;
     margin-bottom: 1rem;
 }
@@ -7756,7 +7870,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    lightweight for, so no reason not to use the actual artwork. */
 .om-loader {
     display: inline-block; vertical-align: middle; border-radius: 50%;
-    border: 2px solid rgba(255, 153, 0, .22); border-top-color: #FF9900;
+    border: 2px solid rgba(var(--bs-primary-rgb), .22); border-top-color: var(--c-primary);
     animation: om-spin .75s linear infinite;
 }
 .om-loader--sm { width: 16px; height: 16px; }
@@ -7794,7 +7908,7 @@ div.dt-processing {
     position: absolute; inset: 0; border-radius: 50%; border: 3px solid transparent;
     animation: om-spin 1.5s linear infinite;
 }
-.om-page-loader__ring--outer { border-top-color: #FF9900; border-right-color: #FF9900; }
+.om-page-loader__ring--outer { border-top-color: var(--c-primary); border-right-color: var(--c-primary); }
 .om-page-loader__ring--inner {
     inset: 15px; border-bottom-color: #E8412C; border-left-color: #E8412C;
     animation: om-spin-reverse 1.15s linear infinite;
@@ -7845,7 +7959,7 @@ div.dt-processing {
 }
 .mode-select-btn i {
     font-size: 1.05rem;
-    color: #FF9900;
+    color: var(--c-primary);
     transition: color .15s ease;
 }
 .mode-select-btn-title {
@@ -7859,14 +7973,14 @@ div.dt-processing {
     transition: color .15s ease;
 }
 .mode-select-btn:hover:not(:disabled):not(.active) {
-    border-color: #FF9900;
+    border-color: var(--c-primary);
     background: #fff8ef;
 }
 .mode-select-btn.active {
-    background: linear-gradient(135deg, #FF9900, #ffb84d);
-    border-color: #FF9900;
+    background: linear-gradient(135deg, var(--c-primary), #ffb84d);
+    border-color: var(--c-primary);
     color: #fff;
-    box-shadow: 0 2px 8px rgba(255, 153, 0, .3);
+    box-shadow: 0 2px 8px rgba(var(--bs-primary-rgb), .3);
 }
 .mode-select-btn.active i,
 .mode-select-btn.active .mode-select-btn-desc {
@@ -7913,7 +8027,7 @@ div.dt-processing {
     width: 52px;
     height: 52px;
     border-radius: 50%;
-    background: #FF9900;
+    background: var(--c-primary);
     color: #fff;
     border: none;
     box-shadow: 0 4px 14px rgba(0, 0, 0, .25);
@@ -7927,7 +8041,7 @@ div.dt-processing {
 }
 .help-drawer-toggle-btn:hover {
     transform: scale(1.06);
-    background: #e68a00;
+    background: var(--c-primary-hover);
 }
 .help-drawer-panel {
     position: fixed;
@@ -8013,7 +8127,7 @@ div.dt-processing {
 .ann-rich-content p { margin: 0 0 .5rem; }
 .ann-rich-content p:last-child { margin-bottom: 0; }
 .ann-rich-content img { max-width: 100%; border-radius: 6px; }
-.ann-rich-content a { color: var(--app-accent-soft-text, #FF9900); }
+.ann-rich-content a { color: var(--app-accent-soft-text, var(--c-primary)); }
 .ann-cover-thumb {
     width: 44px;
     height: 44px;

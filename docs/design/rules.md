@@ -66,6 +66,7 @@
 - ไม่ใช้ `btn-info`, `btn-success`, `btn-warning`, `bg-primary`, `text-primary` ฯลฯ ที่ไม่ได้ map (ดู §12 lint)
 - ตัวเลขทุกที่ (ตาราง, stat, สลิป) ใช้ `.num` → `font-variant-numeric: tabular-nums; text-align:right`
 - ไอคอน: Font Awesome ชุดเดียว น้ำหนักเดียว (`fa-regular` หรือ `fa-solid` เลือกอันเดียวทั้งระบบ) สี = สีข้อความปัจจุบัน (`currentColor`) เสมอ ไม่มีไอคอนหลากสี
+- **ธง (flag icon) เลิกใช้ทั้งหมด — ไม่มีข้อยกเว้น** (ตัดสินใจแล้วรอบ 2, ปิดช่องว่างที่รอบ 1 audit เจอ: `public/flags/th.png`/`gb.png` เป็นภาพสีตายตัว recolor ด้วย `currentColor` ไม่ได้ จึงไม่มีทางทำให้ตรงกับกฎไอคอนข้อบนได้ — ไม่ใช่ "หาข้อยกเว้นให้" แต่ตัดออกไปเลย) ทุกที่ที่ใช้ธงตัวเปลี่ยนภาษา (navbar language switcher, Payslip Template/Employment Certificate Template editor's TH/EN language tabs) เปลี่ยนเป็น**ข้อความ "TH | EN"** (ตัวที่ active = `--c-text` ตัวหนา, ตัวที่ไม่ active = `--c-text-muted`, คั่นด้วย `|` สีเทา, คลิกได้ทั้ง 2 ฝั่ง) — migrate เป็นส่วนหนึ่งของรอบ 4 (navbar อยู่ใน `layout/header.php`, canvas editor 2 ตัวอยู่ใน `_editor_content.php` — ไม่ใช่ไฟล์ที่รอบ 2 แก้ได้ ตาม scope limit ของรอบนี้)
 
 ---
 
@@ -210,7 +211,7 @@
 
 ## 8. ตัวเลขและเงิน (ทั่วระบบ ไม่ใช่แค่ตาราง)
 
-- **แสดงผล**: helper เดียว PHP `fmtMoney($n)` / JS `formatMoney(n)` → `1,234,567.89`; ห้าม `number_format` / `toLocaleString` ตรงๆ ในหน้า
+- **แสดงผล**: helper เดียว PHP `fmtMoney($n)` (ยังไม่มี — สร้างรอบ 2) / JS **`fmtNum(n)`** (`public/js/format-helpers.js`, **มีอยู่แล้ว** — ตัดสินใจแล้วรอบ 2: ไม่สร้าง `formatMoney()` ใหม่ ใช้ `fmtNum()` เดิมเป็นตัวเดียว เพราะทำ `toLocaleString` แบบ 2 ทศนิยมคงที่อยู่แล้วตรงตามที่กฎนี้ต้องการ ไม่ต้อง "ขยาย" อะไรเพิ่ม — เจอระหว่าง audit รอบ 1 ว่ามีอยู่แล้วเหมือนกันเป๊ะ) → `1,234,567.89`; ห้าม `number_format` / `toLocaleString` ตรงๆ ในหน้า (ยกเว้นภายใน `fmtNum()`/`fmtMoney()` เอง) — รอบ 2 ต้องยืนยันด้วย test ว่า PHP `fmtMoney($n)` กับ JS `fmtNum(n)` ให้ผลตรงกันทุกกรณี (ทศนิยม, ค่าลบ, ค่า null/ว่าง, ตัวเลขใหญ่ที่มี comma)
 - **input เงิน**: `<input class="money-input">` + JS `initMoneyInputs($scope)` (เรียกอัตโนมัติจาก app.js ready + หลัง modal shown/render): พิมพ์ได้ตัวเลขและจุด, blur → ใส่ comma + 2 ทศนิยม, focus → เอา comma ออก, **ค่าที่ส่ง server เป็นตัวเลขล้วน** (helper ใส่ hidden input หรือ strip ใน `collect*FormData` — เลือกทางเดียว ใช้ทุกฟอร์ม)
 - ตัวเลขในหน้า/สลิป/stat ทั้งหมด `.num` (tabular)
 - ไม่ใช้สีกับตัวเลข (บวก/ลบ/มากน้อย) — ใช้เครื่องหมายและตำแหน่งคอลัมน์แทน
@@ -259,7 +260,7 @@
 | `status-stepper.php` + `renderStatusStepper()` | partials + app.js | กล่อง 5 สี |
 | `statusBadge()` / `statusBadgeHtml()` + `status_map.php` (rename `payroll-configuration.js`'s local `statusBadge(row)` → `pcRowStatusBadge(row)` ก่อนประกาศ global — ดู §5) | helpers + app.js + config | map สถานะกระจาย |
 | `initSharedDataTable()` (ขยาย: layout, export, fixed column, columnDefs alignment) | app.js | init ตรงทุกหน้า |
-| `fmtMoney()` / `formatMoney()` / `initMoneyInputs()` | helpers + app.js | number_format กระจาย |
+| `fmtMoney()` (ใหม่) / `fmtNum()` (มีแล้ว, `format-helpers.js` — **ไม่สร้าง `formatMoney()` ใหม่**, ตัดสินใจแล้วรอบ 2 — ดู §8) / `initMoneyInputs()` (ใหม่) | helpers + app.js | number_format กระจาย |
 | `apvAvatarHtml()` / `apvPersonLineHtml()` | app.js (มีแล้ว) | avatar เขียนเอง |
 | `emp-header-card` (style ตาม §9) | modals (มีแล้ว) | หัว modal ธง+ไอคอน |
 | `isFormDirty()` / `confirmIfDirtyThen()` | app.js (มีแล้ว, Platform Hardening Phase 1) | ผูก dirty-check เองทีละ modal — **ไม่สร้าง `guardDirtyModal()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §9) |
@@ -274,13 +275,13 @@
 ## 12. Lint (รันใน test suite, fail = commit ไม่ได้)
 
 `scripts/check-design.php` สแกน `app/views/**`, `public/js/**` (ยกเว้น vendor/min), `public/css/**` (ยกเว้น `tokens.css`, vendor):
-1. hex/rgb/hsl ใน CSS นอก `tokens.css` และใน `style=""` / JS string
+1. hex/rgb/hsl ใน CSS นอก `tokens.css` และใน `style=""` / JS string (ยกเว้น `--bs-*-rgb:` ใน `style.css`'s Bootstrap-override section — mechanical RGB-triplet decomposition ของ token ที่มีอยู่แล้ว ไม่ใช่ค่าสีใหม่ ดู comment ในไฟล์นั้นเอง)
 2. `style="` inline ใน view/JS (ยกเว้น `display:none` ชั่วคราวใน JS และ `width` ของคอลัมน์ตาราง — allowlist ระบุใน script)
 3. class ต้องห้าม: `btn-success btn-info btn-warning btn-light btn-dark btn-outline-(?!secondary) bg-primary bg-info bg-success text-primary text-info text-success border-primary rounded-circle btn-circle`
 4. `<i class="fa` ภายใน `.nav-link` (ไอคอนใน tab)
 5. `.DataTable(` / `.dataTable(` นอก `initSharedDataTable`
 6. `Swal.fire(` นอก app.js
-7. `number_format(` ใน view / `toLocaleString(` ใน JS
+7. `number_format(` ใน view / `toLocaleString(` ใน JS (ยกเว้น `fmtNum()`'s ของ `format-helpers.js` เอง — เดียวกับที่ #1 ยกเว้น `tokens.css`)
 8. `<span class="badge` ที่ไม่ได้มาจาก `statusBadge` (ตรวจ marker `data-badge="status"`)
 
 ระหว่างรอบ 4 (ไล่ทีละหน้า) ให้ lint **นับจำนวน** ต่อไฟล์ และ fail เฉพาะไฟล์ที่ "ประกาศแล้วว่าสะอาด" (`// design:clean` บรรทัดแรก / `<?php // design:clean ?>`) — ไฟล์ที่ยังไม่ทำไม่ fail แต่รายงานตัวเลข เพื่อไม่บล็อกงานอื่น
