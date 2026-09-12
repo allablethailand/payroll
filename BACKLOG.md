@@ -420,3 +420,22 @@ this round, `is_ready`-related code in `currentEmployeeRecheckFilters()`/
 `is_payroll_ready` is trustworthy for sync-written employees.
 
 **Source:** Batch 4 item 4, explicit instruction (2026-09-12).
+
+---
+
+## Dead route: `setup/notification` → `NotificationController@index` (method doesn't exist)
+
+Found incidentally during Phase Design Round 1's route-mapping (auditing every page/route against
+`docs/design/rules.md` §2–§10 — not a design issue, logged here per rules.md §0.7: "phase design
+ห้ามแก้ logic...ให้จดลง BACKLOG.md แล้วทำต่อ"). Confirmed by listing every `public function` on
+`NotificationController` — `index()` does not exist on that class, so the route `setup/notification`
+would 500 if anyone actually hit it. The real, working Notifications page is `/notifications` →
+`NotificationController@page()` → `notification/index.php`, unaffected.
+
+**Fix, when picked up:** either remove the dead route mapping (if `setup/notification` was a typo/
+leftover and nothing links to it), or point it at `page()` like the real route does (if something
+still links to `setup/notification` specifically and that link should keep working) — check
+`app/views/**` and `public/js/**` for any remaining reference to `setup/notification` before
+choosing which.
+
+**Source:** Phase Design Round 1 audit, incidental finding (2026-09-12).
