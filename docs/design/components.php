@@ -203,13 +203,63 @@ if (!in_array($__remote, ['127.0.0.1', '::1'], true)) {
     </div>
 </div>
 
-<!-- ==================== ยังไม่ทำ -- placeholder สำหรับข้อ 3-7 ==================== -->
+<!-- ==================== DataTable (§7) ==================== -->
 <div class="cp-section">
-    <h2>DataTable (ข้อ 3)</h2>
-    <p class="cp-section-note"><code>initSharedDataTable()</code> ขยาย: layout toolbar คงที่, export dropdown, fixed header+คอลัมน์แรก, columnDefs alignment (§7)</p>
-    <div class="cp-empty">ยังไม่ทำ -- รอข้อ 3</div>
+    <h2>DataTable (§7)</h2>
+    <p class="cp-section-note">30 แถว mock ครบทุกชนิดคอลัมน์ตามตาราง §7: checkbox / avatar / ข้อความ / วันที่
+        (<code>.col-date</code>) / เงิน (<code>.num.col-money</code>) / ตัวเลข (<code>.num</code>) / สถานะ (badge
+        ธรรมดา -- ยังไม่ผ่าน <code>statusBadge()</code> เพราะข้อ 5 ยังไม่ทำ) / action (<code>.col-actions</code>).
+        เรียกผ่าน <code>initSharedDataTable(selector, { stickyColumns:{left:2,right:1}, columnFilters:{...},
+        export:{onSelect}, dtOptions:{} })</code> -- ไม่ต้องเขียน <code>drawCallback</code>/<code>initComplete</code>/
+        <code>initExcelColumnFilters()</code> เองอีกเลย ทุกอย่างมาจาก class บน <code>&lt;th&gt;</code> + option 3 ตัวนี้
+        ล้วนๆ (ลองลากตารางแนวนอน, ลองกดตัวกรองที่หัวคอลัมน์ "สถานะ", ลองกด "Export" ด้านบนขวา).</p>
+    <table id="cpDemoTable" class="table table-sm table-hover w-100">
+        <thead>
+            <tr>
+                <th class="col-check"><input type="checkbox" disabled></th>
+                <th class="col-avatar">พนักงาน</th>
+                <th>ชื่อ-นามสกุล</th>
+                <th class="col-date">วันที่เริ่มงาน</th>
+                <th class="num col-money">เงินเดือน</th>
+                <th class="num">% ผลงาน</th>
+                <th>สถานะ</th>
+                <th class="col-actions">จัดการ</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php
+            $cpStatuses = [
+                ['label' => 'ทำงานอยู่', 'tone' => 'success'],
+                ['label' => 'รอตรวจสอบ', 'tone' => 'warning'],
+                ['label' => 'ลาออก', 'tone' => 'danger'],
+            ];
+            for ($i = 1; $i <= 30; $i++):
+                $status = $cpStatuses[$i % 3];
+                $salary = 18000 + ($i * 733);
+                $pct = ($i * 7) % 100;
+                $day = str_pad((string)(($i % 28) + 1), 2, '0', STR_PAD_LEFT);
+                $iso = sprintf('2026-%02d-%s', ($i % 12) + 1, $day);
+                $dmy = sprintf('%s/%02d/2026', $day, ($i % 12) + 1);
+            ?>
+            <tr>
+                <td class="col-check"><input type="checkbox"></td>
+                <td class="col-avatar"><span class="rounded-circle bg-secondary-subtle d-inline-flex align-items-center justify-content-center" style="width:32px;height:32px;font-size:.75rem;">E<?=$i?></span></td>
+                <td>พนักงานตัวอย่าง <?=$i?></td>
+                <td class="col-date" data-order="<?=$iso?>"><?=$dmy?></td>
+                <td class="num col-money" data-order="<?=$salary?>"><?=number_format($salary, 2)?></td>
+                <td class="num"><?=$pct?>.0</td>
+                <td><span class="badge bg-<?=$status['tone']?>-subtle text-<?=$status['tone']?>"><?=$status['label']?></span></td>
+                <td class="col-actions">
+                    <button type="button" class="btn btn-link btn-sm p-0 me-2" title="ดู"><i class="fa-solid fa-eye"></i></button>
+                    <button type="button" class="btn btn-link btn-sm p-0 text-danger" title="ลบ"><i class="fa-solid fa-trash"></i></button>
+                </td>
+            </tr>
+            <?php endfor; ?>
+        </tbody>
+    </table>
 </div>
 
+<!-- ==================== ยังไม่ทำ -- placeholder สำหรับข้อ 4-7 ==================== -->
 <div class="cp-section">
     <h2>Page Header / Stat Card / Filter Bar (ข้อ 4)</h2>
     <p class="cp-section-note"><code>page-header.php</code>, <code>stat-card.php</code> (class <code>.stat</code>), <code>filter-bar.php</code> (§2, §6)</p>
@@ -234,7 +284,40 @@ if (!in_array($__remote, ['127.0.0.1', '::1'], true)) {
     <div class="cp-empty">ยังไม่ทำ -- รอข้อ 7</div>
 </div>
 
+<script src="../../node_modules/jquery/dist/jquery.min.js"></script>
 <script src="../../node_modules/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+<script src="../../node_modules/datatables.net/js/dataTables.min.js"></script>
+<script src="../../node_modules/datatables.net-bs5/js/dataTables.bootstrap5.min.js"></script>
+<script src="../../public/js/table-column-filter.js"></script>
+<script src="../../public/js/sticky-table-columns.js"></script>
+<!-- Loads the REAL app.js (not a copy) so initSharedDataTable() below is always byte-identical to
+     production, zero drift risk -- deliberately NOT reimplemented/copy-pasted here. app.js assumes
+     a full app page shell for a few unrelated things it does on $(document).ready() (i18n fetch via
+     BASE_URL, which this standalone page never defines; theme/font-size sync; login-timezone
+     recording) -- those specific bits will harmlessly fail/no-op here (console warnings at most, not
+     thrown synchronously into anything else's path) since this page never calls into them; every
+     DOM-dependent initializer elsewhere in app.js already guards on `$('#selector').length` per this
+     project's own established convention, so nothing here throws just because the normal navbar/
+     sidebar/etc. markup doesn't exist. initSharedDataTable() itself has no dependency on any of that
+     -- confirmed by reading its own function body. -->
+<script src="../../public/js/app.js"></script>
+<script>
+$(function () {
+    initSharedDataTable('#cpDemoTable', {
+        searchThreshold: 0,
+        stickyColumns: { left: 2, right: 1 },
+        columnFilters: {
+            mode: 'client',
+            columns: [{ index: 6, key: 'status' }],
+        },
+        export: {
+            onSelect: function (format) {
+                alert('Export ' + format + ' -- demo only, no backend call. A real caller would trigger its own report-generation endpoint here.');
+            },
+        },
+    });
+});
+</script>
 <script>
 // Self-contained theme toggle for this preview page only -- same 3-state semantics/attribute
 // layout/header.php stamps server-side ('light'/'dark' set data-bs-theme; 'system' removes it so

@@ -760,6 +760,83 @@ function getTableLang() {
 // instance's own data cache, THEN destroy it (so it has nothing stale left to write back), THEN
 // render the new rows, THEN construct fresh -- enforced here so no call site has to get this right
 // on its own.
+// 2026-09-12, Phase Design Round 2 item 3 (docs/design/rules.md §7) -- reads the marker classes
+// (.num/.col-date/.col-money/.col-check/.col-avatar/.col-actions) already sitting on each <thead>
+// <th> (written into the view's own static HTML, or built into a `headHtml` string before
+// `.DataTable()` construction the same way annual-summary.js already does -- either shape works,
+// this only ever reads the DOM, never cares how it got there) and turns them into DataTables
+// `columnDefs` targeting that column's INDEX, so every column tagged this way gets the §7-mandated
+// alignment/behavior for free, with zero JS per table. A `<th>` with none of these classes is left
+// completely alone (default left-align, orderable/searchable per the table's own other settings) --
+// this is purely additive, never a behavior change for a column that isn't opted in. `.col-date`
+// needs no real columnDef (§7: dates are LEFT-aligned, already the plain HTML/DataTables default)
+// but still gets its class explicitly propagated for consistency/documentation, not skipped as a
+// "no-op". None of the 8 existing initSharedDataTable() callers (4 in payroll/detail.js, 4 in
+// reports/annual-summary.js) have any of these classes on their own <th> markup yet -- confirmed by
+// reading both files -- so this is a genuine no-op for every current caller, activating only once
+// round 4 adds these classes to a page's own view markup.
+const DT_MARKER_CLASSES = {
+    'col-date': { className: 'col-date' },
+    'col-money': { className: 'num col-money' },
+    'num': { className: 'num' },
+    'col-check': { className: 'col-check text-center', orderable: false, searchable: false },
+    'col-avatar': { className: 'col-avatar text-center', orderable: false, searchable: false },
+    'col-actions': { className: 'col-actions text-end', orderable: false, searchable: false },
+};
+function dtColumnDefsFromMarkerClasses($table) {
+    const defs = [];
+    $table.find('> thead > tr').first().find('> th').each(function (index) {
+        const classes = (this.className || '').split(/\s+/);
+        // §7's own table pairs .num with .col-money specifically for money columns -- checking
+        // BOTH together first (so a <th class="num col-money"> gets the combined "num col-money"
+        // className exactly once, not "num" and "num col-money" stacked from 2 separate defs)
+        // avoids emitting a redundant/conflicting second columnDef for the same index.
+        let matched = null;
+        if (classes.includes('col-money')) matched = DT_MARKER_CLASSES['col-money'];
+        else if (classes.includes('num')) matched = DT_MARKER_CLASSES['num'];
+        else if (classes.includes('col-date')) matched = DT_MARKER_CLASSES['col-date'];
+        else if (classes.includes('col-check')) matched = DT_MARKER_CLASSES['col-check'];
+        else if (classes.includes('col-avatar')) matched = DT_MARKER_CLASSES['col-avatar'];
+        else if (classes.includes('col-actions')) matched = DT_MARKER_CLASSES['col-actions'];
+        if (matched) defs.push(Object.assign({ targets: index }, matched));
+    });
+    return defs;
+}
+// 2026-09-12, Round 2 item 3 -- §7's "ส่งออก: dropdown secondary ตัวเดียว (Excel/PDF) ต่อจากช่องค้นหา"
+// injected into the SAME `.dt-search` container the app's existing "Add" button convention already
+// targets (see e.g. employee/detail.js's own initComplete) -- same technique, not a new mechanism.
+// Deliberately NOT built on DataTables' own Buttons extension (datatables.net-buttons/buttons.html5/
+// jszip/pdfmake) -- confirmed via `node_modules` listing that NONE of those are installed in this
+// project, and this app's own established convention for Excel/PDF export everywhere else
+// (Reports module, PayrollReportDataModel/PhpSpreadsheet/dompdf) is a SERVER-generated file download,
+// not a client-side re-serialization of whatever DataTables currently has in memory -- consistent
+// with that, this renders ONLY the dropdown UI; `options.export.onSelect(format)` (format is
+// 'excel'/'pdf') is the caller's own hook to trigger its existing download flow. No new dependency
+// added -- if a future page genuinely needs client-side table-to-file export with no backend
+// endpoint to call, that would need a real library decision, reported before adding it, not silently
+// bundled in here.
+function dtInjectExportDropdown($table, exportOptions) {
+    const $wrapper = $table.closest('.dataTables_wrapper, .dt-container');
+    const $searchDiv = $wrapper.find('.dt-search');
+    if (!$searchDiv.length || $searchDiv.find('.dt-export-dropdown').length) return;
+    const $dropdown = $(`
+        <div class="dropdown dt-export-dropdown ms-1 d-inline-block">
+            <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+                <i class="fa-solid fa-file-export me-1"></i>${(langData && langData['export']) || 'Export'}
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item dt-export-item" href="#" data-format="excel"><i class="fa-solid fa-file-excel me-2"></i>Excel</a></li>
+                <li><a class="dropdown-item dt-export-item" href="#" data-format="pdf"><i class="fa-solid fa-file-pdf me-2"></i>PDF</a></li>
+            </ul>
+        </div>
+    `).appendTo($searchDiv);
+    $dropdown.find('.dt-export-item').on('click', function (e) {
+        e.preventDefault();
+        if (typeof exportOptions.onSelect === 'function') {
+            exportOptions.onSelect($(this).data('format'));
+        }
+    });
+}
 function initSharedDataTable(selector, options) {
     options = options || {};
     const $table = $(selector);
@@ -797,6 +874,44 @@ function initSharedDataTable(selector, options) {
         searching: rowCount > searchThreshold,
     }, options.dtOptions || {});
     dtOptions.language = Object.assign({}, getTableLang(), dtOptions.language || {});
+    // 2026-09-12, Round 2 item 3 -- auto columnDefs from marker classes (§7), prepended so an
+    // explicit `dtOptions.columnDefs` the caller already supplies for the SAME column index still
+    // wins (DataTables applies columnDefs in array order, later entries' properties override earlier
+    // ones for a matching target) -- never overrides caller intent, only fills in what nobody set.
+    const autoColumnDefs = dtColumnDefsFromMarkerClasses($table);
+    if (autoColumnDefs.length) {
+        dtOptions.columnDefs = autoColumnDefs.concat(dtOptions.columnDefs || []);
+    }
+    // 2026-09-12, Round 2 item 3 -- §7's "fix คอลัมน์แรก + หัวตาราง + scroll แนวนอน + ลากเลื่อนได้" (the
+    // Employee Recheck pattern) and "ครอบหน้าที่ของ initExcelColumnFilters() ให้เอง" (round 0 decision
+    // 8) both become opt-in top-level options here -- `options.stickyColumns`/`options.columnFilters`/
+    // `options.export` -- rather than every caller repeating the same drawCallback/initComplete
+    // wiring `reports/annual-summary.js`'s own 4 tables still do by hand today. Composed so a
+    // caller's OWN `dtOptions.drawCallback`/`initComplete` (if present) still runs FIRST, unchanged --
+    // none of the 8 existing callers pass any of these 3 new options, so this composition path is
+    // never even entered for them; their own manually-written drawCallback/initComplete (annual-
+    // summary.js's 4 tables) or complete absence of one (payroll/detail.js's 4 tables) passes through
+    // exactly as before, unaffected.
+    if (options.stickyColumns || options.columnFilters || options.export) {
+        const userDrawCallback = dtOptions.drawCallback;
+        const userInitComplete = dtOptions.initComplete;
+        if (options.stickyColumns) {
+            dtOptions.drawCallback = function () {
+                if (typeof userDrawCallback === 'function') userDrawCallback.apply(this, arguments);
+                initStickyColumns(selector, options.stickyColumns);
+            };
+        }
+        dtOptions.initComplete = function () {
+            if (typeof userInitComplete === 'function') userInitComplete.apply(this, arguments);
+            const dt = this.api();
+            if (options.columnFilters) initExcelColumnFilters(dt, options.columnFilters);
+            if (options.stickyColumns) {
+                initStickyColumns(selector, options.stickyColumns);
+                initTableDragScroll(selector);
+            }
+            if (options.export) dtInjectExportDropdown($table, options.export);
+        };
+    }
     return $table.DataTable(dtOptions);
 }
 // 2026-08-26, explicit request: "Format วันที่การแสดงผลทั้งหมดของระบบให้เป็น dd/mm/yyyy" (make every date
