@@ -789,12 +789,29 @@ function recheckOtSummaryHtml(otSummary) {
     return `<span class="badge bg-success-subtle text-success" title="${escapeHtml(title)}">${langData['ot_eligible_short'] || 'Eligible'}</span>`;
 }
 function currentEmployeeRecheckFilters() {
+    // 2026-09-12, Batch 4 item 4 -- Status/Employment Status/Tax Method are static selects whose
+    // "All" option is the 'all' sentinel (see list.php's own comment on why, same convention as the
+    // main Employee tab's #employee_filter_payroll_participant); mapped back to '' here before it
+    // reaches EmployeeModel::buildListWhere(), same pattern currentEmployeeExtraFilters() already
+    // uses for is_payroll_participant.
+    // NOTE: no `is_ready` here -- its UI control was pulled back out before commit (see list.php's
+    // own comment + BACKLOG.md); buildListWhere()'s own `is_ready` support stays backend-only/unused
+    // until employees.is_payroll_ready is trustworthy for sync-written employees.
+    const statusRaw = $('#employee_recheck_filter_status').val() || 'all';
+    const employmentStatusRaw = $('#employee_recheck_filter_employment_status').val() || 'all';
+    const taxCalcMethodRaw = $('#employee_recheck_filter_tax_calculation_method').val() || 'all';
     return {
         role_id: $('#employee_recheck_filter_role').val() || '',
         department_id: $('#employee_recheck_filter_department').val() || '',
         team_id: $('#employee_recheck_filter_team').val() || '',
         shift_id: $('#employee_recheck_filter_shift').val() || '',
         branch_id: $('#employee_recheck_filter_branch').val() || '',
+        position_id: $('#employee_recheck_filter_position').val() || '',
+        nationality: $('#employee_recheck_filter_nationality').val() || '',
+        payment_method_id: $('#employee_recheck_filter_payment_method').val() || '',
+        status: statusRaw === 'all' ? '' : statusRaw,
+        employment_status: employmentStatusRaw === 'all' ? '' : employmentStatusRaw,
+        tax_calculation_method: taxCalcMethodRaw === 'all' ? '' : taxCalcMethodRaw,
         view: currentEmployeeRecheckView
     };
 }
@@ -817,7 +834,13 @@ function updateClearEmployeeRecheckFilterVisibility() {
     // 'participant' ("In Payroll") is its default, so only 'excluded' counts as an active filter here,
     // same "non-default state shows Clear Filter" convention the Employee tab's own
     // is_payroll_participant filter already uses (see updateClearEmployeeFilterVisibility() above).
-    const hasFilter = !!(f.role_id || f.department_id || f.team_id || f.shift_id || f.branch_id || f.view !== 'participant');
+    // 2026-09-12, Batch 4 item 4 -- status/employment_status/tax_calculation_method are already ''
+    // when their own select sits on its own "All" option (mapped in currentEmployeeRecheckFilters()
+    // above), same '' -> "no filter" convention every other field here already uses.
+    const hasFilter = !!(f.role_id || f.department_id || f.team_id || f.shift_id || f.branch_id
+        || f.position_id || f.nationality || f.payment_method_id
+        || f.status || f.employment_status || f.tax_calculation_method
+        || f.view !== 'participant');
     $('#employeeRecheckFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function initEmployeeRecheckTable() {
@@ -919,12 +942,18 @@ $(document).on('click', '#employeeRecheckStationFilterToggle', function () {
     const collapsed = $filter.hasClass('collapsed');
     $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
 });
-$(document).on('change', '#employee_recheck_filter_role, #employee_recheck_filter_department, #employee_recheck_filter_team, #employee_recheck_filter_shift, #employee_recheck_filter_branch', function () {
+// 2026-09-12, Batch 4 item 4 -- Status/Employment Status/Position/Nationality/Tax Method/Payment
+// Method joined this same change-triggers-reload group, same pattern as every filter here.
+$(document).on('change', '#employee_recheck_filter_role, #employee_recheck_filter_department, #employee_recheck_filter_team, #employee_recheck_filter_shift, #employee_recheck_filter_branch, #employee_recheck_filter_position, #employee_recheck_filter_nationality, #employee_recheck_filter_payment_method, #employee_recheck_filter_status, #employee_recheck_filter_employment_status, #employee_recheck_filter_tax_calculation_method', function () {
     updateClearEmployeeRecheckFilterVisibility();
     if (tb_employee_recheck) tb_employee_recheck.ajax.reload(null, true);
 });
 $(document).on('click', '#btnClearEmployeeRecheckFilter', function () {
-    $('#employee_recheck_filter_role, #employee_recheck_filter_department, #employee_recheck_filter_team, #employee_recheck_filter_shift, #employee_recheck_filter_branch').val(null).trigger('change.select2');
+    $('#employee_recheck_filter_role, #employee_recheck_filter_department, #employee_recheck_filter_team, #employee_recheck_filter_shift, #employee_recheck_filter_branch, #employee_recheck_filter_position, #employee_recheck_filter_nationality, #employee_recheck_filter_payment_method').val(null).trigger('change.select2');
+    // 2026-09-12, Batch 4 item 4 -- these 3 have no blank placeholder option (same reasoning as
+    // #employee_filter_payroll_participant on the main tab), so Clear Filter resets each to its own
+    // real 'all' option instead of null.
+    $('#employee_recheck_filter_status, #employee_recheck_filter_employment_status, #employee_recheck_filter_tax_calculation_method').val('all').trigger('change.select2');
     // 2026-09-08: reset the view select back to its own default ('participant'/"In Payroll") too --
     // it's part of this same filter row now, so Clear Filter should clear it as well, same as every
     // other field here. The 'change.select2' trigger fires the plain `change` handler above (which

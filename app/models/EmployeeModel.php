@@ -525,6 +525,21 @@ class EmployeeModel {
         return empty($this->missingPayrollFields($values, $isThCompany));
     }
 
+    // Unwired until is_payroll_ready backfill (BACKLOG: employee readiness)
+    public function recomputeIsPayrollReady(int $employeeId, int $compId): bool {
+        $isThCompany = $this->getCompanyCountry($compId) === 'TH';
+        $stmt = $this->db->prepare("SELECT * FROM `employees` WHERE id = :id AND comp_id = :comp_id");
+        $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            return false;
+        }
+        $row['base_salary_amount'] = self::decryptSalaryValue($row['base_salary_amount'] ?? null, isset($row['key_version']) ? (int)$row['key_version'] : null);
+        $ready = $this->isPayrollReady($row, $isThCompany) ? 1 : 0;
+        $this->db->prepare("UPDATE `employees` SET is_payroll_ready = :ready WHERE id = :id")->execute([':ready' => $ready, ':id' => $employeeId]);
+        return true;
+    }
+
     /** Public wrapper for display (Employee Detail's "Verify Status" badge) -- $e is a get()-shaped
      *  row. Already consumed at save-time too via employees.is_payroll_ready, read by
      *  PayrollRunModel::recalculate() -- an ineligible employee isn't hidden from a run, it's flagged
@@ -638,6 +653,16 @@ class EmployeeModel {
             $where .= " AND e.employment_status = :employment_status";
             $params[':employment_status'] = $filters['employment_status'];
         }
+        // 2026-09-12, Batch 4 item 4 -- 2 more plain enum columns, same equality pattern as
+        // status/employment_status just above.
+        if (!empty($filters['nationality'])) {
+            $where .= " AND e.nationality = :nationality";
+            $params[':nationality'] = $filters['nationality'];
+        }
+        if (!empty($filters['tax_calculation_method'])) {
+            $where .= " AND e.tax_calculation_method = :tax_calculation_method";
+            $params[':tax_calculation_method'] = $filters['tax_calculation_method'];
+        }
         if (!empty($filters['role_id'])) {
             $where .= " AND e.role_id = :role_id";
             $params[':role_id'] = (int)$filters['role_id'];
@@ -658,12 +683,52 @@ class EmployeeModel {
             $where .= " AND e.branch_id = :branch_id";
             $params[':branch_id'] = (int)$filters['branch_id'];
         }
+        // 2026-09-12, Batch 4 item 4 -- 2 more FK filters, same pattern as role_id/department_id/etc.
+        // above (never legitimately 0, so plain !empty() is safe here unlike is_payroll_ready/
+        // is_payroll_participant below).
+        if (!empty($filters['position_id'])) {
+            $where .= " AND e.position_id = :position_id";
+            $params[':position_id'] = (int)$filters['position_id'];
+        }
+        if (!empty($filters['payment_method_id'])) {
+            $where .= " AND e.payment_method_id = :payment_method_id";
+            $params[':payment_method_id'] = (int)$filters['payment_method_id'];
+        }
         // 2026-08-30 (Phase 3, T022) -- !empty() would silently never apply this filter for value
         // '0' (No Salary), unlike every other filter above (all FK ids/non-empty-string enums,
         // where '0' is never a real value) -- checked explicitly instead.
         if (isset($filters['is_payroll_participant']) && $filters['is_payroll_participant'] !== '') {
             $where .= " AND e.is_payroll_participant = :is_payroll_participant";
             $params[':is_payroll_participant'] = (int)$filters['is_payroll_participant'];
+        }
+        // 2026-09-12, Batch 4 item 4 (Recheck tab's "Ready/Not Ready" filter) -- filters on the
+        // PERSISTED `employees.is_payroll_ready` column, never a second readiness definition: that
+        // column is written by EmployeeModel::save() from isPayrollReady()/missingPayrollFields(),
+        // the EXACT SAME call recheckList()'s own live `field_readiness`/`is_ready` (fieldReadiness())
+        // are built from for the SAME row. Filtering here (SQL WHERE) rather than after fetching
+        // keeps DataTables server-side recordsTotal/recordsFiltered correct -- filtering the
+        // PHP-computed `is_ready` post-query would undercount both. Same explicit isset()-not-
+        // empty() pattern as is_payroll_participant just above ('0'/Not Ready is a real, legitimate
+        // value).
+        // KNOWN GAP (investigated, not fixed -- see BACKLOG.md): this column is ONLY ever recomputed
+        // inside EmployeeModel::save(). Employee-master writes that bypass save() via raw SQL
+        // (EmployeeSyncer::upsertItem(), PayrollSyncModel::applyOneEmployeeMasterFields() -- both
+        // Origami sync paths) never touch it, so a sync pull that changes a readiness-affecting
+        // field (employee_type, branch_id, payment_method_id/bank_id) CAN leave this column stale
+        // relative to what fieldReadiness()/missingPayrollFields() would compute fresh right now for
+        // the same row. recomputeIsPayrollReady() (this class, reuses this SAME definition) exists
+        // for exactly this but is deliberately NOT called from either sync path yet -- wiring it in
+        // surfaced that many employees written by these paths never actually satisfy
+        // requiredColumns() at all (department_id/position_id/branch_id/payment_method_id often
+        // arrive NULL from Origami) and have only ever been sitting at `is_payroll_ready`'s schema
+        // DEFAULT of 1 -- turning on the recompute would flip many of them to the TRUE value (0),
+        // which starts blocking PayrollRunModel::submit()/markPaid() (calc_errors=
+        // 'profile_incomplete') for real synced employees company-wide. That is a business-behavior
+        // change needing a deliberate decision (+ a one-time backfill/audit first) -- see
+        // BACKLOG.md for the full analysis before wiring it in.
+        if (isset($filters['is_ready']) && $filters['is_ready'] !== '') {
+            $where .= " AND e.is_payroll_ready = :is_ready";
+            $params[':is_ready'] = (int)$filters['is_ready'];
         }
         if (!empty($filters['created_date_from'])) {
             $where .= " AND DATE(e.created_at) >= :created_date_from";
