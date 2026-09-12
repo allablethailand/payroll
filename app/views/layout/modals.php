@@ -97,6 +97,27 @@
     </div>
 </div>
 
+<!-- 2026-09-12, Batch 5 item 6 -- Annual Total column click-through: that row's own Jan-Dec
+     breakdown (12 fixed rows, plain table -- not a DataTable, see annual-summary.js's own
+     aisRenderAnnualDetail() docblock) + 3 summary stats. A month row here re-opens
+     #aisCellDetailModal above for that specific month's own line-item drill-down -- Bootstrap 5
+     stacks modals natively (both are plain siblings here), no extra z-index/backdrop wiring
+     needed. -->
+<div class="modal fade" id="aisAnnualDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="aisAnnualDetailModalTitle">-</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="aisAnnualDetailBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- ===== Global (app/views/layout/header.php) ===== -->
 <div class="modal fade" id="userSettingsModal" tabindex="-1" aria-labelledby="userSettingsModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">

@@ -158,6 +158,27 @@
             <span class="ais-legend-item"><span class="ais-legend-swatch ais-month-current"></span><span data-i18n="ais_legend_current">Current month</span></span>
             <span class="ais-legend-item"><span class="ais-legend-swatch ais-month-future"></span><span data-i18n="ais_legend_future">Upcoming</span></span>
         </div>
+        <!-- 2026-09-12, Batch 5 item 6 -- income/deduction display toggle (Tab 1 only). "ทั้งหมด" has
+             no state of its own on the server/JS side either -- it's purely derived from the other 2
+             checkboxes, see applyAisColumnDisplayToggle()/the checkbox change handlers in
+             annual-summary.js. Purely a client-side CSS class toggle -- no reload. Plain Bootstrap
+             utility classes here (d-flex/gap/text-secondary/small/fw-semibold) -- no new CSS class,
+             per "ไม่แตะ style" for a logic-only task. -->
+        <div class="d-flex align-items-center flex-wrap gap-3 px-3 pt-2">
+            <span class="text-secondary small fw-semibold" data-i18n="ais_display_columns_label">Show:</span>
+            <div class="form-check form-check-inline mb-0">
+                <input class="form-check-input" type="checkbox" id="aisShowAll" checked>
+                <label class="form-check-label" for="aisShowAll" data-i18n="filter_all">All</label>
+            </div>
+            <div class="form-check form-check-inline mb-0">
+                <input class="form-check-input" type="checkbox" id="aisShowIncome" checked>
+                <label class="form-check-label" for="aisShowIncome" data-i18n="breakdown_earnings">Income</label>
+            </div>
+            <div class="form-check form-check-inline mb-0">
+                <input class="form-check-input" type="checkbox" id="aisShowDeduction" checked>
+                <label class="form-check-label" for="aisShowDeduction" data-i18n="table_deduction_amount">Deductions</label>
+            </div>
+        </div>
         <div id="aisTableEmpty" class="text-center text-secondary py-5 d-none">
             <i class="fa-solid fa-circle-info me-1"></i><span data-i18n="ais_no_data">No payroll data found for this fiscal year.</span>
         </div>

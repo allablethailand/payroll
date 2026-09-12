@@ -16,6 +16,18 @@
  * "today" relative to the selected year; the column count doesn't change, but the styling per
  * header cell does), not just the row data. */
 let aisTable = null;
+// 2026-09-12, Batch 5 item 6 -- module-level so this SURVIVES a year/filter re-render (explicit
+// instruction: the display-toggle state must not reset on reload) -- aisRenderTable() only ever
+// READS these, never resets them. "All" (#aisShowAll) has no state of its own; it's always DERIVED
+// from these 2 (see the checkbox handlers further down), so it can never drift out of sync.
+let aisShowIncome = true;
+let aisShowDeduction = true;
+// 2026-09-12, Batch 5 item 6 -- the currently-loaded table's own row/month data, kept so the Annual
+// Total click-through modal (aisRenderAnnualDetail() below) can read a row's full Jan-Dec breakdown
+// straight from what's ALREADY in memory -- no new endpoint needed (AnnualIncomeSummaryModel::
+// summary() already returns every month's gross/deduction/net per employee in one round trip).
+let aisCurrentEmployeesById = {};
+let aisCurrentMonths = [];
 
 function aisFmt(n) {
     const v = Number(n) || 0;
@@ -47,6 +59,25 @@ function aisEmployeeMonthCellHtml(row, cell, month) {
         <span class="ais-cell-sub">+${aisFmt(cell.gross)}</span>
         <span class="ais-cell-sub ais-cell-deduction">-${aisFmt(cell.deduction)}</span>
         <span class="ais-cell-net">${aisFmt(cell.net)}</span>
+    </button>`;
+}
+// 2026-09-12, Batch 5 item 6 -- the "Annual Total" column becomes a click-through to that row's own
+// full Jan-Dec breakdown (#aisAnnualDetailModal, aisRenderAnnualDetail() below) -- reads straight
+// from the SAME row object already in memory (aisCurrentEmployeesById), no new endpoint. Every
+// employee has SOME annual figures (even an all-zero one, per AnnualIncomeSummaryModel's own "list
+// every matching employee" design), so unlike aisEmployeeMonthCellHtml() above this is always
+// clickable, never plain text.
+function aisAnnualTotalCellHtml(row) {
+    // Deliberately only ais-annual-total-clickable, NOT .ais-cell-clickable -- style.css's own
+    // button-reset/hover rule lists both class names in its selector so this still gets the exact
+    // same look with no separate CSS block, but this element must NOT literally carry the
+    // .ais-cell-clickable class itself: that class is also the OTHER delegated click handler's
+    // selector (which expects data-year/data-month, neither of which this button has), and jQuery
+    // delegation would fire both handlers on the same click if this button matched both.
+    return `<button type="button" class="ais-annual-total-clickable" data-employee-id="${row.employee_id}">
+        <span class="ais-cell-sub">+${aisFmt(row.annual_gross)}</span>
+        <span class="ais-cell-sub ais-cell-deduction">-${aisFmt(row.annual_deduction)}</span>
+        <span class="ais-total-value">${aisFmt(row.annual_net)}</span>
     </button>`;
 }
 
@@ -125,6 +156,12 @@ function aisRenderSummaryCards(totals) {
 function aisRenderTable(data) {
     const months = data.months || [];
     const employees = data.employees || [];
+    // 2026-09-12, Batch 5 item 6 -- kept for the Annual Total click-through modal, see this
+    // variable's own top-of-file docblock. Updated on every render (year/filter change) so the
+    // modal always reads the CURRENTLY-shown data, not a stale snapshot from an earlier load.
+    aisCurrentMonths = months;
+    aisCurrentEmployeesById = {};
+    employees.forEach(function (e) { aisCurrentEmployeesById[e.employee_id] = e; });
 
     if (aisTable) {
         aisTable.destroy();
@@ -214,9 +251,7 @@ function aisRenderTable(data) {
         data: null,
         className: 'text-end',
         render: {
-            display: (row) => `<span class="ais-cell-sub">+${aisFmt(row.annual_gross)}</span>
-                <span class="ais-cell-sub ais-cell-deduction">-${aisFmt(row.annual_deduction)}</span>
-                <span class="ais-total-value">${aisFmt(row.annual_net)}</span>`,
+            display: (row) => aisAnnualTotalCellHtml(row),
             sort: (row) => row.annual_net,
             filter: (row) => row.annual_net,
         }
@@ -292,6 +327,10 @@ function aisRenderTable(data) {
         },
     });
     updateText($('#tb_annual_summary')[0]);
+    // 2026-09-12, Batch 5 item 6 -- re-applied on EVERY render (not just once) so the display-toggle
+    // state survives a year/filter change exactly as instructed: the checkboxes/module state above
+    // are never reset here, only re-synced onto whatever fresh <table> this render just built.
+    applyAisColumnDisplayToggle();
 }
 
 // 2026-08-30, explicit request: "ในแต่ละช่องถ้ามีข้อมูลให้สามารถกดดู Detail ได้ด้วยครับ" -- opens
@@ -354,10 +393,196 @@ $(document).on('click', '.ais-cell-clickable', function () {
     $('#aisCellDetailModalTitle').text(aisMonthLabel({ year: year, month: month }));
     $('#aisCellDetailBody').html(`<div class="text-center text-secondary py-4"><i class="fa-solid fa-spinner fa-spin me-1"></i>${langData['loading'] || 'Loading...'}</div>`);
     bootstrap.Modal.getOrCreateInstance(document.getElementById('aisCellDetailModal')).show();
-    $.getJSON(`${BASE_URL}/api/annual-income-summary.cell-detail`, { employee_id: employeeId, year: year, month: month }, function (res) {
+    // 2026-09-12, Batch 5 item 6 follow-up: real gap found -- this call never forwarded cycle_id,
+    // even though item 5 already added backend cycle-filter support to cellDetail(). One delegated
+    // handler on `document` serves BOTH the main table's month cells AND (this round) the month
+    // rows inside #aisAnnualDetailModal -- reading the CURRENT filter state at click time here
+    // covers both call sites with this one fix, no per-caller wiring needed.
+    $.getJSON(`${BASE_URL}/api/annual-income-summary.cell-detail`, { employee_id: employeeId, year: year, month: month, cycle_id: aisCurrentFilters().cycle_id || '' }, function (res) {
         aisRenderCellDetail(res.status ? res.data : []);
     });
 });
+
+/* ==================== Batch 5 item 6: income/deduction display toggle + Annual Total
+   click-through modal (Tab 1, Annual Income Summary, only -- Tab 2/3 have no gross/deduction
+   breakdown to toggle, and their own "Annual Total" column stays non-clickable this round; Tab 4
+   has no month matrix at all). ==================== */
+// 2026-09-12, Batch 5 item 6 -- pure CSS class toggle on the table itself, no re-render/reload:
+// .ais-cell-sub (income) and .ais-cell-sub.ais-cell-deduction (deduction) are the SAME 2 marker
+// classes month cells, the Annual Total column (aisAnnualTotalCellHtml() above), AND the footer's
+// own grand-total cell (aisMoneyCellHtml() above, used for both the per-month footer cells and the
+// grand-total cell) all already share -- one class toggle here covers all 3 places at once,
+// automatically consistent (explicit instruction: filter the Annual Total column and footer too,
+// not just month cells), with nothing to keep back in sync by hand. .ais-cell-net (the plain-net
+// month cells) is untouched -- net is always shown regardless of this toggle.
+function applyAisColumnDisplayToggle() {
+    $('#tb_annual_summary').toggleClass('ais-hide-income', !aisShowIncome).toggleClass('ais-hide-deduction', !aisShowDeduction);
+}
+// "All" (#aisShowAll) has no state of its own -- always DERIVED from aisShowIncome/aisShowDeduction
+// so it can never drift out of sync with them.
+function aisSyncColumnToggleCheckboxes() {
+    $('#aisShowIncome').prop('checked', aisShowIncome);
+    $('#aisShowDeduction').prop('checked', aisShowDeduction);
+    $('#aisShowAll').prop('checked', aisShowIncome && aisShowDeduction);
+}
+// Clicking "All" is only ever an "enable everything" action -- explicit instruction: it must never
+// be a way to hide everything (the Income/Deduction handlers below already guard against that on
+// their own, so this needs no such guard, but staying consistent with "All can't mean nothing").
+$(document).on('change', '#aisShowAll', function () {
+    aisShowIncome = true;
+    aisShowDeduction = true;
+    aisSyncColumnToggleCheckboxes();
+    applyAisColumnDisplayToggle();
+});
+$(document).on('change', '#aisShowIncome', function () {
+    aisShowIncome = $(this).is(':checked');
+    // Explicit instruction: unchecking the last one of the two auto-recovers to both checked,
+    // rather than ever leaving the table showing nothing.
+    if (!aisShowIncome && !aisShowDeduction) {
+        aisShowIncome = true;
+        aisShowDeduction = true;
+    }
+    aisSyncColumnToggleCheckboxes();
+    applyAisColumnDisplayToggle();
+});
+$(document).on('change', '#aisShowDeduction', function () {
+    aisShowDeduction = $(this).is(':checked');
+    if (!aisShowIncome && !aisShowDeduction) {
+        aisShowIncome = true;
+        aisShowDeduction = true;
+    }
+    aisSyncColumnToggleCheckboxes();
+    applyAisColumnDisplayToggle();
+});
+
+// 2026-09-12, Batch 5 item 6 -- "has real data" uses the EXACT same all-zero test
+// aisMoneyCellHtml()/aisEmployeeMonthCellHtml() already use to decide whether a month cell shows
+// real figures or a plain '-' -- same definition of "no data this month" throughout this page, not
+// a second one invented for this stat.
+function aisMonthHasData(cell) {
+    return !!(cell && (cell.gross || cell.deduction || cell.net));
+}
+// Explicit instruction: average = annual_net / (months WITH data only, not a flat /12) so a
+// mid-year hire's average reflects their real pay, not diluted by months before they even joined;
+// highest month is by net, ties go to the FIRST such month (strict `>` while iterating in
+// chronological order naturally does this -- a later equal value is never `>` the one already
+// found).
+function aisAnnualDetailStatsForRow(row) {
+    const months = row.months || [];
+    let monthsWithData = 0;
+    let peakIdx = -1;
+    let peakNet = -Infinity;
+    months.forEach(function (cell, idx) {
+        if (aisMonthHasData(cell)) {
+            monthsWithData++;
+        }
+        const net = cell ? (Number(cell.net) || 0) : 0;
+        if (net > peakNet) {
+            peakNet = net;
+            peakIdx = idx;
+        }
+    });
+    return {
+        monthsWithData: monthsWithData,
+        average: monthsWithData > 0 ? (row.annual_net / monthsWithData) : 0,
+        peakIdx: peakIdx,
+    };
+}
+// 2026-09-12, Batch 5 item 6 -- plain <table>, not a DataTable (explicit instruction: a fixed
+// 12-row list needs no pagination/search/sort of its own). Reads straight from the row object
+// already in memory (aisCurrentEmployeesById) + aisCurrentMonths for month labels/state -- no
+// endpoint call at all (see this task's own step-1 report on why one isn't needed). A month with no
+// data shows '-' (explicit instruction), not "0.00" -- matches aisMoneyCellHtml()'s own convention
+// for the main table's month cells. Modal always shows all 3 columns regardless of the Income/
+// Deduction checkboxes above (explicit instruction) -- this function never reads
+// aisShowIncome/aisShowDeduction at all. Each month row is still `.ais-cell-clickable` (the SAME
+// existing delegated handler/#aisCellDetailModal as the main table's own month cells) so drilling
+// into one specific month's real line items works identically from inside this modal -- Bootstrap 5
+// stacks the 2 modals natively, no extra wiring needed.
+function aisRenderAnnualDetail(row) {
+    const months = aisCurrentMonths || [];
+    const stats = aisAnnualDetailStatsForRow(row);
+    const name = (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '';
+    const deptName = (currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-';
+    const fiscalYearLabel = months.length ? months[0].year + (months[0].year !== months[months.length - 1].year ? '-' + months[months.length - 1].year : '') : '';
+
+    $('#aisAnnualDetailModalTitle').html(`${apvPersonLineHtml(name, 32, row.profile_photo_path, row.employee_id ? { employeeId: row.employee_id } : null)}
+        <span class="text-muted small ms-2">${escapeHtml(row.employee_no || '')} &middot; ${escapeHtml(deptName)}</span>`);
+
+    const rowsHtml = months.map(function (m, idx) {
+        const cell = row.months[idx];
+        const hasData = aisMonthHasData(cell);
+        const cls = idx === stats.peakIdx && hasData ? ' class="table-warning"' : '';
+        const clickableAttrs = hasData ? ` data-employee-id="${row.employee_id}" data-year="${m.year}" data-month="${m.month}"` : '';
+        const rowTag = hasData ? `<tr class="ais-cell-clickable"${clickableAttrs} style="cursor:pointer;"${cls}>` : `<tr${cls}>`;
+        return `${rowTag}
+            <td>${escapeHtml(aisMonthLabel(m))}</td>
+            <td class="text-end">${hasData ? aisFmt(cell.gross) : '-'}</td>
+            <td class="text-end">${hasData ? aisFmt(cell.deduction) : '-'}</td>
+            <td class="text-end fw-semibold">${hasData ? aisFmt(cell.net) : '-'}</td>
+        </tr>`;
+    }).join('');
+
+    $('#aisAnnualDetailBody').html(`
+        <div class="row g-3 mb-4">
+            <div class="col-4">
+                <div class="stat-card stat-card-success h-100">
+                    <div class="stat-card-icon"><i class="fa-solid fa-coins"></i></div>
+                    <div>
+                        <div class="stat-card-label" data-i18n="annual_total">Annual Total</div>
+                        <div class="stat-card-value">${aisFmt(row.annual_net)}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div class="stat-card stat-card-info h-100">
+                    <div class="stat-card-icon"><i class="fa-solid fa-calculator"></i></div>
+                    <div>
+                        <div class="stat-card-label">${langData['ais_avg_per_month'] || 'Average per Month'} (${stats.monthsWithData} ${langData['ais_months_unit'] || 'months'})</div>
+                        <div class="stat-card-value">${aisFmt(stats.average)}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div class="stat-card stat-card-primary h-100">
+                    <div class="stat-card-icon"><i class="fa-solid fa-trophy"></i></div>
+                    <div>
+                        <div class="stat-card-label">${langData['ais_highest_month'] || 'Highest Month'}</div>
+                        <div class="stat-card-value">${stats.peakIdx >= 0 ? escapeHtml(aisMonthLabel(months[stats.peakIdx])) : '-'}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <table class="table table-sm table-hover ais-table">
+            <thead class="table-light text-secondary">
+                <tr>
+                    <th data-i18n="month">Month</th>
+                    <th class="text-end" data-i18n="breakdown_earnings">Income</th>
+                    <th class="text-end" data-i18n="table_deduction_amount">Deductions</th>
+                    <th class="text-end" data-i18n="table_net_pay">Net Pay</th>
+                </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+            <tfoot>
+                <tr class="fw-bold">
+                    <td data-i18n="total">Total</td>
+                    <td class="text-end">${aisFmt(row.annual_gross)}</td>
+                    <td class="text-end">${aisFmt(row.annual_deduction)}</td>
+                    <td class="text-end">${aisFmt(row.annual_net)}</td>
+                </tr>
+            </tfoot>
+        </table>
+    `);
+    updateText($('#aisAnnualDetailBody')[0]);
+}
+$(document).on('click', '.ais-annual-total-clickable', function () {
+    const employeeId = $(this).data('employee-id');
+    const row = aisCurrentEmployeesById[employeeId];
+    if (!row) return;
+    aisRenderAnnualDetail(row);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('aisAnnualDetailModal')).show();
+});
+
 $(document).on('click', '#aisStationFilterToggle', function () {
     const $filter = $('#aisStationFilter').toggleClass('collapsed');
     const collapsed = $filter.hasClass('collapsed');
