@@ -139,6 +139,40 @@ PHP 8.x, MySQL 8.x, Bootstrap 5, jQuery, SweetAlert2, CSS (custom, ไม่ใ�
   - **exempt ได้เฉพาะ**: คอลัมน์ปุ่มดำเนินการล้วนๆ (Edit/Delete/ไอคอน), widget ภาพที่ไม่มีค่าเดี่ยวให้ filter (mini-timeline, progress bar, avatar), หรือตารางที่ตั้งใจปิด `ordering:false` ทั้งตารางแล้วมี filter หลักระดับบนอยู่แล้ว (เช่น Login History ที่เป็น `serverSide:true` พร้อม top-level filter บริบทเฉพาะ — ดู `employee/detail.js`'s `#tableLoginHistory`/`employee/list.js`'s `#tb_login_history_overview` เป็นตัวอย่าง "จงใจไม่ใส่" ที่มี comment อธิบายเหตุผลไว้)
   - **Filter รูปแบบอื่นที่ไม่ใช่ per-column** (เช่น ช่วงวันที่ ที่ Excel-column-filter แบบ discrete-value ทำไม่ได้) ให้ใช้ component `.station-filter` (label + chevron-toggle ปุ่ม + `.station-filter-body` เป็น `row g-2` ของ field, ปุ่ม "Clear Filter" แยกไว้ข้างล่างโชว์เฉพาะตอนมี filter active) แบบเดียวกับ Employee List/Process List/Notifications — ห้ามสร้าง filter row แบบ `d-flex gap-2` เอง
 
+## Design
+
+> **บังคับ: ก่อนแตะ view/CSS/JS ที่ render UI ต้องอ่าน `docs/design/rules.md` ทั้งไฟล์ทุกครั้ง และรายงานอ้าง § ของกฎ** — เอกสารนี้ (`## Design` ใน CLAUDE.md) เป็นแค่สรุปหลักการ + ตาราง shared component เท่านั้น `docs/design/rules.md` คือฉบับเต็ม (โครงสร้างหน้า/สี/ปุ่ม/badge/tabs/ตาราง/ตัวเลข/modal/feedback/lint/กระบวนการ phase design — §1–§13)
+
+### หลักการ (§0 ของ `docs/design/rules.md`, อ่านก่อนทุกครั้ง)
+
+1. **หน้าจอต้องเงียบ** — สีมีหน้าที่บอกว่า "ทำอะไรต่อ" หรือ "ต้องตัดสินใจอะไร" เท่านั้น ถ้าสีไม่ได้ตอบสองคำถามนี้ ให้เป็นเทา
+2. **1 หน้า/1 modal = 1 action หลัก** — มีปุ่มส้มได้ตัวเดียว ถ้าหาไม่เจอว่าตัวไหนคือ action หลัก ให้ถาม
+3. **โครงสร้างต้องสื่อข้อมูล ไม่ใช่ตกแต่ง** — เส้น กล่อง การ์ด ไอคอน ตัวเลขลำดับ ใช้เมื่อมันบอกอะไรที่ผู้ใช้ต้องรู้ ถ้าเอาออกแล้วความหมายไม่เปลี่ยน ให้เอาออก
+4. **ซ้ำ = shared** — ถ้า markup/JS แบบเดียวกันจะปรากฏใน 2 ที่ ต้องเป็น partial/helper ตัวเดียว (กฎ "ห้าม mirror-copy" เดิมใช้กับ UI ด้วย)
+5. **คำในหน้าจอเป็น design content** — ปุ่ม/หัวข้อ/toast ใช้คำเดียวกันตลอด flow ("บันทึก" → toast "บันทึกแล้ว" ไม่ใช่ "สำเร็จ"), ประโยคเดียว, active voice, ไม่มีคำเติม
+6. **ห้ามเดา design** — เจอกรณีที่กฎไม่ครอบ ให้เสนอ 2–3 ตัวเลือกพร้อมภาพ/ASCII แล้วหยุดถาม ไม่ตัดสินเอง
+7. **phase design ห้ามแก้ logic** — ถ้าระหว่างจัด UI เจอบั๊ก logic ให้จดลง BACKLOG.md แล้วทำต่อ ไม่แก้ปนกัน (diff ของ design pass ต้องเป็น view/CSS/JS-render เท่านั้น)
+
+### Shared components (§11 ของ `docs/design/rules.md`) — ต้องใช้ ห้ามเขียนเอง
+
+| ชื่อ | ที่อยู่ | แทนของเดิม |
+|---|---|---|
+| `page-header.php` | `app/views/partials/` | การ์ดหัวหน้าทุกหน้า |
+| `stat-card.php` | partials | การ์ดตัวเลขขอบสี |
+| `filter-bar.php` | partials | filter กางค้าง |
+| `status-stepper.php` + `renderStatusStepper()` | partials + app.js | กล่อง 5 สี |
+| `statusBadge()` / `statusBadgeHtml()` + `status_map.php` (rename `payroll-configuration.js`'s local `statusBadge(row)` → `pcRowStatusBadge(row)` ก่อนประกาศ global — ดู rules.md §5) | helpers + app.js + config | map สถานะกระจาย |
+| `initSharedDataTable()` (ขยาย: layout, export, fixed column, columnDefs alignment, ครอบ `initExcelColumnFilters()` ให้เอง) | app.js | init ตรงทุกหน้า |
+| `fmtMoney()` / `formatMoney()` / `initMoneyInputs()` | helpers + app.js | number_format กระจาย |
+| `apvAvatarHtml()` / `apvPersonLineHtml()` | app.js (มีแล้ว) | avatar เขียนเอง |
+| `emp-header-card` (style ตาม §9) | modals (มีแล้ว) | หัว modal ธง+ไอคอน |
+| `isFormDirty()` / `confirmIfDirtyThen()` | app.js (มีแล้ว) | ผูก dirty-check เองทีละ modal — ไม่สร้าง `guardDirtyModal()` ใหม่ |
+| `showConfirm()` (ขยายรับ object form) / `showSuccess` / `showError` | app.js/alert.js (มีแล้ว) | Swal.fire ตรง — ไม่สร้าง `confirmAction()` ใหม่ |
+| `resetModalTabs()` | app.js (มีแล้ว) | strip class เอง |
+| `payslip-view.php` | partials | modal คำนวณแบบตาราง |
+
+เพิ่ม component ใหม่ต้องเสนอชื่อ + API + ที่ใช้ ≥ 2 จุด ก่อนเขียน — ดูรายละเอียดเต็ม (tokens, สี, ปุ่ม, badge, tabs/stepper/filter bar, ตาราง, ตัวเลข, modal/ฟอร์ม, feedback, lint, กระบวนการ 4 รอบ) ใน `docs/design/rules.md`
+
 ## Business Model — 3 ประเภทผู้ใช้
 1. **Origami HR user** — sync attendance/leave/holiday/OT/ค่าเที่ยว อัตโนมัติจากโมดูล HR
 2. **External HR user** — Import ผ่าน Excel/CSV template + validation + field mapping
