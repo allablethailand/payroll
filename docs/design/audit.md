@@ -406,3 +406,28 @@ than front-loading only the hardest pages.
     legacy/reduced-relevance standalone routes) — lowest priority, may not even need independent
     round-4 commits if their real content lives elsewhere (Payslip Settings tab / Company Profile's
     own Permissions sub-tab respectively).
+
+---
+
+## 2026-09-13 addendum — Round 2 item 9 findings (chart/calendar colors, real pages not touched this round)
+
+Found while building the chart token/calendar-widget infra (tokens.css `--chart-*`, `chartDefaults()`
+in app.js, `calendar-widget.php`) — confirmed by reading the real page JS directly, not fixed here
+(Round 2 does not touch real page templates, §13). Add to whichever round-4 pass covers these 2 pages
+(item 1 `/dashboard`, item 10 `/employees/reports` above):
+
+- **`/employees/reports` (`public/js/employee/reports.js`) — 2 charts use a rainbow color-per-bar
+  palette** (`EMP_TENURE_BUCKET_COLORS` on the Tenure-buckets bar chart, `EMP_COMPLETENESS_BUCKET_COLORS`
+  on the Completeness-by-bucket bar chart) — violates the new chart color rule (docs/design/rules.md
+  §14): a single-series bar chart with no real per-bar status meaning should use one color
+  (`--chart-1`), not a different hue per bucket. Migrate both to `chartDefaults()` + `--chart-1` (or
+  `--chart-1`/`--chart-2..5` grays if the buckets genuinely need to stay visually distinct) when this
+  page's round-4 pass happens.
+- **`/dashboard` calendar widget (`public/js/dashboard.js`'s `renderDashboardCalendarGrid()`,
+  `DASH_CAL_TYPE_CLASS`) — probation/internship-end dot is indigo/blue (`#6366f1`,
+  `.dash-cal-dot-probation` in `style.css`)**, not a status color per §3 ("info = เทา ไม่ใช่ฟ้า") — the
+  new `calendar-widget.php`/`renderCalendarWidget()` component (§14) correctly uses a gray
+  (`--c-text-muted`) tone for this event type instead. When `/dashboard` migrates to the new component
+  in round 4, this real color needs to change from indigo to gray to match (also applies to the other
+  3 event dot colors there, which are currently raw hex — `#dc2626`/`#f59e0b`/`#16a34a` — not tokens,
+  same migration).

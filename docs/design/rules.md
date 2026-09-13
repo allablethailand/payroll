@@ -925,6 +925,9 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 | `resetModalTabs()` | app.js (มีแล้ว) | strip class เอง |
 | `payslip-view.php` | partials | modal คำนวณแบบตาราง |
 | `.scroll-thin` (ใหม่, notification "ซอฟต์ลง" follow-up 2026-09-13 — CSS utility class ล้วนๆ ไม่มี JS, scrollbar บาง 6px โปร่ง) | `style.css` | scrollbar เริ่มต้นหนาของ browser บน dropdown/panel ที่ scroll — ใช้กับ `.notif-list` แล้ว, ตัวไหนใน dropdown/panel ที่ scroll ต่อไปในระบบให้เรียกซ้ำ ไม่เขียน scrollbar CSS เองใหม่ |
+| `calendar-widget.php` + `renderCalendarWidget(el, {month, events, onSelect})` (ใหม่, item 9 — เสร็จแล้ว; โครงคงเดิมจาก dashboard จริงแต่ class namespace ใหม่ทั้งหมด, ยังไม่มีหน้าจริงเรียกใช้ รอรอบ 4 — ดู §14) | `app/views/partials/` + `app.js` | `.dash-calendar-*` ของจริง (ไม่แตะ, ไม่ reuse ชื่อเดิม) |
+| `chartColor()` / `chartColors()` / `chartDefaults(overrides)` (ใหม่, item 9 — เสร็จแล้ว; อ่าน token `--chart-*`/`--chart-grid`/`--c-*` สดจาก `getComputedStyle` ทุกครั้งที่เรียก ไม่ cache ค่า) | `app.js` | สี/font/grid ที่แต่ละกราฟ (8 กราฟทั้งแอป) ตั้งเองแยกกันตอนนี้ — ยังไม่ migrate หน้าจริง รอรอบ 4 |
+| `initTimepicker($scope, options)` (ใหม่, item 9 — เสร็จแล้ว; flatpickr time-only, **auto-init** ต่างจาก `initDatepicker()` — ดู §14) | `input.js` | native `<input type="time">` ที่ปรับสไตล์ popup ไม่ได้เลย — ของเดิมใน `layout/modals.php`/`setup-rules` ยังไม่แตะ รอรอบ 4 |
 
 เพิ่ม component ใหม่ต้องเสนอชื่อ + API + ที่ใช้ ≥ 2 จุด ก่อนเขียน
 
@@ -989,3 +992,109 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 `window.STATUS_MAP = <?=json_encode(loadStatusMap())?>;` เพื่อให้ `app/config/status_map.php` เป็น
 แหล่งข้อมูลเดียวจริงๆ ไม่ต้องมี JS copy ของตัวเอง (ดู §5, §11) — **ไม่ใช่การเปิดทางให้แก้ header.php
 เพิ่มเติมได้อีกในรอบนี้** ยกเว้นเฉพาะบรรทัดนี้บรรทัดเดียวที่ขอ/อนุมัติไว้ชัดเจนแล้วเท่านั้น
+
+---
+
+## 14. Datepicker, Timepicker, Calendar widget, Chart (Round 2 item 9, 2026-09-13)
+
+**Scope note**: infra + token override + `docs/design/components.php` demo เท่านั้น — `dashboard.js`/
+`dashboard.php` (calendar) และ `employee/reports.js` (chart) เป็นหน้าจริง **ไม่แตะในรอบนี้** ตาม §13
+ปกติ — 2 บั๊กสีจริงที่เจอระหว่างสำรวจ (probation dot สีคราม, กราฟ Tenure/Completeness สีรุ้งต่อแท่ง) จด
+ไว้ใน `docs/design/audit.md`'s 2026-09-13 addendum แล้ว รอรอบ 4
+
+### Datepicker
+
+Library เดิม `bootstrap-datepicker` v1.10.1 (npm-vendored, `initDatepicker()` ใน `public/js/input.js`)
+— **migrate override เดิม (`style.css`, comment block "Bootstrap-datepicker") จาก token ชุดเก่า
+`--app-*` (T069, 2026-09-05) มาเป็นชุด `--c-*`/`--radius-lg`/`--shadow-modal` ของรอบนี้** — `--app-*`
+เองไม่ได้ถูกถอดออกจากแอปทั้งหมด (ยังเหลืออีก ~220 บรรทัดที่ใช้ใน `style.css` ที่อื่น เป็นระบบ dark-mode
+เดิมของ T069 คนละเรื่องกับ token ชุดนี้ นอกขอบเขตรอบนี้ — จดเป็น candidate รอบ 4 ถ้าจะรวม 2 ระบบ token
+เป็นชุดเดียว):
+- popup (`.datepicker.datepicker-dropdown`): พื้น `--c-bg` ตัวหนังสือ `--c-text` ขอบ 1px `--c-border`
+  radius `--radius-lg` เงา `--shadow-modal` padding `--sp-2`
+- หัวเดือน/ปุ่มเลื่อน (`th`) และช่องวันปกติ: `--c-text`
+- วันนอกเดือน (`.old`/`.new`) และวันปิด/disabled (`.disabled`): `--c-text-faint`
+- วันที่เลือก (`.active`/`.selected`): พื้น `--c-primary` ตัวหนังสือขาว (`#fff`, คงไว้ตามเดิม — สีขาวบน
+  พื้น primary ไม่ใช่ token เพราะเป็นค่าคงที่ไม่ผูกกับ theme)
+- วันนี้ (`.today`): **ขอบ 1px `--c-primary`** (ไม่ใช่พื้นสี — แยกสัญญาณจากวันที่เลือกที่เป็นพื้นทึบชัดเจน
+  ไม่ให้สับสนกันเมื่อ "วันนี้" เป็น "วันที่เลือก" ด้วย ซึ่งกรณีนั้น specificity ของ `.active`/`.selected`
+  ชนะอยู่แล้วเพราะมี 2 class)
+- hover: `--c-bg-hover`
+- ปุ่ม Clear (`tfoot th.clear`): `--c-primary` ตัวหนา, hover `--c-bg-hover`
+- dark mode: ได้มาโดยอัตโนมัติจาก token เอง (ไม่มี override ซ้ำ เหมือนทุก component อื่นในรอบนี้)
+
+### Timepicker
+
+**ตัดสินใจแล้ว (2026-09-13, ยืนยันโดยผู้ใช้): flatpickr โหมด time-only** (ไม่ใช่ native
+`<input type="time">`) — native ปรับสไตล์ popup ไม่ได้เลยในเบราว์เซอร์หลักเกือบทั้งหมด (closed shadow
+DOM) ซึ่งขัดกับเป้าหมายที่ต้องการให้หน้าตาเหมือน datepicker ตรงๆ — `npm install flatpickr` (lock ใน
+`package.json`, v4.6.13) โหลด global ผ่าน `layout/footer.php` (CSS+JS 2 บรรทัด ต่อจาก
+bootstrap-datepicker เดิม — **ข้อยกเว้นเดียวของ "ห้ามแตะหน้าจริง" ที่ยืนยันแล้วสำหรับ item นี้** เหมือนที่
+`window.STATUS_MAP` เคยได้รับตอน item 5, จำกัดเฉพาะ 2 บรรทัดนี้เท่านั้น) เพราะ `.timepicker` เป็น field
+ที่ปรากฏได้ทุกหน้า เหมือน bootstrap-datepicker
+- **`initTimepicker($scope, options)` (`public/js/input.js`)** คู่กับ `initDatepicker()` แต่
+  **auto-init** (ต่างจาก datepicker ที่ต้องเรียกเองต่อ field) — ผูกกับ `.timepicker` ผ่าน
+  `$(document).ready()` + `shown.bs.modal` เหมือน `initMoneyInputs()` (app.js, §8) มี guard
+  `data('timepickerWired')` กัน init ซ้ำ ค่า default: `enableTime:true, noCalendar:true,
+  dateFormat:'H:i', time_24hr:true, minuteIncrement:5, allowInput:true` (24 ชม., ทีละ 5 นาที, ค่าที่
+  ส่ง server เป็น string `"HH:mm"`) — override ได้ต่อ field ผ่าน `options` param
+- **override เข้า token** (`style.css`, บล็อกใหม่ต่อจาก Bootstrap-datepicker เดิม, ทุกค่าเป็น
+  `var(--c-*)` จึงได้ dark mode ฟรีไม่ต้องเขียนซ้ำ): popup (`.flatpickr-calendar`) พื้น `--c-bg` ขอบ 1px
+  `--c-border` radius `--radius-lg` เงา `--shadow-soft` (แทนที่ box-shadow เดิมของ lib ที่ผสมเส้นขอบ
+  จำลอง 4 ด้าน + เงาไว้ในค่าเดียวกัน) ลูกศรชี้ (`:before`/`:after`) recolor ตาม border/bg ใหม่แทนการซ่อน
+  — ตัวเลขชั่วโมง/นาที (`.flatpickr-time input`, คือ "เวลาที่เลือก" เพราะ time-only ไม่มี cell ให้เลือก
+  แบบปฏิทิน) สี `--c-primary`, ตัวคั่น `:`/AM-PM `--c-text`, hover (ทั้ง input และปุ่มลูกศรขึ้น-ลง)
+  `--c-bg-hover`, ลูกศรขึ้น-ลงเอง `--c-text-muted`
+- **`<input type="time">` เดิมใน `layout/modals.php`/`setup-rules/index.php` ไม่แตะในรอบนี้** (ไม่มี
+  class `.timepicker` จึง auto-init ไม่จับ) — migrate เป็นหน้าจริง จดไว้ `docs/design/audit.md`'s
+  2026-09-13 addendum แล้ว รอรอบ 4
+
+### Calendar widget (`calendar-widget.php` + `renderCalendarWidget()`, §11)
+
+Component ใหม่ ไม่ใช่การแก้ dashboard จริง — โครงเดิมคงไว้ครบ (ตาราง 7 คอลัมน์, ปุ่มเลื่อนเดือน,
+dropdown เลือกเดือน, legend, ช่องรายละเอียดวันที่เลือก) แค่ class namespace ใหม่ (`.calendar-widget-*`)
+และสีย้าย token ครบ:
+- ช่องวัน: พื้น `--c-bg` ขอบ 1px `--c-border` radius `--radius`; **วันนี้** พื้น `--c-primary-soft`
+  (ไม่แตะขอบ); **วันที่เลือก** ขอบ 2px `--c-primary` (ซ้อนกับพื้นวันนี้ได้ถ้าเป็นวันเดียวกัน); วันนอกเดือน/
+  ช่องว่างท้ายแถว **ไม่แสดงกล่องเลย** (ไม่ใช่กล่องจางเหมือน datepicker — calendar widget แสดงเฉพาะเดือน
+  ที่ขอเท่านั้น ไม่โชว์วันเดือนติดกัน)
+- event dot 4 ประเภท คนละ tone ไม่ใช่สีตามใจ: **holiday → danger, ตัดรอบ → warning, จ่ายเงิน →
+  success, สิ้นสุดทดลองงาน/ฝึกงาน → muted** (`--c-text-muted`, เทาเข้ม **ไม่ใช่** `--c-info`/ฟ้า — ตรงกับ
+  §3 "info = เทา ไม่ใช่ฟ้า" ที่ของจริงบน dashboard ละเมิดอยู่ตอนนี้ ดู audit.md) legend ใช้จุดสีเดียวกัน
+  วันที่มีหลาย event แสดงจุดสูงสุด **3 จุด** (event ที่เหลือดูได้จากช่องรายละเอียดด้านล่างเมื่อคลิกวันนั้น)
+- dropdown เลือกเดือน: select ธรรมดา (ไม่มี custom dropdown UI) สไตล์ tertiary (`--c-text-muted`,
+  hover `--c-text`) + ไอคอน caret เล็ก `--c-text-faint` — **ไม่มีจุดเขียว/จุดสีใดๆ** (ของจริงบน dashboard
+  มี `.dash-period-picker-live-dot` สีเขียวที่ไม่มีความหมายจริง — ไม่ port มาที่นี่ ตรงกับ §1 "สีต้องตอบ 2
+  คำถาม")
+- ช่องรายละเอียดวันที่เลือก: พื้น `--c-bg-subtle` (ไม่ใช่ส้มอ่อนแบบของจริง) ขอบ `--c-border` radius
+  `--radius`; ว่าง = ข้อความ empty-state ขนาดเล็ก `--c-text-faint` กึ่งกลาง (ไม่ใช่ full `empty-state.php`
+  component — เล็กเกินไปสำหรับ icon+title+text เต็มรูปแบบ)
+- หัว "ปฏิทิน": ข้อความล้วน **ไม่มีไอคอน** (ของจริงมี `<i class="fa-calendar-days text-warning">` สีส้ม
+  เหลืองที่ไม่สื่อความหมายอะไร — §2 ไอคอนพื้นสีต้องมีความหมาย ถ้าไม่มีให้ตัดออก ไม่ใช่แค่เปลี่ยนสี)
+
+### Chart
+
+Library: Chart.js v4.5.1 (npm-vendored, โหลดต่อหน้า ไม่ global) — **ยังไม่มี `chartDefaults()` มาก่อน
+รอบนี้** ทุกกราฟ (8 กราฟทั้งแอป) ตั้งสี/font/grid เองแยกกัน (ดู audit.md's addendum สำหรับรายชื่อกราฟที่
+ต้อง migrate ตอนหน้าจริงไปรอบ 4)
+
+- Token: `--chart-1` (= `--c-primary` ตรงๆ, ไม่ประกาศค่าใหม่) `--chart-2..5` (เทาไล่ระดับ ไม่มีความหมาย
+  สถานะ, มีค่า dark mode ของตัวเองที่ไล่ระดับกลับด้าน ให้ยังแยกกันได้บนพื้นมืด) `--chart-grid` (=
+  `--c-border` ตรงๆ)
+- Helper `chartColor(varName)`/`chartColors()`/`chartDefaults(overrides)` (`app.js`) — `chartDefaults()`
+  คืน options object ของ Chart.js (font Sarabun, สี legend/tooltip/axis จาก token, grid
+  `--chart-grid`, tooltip radius `--radius-lg`, ผสานกับ `overrides` ที่ผู้เรียกส่งมาผ่าน
+  `$.extend(true, {}, base, overrides)`) — ทุกกราฟใหม่ (และกราฟจริงตอน migrate รอบ 4) เรียกฟังก์ชันนี้
+  แทนตั้ง options เอง
+- **กฎการใช้กราฟ (ใหม่, แม่นกว่าที่ระบุไว้ตอนสั่งงานครั้งแรก)**: กราฟต้องมี "ข้อมูลที่เปรียบเทียบได้" —
+  series เดียวแต่ **≥ 6 จุด** (เช่นแนวโน้มรายเดือน) หรือมีหลาย series อยู่แล้ว ยังนับเป็นกราฟได้ทั้งคู่ —
+  ถ้าเป็นแท่งเดียว/ค่าเดียว (ไม่มีอะไรให้เทียบ) ให้ใช้ **stat card** หรือตารางแทน ไม่ใช่กราฟ
+- **สีต่อแท่ง/เส้น**: แท่งหลายแท่งที่อยู่ *series เดียวกัน* ใช้สีเดียว (`--chart-1`) ทั้งหมด **ยกเว้น**แท่งที่
+  ต้องเน้นสถานะจริง (เช่น alert/at-risk vs. ปกติ) จึงใช้ `--c-danger`/`--c-success` เฉพาะแท่งนั้นได้ —
+  หลาย series ใช้ `--chart-1..5` ไล่ตามลำดับ ไม่ใช่สีรุ้งเลือกเอง
+- **doughnut 2 ส่วน**: ใช้ `--chart-1` (ส่วนที่นับ) + `--chart-grid` (ส่วนที่เหลือ/พื้นหลัง) เท่านั้น —
+  ยกเว้นกรณีที่ 2 ส่วนนั้นสื่อสถานะจริงคู่กัน (เช่น enrolled/not enrolled, hire/exit) ซึ่งใช้
+  `--c-success`/`--c-danger` ได้ตรงตามกฎ §3 เดิม (ไม่ใช่กฎใหม่ ของเดิมมีอยู่แล้ว)
+- **legend ไม่มีสีรุ้ง** — ห้ามมี legend ที่สีแต่ละอันเลือกเอง/ไล่เฉดแบบไม่มีระบบ (เช่น 1 สีต่อ bucket ที่
+  ไม่มีความหมายสถานะ) ทุกสีใน legend ต้องสืบย้อนกลับไปที่ `--chart-1..5` หรือสถานะจริง (`--c-danger`/
+  `--c-success`) เท่านั้น

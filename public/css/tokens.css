@@ -59,6 +59,17 @@
                                         นุ่มกว่า --shadow-modal (กระจายกว้างกว่า, ทึบน้อยกว่า) เช่น
                                         notification -- คนละโทนกับ --shadow-modal เจตนา ไม่ใช่ค่าเดียว
                                         ที่ปรับเผื่อทุกที่ */
+
+  /* chart -- 2026-09-13, Round 2 item 9. --chart-1 คือสีเดียวที่มีความหมาย "brand/primary series" (ใช้
+     ซ้ำ --c-primary ตรงๆ ไม่ประกาศค่าใหม่) --chart-2..5 เป็นเทาไล่ระดับล้วนๆ (ไม่ใช่สี, ไม่มีความหมาย
+     สถานะ) สำหรับ series รองที่ไม่ใช่ primary และไม่ใช่ danger/success สถานะจริง -- ใช้คู่กับ danger/
+     success ปกติของ §... (ตาราง status) เมื่อ series นั้นสื่อสถานะจริงเท่านั้น (ดู §ใหม่ "Chart") */
+  --chart-1: var(--c-primary);
+  --chart-2: #CBD5E1;
+  --chart-3: #94A3B8;
+  --chart-4: #64748B;
+  --chart-5: #334155;
+  --chart-grid: var(--c-border);
 }
 
 /* ==========================================================================
@@ -98,6 +109,12 @@
     --c-info: #9AA3AE;        --c-info-soft: #232830;
     --shadow-modal: 0 8px 24px rgba(0, 0, 0, .6);
     --shadow-soft: 0 12px 32px rgba(0, 0, 0, .5);
+    /* chart grays -- ramp inverted vs. light mode (light-to-dark becomes dark-to-light) so all 4
+       stay distinguishable against a dark --c-bg instead of the darkest 2 washing out near-black. */
+    --chart-2: #334155;
+    --chart-3: #64748B;
+    --chart-4: #94A3B8;
+    --chart-5: #CBD5E1;
 }
 @media (prefers-color-scheme: dark) {
     :root:not([data-bs-theme="light"]) {
@@ -117,5 +134,9 @@
         --c-info: #9AA3AE;        --c-info-soft: #232830;
         --shadow-modal: 0 8px 24px rgba(0, 0, 0, .6);
         --shadow-soft: 0 12px 32px rgba(0, 0, 0, .5);
+        --chart-2: #334155;
+        --chart-3: #64748B;
+        --chart-4: #94A3B8;
+        --chart-5: #CBD5E1;
     }
 }

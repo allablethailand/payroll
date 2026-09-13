@@ -1537,6 +1537,182 @@ function dtRenderEmptyState(dt, emptyState) {
         $tbody.find('.empty-state-action').on('click', config.action.onClick);
     }
 }
+// Calendar widget (docs/design/rules.md §14, Round 2 item 9) -- JS twin of
+// app/views/partials/calendar-widget.php (see that file's own docblock for the full visual-rule
+// spec and the `.calendar-widget-*` class contract both renderers share byte-for-byte). This is the
+// LIVE version: owns month-navigation (prev/next buttons + the plain <select>) and day-selection
+// entirely client-side, re-rendering itself from the SAME `events` array passed in at call time --
+// there is no server round trip here (that's a round-4 decision for whichever real page adopts this,
+// see docs/design/audit.md's 2026-09-13 addendum), so navigating to a month outside the given
+// `events` data simply renders an empty grid for that month, which is expected/correct.
+//
+// renderCalendarWidget(el, {month, events, onSelect}):
+//   el      - a DOM element or jQuery selector to render into (its entire content is replaced).
+//   month   - {year, month} (1-based month) for the initially-displayed month.
+//   events  - flat array of {date:'Y-m-d', tone:'danger'|'warning'|'success'|'muted', label}.
+//   onSelect - optional function(dateStr|null, dayEvents) fired whenever the selected day changes
+//              (including deselection, dateStr === null) -- the widget's OWN detail panel already
+//              updates itself regardless, this is only for a caller that wants to react elsewhere.
+const CALENDAR_WIDGET_WEEKDAY_FALLBACKS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+function calendarWidgetWeekdayLabels() {
+    const keys = ['weekday_short_sun', 'weekday_short_mon', 'weekday_short_tue', 'weekday_short_wed', 'weekday_short_thu', 'weekday_short_fri', 'weekday_short_sat'];
+    return keys.map((k, i) => getLangValue(k) || CALENDAR_WIDGET_WEEKDAY_FALLBACKS[i]);
+}
+function calendarWidgetMonthLabel(year, month) {
+    return `${getLangValue('month_' + month) || month} ${year}`;
+}
+function calendarWidgetDefaultLegend() {
+    return [
+        { tone: 'danger', label: getLangValue('dash_cal_holiday') || 'Holiday' },
+        { tone: 'warning', label: getLangValue('dash_cal_cutoff') || 'Payroll Cutoff' },
+        { tone: 'success', label: getLangValue('dash_cal_payment') || 'Payment Date' },
+        { tone: 'muted', label: getLangValue('dash_cal_probation') || 'Probation/Internship End' },
+    ];
+}
+function renderCalendarWidget(el, options) {
+    options = options || {};
+    const $el = $(el);
+    const weekdayLabels = options.weekdayLabels || calendarWidgetWeekdayLabels();
+    const legend = options.legend || calendarWidgetDefaultLegend();
+    const events = options.events || [];
+    const onSelect = typeof options.onSelect === 'function' ? options.onSelect : function () {};
+    let year = options.month && options.month.year ? Number(options.month.year) : new Date().getFullYear();
+    let month = options.month && options.month.month ? Number(options.month.month) : (new Date().getMonth() + 1);
+    let selectedDate = null;
+
+    function eventsByDate() {
+        const map = {};
+        events.forEach(function (ev) { (map[ev.date] = map[ev.date] || []).push(ev); });
+        return map;
+    }
+    function renderDots(dayEvents) {
+        if (!dayEvents.length) return '';
+        const shown = dayEvents.slice(0, 3);
+        return `<div class="calendar-widget-dots">${shown.map(ev => `<span class="calendar-widget-dot calendar-widget-dot-${escapeHtml(ev.tone)}"></span>`).join('')}</div>`;
+    }
+    function renderDetail(map) {
+        const $detail = $el.find('.calendar-widget-detail');
+        const dayEvents = selectedDate ? (map[selectedDate] || []) : [];
+        if (selectedDate && dayEvents.length) {
+            $detail.html(`<div class="calendar-widget-detail-date">${escapeHtml(selectedDate)}</div>` +
+                dayEvents.map(ev => `<div class="calendar-widget-detail-row"><span class="calendar-widget-dot calendar-widget-dot-${escapeHtml(ev.tone)}"></span>${escapeHtml(ev.label)}</div>`).join(''));
+        } else {
+            $detail.html(`<div class="calendar-widget-detail-empty">${escapeHtml(getLangValue('calendar_select_day') || 'เลือกวันที่เพื่อดูรายละเอียด')}</div>`);
+        }
+    }
+    function render() {
+        const map = eventsByDate();
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const daysInMonth = new Date(year, month, 0).getDate();
+        const startWeekday = new Date(year, month - 1, 1).getDay();
+        const cells = [];
+        for (let i = 0; i < startWeekday; i++) cells.push(null);
+        for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+        while (cells.length % 7 !== 0) cells.push(null);
+
+        let headerRow = '<div class="calendar-widget-row calendar-widget-header-row">' +
+            weekdayLabels.map(w => `<div class="calendar-widget-cell calendar-widget-weekday">${escapeHtml(w)}</div>`).join('') + '</div>';
+        let bodyRows = '';
+        for (let i = 0; i < cells.length; i += 7) {
+            bodyRows += '<div class="calendar-widget-row">';
+            cells.slice(i, i + 7).forEach(function (d) {
+                if (d === null) { bodyRows += '<div class="calendar-widget-cell calendar-widget-cell-empty"></div>'; return; }
+                const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                const dayEvents = map[dateStr] || [];
+                let cls = 'calendar-widget-cell calendar-widget-day';
+                if (dateStr === todayStr) cls += ' calendar-widget-today';
+                if (dateStr === selectedDate) cls += ' calendar-widget-selected';
+                bodyRows += `<div class="${cls}" data-date="${dateStr}"><span class="calendar-widget-day-num">${d}</span>${renderDots(dayEvents)}</div>`;
+            });
+            bodyRows += '</div>';
+        }
+        const legendHtml = legend.map(lg => `<span class="calendar-widget-legend-item"><span class="calendar-widget-dot calendar-widget-dot-${escapeHtml(lg.tone)}"></span>${escapeHtml(lg.label)}</span>`).join('');
+
+        $el.html(`<div class="calendar-widget">
+            <div class="calendar-widget-nav">
+                <button type="button" class="calendar-widget-nav-btn calendar-widget-prev" aria-label="Previous month"><i class="fa-solid fa-chevron-left"></i></button>
+                <span class="calendar-widget-month-select-wrap">
+                    <select class="calendar-widget-month-select" aria-label="เลือกเดือน">
+                        <option value="0" selected>${escapeHtml(calendarWidgetMonthLabel(year, month))}</option>
+                        <option value="-1">${escapeHtml(calendarWidgetMonthLabel(month === 1 ? year - 1 : year, month === 1 ? 12 : month - 1))}</option>
+                        <option value="1">${escapeHtml(calendarWidgetMonthLabel(month === 12 ? year + 1 : year, month === 12 ? 1 : month + 1))}</option>
+                    </select>
+                    <i class="fa-solid fa-chevron-down calendar-widget-month-select-caret"></i>
+                </span>
+                <button type="button" class="calendar-widget-nav-btn calendar-widget-next" aria-label="Next month"><i class="fa-solid fa-chevron-right"></i></button>
+            </div>
+            <div class="calendar-widget-grid">${headerRow}${bodyRows}</div>
+            <div class="calendar-widget-legend">${legendHtml}</div>
+            <div class="calendar-widget-detail"></div>
+        </div>`);
+        renderDetail(map);
+
+        $el.find('.calendar-widget-prev').on('click', function () { month--; if (month < 1) { month = 12; year--; } selectedDate = null; render(); onSelect(null, []); });
+        $el.find('.calendar-widget-next').on('click', function () { month++; if (month > 12) { month = 1; year++; } selectedDate = null; render(); onSelect(null, []); });
+        $el.find('.calendar-widget-month-select').on('change', function () {
+            const delta = Number($(this).val());
+            if (!delta) return;
+            month += delta; if (month < 1) { month = 12; year--; } else if (month > 12) { month = 1; year++; }
+            selectedDate = null; render(); onSelect(null, []);
+        });
+        $el.find('.calendar-widget-day').on('click', function () {
+            const dateStr = $(this).data('date');
+            selectedDate = selectedDate === dateStr ? null : dateStr;
+            render();
+            onSelect(selectedDate, selectedDate ? (map[selectedDate] || []) : []);
+        });
+    }
+    render();
+}
+
+// Chart defaults (docs/design/rules.md §14, Round 2 item 9) -- ONE place every Chart.js instance in
+// the app should read its colors/fonts/grid/tooltip styling from, instead of each chart hardcoding
+// its own hex values (the app-wide pattern this session's own investigation found across all 8
+// existing charts -- see docs/design/audit.md's 2026-09-13 addendum). Infra + demo only this round
+// (§13 -- real pages are NOT migrated here, that's round 4); dashboard.js/employee/reports.js are
+// unchanged and keep working exactly as before.
+//
+// chartColor(varName) resolves a CSS custom property to its current computed value (light/dark-aware
+// automatically, since it just reads whatever the browser has already resolved --chart-*/--c-* to).
+// chartColors() returns the --chart-1..5 ramp as an array, in order, for a multi-dataset chart that
+// genuinely needs several colors (see §14's own rule on when that's appropriate vs. a single color).
+function chartColor(varName) {
+    return (getComputedStyle(document.documentElement).getPropertyValue(varName) || '').trim() || '#94A3B8';
+}
+function chartColors() {
+    return [1, 2, 3, 4, 5].map(n => chartColor('--chart-' + n));
+}
+function chartDefaults(overrides) {
+    const fontFamily = getComputedStyle(document.documentElement).getPropertyValue('--font-sans').trim() || 'Sarabun, system-ui, sans-serif';
+    const gridColor = chartColor('--chart-grid');
+    const textColor = chartColor('--c-text-muted');
+    const radiusLg = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--radius-lg')) || 12;
+    const base = {
+        responsive: true,
+        maintainAspectRatio: false,
+        font: { family: fontFamily },
+        plugins: {
+            legend: { labels: { font: { family: fontFamily }, color: textColor } },
+            tooltip: {
+                backgroundColor: chartColor('--c-bg'),
+                titleColor: chartColor('--c-text'),
+                bodyColor: chartColor('--c-text-muted'),
+                borderColor: chartColor('--c-border'),
+                borderWidth: 1,
+                cornerRadius: radiusLg,
+                padding: 10,
+                titleFont: { family: fontFamily, weight: '600' },
+                bodyFont: { family: fontFamily },
+            },
+        },
+        scales: {
+            x: { grid: { color: gridColor }, ticks: { font: { family: fontFamily }, color: textColor } },
+            y: { grid: { color: gridColor }, ticks: { font: { family: fontFamily }, color: textColor } },
+        },
+    };
+    return $.extend(true, {}, base, overrides || {});
+}
+
 // Money input (§8, Round 2 item 7a) -- `<input class="money-input">` + initMoneyInputs($scope),
 // auto-wired below both from $(document).ready() (every field already on the page at load) and from
 // a delegated shown.bs.modal handler (every field inside a modal that just opened -- same pattern

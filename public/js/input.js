@@ -175,6 +175,48 @@ function initDatepicker(selector = '.datepicker', options = {}) {
 
     $(selector).datepicker(mergedOptions);
 }
+// initTimepicker() -- docs/design/rules.md §14, Round 2 item 9. Pairs with initDatepicker() above,
+// but AUTO-init (see the $(document).ready()/shown.bs.modal wiring right below this function) instead
+// of a per-page explicit call -- the user's own explicit choice for this one, matching how
+// initMoneyInputs() (app.js) already auto-wires `.money-input` fields app-wide with zero per-page
+// call needed. flatpickr (not bootstrap-datepicker) was chosen specifically for the time picker
+// because the native <input type="time">'s own popup renders through a closed shadow DOM in every
+// major browser -- it cannot be restyled to match this app's token system at all, which was the
+// whole point of doing this. 24-hour, 5-minute-step, "HH:mm" value by default -- all 3 overridable
+// per call via `options`. Existing native `<input type="time">` fields (app/views/layout/modals.php,
+// app/views/setup-rules/index.php) are NOT touched this round (they don't carry the `.timepicker`
+// class, so this auto-init never touches them) -- migrating them to `.timepicker` is a round-4
+// decision, tracked in docs/design/audit.md's 2026-09-13 addendum.
+function initTimepicker($scope, options = {}) {
+    if (typeof flatpickr === 'undefined') return;
+    const $root = $scope ? $($scope) : $(document);
+    const defaultOptions = {
+        enableTime: true,
+        noCalendar: true,
+        dateFormat: 'H:i',
+        time_24hr: true,
+        minuteIncrement: 5,
+        allowInput: true,
+    };
+    const mergedOptions = $.extend(true, {}, defaultOptions, options);
+    $root.find('.timepicker').addBack('.timepicker').each(function () {
+        const $el = $(this);
+        // Same double-init guard as initMoneyInputs() -- a field still in the DOM the next time its
+        // own modal is shown must not get a second flatpickr instance stacked on top of the first.
+        if ($el.data('timepickerWired')) return;
+        $el.data('timepickerWired', true);
+        if (!$el.attr('placeholder')) {
+            $el.attr('placeholder', 'HH:mm');
+        }
+        flatpickr(this, mergedOptions);
+    });
+}
+$(document).ready(function () {
+    initTimepicker(document);
+});
+$(document).on('shown.bs.modal', '.modal', function () {
+    initTimepicker(this);
+});
 function initSelect2(selector, options = {}) {
     $(selector).each(function () {
         const $this = $(this);

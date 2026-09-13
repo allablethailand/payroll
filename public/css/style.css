@@ -1812,32 +1812,39 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     color: var(--app-text);
 }
 
-/* Bootstrap-datepicker — brand orange theme (applies app-wide, all .datepicker inputs share this design system) */
+/* Bootstrap-datepicker -- token theme (applies app-wide, all .datepicker inputs share this design
+   system). Migrated 2026-09-13 (Round 2 item 9) off the old --app-* token set (T069, 2026-09-05 --
+   see git history if the old values are ever needed for reference) onto the current
+   docs/design/rules.md §1 --c-*/--radius-lg/--shadow-modal set, same token family the notification
+   dropdown/Select2/SweetAlert2 overrides elsewhere in this file already use -- --app-* itself is
+   NOT being retired app-wide by this change (still ~220 lines using it elsewhere in this file, T069's
+   own app-wide dark-mode system, out of this round's scope -- flagged in docs/design/audit.md as a
+   round-4 candidate if the two token systems are ever meant to merge into one). */
 .datepicker.datepicker-dropdown {
-    border-radius: 0.5rem;
-    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, .15);
-    border: 1px solid rgba(var(--bs-primary-rgb), .25);
-    padding: 0.5rem;
-    /* 2026-09-05, T069 Step 3 -- the library's own base CSS has no dark-mode awareness at all and
-       this app never gave the dropdown panel an explicit background/text color before (it only ever
-       overrode border/shadow/padding above) -- CSS-only addition, no JS init/update logic touched,
-       per this file's own documented .datepicker('update') desync-bug history. One plain rule using
-       --app-* tokens directly works in both themes, same pattern as the Select2 block above. */
-    background-color: var(--app-surface-bg);
-    color: var(--app-text);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-modal);
+    border: 1px solid var(--c-border);
+    padding: var(--sp-2);
+    background-color: var(--c-bg);
+    color: var(--c-text);
 }
 /* Day-name header row, week/day cells, and the month/year "switch" + prev/next <th> nav all share
-   this one selector (bootstrap-datepicker renders the switch/prev/next as plain <th> too) -- the
-   library's own base CSS hardcodes a light-only text color here with no theme awareness. */
+   this one selector (bootstrap-datepicker renders the switch/prev/next as plain <th> too). */
 .datepicker table tr td,
 .datepicker table tr th {
-    color: var(--app-text);
+    color: var(--c-text);
 }
-/* Previous/next-month "faded" days (bootstrap-datepicker's own .old/.new classes) -- deliberately
-   dimmer than a same-month day, using --app-text-muted instead of the plain --app-text above. */
+/* Previous/next-month "faded" days (bootstrap-datepicker's own .old/.new classes), and disabled/
+   closed dates (datesDisabled option) -- both deliberately fainter than a normal same-month day. */
 .datepicker table tr td.old,
-.datepicker table tr td.new {
-    color: var(--app-text-muted);
+.datepicker table tr td.new,
+.datepicker table tr td.disabled,
+.datepicker table tr td.disabled:hover {
+    color: var(--c-text-faint);
+}
+.datepicker table tr td.disabled,
+.datepicker table tr td.disabled:hover {
+    cursor: not-allowed;
 }
 .datepicker table tr td.active.active,
 .datepicker table tr td.active:hover.active,
@@ -1848,17 +1855,20 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     color: #fff;
     text-shadow: none;
 }
+/* Today = an outline only (not a filled tint) so it never gets confused with the selected date's own
+   solid --c-primary fill above -- the two are visually distinct signals (selected vs. today) that a
+   translucent-primary tint on today alone doesn't clearly separate. */
 .datepicker table tr td.today,
 .datepicker table tr td.today:hover {
-    background-color: rgba(var(--bs-primary-rgb), .18) !important;
+    background-color: transparent !important;
     background-image: none;
-    /* was a hardcoded #212529 -- same fix as Select2's highlighted-option rule above, same reason:
-       illegible on a translucent-orange-over-dark-surface tint without it. */
-    color: var(--app-heading);
+    border: 1px solid var(--c-primary);
+    color: var(--c-text);
+    text-shadow: none;
 }
 .datepicker table tr td:hover,
 .datepicker table tr th:hover {
-    background-color: rgba(var(--bs-primary-rgb), .12);
+    background-color: var(--c-bg-hover);
     cursor: pointer;
 }
 /* 2026-09-03, Platform Hardening Phase 2 -- Clear button row (clearBtn:true, public/js/input.js's
@@ -1870,9 +1880,55 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     cursor: pointer;
 }
 .datepicker tfoot tr th.clear:hover {
-    background-color: rgba(var(--bs-primary-rgb), .12);
+    background-color: var(--c-bg-hover);
     text-decoration: underline;
 }
+
+/* flatpickr (time-only mode) -- token override, docs/design/rules.md §14, Round 2 item 9.
+   `.timepicker` fields (initTimepicker(), public/js/input.js) render through this library instead of
+   bootstrap-datepicker -- see that function's own docblock for why (native <input type="time"> can't
+   be restyled at all in most browsers, closed shadow DOM). All values below are var(--c-*)/token
+   references, so dark mode is automatic (no separate dark block needed) -- same as every other
+   override in this file added this round. */
+.flatpickr-calendar {
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-lg);
+    /* replaces the library's own box-shadow (which baked a 1px-per-side border simulation INTO the
+       shadow value itself, `1px 0 0 #e6e6e6, -1px 0 0 #e6e6e6, ...`) with a real border above plus a
+       single soft shadow -- same split this round already used for the notification dropdown. */
+    box-shadow: var(--shadow-soft);
+}
+/* The little pointer-arrow triangle pointing at the input -- recolored to match the new
+   border/background above instead of removed, same border+fill 2-triangle technique the library's
+   own CSS already uses (outer triangle = border color, inner triangle = background color). */
+.flatpickr-calendar.arrowTop:before { border-bottom-color: var(--c-border); }
+.flatpickr-calendar.arrowTop:after { border-bottom-color: var(--c-bg); }
+.flatpickr-calendar.arrowBottom:before { border-top-color: var(--c-border); }
+.flatpickr-calendar.arrowBottom:after { border-top-color: var(--c-bg); }
+/* The hour/minute number fields -- the "selected time" itself, so this is the one place --c-primary
+   applies (there's no discrete "selected cell" the way a date picker has). */
+.flatpickr-time input {
+    color: var(--c-primary);
+}
+.flatpickr-time .flatpickr-time-separator,
+.flatpickr-time .flatpickr-am-pm {
+    color: var(--c-text);
+}
+.flatpickr-time input:hover,
+.flatpickr-time .flatpickr-am-pm:hover,
+.flatpickr-time input:focus,
+.flatpickr-time .flatpickr-am-pm:focus,
+.numInputWrapper span:hover {
+    background: var(--c-bg-hover);
+}
+.flatpickr-time .numInputWrapper span.arrowUp:after {
+    border-bottom-color: var(--c-text-muted);
+}
+.flatpickr-time .numInputWrapper span.arrowDown:after {
+    border-top-color: var(--c-text-muted);
+}
+
 /* ==========================================================================
    Payroll Process "Station" bar + collapsible filter box.
    Adapted from Origami's own Process page (app/views/process.php,
@@ -3758,6 +3814,165 @@ td.dt-empty-cell {
 }
 .timeline-day-header:not(:first-child) {
     padding-top: var(--sp-3);
+}
+
+/* Calendar widget (docs/design/rules.md §14, Round 2 item 9) -- new `.calendar-widget-*` namespace,
+   NOT the real dashboard's own `.dash-calendar-*` classes (that page is untouched this round, see
+   docs/design/audit.md's 2026-09-13 addendum for what its real migration needs). Shared by both
+   calendar-widget.php (one static server-rendered month) and renderCalendarWidget() (app.js, the
+   live/interactive version) -- byte-identical class names so both renderers look pixel-identical. */
+.calendar-widget {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+}
+.calendar-widget-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+}
+.calendar-widget-nav-btn {
+    background: none;
+    border: none;
+    color: var(--c-text);
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+.calendar-widget-nav-btn:hover {
+    background: var(--c-bg-hover);
+}
+/* Month-select: plain tertiary text + a small caret icon, NOT a colored "live/current" dot like the
+   real dashboard's own `.dash-period-picker-live-dot` -- that dot carries no real meaning per §1
+   ("สีต้องตอบ 2 คำถาม"), so it has no equivalent here on purpose. */
+.calendar-widget-month-select-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+.calendar-widget-month-select {
+    appearance: none;
+    background: none;
+    border: none;
+    color: var(--c-text-muted);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 2px var(--sp-4) 2px var(--sp-1);
+}
+.calendar-widget-month-select:hover {
+    color: var(--c-text);
+}
+.calendar-widget-month-select-caret {
+    position: absolute;
+    right: 0;
+    font-size: 10px;
+    color: var(--c-text-faint);
+    pointer-events: none;
+}
+.calendar-widget-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.calendar-widget-row {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+}
+.calendar-widget-cell {
+    aspect-ratio: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--fs-xs);
+}
+.calendar-widget-weekday {
+    color: var(--c-text-faint);
+    font-weight: 600;
+    aspect-ratio: auto;
+}
+.calendar-widget-day {
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    color: var(--c-text);
+    cursor: pointer;
+    gap: 2px;
+}
+.calendar-widget-day:hover {
+    background: var(--c-bg-hover);
+}
+.calendar-widget-today {
+    background: var(--c-primary-soft);
+}
+.calendar-widget-selected {
+    border: 2px solid var(--c-primary);
+}
+.calendar-widget-day-num {
+    font-weight: 600;
+}
+.calendar-widget-dots {
+    display: flex;
+    gap: 2px;
+}
+.calendar-widget-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    display: inline-block;
+}
+/* Tone -> event-type mapping is fixed (§14): danger=holiday, warning=payroll cutoff,
+   success=payment date, muted=probation/internship end -- muted is a deliberately gray tone, NOT
+   --c-info (§3: "info = เทา ไม่ใช่ฟ้า" already rules out a blue dot here, same reasoning the real
+   dashboard's own indigo probation dot violates -- see the audit.md addendum). */
+.calendar-widget-dot-danger { background: var(--c-danger); }
+.calendar-widget-dot-warning { background: var(--c-warning); }
+.calendar-widget-dot-success { background: var(--c-success); }
+.calendar-widget-dot-muted { background: var(--c-text-muted); }
+.calendar-widget-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sp-3);
+    font-size: var(--fs-xs);
+    color: var(--c-text-muted);
+}
+.calendar-widget-legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+}
+.calendar-widget-detail {
+    background: var(--c-bg-subtle);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: var(--sp-3);
+}
+.calendar-widget-detail-date {
+    font-weight: 600;
+    color: var(--c-text);
+    margin-bottom: var(--sp-1);
+    font-size: var(--fs-sm);
+}
+.calendar-widget-detail-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+    padding: 2px 0;
+}
+.calendar-widget-detail-empty {
+    color: var(--c-text-faint);
+    font-size: var(--fs-sm);
+    text-align: center;
 }
 
 /* .emp-header-card (§9, Round 2 item 6c) -- the "design phase comes later" this class's own

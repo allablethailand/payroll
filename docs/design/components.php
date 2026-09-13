@@ -60,6 +60,11 @@ require_once __DIR__ . '/../../app/helpers/helpers.php';
 <link href="../../node_modules/select2/dist/css/select2.min.css" rel="stylesheet">
 <link href="../../node_modules/select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet">
 <link rel="stylesheet" href="../../node_modules/bootstrap-datepicker/dist/css/bootstrap-datepicker.standalone.min.css">
+<!-- 2026-09-13, Round 2 item 9 -- flatpickr (timepicker demo below). This page duplicates each real
+     page's own <link>/<script> list by hand rather than including layout/header.php/footer.php
+     directly (see the earlier 2026-09-12 comment on this same pattern) -- footer.php's own 2 new
+     lines for flatpickr (§14) need a matching pair here too. -->
+<link rel="stylesheet" href="../../node_modules/flatpickr/dist/flatpickr.min.css">
 <link rel="stylesheet" href="../../node_modules/intl-tel-input/dist/css/intlTelInput.min.css">
 <!-- 2026-09-13, real bug found and fixed (explicit reports: emp-header-card rendering stacked
      vertically instead of the styled flex row, "initRowToggles is not defined" in the console) --
@@ -889,6 +894,34 @@ $cpStats = [
     </div>
 </div>
 
+<div class="cp-section">
+    <h2>Datepicker / Timepicker (§14, ข้อ 9)</h2>
+    <p class="cp-section-note">Datepicker: migrate override เดิม (<code>style.css</code>'s "Bootstrap-datepicker" block) จาก token ชุดเก่า <code>--app-*</code> (T069) เป็นชุด <code>--c-*</code>/<code>--radius-lg</code>/<code>--shadow-modal</code> ของรอบนี้ -- วันนี้เป็นขอบ <code>--c-primary</code> (ไม่ใช่พื้นสี, แยกจากวันที่เลือกที่เป็นพื้นทึบ), วันปิด/นอกเดือน <code>--c-text-faint</code>, hover <code>--c-bg-hover</code>. Timepicker: <b>flatpickr time-only</b> (ตัดสินใจแล้ว -- native <code>&lt;input type="time"&gt;</code> ปรับสไตล์ popup ไม่ได้เลย) ผ่าน <code>initTimepicker()</code> (<code>input.js</code>, §11) <b>auto-init</b> ที่ class <code>.timepicker</code> ไม่ต้องเรียกเอง 24 ชม. ทีละ 5 นาที ค่า server เป็น <code>"HH:mm"</code> -- popup radius <code>--radius-lg</code> เงา <code>--shadow-soft</code> ตัวเลขที่กำลังตั้ง <code>--c-primary</code> hover <code>--c-bg-hover</code>.</p>
+    <div class="d-flex flex-wrap gap-3">
+        <input type="text" class="form-control datepicker" id="cpDatepickerDemo" style="max-width:220px;" placeholder="เลือกวันที่" autocomplete="off">
+        <input type="text" class="form-control timepicker" id="cpTimepickerDemo" style="max-width:160px;" autocomplete="off">
+    </div>
+</div>
+
+<div class="cp-section">
+    <h2>Calendar widget (§14, ข้อ 9) -- component ใหม่ ยังไม่ต่อ dashboard จริง</h2>
+    <p class="cp-section-note"><code>calendar-widget.php</code> + <code>renderCalendarWidget(el, {month, events, onSelect})</code> (<code>app.js</code>) -- โครงเดิมของ dashboard คงไว้ครบ (ตาราง 7 คอลัมน์/ปุ่มเลื่อนเดือน/dropdown เดือน/legend/ช่องรายละเอียด) class namespace ใหม่ทั้งหมด สีย้าย token ครบ 4 tone: holiday=<code>--c-danger</code>, ตัดรอบ=<code>--c-warning</code>, จ่ายเงิน=<code>--c-success</code>, สิ้นสุดทดลองงาน/ฝึกงาน=<code>--c-text-muted</code> (เทา ไม่ใช่ฟ้า -- ของจริงบน dashboard ตอนนี้เป็นสีครามซึ่งผิด §3, จดไว้ audit.md แล้ว). วันที่ 15 ของเดือนนี้ตั้งใจให้มี 2 event ซ้อนกันเพื่อโชว์ dots หลายจุด.</p>
+    <div id="cpCalendarWidgetDemo" style="max-width:420px;"></div>
+</div>
+
+<div class="cp-section">
+    <h2>Chart (§14, ข้อ 9) -- infra + demo เท่านั้น ยังไม่ migrate กราฟจริง</h2>
+    <p class="cp-section-note">Token <code>--chart-1</code> (=<code>--c-primary</code>) ถึง <code>--chart-5</code> (เทาไล่ระดับ) + <code>--chart-grid</code> (=<code>--c-border</code>) และ helper <code>chartDefaults(overrides)</code>/<code>chartColors()</code> (<code>app.js</code>) ให้ทุกกราฟในอนาคตเรียกแทนตั้งสี/font/grid เอง. กฎใหม่: กราฟต้องมีข้อมูลเปรียบเทียบได้ (series เดียว &ge;6 จุด หรือหลาย series) &mdash; ค่าเดียว/แท่งเดียวใช้ stat card แทน; แท่งหลายแท่ง <em>series เดียวกัน</em> สีเดียว ยกเว้นแท่งที่เน้นสถานะจริง; legend ไม่มีสีรุ้ง. Bar 3 series ใช้ <code>--chart-1..3</code>, Line 2 series ใช้ <code>--chart-1</code>/<code>--chart-3</code> -- ลองสลับ theme มุมขวาบนดูสีปรับตามจริง.</p>
+    <div class="row g-3">
+        <div class="col-md-6">
+            <div style="height:260px;"><canvas id="cpChartBarDemo"></canvas></div>
+        </div>
+        <div class="col-md-6">
+            <div style="height:260px;"><canvas id="cpChartLineDemo"></canvas></div>
+        </div>
+    </div>
+</div>
+
 <script src="../../node_modules/jquery/dist/jquery.min.js"></script>
 <script src="../../node_modules/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
 <!-- Round 2 item 7b -- this page never loaded SweetAlert2 or alert.js at all before this (needed now
@@ -974,6 +1007,15 @@ $cpStats = [
      Added here in the same relative grouping real footer.php uses (near the other footer-loaded
      libraries) for readability, not because the position is functionally required. -->
 <script src="../../node_modules/select2/dist/js/select2.min.js"></script>
+<!-- 2026-09-13, Round 2 item 9 -- this page's own datepicker/calendar/chart demo section needs
+     bootstrap-datepicker's real JS (the CSS was already linked in <head> long before this, but the
+     library script itself was never actually loaded here -- confirmed via grep, 0 hits before this)
+     + Chart.js (loaded per-page in every real consumer, e.g. dashboard.php/employee/reports.php, not
+     globally via footer.php -- same "load it on the page that needs it" pattern followed here). -->
+<script src="../../node_modules/bootstrap-datepicker/dist/js/bootstrap-datepicker.min.js"></script>
+<script src="../../node_modules/bootstrap-datepicker/dist/locales/bootstrap-datepicker.th.min.js"></script>
+<script src="../../node_modules/flatpickr/dist/flatpickr.min.js"></script>
+<script src="../../node_modules/chart.js/dist/chart.umd.min.js"></script>
 <script src="../../public/js/input.js?v=<?=assetVersion('public/js/input.js')?>"></script>
 <script src="../../public/js/table-column-filter.js?v=<?=assetVersion('public/js/table-column-filter.js')?>"></script>
 <script src="../../public/js/sticky-table-columns.js?v=<?=assetVersion('public/js/sticky-table-columns.js')?>"></script>
@@ -1297,6 +1339,61 @@ $(function () {
         refreshDirtyGuard('#cpDirtyModal');
         showSuccess('บันทึกแล้ว (demo)');
     });
+
+    // Datepicker (§14, ข้อ 9) -- real bootstrap-datepicker via the real initDatepicker(), proving the
+    // token override above actually applies (not a mockup screenshot of one).
+    initDatepicker('#cpDatepickerDemo');
+
+    // Calendar widget (§14, ข้อ 9) -- component demo only, events hand-built for "this month" (not
+    // fetched from any backend) so the demo always shows something regardless of when this page is
+    // opened. Day 15 deliberately carries 2 events (cutoff + payment landing the same day, a real
+    // combination this app's own payroll cycles can produce) to show the multi-dot case.
+    (function () {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = now.getMonth() + 1;
+        const pad = function (n) { return String(n).padStart(2, '0'); };
+        const events = [
+            { date: y + '-' + pad(m) + '-05', tone: 'danger', label: 'วันหยุดชดเชย' },
+            { date: y + '-' + pad(m) + '-15', tone: 'warning', label: 'วันตัดรอบเงินเดือน' },
+            { date: y + '-' + pad(m) + '-15', tone: 'success', label: 'วันจ่ายเงินเดือน' },
+            { date: y + '-' + pad(m) + '-25', tone: 'muted', label: 'สิ้นสุดทดลองงาน: สมชาย ใจดี' },
+        ];
+        renderCalendarWidget('#cpCalendarWidgetDemo', { month: { year: y, month: m }, events: events });
+    })();
+
+    // Chart (§14, ข้อ 9) -- infra demo only, chartDefaults()/chartColors() reused instead of each
+    // chart setting its own colors (the pattern all 8 REAL charts in the app currently do -- see
+    // docs/design/audit.md's 2026-09-13 addendum; real pages are NOT migrated here, that's round 4).
+    // Bar = 3 genuinely different series (each internally one color, per §14's own rule -- not 1
+    // series with a rainbow color per bar). Line = 2 series, same ramp.
+    if (typeof Chart !== 'undefined') {
+        const chartLabels = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.'];
+        const colors = chartColors();
+        new Chart(document.getElementById('cpChartBarDemo').getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: chartLabels,
+                datasets: [
+                    { label: 'ต้นทุนเงินเดือน', data: [420, 435, 410, 460, 455, 470], backgroundColor: colors[0], borderRadius: 4 },
+                    { label: 'สปส.', data: [28, 29, 27, 30, 30, 31], backgroundColor: colors[1], borderRadius: 4 },
+                    { label: 'กยศ.', data: [12, 12, 11, 13, 12, 13], backgroundColor: colors[2], borderRadius: 4 },
+                ],
+            },
+            options: chartDefaults(),
+        });
+        new Chart(document.getElementById('cpChartLineDemo').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: chartLabels,
+                datasets: [
+                    { label: 'พนักงานเข้าใหม่', data: [4, 6, 3, 7, 5, 8], borderColor: colors[0], backgroundColor: colors[0], tension: .3 },
+                    { label: 'พนักงานลาออก', data: [2, 3, 4, 2, 3, 2], borderColor: colors[2], backgroundColor: colors[2], tension: .3 },
+                ],
+            },
+            options: chartDefaults(),
+        });
+    }
     }); // end (window.langReady || Promise.resolve()).then(...)
 });
 </script>
@@ -1357,6 +1454,12 @@ document.addEventListener('DOMContentLoaded', function () {
     if (typeof window.bootstrap === 'undefined') {
         missing.push('Bootstrap JS (node_modules/bootstrap/dist/js/bootstrap.bundle.min.js)');
     }
+    if (typeof window.Chart === 'undefined') {
+        missing.push('Chart.js (node_modules/chart.js/dist/chart.umd.min.js)');
+    }
+    if (typeof window.flatpickr === 'undefined') {
+        missing.push('flatpickr (node_modules/flatpickr/dist/flatpickr.min.js)');
+    }
     // 2026-09-13, explicit follow-up request (after "initRowToggles is not defined" slipped past
     // this exact banner -- it existed for LIBRARIES, but not for this app's OWN Round 2 shared
     // helper functions, which is exactly what that error was about). Every one of these is a plain
@@ -1368,7 +1471,7 @@ document.addEventListener('DOMContentLoaded', function () {
         'initSharedDataTable', 'initFilterBar', 'initStatusTabs', 'renderStatusStepper',
         'renderTimeline', 'employeeHeaderCardHtml', 'statusBadgeHtml', 'initMoneyInputs',
         'initRowToggles', 'showConfirm', 'renderNotifications', 'setNotificationCount',
-        'emptyStateHtml', 'dtRenderEmptyState',
+        'emptyStateHtml', 'dtRenderEmptyState', 'renderCalendarWidget', 'chartDefaults', 'chartColors',
     ];
     cpRound2Helpers.forEach(function (name) {
         if (typeof window[name] !== 'function') {
