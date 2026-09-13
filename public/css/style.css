@@ -2597,6 +2597,30 @@ table.dataTable {
 .dt-container .dt-length label {
     white-space: nowrap;
 }
+/* .num (§7/§8) -- real gap found while building item 7a: `stat-card.php` (item 4, "stat-value num"),
+   `initSharedDataTable()`'s own `DT_MARKER_CLASSES` (item 3, app.js -- applies `className:'num'`/
+   `'num col-money'` to DataTable body <td>s expecting THIS class alone to right-align them), and the
+   header-alignment fix right below this comment all already ASSUMED a `.num` base rule exists --
+   confirmed via grep it never did (0 hits for `tabular-nums`/`font-variant-numeric` anywhere in this
+   file before this addition), so every DataTable numeric column shipped by item 3 has been rendering
+   LEFT-aligned this whole time despite carrying the right class.
+   §7's own table says .num means "ขวา" (right) -- but ONLY for table columns; §8 separately says
+   general page/slip/stat numbers get `.num` too but only for "(tabular)" digit rendering, with NO
+   alignment rule attached (item 4's stat-card number is a plain <div>, deliberately left-aligned
+   under its left-aligned label -- already reviewed/shipped that way). A single blanket
+   `.num{text-align:right}` would have silently right-aligned that already-approved stat-card number
+   too, which is why the two rules below are split instead of merged into one: `.num` alone only ever
+   sets the digit-rendering feature (safe everywhere, including stat-card.php), and the actual
+   right-align is scoped to `.num`/`.col-money` on an actual table cell (`<td>`/`<th>`) only.
+   `.col-money` cells always carry `.num` too (see DT_MARKER_CLASSES's own `'num col-money'`), so
+   `td.num`/`th.num` alone already covers them -- no separate `.col-money` selector needed here. */
+.num {
+    font-variant-numeric: tabular-nums;
+}
+td.num,
+th.num {
+    text-align: right;
+}
 /* Sortable right-aligned header text crowding its own sort arrow (§7's own .num/.col-money right-
    align convention) -- DataTables' native header structure is `div.dt-column-header { display:flex;
    justify-content:space-between; gap:4px; }` wrapping `.dt-column-title` (flex-grow:1) +

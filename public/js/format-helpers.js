@@ -48,3 +48,24 @@ function fmtNum(value) {
     const num = Number(value);
     return isNaN(num) ? '-' : num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+/**
+ * Round 2 item 7a (docs/design/rules.md §8) -- the ONE shared way to turn a `.money-input`'s
+ * on-screen value (which may carry commas, since initMoneyInputs()/app.js formats it with them on
+ * blur) back into a plain number for sending to the server. Deliberately a pure string->number
+ * parser with no DOM dependency (usable from a jQuery element's `.val()` OR any other string source)
+ * -- returns `null` for anything that isn't a real number after stripping commas, never NaN/''.
+ *
+ * This app has NO single central form-serializer to "strip the comma in" -- every real page builds
+ * its own bespoke `collect*FormData()` (collectRunFormData/collectRcFormData/
+ * collectEmployeeFormData/collectEedFormData/collectPedTypeFormData/collectCycleFormData/
+ * collectSrDetailsFormData/collectSrRateVersionFormData -- 8 separate per-page functions, confirmed
+ * by grepping every `function collect*FormData` in the app, not assumed). Round 2 does not touch
+ * real page templates (§13), so none of those 8 are migrated to call this here -- this function is
+ * the single shared piece a future collectXxxFormData() calls instead of hand-rolling its own
+ * `.replace(/,/g, '')`, once a page's own form actually adopts `.money-input` in round 4.
+ */
+function parseMoneyInput(str) {
+    if (str === null || str === undefined || str === '') return null;
+    const num = Number(String(str).replace(/,/g, ''));
+    return isNaN(num) ? null : num;
+}

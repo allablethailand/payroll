@@ -544,9 +544,40 @@ $cpStats = [
 </div>
 
 <div class="cp-section">
-    <h2>ตัวเลข/เงิน + Feedback (ข้อ 7)</h2>
-    <p class="cp-section-note">PHP <code>fmtMoney()</code> / JS <code>fmtNum()</code> + <code>initMoneyInputs()</code> (§8); <code>showConfirm()</code> object form, <code>isFormDirty()</code>/<code>confirmIfDirtyThen()</code> wired app-wide, <code>showSuccess</code>/<code>showError</code> wording (§9/§10)</p>
-    <div class="cp-empty">ยังไม่ทำ -- รอข้อ 7</div>
+    <h2>ตัวเลข/เงิน (ข้อ 7a)</h2>
+    <p class="cp-section-note">PHP <code>fmtMoney($n)</code> (<code>app/helpers/helpers.php</code>, ใหม่) / JS <code>fmtNum(n)</code> (<code>format-helpers.js</code>, <b>มีอยู่แล้ว ไม่ต้องแก้</b> -- ตรวจแล้วให้ 2 ทศนิยม + comma เสมอตรงตามกฎอยู่แล้ว, ตรวจ caller เดิมทุกจุดที่เรียก <code>fmtNum()</code> แล้วไม่มีจุดไหนพึ่งทศนิยมจำนวนอื่น) -- ตารางซ้ายคอลัมน์ "PHP" render จาก <code>fmtMoney()</code> ตรงๆ ตอน request, คอลัมน์ "JS" render จาก <code>fmtNum()</code> ตรงๆ ตอน runtime (ค่าเดียวกัน 5 ค่า, ตรงกันทุกแถว) -- ยืนยันเพิ่มอีก 10 ค่าด้วย <code>tests/fmt_money_test.php</code> (รวมติดลบ/ศูนย์/ทศนิยมยาว/null/ว่าง/mask "XXXX"). ฝั่งขวา <code>&lt;input class="money-input"&gt;</code> + <code>initMoneyInputs($scope)</code> (เรียกอัตโนมัติจาก app.js's <code>$(document).ready()</code> อยู่แล้ว ไม่ต้องเขียน init เพิ่มในหน้านี้ -- ลองพิมพ์ตัวเลข/จุด แล้ว blur ดู comma+ทศนิยม 2 ตำแหน่ง แล้วคลิกกลับเข้าไป (focus) ดู comma หายกลับเป็นตัวเลขล้วนพร้อมแก้ต่อ) ค่าที่จะส่ง server เป็นตัวเลขล้วนเสมออยู่ที่ <code>data-raw-value</code> attribute ของ input เอง (เปิด devtools ดูตอน blur) -- ดู note ท้ายส่วนนี้เรื่อง <code>collect*FormData</code>.</p>
+    <div class="row g-4">
+        <div class="col-md-7">
+            <table class="table table-sm">
+                <thead><tr><th>ค่าดิบ</th><th class="num">PHP <code>fmtMoney()</code></th><th class="num">JS <code>fmtNum()</code></th></tr></thead>
+                <tbody>
+                <?php
+                $cpFmtDemoValues = [0, 1234567.89, -1234.5, 0.1, null];
+                foreach ($cpFmtDemoValues as $cpI => $cpV):
+                    $cpVLabel = $cpV === null ? 'null' : (string)$cpV;
+                ?>
+                    <tr>
+                        <td><code><?=htmlspecialchars($cpVLabel)?></code></td>
+                        <td class="num"><?=htmlspecialchars(fmtMoney($cpV))?></td>
+                        <td class="num" data-cp-fmtnum-index="<?=$cpI?>"></td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <div class="col-md-5">
+            <label class="form-label small mb-1">Money input</label>
+            <input type="text" class="form-control money-input" value="1234.5">
+            <p class="cp-section-note mt-2 mb-0">เริ่มด้วยค่าดิบ <code>1234.5</code> ในโค้ด -- <code>initMoneyInputs()</code> format ให้เป็น <code>1,234.50</code> ทันทีตอนหน้าโหลดเสร็จ (เหมือนฟิลด์ที่ populate ค่าจาก server มาแล้ว) ไม่ต้องรอ blur ครั้งแรก -- ค่านี้ไม่ใช่ตัวอย่างจากหน้าจริงที่ไหน (ยังไม่มีหน้าจริงใช้ <code>.money-input</code> รอบนี้ -- ห้ามแตะหน้าจริง §13, ย้ายมาใช้จริงเป็นงานรอบ 4).</p>
+        </div>
+    </div>
+    <p class="cp-section-note mt-3 mb-0"><b>ตรวจแล้ว: แอปนี้ไม่มี central form-serializer จุดเดียว</b> -- grep เจอ 8 ฟังก์ชัน <code>collect*FormData()</code> แยกกันคนละหน้า (<code>collectRunFormData</code>/<code>collectRcFormData</code>/<code>collectEmployeeFormData</code>/<code>collectEedFormData</code>/<code>collectPedTypeFormData</code>/<code>collectCycleFormData</code>/<code>collectSrDetailsFormData</code>/<code>collectSrRateVersionFormData</code>) ไม่มีตัวกลางให้ strip comma รวมจุดเดียวได้จริงตอนนี้ -- <code>parseMoneyInput(str)</code> (<code>format-helpers.js</code>, ใหม่) จึงเป็นจุดร่วมเดียวที่มี ให้ฟังก์ชันพวกนี้เรียกแทนการเขียน <code>.replace(/,/g,'')</code> เองทีละหน้า เมื่อหน้าไหนย้ายมาใช้ <code>.money-input</code> จริง (รอบ 4). พบเพิ่ม (ไม่แก้รอบนี้ เพราะเป็นหน้าจริง): <b>60 จุดใน 10 ไฟล์</b> ยัง <code>toLocaleString()</code> ตรงๆ ไม่ผ่าน <code>fmtNum()</code> เลย (บางจุดตั้งใจใช้ทศนิยมอื่น เช่น ปี/เปอร์เซ็นต์ 1 ตำแหน่ง ไม่ใช่เงิน) และ <code>employee/reports.js</code>'s <code>fmtMoneyList()</code> เป็นสำเนาใกล้เคียง <code>fmtNum()</code> ที่หลุดรอดตอน consolidate ใน Phase 11 T065 (ต่างกันตรง null/undefined กลายเป็น "0.00" แทน "-") -- ทั้งหมดเป็นงาน migrate รอบ 4.</p>
+</div>
+
+<div class="cp-section">
+    <h2>Feedback (ข้อ 7b)</h2>
+    <p class="cp-section-note"><code>showConfirm()</code> object form, <code>isFormDirty()</code>/<code>confirmIfDirtyThen()</code> wired app-wide, <code>showSuccess</code>/<code>showError</code> wording (§9/§10)</p>
+    <div class="cp-empty">ยังไม่ทำ -- รอข้อ 7b</div>
 </div>
 
 <script src="../../node_modules/jquery/dist/jquery.min.js"></script>
@@ -705,6 +736,20 @@ $(function () {
         $block.append(renderStatusStepper(CP_STEPPER_LABELS, demo.current));
         $cpStepperShowcase.append($block);
     });
+
+    // ตัวเลข/เงิน (ข้อ 7a) -- SAME 5 values the PHP side already rendered via fmtMoney() (kept in sync
+    // by hand, this dev-only page has no shared JSON to source both sides from) run through the REAL
+    // fmtNum() at runtime -- if the 2 columns ever visibly disagree, that's a real fmtMoney()/fmtNum()
+    // parity bug, not a demo bug.
+    const CP_FMT_DEMO_VALUES = [0, 1234567.89, -1234.5, 0.1, null];
+    CP_FMT_DEMO_VALUES.forEach(function (v, i) {
+        $(`[data-cp-fmtnum-index="${i}"]`).text(fmtNum(v));
+    });
+    // initMoneyInputs() itself needs no call here -- the .money-input field above is already in the
+    // DOM by the time app.js's own $(document).ready() runs (this <script> block runs AFTER app.js
+    // loads, see the <script> tag order above, but initMoneyInputs(document) fires from app.js's OWN
+    // ready handler, which jQuery guarantees runs once, after the DOM -- including this page's static
+    // markup -- is fully parsed).
 });
 </script>
 <script>

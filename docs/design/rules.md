@@ -366,9 +366,43 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 
 ## 8. ตัวเลขและเงิน (ทั่วระบบ ไม่ใช่แค่ตาราง)
 
-- **แสดงผล**: helper เดียว PHP `fmtMoney($n)` (ยังไม่มี — สร้างรอบ 2) / JS **`fmtNum(n)`** (`public/js/format-helpers.js`, **มีอยู่แล้ว** — ตัดสินใจแล้วรอบ 2: ไม่สร้าง `formatMoney()` ใหม่ ใช้ `fmtNum()` เดิมเป็นตัวเดียว เพราะทำ `toLocaleString` แบบ 2 ทศนิยมคงที่อยู่แล้วตรงตามที่กฎนี้ต้องการ ไม่ต้อง "ขยาย" อะไรเพิ่ม — เจอระหว่าง audit รอบ 1 ว่ามีอยู่แล้วเหมือนกันเป๊ะ) → `1,234,567.89`; ห้าม `number_format` / `toLocaleString` ตรงๆ ในหน้า (ยกเว้นภายใน `fmtNum()`/`fmtMoney()` เอง) — รอบ 2 ต้องยืนยันด้วย test ว่า PHP `fmtMoney($n)` กับ JS `fmtNum(n)` ให้ผลตรงกันทุกกรณี (ทศนิยม, ค่าลบ, ค่า null/ว่าง, ตัวเลขใหญ่ที่มี comma)
-- **input เงิน**: `<input class="money-input">` + JS `initMoneyInputs($scope)` (เรียกอัตโนมัติจาก app.js ready + หลัง modal shown/render): พิมพ์ได้ตัวเลขและจุด, blur → ใส่ comma + 2 ทศนิยม, focus → เอา comma ออก, **ค่าที่ส่ง server เป็นตัวเลขล้วน** (helper ใส่ hidden input หรือ strip ใน `collect*FormData` — เลือกทางเดียว ใช้ทุกฟอร์ม)
-- ตัวเลขในหน้า/สลิป/stat ทั้งหมด `.num` (tabular)
+- **แสดงผล — เสร็จแล้ว รอบ 2 item 7a**: helper PHP `fmtMoney($n)` (`app/helpers/helpers.php`, ใหม่)
+  / JS **`fmtNum(n)`** (`public/js/format-helpers.js`, **มีอยู่แล้ว ไม่ต้องแก้** — ตัดสินใจแล้วรอบ 2:
+  ไม่สร้าง `formatMoney()` ใหม่ ใช้ `fmtNum()` เดิมเป็นตัวเดียว เพราะทำ `toLocaleString` แบบ 2 ทศนิยมคงที่
+  อยู่แล้วตรงตามที่กฎนี้ต้องการ ไม่ต้อง "ขยาย" อะไรเพิ่ม — ตรวจ caller เดิมทุกจุดที่เรียก `fmtNum()` แล้วครบถ้วน:
+  ไม่มีจุดไหนพึ่งทศนิยมจำนวนอื่นเลย) → `1,234,567.89`; ยืนยันด้วย `tests/fmt_money_test.php` (10 ค่า
+  รวมติดลบ/ศูนย์/ทศนิยมยาว/null/ว่าง/mask `'XXXX'`, expected string ของแต่ละค่ายืนยันจากการรัน `fmtNum()`
+  จริงใน Node ก่อน ไม่ใช่เดา) ว่า PHP/JS ให้ผลตรงกันทุกกรณี
+  - **พบระหว่างตรวจ (ไม่แก้รอบนี้ เพราะเป็นหน้าจริง — ห้ามแตะหน้าจริง §13, migrate รอบ 4)**: 60 จุดใน 10
+    ไฟล์ JS ยังเรียก `toLocaleString()` ตรงๆ ไม่ผ่าน `fmtNum()` เลย (บางจุดตั้งใจใช้ทศนิยมจำนวนอื่นสำหรับ
+    ค่าที่ไม่ใช่เงิน เช่น ปี/เปอร์เซ็นต์ที่ใช้ 1 ตำแหน่ง, จำนวนนับที่ไม่มีทศนิยมเลย — ไม่ใช่ทุกจุดเป็น bug) และ
+    `employee/reports.js`'s `fmtMoneyList(n)` เป็นสำเนาใกล้เคียง `fmtNum()` ที่หลุดรอดตอน consolidate ใน
+    Phase 11 T065 (ต่างกันตรงค่า null/undefined กลายเป็น `"0.00"` แทน `"-"`) — ทั้งสองเป็น debt เดียวกับที่
+    §6/§7 อื่นๆ เจอมาแล้ว (เช่น icon-label ~140 จุด, `.btn-circle-action` 14 ไฟล์) migrate ทีละหน้าตอนย้าย
+    มาใช้จริงในรอบ 4
+- **input เงิน — เสร็จแล้ว รอบ 2 item 7a**: `<input class="money-input">` + JS `initMoneyInputs($scope)`
+  (`app.js`, เรียกอัตโนมัติจาก `$(document).ready()` + `shown.bs.modal` ทุก modal แบบเดียวกับที่ไฟล์นี้
+  ผูก modal-lifecycle หมายเลขอื่นอยู่แล้ว): พิมพ์ได้ตัวเลขและจุด (กรองตัวอักษรอื่น/จุดที่ 2 ทิ้งทันทีขณะพิมพ์),
+  blur → `fmtNum()` (comma + 2 ทศนิยม), focus → เอา comma ออกกลับเป็นตัวเลขล้วนแก้ต่อได้ — ค่าดิบ (ไม่มี
+  comma) sync ไว้ที่ `data-raw-value` attribute ของ input เองตลอดเวลา (พิมพ์/blur/โหลดครั้งแรก)
+  - **ตรวจแล้ว (ตัดสินใจแล้ว): แอปนี้ไม่มี central form-serializer จุดเดียวให้ strip comma รวมได้จริง** —
+    grep เจอ 8 ฟังก์ชัน `collect*FormData()` แยกกันคนละหน้า (`collectRunFormData`/`collectRcFormData`/
+    `collectEmployeeFormData`/`collectEedFormData`/`collectPedTypeFormData`/`collectCycleFormData`/
+    `collectSrDetailsFormData`/`collectSrRateVersionFormData`) ไม่ใช่ตัวกลางเดียว — คำตอบคือสร้าง
+    `parseMoneyInput(str)` (`format-helpers.js`, ใหม่) เป็นจุดร่วมเดียวที่มีให้เรียกแทนการเขียน
+    `.replace(/,/g,'')` เองทีละฟังก์ชัน แต่ **ยังไม่ได้ wire เข้าทั้ง 8 ฟังก์ชันจริงรอบนี้** (ไม่มีหน้าไหนใช้
+    `.money-input` อยู่จริงตอนนี้ด้วย — ห้ามแตะหน้าจริง §13) เป็นงาน migrate รอบ 4 พร้อมกับตัวหน้าที่จะเริ่มใช้
+    `.money-input` จริง
+  - **บั๊กจริงที่เจอระหว่างทำข้อนี้ (แก้แล้ว): `.num` ไม่เคยมี CSS ของตัวเองเลย** — `stat-card.php` (item 4)
+    และ `initSharedDataTable()`'s `DT_MARKER_CLASSES` (item 3, ใส่ `className:'num'`/`'num col-money'`
+    ให้ `<td>` ของ DataTable) ทั้งคู่สันนิษฐานว่ามี `.num` base rule อยู่แล้ว — grep ยืนยัน 0 จุดที่มี
+    `tabular-nums`/`font-variant-numeric` ในทั้งไฟล์ก่อนรอบนี้ แปลว่า**ทุกคอลัมน์ตัวเลขของ DataTable ที่
+    item 3 ทำไว้ชิดซ้ายมาตลอด ทั้งที่ควรชิดขวา** — แก้โดยแยก 2 กฎ ไม่รวมเป็นกฎเดียว: `.num` เปล่าให้แค่
+    `font-variant-numeric:tabular-nums` (ปลอดภัยทุกที่ รวม `.stat-value.num` ที่ item 4 ตัดสินใจ/verify
+    ไว้แล้วว่าชิดซ้ายใต้ label ชิดซ้าย) ส่วน `td.num`/`th.num` (สโคปเฉพาะ cell ในตารางจริง) เท่านั้นที่ชิดขวา
+    ตาม §7's ตาราง — `.col-money` cell มี `.num` ติดมาด้วยเสมอ (`DT_MARKER_CLASSES`'s เอง) จึงไม่ต้องมี
+    selector แยก
+- ตัวเลขในหน้า/สลิป/stat ทั้งหมด `.num` (tabular — ไม่บังคับชิดขวานอกตาราง ดูข้อข้างบน)
 - ไม่ใช้สีกับตัวเลข (บวก/ลบ/มากน้อย) — ใช้เครื่องหมายและตำแหน่งคอลัมน์แทน
 
 ---
@@ -416,7 +450,7 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 | `status-tabs.php` + `initStatusTabs()` (ใหม่, item 4b — chevron pipeline เดิม**ยังคงรูปแบบไว้**, retokenize เท่านั้น; **ตัดสินใจแล้ว**: เคยมี variant `path` ให้เทียบคู่กัน ลบออกทั้งหมดแล้ว) | partials + app.js | markup ที่เคยซ้ำ 2 ไฟล์ของ `.station-row`/`.station-card` |
 | `statusBadge()` / `statusBadgeHtml()` + `status_map.php` (ใหม่, item 5 — เสร็จแล้ว; map มีที่เดียวคือ `status_map.php`, JS ไม่มี copy ของตัวเอง อ่านจาก `window.STATUS_MAP` ที่ `layout/header.php` inject ให้ — ยกเว้นกฎ "ห้ามแตะหน้าจริง" เฉพาะจุดนี้จุดเดียว; rename `payroll-configuration.js`'s local `statusBadge(row)` → `pcRowStatusBadge(row)` ทำก่อนเขียนแล้วตามแผน — ดู §5) | `app/helpers/helpers.php` + `app.js` + `app/config/status_map.php` + `layout/header.php` (inject จุดเดียว) | map สถานะกระจาย |
 | `initSharedDataTable()` (ขยาย: layout, export, fixed column, columnDefs alignment) | app.js | init ตรงทุกหน้า |
-| `fmtMoney()` (ใหม่) / `fmtNum()` (มีแล้ว, `format-helpers.js` — **ไม่สร้าง `formatMoney()` ใหม่**, ตัดสินใจแล้วรอบ 2 — ดู §8) / `initMoneyInputs()` (ใหม่) | helpers + app.js | number_format กระจาย |
+| `fmtMoney()` (ใหม่, item 7a — เสร็จแล้ว) / `fmtNum()` (มีแล้ว, `format-helpers.js` — **ไม่สร้าง `formatMoney()` ใหม่**, ตัดสินใจแล้วรอบ 2 — ดู §8) / `initMoneyInputs()` (ใหม่, item 7a — เสร็จแล้ว; ยังไม่มีหน้าจริงใช้ `.money-input`, migrate รอบ 4) / `parseMoneyInput()` (ใหม่, item 7a — `format-helpers.js`, จุดร่วมเดียวสำหรับ strip comma ที่ `collect*FormData` 8 ฟังก์ชันของหน้าจริงจะเรียกตอน migrate) | `app/helpers/helpers.php` + `app.js` + `format-helpers.js` | number_format กระจาย |
 | `apvAvatarHtml()` / `apvPersonLineHtml()` | app.js (มีแล้ว) | avatar เขียนเอง |
 | `emp-header-card` (style ตาม §9) | modals (มีแล้ว) | หัว modal ธง+ไอคอน |
 | `isFormDirty()` / `confirmIfDirtyThen()` | app.js (มีแล้ว, Platform Hardening Phase 1) | ผูก dirty-check เองทีละ modal — **ไม่สร้าง `guardDirtyModal()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §9) |

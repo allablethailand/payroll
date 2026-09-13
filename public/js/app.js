@@ -614,6 +614,7 @@ $(document).ready(async function() {
     initSelect2Remote('.select2-remote');
     initSelect2('.select2-static', { mode: 'static' });
     initSelect2('.select2-native', { mode: 'native' });
+    initMoneyInputs(document);
     registerSidebarMenuSearch();
 });
 // 2026-08-23, explicit request ("ใน Menu อยากให้เพิ่มช่องในการค้นหา Menu ในกรณีที่ Menu เยอะๆ") --
@@ -1239,6 +1240,62 @@ function renderStatusStepper(steps, current) {
     html += '</ul>';
     return html;
 }
+// Money input (§8, Round 2 item 7a) -- `<input class="money-input">` + initMoneyInputs($scope),
+// auto-wired below both from $(document).ready() (every field already on the page at load) and from
+// a delegated shown.bs.modal handler (every field inside a modal that just opened -- same pattern
+// this file already uses for other per-modal setup, see the shown.bs.modal listener above this one).
+// A field wired twice (e.g. still in the DOM the next time its modal is shown) is a no-op --
+// `.data('moneyInputWired')` guards against attaching duplicate event handlers.
+//
+// Behavior: typing filters to digits + at most one dot (no comma, no 2nd dot) as you type; blur
+// formats the field's own value WITH commas + exactly 2 decimals via fmtNum() (this file's own
+// canonical formatter, so a money-input's blurred display is always identical to how the same value
+// renders as read-only text elsewhere); focus strips the commas back off so the plain number is easy
+// to edit again. The field's raw numeric value (never comma-formatted) is ALSO kept in sync on a
+// `data-raw-value` attribute at every step (typing/blur/initial load) -- see format-helpers.js's own
+// parseMoneyInput() docblock for why this attribute exists: this app has no single central
+// form-serializer to strip commas in, so `data-raw-value` (or calling parseMoneyInput($el.val())
+// directly) is the ONE shared access point a future collectXxxFormData() reads from instead of
+// hand-rolling its own comma-strip, once a real form actually adopts `.money-input` (round 4 -- no
+// real page uses this class yet, Round 2 does not touch real page templates, §13).
+function initMoneyInputs($scope) {
+    const $root = $scope ? $($scope) : $(document);
+    $root.find('.money-input').addBack('.money-input').each(function () {
+        const $el = $(this);
+        if ($el.data('moneyInputWired')) return;
+        $el.data('moneyInputWired', true);
+        function syncRawValue() {
+            const raw = parseMoneyInput($el.val());
+            $el.attr('data-raw-value', raw === null ? '' : raw);
+            return raw;
+        }
+        $el.on('input', function () {
+            let digits = $el.val().replace(/[^\d.]/g, '');
+            const firstDot = digits.indexOf('.');
+            if (firstDot !== -1) {
+                digits = digits.slice(0, firstDot + 1) + digits.slice(firstDot + 1).replace(/\./g, '');
+            }
+            $el.val(digits);
+            syncRawValue();
+        });
+        $el.on('focus', function () {
+            const raw = syncRawValue();
+            $el.val(raw === null ? '' : String(raw));
+        });
+        $el.on('blur', function () {
+            const raw = syncRawValue();
+            $el.val(raw === null ? '' : fmtNum(raw));
+        });
+        // A field that already has a value when this runs (server-rendered on page load, or
+        // populated by a modal's own edit-fetch before shown.bs.modal fires) gets formatted right
+        // away too, not just after the next blur.
+        const initRaw = syncRawValue();
+        if (initRaw !== null) $el.val(fmtNum(initRaw));
+    });
+}
+$(document).on('shown.bs.modal', '.modal', function () {
+    initMoneyInputs(this);
+});
 // 2026-08-26, explicit request: "Format วันที่การแสดงผลทั้งหมดของระบบให้เป็น dd/mm/yyyy" (make every date
 // display in the system dd/mm/yyyy). Several pages already had their OWN local helper doing exactly
 // this (employee/detail.js's own toDisplayDate(), payroll/approval.js's toDisplayDateAp(), payroll/

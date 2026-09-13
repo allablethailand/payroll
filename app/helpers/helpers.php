@@ -286,3 +286,24 @@
         $label = statusEnLabelFallback($labelKey);
         return '<span class="badge badge-' . $tone . '" data-badge="status" data-i18n="' . htmlspecialchars($labelKey) . '">' . htmlspecialchars($label) . '</span>';
     }
+
+    /**
+     * PHP twin of public/js/format-helpers.js's fmtNum() -- docs/design/rules.md §8. Mirrors that
+     * function's exact 4-branch shape on purpose (the 'XXXX' salary-mask passthrough included) so a
+     * value rendered server-side and one rendered client-side (e.g. after an AJAX response updates
+     * the same field) are always byte-identical -- verified by tests/fmt_money_test.php against 10
+     * real values (negative/zero/long-decimal/null/empty/the 'XXXX' mask), each one's expected
+     * string confirmed by actually running fmtNum() in Node first, not hand-derived.
+     */
+    function fmtMoney($n): string {
+        if ($n === 'XXXX') {
+            return 'XXXX';
+        }
+        if ($n === null || $n === '') {
+            return '-';
+        }
+        if (!is_numeric($n)) {
+            return '-';
+        }
+        return number_format((float)$n, 2);
+    }

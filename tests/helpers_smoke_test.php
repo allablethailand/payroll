@@ -32,9 +32,9 @@ function check(string $label, $actual, $expected): void {
 // Every function actually declared in app/helpers/helpers.php today (confirmed by grepping the file
 // directly, not guessed/copied from memory) -- if a stray closing tag anywhere above one of these
 // broke parsing, function_exists() for it (and everything declared after it) comes back false here.
-// NOTE: fmtMoney() is §8's own PLANNED helper (item 7, not built yet) -- deliberately NOT asserted
-// here, since asserting a function that doesn't exist yet would make this smoke test permanently red
-// instead of a real regression signal; add it to this list when item 7 actually ships it.
+// fmtMoney() (item 7a) is the LAST function in the file as of this list -- the strongest possible
+// position to catch a future occurrence of the exact bug class this whole test file exists to guard
+// against (see the file's own top-of-file docblock).
 $expectedFunctions = [
     'assetVersion',
     'asset',
@@ -45,6 +45,7 @@ $expectedFunctions = [
     'statusMapEntry',
     'statusEnLabelFallback',
     'statusBadge',
+    'fmtMoney',
 ];
 foreach ($expectedFunctions as $fn) {
     check("function_exists('{$fn}')", function_exists($fn), true);
