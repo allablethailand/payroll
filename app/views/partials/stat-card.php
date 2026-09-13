@@ -39,6 +39,10 @@
  *     was asked: "เลือกไม่เว้น — ข้อความชิดซ้ายปกติ"/"ไม่มีไอคอน = ไม่เว้นที่ (เหมือนเดิม)").
  *   - 'value' is rendered through `.num` (tabular-nums) -- pass it pre-formatted (e.g. already run
  *     through fmtMoney()) if it's money; this partial does not format it itself.
+ *   - 'value_class' (optional, added 2026-09-13, §8 money-color system) -- extra class(es) appended
+ *     to the value span alongside `.num`, e.g. `'money-gross'`/`'money-deduction'`/`'money-net'` (§8's
+ *     own 3 shared classes) for a money value that carries real accounting meaning. Omit for a plain
+ *     (non-money, or money-but-no-signal-needed) value -- nothing forces this on.
  *   - 'sub' is a plain one-line string, muted gray text -- NOT where a status badge goes (see
  *     'badge' below). Renders inside the same fixed-height bottom slot as 'badge'/'link'.
  *   - 'badge' is how a status that needs a decision (§2: "ถ้าค่าเป็นสถานะที่ต้องตัดสินใจ เช่น 'รออนุมัติ 3'
@@ -64,6 +68,7 @@ $stIcon = $stat['icon'] ?? null;
 $stSub = $stat['sub'] ?? null;
 $stBadge = $stat['badge'] ?? null;
 $stLink = $stat['link'] ?? null;
+$stValueClass = $stat['value_class'] ?? null;
 $stHasFooter = $stSub || $stBadge || $stLink;
 ?>
 <div class="stat">
@@ -71,7 +76,7 @@ $stHasFooter = $stSub || $stBadge || $stLink;
         <div class="stat-label"><?=htmlspecialchars($stat['label'])?></div>
         <?php if ($stIcon): ?><i class="<?=htmlspecialchars($stIcon)?> stat-icon"></i><?php endif; ?>
     </div>
-    <div class="stat-value num"><?=htmlspecialchars((string)$stat['value'])?></div>
+    <div class="stat-value num<?=$stValueClass ? ' ' . htmlspecialchars($stValueClass) : ''?>"><?=htmlspecialchars((string)$stat['value'])?></div>
     <div class="stat-footer<?=$stHasFooter ? '' : ' stat-footer-empty'?>">
         <?php if ($stBadge): ?><?=statusBadge($stBadge['enum'], $stBadge['context'])?><?php endif; ?>
         <?php if ($stSub): ?><span class="stat-sub"><?=htmlspecialchars($stSub)?></span><?php endif; ?>

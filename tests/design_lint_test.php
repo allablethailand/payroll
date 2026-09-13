@@ -48,6 +48,7 @@ check('no design:clean file has any lint hit (overall)', $result['failed'], []);
 // The exact file list Round 2 item 8 was told to mark clean and make genuinely pass.
 $mustBeCleanAndPassing = [
     'docs/design/components.php',
+    'app/views/partials/callout.php',
     'app/views/partials/emp-header-card.php',
     'app/views/partials/empty-state.php',
     'app/views/partials/filter-bar.php',

@@ -935,8 +935,8 @@ function dtInjectExportDropdown($table, exportOptions) {
                 <i class="fa-solid fa-file-export me-1"></i>${(langData && langData['export']) || 'Export'}
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
-                <li><a class="dropdown-item dt-export-item" href="#" data-format="excel"><i class="fa-solid fa-file-excel me-2"></i>Excel</a></li>
-                <li><a class="dropdown-item dt-export-item" href="#" data-format="pdf"><i class="fa-solid fa-file-pdf me-2"></i>PDF</a></li>
+                <li><a class="dropdown-item dt-export-item" href="#" data-format="excel"><i class="fa-solid fa-file-excel file-icon-excel me-2"></i>Excel</a></li>
+                <li><a class="dropdown-item dt-export-item" href="#" data-format="pdf"><i class="fa-solid fa-file-pdf file-icon-pdf me-2"></i>PDF</a></li>
             </ul>
         </div>
     `).appendTo($searchDiv);
@@ -1362,17 +1362,28 @@ function statusBadgeHtml(enumValue, context) {
     const label = getLangValue(entry.label_key) || entry.label_key;
     return `<span class="badge badge-${tone}" data-badge="status" data-i18n="${escapeHtml(entry.label_key)}">${escapeHtml(label)}</span>`;
 }
-// Status stepper (§6, Round 2 item 6) -- JS twin of app/views/partials/status-stepper.php, same 2
-// plain arguments, byte-identical markup. Deliberately dumb: done/current/next is derived purely
-// from each step's POSITION relative to `current` -- no state-machine awareness, no per-step action
-// buttons/dates/branch icons. That richer logic stays exactly where it already lives, this file's
-// own RUN_LIFECYCLE_STEPS/runLifecycleSteps()/computeRunLifecycleProgress() further below -- the
-// real payroll run spine (payroll/detail.js's renderProcessTimeline(), payroll/index.js's
-// mini-timeline) is NOT migrated onto this generic stepper this round (Round 2 does not touch real
-// page templates -- see rules.md §13); that's a round-4 decision, not made here.
+// Status stepper (§6, Round 2 item 6, extended 2026-09-13 Round 3 item 3a -- see
+// status-stepper.php's own docblock for the full per-step date/tone shape and the branch-state
+// caveat) -- JS twin of app/views/partials/status-stepper.php, same 2 arguments, byte-identical
+// markup. Deliberately dumb: done/current/next is derived purely from each step's POSITION relative
+// to `current` -- no state-machine awareness, no per-step action buttons. That richer logic stays
+// exactly where it already lives, this file's own RUN_LIFECYCLE_STEPS/runLifecycleSteps()/
+// computeRunLifecycleProgress() further below -- payroll/detail.js's renderProcessTimeline() calls
+// THIS function, passing {label, date, tone} per step + a plain current index, same "caller resolves
+// display values, this just lays them out" split as always. `tone` (2026-09-13 same-day follow-up,
+// explicit instruction: "status-stepper รับ tone ของขั้นปัจจุบันจาก statusMapEntry(run_state)") only
+// ever affects the step AT `current` -- a branch state (rejected/need_info/cancelled) overrides that
+// one circle's color away from the default orange, looked up by the CALLER via
+// getStatusMapEntry(state, 'run_state') (§5), never guessed/hardcoded here.
 function renderStatusStepper(steps, current) {
     let html = '<ul class="status-stepper">';
-    (steps || []).forEach(function (label, i) {
+    (steps || []).forEach(function (step, i) {
+        const label = typeof step === 'object' && step !== null ? (step.label || '') : step;
+        const date = typeof step === 'object' && step !== null ? (step.date || '') : '';
+        const tone = typeof step === 'object' && step !== null ? (step.tone || '') : '';
+        const isFinal = typeof step === 'object' && step !== null ? !!step.final : false;
+        const isLive = typeof step === 'object' && step !== null ? !!step.live : false;
+        const stepIcon = typeof step === 'object' && step !== null ? (step.icon || '') : '';
         let stateClass = 'status-stepper-step--next';
         let inner = '';
         if (i < current) {
@@ -1380,10 +1391,20 @@ function renderStatusStepper(steps, current) {
             inner = '<i class="fa-solid fa-check"></i>';
         } else if (i === current) {
             stateClass = 'status-stepper-step--current';
+            // §6, 2026-09-13, item C follow-up: white 12px icon, bare glyph class prefixed with
+            // `fa-solid` HERE (not stored with the prefix already) -- matches index.js's own
+            // mini-timeline convention for this exact same RUN_LIFECYCLE_STEPS/
+            // RUN_LIFECYCLE_BRANCH_INFO-sourced `icon` field, no mapping of its own in this function.
+            if (stepIcon) inner = `<i class="fa-solid ${escapeHtml(stepIcon)} status-stepper-current-icon"></i>`;
         }
-        html += `<li class="status-stepper-step ${stateClass}">
+        const toneClass = (stateClass === 'status-stepper-step--current' && tone) ? ' status-stepper-tone-' + tone : '';
+        const finalClass = (stateClass === 'status-stepper-step--done' && isFinal) ? ' status-stepper-step--final' : '';
+        const liveClass = (stateClass === 'status-stepper-step--current' && isLive) ? ' stepper-current-live' : '';
+        const dateHtml = (date && i <= current) ? `<span class="status-stepper-date">${escapeHtml(date)}</span>` : '';
+        html += `<li class="status-stepper-step ${stateClass}${toneClass}${finalClass}${liveClass}">
             <span class="status-stepper-circle">${inner}</span>
             <span class="status-stepper-label">${escapeHtml(label)}</span>
+            ${dateHtml}
         </li>`;
     });
     html += '</ul>';
@@ -1734,6 +1755,101 @@ function chartDefaults(overrides) {
         },
     };
     return $.extend(true, {}, base, overrides || {});
+}
+
+// Page header actions (docs/design/rules.md §2, Round 3 item 3a) -- JS twin of page-header.php's own
+// $secondary_actions/$overflow_actions/$primary_action button-queue rendering, byte-equivalent
+// markup, for a page whose header actions are only knowable AFTER an async fetch (e.g. Payroll
+// Detail's own run-state-dependent buttons -- draft shows Submit, pending_approval shows Approve +
+// an overflow menu, etc.) -- same "PHP partial = first paint, JS twin = live re-render on every
+// state change" split renderStatusStepper()/renderTimeline()/renderCalendarWidget() already use.
+//
+// pageHeaderActionButtonHtml(action, btnClass) renders ONE button/dropdown -- exported as its own
+// function (not inlined into renderPageHeaderActions()) since it's also the natural unit to reuse if
+// a future page needs to render a single ad-hoc action button outside the queue.
+// renderPageHeaderActions(container, {primary, secondary, overflow, overflowLabel}) replaces
+// `container`'s (typically `#phActions`) entire content with the full queue, in the exact same
+// secondary-then-overflow-then-primary order the PHP partial itself builds it in.
+//
+// `action.extraClass`/`item.extraClass` (2026-09-13, added while wiring Payroll Detail's own
+// state-transition buttons here): an OPTIONAL extra CSS class appended to the rendered element, on
+// top of `id`. Needed because several of this app's existing action buttons (payroll/detail.js's own
+// `.btn-tl-approve`/`.btn-tl-reject`/`.btn-tl-revert`/etc.) are wired via CLASS-based
+// `$(document).on('click', '.btn-tl-xxx', ...)` delegation, not id-based -- moving such a button into
+// this shared renderer without a way to also carry its own class would have silently detached it
+// from its existing click handler (a real bug caught before shipping, not a guess: `id` alone is NOT
+// enough for those specific buttons).
+function pageHeaderActionButtonHtml(action, btnClass) {
+    const iconHtml = action.icon ? `<i class="${escapeHtml(action.icon)} me-1"></i>` : '';
+    const extraCls = action.extraClass ? ' ' + action.extraClass : '';
+    if (action.items && action.items.length) {
+        let dangerDividerDone = false;
+        const itemsHtml = action.items.map(function (item, i) {
+            const isDanger = item.tone === 'danger';
+            const itemExtraCls = item.extraClass ? ' ' + item.extraClass : '';
+            const itemClass = 'dropdown-item' + (isDanger ? ' text-danger' : '') + itemExtraCls;
+            // 2026-09-13, "เมนูอื่นๆ" follow-up: a divider means "normal group above, danger group
+            // below" -- only render it when something genuinely renders above (i > 0). A menu that's
+            // ENTIRELY danger items (danger starts at index 0) gets no divider at all.
+            const dividerHtml = (isDanger && !dangerDividerDone && i > 0) ? '<li><hr class="dropdown-divider"></li>' : '';
+            if (isDanger) dangerDividerDone = true;
+            const itemIconHtml = item.icon ? `<i class="${escapeHtml(item.icon)} me-2"></i>` : '';
+            const inner = item.href
+                ? `<a class="${itemClass}" href="${escapeHtml(item.href)}">${itemIconHtml}${escapeHtml(item.label)}</a>`
+                : `<button type="button" id="${escapeHtml(item.id || '')}" class="${itemClass}">${itemIconHtml}${escapeHtml(item.label)}</button>`;
+            return `${dividerHtml}<li>${inner}</li>`;
+        }).join('');
+        return `<div class="btn-group ph-action-group">
+            <button type="button" class="btn ${btnClass} ph-action dropdown-toggle${extraCls}" data-bs-toggle="dropdown" aria-expanded="false">${iconHtml}${escapeHtml(action.label)}</button>
+            <ul class="dropdown-menu dropdown-menu-end">${itemsHtml}</ul>
+        </div>`;
+    }
+    if (action.href) {
+        return `<a href="${escapeHtml(action.href)}" class="btn ${btnClass} ph-action${extraCls}">${iconHtml}${escapeHtml(action.label)}</a>`;
+    }
+    return `<button type="button" id="${escapeHtml(action.id || '')}" class="btn ${btnClass} ph-action${extraCls}">${iconHtml}${escapeHtml(action.label)}</button>`;
+}
+// `options.decision` (2026-09-13, item 3a follow-up, REVISED same-day -- JS twin of page-header.php's
+// own $decision_actions) -- an array a caller sets INSTEAD OF `options.primary` (silently ignored if
+// both are set, same precedence as the PHP partial). Each item's own `tone` ('success'/'warning'/
+// 'danger') picks its `.btn-decision-*` class (style.css) -- the earlier "last item = primary, the
+// rest outline-secondary" rule is GONE, not just superseded by this caller's data; §4's documented
+// decision-set exception (rules.md §4) is what allows tone-colored buttons here at all, still nowhere
+// else. Rendered together in one `.ph-decision-group` wrapper, appended after the ordinary queue, IN
+// THE ORDER given (never reordered).
+function renderPageHeaderActions(container, options) {
+    options = options || {};
+    const queue = [];
+    (options.secondary || []).slice(0, 2).forEach(function (a) { queue.push({ action: a, cls: 'btn-outline-secondary' }); });
+    if (options.overflow && options.overflow.length === 1) {
+        // 2026-09-13, "เมนูอื่นๆ" follow-up: exactly 1 item -> plain button using that item's own
+        // shape, not a 1-item dropdown. Always outline-secondary regardless of the item's own `tone`
+        // -- pageHeaderActionButtonHtml()'s plain-button branch never reads `tone`, same as the PHP twin.
+        queue.push({ action: options.overflow[0], cls: 'btn-outline-secondary' });
+    } else if (options.overflow && options.overflow.length) {
+        queue.push({ action: { label: options.overflowLabel || getLangValue('overflow_actions_label') || 'อื่นๆ', icon: null, items: options.overflow }, cls: 'btn-outline-secondary' });
+    }
+    let decisionHtml = '';
+    if (options.decision && options.decision.length) {
+        decisionHtml = `<div class="ph-decision-group">${options.decision.map(function (a) {
+            const tone = ['success', 'warning', 'danger'].indexOf(a.tone) !== -1 ? a.tone : 'success';
+            return pageHeaderActionButtonHtml(a, 'btn-decision-' + tone);
+        }).join('')}</div>`;
+    } else if (options.primary) {
+        queue.push({ action: options.primary, cls: 'btn-primary' });
+    }
+    $(container).html(queue.map(q => pageHeaderActionButtonHtml(q.action, q.cls)).join('') + decisionHtml);
+}
+
+// Callout (§15, new 2026-09-13, Round 3 item 3a follow-up) -- JS twin of
+// app/views/partials/callout.php, same 2 arguments, byte-identical markup. Replaces the old bespoke
+// `.next-step-banner`/`.process-next-step` box -- see that partial's own docblock for the full
+// visual-rule spec (plain --c-bg-subtle box, 3px tone-colored LEFT border only, no icon).
+// `text` is a RAW HTML string the caller has already authored (may bold a specific action word to
+// match a real button's own label) -- this function does NOT escapeHtml() it, same "caller-authored
+// copy only, never end-user input" contract the PHP partial documents.
+function calloutHtml(text, tone) {
+    return `<div class="callout callout-${escapeHtml(tone || 'neutral')}">${text}</div>`;
 }
 
 // Money input (§8, Round 2 item 7a) -- `<input class="money-input">` + initMoneyInputs($scope),
@@ -2189,26 +2305,53 @@ async function loadLang(lang) {
 // placeholder on detail pages (payroll run/employee/etc. -- see payroll/detail.php's own markup)
 // until an async fetch fills in the real name; skipped here as "not a real value yet" rather than
 // shipping a title like "Payroll Process — - | Origami Payroll" during that flash.
+// 2026-09-13, Phase Design Round 3 item 3a (Payroll Detail pilot, first real page to adopt
+// page-header.php) -- extended to ALSO recognize `page-header.php`'s own breadcrumb markup
+// (`.ph-breadcrumb .ph-breadcrumb-link`/`.ph-breadcrumb-current`), not just the old
+// `.payroll-breadcrumb .bc-parent`/`.bc-current` shape every pre-Round-2 page still uses. Genuinely
+// 2 different class sets rather than dual-classing page-header.php's own elements with `.bc-parent`/
+// `.bc-current` too, because `.bc-current` (style.css) carries its own real visual identity (an
+// orange pill background/padding/radius) that page-header.php's plain-text breadcrumb deliberately
+// does NOT want -- adding that class for this mechanism's sake alone would silently reintroduce the
+// old pill look. Both old and new pages keep working from this one function -- no page needs to
+// change which classes IT renders, this just widens what the function itself looks for.
+//
+// 2026-09-13, 3a follow-up: also appends `#phTitle`'s own text when present. §2's new convention for
+// a page-header.php-based detail page is "crumb สุดท้าย = ชนิดหน้า, H1 = ชื่อของสิ่งนั้น" (e.g. Payroll
+// Detail's own last crumb is now the static "รายละเอียดรอบ", the SPECIFIC run name lives in the H1
+// instead) -- without this, the browser tab title would lose the one piece of text that actually
+// tells 2 open tabs apart (which payroll run, which employee, ...), since the breadcrumb's own last
+// crumb no longer carries it. Old `.payroll-breadcrumb` pages have no `#phTitle` at all, so this is a
+// pure no-op for them; a page-header.php page whose current-crumb genuinely IS the specific value
+// (no `#phTitle`, or one that duplicates the crumb) simply gets no 2nd entry appended.
 function updateDocumentTitleFromBreadcrumb() {
     const parts = [];
-    $('.payroll-breadcrumb .bc-parent').each(function () {
+    $('.payroll-breadcrumb .bc-parent, .ph-breadcrumb .ph-breadcrumb-link').each(function () {
         const t = $(this).text().trim();
         if (t) parts.push(t);
     });
-    const currentText = $('.payroll-breadcrumb .bc-current').first().text().trim();
+    const currentText = $('.payroll-breadcrumb .bc-current, .ph-breadcrumb .ph-breadcrumb-current').first().text().trim();
     if (currentText && currentText !== '-') parts.push(currentText);
+    const phTitleText = $('#phTitle').first().text().trim();
+    if (phTitleText && phTitleText !== '-' && phTitleText !== currentText) parts.push(phTitleText);
     document.title = parts.length ? `${parts.join(' — ')} | Origami Payroll` : 'Origami Payroll';
 }
-// Covers pages where `.bc-current`'s real value only appears after an async fetch (e.g.
-// payroll/detail.js's renderRunHeader() setting #bcRunName once the run loads) -- fires the same
+// Covers pages where the current-crumb's/#phTitle's real value only appears after an async fetch
+// (e.g. payroll/detail.js's renderRunHeader() setting #phTitle once the run loads) -- fires the same
 // derivation above automatically whenever that text actually changes, instead of requiring every
 // such page to remember to call it manually. One observer, delegated at the document level, set up
-// once on first load (harmless no-op if `.payroll-breadcrumb` doesn't exist on a page, e.g.
-// error404.php/permission.php).
+// once on first load (harmless no-op if none of these containers exist on a page, e.g.
+// error404.php/permission.php) -- watches whichever containers a page happens to render (never all
+// 3 at once in practice, but observing whichever exists costs nothing extra). `.ph-header` (not just
+// `.ph-breadcrumb`) is watched for page-header.php pages specifically because `#phTitle` is a
+// SIBLING of `.ph-breadcrumb`, not a descendant of it -- a `.ph-breadcrumb`-only observer would never
+// see #phTitle's own text change at all.
 $(function () {
-    const breadcrumbEl = document.querySelector('.payroll-breadcrumb');
-    if (breadcrumbEl && typeof MutationObserver !== 'undefined') {
-        new MutationObserver(updateDocumentTitleFromBreadcrumb).observe(breadcrumbEl, { characterData: true, childList: true, subtree: true });
+    const breadcrumbEls = document.querySelectorAll('.payroll-breadcrumb, .ph-header');
+    if (breadcrumbEls.length && typeof MutationObserver !== 'undefined') {
+        breadcrumbEls.forEach(function (el) {
+            new MutationObserver(updateDocumentTitleFromBreadcrumb).observe(el, { characterData: true, childList: true, subtree: true });
+        });
     }
 });
 // 2026-09-03, Manual Entry / Platform UX review Phase 5 (fee currency), Option A -- fills every
@@ -2602,16 +2745,25 @@ function auditActionLabel(action) {
 // or, for step 3 specifically, one of its real branch outcomes (rejected/need_info/cancelled) --
 // per this same distinction the CSS tone classes (done/current/rejected/need_info/cancelled) were
 // already computing correctly; only the LABEL TEXT was ever wrong, colors were already fine.
+// 2026-09-13, §6 item C follow-up ("ไอคอนขาวของขั้นปัจจุบัน"): `icon` here is the ONE place this
+// mapping lives -- status-stepper.php/renderStatusStepper() never hardcode a step->icon table of
+// their own, they just render whatever `icon` string a step object carries (see that partial's own
+// docblock). Values are BARE glyph classes (no `fa-solid`/weight prefix) -- matches the ALREADY-
+// EXISTING consumer of this exact field, index.js's own mini-timeline
+// (`<i class="fa-solid ${step.icon}">`, prepends the weight class itself at render time) -- changing
+// these values therefore also changes the List page's own mini-timeline dots, not just Payroll
+// Detail's stepper; this function is the single shared source for both, by design (see this file's
+// own consolidation comment above), not something this round scoped down to one page.
 const RUN_LIFECYCLE_STEPS = [
-    { key: 'draft', icon: 'fa-file-alt', pendingKey: 'state_draft', doneKey: 'step_draft_done', dateField: 'created_at' },
+    { key: 'draft', icon: 'fa-calculator', pendingKey: 'state_draft', doneKey: 'step_draft_done', dateField: 'created_at' },
     { key: 'pending_approval', icon: 'fa-paper-plane', pendingKey: 'step_submit_pending', doneKey: 'step_submit_done', dateField: 'submitted_at' },
-    { key: 'approved', icon: 'fa-check', pendingKey: 'state_pending_approval', doneKey: 'state_approved', dateField: 'approved_at' },
-    { key: 'paid', icon: 'fa-money-check-dollar', pendingKey: 'step_paid_pending', doneKey: 'state_paid', dateField: 'paid_at' },
+    { key: 'approved', icon: 'fa-list-check', pendingKey: 'state_pending_approval', doneKey: 'state_approved', dateField: 'approved_at' },
+    { key: 'paid', icon: 'fa-money-bill', pendingKey: 'step_paid_pending', doneKey: 'state_paid', dateField: 'paid_at' },
     { key: 'locked', icon: 'fa-lock', pendingKey: 'step_locked_pending', doneKey: 'state_locked', dateField: 'locked_at' },
 ];
 const RUN_LIFECYCLE_BRANCH_INFO = {
     rejected: { icon: 'fa-xmark', labelKey: 'step_approval_rejected' },
-    need_info: { icon: 'fa-circle-question', labelKey: 'step_approval_need_info' },
+    need_info: { icon: 'fa-circle-info', labelKey: 'step_approval_need_info' },
     cancelled: { icon: 'fa-ban', labelKey: 'state_cancelled' },
 };
 // A cancelled run's own audit_log always ends with the 'cancel' action -- its from_state (the last

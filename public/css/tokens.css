@@ -32,6 +32,63 @@
   --c-success: #067647; --c-success-soft: #DCFAE6;
   --c-info: #6B7280;    --c-info-soft: #F1F3F5;   /* "info" = เทา ไม่ใช่ฟ้า */
 
+  /* Decision-set solid buttons only (§4's documented exception, .btn-decision-*, 2026-09-13) --
+     NOT used anywhere else --c-success/-warning/-danger already are (badge/icon/callout border stay
+     on the plain token). 2 things a solid-fill button needs that the plain status token alone
+     doesn't give: (1) which text color actually READS on top of that fill, (2) a hover shade.
+     -on-fill: computed per THEME, not copy-pasted from the other theme's own value -- light mode's
+     3 status colors are all dark enough for white text (contrast ratios 4.83-5.78, real numbers
+     checked, not eyeballed), but dark mode's are the OPPOSITE (light accent colors meant for text-on-
+     dark-bg use, not fill-with-white-text use) -- white-on-dark-mode-warning is 1.86:1, white-on-
+     dark-mode-success is 1.74:1, white-on-dark-mode-danger is 2.79:1, ALL fail WCAG AA's 4.5:1 (found
+     while checking warning specifically as asked; success/danger turned out to have the exact same
+     problem, so fixed consistently rather than leaving 2 of 3 known-broken). Dark mode's own
+     `--c-text` is NOT the right substitute (it resolves to #E6E8EB, near-white, in dark mode --
+     using it literally would leave contrast just as broken) -- the dark value below is light mode's
+     own --c-text (#1F2328, genuinely dark) instead, verified 5.67-9.06:1 against all 3 dark-mode fills.
+     -hover: literal -8% (each RGB channel × 0.92, "เข้มขึ้น 8%") computed per theme's own base color --
+     darkening ALWAYS (not the lighter-on-hover convention --c-primary-hover uses in dark mode) since
+     that was the literal, explicit instruction here, not inferred from --c-primary's own pattern.
+
+     REVISED (2026-09-13, item 3a "เก็บตก" item 3, then corrected again same-day): `.btn-decision-
+     warning`'s fill switched from the plain `--c-warning` token to a NEW `--c-warning-fill` --
+     `--c-warning` itself (#B54708 light / #F5B14C dark) was tuned for TEXT/border/badge use, not a
+     solid-fill-with-readable-text button. FIRST fill value tried, #F5B400 (a bright yellow), needed
+     DARK text on top in both themes to pass 4.5:1 -- REPLACED with a darker amber, #D97706 (light) /
+     #C26A05 (dark), specifically so WHITE text (bold 600, matching all 3 `.btn-decision-*` buttons
+     uniformly, not just success/danger) passes WCAG's bold/large-text threshold (3:1, not the regular-
+     text 4.5:1): white on #D97706 measures 3.19:1, white on #C26A05 measures 3.92:1, both real numbers
+     checked, not eyeballed -- verified ≥3:1 as instructed. `--c-warning-on-fill` is `#fff` in BOTH
+     themes now, matching `--c-success-on-fill`'s own light-mode value.
+     `--c-success-on-fill`/`--c-danger-on-fill` are DELIBERATELY left AS THEY WERE (light `#fff`, dark
+     `#1F2328`) -- NOT flipped to white-in-dark-mode-too despite the "ทั้ง 3 เป็นขาวเหมือนกัน" (all 3
+     white, the same) instruction reading as if it wanted every theme uniform: white text on THEIR
+     dark-mode fills (`--c-success: #4ADE80` / `--c-danger: #F97066`, unchanged, not retuned to a
+     darker shade the way warning's fill just was) measures only 1.74:1/2.79:1 -- both still fail even
+     the RELAXED 3:1 bold-text threshold this same instruction just established for warning, a real
+     regression from the already-fixed 5.67-9.06:1 dark text currently gives them. Flagged rather than
+     silently applied -- if uniform white in dark mode across all 3 is genuinely wanted, success/danger
+     would need their OWN darker `-fill` values (the same treatment just given to warning), not just a
+     text-color flip on their current fill.
+     `--c-success-fill`/`--c-danger-fill` are pure ALIASES of `--c-success`/`--c-danger` (`var()`
+     indirection -- resolves per-theme automatically, no separate dark-mode redeclaration needed) added
+     purely for NAMING SYMMETRY across all 3 `.btn-decision-*` fills, their actual computed values never
+     diverge from the base status token (still true, unaffected by warning's own fill becoming a real,
+     divergent color). Bold 600 is now REQUIRED on `.btn-decision-*` (style.css) for the 3:1 threshold
+     to legitimately apply to warning at all -- WCAG's relaxed bold-text minimum only holds when the
+     text actually IS bold; this was the trigger for adding `font-weight:600` there (see its own
+     comment), not a separate, unrelated styling choice. */
+  --c-success-on-fill: #fff;
+  --c-warning-on-fill: #fff;
+  --c-danger-on-fill: #fff;
+  --c-success-hover: #066D41;
+  --c-warning-hover: #A74107;
+  --c-danger-hover: #C8291D;
+  --c-success-fill: var(--c-success);
+  --c-warning-fill: #D97706;
+  --c-danger-fill: var(--c-danger);
+  --c-warning-fill-hover: #C86D06;
+
   /* type */
   --font-sans: "Sarabun", system-ui, sans-serif;   /* ฟอนต์เดียวทั้งระบบ -- ตรงกับ layout/header.php's
                                                        existing Google Fonts <link> อยู่แล้ว (round 1
@@ -107,6 +164,20 @@
     --c-warning: #F5B14C;     --c-warning-soft: #3A2A12;
     --c-success: #4ADE80;     --c-success-soft: #12301E;
     --c-info: #9AA3AE;        --c-info-soft: #232830;
+    /* -on-fill/-hover for .btn-decision-* (see the light :root block's own comment for the full
+       contrast-check reasoning). success/danger keep dark text here (LIGHT MODE's own --c-text,
+       #1F2328 -- genuinely dark, not this theme's own near-white --c-text) since white fails on their
+       UNCHANGED dark-mode fills (1.74:1/2.79:1) -- warning's own fill was retuned darker instead
+       (#C26A05) specifically so it could go back to white/bold like the other 2 buttons visually read,
+       verified 3.92:1 against THIS darker value (not the original, brighter #E0A400 this replaced). */
+    --c-success-on-fill: #1F2328;
+    --c-warning-on-fill: #fff;
+    --c-danger-on-fill: #1F2328;
+    --c-success-hover: #44CC76;
+    --c-warning-hover: #E1A346;
+    --c-danger-hover: #E5675E;
+    --c-warning-fill: #C26A05;
+    --c-warning-fill-hover: #B26205;
     --shadow-modal: 0 8px 24px rgba(0, 0, 0, .6);
     --shadow-soft: 0 12px 32px rgba(0, 0, 0, .5);
     /* chart grays -- ramp inverted vs. light mode (light-to-dark becomes dark-to-light) so all 4
@@ -132,6 +203,14 @@
         --c-warning: #F5B14C;     --c-warning-soft: #3A2A12;
         --c-success: #4ADE80;     --c-success-soft: #12301E;
         --c-info: #9AA3AE;        --c-info-soft: #232830;
+        --c-success-on-fill: #1F2328;
+        --c-warning-on-fill: #fff;
+        --c-danger-on-fill: #1F2328;
+        --c-success-hover: #44CC76;
+        --c-warning-hover: #E1A346;
+        --c-danger-hover: #E5675E;
+        --c-warning-fill: #C26A05;
+        --c-warning-fill-hover: #B26205;
         --shadow-modal: 0 8px 24px rgba(0, 0, 0, .6);
         --shadow-soft: 0 12px 32px rgba(0, 0, 0, .5);
         --chart-2: #334155;

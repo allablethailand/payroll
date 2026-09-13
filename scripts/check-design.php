@@ -264,7 +264,15 @@ function designLintRule2(array $lines, string $type): array {
  * literal -- the double/single-quoted class="..." substring inside it extracts identically). Exact
  * token match or an explicit prefix check (`btn-outline-*`, never a bare substring) -- this is what
  * keeps `.btn-circle-action` (contains "circle" but is not `.btn-circle`) and prose mentioning a
- * class name inside a `<code>` tag (no real class="" attribute at all) from false-triggering. */
+ * class name inside a `<code>` tag (no real class="" attribute at all) from false-triggering.
+ *
+ * `.btn-decision-success`/`.btn-decision-warning`/`.btn-decision-danger` (2026-09-13, decision-set
+ * follow-up, rules.md §4's documented exception) are DELIBERATELY not in `$exactForbidden` below and
+ * need no explicit allowlist entry either -- they already pass through untouched, since exact-token
+ * matching means a whole different string (`btn-decision-success`) never equals a forbidden one
+ * (`btn-success`), and the `btn-outline-*` prefix check only matches THAT prefix, not `btn-decision-*`.
+ * Documented here so a future tightening of this rule (e.g. switching to a substring/prefix check)
+ * doesn't accidentally sweep these 3 up without someone reading this comment first. */
 function designLintRule3(array $lines): array {
     $hits = [];
     $exactForbidden = [
@@ -279,10 +287,19 @@ function designLintRule3(array $lines): array {
         $matchedToken = null;
         foreach (designLintExtractAttr($line, 'class') as $classValue) {
             $tokens = preg_split('/\s+/', trim($classValue), -1, PREG_SPLIT_NO_EMPTY);
-            foreach ($tokens as $t) {
-                $t = strtolower($t);
+            $lowerTokens = array_map('strtolower', $tokens);
+            foreach ($lowerTokens as $t) {
                 if (in_array($t, $exactForbidden, true)) { $hit = true; $matchedToken = $t; break; }
                 if (preg_match('/^btn-outline-(?!secondary$)[a-z]+$/', $t)) { $hit = true; $matchedToken = $t; break; }
+            }
+            // §8/item D, 2026-09-13: `text-danger` alone stays legal (destructive dropdown items etc.
+            // still use it plainly) -- but combined with `.num` on the SAME element it's an ad-hoc
+            // money color bypassing the shared `.money-gross`/`.money-deduction`/`.money-net` classes
+            // (§8's own money-color system), so THAT specific pairing is forbidden. `text-success` on
+            // a `.num` element is already caught by the blanket `text-success` ban above -- no
+            // separate pairing check needed for it.
+            if (!$hit && in_array('num', $lowerTokens, true) && in_array('text-danger', $lowerTokens, true)) {
+                $hit = true; $matchedToken = 'text-danger (on .num)';
             }
             if ($hit) break;
         }

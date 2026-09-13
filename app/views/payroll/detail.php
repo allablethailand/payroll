@@ -1,79 +1,73 @@
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <a href="<?=BASE_URL?>/payroll-process" class="bc-parent text-decoration-none" data-i18n="payroll_process">Payroll Process</a>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" id="bcRunName">-</span>
-        </h5>
-    </nav>
-    <!-- .page-header-card rollout (2026-08-21 origin, see payroll/index.php's own comment) --
-         payroll/detail.php was a real, previously-missed gap (T063 design audit, 2026-09-04):
-         one of the highest-traffic pages in the app had no standard page header at all. This is
-         the STATIC identity header (icon + generic title/description, matching every other
-         top-level page) -- the .card-surface block right below it is UNCHANGED, still the
-         dynamic run-specific content (run name/status badge/action buttons), not replaced by
-         this. #runDetailTabs further down the page is a separate, deliberately-exempted
-         component (its own bespoke polish CSS, unrelated to this page header) -- not touched. -->
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon"><i class="fa-solid fa-file-invoice-dollar"></i></div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="payroll_run_detail_title">Payroll Run Detail</h5>
-            <p class="page-header-card-desc" data-i18n="payroll_run_detail_description">Review, calculate, and manage this payroll run from draft through approval, payment, and closing.</p>
-        </div>
-    </div>
+    <!-- 2026-09-13, Phase Design Round 3 item 3a (Payroll Detail pilot, rules.md §2) -- page-header.php
+         replaces the OLD 3-piece header (a plain `.payroll-breadcrumb` <h5>, a separate STATIC
+         `.page-header-card` identity block, and a bespoke run-name/status/export-buttons row) with
+         ONE shared component. Real consequences of this, not just a markup swap:
+         - The static identity header's own generic title/description
+           (payroll_run_detail_title/_description) is GONE -- $title is now the run's own name (a
+           real value, not a category label), matching the decided spec "H1 = ชื่อรอบ". The 2 i18n
+           keys themselves are left in th.json/en.json (harmless if unused; not deleted, in case a
+           future page still wants that generic wording).
+         - $title/breadcrumb-current/description/actions are all UNKNOWN at server-render time (this
+           page's real data loads via api/payroll-run.get, not server-side PHP) -- every one of them
+           starts as a placeholder here and gets filled by renderRunHeader()/renderRunHeaderActions()
+           (detail.js) once that fetch resolves, via the stable ids page-header.php now documents
+           its own docblock (#phBreadcrumbCurrent/#phTitle/#phTitleBadge/#phDescription/#phActions).
+         - The state-dependent action buttons that used to render INSIDE the process-timeline itself
+           (timelineStepActionsHtml(), now renderRunHeaderActions()) moved here instead -- confirmed
+           decision: "stepper เป็น 'สถานะ' ล้วน ไม่มีปุ่มฝังอีก" (§2/§6, applies to every future page with
+           a stepper, not just this one). #btnExportRunRegister/#btnPreviewRunRegisterPdf (unchanged
+           ids/click handlers, both delegated on `document`) now live inside the header's own
+           "ส่งออก ▾" secondary dropdown instead of as 2 standalone buttons.
+         - Breadcrumb's old non-link "Home" crumb (`.bc-root`, icon+label, never a real link) has NO
+           equivalent icon slot in page-header.php (§2: "ไม่มีไอคอนหน้า" applies to breadcrumbs too, not
+           just page titles) -- rendered here as a plain, non-clickable label only, matching every
+           other real page's own breadcrumb convention already established elsewhere in the app
+           (page-header.php was never designed with a "Home" icon crumb in mind to begin with; no
+           other Round-4 candidate page's breadcrumb has one either, confirmed via grep). -->
+    <?php
+    $title = '-';
+    // 2026-09-13, §2 REVISED (supersedes the previous "crumb สุดท้าย = ชนิดหน้า" decision entirely, not
+    // just this page's own use of it) -- the last crumb is now the entity's own CODE (here, the run's
+    // `run_code`), not a generic static page-type label -- $title (the H1) is the run's own DISPLAY
+    // NAME instead. Both are unknowable until api/payroll-run.get resolves (same as before), so this
+    // crumb is a placeholder here too now, filled in by renderRunHeader() (detail.js) alongside $title
+    // -- see that function's own comment for the exact fallback chain on each.
+    $breadcrumb = [
+        ['label' => 'Payroll', 'href' => null, 'i18n' => 'payroll'],
+        ['label' => 'Payroll Process', 'href' => BASE_URL . '/payroll-process', 'i18n' => 'payroll_process'],
+        ['label' => '-', 'href' => null],
+    ];
+    // $primary_action/$secondary_actions/$overflow_actions deliberately omitted (null/empty) --
+    // entirely state-dependent, unknowable until api/payroll-run.get resolves. renderRunHeaderActions()
+    // (detail.js) populates #phActions via renderPageHeaderActions() (app.js) once it does, and again
+    // after every state-changing action (submit/approve/reject/mark paid/lock/reopen/...).
+    $description = null;
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
 
     <!-- 2026-09-09, explicit request: "ตรง Timeline ในหน้า Process Detail เอา card-surface mb-4 ออกครับ" --
          was the same .card-surface treatment every other content block on this page uses; removed
-         here specifically, per this explicit request, leaving a plain unstyled wrapper. -->
+         here specifically, per this explicit request, leaving a plain unstyled wrapper.
+         2026-09-13, Round 3 item 3a: #rejectReasonBox/#cancelReasonBox (were siblings of the old
+         run-name heading) moved to sit here instead, directly under the stepper -- page-header.php
+         has no slot for an inline reason/warning box (nor should it grow one just for this; a status
+         reason belongs with the status stepper below the title, not the page identity above it). -->
     <div>
-        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
-            <div>
-                <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <h5 class="fw-bold mb-0" id="runNameHeading">-</h5>
-                    <span id="runStateBadge"></span>
-                </div>
-                <div class="text-danger small mt-2 d-none" id="rejectReasonBox"></div>
-                <div class="text-muted small mt-2 d-none" id="cancelReasonBox"></div>
-            </div>
-            <!-- 2026-08-29, same-day follow-up: "ตรงปุ่มออกรายงาน ให้ปรับเป็นเพิ่มอีก Tab ก่อน Action
-                 History" -- the dropdown button that used to sit here (renderRunReportsButtons())
-                 moved into its own "Reports" tab (#run-reports-pane) instead. The List page's own
-                 row dropdown (public/js/payroll/index.js) is UNCHANGED, still a dropdown there --
-                 this request was specifically about the Detail page. -->
-            <!-- 2026-09-09, real bug found and fixed (explicit report: "ปุ่ม Export Excel และ pdf ตอนนี้
-                 ไม่ติดกัน อยากให้อยู่ติดกันและไปอยู่ขวาสุด") -- both buttons used to be direct children
-                 of the SAME outer `justify-content-between` flex container as the run-name/badge div
-                 above them, making `justify-content-between` distribute all 3 items (name-div, Excel,
-                 PDF) with equal space between EACH of them, instead of grouping the two buttons
-                 together at the far right. Wrapped them in their own `d-flex gap-2` group so the
-                 outer flex only ever sees 2 items again (name-div, button-group) -- now the whole
-                 group moves to the right edge as one unit, with the 2 buttons touching via gap-2
-                 inside it. -->
-            <div class="d-flex gap-2">
-            <!-- 2026-08-31, same-day follow-up, explicit request: "ปุ่ม Export Excel ไม่ควรไปรวมอยู่ใน
-                 รายงาน ย้ายไปอยู่กับ Timeline ดูตรงการจัดตำแหน่งให้หน่อยครับ ขอสวยๆ" -- this slot sat empty
-                 since the dropdown above it was removed; reused here for PAYROLL_REGISTER's own
-                 dedicated one-click export (this run's employee-by-employee register), directly
-                 above the Timeline it now sits with instead of buried as one row among the
-                 statutory/payment reports in the Reports tab. -->
-            <button type="button" class="btn btn-outline-success btn-sm" id="btnExportRunRegister">
-                <i class="fa-solid fa-file-excel me-1"></i><span data-i18n="export_excel">Export Excel</span>
-            </button>
-            <!-- 2026-09-02, explicit request: "เพิ่มให้ Export เป็น PDF ได้ด้วย...การ Export กดแล้ว แสดง
-                 ตัวอย่าง แล้วค่อยเลือกจะ Download ภาษาไทยหรือภาษาอังกฤษ" -- deliberately additive next to
-                 the Excel button above (unchanged, still a direct one-click download) rather than
-                 replacing it -- Excel stays the quick-download path, this opens the SAME
-                 #reportPreviewModal every other report on this page already uses (PDF preview +
-                 Thai/English download buttons), reused as-is with report_code=PAYROLL_REGISTER. -->
-            <button type="button" class="btn btn-outline-danger btn-sm" id="btnPreviewRunRegisterPdf">
-                <i class="fa-solid fa-file-pdf me-1"></i><span data-i18n="export_pdf">Export PDF</span>
-            </button>
-            </div>
-        </div>
-        <div class="process-timeline-wrap" id="runProcessTimeline"></div>
-        <div id="nextStepBanner" class="next-step-banner"></div>
+        <div class="text-danger small mb-2 d-none" id="rejectReasonBox"></div>
+        <div class="text-muted small mb-2 d-none" id="cancelReasonBox"></div>
+        <!-- 2026-09-13, Round 3 item 3a follow-up fix -- `.process-timeline-wrap` (card border/
+             background/padding) removed: a real miss caught in review, this page's own stepper still
+             looked like the OLD bespoke `.process-timeline` design (card-wrapped) even after
+             renderProcessTimeline() (detail.js) was fixed to call the real status-stepper.php/
+             renderStatusStepper() component, which is explicitly card-free (§6). No wrapper class at
+             all now -- #runProcessTimeline is just a plain container renderStatusStepper() fills. -->
+        <div id="runProcessTimeline"></div>
+        <!-- §15, item B (2026-09-13): a real callout.php-shaped box (not a page-specific banner class
+             anymore) -- renderRunHeader() (detail.js) sets both its class (`callout callout-{tone}`,
+             via calloutHtml()) and its content, or leaves it `d-none` with empty content when the
+             current state's map entry gives back no text at all. -->
+        <div id="nextStepBanner" class="d-none"></div>
     </div>
 
     <!-- 2026-09-09, explicit request: "ส่วน Card Summary ให้ย้ายไปไว้ด้านบน Tab ใต้ Timeline ของรอบ" --
@@ -89,43 +83,65 @@
          table+footer but left these more prominent cards showing the stale, unfiltered total. Now
          recomputed from the table's own currently-VISIBLE (filtered) rows on every draw -- see
          updateSummaryCardsFromTable() in detail.js. -->
-    <?php // mt-4 here, not on #nextStepBanner: detail.js overwrites its class attr ?>
+    <!-- 2026-09-13, Round 3 item 3a -- markup switched from the old colored-edge `.stat-card`/
+         `.stat-card-{tone}` classes to stat-card.php's plain `.stat`/`.stat-head`/`.stat-icon`/
+         `.stat-value`/`.stat-footer`/`.stat-sub` shape (§2: "ไม่มีขอบสี, ไอคอนเดี่ยวสีเดียว"). NOT
+         rendered via an `include stat-card.php` loop, though -- confirmed gap, reported separately:
+         that partial replaces a card's ENTIRE content from one `$stat` array per render, but these 4
+         values update INDIVIDUALLY and live (updateSummaryCardsFromTable(), on every table redraw,
+         NOT a full page reload) via direct `.text()` calls on each value's own stable id -- forcing
+         that through a whole-array re-render would mean either rebuilding all 4 array literals in JS
+         just to change one number, or adding several id-passthrough params to the partial for a
+         single, narrow caller. Hand-written here with the EXACT SAME CSS classes the partial itself
+         outputs instead, so the visual result is identical either way -- ids preserved unchanged,
+         `.num` added to each value span per §8 ("ตัวเลขทุกที่ใช้ .num") -- the OLD markup never had it
+         on these 3 money values, `fmtNum()`'s own tabular-nums alignment was simply missing here
+         before. `mt-4`/`mb-4` here = --sp-5 (item A.1: callout->stat and stat->tabs are both --sp-5 --
+         Bootstrap's own 4-scale spacer happens to equal that token exactly, 1.5rem = 24px = --sp-5, so
+         no bespoke class was needed here).
+         2026-09-13, item D -- `.money-gross`/`.money-deduction`/`.money-net` (§8) added to the 3 money
+         values below (Employees isn't a money value, gets neither). -->
     <div class="row g-3 mt-4 mb-4" id="runSummaryCards">
         <div class="col-6 col-md-3">
-            <div class="stat-card stat-card-info">
-                <div class="stat-card-icon"><i class="fa-solid fa-users"></i></div>
-                <div>
-                    <div class="stat-card-label" data-i18n="table_employee_count">Employees</div>
-                    <div class="stat-card-value" id="infoEmployeeCount">-</div>
-                    <div class="stat-card-sub" id="infoPaymentBreakdown"></div>
+            <div class="stat">
+                <div class="stat-head">
+                    <div class="stat-label" data-i18n="table_employee_count">Employees</div>
+                    <i class="fa-solid fa-users stat-icon"></i>
+                </div>
+                <div class="stat-value num" id="infoEmployeeCount">-</div>
+                <div class="stat-footer">
+                    <span class="stat-sub" id="infoPaymentBreakdown"></span>
                 </div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="stat-card stat-card-success">
-                <div class="stat-card-icon"><i class="fa-solid fa-sack-dollar"></i></div>
-                <div>
-                    <div class="stat-card-label" data-i18n="table_gross_amount">Gross</div>
-                    <div class="stat-card-value" id="infoGross">-</div>
+            <div class="stat">
+                <div class="stat-head">
+                    <div class="stat-label" data-i18n="table_gross_amount">Gross</div>
+                    <i class="fa-solid fa-sack-dollar stat-icon"></i>
                 </div>
+                <div class="stat-value num money-gross" id="infoGross">-</div>
+                <div class="stat-footer stat-footer-empty"></div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="stat-card stat-card-danger">
-                <div class="stat-card-icon"><i class="fa-solid fa-minus"></i></div>
-                <div>
-                    <div class="stat-card-label" data-i18n="table_deduction_amount">Deductions</div>
-                    <div class="stat-card-value" id="infoDeduction">-</div>
+            <div class="stat">
+                <div class="stat-head">
+                    <div class="stat-label" data-i18n="table_deduction_amount">Deductions</div>
+                    <i class="fa-solid fa-minus stat-icon"></i>
                 </div>
+                <div class="stat-value num money-deduction" id="infoDeduction">-</div>
+                <div class="stat-footer stat-footer-empty"></div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="stat-card stat-card-primary">
-                <div class="stat-card-icon"><i class="fa-solid fa-hand-holding-dollar"></i></div>
-                <div>
-                    <div class="stat-card-label" data-i18n="table_net_pay">Net Pay</div>
-                    <div class="stat-card-value" id="infoNet">-</div>
+            <div class="stat">
+                <div class="stat-head">
+                    <div class="stat-label" data-i18n="table_net_pay">Net Pay</div>
+                    <i class="fa-solid fa-hand-holding-dollar stat-icon"></i>
                 </div>
+                <div class="stat-value num money-net" id="infoNet">-</div>
+                <div class="stat-footer stat-footer-empty"></div>
             </div>
         </div>
     </div>
@@ -158,10 +174,16 @@
         <i class="fa-solid fa-hourglass-half me-1"></i><span id="mergeTargetWaitingBannerText"></span>
     </div>
 
+    <!-- 2026-09-13, Round 3 item 3a (§6: "Tabs ไม่มีไอคอน") -- icons stripped from the 5 tab buttons
+         that still had one (Details/Employee Breakdown/Cash Payments/Bank Account Assignment/Third-
+         Party Remittance/Action History; Reports already had none, see its own 2026-09-09 comment
+         below). Labels/ids/data-bs-target/tab-pane CONTENT are all untouched -- every tab still
+         opens exactly as before (§0.7: this round only touches how the tab BAR looks, not what's
+         inside any tab-pane other than Employee Breakdown's own, done separately in 3b/3c). -->
     <ul class="nav nav-tabs" id="runDetailTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary active" id="run-details-tab" data-bs-toggle="tab" data-bs-target="#run-details-pane" type="button" role="tab" aria-controls="run-details-pane" aria-selected="true">
-                <i class="fa-solid fa-circle-info me-1"></i><span data-i18n="tab_run_details">Details</span>
+                <span data-i18n="tab_run_details">Details</span>
             </button>
         </li>
         <!-- 2026-09-09, explicit request: "แยก Employee และการคำนวณไว้อีก Tab ครับ...ใน Tab แรกจะเป็นการ
@@ -174,7 +196,7 @@
              needed. -->
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary" id="run-employee-tab" data-bs-toggle="tab" data-bs-target="#run-employee-pane" type="button" role="tab" aria-controls="run-employee-pane" aria-selected="false">
-                <i class="fa-solid fa-users me-1"></i><span data-i18n="employee_breakdown">Employee Breakdown</span>
+                <span data-i18n="employee_breakdown">Employee Breakdown</span>
             </button>
         </li>
         <!-- 2026-08-29, same-day follow-up: "ตรงปุ่มออกรายงาน ให้ปรับเป็นเพิ่มอีก Tab ก่อน Action History
@@ -204,7 +226,7 @@
              report's own docblock on why both exist). -->
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary" id="run-cash-tab" data-bs-toggle="tab" data-bs-target="#run-cash-pane" type="button" role="tab" aria-controls="run-cash-pane" aria-selected="false">
-                <i class="fa-solid fa-money-bill-wave me-1"></i><span data-i18n="tab_cash_payments">Cash Payments</span>
+                <span data-i18n="tab_cash_payments">Cash Payments</span>
             </button>
         </li>
         <!-- 2026-09-02, multi-bank-account payroll, explicit request: "ในหน้า Detail ก็สามารถเลือกได้ว่าใครจะ
@@ -216,7 +238,7 @@
              as Cash Payments/Remittance right beside it. -->
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary" id="run-bank-account-tab" data-bs-toggle="tab" data-bs-target="#run-bank-account-pane" type="button" role="tab" aria-controls="run-bank-account-pane" aria-selected="false">
-                <i class="fa-solid fa-building-columns me-1"></i><span data-i18n="tab_bank_account_assignment">Bank Account Assignment</span>
+                <span data-i18n="tab_bank_account_assignment">Bank Account Assignment</span>
             </button>
         </li>
         <!-- 2026-09-02, Deduction Destination & Third-Party Remittance -- deduction lines routed to
@@ -227,12 +249,12 @@
              numbers are final). -->
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary" id="run-remittance-tab" data-bs-toggle="tab" data-bs-target="#run-remittance-pane" type="button" role="tab" aria-controls="run-remittance-pane" aria-selected="false">
-                <i class="fa-solid fa-money-bill-transfer me-1"></i><span data-i18n="tab_remittance">Third-Party Remittance</span>
+                <span data-i18n="tab_remittance">Third-Party Remittance</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary" id="run-history-tab" data-bs-toggle="tab" data-bs-target="#run-history-pane" type="button" role="tab" aria-controls="run-history-pane" aria-selected="false">
-                <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="tab_action_history">Action History</span>
+                <span data-i18n="tab_action_history">Action History</span>
             </button>
         </li>
     </ul>
@@ -1750,9 +1772,14 @@
                         <label class="form-label mb-1" data-i18n="approve_note_label">Note (optional)</label>
                         <textarea class="form-control" id="run_approve_note" rows="3" data-i18n="approve_note_placeholder" placeholder="Any comment for this approval..."></textarea>
                     </div>
+                    <!-- 2026-09-13, decision-set follow-up (§4 exception, rules.md §4): was plain
+                         Bootstrap `.btn-success` -- a real §4 violation (banned everywhere per §12
+                         lint rule 3) found while wiring this up, not limited to the header buttons
+                         that opened this modal. `.btn-decision-success` matches #btnApproveRunHeader's
+                         own tone so the color stays consistent from trigger to actual confirmation. -->
                     <div class="modal-footer">
                         <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                        <button type="submit" class="btn btn-success"><span data-i18n="approval_confirm_approve">Confirm Approve</span></button>
+                        <button type="submit" class="btn btn-decision-success"><span data-i18n="approval_confirm_approve">Confirm Approve</span></button>
                     </div>
                 </form>
             </div>
@@ -1772,9 +1799,12 @@
                         <label class="form-label mb-1"><span data-i18n="reject_reason_label">Reject Reason</span> <span class="text-danger">*</span></label>
                         <textarea class="form-control required" id="run_reject_reason" rows="3" data-i18n="reject_reason_placeholder" placeholder="Explain what needs to be fixed before resubmitting..."></textarea>
                     </div>
+                    <!-- 2026-09-13, decision-set follow-up: was plain Bootstrap `.btn-danger` -- same
+                         §4-violation note as the Approve modal above; `.btn-decision-danger` (outline,
+                         not solid) matches #btnRejectRunHeader's own tone. -->
                     <div class="modal-footer">
                         <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                        <button type="submit" class="btn btn-danger"><span data-i18n="approval_confirm_reject">Confirm Reject</span></button>
+                        <button type="submit" class="btn btn-decision-danger"><span data-i18n="approval_confirm_reject">Confirm Reject</span></button>
                     </div>
                 </form>
             </div>
@@ -1794,9 +1824,12 @@
                         <label class="form-label mb-1"><span data-i18n="request_info_reason_label">What information is needed?</span> <span class="text-danger">*</span></label>
                         <textarea class="form-control required" id="run_request_info_reason" rows="3" data-i18n="request_info_reason_placeholder" placeholder="Explain what additional information is needed before this can be decided..."></textarea>
                     </div>
+                    <!-- 2026-09-13, decision-set follow-up: was plain `.btn-primary` (orange, no
+                         warning signal at all before this) -- `.btn-decision-warning` (outline) now
+                         matches #btnRequestInfoRunHeader's own tone. -->
                     <div class="modal-footer">
                         <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                        <button type="submit" class="btn btn-primary"><span data-i18n="approval_confirm_request_info">Confirm</span></button>
+                        <button type="submit" class="btn btn-decision-warning"><span data-i18n="approval_confirm_request_info">Confirm</span></button>
                     </div>
                 </form>
             </div>

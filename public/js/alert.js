@@ -83,6 +83,11 @@ function showWarning(msg, confirm = true) {
 // `danger: true` swaps ONLY the confirm button's color to `var(--c-danger)` (style.css's own default
 // for every OTHER confirm button is `var(--c-primary)`, see the Swal2 token block there) -- nothing
 // else about the dialog changes for danger.
+// `tone: 'success'|'warning'|'danger'` (2026-09-13, decision-set follow-up) -- a 3-way generalization
+// of the same idea, so a confirm dialog can match a `.btn-decision-*` trigger's own color (§4's
+// documented decision-set exception, rules.md §4). `danger: true` is kept as a backward-compatible
+// SHORTHAND for `tone: 'danger'` (the only tone this ever supported before today) -- existing callers
+// that pass `danger` keep working unchanged; `tone` takes precedence when both happen to be set.
 function showConfirm(arg1, arg2, arg3, arg4) {
     const opts = (arg1 !== null && typeof arg1 === 'object')
         ? arg1
@@ -95,9 +100,10 @@ function showConfirm(arg1, arg2, arg3, arg4) {
         confirmButtonText: opts.confirmText || langData.yes || 'Yes',
         cancelButtonText: opts.cancelText || langData.no || 'No',
     };
-    if (opts.danger) {
-        swalOpts.confirmButtonColor = 'var(--c-danger)';
-    }
+    const tone = opts.tone || (opts.danger ? 'danger' : null);
+    if (tone === 'danger') swalOpts.confirmButtonColor = 'var(--c-danger)';
+    else if (tone === 'warning') swalOpts.confirmButtonColor = 'var(--c-warning)';
+    else if (tone === 'success') swalOpts.confirmButtonColor = 'var(--c-success)';
     Swal.fire(swalOpts).then(r => {
         if (r.isConfirmed && opts.onYes) opts.onYes();
         if (!r.isConfirmed && opts.onNo) opts.onNo();

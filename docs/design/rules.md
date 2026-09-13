@@ -55,6 +55,20 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
   --c-success: #067647; --c-success-soft: #DCFAE6;
   --c-info: #6B7280;    --c-info-soft: #F1F3F5;   /* "info" = เทา ไม่ใช่ฟ้า */
 
+  /* decision-set solid buttons เท่านั้น (.btn-decision-*, §4's ข้อยกเว้น, 2026-09-13, แก้สี warning อีก
+     รอบวันเดียวกัน) — -on-fill คือสีตัวหนังสือ/ไอคอนบนพื้นตัน **ตอนนี้ขาวทั้ง 3 tone ทั้ง 2 theme** (ตัวหนา
+     600 บังคับบน `.btn-decision-*` ทุกตัว ช่วย contrast ให้ผ่านเกณฑ์ตัวหนา/ตัวใหญ่ 3:1 แทน 4.5:1 ปกติ) —
+     **ยกเว้น success/danger ใน dark mode ที่ยังเป็น #1F2328 (ดำ) เหมือนเดิม ไม่ได้เปลี่ยนตาม** เพราะพื้น
+     dark-mode ของ 2 ตัวนั้น (--c-success/--c-danger เดิม ไม่ได้ปรับสี) ตัวหนังสือขาวยังวัดได้แค่ 1.74:1/
+     2.79:1 ไม่ผ่านแม้เกณฑ์ 3:1 ที่ผ่อนแล้ว — ดู tokens.css's เอง comment สำหรับตัวเลข contrast จริงที่เช็ค
+     ครบทุกคู่ -hover = เข้มขึ้น 8% ต่อ channel -- -fill คือสีพื้นถมจริงที่ใช้ (success/danger = alias ของ
+     token สถานะเดิม เท่ากันเป๊ะ แค่ชื่อสม่ำเสมอ; warning เป็นสีใหม่จริง #D97706/#C26A05 — เข้มกว่ารอบแรก
+     #F5B400/#E0A400 โดยตั้งใจ เพื่อให้ตัวหนังสือขาวกลับมาใช้ได้ ผ่าน 3:1) */
+  --c-success-on-fill: #fff; --c-warning-on-fill: #fff; --c-danger-on-fill: #fff;
+  --c-success-hover: #066D41; --c-warning-hover: #A74107; --c-danger-hover: #C8291D;
+  --c-success-fill: var(--c-success); --c-warning-fill: #D97706; --c-danger-fill: var(--c-danger);
+  --c-warning-fill-hover: #C86D06;
+
   /* type */
   --font-sans: "Sarabun", system-ui, sans-serif;   /* ฟอนต์เดียวทั้งระบบ ทุกน้ำหนักจาก Sarabun */
   --font-num: var(--font-sans);     /* ตัวเลข: เปิด font-variant-numeric: tabular-nums เสมอ */
@@ -86,6 +100,14 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 - ไม่ใช้ `btn-info`, `btn-success`, `btn-warning`, `bg-primary`, `text-primary` ฯลฯ ที่ไม่ได้ map (ดู §12 lint)
 - ตัวเลขทุกที่ (ตาราง, stat, สลิป) ใช้ `.num` → `font-variant-numeric: tabular-nums; text-align:right`
 - ไอคอน: Font Awesome ชุดเดียว น้ำหนักเดียว (`fa-regular` หรือ `fa-solid` เลือกอันเดียวทั้งระบบ) สี = สีข้อความปัจจุบัน (`currentColor`) เสมอ ไม่มีไอคอนหลากสี
+  - **ข้อยกเว้น: ไอคอนชนิดไฟล์ (Excel/PDF/CSV) ใช้สีประจำชนิดได้ เฉพาะไอคอน ไม่ใช่ปุ่ม (ใหม่, 2026-09-13,
+    item 3a "เก็บตก" item 1)** — Excel/CSV = `--c-success` (เขียว), PDF = `--c-danger` (แดง) ผ่าน token
+    เดิม ไม่ hardcode hex ใหม่ ทำเป็น class กลาง `.file-icon-excel`/`.file-icon-csv`/`.file-icon-pdf`
+    (style.css) — ตรงตามธรรมเนียมที่ผู้ใช้คุ้นเคยอยู่แล้วจากทุก OS/office suite (Excel เขียว, PDF แดง) ระบุ
+    **ชนิดไฟล์** ไม่ใช่สถานะ/action จึงไม่ขัดกับ §3's "สีมีหน้าที่บอกว่าต้องทำอะไรต่อ" — **สีอยู่ที่ไอคอนเท่านั้น
+    ปุ่ม/ลิงก์ที่ห่อไอคอนนั้นยังเป็น `.btn-outline-secondary`/`.dropdown-item` ปกติไม่เปลี่ยน** ใช้แล้วที่เมนู
+    ส่งออก (page-header.php's export dropdown items, app.js's `dtInjectExportDropdown()` สำหรับ toolbar
+    ของ DataTable)
 - **`--radius-lg` (12px, เพิ่ม 2026-09-13 ที่ 10px ปรับเป็น 12px วันเดียวกัน)** — ใช้เฉพาะ surface ที่
   "ลอย" เหนือหน้า: dropdown (เช่น notification), popover, toast, Swal popup, และการ์ดต่อรายการที่อยู่
   *ข้างใน* surface ลอยเหล่านั้น (เช่น การ์ดต่อรายการใน notification dropdown) — ใช้**ค่าเดียวกัน**ทั้ง
@@ -115,24 +137,89 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 └──────────┴────────────────────────────────────────────────────────┘
 ```
 
-- **Page header = partial เดียว** `app/views/partials/page-header.php` รับ `title`, `breadcrumb[]`, `secondary_actions[]` (ไม่เกิน 2, label + id/href + icon optional, render `.btn-outline-secondary`, วางซ้ายของ `primary_action` เสมอ — ตัดสินใจแล้วรอบ 2 item 4), `primary_action` (label + id/href + icon optional), `description` — **ไม่มี card ครอบ ไม่มีไอคอนหน้า ไม่มีพื้นหลังสี** (ของเดิม "การ์ดหัวหน้า + ไอคอน" ทุกหน้าให้แทนด้วย partial นี้)
+- **Page header = partial เดียว** `app/views/partials/page-header.php` รับ `title`, `breadcrumb[]`, `secondary_actions[]` (ไม่เกิน 2, label + id/href + icon optional, render `.btn-outline-secondary`, วางซ้ายของ `primary_action` เสมอ — ตัดสินใจแล้วรอบ 2 item 4; item ยังรับ `items[]` ให้เป็น dropdown ได้, และมี slot แยก `overflow_actions[]`/`overflow_label` สำหรับ action เปลี่ยนสถานะ — เพิ่มรอบ 3 item 3a), `primary_action` (label + id/href + icon optional), `description`, `id_prefix` (optional, default `'ph'` — ให้หน้าเดียวกัน include ซ้ำได้โดยไม่ id ชน เช่น demo หลายชุดใน components.php) — **ไม่มี card ครอบ ไม่มีไอคอนหน้า ไม่มีพื้นหลังสี** (ของเดิม "การ์ดหัวหน้า + ไอคอน" ทุกหน้าให้แทนด้วย partial นี้) **ปุ่มทุกตัวใน header เป็นขนาดปกติเสมอ ห้าม `btn-sm`** (item A.4, 2026-09-13 — partial ไม่เคยใช้ `btn-sm` มาตั้งแต่แรกอยู่แล้ว ตรวจสอบแล้ว ไม่ต้องแก้โค้ด)
+  - **`decision_actions[]` (ใหม่, item 3a follow-up ข้อ 1, 2026-09-13; REVISED ข้อ "แก้ decision set" วัน
+    เดียวกัน)** — แยกจาก `secondary_actions` โดยตั้งใจ: ใช้เมื่อผู้ใช้ต้องเห็น**ทุกทางเลือกของการตัดสินใจ
+    หนึ่งเรื่อง**พร้อมกัน ไม่ใช่ action ระดับหน้าทั่วไป — caller ตั้งค่าตัวนี้แทน `primary_action` (ไม่ใช่คู่กัน,
+    ตัวนี้แทนที่ slot primary ไปเลย) เรียงลำดับซ้าย→ขวา**ตามที่ caller ส่งมาตรงๆ ไม่มีการจัดเรียงเอง**
+    (กฎเดิม "รายการสุดท้าย = primary" **ถูกถอดออกแล้ว**) — **แต่ละรายการระบุ `tone` เอง**
+    (`'success'|'warning'|'danger'`) เลือก class `.btn-decision-success`/`.btn-decision-warning`/
+    `.btn-decision-danger` (§4's ข้อยกเว้น "decision set" — ดู §4 เต็ม) กลุ่มนี้ห่างจาก action อื่นด้วยระยะ
+    `--sp-3` (กว้างกว่า `--sp-2` ปกติระหว่าง action อื่น เพื่อให้เห็นชัดว่าเป็นกลุ่มแยก) ตัวอย่างจริง: Payroll
+    Detail's pending_approval + มีสิทธิ์อนุมัติ = `[อนุมัติ]` (success, ตัน) `[ขอข้อมูลเพิ่มเติม]` (warning,
+    ตัน) `[ไม่อนุมัติ]` (danger, ตัน) — ทั้ง 3 พื้นตัน ตัวหนา 600 ตัวหนังสือขาว (ดู §4 เต็มสำหรับข้อยกเว้น
+    dark-mode ของ success/danger) — modal ฟอร์มที่ตามหลังแต่ละปุ่ม (มีช่องเหตุผล/note) ก็ใช้ class เดียวกัน
+    บนปุ่มยืนยันของตัวเอง ให้สีตรงกันตลอด ไม่ใช่แค่ที่ header
+  - **`overflow_actions[]` เมนู "อื่นๆ" (ใหม่, 2026-09-13, "เมนูอื่นๆ" follow-up)** — 2 จุดที่แก้: **(1) เหลือ
+    รายการเดียว → render เป็นปุ่ม `.btn-outline-secondary` ธรรมดา** (label/id/href/icon ของรายการนั้นตรงๆ)
+    **ไม่ใช่ dropdown 1 ตัวเลือก** — เมนูที่เลือกได้ทางเดียวไม่ใช่เมนู; `tone` ของรายการนั้น (ถ้ามี) **ไม่ถูกนำมา
+    ใช้เลย** เพราะ path ปุ่มธรรมดาไม่อ่าน `tone` (ตั้งใจ ให้เหมือนกับ decision set's เอง "สีทำลายอยู่ที่ confirm
+    เท่านั้น") **(2) divider คั่นเฉพาะเมื่อมีรายการปกติอยู่เหนือมันจริง** — ก่อนหน้านี้ divider จะขึ้นก่อนรายการ
+    danger ตัวแรกเสมอแม้จะเป็นรายการแรกสุดของเมนู (เส้นคั่นที่ไม่มีอะไรอยู่เหนือมันเลย ไม่มีความหมาย) — ตอนนี้
+    render เฉพาะเมื่อ index ของรายการ danger ตัวแรกนั้น > 0 (มีรายการปกติอย่างน้อย 1 ตัวอยู่ก่อน) — ทำใน
+    page-header.php **และ** JS twin `renderPageHeaderActions()`/`pageHeaderActionButtonHtml()` (app.js)
+    พร้อมกัน ไม่ใช่เฉพาะหน้าใดหน้าหนึ่ง
+- **ระยะห่างแนวตั้งของหน้ารายละเอียด (item A.1, 2026-09-13)** — ทุกช่วง header → stepper → callout → stat cards → tabs ห่างเท่ากัน = `--sp-5` (24px) **ยกเว้น stepper → callout ที่ห่างแค่ `--sp-3`** (เพราะ callout คือคำอธิบายของ stepper ด้านบนมันโดยตรง ไม่ใช่ block ถัดไปที่เป็นอิสระ) — page header เองมี `border-bottom` คั่นจากส่วนถัดไปเสมอ (`.ph-header`'s `padding-bottom`+`border-bottom`, ไม่ใช่แค่ `margin-bottom` เฉยๆ)
+- **`$description` = ข้อมูล 1 ชิ้นที่สำคัญที่สุดพร้อมคำนำหน้า ไม่ใช่รายการตัวเลข (item 5, 2026-09-13)** — เคยตัดสินใจ
+  (item 3a แรก) ให้ Payroll Detail's description เป็น "งวด · วันจ่าย" (2 ค่าคั่นด้วย `·`) — **แก้แล้ว**:
+  ขัดกับเจตนาเดิมของ `$description` (§2's diagram: "คำอธิบาย 1 บรรทัด (ถ้าจำเป็นจริง)" — บรรทัดอธิบาย ไม่ใช่
+  ช่องรวมตัวเลข) เหลือแค่ **ค่าเดียวที่สำคัญที่สุดของหน้านั้น พร้อมคำนำหน้าบอกว่าคือค่าอะไร** เช่น Payroll
+  Detail ใช้ "วันจ่าย 31/08/2026" (`run_payment_date_label` + `toDisplayDateRd()`) — งวดเอง (period range)
+  ไม่ได้หายไปจากหน้า แค่ไม่ได้อยู่ซ้ำใน description (มีอยู่แล้วที่ Details tab's `#infoPeriod`)
 - **Action วางที่ไหน (ตัดสินใจแล้วรอบ 2 item 4, กฎบังคับทั้งระบบ)**:
   - **Page header** (`primary_action`/`secondary_actions`) = action ระดับ**หน้า** เท่านั้น — ไม่ขึ้นกับว่ามีแถวไหนถูกเลือกอยู่ไหม เช่น "สร้าง/เพิ่ม", "ดึงข้อมูล" (ซิงค์จาก Origami, นำเข้า Excel), "ดูประวัติ"
   - **Toolbar ของตาราง ฝั่งซ้าย หลัง length** = action ที่ทำกับ**แถวที่เลือกไว้** (bulk) เท่านั้น เช่น "ซิงค์ที่เลือก", "ลบที่เลือก" — ไม่ใช่ page header (เพราะพิมพ์ผิดที่ผู้ใช้ทั่วไปจะกดตอนไม่ได้เลือกอะไรเลย ปุ่มควรโผล่/ใช้งานได้เฉพาะตอนมี selection)
   - **Toolbar ของตาราง ฝั่งขวา** = **เฉพาะ**ค้นหา + ส่งออกเท่านั้น (§7) ห้ามใส่ action อื่นแทรก
 - Breadcrumb กับ H1 ห้ามพูดซ้ำกัน — H1 คือชื่อหน้า breadcrumb คือทาง
+  - **หน้ารายละเอียดที่ H1 เป็นค่าข้อมูลจริง (2026-09-13, Payroll Detail pilot item 3a; REVISED เต็ม
+    วันเดียวกัน — ทับกฎ "crumb สุดท้าย = ชนิดหน้า" เดิมด้านล่างนี้ทั้งหมด ไม่ใช่ต่อยอด)**: เมื่อ H1 ต้อง
+    เป็นชื่อ/รหัสของ**ตัวข้อมูล**นั้นเอง (เช่น ชื่อรอบเงินเดือน, ชื่อพนักงาน) ไม่ใช่ชื่อหมวดของหน้า — สเปกจริง:
+    - **crumb สุดท้ายของ breadcrumb = รหัสของ entity นั้น** (เช่น รอบเงินเดือน = `run_code`, พนักงาน =
+      รหัสพนักงาน, รายการทั่วไป = code ของตัวมันเอง) **ไม่ใช่คำว่า "รายละเอียด…" อีกต่อไป** (มติเดิมของ
+      3a เองที่บอกว่า crumb สุดท้าย = ชนิดหน้า คงที่ ถูกยกเลิก ไม่ใช่กฎที่ใช้จริงแล้ว)
+    - **H1 = ชื่อแสดงผล** (display name จริงของ entity นั้น เช่น `run_name`) — **ถ้าไม่มีชื่อ (name ว่าง/
+      ไม่มี) ให้ H1 = รหัสเดียวกับที่ breadcrumb ใช้แทน — ยอมให้ซ้ำกันได้ในกรณีนี้เท่านั้น** (เป็น fallback
+      ที่ยอมรับได้ ไม่ใช่การออกแบบให้ซ้ำกันปกติ) — `updateDocumentTitleFromBreadcrumb()` (app.js) เอง
+      กันการซ้ำในชื่อ browser tab อยู่แล้ว (ไม่ push `#phTitle`'s text ซ้ำถ้าเท่ากับ crumb's text พอดี —
+      ตรวจแล้วว่า logic เดิมนี้ครอบกรณี fallback นี้ได้เองโดยไม่ต้องแก้เพิ่ม)
+    - **crumb สุดท้ายเป็นข้อความธรรมดา `--c-text`เสมอ (ไม่ใช่ `--c-text-muted` แบบ crumb ก่อนหน้ามันที่ยัง
+      เป็นลิงก์) ไม่ใช่ลิงก์** — รหัสต้องอ่านง่าย ไม่จาง; ไม่คลิกได้เพราะ "อยู่หน้านี้อยู่แล้ว" ไม่มีที่ให้ไปต่อ
+    - **ถ้ารหัสของ entity นั้นเองก็ไม่มี (เช่น `run_code` เป็น `null` ได้จริงตามสคีมา)**: fallback เป็น
+      `#{id}` (ตัวเลข primary key ของ record นั้น เสมอมีอยู่แล้ว) — ตัวอย่างจริง Payroll Detail:
+      `run.run_code || ('#' + run.id)` ใช้ทั้งเป็น crumb และเป็น fallback ของ H1 (chain เดียวกัน 2 จุด)
+    - ตัวอย่างจริง (Payroll Detail, `renderRunHeader()`, detail.js): `$('#phBreadcrumbCurrent').text(run.run_code
+      || ('#' + run.id))`, `$('#phTitle').text(run.run_name || runCodeOrFallback)`
+    - **สำหรับ Employee Detail (ยังไม่ทำ รอรอบ 4)**: crumb สุดท้าย = รหัสพนักงาน (employee code),
+      H1 = ชื่อพนักงาน (fallback เป็นรหัสพนักงานเดียวกันถ้าไม่มีชื่อ) — ใช้กฎเดียวกันนี้เป๊ะ ไม่ต้องคิดใหม่
+    - **ผลข้างเคียงที่ยังต้องจัดการคู่กันเสมอ (ไม่เปลี่ยนจากก่อนหน้านี้)**: `updateDocumentTitleFromBreadcrumb()`
+      (app.js) ยังดึงค่าจากทั้ง breadcrumb **และ** `#phTitle` มาต่อกันเป็น browser tab title (ทั้งคู่เป็น
+      data จริงตอนนี้ ไม่ใช่แค่ H1 อย่างเดียวเหมือนตอนที่ crumb เป็น label คงที่) — ฟังก์ชันเดิมรองรับ
+      กรณีนี้ได้ครบอยู่แล้วโดยไม่ต้องแก้เพิ่ม
 - **Stat card** = partial `stat-card.php` render ด้วย **class ใหม่ `.stat`** (ไม่ใช่ `.stat-card`) — ตัดสินใจแล้วว่า **ทุบสีของ `.stat-card` เดิมทิ้งจริง** (ของเดิมมี 7 tone สี ขอบซ้ายสี ใช้อยู่ 5 ไฟล์ ณ ตอนตัดสินใจนี้ — ตรงข้ามกับกฎนี้โดยสิ้นเชิง ไม่ใช่ต่อยอด) พื้นขาว ขอบ `--c-border` **ไม่มีขอบซ้ายสี ไม่มีพื้นสี** ตัวเลข `.num` ขนาด `--fs-xl` ตัวหนา — ถ้าค่าเป็นสถานะที่ต้องตัดสินใจ (เช่น "รออนุมัติ 3") ใช้ badge จาก `status_map.php` (ข้อ 5) ใน slot ล่างเท่านั้น ไม่ใช่เปลี่ยนสีทั้งการ์ด — **field `badge` ของ `$stat` คือ `{enum, context}` เท่านั้น (ข้อ 5, ไม่ใช่ `{label, tone}` ดิบอีกต่อไป)**: partial เรียก `statusBadge($enum, $context)` เองข้างใน ไม่มีทางส่ง label/สีที่ไม่ผ่าน `status_map.php` เข้ามาได้อีกแล้ว
   - **แก้ไข (รอบ 2 follow-up): อนุญาตไอคอน (optional) 1 ตัว/การ์ด** (เดิมห้ามไอคอนเลย) — ยังคง
     **ห้ามพื้นสี/ขอบสีบนตัวการ์ด**เหมือนเดิม การอนุญาตไอคอนไม่ใช่การเปิดทางกลับไปหา `.stat-card` เดิม —
     **ตัดสินใจแล้ว (แก้กลับรอบที่ 2): ใช้ไอคอนมุมขวาบน** (เคยมี 2 variant ให้เทียบกันใน components.php —
     ตัดสินใจครั้งแรกเลือกไอคอนวงกลมซ้าย 40px, **แก้กลับมาเป็นมุมขวาบนในรอบนี้แทน** — วงกลมซ้ายถูกลบออกจาก
     partial/CSS/components.php ทั้งหมดแล้วเป็นครั้งที่สอง ไม่เหลือ dead code ทั้งสองรอบ): ไอคอนมุมขวาบน
-    ขนาด 20px สี `--c-text-faint` ไม่มีวงกลม/พื้นของตัวเอง, label เล็กสีเทาซ้ายบน, ตัวเลข `--fs-xl` ตัวหนา
+    ขนาด **16px** (แก้จาก 20px เดิม 2026-09-13, Payroll Detail pilot item 3a — 20px ดูใหญ่ไปเมื่อเห็นบน
+    หน้าจริง) สี `--c-text-faint` ไม่มีวงกลม/พื้นของตัวเอง, label เล็กสีเทาซ้ายบน, ตัวเลข `--fs-xl` ตัวหนา
     ด้านล่าง — **ถ้าไม่ส่งไอคอนมา ไม่เว้นที่ไว้** (ตัดสินใจเดิม ยังคงไว้ไม่เปลี่ยนข้ามทั้ง 2 รอบ:
     "เลือกไม่เว้น"/"ไม่มีไอคอน = ไม่เว้นที่") — label เป็นสมาชิกเดียวในแถว flex (label+ไอคอน,
     `justify-content:space-between`) จึงชิดซ้ายเองโดยธรรมชาติเมื่อไม่มีไอคอน ไม่ต้องเขียนโค้ดพิเศษกันที่ว่าง
   - **ทุกการ์ดในแถวสูงเท่ากันเสมอ** — caller ครอบด้วย Bootstrap `.row` ธรรมดา (ยืด column เท่ากันเป็น default อยู่แล้ว ไม่ต้องเพิ่ม CSS) `.stat` เอง `height:100%` + เป็น flex column — **slot ล่างคงที่สำหรับ sub/badge/link เสมอ** (มี `min-height` แม้ไม่มีเนื้อหาอะไรเลย ก็ยังเว้นพื้นที่เท่ากับการ์ดที่มีครบทั้ง 3 อย่าง) และ `margin-top:auto` ดันลงชิดขอบล่างเสมอ ไม่ว่า header/ไอคอนด้านบนจะสูงแค่ไหน
+  - **ขนาดที่แน่นอน (item A.3, 2026-09-13)**: padding การ์ด `--sp-4`, label `--fs-sm`, value `--fs-xl` `line-height:1.2`, slot ล่างสูงคงที่ `24px` (แก้จาก `20px` เดิม) — รวมกันแล้วการ์ดสูง **~110px เท่ากันทุกใบ**; ไอคอน 16px ชิดขวาบนระดับเดียวกับ label (ไม่เปลี่ยนจากที่ตกลงไว้ก่อนหน้า); บรรทัดย่อยใน slot ล่าง (เช่น "โอนผ่านบัญชี 0 · เงินสด 2") เป็นข้อความ `--c-text-muted` ล้วน **ไม่มีไอคอน/สี** ใดๆ
+  - **`value_class` (ใหม่, item D, 2026-09-13)** — field เสริม optional ของ `$stat`, ใส่ class เพิ่มบน `.stat-value` ต่อจาก `.num` (เช่น `'money-gross'`) สำหรับตัวเลขที่มีความหมายทางบัญชีจริง — ดู §8 money-color system ด้านล่าง คนละเรื่องกับ `value_id`/`sub_id` ที่ยังเป็นแผนรอบ 4 ด้านล่าง (นี่คือ class เสริมตอน render ครั้งเดียว, ไม่เกี่ยวกับปัญหา live-update ค่าเดี่ยว)
   - **Migration**: รอบ 2 สร้าง `.stat`/`stat-card.php` ใหม่เท่านั้น **ไม่แตะ 5 ไฟล์ที่ใช้ `.stat-card` เดิม**; รอบ 4 ย้ายทีละหน้า (หน้าไหนมี stat card ก็ย้ายเป็นส่วนหนึ่งของการทำหน้านั้นให้ clean ไม่ใช่ commit แยก) เมื่อย้ายครบ 5 ไฟล์แล้วให้ลบ CSS ของ `.stat-card`/`.stat-card-*` (`style.css`) ทิ้งเป็นขั้นตอนสุดท้าย — ห้ามลบ CSS เดิมก่อนไฟล์ล่าสุดที่ใช้มันย้ายเสร็จ
+  - **Gap พบระหว่างรอบ 3 (Payroll Detail pilot, item 3a, 2026-09-13) — ยังไม่แก้ partial, บันทึกไว้ก่อน**:
+    `stat-card.php` แทนที่เนื้อหาการ์ดทั้งใบจาก `$stat` array ต่อการ render ครั้งเดียว แต่ Payroll Detail
+    ต้องอัปเดตค่าเดี่ยว **สด** ทีละค่า (`updateSummaryCardsFromTable()`, ทุกครั้งตารางพนักงาน redraw
+    ไม่ใช่ reload ทั้งหน้า) ผ่าน `.text()` บน id คงที่ — partial ปัจจุบันไม่มีทางรองรับกรณีนี้โดยไม่ re-render
+    การ์ดทั้งใบ รอบนี้แก้โดย**เขียนมือด้วย class เดียวกับที่ partial output ตรงๆ** (ไม่ได้ extend partial)
+    — **แผนสำหรับรอบ 4**: ถ้าเจอหน้าที่สอง (นอกจาก Payroll Detail) ที่ต้องการ live-update ค่าเดี่ยวแบบนี้
+    ให้ `stat-card.php`/`$stat` รับ `value_id`/`sub_id` (optional, string) เพิ่ม — เมื่อระบุ ให้ partial
+    ใส่ `id="<?=$value_id?>"` บน `.stat-value`/`.stat-sub` แทนที่จะปล่อยไม่มี id เลย caller เดิมที่ไม่ส่งมา
+    ไม่กระทบอะไร (id ไม่ใช่ required field) — **ยังไม่ทำตอนนี้เพราะมีแค่ 1 หน้าที่ต้องการ** ไม่อยากเดา
+    shape ล่วงหน้าจากตัวอย่างเดียว
 - Dashboard: ไม่มี welcome card, ไม่มีกราฟที่มีข้อมูลแท่งเดียว — เนื้อหาต้องเป็น "งานที่ต้องทำ" ก่อน (รออนุมัติ/อนุมัติแล้วรอทำต่อ/ค้างนาน) ตามด้วยตัวเลขสรุป
 - ปุ่ม `?` ลอย: เอาออก — ความช่วยเหลือให้อยู่ใน helper text หรือลิงก์ "วิธีใช้" ใน page header เท่านั้น
 - Max content width ไม่จำกัด (ตารางกว้าง) แต่ **padding ซ้าย/ขวาของ content เท่ากันทุกหน้า = `--sp-5`** และตาราง/การ์ด **เต็มความกว้าง content เสมอ** ไม่มี padding ซ่อนในตาราง (ปัญหา "ตารางไม่เต็มขอบ")
@@ -145,12 +232,19 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 |---|---|---|
 | ส้ม `--c-primary` | ปุ่มหลัก (1/หน้า, 1/modal), tab ที่เลือก (เส้นใต้), step ปัจจุบันใน stepper, focus ring, **checkbox/radio/switch ที่ถูกเลือก/เปิด (§9 — ข้อยกเว้นเดียวกับ tab ที่เลือก, เพิ่มรอบ 2 item (2))**, **รายการที่ยังไม่อ่าน/ต้องสนใจ ใช้ `--c-primary-soft` เป็นพื้น + `--c-primary` ที่ไอคอนได้ (ความหมายเดียวกับ step ปัจจุบัน — "นี่คือสิ่งที่ต้องดู/ตัดสินใจตอนนี้" ไม่ใช่ตกแต่ง — เพิ่ม 2026-09-13, notification item ข้อ 6d)** | ไอคอน (ปกติ — ยกเว้นข้อบน), ตัวเลข, badge, ขอบการ์ด, หัวตาราง, ลิงก์ในเนื้อหา |
 | เทา (neutral) | ทุกอย่างที่เหลือ: ปุ่มรอง, ไอคอน, badge ข้อมูล, เส้น, พื้น | — |
-| แดง | สถานะ "ผิด/ถูกปฏิเสธ/เกินกำหนด/ต้องแก้", ปุ่มยืนยันลบใน confirm dialog เท่านั้น | ปุ่ม PDF, ปุ่มลบในแถว (ใช้เทา, ไปแดงตอน confirm), ตัวเลขติดลบ (ใช้เครื่องหมายลบ + `--c-text`) |
+| แดง | สถานะ "ผิด/ถูกปฏิเสธ/เกินกำหนด/ต้องแก้", ปุ่มยืนยันลบใน confirm dialog เท่านั้น, **ตัวเลขรายการหัก (`.money-deduction`, §8, ข้อยกเว้นด้านล่าง)** | ปุ่ม PDF, ปุ่มลบในแถว (ใช้เทา, ไปแดงตอน confirm), ตัวเลขติดลบทั่วไป (ใช้เครื่องหมายลบ + `--c-text`) |
 | เหลือง | สถานะ "รอ/ต้องตรวจ/ยังไม่ครบ" | แจ้งเตือนทั่วไป, helper text |
-| เขียว | สถานะ "อนุมัติแล้ว/จ่ายแล้ว/พร้อม" | ปุ่ม Excel, ปุ่มบันทึก, ไอคอน sync, ตัวเลขบวก |
+| เขียว | สถานะ "อนุมัติแล้ว/จ่ายแล้ว/พร้อม", **ตัวเลขรายได้/รายรับ (`.money-gross`, §8, ข้อยกเว้นด้านล่าง)** | ปุ่ม Excel, ปุ่มบันทึก, ไอคอน sync, ตัวเลขบวกทั่วไป |
 | ฟ้า | **ไม่ใช้เลย** | ปุ่ม sync, badge info, ลิงก์ (ลิงก์ = `--c-text` + underline on hover) |
 
 ทดสอบง่ายๆ: ถ้าเปลี่ยนหน้าให้เป็นขาวดำ ผู้ใช้ยังรู้ไหมว่าต้องกดอะไร ถ้ารู้ = ถูก สีที่เหลือคือของแถม
+
+**ข้อยกเว้นของกฎ "การ์ด/กล่องห้ามมีสี tone บนขอบ/พื้นตัวเอง" (เพิ่ม 2026-09-13)** — 2 กรณีนี้เท่านั้นที่ให้สี
+tone ปรากฏบนตัว container ได้ ไม่ใช่แค่ badge/ไอคอน/ตัวเลขเดี่ยว เพราะเป็น "หน้าที่ทั้งหมด" ของ component นั้นเอง
+ไม่ใช่การตกแต่งเพิ่ม:
+1. **Callout (§15)** — เส้นซ้าย 3px ของ `.callout` มีสีตาม `tone` ได้ (พื้น/ตัวหนังสือยังคงที่ `--c-bg-subtle`/
+   `--c-text` เสมอไม่ว่า tone ไหน — สีอยู่แค่เส้นซ้ายเส้นเดียว)
+2. **ตัวเลขเงิน (§8)** — `.money-gross`/`.money-deduction` (สีตัวเลขเอง ไม่ใช่การ์ด/พื้นหลัง/label ที่ล้อมมัน)
 
 ---
 
@@ -180,6 +274,39 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
   (ข้อความเดิมด้านบน — เก็บไว้ให้เห็นประวัติการกลับมติ ไม่ใช่กฎที่ใช้จริงอีกต่อไป)
 - Save/Cancel วางขวาล่างเสมอ ลำดับ `[ยกเลิก] [บันทึก]` (secondary ซ้าย, primary ขวาสุด) ทั้งใน modal footer และฟอร์มเต็มหน้า — `payroll-configuration` ต้องเป็นแบบนี้ด้วย
 - ปุ่มระหว่างโหลด: `disabled` + spinner ในปุ่มเดิม ไม่เปลี่ยนคำ
+- **ข้อยกเว้น: Decision set (ใหม่, 2026-09-13, page-header.php's `$decision_actions`; REVISED หลายรอบ
+  same-day — พื้นตันทั้ง 3 ปุ่ม, warning ได้ token สีพื้นของตัวเอง, แล้วปรับสี warning อีกรอบให้ตัวหนังสือ
+  ขาวได้ทั้ง 3 ปุ่ม)** — ปุ่มที่**ตั้งสถานะ**ของ record นั้นโดยตรง (ไม่ใช่ "บันทึก/ยกเลิก" ทั่วไป) ใน
+  **ชุดตัดสินใจที่จำกัดตายตัว**เท่านั้น — อนุญาตเฉพาะชุด **อนุมัติ/ขอข้อมูลเพิ่มเติม/ปฏิเสธ** (และชุดที่มี
+  ความหมายแบบเดียวกันจริงๆ ในอนาคต ไม่ใช่ทุกปุ่มที่ "อยากได้สี") — **ทั้ง 3 ปุ่มเป็นพื้นตัน ตัวหนา 600 ตัวหนังสือ
+  ขาวเหมือนกันหมด**: อนุมัติ = `.btn-decision-success` (พื้น `--c-success-fill`), ขอข้อมูลเพิ่มเติม =
+  `.btn-decision-warning` (พื้น `--c-warning-fill`), ปฏิเสธ = `.btn-decision-danger` (พื้น
+  `--c-danger-fill`) — `-fill` (tokens.css) สำหรับ success/danger เป็นแค่ alias ของ `--c-success`/
+  `--c-danger` เดิม (ค่าเท่ากันเป๊ะ ตั้งชื่อให้สม่ำเสมอเฉยๆ) **แต่ warning ไม่ใช่** — `--c-warning-fill`
+  (`#D97706` light / `#C26A05` dark) เป็นสีใหม่จริง เพราะ `--c-warning` เดิม (`#B54708`/`#F5B14C`) ถูก
+  tune ไว้สำหรับตัวหนังสือ/ขอบ/badge ไม่ใช่พื้นถม — `--c-warning` ตัวเดิมยังใช้กับตัวหนังสือ/ขอบ/badge ต่อไป
+  ไม่เปลี่ยน (เช่น stepper's `.status-stepper-tone-warning`)
+  - **ตัวหนา 600 (`font-weight:600` บน `.btn-decision-*` ทุกตัว) เป็นเงื่อนไขที่ต้องมีจริงๆ ไม่ใช่แค่สไตล์**
+    — WCAG อนุญาตเกณฑ์ contrast ต่ำกว่าปกติ (3:1 แทน 4.5:1) สำหรับตัวหนังสือ "ตัวหนา/ตัวใหญ่" เท่านั้น ถ้าไม่
+    ใส่ตัวหนาจริง เกณฑ์ผ่อนนี้จะใช้อ้างอิงไม่ได้
+  - ตัวหนังสือ/ไอคอนใช้ `--c-{tone}-on-fill` (tokens.css, **ไม่ใช่ `#fff` ตรงๆ**) — **ตอนนี้เป็น `#fff` ทั้ง
+    3 tone ทั้ง 2 theme แล้ว ยกเว้น 1 กรณี**: success/danger ใน **dark mode** ยังเป็น `#1F2328` (ดำ) เหมือน
+    เดิม เพราะพื้น dark-mode ของ 2 ตัวนั้น (`--c-success`/`--c-danger` เดิม ไม่ได้ปรับสี) ตัวหนังสือขาววัดได้
+    แค่ 1.74:1/2.79:1 — **ไม่ผ่านแม้เกณฑ์ตัวหนา 3:1 ที่ผ่อนแล้ว** (เช็คจริง ไม่ได้เดา) จึง**ไม่ได้ทำตามคำสั่ง
+    "ทั้ง 3 เหมือนกัน" ให้ครบ 100%** สำหรับ 2 ตัวนี้ในธีมมืดโดยเฉพาะ — flag ไว้ตรงๆ: ถ้าต้องการขาวจริงทั้ง 3
+    ทุก theme ต้องปรับ `--c-success`/`--c-danger` เองให้เข้มขึ้นแบบเดียวกับที่ทำกับ warning ไปแล้ว ไม่ใช่แค่
+    เปลี่ยนสีตัวหนังสือเฉยๆ (ยังไม่ทำ รอคำยืนยัน)
+  - **warning**: `--c-warning-fill` เปลี่ยนจาก `#F5B400`/`#E0A400` (รอบแรก) เป็น `#D97706`/`#C26A05` (เข้ม
+    ขึ้น) โดยตั้งใจ เพื่อให้ตัวหนังสือขาว**กลับมาใช้ได้** — วัด contrast จริง: ขาวบน `#D97706` = 3.19:1
+    (light), ขาวบน `#C26A05` = 3.92:1 (dark) — ผ่านเกณฑ์ตัวหนา 3:1 ทั้งคู่ (ไม่ใช่เกณฑ์ปกติ 4.5:1)
+  - hover = `--c-{tone}-hover` (success/danger) / `--c-warning-fill-hover` (tokens.css, เข้มขึ้น 8% ต่อ
+    channel คำนวณจากสีฐานของแต่ละ theme เอง ไม่ใช่ `filter:brightness()` runtime)
+  - **สังเกตว่า "ปฏิเสธ" ยังไม่ใช่ Danger tier ด้านบน** (`.btn-danger` ตัวนั้นสงวนไว้เฉพาะปุ่มยืนยันใน
+    SweetAlert confirm ของการลบ/ยกเลิกที่ย้อนไม่ได้ — คนละ class คนละบริบทกัน แม้จะพื้นตันเหมือนกันตอนนี้ก็ตาม)
+    `showConfirm()` (§10) รับ `tone` แบบเดียวกันสำหรับ confirm dialog/modal ที่ตามหลังปุ่มกลุ่มนี้ ให้สีตรงกัน
+    ตลอดจากปุ่ม trigger ถึงปุ่มยืนยันจริง — ไอคอนไม่เปลี่ยน (glyph/ตำแหน่งเดิม แค่สีตามตัวหนังสือที่เปลี่ยนไป
+    โดยอัตโนมัติ เพราะไม่มี CSS override สีไอคอนแยก) — **ปุ่มอื่นทั้งหมดนอกชุดนี้ยังตามลำดับชั้น 4 ระดับเดิม
+    ข้างบนไม่เปลี่ยน** ข้อยกเว้นนี้ไม่ใช่ใบอนุญาตให้ปุ่มไหนก็ได้มีสีของตัวเอง
 
 ---
 
@@ -318,13 +445,92 @@ approved → ...) ไม่ใช่สลับหน้า)
   `$current`/`current` เท่านั้น ไม่มี action button/วันที่/ไอคอน branch ต่อขั้นเหมือนของจริง —
   `payroll/detail.js`'s `renderProcessTimeline()`/`payroll/index.js`'s mini-timeline **ยังไม่ถูกย้ายมาใช้
   partial นี้รอบนี้** (ห้ามแตะหน้าจริง §13) เป็นการตัดสินใจของรอบ 4 ถ้าจะทำ
-- เสร็จแล้ว: วงกลมเทา (fill `--c-border-strong`) + ✓ (ไอคอน `--c-text-muted`), ตัวหนังสือ `--c-text-muted`;
-  ปัจจุบัน: วงกลมตัน `--c-primary` (ไม่มีไอคอน), ตัวหนังสือ `--c-text` หนา; ถัดไป: วงกลมขอบ
-  `--c-border-strong` ว่าง (ไม่มี fill/ไอคอน)
-- **ไม่มีสีพาสเทล 5 สี ไม่มีกล่องต่อขั้น** — เส้นเชื่อมสีเดียว `--c-border` เสมอ ไม่เปลี่ยนสีตามขั้นที่เสร็จ/ไม่เสร็จ
+- **แยก 3 สถานะชัด (แก้ 2026-09-13, item C — ทับข้อความเดิมด้านบนที่บอกว่า "เสร็จแล้ว = วงกลมเทา")**:
+  - **เสร็จแล้ว**: วงกลม `--c-success-soft` (fill) + ✓ สี `--c-success`, ตัวหนังสือ **`--c-text` เต็มสี** (ไม่จาง
+    แล้ว — ต่างจาก "ยังมาไม่ถึง" อย่างชัดเจน ไม่ใช่โทนเทาเดียวกันเหมือนก่อนแก้), เส้นเชื่อมของ**ช่วงที่ตามหลัง
+    ขั้นเสร็จ**เปลี่ยนเป็น `--c-success` (เดิมบอกว่า "เส้นเชื่อมสีเดียว `--c-border` เสมอ" — **แก้แล้ว**: ทุกช่วง
+    ก่อนขั้นปัจจุบันเป็นเขียว ช่วงตั้งแต่ปัจจุบันเป็นต้นไปยังเทาเหมือนเดิม)
+  - **ปัจจุบัน**: วงกลมตัน `--c-primary` **+ ไอคอนขาว 12px ของขั้นนั้นโดยเฉพาะ** (แก้ ambiguity เดิมแล้ว, item C
+    follow-up 2026-09-13 — เดิมไม่มีไอคอนเพราะไม่รู้ glyph ที่แน่นอน ตอนนี้มี mapping ชัดเจนแล้ว: `created`/draft
+    = `fa-calculator`, `submitted`/pending_approval = `fa-paper-plane`, `pending_approval`/approved =
+    `fa-list-check`, `paid` = `fa-money-bill`, `locked` = `fa-lock`; branch state ใช้ไอคอนของ tone นั้น:
+    `need_info` = `fa-circle-info`, `rejected` = `fa-xmark` — **mapping อยู่ที่เดียว**: `app.js`'s
+    `RUN_LIFECYCLE_STEPS`/`RUN_LIFECYCLE_BRANCH_INFO` (ตัวเดียวกับที่ `payroll/index.js`'s mini-timeline
+    ใช้อยู่แล้ว) **ไม่ hardcode ใน `status-stepper.php`/`renderStatusStepper()` เลย** — partial แค่รับ
+    `icon` (bare glyph class ไม่มี `fa-solid` prefix, partial เติมให้เอง) ต่อขั้น render เฉพาะขั้นปัจจุบัน
+    เท่านั้น (ขั้นเสร็จยัง ✓ คงที่, ขั้นถัดไปว่างเหมือนเดิม ไม่เปลี่ยน) — **สังเกต**: ชื่อ key ที่ผู้ใช้ระบุ
+    (`created`/`submitted`/`pending_approval`) ไม่ตรงกับ `RUN_LIFECYCLE_STEPS[i].key` จริงเป๊ะ (key จริงคือ
+    `draft`/`pending_approval`/`approved`/`paid`/`locked`) — ตีความตามลำดับตำแหน่ง (5 ค่าตรงกับ 5 ขั้นตาม
+    ลำดับ) ไม่ใช่ตาม key name เป๊ะๆ ระบุไว้ตรงๆ ไม่เดาเงียบๆ — **ผลข้างเคียงที่ต้องรู้**: `RUN_LIFECYCLE_STEPS`/
+    `RUN_LIFECYCLE_BRANCH_INFO` เป็น shared function ข้ามหน้า (ใช้ทั้ง Payroll Detail's stepper และ Payroll
+    Process List's mini-timeline) แก้ตรงนี้จึงเปลี่ยนไอคอนบน**ทั้ง 2 หน้า** ไม่ใช่แค่หน้านี้ — ตามที่สั่งให้ไป
+    แก้ที่เดียว ("ไม่ hardcode ใน partial") จึงเป็นผลที่ตั้งใจ ไม่ใช่ side effect ที่ไม่รู้ตัว, ตัวหนังสือ
+    `--c-text` หนา **600**
+  - **ยังมาไม่ถึง**: วงกลมขอบ `--c-border-strong` ว่าง (ไม่มี fill/ไอคอน, ไม่เปลี่ยน), ตัวหนังสือ
+    **`--c-text-faint`** (จางกว่าขั้นเสร็จ — เดิมใช้ `--c-text-muted` เดียวกับขั้นเสร็จ ทำให้ 2 สถานะแยกไม่ออก
+    ที่ตัวหนังสือ, แก้แล้ว), **ไม่แสดงวันที่**
+  - **รอบจบแล้ว (locked) — ขั้นสุดท้าย = `final:true`**: วงกลมตัน `--c-success` (ไม่ใช่ soft แล้ว) + ✓ สีขาว,
+    ทุกขั้นก่อนหน้าเป็น "เสร็จแล้ว" ตามปกติ — `final` เป็น bool ต่อขั้น (ผลเฉพาะขั้นที่อยู่ในสถานะเสร็จแล้วเท่านั้น)
+    caller เป็นคนตัดสินว่าเมื่อไหร่ "จบจริง" (เช่น `run.state === 'locked'`) component ไม่เดาเองจาก `current`
+    ล้วนๆ — ดู `payroll/detail.js`'s `renderProcessTimeline()`
+  - **branch state (rejected/need_info)**: ยังใช้ `tone` danger/warning ตามที่ทำไว้ก่อนหน้านี้ (ดู bullet
+    ด้านล่าง ไม่เปลี่ยน)
+- **ขนาด/สัดส่วน (item A.2, 2026-09-13, แก้ตำแหน่งอีกครั้งที่ item 4 ของ follow-up เดียวกัน)**: ไม่ยืดเต็ม
+  ความกว้าง content — `max-width:960px` **จัดกึ่งกลาง** (`margin:0 auto`, ใช้กับทุกหน้าที่มี stepper — ของเดิม
+  ตอน A.2 เคยตัดสินให้ชิดซ้าย align กับ H1 ด้านบน แต่**แก้เป็นกึ่งกลางแทนในรอบ item 4**) ระยะระหว่างขั้นเท่ากัน
+  ทุกช่วง (Bootstrap flex equal-width columns เดิมทำให้อยู่แล้ว) วงกลม 28px, label `--fs-sm`, วันที่ `--fs-xs`,
+  ความสูงรวมไม่เกิน 72px (28px วงกลม + `--sp-2` ระยะห่าง + label 1 บรรทัด + วันที่ 1 บรรทัด — ค่าที่มีอยู่แล้ว
+  พอดี ไม่ต้องแก้)
 - Demo จริงใน `docs/design/components.php` ("Stepper (ข้อ 6)"): 5 ขั้นจริงของรอบเงินเดือน (สร้างรายการ →
-  ส่งอนุมัติ → อนุมัติ → จ่ายเงิน → ปิดรอบ) ที่ 3 สถานะจริง (`draft`/`approved`/`paid`) — `current` คำนวณตาม
-  กฎเดียวกับ `runLifecycleSteps()` จริง (`currentIndex = reachedIdx + 1`)
+  ส่งอนุมัติ → อนุมัติ → จ่ายเงิน → ปิดรอบ) ที่ 4 กรณีจริง (`draft`/`approved`/`locked` ใหม่ — เพื่อโชว์
+  `final`/`rejected`) — `current` คำนวณตามกฎเดียวกับ `runLifecycleSteps()` จริง (`currentIndex = reachedIdx
+  + 1`)
+- **2026-09-13, Round 3 item 3a — ย้ายหน้าจริงมาใช้ partial นี้แล้วจริงๆ (Payroll Detail, `payroll/
+  detail.js`'s `renderProcessTimeline()`)**, ขยาย component 1 จุด (รายงานตามที่สั่ง ไม่ใช่แก้เงียบๆ):
+  - **`$steps`/`steps` รับ 2 รูปแบบ**: string ธรรมดา (เดิม ยังใช้ได้ 100%) หรือ
+    `{label, date}` (ใหม่) — เมื่อมี `date` render เป็นบรรทัดใต้ label `--fs-xs` `--c-text-faint`
+    **ไม่มีไอคอนนาฬิกา** (ของจริงเดิมมี `<i class="fa-regular fa-clock">` — ตัดออกตามที่สั่งชัดเจน) `date`
+    เป็น string ที่ caller format มาแล้ว (partial ไม่ parse/format วันที่เอง)
+  - **branch state (rejected/need_info/cancelled) ไม่มีไอคอนแยกของตัวเองใน component นี้** (ยังคงเป็น
+    วงกลมเปล่าธรรมดา ไม่มี glyph ต่าง) แต่ **สีวงกลมเปลี่ยนได้แล้ว** (2026-09-13, same-day follow-up,
+    explicit instruction: "status-stepper รับ tone ของขั้นปัจจุบันจาก statusMapEntry(run_state)") — ดู
+    bullet ถัดไป — label ยังใช้ label ของ branch นั้นแทน (เช่น "ไม่อนุมัติ / ส่งกลับแก้ไข" แทน "อนุมัติ")
+    เหมือนเดิม
+  - **`$steps`/`steps` แต่ละขั้นรับ `tone` เพิ่มได้ (`{label, date, tone}`)** — มีผลเฉพาะขั้นที่เป็น
+    "ปัจจุบัน" เท่านั้น (`tone` บนขั้นเสร็จ/ถัดไปถูกเพิกเฉย) เปลี่ยนสีวงกลมจาก `--c-primary` (ส้ม) เป็นสีของ
+    tone นั้น (`danger`/`warning`/`success`/`neutral` — คำศัพท์เดียวกับ `status_map.php`, ข้อ 5) — caller
+    ต้อง**ดึงเองผ่าน `statusMapEntry()`/`getStatusMapEntry(state, 'run_state')` เสมอ ห้าม hardcode สีตรงๆ**
+    (payroll/detail.js's `renderProcessTimeline()` ใช้ `step.cls` ของ `runLifecycleSteps()` เป็น enum
+    ตรงๆ ได้เลยเพราะ branch step's `cls` ตั้งใจให้ตรงกับ `run_state` enum อยู่แล้ว) — สถานะ flow ปกติ
+    (draft/pending_approval/approved/paid/locked) ไม่ส่ง `tone` เลย จึงยังเป็นส้มเหมือนเดิมเสมอ ไม่ใช่ทุก
+    ขั้นปัจจุบันจะถูกดึง tone อัตโนมัติ (`statusMapEntry('current', ...)` หาไม่เจอ คืน null ตามปกติ)
+  - `.process-timeline`/`.tl-*`/`.process-timeline-wrap` CSS **ไม่ได้ลบทิ้ง** — ยังใช้อยู่จริงที่
+    `payroll/index.js`'s mini-timeline และ Approval Timeline modal (`layout/modals.php`) — แค่
+    Payroll Detail เท่านั้นที่เลิกใช้ (ตัวอย่าง "ห้ามลบ shared CSS จนกว่าทุกจุดที่ใช้จะย้ายครบ" เดียวกับ
+    `.stat-card` migration ด้านบน)
+  - `.process-next-step` (ข้อความ "This run is still a draft…") ก็เจอปัญหาเดียวกัน (พื้นสี/ขอบซ้ายสีตาม
+    tone) — แก้ครั้งแรกเหลือแค่ตัวหนังสือธรรมดา **ตอนนี้ (item B, 2026-09-13) ถอดออกทั้งคลาสแล้ว**
+    เปลี่ยนไปใช้ Callout component แทน (§15 ใหม่) เพราะ "ข้อความ 1 บรรทัดใต้ stepper สีตามความหมาย" กลาย
+    เป็น shape ที่ reusable จริง ไม่ใช่แค่ของหน้านี้หน้าเดียว
+  - **`final` (bool ต่อขั้น, item C, 2026-09-13)** — ดูสเปกเต็มใน bullet "แยก 3 สถานะชัด" ด้านบน; มีผลเฉพาะ
+    ขั้นที่อยู่ในสถานะ "เสร็จแล้ว" เท่านั้น (บน "ปัจจุบัน"/"ยังมาไม่ถึง" ไม่มีผล — component ยังไม่มี glyph
+    พิเศษให้ 2 สถานะนั้น)
+  - **`live` (bool ต่อขั้น, ใหม่ 2026-09-13, item 3a "เก็บตก" item 2) — pulse เบาๆ ที่ขั้นปัจจุบัน** — มีผล
+    เฉพาะขั้น "ปัจจุบัน" เท่านั้น (เหมือน `tone` — บนขั้นเสร็จ/ยังมาไม่ถึง ไม่มีผล) render วงแหวน `--c-primary`
+    ขยายออกจากวงกลม (opacity `.35`→`0` scale `1`→`1.9` ทุก `2.4s` ease-out, keyframe เดียวใน style.css,
+    class `.stepper-current-live`) **วงกลมเองไม่กะพริบ** (มีแค่วงแหวนที่เคลื่อนไหว) `@media
+    (prefers-reduced-motion: reduce)` ปิด animation ให้อัตโนมัติ — **เงื่อนไขที่ caller ต้องตัดสินเอง (ไม่ใช่
+    component เดาสถานะ)**: pulse เฉพาะเมื่อ **ถึงตาผู้ใช้คนนี้จริงๆ** คือ `run_state` นั้นมี
+    `$decision_actions`/`$primary_action` ให้ผู้ใช้ปัจจุบันกด (ตรวจจาก `computeRunHeaderActions(run)` เดียว
+    กับที่ page-header.php's เองใช้ ไม่ derive ใหม่แยก) **และ** ขั้นนั้นไม่มี `tone` override เลย (branch
+    state เช่น rejected/need_info นิ่งอยู่แล้ว ไม่ต้อง pulse ซ้ำ แม้ผู้ใช้บาง role จะยังกดอะไรได้อยู่ก็ตาม) —
+    payroll/detail.js's `renderProcessTimeline()` เป็นตัวอย่างจริงที่ตัดสินเงื่อนไขนี้
+  - **`icon` (string ต่อขั้น, ใหม่ 2026-09-13, item C ambiguity resolution) — ไอคอนขาว 12px ของขั้นปัจจุบัน**
+    — มีผลเฉพาะขั้น "ปัจจุบัน" เท่านั้น (เหมือน `tone`/`live`) เป็น bare Font Awesome class ไม่มี `fa-solid`
+    prefix (partial/JS twin เติมให้เอง) — **partial ไม่มี mapping ขั้น→ไอคอนของตัวเองเลย** caller ต้องดึงจาก
+    `runLifecycleSteps()`'s ผลลัพธ์ (`step.icon`) ซึ่ง sourced จาก `app.js`'s `RUN_LIFECYCLE_STEPS`/
+    `RUN_LIFECYCLE_BRANCH_INFO` — **ที่เดียวที่มี mapping จริง** ดูสเปกเต็มใน "แยก 3 สถานะชัด" bullet ด้านบน
+    (รายชื่อไอคอนต่อขั้น + ผลข้างเคียงที่กระทบ mini-timeline ของ Payroll Process List ด้วย)
 
 **Timeline** (feed กิจกรรม/audit log — ยาวเท่าไหร่ก็ได้, ไม่ใช่ milestone คงที่แบบ Stepper) — **เสร็จแล้ว
 รอบ 2 item (3)/6b**
@@ -412,6 +618,37 @@ approved → ...) ไม่ใช่สลับหน้า)
      แทน ให้ใช้ได้ทั้งกรณี 2 ลูก (ปกติ) และ 3 ลูก (ยุบ, มี chips แทรกกลาง) โดยปุ่ม toggle ชิดขวาเสมอ —
      ปุ่ม "ล้างตัวกรอง" หายไปพร้อมกับ `.filter-bar-footer` ตอนยุบ (ตามที่สั่ง "เหลือหัว + chips" ไม่ได้
      พูดถึงปุ่มล้าง) กลับมาตอนกางเหมือนเดิม
+
+**Dropdown ของปุ่ม** (⋮/ส่งออก/action menu ทั่วไป — `.dropdown-menu:not(.notif-dropdown)` — REVISED
+2026-09-13, item 3a "เก็บตก" item 1, แล้วปรับละเอียดอีกรอบวันเดียวกัน)
+- **มีขอบจริง**: ขอบ 1px `--c-border` + พื้น `--c-bg` + เงา `--shadow-soft` — ทำผ่าน Bootstrap 5's เอง
+  per-component CSS vars (`--bs-dropdown-border-color`/`-width`/`-bg`/`-box-shadow`) scope ที่
+  `.dropdown-menu` เท่านั้น **ไม่แตะ root `--bs-border-radius`/`--bs-box-shadow`** (นั่นยังเป็น
+  `--radius`/`--shadow-modal` ให้ component อื่น เช่น modal จริงที่อ่าน var เดียวกัน) — **ย้อนกลับการ
+  ตัดสินใจก่อนหน้านี้ในรอบเดียวกัน** ที่ตั้ง `--bs-dropdown-border-color: transparent` ไว้ทั่วระบบ (ขอบใส
+  หมดทุก dropdown)
+- **มุมโค้ง `--radius` (6px) ไม่ใช่ `--radius-lg`** — **`--radius-lg` สงวนไว้เฉพาะ surface ที่ "ลอยเหนือ
+  หน้า" จริงๆ เท่านั้น: notification dropdown / Swal2 toast / popover ในอนาคต** — dropdown ของปุ่มทั่วไป
+  เป็น control ที่เล็ก/แน่นกว่านั้น ใช้มุมโค้งปกติ padding รอบนอกแค่ `--sp-1` (padding จริงที่เห็นมาจาก
+  แต่ละรายการเองด้านล่าง ไม่ใช่ขอบเมนู)
+- **แต่ละรายการ (`.dropdown-item`)**: padding `--sp-2 --sp-3`, มุมโค้งของตัวเอง `4px` (ค่าตายตัว ไม่ใช่
+  token — เล็กกว่า `--radius` ปกติโดยตั้งใจ เพราะเป็น element ย่อยข้างในเมนูที่มีมุมโค้งอยู่แล้ว), hover/focus
+  พื้น `--c-bg-hover` (คนละสีกับ `.active`/`:active` ที่ใช้ `--c-bg-subtle` เดิม — 2 สถานะคนละความหมาย)
+- **ไอคอนกว้างคงที่ 16px**: ไอคอนแต่ละรายการ (child ตัวแรกของ `.dropdown-item`) กว้าง 16px + จัดกลาง
+  ในกรอบนั้น เพื่อให้**ข้อความเริ่มที่ตำแหน่งเดียวกันทุกแถว** ไม่ว่า glyph ไหน (ไอคอนแต่ละตัวใน Font Awesome
+  กว้างไม่เท่ากันที่ font-size เดียวกัน)
+- **`min-width: 180px`**
+- **ห่างจากปุ่ม trigger `margin-top: var(--sp-1)` (4px)** — **ข้อจำกัดที่ต้องรู้ (ตรวจแล้ว ไม่ได้เดา)**:
+  Bootstrap's เอง Popper positioning (`dropdown.js`'s default offset modifier `[0, 2]`, hardcode ใน JS
+  ไม่ได้อ่านจาก CSS variable เลย) วางเมนูห่างจากปุ่มด้วย inline `transform` ของตัวเองอยู่แล้ว (~2px) —
+  `margin-top` นี้**บวกเพิ่ม**บนนั้น (margin ไม่ถูก reset โดย positioning แบบ absolute) ไม่ใช่แทนที่ — ระยะ
+  ที่เห็นจริงจะใกล้เคียง ~6px ไม่ใช่ 4px เป๊ะๆ ถ้าต้องการ 4px เป๊ะจริงต้อง override Popper's เอง offset ผ่าน
+  `data-bs-offset="0,0"` ที่ทุกปุ่ม trigger ด้วย (ยังไม่ทำ เพราะคำสั่งระบุกลไก "margin-top" ตรงๆ)
+- **ข้อยกเว้นเดียว: `.notif-dropdown`** — ไม่มีขอบ (`border: none` ชัดเจน) และไม่ถูกกระทบจาก bullet ไหน
+  ข้างบนเลย (`:not(.notif-dropdown)` กันไว้ทุก rule ใหม่) พื้น/มุมโค้ง/เงา/padding ของตัวเองยังคงเดิม
+  (`--c-bg-subtle`/`--radius-lg`/`--shadow-soft`/`--sp-2` — ตั้งเป็น plain CSS property โดยตรงมาก่อนหน้า
+  นี้แล้ว ไม่ผ่าน Bootstrap var เลย) — เหตุผลเดิม (§14/notification card redesign): เป็น "surface ที่ลอย
+  เหนือหน้า" ที่ใช้เงาบอกความลอยพออยู่แล้ว ไม่ต้องมีขอบซ้อน
 
 **Notification** (ตัดสินใจแล้วรอบ 2 item 6d — **UI เท่านั้น ยังไม่ต่อ backend, ไม่ polling**)
 - **มีกลไกจริงอยู่แล้ว** (`layout/header.php`'s `.nav-notif-dropdown`, `public/js/notifications.js`,
@@ -776,7 +1013,25 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
     ตาม §7's ตาราง — `.col-money` cell มี `.num` ติดมาด้วยเสมอ (`DT_MARKER_CLASSES`'s เอง) จึงไม่ต้องมี
     selector แยก
 - ตัวเลขในหน้า/สลิป/stat ทั้งหมด `.num` (tabular — ไม่บังคับชิดขวานอกตาราง ดูข้อข้างบน)
-- ไม่ใช้สีกับตัวเลข (บวก/ลบ/มากน้อย) — ใช้เครื่องหมายและตำแหน่งคอลัมน์แทน
+- ไม่ใช้สีกับตัวเลขทั่วไป (บวก/ลบ/มากน้อย) — ใช้เครื่องหมายและตำแหน่งคอลัมน์แทน **ยกเว้นตัวเลขประเภทเงินจริง
+  ที่มีความหมายทางบัญชี ดูระบบสีเงินด้านล่าง (ตัดสินแล้ว item D, 2026-09-13)**
+
+**ระบบสีตัวเลขเงิน (§8, ตัดสินแล้ว 2026-09-13, item D)** — ระบบเดียวทั้งแอป ไม่แยกเฉด ไม่แยกหน้า:
+- **รายได้/รายรับ** = `--c-success` (เขียว), **รายหัก** = `--c-danger` (แดง), **สุทธิ** = `--c-text` **ตัวหนา
+  600** (ไม่มีสี ไม่ใช่ฟ้า — ยอดสุทธิไม่ใช่ตัวเลข "ดี/ไม่ดี" แต่เป็นยอดสรุปที่ต้องเด่นด้วยน้ำหนักตัวอักษรแทน)
+- **ใช้กับ "ตัวเลขประเภทเงิน" เท่านั้น** — label/ไอคอน/การ์ด/พื้นหลังรอบตัวเลขนั้น**ไม่**ตามสีไปด้วย (ตัวเลขตัว
+  เดียวเปลี่ยนสี ไม่ใช่ทั้ง component)
+- **เขียว/แดงเป็น token เดียวกับที่ใช้บอกสถานะ (§3) ไม่แยกเฉดใหม่** — "ตัวเลขนี้เป็นรายการหัก" กับ "การกระทำนี้
+  ล้มเหลว" ให้อ่านเป็นภาษาสีเดียวกัน ไม่ใช่แดง 2 เฉดคนละความหมาย
+- **ทำผ่าน class กลาง 3 ตัวเท่านั้น**: `.money-gross` / `.money-deduction` / `.money-net` (ใส่คู่กับ `.num`
+  เสมอ ไม่แทนที่) — นิยามใน `tokens`/`style.css` ใกล้ `.num` — **ห้ามใช้ `text-success`/`text-danger` ตรงๆ
+  บนตัวเลขเงินอีกต่อไป**; §12's lint rule 3 ขยายเพิ่ม: `text-danger` ที่อยู่ในธาตุเดียวกับ `.num` เป็น hit
+  (แต่ `text-danger` เดี่ยวๆ ไม่มี `.num` ยังใช้ได้ปกติ เช่น dropdown item ทำลาย) — `text-success` ถูกแบนทุก
+  ที่อยู่แล้วจากกฎเดิม ไม่ต้องเพิ่มกฎแยก
+- **ที่ใช้แล้วรอบนี้ (3a)**: stat card 3 ใบของ Payroll Detail (รายได้รวม/รายการหัก/ยอดจ่ายสุทธิ — `#infoGross`/
+  `#infoDeduction`/`#infoNet`) ผ่าน `stat-card.php`'s ใหม่ `value_class` (ดู §2)
+- **ที่ยังไม่ทำ (deferred ตามลำดับงานเดิม)**: คอลัมน์เงิน 6/7/8 ของตาราง Employee Breakdown (item 3b),
+  `payslip-view.php` (item 3c) — คนละ commit ตามที่วางแผนไว้ ไม่ใช่ลืม
 
 ---
 
@@ -898,12 +1153,17 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
   (`public/js/alert.js`, มีอยู่แล้วทั่วระบบ) — **ไม่สร้าง `confirmAction()` ใหม่** (ตัดสินใจแล้วรอบ 0)
   รับได้ 2 รูปแบบ: **positional เดิม** `showConfirm(title, msg, yesCallback, noCallback)` (ทุก call
   site เดิมยังทำงานเหมือนเดิม 100% — ยืนยันด้วยการอ่าน implementation ตรง ไม่ใช่แค่ test) **หรือ object
-  form ใหม่** `showConfirm({title, message, confirmText, cancelText, danger, onYes, onNo})` เมื่อ
+  form ใหม่** `showConfirm({title, message, confirmText, cancelText, danger, tone, onYes, onNo})` เมื่อ
   argument แรกเป็น object — **`cancelText` เป็นการขยายเพิ่มนอกเหนือ draft เดิมของบรรทัดนี้** (ของเดิม
   มีแค่ `confirmText`) จำเป็นเพราะ modal dirty-guard (§9) ต้อง override ปุ่มทั้ง 2 ฝั่งพร้อมกัน
   ("กลับไปแก้ต่อ"/"ปิดโดยไม่บันทึก" ไม่ใช่ "Yes"/"No" default) — ห้ามเรียก `Swal.fire` ตรงๆ ในหน้า
+  - **`tone: 'success'|'warning'|'danger'` (ใหม่, 2026-09-13, decision-set follow-up)** — ขยาย
+    `danger:true` เดิมเป็น 3 ทาง สำหรับ confirm dialog ที่ต้องสีตรงกับปุ่ม `.btn-decision-*` (§4's
+    decision-set exception) ที่เปิดมัน — `danger:true` **ยังใช้ได้เหมือนเดิม** เป็น shorthand ของ
+    `tone:'danger'` (backward-compatible, ไม่ต้องแก้ call site เดิม) `tone` มีผลเหนือกว่าถ้าตั้งทั้งคู่
   - **สไตล์ปุ่ม/ไอคอน — เปลี่ยน default ทั้งระบบ ผ่าน `tokens.css`/`style.css`'s `--swal2-*` block เดียว
-    ไม่ใช่ per-call**: ปุ่มยืนยัน = `--c-primary` (ส้ม), `danger:true` = `--c-danger` (แดง, per-call
+    ไม่ใช่ per-call**: ปุ่มยืนยัน = `--c-primary` (ส้ม), `danger:true`/`tone:'danger'` = `--c-danger`
+    (แดง), `tone:'warning'` = `--c-warning`, `tone:'success'` = `--c-success` (ทั้งหมด per-call
     `confirmButtonColor` override), ปุ่มยกเลิก = ทรง `.btn-outline-secondary` (โปร่งใส + ขอบ
     `--c-border-strong` + ตัวหนังสือ `--c-text`), popup/ปุ่มทุกปุ่ม border-radius = `--radius` เดียวกับ
     ที่อื่นทั้งแอป, ฟอนต์ Sarabun **ไม่ต้องแก้อะไรเลย** (`.swal2-popup` เดิมใช้ `font-family:inherit` +
@@ -943,11 +1203,12 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 
 | ชื่อ | ที่อยู่ | แทนของเดิม |
 |---|---|---|
-| `page-header.php` | `app/views/partials/` | การ์ดหัวหน้าทุกหน้า |
-| `stat-card.php` | partials | การ์ดตัวเลขขอบสี |
+| `page-header.php` (ขยายรอบ 3 item 3a: `secondary_actions`/`overflow_actions` รับ dropdown ได้ (`items[]`), `extraClass` ต่อ action, `id_prefix` optional กันชน id ตอน include ซ้ำ, `decision_actions[]` ใหม่ (แทน `primary_action` สำหรับกลุ่มตัดสินใจ, ห่าง `--sp-3`, แต่ละรายการมี `tone` ของตัวเอง — `.btn-decision-{success,warning,danger}`, §4's decision-set exception); `overflow_actions[]` เหลือ 1 รายการ → ปุ่มธรรมดาแทน dropdown, divider เฉพาะเมื่อมีรายการปกติอยู่เหนือจริง — ดู §2/§4) | `app/views/partials/` | การ์ดหัวหน้าทุกหน้า |
+| `stat-card.php` (ขยายรอบ 3 item 3a/D: `value_class` optional ใส่ `.money-gross`/`.money-deduction`/`.money-net` — ดู §2/§8) | partials | การ์ดตัวเลขขอบสี |
+| `callout.php` + `calloutHtml()` (ใหม่, §15, รอบ 3 item 3a follow-up — ข้อความ 1 บรรทัดสีตามความหมายใต้ block อื่น, 5 tone) | `app/views/partials/` + `app.js` | `.next-step-banner`/`.process-next-step` เดิม (Payroll Detail เท่านั้น, ลบ CSS แล้ว) |
 | `filter-bar.php` (ปรับเป็นแผง 3 ส่วน หัว/ตัว/ท้าย, item 4 revision, ยกเลิก `toolbarTarget` — ดู §6) | partials | filter กางค้าง |
 | `renderNotifications()` / `setNotificationCount()` (ใหม่, item 6d — เสร็จแล้ว, UI เท่านั้นยังไม่ต่อ backend; ของจริงมีอยู่แล้ว `notifications.js`/`NotificationModel` — 3 จุดต่างจริง (ไอคอนมีพื้นสี, จุด unread ขวา, badge "99+") ไม่ใช่แค่ token เดิม บันทึกไว้ให้รอบ 4 ตัดสินใจ — ดู §6) | app.js (ใหม่) | `.row-type-icon`/dot-ขวา ของจริง (คงไว้ ไม่แตะ — แค่ flag ความต่างสำหรับ migrate) |
-| `status-stepper.php` + `renderStatusStepper()` (ใหม่, item 6 — เสร็จแล้ว; render อย่างเดียว ตำแหน่งเทียบ `current` เท่านั้น ไม่มี action/วันที่/branch icon แบบของจริง — logic ขั้นยังอยู่ที่ `runLifecycleSteps()` เดิม, ยังไม่ย้ายหน้าจริงมาใช้ รอรอบ 4 — ดู §6) | `app/views/partials/` + `app.js` | กล่อง 5 สี |
+| `status-stepper.php` + `renderStatusStepper()` (item 6 — เสร็จแล้ว; render อย่างเดียว ตำแหน่งเทียบ `current` เท่านั้น ไม่มี action button แบบของจริง — logic ขั้นยังอยู่ที่ `runLifecycleSteps()` เดิม — 2026-09-13 รอบ 3 item 3a: **ย้าย Payroll Detail มาใช้จริงแล้ว** + ขยายรับ `{label, date, tone, final, live, icon}` ต่อขั้น, แยก 3 สถานะสีชัดเจน (done/current/next), pulse ring, ไอคอนขาว 12px ของขั้นปัจจุบัน (mapping อยู่ที่ `RUN_LIFECYCLE_STEPS`/`RUN_LIFECYCLE_BRANCH_INFO` เท่านั้น ไม่ hardcode ใน partial) — ดู §6) | `app/views/partials/` + `app.js` | กล่อง 5 สี, `.process-timeline`/`.tl-*` (Payroll Detail เท่านั้น — ที่อื่นยังใช้อยู่) |
 | `timeline.php` + `renderTimeline()` (ใหม่, item (3)/6b — เสร็จแล้ว; feed กิจกรรมยาวไม่จำกัด, caller เรียงมาเอง, ยังไม่ย้ายหน้าจริง (`renderApprovalTimelineBody()`) มาใช้ รอรอบ 4 — ดู §6) | `app/views/partials/` + `app.js` | `.apv-timeline-log`/`.apv-log-entry` เดิม (dead code, ไม่มี call site — ไม่ reuse ตั้งชื่อใหม่แทน) |
 | `status-tabs.php` + `initStatusTabs()` (ใหม่, item 4b — chevron pipeline เดิม**ยังคงรูปแบบไว้**, retokenize เท่านั้น; **ตัดสินใจแล้ว**: เคยมี variant `path` ให้เทียบคู่กัน ลบออกทั้งหมดแล้ว) | partials + app.js | markup ที่เคยซ้ำ 2 ไฟล์ของ `.station-row`/`.station-card` |
 | `statusBadge()` / `statusBadgeHtml()` + `status_map.php` (ใหม่, item 5 — เสร็จแล้ว; map มีที่เดียวคือ `status_map.php`, JS ไม่มี copy ของตัวเอง อ่านจาก `window.STATUS_MAP` ที่ `layout/header.php` inject ให้ — ยกเว้นกฎ "ห้ามแตะหน้าจริง" เฉพาะจุดนี้จุดเดียว; rename `payroll-configuration.js`'s local `statusBadge(row)` → `pcRowStatusBadge(row)` ทำก่อนเขียนแล้วตามแผน — ดู §5) | `app/helpers/helpers.php` + `app.js` + `app/config/status_map.php` + `layout/header.php` (inject จุดเดียว) | map สถานะกระจาย |
@@ -958,7 +1219,7 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 | `apvAvatarHtml()` / `apvPersonLineHtml()` | app.js (มีแล้ว) | avatar เขียนเอง |
 | `emp-header-card.php` (ใหม่, item 6c) + `employeeHeaderCardHtml()` (generalize ของเดิม Batch 3C item 8 — เสร็จแล้ว, **มี 6 real call site ใน payroll/detail.js อยู่แล้ว ได้สไตล์ใหม่ทันทีที่ commit** ไม่เหมือน component อื่นในรอบนี้ — ดู §9) | `app/views/partials/` + `app.js` | หัว modal ธง+ไอคอน |
 | `isFormDirty()` / `confirmIfDirtyThen()` (ขยายรับ `promptOptions`, item 7b — เสร็จแล้ว) / `refreshDirtyGuard()` (ใหม่, item 7b) / `data-dirty-guard` modal marker (ใหม่, item 7b — opt-in, redesign ของกลไกที่เคยถูกสั่งปิดทั้งระบบไป 2026-09-09, ยังไม่มีหน้าจริงใช้ รอรอบ 4) | app.js (มีแล้ว, Platform Hardening Phase 1) | ผูก dirty-check เองทีละ modal — **ไม่สร้าง `guardDirtyModal()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §9) |
-| `showConfirm()` (ขยายรับ object form + `cancelText`, item 7b — เสร็จแล้ว) / `showSuccess` (เปลี่ยนเป็น toast default, item 7b) / `showError` (ไม่เปลี่ยน) | app.js/alert.js (มีแล้ว) | Swal.fire ตรง — **ไม่สร้าง `confirmAction()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §10) |
+| `showConfirm()` (ขยายรับ object form + `cancelText`, item 7b — เสร็จแล้ว; + `tone` 3 ทาง 2026-09-13 decision-set follow-up, `danger:true` ยังใช้ได้เป็น shorthand) / `showSuccess` (เปลี่ยนเป็น toast default, item 7b) / `showError` (ไม่เปลี่ยน) | app.js/alert.js (มีแล้ว) | Swal.fire ตรง — **ไม่สร้าง `confirmAction()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §10) |
 | `resetModalTabs()` | app.js (มีแล้ว) | strip class เอง |
 | `payslip-view.php` | partials | modal คำนวณแบบตาราง |
 | `.scroll-thin` (ใหม่, notification "ซอฟต์ลง" follow-up 2026-09-13 — CSS utility class ล้วนๆ ไม่มี JS, scrollbar บาง 6px โปร่ง) | `style.css` | scrollbar เริ่มต้นหนาของ browser บน dropdown/panel ที่ scroll — ใช้กับ `.notif-list` แล้ว, ตัวไหนใน dropdown/panel ที่ scroll ต่อไปในระบบให้เรียกซ้ำ ไม่เขียน scrollbar CSS เองใหม่ |
@@ -975,7 +1236,7 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 `scripts/check-design.php` สแกน `app/views/**`, `public/js/**` (ยกเว้น vendor/min), `public/css/**` (ยกเว้น `tokens.css`, vendor):
 1. hex/rgb/hsl ใน CSS นอก `tokens.css` และใน `style=""` / JS string (ยกเว้น `--bs-*-rgb:` ใน `style.css`'s Bootstrap-override section — mechanical RGB-triplet decomposition ของ token ที่มีอยู่แล้ว ไม่ใช่ค่าสีใหม่ ดู comment ในไฟล์นั้นเอง)
 2. `style="` inline ใน view/JS (ยกเว้น `display:none` ชั่วคราวใน JS และ `width` ของคอลัมน์ตาราง — allowlist ระบุใน script)
-3. class ต้องห้าม: `btn-success btn-info btn-warning btn-light btn-dark btn-outline-(?!secondary) bg-primary bg-info bg-success text-primary text-info text-success border-primary rounded-circle btn-circle`
+3. class ต้องห้าม: `btn-success btn-info btn-warning btn-light btn-dark btn-outline-(?!secondary) bg-primary bg-info bg-success text-primary text-info text-success border-primary rounded-circle btn-circle` — **+ ตัวที่เจาะจงกว่านั้น (item D, 2026-09-13, §8)**: `text-danger` ที่อยู่ใน `class="..."` เดียวกันกับ `num` (ไม่ใช่แบนทั่วไป — `text-danger` เดี่ยวๆ ไม่มี `num` ยังใช้ได้ปกติ เช่น dropdown item ทำลาย) เพื่อบังคับให้ตัวเลขเงินใช้ `.money-gross`/`.money-deduction`/`.money-net` (`.callout`/`.callout-*` ตัวมันเองไม่ถูก flag เพราะไม่มี `text-danger`/`num` เลย — สีของมันมาจาก `border-left-color` ไม่ใช่ text class) — **`.btn-decision-success`/`.btn-decision-warning`/`.btn-decision-danger` (§4's decision-set exception, 2026-09-13) ผ่านกฎนี้เองอัตโนมัติ** (ชื่อ class ไม่ตรงกับตัวไหนใน list ต้องห้ามข้างบนเป๊ะๆ, ไม่ใช่ `btn-outline-*` prefix ด้วย) ไม่ต้อง allowlist เพิ่มในโค้ด แต่บันทึกไว้ตรงนี้กันคนแก้ regex รอบหน้าเผลอไปครอบคลุมโดยไม่ตั้งใจ
 4. `<i class="fa` ภายใน `.nav-link` (ไอคอนใน tab)
 5. `.DataTable(` / `.dataTable(` นอก `initSharedDataTable`
 6. `Swal.fire(` นอก app.js
@@ -1135,3 +1396,47 @@ Library: Chart.js v4.5.1 (npm-vendored, โหลดต่อหน้า ไม
 - **legend ไม่มีสีรุ้ง** — ห้ามมี legend ที่สีแต่ละอันเลือกเอง/ไล่เฉดแบบไม่มีระบบ (เช่น 1 สีต่อ bucket ที่
   ไม่มีความหมายสถานะ) ทุกสีใน legend ต้องสืบย้อนกลับไปที่ `--chart-1..5` หรือสถานะจริง (`--c-danger`/
   `--c-success`) เท่านั้น
+
+---
+
+## 15. Callout — ข้อความ 1 กล่องใต้ block อื่น สีตามความหมาย (ใหม่, Round 3 item 3a follow-up, 2026-09-13)
+
+**ที่มา**: Payroll Detail's เดิม `.next-step-banner`/`.process-next-step` (ข้อความ "This run is still a
+draft…" ใต้ stepper) ถูกทำให้เรียบง่ายมาแล้วครั้งหนึ่ง (item 3a เดิม) แต่รูปร่าง "1 บรรทัดข้อความอธิบาย
+ต่อจาก block อื่นด้านบน มีสีตามความหมาย" กลายเป็น shape ที่ reusable จริง ไม่ใช่แค่ของหน้านี้หน้าเดียว —
+ยกระดับเป็น component ตั้งชื่อ + API ชัดเจนแทนที่จะปล่อยเป็น page-local class ต่อไป
+
+**Component**: `app/views/partials/callout.php` (`$text`, `$tone`) + JS twin `calloutHtml(text, tone)`
+(`app.js`) — ทั้งคู่ render markup เดียวกัน:
+```
+<div class="callout callout-{tone}">{text}</div>
+```
+
+**สเปกภาพ (ไม่มีข้อยกเว้น)**:
+- พื้น `--c-bg-subtle`, มุมโค้ง `--radius`, padding `--sp-2 --sp-3` (แก้จาก `--sp-3 --sp-4` เดิม, 2026-09-13
+  same-day follow-up — สูงเกินไปสำหรับ caption 1 บรรทัดใต้ stepper)
+- เส้นซ้าย 3px สีตาม `tone` — **ข้อยกเว้นของ §3** (ดูตารางสี §3): container ทั่วไปห้ามมีสี tone บนขอบ/พื้น
+  ของตัวเอง แต่ callout ใช้ได้เพราะสีบนเส้นซ้ายคือหน้าที่หลักของ component นี้ (ไม่ใช่ของแถม)
+- ตัวหนังสือ `--c-text` ขนาด **`--fs-sm`** (แก้จาก `--fs-base` เดิม, 2026-09-13) เสมอ **ไม่ว่า tone ไหน**
+  (สีอยู่ที่เส้นซ้ายเท่านั้น พื้น/ตัวหนังสือคงที่) — คำที่เป็น action ยังตัวหนา 600 เหมือนเดิมผ่าน
+  `.callout b`/`.callout strong` (ไม่เปลี่ยนตามขนาดตัวอักษรที่เล็กลง) — รวมแล้วกล่องสูง **~36px**
+  (padding-top 8px + บรรทัดข้อความ ~20px + padding-bottom 8px)
+- **ไม่มีไอคอนหน้าข้อความ** (เคยมี ⓘ/✓ ในเวอร์ชันแรกๆ ของ `.process-next-step` — ตัดออกตามคำสั่งชัดเจน:
+  เส้นซ้ายสี tone บอกความหมายพออยู่แล้ว ไอคอนซ้ำเป็นของตกแต่งที่เอาออกได้โดยไม่เสียความหมาย, §0.3)
+- 5 tone: `primary` (ขั้นต่อไปที่ต้องทำ), `success` (จบแล้ว), `warning`, `danger`, `neutral`
+  (`--c-border-strong`) — คำศัพท์เดียวกับ `status_map.php`'s tone vocabulary (§5), ไม่ใช่ชุดใหม่
+
+**`$text` เป็น HTML ดิบที่ caller เตรียม/escape มาเองแล้ว — partial/`calloutHtml()` ไม่ escape ซ้ำ** (ตั้งใจ,
+ไม่ใช่ช่องโหว่): จุดประสงค์หลักของ component นี้คือให้ caller ตัวหนา**คำที่เป็น action** ในประโยคให้ตรงกับ
+label ปุ่มจริง (เช่น `<b>คำนวณ</b>` ตรงกับปุ่ม "คำนวณ") — ตัวหนาผ่าน `.callout b`/`.callout strong` (weight
+600) — **`$text` ต้องเป็น copy ที่แอปเขียนเอง (i18n string) เสมอ ห้ามเป็น user input ดิบที่ไม่ผ่าน escape**
+
+**ที่ใช้แล้ว**: Payroll Detail's `#nextStepBanner` (แทน `.next-step-banner`/`.process-next-step` เดิมทั้งคู่
+— CSS เก่าถูกลบออกจาก `style.css` แล้ว ไม่เหลือ dead code เพราะยืนยันแล้วว่า exclusive กับหน้านี้) — tone
+ต่อ state ของรอบเงินเดือนเป็น **judgment call ที่ flag ไว้ตรงๆ** (ผู้ใช้ระบุชัดแค่ locked=success/
+rejected=danger/need_info=warning): draft/pending_approval/approved/paid → `primary`, cancelled →
+`neutral`
+
+Demo จริงใน `docs/design/components.php` ("Callout (§15)"): 5 tone ผ่าน partial จริง (ไม่ใช่ mockup) ข้อความ
+ดึงมาจาก i18n string จริงของ Payroll Detail (`next_step_draft`/`_locked`/`_need_info`/`_rejected`/
+`_cancelled`) เพื่อยืนยันคู่ tone/ข้อความจริงที่ใช้บนหน้าจริง

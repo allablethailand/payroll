@@ -308,6 +308,15 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
     ];
     $primary_action = ['label' => 'สร้างรอบใหม่', 'id' => 'cpFullNewRunBtn', 'icon' => 'fa-solid fa-plus'];
     $description = null;
+    // 2026-09-13, real bug found and fixed: page-header.php now renders a FEW stable ids
+    // unconditionally (#phTitle/#phActions/etc., Round 3 item 3a -- needed so a real page's JS can
+    // hook into them once async data loads). This page includes the SAME partial twice (this
+    // full-page mockup, and the real "Page Header (§2)" demo section further down) -- without a
+    // distinct $id_prefix here, both would render the exact same ids, duplicate DOM ids on one page.
+    // The canonical demo section keeps the DEFAULT 'ph' prefix (reset explicitly before its own
+    // include, since PHP `include` shares this file's variable scope -- whatever $id_prefix this
+    // include leaves behind would otherwise leak into every include after it, not just this one).
+    $id_prefix = 'cpFullPh';
     include __DIR__ . '/../../app/views/partials/page-header.php';
     ?>
     <ul class="nav nav-tabs mb-3" role="tablist">
@@ -564,8 +573,108 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
     ];
     $primary_action = ['label' => 'เพิ่มพนักงาน', 'id' => 'cpPhDemoBtn', 'icon' => 'fa-solid fa-plus'];
     $description = 'รายชื่อพนักงานทั้งหมดในบริษัท พร้อมตัวกรองและการนำเข้า/ส่งออกข้อมูล';
+    // 2026-09-13: reset back to the DEFAULT 'ph' prefix for this canonical demo -- the earlier
+    // "ภาพรวมทั้งหน้า Payroll Process" section's own $id_prefix='cpFullPh' would otherwise leak in
+    // here too (PHP `include` shares this file's variable scope across every include, not just the
+    // one call site that set it).
+    unset($id_prefix);
     include __DIR__ . '/../../app/views/partials/page-header.php';
     ?>
+</div>
+
+<!-- ==================== Page Header -- decision_actions (§2, item 3a follow-up ข้อ 1) ==================== -->
+<div class="cp-section">
+    <h2>Page Header — <code>decision_actions</code> (ใหม่, 2026-09-13, REVISED same-day -- tone ต่อปุ่ม)</h2>
+    <p class="cp-section-note"><b>2 มุมมองของหน้า Payroll Detail เดียวกัน ตอน state <code>pending_approval</code></b> -- <b>มุมมองที่ 1 (มีสิทธิ์อนุมัติ)</b>: <code>secondary_actions</code> = [ไทม์ไลน์อนุมัติ] [ส่งออก ▾], <code>overflow_actions</code> = [ส่งกลับแก้ไข] -- <b>เหลือรายการเดียว (2026-09-13 "เมนูอื่นๆ" follow-up) จึง render เป็นปุ่ม <code>.btn-outline-secondary</code> ธรรมดาตรงๆ ไม่ใช่ dropdown "อื่นๆ ▾" อีกต่อไป</b> (เมนูเลือกได้ทางเดียวไม่ใช่เมนู), แล้วห่าง <code>--sp-3</code> ตามด้วย <code>decision_actions</code> 3 ปุ่ม**ตามลำดับที่ caller ส่งมา** [อนุมัติ] (<code>tone:'success'</code>) [ขอข้อมูลเพิ่มเติม] (<code>tone:'warning'</code>) [ไม่อนุมัติ] (<code>tone:'danger'</code>) -- **ทั้ง 3 พื้นตัน ตัวหนา 600 ตัวหนังสือขาวเหมือนกันหมด** (ไม่มีกฎ "รายการสุดท้าย = primary" อีกแล้ว แต่ละปุ่มลงสีพื้นตาม <code>tone</code> ของตัวเอง, §4's decision-set exception) <code>callout</code> คู่กันบอกสิ่งที่ต้องทำ ("ตรวจสอบ...แล้วกด") ตัวหนาตรงกับปุ่มจริงเป๊ะ.</p>
+    <?php
+    // 2026-09-13, §2 REVISED: crumb สุดท้าย = รหัสของ entity เอง (run_code) ไม่ใช่ label คงที่แบบเดิม
+    // ("รายละเอียดรอบ") อีกต่อไป -- H1 = ชื่อแสดงผลจริง (คนละค่ากับ crumb ตอนนี้).
+    $title = 'รอบเงินเดือน มิถุนายน 2569';
+    $breadcrumb = [
+        ['label' => 'Payroll', 'href' => '#'],
+        ['label' => 'Payroll Process', 'href' => '#'],
+        ['label' => 'RUN-2026-06-A', 'href' => null],
+    ];
+    $secondary_actions = [
+        ['label' => 'ไทม์ไลน์อนุมัติ', 'id' => 'cpPhaTimelineBtn', 'icon' => 'fa-solid fa-list-check'],
+        ['label' => 'ส่งออก', 'icon' => 'fa-solid fa-file-export', 'items' => [
+            ['label' => 'Excel', 'id' => 'cpPhaExportExcelBtn', 'icon' => 'fa-solid fa-file-excel file-icon-excel'],
+            ['label' => 'PDF', 'id' => 'cpPhaExportPdfBtn', 'icon' => 'fa-solid fa-file-pdf file-icon-pdf'],
+        ]],
+    ];
+    $overflow_actions = [
+        ['label' => 'ส่งกลับแก้ไข', 'id' => 'cpPhaRevertBtn', 'icon' => 'fa-solid fa-rotate-left'],
+    ];
+    $decision_actions = [
+        ['label' => 'อนุมัติ', 'id' => 'cpPhaApproveBtn', 'icon' => 'fa-solid fa-check', 'tone' => 'success'],
+        ['label' => 'ขอข้อมูลเพิ่มเติม', 'id' => 'cpPhaRequestInfoBtn', 'icon' => 'fa-solid fa-circle-info', 'tone' => 'warning'],
+        ['label' => 'ไม่อนุมัติ', 'id' => 'cpPhaRejectBtn', 'icon' => 'fa-solid fa-xmark', 'tone' => 'danger'],
+    ];
+    $primary_action = null; // ignored anyway once $decision_actions is set -- explicit here for clarity
+    // Real PHP has no langData/getLangValue() (client-only, loaded async via app.js's own loadLang())
+    // -- printed directly, same "พิมพ์ตรงๆ ที่นี่แทนอ่านจาก langData เพื่อความง่าย" convention this file's
+    // own Stepper demo already uses (see CP_STEPPER_LABELS further down).
+    $description = 'วันจ่าย 30/06/2569';
+    $id_prefix = 'cpPha';
+    include __DIR__ . '/../../app/views/partials/page-header.php';
+    ?>
+    <?php $text = 'ตรวจสอบรายละเอียดพนักงาน แล้วกด <b>อนุมัติ</b> / <b>ไม่อนุมัติ</b> / <b>ขอข้อมูลเพิ่มเติม</b>'; $tone = 'primary'; include __DIR__ . '/../../app/views/partials/callout.php'; ?>
+
+    <p class="cp-section-note mt-4"><b>มุมมองที่ 2 (ไม่มีสิทธิ์อนุมัติ)</b>: <code>secondary_actions</code> เท่าเดิม [ไทม์ไลน์] [ส่งออก ▾] แต่ <code>overflow_actions</code>/<code>decision_actions</code> ว่างทั้งคู่ -- "อื่นๆ ▾" หายไปเอง (ว่าง = ไม่ render) ไม่มีปุ่มส้มเลยสักตัว <code>callout</code> บอกชื่อคนที่กำลังรออนุมัติจริง (ดึงจาก <code>run.approval_flow.approvers</code> ที่ <code>status==='pending'</code> เท่านั้น ไม่ใช่ mockup ข้อความลอยๆ).</p>
+    <?php
+    $title = 'รอบเงินเดือน มิถุนายน 2569';
+    $secondary_actions = [
+        ['label' => 'ไทม์ไลน์อนุมัติ', 'id' => 'cpPhbTimelineBtn', 'icon' => 'fa-solid fa-list-check'],
+        ['label' => 'ส่งออก', 'icon' => 'fa-solid fa-file-export', 'items' => [
+            ['label' => 'Excel', 'id' => 'cpPhbExportExcelBtn', 'icon' => 'fa-solid fa-file-excel file-icon-excel'],
+            ['label' => 'PDF', 'id' => 'cpPhbExportPdfBtn', 'icon' => 'fa-solid fa-file-pdf file-icon-pdf'],
+        ]],
+    ];
+    $overflow_actions = [];
+    $decision_actions = [];
+    $primary_action = null;
+    $description = 'วันจ่าย 30/06/2569';
+    $id_prefix = 'cpPhb';
+    include __DIR__ . '/../../app/views/partials/page-header.php';
+    ?>
+    <?php $cpPendingNames = 'สมชาย ใจดี, สมหญิง รักงาน'; $text = 'รอการอนุมัติจาก ' . htmlspecialchars($cpPendingNames); $tone = 'primary'; include __DIR__ . '/../../app/views/partials/callout.php'; ?>
+</div>
+
+<!-- ==================== Page Header -- เมนู "อื่นๆ" divider fix (2026-09-13) ==================== -->
+<div class="cp-section">
+    <h2>Page Header — เมนู "อื่นๆ" (divider fix, 2026-09-13)</h2>
+    <p class="cp-section-note">2 กรณีเทียบกัน, ทั้งคู่ใช้ <code>overflow_actions</code> 3 รายการ (พอที่จะเป็น dropdown จริง ไม่ใช่ 1 รายการที่กลายเป็นปุ่มธรรมดา) -- <b>ซ้าย</b>: [ปกติ][ปกติ][danger] -- มีรายการปกติอยู่เหนือ danger จริง ยังเห็น divider คั่นก่อนรายการ danger ตามเดิม (ไม่มีอะไรเปลี่ยนตรงนี้). <b>ขวา</b>: [danger][danger] ล้วน -- danger เริ่มที่ index 0 (ไม่มีรายการปกติอยู่เหนือเลย) <b>ไม่มี divider ให้เห็นอีกต่อไป</b> (ก่อนแก้ จะมี divider ว่างๆ ขึ้นก่อนรายการแรกสุดของเมนู ทั้งที่ไม่มีอะไรอยู่เหนือมันเลย) -- กดปุ่ม "อื่นๆ ▾" ทั้ง 2 ฝั่งเพื่อเทียบ.</p>
+    <div class="d-flex gap-4">
+        <div>
+            <div class="small text-muted mb-1">มีรายการปกติอยู่เหนือ danger (ยังมี divider)</div>
+            <?php
+            $title = 'ตัวอย่าง';
+            $breadcrumb = [];
+            $secondary_actions = [];
+            $primary_action = null;
+            $decision_actions = [];
+            $overflow_actions = [
+                ['label' => 'ทำสำเนา', 'id' => 'cpPhcDuplicateBtn', 'icon' => 'fa-solid fa-copy'],
+                ['label' => 'ดูประวัติ', 'id' => 'cpPhcHistoryBtn', 'icon' => 'fa-solid fa-clock-rotate-left'],
+                ['label' => 'ลบ', 'id' => 'cpPhcDeleteBtn', 'icon' => 'fa-solid fa-trash', 'tone' => 'danger'],
+            ];
+            $description = null;
+            $id_prefix = 'cpPhc';
+            include __DIR__ . '/../../app/views/partials/page-header.php';
+            ?>
+        </div>
+        <div>
+            <div class="small text-muted mb-1">danger ล้วน เริ่มที่ index 0 (ไม่มี divider แล้ว)</div>
+            <?php
+            $overflow_actions = [
+                ['label' => 'ยกเลิกรอบ', 'id' => 'cpPhdCancelBtn', 'icon' => 'fa-solid fa-ban', 'tone' => 'danger'],
+                ['label' => 'ลบถาวร', 'id' => 'cpPhdDeleteBtn', 'icon' => 'fa-solid fa-trash', 'tone' => 'danger'],
+            ];
+            $id_prefix = 'cpPhd';
+            include __DIR__ . '/../../app/views/partials/page-header.php';
+            ?>
+        </div>
+    </div>
 </div>
 
 <!-- ==================== Stat Card (§2) ==================== -->
@@ -599,6 +708,18 @@ $cpStats = [
         </div>
         <div class="col-md-3">
             <?php $stat = ['label' => 'แผนกทั้งหมด', 'value' => '9', 'icon' => 'fa-solid fa-sitemap', 'sub' => null, 'badge' => null, 'link' => null]; include __DIR__ . '/../../app/views/partials/stat-card.php'; ?>
+        </div>
+    </div>
+    <p class="cp-section-note mt-3">§8 money-color system (item D, 2026-09-13) -- <code>value_class</code> ใหม่ (optional) ใส่ <code>.money-gross</code>/<code>.money-deduction</code>/<code>.money-net</code> ต่อจาก <code>.num</code> บนตัวเลขที่มีความหมายทางบัญชีจริง -- <b>ตัวเลขเท่านั้นที่เปลี่ยนสี</b> label/ไอคอน/การ์ดยังเทาปกติทุกใบ (เขียว/แดงเป็น token เดียวกับสถานะ ไม่มีเฉดแยก, สุทธิเป็นตัวหนา 600 <code>--c-text</code> ไม่มีสี -- ไม่ใช่ตัวเลข "ดี/ไม่ดี" แต่เป็นยอดสรุป). สลับ theme มุมขวาบนดู dark mode ด้วย.</p>
+    <div class="row g-3">
+        <div class="col-md-4">
+            <?php $stat = ['label' => 'รายได้รวม', 'value' => fmtMoney(485000), 'icon' => 'fa-solid fa-sack-dollar', 'sub' => null, 'badge' => null, 'link' => null, 'value_class' => 'money-gross']; include __DIR__ . '/../../app/views/partials/stat-card.php'; ?>
+        </div>
+        <div class="col-md-4">
+            <?php $stat = ['label' => 'รายการหัก', 'value' => fmtMoney(62500), 'icon' => 'fa-solid fa-minus', 'sub' => null, 'badge' => null, 'link' => null, 'value_class' => 'money-deduction']; include __DIR__ . '/../../app/views/partials/stat-card.php'; ?>
+        </div>
+        <div class="col-md-4">
+            <?php $stat = ['label' => 'ยอดจ่ายสุทธิ', 'value' => fmtMoney(422500), 'icon' => 'fa-solid fa-hand-holding-dollar', 'sub' => null, 'badge' => null, 'link' => null, 'value_class' => 'money-net']; include __DIR__ . '/../../app/views/partials/stat-card.php'; ?>
         </div>
     </div>
 </div>
@@ -772,8 +893,34 @@ $cpStats = [
 
 <div class="cp-section">
     <h2>Stepper (ข้อ 6)</h2>
-    <p class="cp-section-note"><code>app/views/partials/status-stepper.php</code> + JS <code>renderStatusStepper(steps, current)</code> (<code>app.js</code>) -- render อย่างเดียว ไม่มี state-machine/ปุ่ม/วันที่/ไอคอน branch แบบ <code>runLifecycleSteps()</code> ตัวจริง (โลจิกขั้นยังอยู่ที่เดิม -- <code>payroll/detail.js</code>'s <code>renderProcessTimeline()</code>/<code>payroll/index.js</code>'s mini-timeline ยังไม่ถูกแตะรอบนี้ ตามกฎ "ห้ามแตะหน้าจริง" §13, ย้ายมาใช้จริงเป็นงานรอบ 4). ด้านล่างคือ 5 ขั้นจริงของรอบเงินเดือน (สร้างรายการ → ส่งอนุมัติ → อนุมัติ → จ่ายเงิน → ปิดรอบ) ที่ 3 สถานะจริง: <b>draft</b> (ยังไม่ส่งอนุมัติ -- ปัจจุบัน = "ส่งอนุมัติ"), <b>approved</b> (อนุมัติแล้ว รอจ่าย -- ปัจจุบัน = "จ่ายเงิน"), <b>paid</b> (จ่ายแล้ว รอปิดรอบ -- ปัจจุบัน = "ปิดรอบ") -- <code>current</code> คำนวณตามกฎเดียวกับ <code>runLifecycleSteps()</code> จริง (<code>currentIndex = reachedIdx + 1</code>) เสร็จ = วงกลมเทา + ✓ ตัวหนังสือจาง, ปัจจุบัน = วงกลมส้มตัน ตัวหนังสือเข้ม+หนา, ถัดไป = วงกลมขอบเทาว่าง, เส้นเชื่อมสีเทาเดียวกันทุกช่วงไม่ว่าขั้นไหนจะเสร็จแล้วหรือยัง ไม่มีสีพาสเทล 5 สี ไม่มีกล่อง/การ์ดต่อขั้น (สลับ theme มุมขวาบนดู dark mode ด้วย).</p>
+    <p class="cp-section-note"><code>app/views/partials/status-stepper.php</code> + JS <code>renderStatusStepper(steps, current)</code> (<code>app.js</code>) -- <b>ย้าย Payroll Detail มาใช้จริงแล้ว 2026-09-13</b> (<code>payroll/detail.js</code>'s <code>renderProcessTimeline()</code>) -- โลจิกขั้น/branch ยังอยู่ที่ <code>runLifecycleSteps()</code>/<code>computeRunLifecycleProgress()</code> เดิมเป๊ะ ไม่แตะ, partial เองยัง "โง่" (ตัดสิน done/current/next จากตำแหน่งเทียบ <code>current</code> เท่านั้น ไม่มีปุ่ม action). <b>2026-09-13 same-day, "แยก 3 สถานะชัด" (§6 revised):</b> <b>เสร็จแล้ว</b> = วงกลม <code>--c-success-soft</code> + ✓ <code>--c-success</code>, label เต็มสี <code>--c-text</code> (ไม่จางแล้ว), เส้นเชื่อมช่วงที่อยู่หลังขั้นเสร็จ = <code>--c-success</code>; <b>ปัจจุบัน</b> = วงกลมตัน <code>--c-primary</code> + ไอคอนขาว 12px ของขั้นนั้น (แก้ ambiguity เดิมแล้ว, ดู item (5) ด้านล่าง), label <code>--c-text</code> หนา 600; <b>ยังมาไม่ถึง</b> = วงกลมว่างขอบ <code>--c-border-strong</code>, label <code>--c-text-faint</code> (จางกว่าขั้นเสร็จ), ไม่แสดงวันที่. รับเพิ่ม 3 อย่างต่อขั้น: <b>(1)</b> วันที่ (<code>{label, date}</code>, ใต้ label <code>--fs-xs</code> <code>--c-text-faint</code> ไม่มีไอคอนนาฬิกา) <b>(2)</b> <code>tone</code> ของขั้นปัจจุบันเท่านั้น (<code>{label, date, tone}</code>) ดึงจาก <code>statusMapEntry()</code>/<code>getStatusMapEntry(state, 'run_state')</code> จริงเสมอ ไม่ hardcode สี (ข้อ 5) <b>(3)</b> <code>final</code> (bool) บนขั้นที่เสร็จแล้วขั้นสุดท้ายเท่านั้น (<code>{label, date, final:true}</code>) -- ทำให้วงกลมนั้นตัน <code>--c-success</code> + ✓ สีขาว แทนที่ soft-done ปกติ (สำหรับรอบที่ "จบแล้วจริง" เช่น locked) <b>(4)</b> <code>live</code> (bool, ใหม่ 2026-09-13 item 3a "เก็บตก") บนขั้นปัจจุบันเท่านั้น (<code>{label, date, live:true}</code>) -- วงแหวน <code>--c-primary</code> ขยายออกเบาๆ ทุก 2.4s (วงกลมเองไม่กะพริบ, <code>prefers-reduced-motion</code> ปิดให้อัตโนมัติ) caller ต้องตัดสินเองว่า "ถึงตาผู้ใช้คนนี้" จริงไหม (มี decision/primary action ให้กด) ไม่ pulse ถ้าขั้นมี <code>tone</code> (branch state นิ่งอยู่แล้ว) <b>(5)</b> <code>icon</code> (string, ใหม่ 2026-09-13 item C ambiguity resolution) บนขั้นปัจจุบันเท่านั้น -- ไอคอนขาว 12px, bare Font Awesome class ไม่มี <code>fa-solid</code> prefix (partial/JS twin เติมให้เอง) -- <b>partial ไม่มี mapping ขั้น→ไอคอนของตัวเองเลย</b> caller ดึงจาก <code>runLifecycleSteps()</code>'s <code>step.icon</code> ซึ่ง sourced จาก <code>app.js</code>'s <code>RUN_LIFECYCLE_STEPS</code>/<code>RUN_LIFECYCLE_BRANCH_INFO</code> ที่เดียว (ตัวเดียวกับที่ Payroll Process List's mini-timeline ใช้อยู่แล้ว -- แก้ mapping ตรงนี้จึงกระทบทั้ง 2 หน้า ไม่ใช่แค่หน้านี้). ด้านล่างคือ 5 ขั้นจริงของรอบเงินเดือน (สร้างรายการ → ส่งอนุมัติ → อนุมัติ → จ่ายเงิน → ปิดรอบ) ที่ 5 กรณี: <b>draft</b> (ไอคอน <code>fa-calculator</code>)/<b>approved</b> (ปกติ ปัจจุบันสีส้มเหมือนเดิม), <b>pending_approval</b> (ใหม่ -- <code>live:true</code> เห็นวงแหวน pulse รอบขั้นปัจจุบัน), <b>locked</b> (ทุกขั้นเสร็จ ขั้นสุดท้าย <code>final:true</code> ตัน ✓ ขาว) และ <b>rejected</b> (ปัจจุบัน = "ไม่อนุมัติ / ส่งกลับแก้ไข" วงกลม <code>--c-danger</code> + ไอคอน <code>fa-xmark</code> ดึงจาก <code>statusMapEntry('rejected','run_state')</code>/<code>RUN_LIFECYCLE_BRANCH_INFO</code> จริง ไม่ใช่ mockup, <b>ไม่ pulse</b> แม้จะเป็นขั้นปัจจุบัน เพราะมี <code>tone</code>) -- ไม่มีกล่อง/การ์ดต่อขั้น (สลับ theme มุมขวาบนดู dark mode ด้วย).</p>
     <div id="cpStepperShowcase" class="d-flex flex-column gap-4"></div>
+</div>
+
+<!-- ==================== Callout (§15) ==================== -->
+<?php
+// Rendered through the REAL PHP partial (not just the JS twin) -- 5 tones, text taken verbatim from
+// the real Payroll Detail i18n strings (next_step_draft/locked/need_info/rejected/cancelled) so this
+// demo proves the actual copy/tone pairing used on the real page, not invented placeholder text.
+$cpCallouts = [
+    ['tone' => 'primary', 'text' => 'รอบนี้ยังเป็นแบบร่างอยู่ กด <b>คำนวณ</b> เพื่อคำนวณยอด แล้วจึง <b>ส่งอนุมัติ</b> เมื่อพร้อม'],
+    ['tone' => 'success', 'text' => 'รอบนี้ถูกล็อกและปิดงานเรียบร้อยแล้ว ไม่ต้องดำเนินการเพิ่มเติม'],
+    ['tone' => 'warning', 'text' => 'มีการขอข้อมูลเพิ่มเติม อ่านหมายเหตุด้านบน แล้วแก้ไขและส่งใหม่อีกครั้ง'],
+    ['tone' => 'danger', 'text' => 'ถูกปฏิเสธ อ่านเหตุผลด้านบน รอการแก้ไขใหม่'],
+    ['tone' => 'neutral', 'text' => 'รอบนี้ถูกยกเลิกแล้ว ไม่มีการดำเนินการต่อ'],
+];
+?>
+<div class="cp-section">
+    <h2>Callout (§15) — ใหม่</h2>
+    <p class="cp-section-note"><code>app/views/partials/callout.php</code> + JS <code>calloutHtml(text, tone)</code> (<code>app.js</code>) -- แทน <code>.next-step-banner</code>/<code>.process-next-step</code> เดิมของ Payroll Detail (Round 3 item 3a follow-up). พื้น <code>--c-bg-subtle</code>, <code>--radius</code>, เส้นซ้าย 3px ตาม <code>tone</code> (<b>ข้อยกเว้นของ §3</b> -- การ์ด/stat ยังห้ามใช้สี tone บนขอบ/พื้นตัวเอง แต่ callout ใช้ได้เพราะนั่นคือหน้าที่ทั้งหมดของ component นี้), ตัวหนังสือ <code>--c-text</code> <code>--fs-base</code> เท่ากันทุก tone, <b>ไม่มีไอคอน</b> (เส้นซ้ายสีเดียวก็บอกความหมายพอแล้ว). <code>$text</code> เป็น HTML ดิบที่ caller เตรียมมาเอง (ไม่ escape ซ้ำ) เพื่อให้ตัวหนาคำ action ที่ตรงกับปุ่มจริงได้ (เช่น <code>&lt;b&gt;คำนวณ&lt;/b&gt;</code> ตรงกับปุ่ม "คำนวณ" ในตัวอย่าง <b>primary</b> ด้านล่าง) -- <code>.callout b/strong</code> คือ weight 600. 5 tone: <b>primary</b> (ขั้นต่อไป), <b>success</b> (จบแล้ว), <b>warning</b>, <b>danger</b>, <b>neutral</b> (<code>--c-border-strong</code>).</p>
+    <div class="d-flex flex-column gap-2" style="max-width:640px;">
+        <?php foreach ($cpCallouts as $co): $text = $co['text']; $tone = $co['tone']; ?>
+        <div>
+            <div class="small text-muted mb-1"><code>tone="<?=$tone?>"</code></div>
+            <?php include __DIR__ . '/../../app/views/partials/callout.php'; ?>
+        </div>
+        <?php endforeach; ?>
+    </div>
 </div>
 
 <div class="cp-section">
@@ -1282,22 +1429,63 @@ $(function () {
     $cpUnmappedRow.find('.d-flex').append($cpUnmappedChip);
     $cpBadgeShowcase.append($cpUnmappedRow);
 
-    // Stepper (ข้อ 6) -- 5 ขั้นจริงของรอบเงินเดือน (ชื่อขั้นตรงกับ app.js's own RUN_LIFECYCLE_STEPS'
-    // doneKey labels: step_draft_done/step_submit_done/state_approved/state_paid/state_locked) --
-    // พิมพ์ตรงๆ ที่นี่แทนอ่านจาก langData เพราะหน้านี้ไม่มี i18n fetch จริง (ดู comment ด้านบนเรื่อง
-    // app.js's own $(document).ready() ที่ทำอะไรไม่ได้บนหน้านี้). `current` ต่อ state ตามกฎเดียวกับ
-    // runLifecycleSteps() ของจริง (currentIndex = reachedIdx + 1): draft (reachedIdx=0) -> current=1,
-    // approved (reachedIdx=2) -> current=3, paid (reachedIdx=3) -> current=4.
+    // Stepper (ข้อ 6, ย้าย Payroll Detail มาใช้จริงแล้ว 2026-09-13) -- 5 ขั้นจริงของรอบเงินเดือน (ชื่อขั้น
+    // ตรงกับ app.js's own RUN_LIFECYCLE_STEPS' doneKey labels: step_draft_done/step_submit_done/
+    // state_approved/state_paid/state_locked) -- พิมพ์ตรงๆ ที่นี่แทนอ่านจาก langData เพื่อความง่าย
+    // (เดโมอื่นในไฟล์นี้ก็ hardcode แบบนี้เป็นส่วนใหญ่) แม้หน้านี้จะมี i18n fetch จริงแล้วก็ตาม. `current`
+    // ต่อ state ตามกฎเดียวกับ runLifecycleSteps() ของจริง (currentIndex = reachedIdx + 1): draft
+    // (reachedIdx=0) -> current=1, approved (reachedIdx=2) -> current=3, paid (reachedIdx=3) ->
+    // current=4 -- แต่ละขั้นที่ i<=current ได้วันที่ (feature ใหม่ 2026-09-13) เป็นตัวอย่างว่าเหมือน
+    // payroll/detail.js's renderProcessTimeline() จริงเป๊ะ.
     const CP_STEPPER_LABELS = ['สร้างรายการ', 'ส่งอนุมัติ', 'อนุมัติ', 'จ่ายเงิน', 'ปิดรอบ'];
+    // 2026-09-13, item C follow-up (icon resolution): SAME 5 icon values as the real
+    // RUN_LIFECYCLE_STEPS (app.js), positional, printed directly here per this file's own
+    // "พิมพ์ตรงๆ ที่นี่แทนอ่านจาก langData เพื่อความง่าย" convention -- not re-derived from the real
+    // constant (which is tied to a real payroll run's own 5 stations, not a generic demo shape), but
+    // kept byte-identical to it so this demo visually matches the real page exactly.
+    const CP_STEPPER_ICONS = ['fa-calculator', 'fa-paper-plane', 'fa-list-check', 'fa-money-bill', 'fa-lock'];
+    // 2026-09-13, item C follow-up: `markFinal` sets `final:true` on the LAST label only, for the
+    // "locked" demo below (current pushed past the last index so every step, including the last,
+    // renders --done -- the last one ALSO gets the final treatment: solid --c-success + white check).
+    function cpStepperSteps(current, overrideAtCurrent, markFinal, markLive) {
+        return CP_STEPPER_LABELS.map(function (label, i) {
+            const step = { label: (overrideAtCurrent && i === current) ? overrideAtCurrent.label : label };
+            if (i <= current) step.date = '13/09/2026';
+            if (overrideAtCurrent && i === current && overrideAtCurrent.tone) step.tone = overrideAtCurrent.tone;
+            if (markFinal && i === CP_STEPPER_LABELS.length - 1) step.final = true;
+            // 2026-09-13, item 3a "เก็บตก" item 2: `markLive` sets `live:true` on the CURRENT step only
+            // -- demo's own stand-in for "computeRunHeaderActions(run) returned a decision/primary
+            // action for this viewer" (payroll/detail.js's real condition), no `tone` on this step so
+            // the pulse actually renders (a toned/branch step never pulses per §6).
+            if (markLive && i === current) step.live = true;
+            // Icon (white, 12px) -- current step only, same "overrideAtCurrent supplies its own icon
+            // when there's a branch" pattern the label/tone override already uses.
+            if (i === current) {
+                step.icon = (overrideAtCurrent && overrideAtCurrent.icon) ? overrideAtCurrent.icon : CP_STEPPER_ICONS[i];
+            }
+            return step;
+        });
+    }
     const $cpStepperShowcase = $('#cpStepperShowcase');
+    // 2026-09-13, same-day follow-up: "rejected" ทดสอบผ่าน statusMapEntry(run_state) จริง (ไม่ hardcode
+    // สี) -- ดึง tone/label ผ่าน getStatusMapEntry()/getLangValue() ตัวจริงเดียวกับที่
+    // renderProcessTimeline() (payroll/detail.js) เรียกใช้ พิสูจน์ว่า wiring ทำงานจริง ไม่ใช่แค่ mockup.
+    const cpRejectedEntry = getStatusMapEntry('rejected', 'run_state') || { tone: 'danger', label_key: null };
+    const cpRejectedLabel = (cpRejectedEntry.label_key && getLangValue(cpRejectedEntry.label_key)) || 'ไม่อนุมัติ / ส่งกลับแก้ไข';
+    // 2026-09-13, item C follow-up: icon pulled from the REAL RUN_LIFECYCLE_BRANCH_INFO (app.js, the
+    // one place this mapping lives) -- not re-typed -- same "prove the wiring, not a mockup" pattern
+    // the tone/label above already use.
+    const cpRejectedIcon = (RUN_LIFECYCLE_BRANCH_INFO.rejected && RUN_LIFECYCLE_BRANCH_INFO.rejected.icon) || 'fa-xmark';
     [
-        { title: 'draft', current: 1 },
+        { title: 'draft (ไอคอนขั้นปัจจุบัน: fa-calculator)', current: 1 },
+        { title: 'pending_approval (ถึงตาผู้ใช้คนนี้ -- live:true, วงแหวนเบาๆ รอบวงกลม)', current: 2, live: true },
         { title: 'approved', current: 3 },
-        { title: 'paid', current: 4 },
+        { title: 'locked (จบแล้ว -- ขั้นสุดท้าย final:true)', current: CP_STEPPER_LABELS.length, final: true },
+        { title: 'rejected (tone + icon จาก RUN_LIFECYCLE_BRANCH_INFO/statusMapEntry จริง -- ไม่ pulse แม้จะมี tone)', current: 2, override: { label: cpRejectedLabel, tone: cpRejectedEntry.tone, icon: cpRejectedIcon } },
     ].forEach(function (demo) {
         const $block = $('<div></div>');
         $block.append($('<div class="fw-semibold small text-uppercase text-muted mb-2"></div>').text(demo.title));
-        $block.append(renderStatusStepper(CP_STEPPER_LABELS, demo.current));
+        $block.append(renderStatusStepper(cpStepperSteps(demo.current, demo.override, demo.final, demo.live), demo.current));
         $cpStepperShowcase.append($block);
     });
 

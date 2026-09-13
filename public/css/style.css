@@ -2617,22 +2617,86 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     color: var(--c-text);
     font-weight: 600;
 }
-/* Dropdown -- radius/shadow already reach it via the root vars above (--bs-border-radius/
-   --bs-box-shadow). Border is different: --bs-dropdown-border-color inherits from
-   --bs-border-color-translucent (root override above), which DOES correctly resolve to --c-border
-   already -- not Bootstrap's own hardcoded translucent black, contrary to what a naive read of this
-   comment's own PREVIOUS wording implied was the whole story. 2026-09-13, real bug found (explicit
-   report + screenshot: the notification dropdown still showed a visible 1px border) -- root cause is
-   that this app's own "soften" direction this round (notification dropdown/datepicker/flatpickr, all
-   converging on shadow-only floating surfaces, no border at all) was never actually applied to
-   .dropdown-menu's own border ITSELF -- `.notif-dropdown` (style.css) never set `border: none`
-   because nothing needed to: the border was already a subtle --c-border gray, not an obviously-wrong
-   color, so it read as "already fine" during review until seen live. Overridden to fully transparent
-   here (not just a lighter gray) so EVERY `.dropdown-menu` in the app gets this borderless treatment
-   consistently, matching §14's own "no border, shadow only" convention for floating surfaces --
-   `.notif-dropdown`'s own box-shadow (--shadow-soft) already carries the "floating" cue alone. */
+/* Dropdown -- REVISED AGAIN 2026-09-13, item 3a "เก็บตก" follow-up (item 1, then refined further
+   same-day): the borderless-everywhere decision from an even earlier round (kept here for history,
+   not the current behavior) is REVERSED for general "ปุ่ม" dropdowns (action-button/⋮/export menus) --
+   real 1px --c-border edge + --c-bg + --shadow-soft, via Bootstrap 5's own PER-COMPONENT
+   `--bs-dropdown-*` CSS vars (NOT the shared root `--bs-border-radius`/`--bs-box-shadow` overrides
+   further up this file -- those stay --radius/--shadow-modal for every OTHER component that reads
+   them, e.g. real modals; scoping to `--bs-dropdown-*` keeps this a dropdown-only change).
+   `--radius-lg`/generous padding were the FIRST cut here -- corrected same-day: `--radius-lg` is
+   reserved for genuinely "floating surface" components ONLY (notification dropdown, Swal2 toast,
+   a future popover) -- an ordinary action/⋮/export menu is a smaller, denser control and gets the
+   PLAIN `--radius` (6px) instead, with a tighter `--sp-1` outer padding (the actual visual padding
+   comes from each `.dropdown-item`'s own padding below, not the menu's outer edge).
+   `:not(.notif-dropdown)` on every new rule below (min-width/margin-top/item styling) is a DELIBERATE
+   scope guard, even where `.notif-dropdown`'s own later, more specific rule would already win on its
+   own (radius/padding already did, safely, before this comment was updated) -- keeps this whole
+   "ปุ่ม dropdown" pass from ever silently reaching into notification's own separately-designed surface,
+   matching the explicit "เก็บ lg ไว้ notification/toast/popover เท่านั้น" instruction. */
 .dropdown-menu {
-    --bs-dropdown-border-color: transparent;
+    --bs-dropdown-border-color: var(--c-border);
+    --bs-dropdown-border-width: 1px;
+    --bs-dropdown-bg: var(--c-bg);
+    --bs-dropdown-box-shadow: var(--shadow-soft);
+    --bs-dropdown-border-radius: var(--radius);
+    --bs-dropdown-padding-x: var(--sp-1);
+    --bs-dropdown-padding-y: var(--sp-1);
+}
+.notif-dropdown {
+    border: none;
+}
+.dropdown-menu:not(.notif-dropdown) {
+    min-width: 180px;
+    /* Bootstrap's own Popper-driven positioning (dropdown.js's default offset modifier, [0, 2] --
+       hardcoded in its JS config, NOT read from any CSS variable, confirmed by reading the actual
+       bundled source rather than assumed) already places the menu ~2px below its trigger via an
+       inline `transform` -- that inline positioning does NOT reset a box's own `margin` (margin still
+       adds further offset around an absolutely-positioned box in the normal box model), so this
+       `margin-top` genuinely adds on top of Popper's own small default gap rather than replacing it.
+       Flagged, not silently ignored: the resulting VISUAL gap from the trigger button is closer to
+       ~6px (Popper's 2px + this 4px), not a clean isolated 4px -- getting an EXACT 4px-only gap would
+       mean also overriding Popper's own offset via `data-bs-offset="0,0"` on every trigger button
+       across every call site this touches (page-header.php, app.js's pageHeaderActionButtonHtml()/
+       dtInjectExportDropdown()), a larger, more invasive change than "add margin-top" -- not done
+       here since the instruction's own wording ("ห่างจากปุ่ม 4px (margin-top)") named the mechanism
+       explicitly, matched literally. */
+    margin-top: var(--sp-1);
+}
+.dropdown-menu:not(.notif-dropdown) .dropdown-item {
+    padding: var(--sp-2) var(--sp-3);
+    border-radius: 4px;
+}
+.dropdown-menu:not(.notif-dropdown) .dropdown-item:hover,
+.dropdown-menu:not(.notif-dropdown) .dropdown-item:focus {
+    background-color: var(--c-bg-hover);
+}
+/* Icon column -- fixed 16px regardless of which glyph (different Font Awesome icons have different
+   intrinsic advance widths at the same font-size, e.g. fa-check vs. fa-file-excel) so the LABEL text
+   starts at the exact same x-offset on every row of one menu, icon or not. Targets the icon as the
+   item's own first child specifically (this app's own dropdown-item markup convention, page-header.php
+   and every JS twin -- `<i class="... me-2"></i>{label}`) rather than every `<i>` anywhere inside an
+   item, which could otherwise catch an icon appearing later in a label for an unrelated reason. */
+.dropdown-menu:not(.notif-dropdown) .dropdown-item > i:first-child {
+    display: inline-block;
+    width: 16px;
+    text-align: center;
+}
+/* File-type icons (§1's documented exception, 2026-09-13, item 3a "เก็บตก" item 1) -- Excel/PDF (and
+   CSV, same green as Excel -- both are "spreadsheet-shaped" data) icons may carry their OWN color
+   regardless of context, same real-world convention every OS/office suite already uses (Excel = green,
+   PDF = red) -- scoped to ICON ONLY via these 2 classes, never the button/link itself (§3's own "สี
+   มีหน้าที่บอกว่าต้องทำอะไรต่อ" doesn't apply to a file-type glyph, it's identifying a FORMAT, not a
+   status/action) -- reuses the same tokens §3 already defines for status, not a new hardcoded green/
+   red pair. Applied in the export dropdown (page-header.php's own items, app.js's own
+   dtInjectExportDropdown() for DataTable toolbars) -- append directly into the icon's own class
+   string, no new field on either caller's contract. */
+.file-icon-excel,
+.file-icon-csv {
+    color: var(--c-success);
+}
+.file-icon-pdf {
+    color: var(--c-danger);
 }
 /* The SELECTED/active item background, which Bootstrap hardcodes to #0d6efd directly on
    .dropdown-item.active/:active (confirmed) -- §3: ฟ้าไม่ใช้เลย. */
@@ -2786,6 +2850,27 @@ td.num,
 th.num {
     text-align: right;
 }
+/* Money color system (§8, decided 2026-09-13, Round 3 item 3a) -- ONE app-wide rule for any money
+   value that carries a real accounting meaning (income/gross vs. deduction vs. net), applied via
+   these 3 classes ON TOP of `.num`, never a raw `text-success`/`text-danger` directly (§12's own lint
+   now specifically forbids `text-danger` combined with `.num` -- `text-success` was already
+   forbidden everywhere). Same green/red tokens this app already uses for real status meaning (§3) --
+   deliberately not a separate shade, so "this number is a deduction" and "this action failed" read
+   as the same visual language, not two different reds. `.money-net` is bold (600) instead of colored
+   -- a net/total figure isn't itself "good" or "bad", it's the headline number the other two exist to
+   explain, so weight (not color) is what should make it stand out. Scope is narrow and explicit: only
+   the number itself changes color -- its label, icon, and any card/background around it stay exactly
+   as neutral as any other value (§3: "การ์ด/stat ยังห้าม" carry status color on their own chrome). */
+.money-gross {
+    color: var(--c-success);
+}
+.money-deduction {
+    color: var(--c-danger);
+}
+.money-net {
+    color: var(--c-text);
+    font-weight: 600;
+}
 /* .col-check/.col-avatar/.col-actions/.col-toggle (§7) -- another real gap in the same family as
    `.num` just above: item 3's own DT_MARKER_CLASSES (app.js) has applied these 4 marker classes to
    DataTable cells since Round 2 item 3, all 4 documented as "กว้างคงที่" (fixed width) in §7's own
@@ -2914,8 +2999,13 @@ th.col-money div.dt-column-header .dt-column-title {
 
 /* page-header.php (§2) -- "ไม่มี card ครอบ ไม่มีไอคอนหน้า ไม่มีพื้นหลังสี", breadcrumb+H1 own separate
    lines/weights so they never read as saying the same thing twice. */
+/* §2, 2026-09-13 addition: a border-bottom under the whole header block (title+breadcrumb+
+   description+actions), separating it from whatever section follows (stepper/callout/stat cards) --
+   part of the item-A vertical-rhythm pass (Payroll Detail pilot, Round 3 item 3a follow-up). */
 .ph-header {
     margin-bottom: var(--sp-5);
+    padding-bottom: var(--sp-4);
+    border-bottom: 1px solid var(--c-border);
 }
 .ph-breadcrumb {
     font-size: var(--fs-sm);
@@ -2934,8 +3024,12 @@ th.col-money div.dt-column-header .dt-column-title {
     margin: 0 var(--sp-1);
     color: var(--c-text-faint);
 }
+/* §2, 2026-09-13 revision: the last crumb is now a real DATA value (an entity's own code, e.g. a
+   payroll run's run_code) -- --c-text (not --c-text-muted like it was as a generic static "type of
+   page" label) so a code stays legible, not faded. Still plain text, never a link (the current page
+   is never its own link target). */
 .ph-breadcrumb-current {
-    color: var(--c-text-muted);
+    color: var(--c-text);
 }
 .ph-title-row {
     display: flex;
@@ -2944,14 +3038,103 @@ th.col-money div.dt-column-header .dt-column-title {
     gap: var(--sp-3);
     flex-wrap: wrap;
 }
-/* Holds $secondary_actions (up to 2, .btn-outline-secondary) + $primary_action (.btn-primary), in
-   that order left-to-right -- secondary_actions render first in the queue so they land to the LEFT
-   of primary automatically, no separate ordering logic needed in CSS. */
+/* 2026-09-13, Round 3 item 3a -- wraps $title + the optional #phTitleBadge slot so a state badge
+   next to the H1 (e.g. Payroll Detail's run-state badge) doesn't get pulled apart from it by
+   `.ph-title-row`'s own `justify-content: space-between`. */
+.ph-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+}
+/* Holds $secondary_actions (up to 2, .btn-outline-secondary) + $overflow_actions (one more
+   .btn-outline-secondary dropdown, when present) + $primary_action (.btn-primary), in that order
+   left-to-right -- each renders into the queue in that order so they land correctly without
+   separate ordering logic needed in CSS. */
 .ph-actions {
     display: flex;
     align-items: center;
     gap: var(--sp-2);
     flex-wrap: wrap;
+}
+/* $decision_actions (2026-09-13, item 3a follow-up, revised same-day) -- one flex item of
+   `.ph-actions`, itself a flex row of its own buttons, each one's `tone` (`success`/`warning`/
+   `danger`) picking its own `.btn-decision-*` class below (see that ruleset's own comment -- NO
+   "last item = primary" rule anymore, every item's color comes from its own tone). `.ph-actions`'s own
+   `gap:var(--sp-2)` already contributes 1 `--sp-2` of space before this element (flex `gap` applies
+   between every adjacent pair) -- the extra `margin-left` tops that up to exactly `--sp-3` total,
+   deliberately wider than the ordinary `--sp-2` between other actions, so the decision cluster reads
+   as its own visually separate group. */
+.ph-decision-group {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-left: calc(var(--sp-3) - var(--sp-2));
+}
+/* §4 exception -- decision set (2026-09-13, documented in rules.md §4; solid fills for all 3).
+   Approve/Request Info/Reject inside a page-header.php `$decision_actions` cluster use their OWN
+   state's tone color instead of the ordinary primary/outline-secondary button hierarchy every other
+   action in the app follows -- deliberately NAMED `.btn-decision-*`, NOT Bootstrap's own
+   `.btn-success`/`.btn-warning`/`.btn-danger` (all of those stay banned everywhere else per §12 lint
+   rule 3 -- these 3 specific class names are the one documented exception, narrowly scoped to a
+   decision cluster, never a general-purpose class a future page should reach for instead of the real
+   §4 hierarchy). Also applied to the matching CONFIRM button inside each action's own modal form
+   (#runApproveForm/#runRejectForm/#runRequestInfoForm's own submit button, app/views/payroll/
+   detail.php) so the color stays consistent from the header trigger through to the actual point of
+   confirmation.
+   All 3 solid, all 3 the SAME shape: `background`/`border-color` = `--c-{tone}-fill` (tokens.css --
+   success/danger are pure `var()` aliases of the plain `--c-success`/`--c-danger` status tokens, added
+   for naming symmetry only, never diverge; warning is a GENUINELY different color, #D97706/#C26A05 --
+   see tokens.css's own comment on why `--c-warning` itself, tuned for text/border/badge use, wasn't
+   right for a solid fill), `color` = `--c-{tone}-on-fill` -- NOT a hardcoded `#fff` here even though
+   all 3 currently resolve to white: a real WCAG contrast check (tokens.css's own comment has the
+   actual numbers) found white text fails AA on success/danger's dark-mode fill (light accent colors
+   meant for text-on-dark-bg use, not fill-with-white-text use, 1.74:1/2.79:1, still true, unchanged
+   this round) -- `-on-fill` keeps dark text for THOSE 2 in dark mode specifically; only warning's own
+   fill was retuned to a darker amber (from a brighter #F5B400) so IT could legitimately go back to
+   white/bold in both themes (white on #D97706/#C26A05 measures 3.19:1/3.92:1 -- passes WCAG's
+   bold/large-text 3:1 minimum, not the regular-text 4.5:1 one, which is why `font-weight:600` below
+   is REQUIRED for this to actually hold, not a separate unrelated style choice). `-on-fill` resolves
+   correctly per tone/theme entirely via the token, no `@media`/`[data-bs-theme]` override needed in
+   THIS file for it. Hover = `--c-{tone}-hover` (success/danger) / `--c-warning-fill-hover` (tokens.css,
+   literal -8% per channel, "เข้มขึ้น 8%" as explicitly instructed -- computed per theme's own base
+   color, not a runtime `filter:brightness()`, so dark mode gets its own correctly-tuned value rather
+   than a flat percentage relative to a base color already different in that theme). */
+.btn-decision-success {
+    background: var(--c-success-fill);
+    border: 1px solid var(--c-success-fill);
+    color: var(--c-success-on-fill);
+    font-weight: 600;
+}
+.btn-decision-success:hover,
+.btn-decision-success:focus {
+    background: var(--c-success-hover);
+    border-color: var(--c-success-hover);
+    color: var(--c-success-on-fill);
+}
+.btn-decision-warning {
+    background: var(--c-warning-fill);
+    border: 1px solid var(--c-warning-fill);
+    color: var(--c-warning-on-fill);
+    font-weight: 600;
+}
+.btn-decision-warning:hover,
+.btn-decision-warning:focus {
+    background: var(--c-warning-fill-hover);
+    border-color: var(--c-warning-fill-hover);
+    color: var(--c-warning-on-fill);
+}
+.btn-decision-danger {
+    background: var(--c-danger-fill);
+    border: 1px solid var(--c-danger-fill);
+    color: var(--c-danger-on-fill);
+    font-weight: 600;
+}
+.btn-decision-danger:hover,
+.btn-decision-danger:focus {
+    background: var(--c-danger-hover);
+    border-color: var(--c-danger-hover);
+    color: var(--c-danger-on-fill);
 }
 .ph-title {
     font-size: var(--fs-xl);
@@ -2996,7 +3179,28 @@ th.col-money div.dt-column-header .dt-column-title {
 .stat-value {
     font-size: var(--fs-xl);
     font-weight: 700;
+    line-height: 1.2;
     color: var(--c-text);
+}
+/* §8 money-color system on a stat card -- same cascade-order bug, 3 separate real instances, not just
+   the 1 (money-net) originally caught: `.stat-value { color: var(--c-text); font-weight: 700; }` right
+   above is declared AFTER `.money-gross`/`.money-deduction`/`.money-net` (defined earlier in this file,
+   near `.num`), and all 4 selectors are equal (0,1,0) specificity -- so `.stat-value`'s own `color`
+   silently won on EVERY one of the 3 money classes, not just weight on money-net (the one that was
+   fixed before): `.money-gross`/`.money-deduction`'s intended --c-success/--c-danger color was being
+   overridden back to plain --c-text the whole time, confirmed the actual reported bug (stat cards never
+   visibly changed color despite the classes being present in the DOM) -- these 2-class compound
+   selectors are unconditionally more specific (0,2,0) than either single-class rule alone, so they win
+   regardless of source order -- the deterministic fix, not a reorder that could silently break again
+   the next time any of these rules moves. */
+.stat-value.money-gross {
+    color: var(--c-success);
+}
+.stat-value.money-deduction {
+    color: var(--c-danger);
+}
+.stat-value.money-net {
+    font-weight: 600;
 }
 /* Icon (optional) sits bare, top-right, no circle/background of its own -- a single flat color,
    `--c-text-faint` (this app's own faintest text token, since it's purely decorative here, not
@@ -3013,7 +3217,9 @@ th.col-money div.dt-column-header .dt-column-title {
     margin-bottom: var(--sp-1);
 }
 .stat-icon {
-    font-size: 20px;
+    /* 2026-09-13, Round 3 item 3a follow-up: 20px (the original Round 2 decision) read too large
+       once seen on a real page (Payroll Detail) -- sized down to 16px per explicit correction. */
+    font-size: 16px;
     line-height: 1;
     color: var(--c-text-faint);
     flex: 0 0 auto;
@@ -3022,15 +3228,15 @@ th.col-money div.dt-column-header .dt-column-title {
    the exact same height whether a card has a sub/badge/link or not; `margin-top:auto` pushes it down
    to the bottom edge of the (flex-column) card regardless of how tall the header/value block above
    it is, so every card's footer lines up on the same baseline across a row even when their icons/
-   labels don't take up identical space. `min-height` is one `--fs-sm` line at this app's own `--lh`
-   line-height (13px * 1.5 ≈ 20px, rounded) -- big enough for a badge/link/sub text line, same whether
-   populated or empty. */
+   labels don't take up identical space. `min-height` raised 20px->24px, 2026-09-13 Round 3 item 3a
+   follow-up ("slot ล่างสูงคงที่ 24px") -- together with `--sp-4` padding/`--fs-xl` value/1.2 line-height
+   above, this is what makes every stat card land at the same ~110px total height. */
 .stat-footer {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: var(--sp-2);
-    min-height: 20px;
+    min-height: 24px;
     margin-top: auto;
     padding-top: var(--sp-2);
 }
@@ -3718,17 +3924,20 @@ td.dt-empty-cell {
     font-weight: 400;
 }
 
-/* status-stepper.php + renderStatusStepper() (§6, Round 2 item 6) -- a plain, generic N-step
-   progress indicator. NOT a re-skin of the payroll run spine -- that keeps its own
-   action-button/date/branch-icon-aware rendering in app.js's own runLifecycleSteps()/
-   computeRunLifecycleProgress(), untouched this round; migrating it onto this generic component is
-   a round-4 decision. Horizontal row of circle+label columns joined by a single-color connecting
-   line -- no per-step pastel colors, no box/card per step (§6). */
+/* status-stepper.php + renderStatusStepper() (§6, Round 2 item 6, revised 2026-09-13 Round 3 item 3a
+   follow-up -- "แยก 3 สถานะชัด") -- a plain, generic N-step progress indicator, now genuinely used by
+   the real payroll run spine (payroll/detail.js's renderProcessTimeline()). Horizontal row of
+   circle+label columns -- no box/card per step (§6). */
 .status-stepper {
     list-style: none;
     display: flex;
-    margin: 0;
     padding: 0;
+    /* §6, 2026-09-13, item 4 (Payroll Detail 3a follow-up, applies to every page with a stepper) --
+       never stretches full-width on a wide page: capped at 960px, CENTERED (`margin:0 auto`) within
+       its container -- revises the item A.2 decision earlier this same round, which had it flush left
+       under the H1 instead. */
+    max-width: 960px;
+    margin: 0 auto;
 }
 .status-stepper-step {
     position: relative;
@@ -3738,10 +3947,14 @@ td.dt-empty-cell {
     flex: 1 1 0;
     text-align: center;
 }
-/* One --c-border line through the row, drawn on every step except the last, from this circle's own
-   center to the next one's (equal-width flex columns make "100% of this column's width, starting at
-   its own center" land exactly on the next column's center) -- always this one color, never
-   recolored by done/not-done state (§6: "เส้นเชื่อมสีเดียว --c-border"). */
+/* Connecting line -- default --c-border ("ยังมาไม่ถึง" segments, unchanged). 2026-09-13 revision: a
+   DONE step's own trailing segment (drawn by that step's OWN <li>, geometry unchanged -- "100% of
+   this column's width starting at its own center" already lands exactly on the next column's
+   center) turns --c-success instead of staying the flat single color the ORIGINAL §6 wording called
+   for ("เส้นเชื่อมสีเดียว --c-border เสมอ" -- superseded by this same date's own explicit correction).
+   Net effect: every segment BEFORE the current step is green, the segment leading OUT of current (and
+   everything after it) stays gray -- matches "เส้นก่อนหน้า --c-success เส้นถัดไป --c-border" exactly,
+   with no per-segment logic needed beyond "which step owns this segment". */
 .status-stepper-step:not(:last-child)::after {
     content: '';
     position: absolute;
@@ -3751,6 +3964,9 @@ td.dt-empty-cell {
     height: 1px;
     background: var(--c-border);
     z-index: 0;
+}
+.status-stepper-step--done:not(:last-child)::after {
+    background: var(--c-success);
 }
 .status-stepper-circle {
     position: relative;
@@ -3771,29 +3987,127 @@ td.dt-empty-cell {
     font-size: var(--fs-sm);
     color: var(--c-text-muted);
 }
-/* Done: gray circle (--c-border-strong fill) + checkmark, muted label -- the fill/icon-color pair is
-   deliberately swapped light vs. dark (--c-border-strong is light gray in light mode, dark gray in
-   dark mode; --c-text-muted inverts the same way), so the checkmark stays legible against its own
-   circle in both themes without a separate dark override. */
+/* Done (2026-09-13 revision) -- soft-success circle + success-colored checkmark, FULL-strength
+   (--c-text, not muted) label -- was a flat gray fill + muted label indistinguishable enough from
+   "next" at a glance that this app's own review asked for the 3 states to read apart more clearly. */
 .status-stepper-step--done .status-stepper-circle {
-    background: var(--c-border-strong);
-    border-color: var(--c-border-strong);
-    color: var(--c-text-muted);
+    background: var(--c-success-soft);
+    border-color: var(--c-success-soft);
+    color: var(--c-success);
 }
-/* Current: solid --c-primary circle, no icon -- label reads --c-text (not muted) and bold. */
+.status-stepper-step--done .status-stepper-label {
+    color: var(--c-text);
+}
+/* Final done (2026-09-13) -- the LAST step, when the caller's own process is FULLY complete (e.g. a
+   payroll run's "locked" state), reads as a distinct solid-fill "finished" circle instead of the
+   ordinary soft-done treatment every earlier done step gets. An explicit `final:true` per STEP the
+   CALLER sets (only ever on its own last step, only when genuinely all the way done) -- this generic
+   component never infers "is the whole thing complete" on its own. White icon on solid --c-success,
+   same "icon/text on a solid brand-color fill is white" convention this app's buttons/badges already
+   use elsewhere -- not a new pattern invented here. */
+.status-stepper-step--done.status-stepper-step--final .status-stepper-circle {
+    background: var(--c-success);
+    border-color: var(--c-success);
+    color: #fff;
+}
+/* Current: solid --c-primary circle + that step's own white 12px icon (§6, 2026-09-13 item C
+   follow-up -- resolves the earlier flagged ambiguity: "ไอคอนขาว" now means a real per-station glyph,
+   not a hardcoded generic one -- the mapping lives in app.js's RUN_LIFECYCLE_STEPS/
+   RUN_LIFECYCLE_BRANCH_INFO, this file only styles the icon `renderStatusStepper()`/status-stepper.php
+   are HANDED, never chooses one itself). `color:#fff` here is what the icon (Font Awesome glyphs
+   render in `currentColor` by default) actually picks up -- a tone-override rule below only changes
+   `background`/`border-color`, never `color`, so a branch-state icon (already swapped to that branch's
+   own glyph by the CALLER, e.g. fa-xmark for rejected) stays white automatically too, no separate
+   override needed per tone. Label reads --c-text (not muted) and bold 600. */
 .status-stepper-step--current .status-stepper-circle {
     background: var(--c-primary);
     border-color: var(--c-primary);
+    color: #fff;
+}
+.status-stepper-current-icon {
+    font-size: 12px;
 }
 .status-stepper-step--current .status-stepper-label {
     color: var(--c-text);
     font-weight: 600;
 }
-/* Next: empty circle, outline only -- same as the base rule above, restated here for clarity only
-   (no visual change from the default). */
+/* Next/"ยังมาไม่ถึง" (2026-09-13 revision) -- empty outline circle unchanged, but the label is now
+   --c-text-faint specifically (was --c-text-muted, the SAME tone "done" used to share before this
+   revision -- now strictly fainter than done, so the two states read apart, not both "some flavor of
+   gray"). Never shows a date -- renderProcessTimeline()'s own showDate condition already only ever
+   passes a date for done/current steps, nothing extra needed here to enforce it. */
 .status-stepper-step--next .status-stepper-circle {
     background: var(--c-bg);
     border-color: var(--c-border-strong);
+}
+.status-stepper-step--next .status-stepper-label {
+    color: var(--c-text-faint);
+}
+/* 2026-09-13, Round 3 item 3a extension -- an optional date under the label, plain text, NO icon
+   (the real payroll spine's own OLD `.tl-date` had a clock icon -- explicitly dropped per instruction
+   "ไม่มีไอคอนนาฬิกา"). Same faint tone regardless of done/current/next state -- a date is a supporting
+   detail, not the thing that carries the step's own done/current/next signal. */
+.status-stepper-date {
+    font-size: var(--fs-xs);
+    color: var(--c-text-faint);
+    margin-top: 2px;
+}
+/* 2026-09-13, same-day follow-up -- the CURRENT step's circle can be recolored away from the default
+   --c-primary orange via a `tone` (danger/warning/success/neutral, status_map.php's own vocabulary,
+   §5) when it represents a branch/exception state (rejected/need_info/cancelled) rather than the
+   normal forward flow -- the caller looks the tone up itself (statusMapEntry()/getStatusMapEntry()),
+   never guessed here. Only `.status-stepper-step--current` combined with a tone class has any effect
+   -- a tone on a done/next step is a no-op by construction (renderStatusStepper()/status-stepper.php
+   only ever add the tone class to the current step). --c-warning intentionally has no shadow/ring of
+   its own beyond the fill, matching --c-primary's own plain solid-fill treatment (no extra glow). */
+.status-stepper-step--current.status-stepper-tone-danger .status-stepper-circle {
+    background: var(--c-danger);
+    border-color: var(--c-danger);
+}
+.status-stepper-step--current.status-stepper-tone-warning .status-stepper-circle {
+    background: var(--c-warning);
+    border-color: var(--c-warning);
+}
+.status-stepper-step--current.status-stepper-tone-success .status-stepper-circle {
+    background: var(--c-success);
+    border-color: var(--c-success);
+}
+.status-stepper-step--current.status-stepper-tone-neutral .status-stepper-circle {
+    background: var(--c-text-muted);
+    border-color: var(--c-text-muted);
+}
+/* Current-step pulse (§6, 2026-09-13, item 3a "เก็บตก" item 2) -- a soft `--c-primary` ring expanding
+   outward from the CURRENT circle, ONLY when the caller marks that step `live: true` (payroll/
+   detail.js's renderProcessTimeline() -- "ถึงตาผู้ใช้คนนี้": a $decision_actions cluster or
+   $primary_action exists for the CURRENT viewer, AND the step carries no `tone` override -- a branch
+   state, rejected/need_info, reads as settled/waiting, never pulses). The ring is a `::after` pseudo-
+   element sized to the circle's own 28px, `z-index:-1` so it paints BEHIND the circle's own solid
+   fill/checkmark (only ever visible past the circle's own edge, the classic "radar ping" look) --
+   the circle's OWN background/border/icon never animates, only this one extra layer does. */
+@keyframes stepper-pulse-ring {
+    0% { opacity: .35; transform: translate(-50%, -50%) scale(1); }
+    100% { opacity: 0; transform: translate(-50%, -50%) scale(1.9); }
+}
+.status-stepper-step--current.stepper-current-live .status-stepper-circle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--c-primary);
+    opacity: .35;
+    transform: translate(-50%, -50%) scale(1);
+    animation: stepper-pulse-ring 2.4s ease-out infinite;
+    pointer-events: none;
+    z-index: -1;
+}
+@media (prefers-reduced-motion: reduce) {
+    .status-stepper-step--current.stepper-current-live .status-stepper-circle::after {
+        content: none;
+        animation: none;
+    }
 }
 
 /* timeline.php + renderTimeline() (§6, Round 2 item (3)/6b) -- a plain vertical activity log: one
@@ -4608,37 +4922,42 @@ html, body {
     background: #a8d5ae;
 }
 
-.process-next-step {
-    margin: 14px 0 0;
-    padding: 10px 16px;
-    background: #fff8ec;
-    border-left: 3px solid var(--c-primary);
-    border-radius: 6px;
-    font-size: 0.85rem;
-    color: #7a5200;
+/* Callout -- docs/design/rules.md §15, new 2026-09-13 (Round 3 item 3a follow-up). Replaces the
+   `.process-next-step` box that used to live here (was a colored-per-state box -- orange/blue/green/
+   red/gray background + left border -- then simplified once already to plain muted text in an
+   earlier round of this same follow-up; now retired outright in favor of a real, named, reusable
+   component instead of a page-specific class, since "one line of guidance text, colored by meaning"
+   turned out to be a genuinely reusable shape -- see app/views/partials/callout.php's own docblock).
+   Plain `--c-bg-subtle` background, `--radius` corners, a 3px LEFT border colored by tone (§3's own
+   documented exception, see rules.md §3's exception table) -- deliberately NO icon (the tone-colored
+   border already carries that signal) and no background-color-per-tone (only the border does). */
+/* 2026-09-13, same-day follow-up: text size/padding trimmed -- was `--fs-base`/`--sp-3 --sp-4` (a
+   fuller paragraph-sized box); reads too heavy for a 1-line caption directly under the stepper.
+   `--fs-sm` (13px) + `--sp-2 --sp-3` padding lands the whole box at ~36px tall (padding-top 8px +
+   ~20px line height + padding-bottom 8px) -- action words stay bold 600 via `.callout b/strong` below,
+   unchanged, so the one thing that needs to stand out still does even at the smaller size. Applies to
+   every tone (this rule, not a per-`.callout-*` override) -- size/padding are never tone-dependent. */
+.callout {
+    background: var(--c-bg-subtle);
+    border-radius: var(--radius);
+    border-left: 3px solid var(--c-border-strong);
+    padding: var(--sp-2) var(--sp-3);
+    font-size: var(--fs-sm);
+    color: var(--c-text);
 }
-.process-next-step i {
-    margin-right: 6px;
+.callout b, .callout strong {
+    font-weight: 600;
 }
-.process-next-step.waiting {
-    background: #f4f8fb;
-    border-left-color: #5bc0de;
-    color: #2b5f76;
-}
-.process-next-step.done {
-    background: #f0f9f0;
-    border-left-color: #198754;
-    color: #2e6b2e;
-}
-.process-next-step.error {
-    background: #fdecea;
-    border-left-color: #dc3545;
-    color: #a83232;
-}
-.process-next-step.muted {
-    background: #f1f3f5;
-    border-left-color: #6c757d;
-    color: #495057;
+.callout-primary { border-left-color: var(--c-primary); }
+.callout-success { border-left-color: var(--c-success); }
+.callout-warning { border-left-color: var(--c-warning); }
+.callout-danger { border-left-color: var(--c-danger); }
+.callout-neutral { border-left-color: var(--c-border-strong); }
+/* Payroll Detail's own placement of the callout (§0.7-scoped page usage, not part of the shared
+   component's own CSS contract above): stepper->callout gap is --sp-3 (the callout is the stepper's
+   own caption, a tighter gap than the --sp-5 used everywhere else -- item A.1). */
+#nextStepBanner.callout {
+    margin-top: var(--sp-3);
 }
 
 /* ==========================================================================

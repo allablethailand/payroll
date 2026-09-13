@@ -151,29 +151,67 @@ function personDisplayNameRd(row, prefix) {
     return (currentLang === 'th' ? th : en) || th || en || '-';
 }
 
-/* ---------- Next-step banner: one line below the timeline, telling the user exactly what this
-   run needs next in plain language -- separate from the state badge/timeline labels (which just
-   name the state) and from the action buttons themselves (which say WHAT to click, not WHY).
-   Styled via .process-next-step (see style.css), colored by urgency. */
-function nextStepBanner(state) {
-    // Non-draft text is purely informational now (no "click X" instructions) -- this page shows no
-    // action buttons at all once a run has left draft (per explicit request), so telling the
-    // viewer to click something that isn't there would be misleading.
+/* ---------- Next-step callout: one line below the stepper, telling the user exactly what this run
+   needs next in plain language -- separate from the state badge/stepper labels (which just name the
+   state) and from the action buttons themselves (which say WHAT to click, not WHY). §15/item B
+   (2026-09-13): rendered via the shared callout.php/calloutHtml() component instead of a bespoke
+   page-local box -- see style.css's own `.callout*` rules and callout.php's docblock.
+   Tone-per-state is a JUDGMENT CALL (flagged, not something the task's own instruction spelled out
+   for every state -- only locked=success/rejected=danger/need_info=warning were explicit): every
+   normal forward-flow state (draft/pending_approval/approved/paid) reads as 'primary' (still moving
+   toward completion, matches the stepper's own current-step orange), 'cancelled' reads as 'neutral'
+   (nothing left to do, but not a success either). */
+// 2026-09-13, item 3a follow-up (item 3): `run.approval_flow.approvers` (PayrollRunModel::
+// approvalFlow(), unchanged -- the SAME flattened "who can act right now" list the Approval Timeline
+// modal's own apvApprovalStageHtml() already renders) is the one real source for "who is this run
+// waiting on" -- `status === 'pending'` is exactly the ones who haven't acted yet, real data, not a
+// guess. Names fall back th->en->employee_no, same convention as apvApproverSubstepHtml()'s own.
+function pendingApproverNamesRd(run) {
+    const approvers = (run.approval_flow && run.approval_flow.approvers) || [];
+    return approvers
+        .filter(function (a) { return a.status === 'pending'; })
+        .map(function (a) { return (currentLang === 'th' ? a.name_th : a.name_en) || a.name_th || a.name_en || a.employee_no; })
+        .filter(Boolean);
+}
+function nextStepBanner(run) {
+    const state = run.state;
+    // Non-draft text is purely informational now (no "click X" instructions) except draft's own text
+    // and pending_approval's approver-view text, which DO name real actions -- see the <b> tags,
+    // matching real button labels word-for-word, weight 600 via .callout's own `b`/`strong` rule
+    // (item B: "ตรงกับ label ปุ่มจริงและหนา 600").
+    if (state === 'pending_approval') {
+        // 2026-09-13, item 3: 2 genuinely different messages, not one generic "รอการอนุมัติ" for
+        // everyone -- the approver (can_approve_payroll) sees what to DO (matches the 3
+        // decision-cluster buttons in the header, computeRunHeaderActions() above, word-for-word);
+        // everyone else sees WHO they're waiting on, by real name pulled from run.approval_flow, not
+        // a static "someone is approving this" placeholder.
+        if (run.can_approve_payroll) {
+            const approverText = langData['next_step_pending_approval_approver']
+                || 'Review the employee details, then click <b>Approve</b> / <b>Reject</b> / <b>Request Info</b>';
+            return { tone: 'primary', html: approverText };
+        }
+        const names = pendingApproverNamesRd(run);
+        if (names.length) {
+            const namedTpl = langData['next_step_pending_approval_named'] || 'Waiting for approval from {names}.';
+            return { tone: 'primary', html: namedTpl.replace('{names}', escapeHtml(names.join(', '))) };
+        }
+        return { tone: 'primary', html: langData['next_step_pending_approval'] || 'Waiting for approval.' };
+    }
     const map = {
-        draft: ['', 'fa-circle-info', 'next_step_draft', 'This run is still a draft. Recalculate to compute amounts, then Submit for Approval when ready.'],
-        pending_approval: ['waiting', 'fa-hourglass-half', 'next_step_pending_approval', 'Waiting for approval.'],
-        approved: ['', 'fa-money-check-dollar', 'next_step_approved', 'Approved. Waiting to be marked as paid.'],
-        paid: ['', 'fa-lock', 'next_step_paid', 'Paid. Waiting to be locked.'],
-        locked: ['done', 'fa-circle-check', 'next_step_locked', 'This run is locked and finalized. No further action is needed.'],
-        rejected: ['error', 'fa-rotate', 'next_step_rejected', 'Rejected. Review the reason above. Waiting to be revised.'],
-        cancelled: ['muted', 'fa-ban', 'next_step_cancelled', 'This run was cancelled and is no longer active.'],
+        draft: ['primary', 'next_step_draft', 'This run is still a draft. <b>Recalculate</b> to compute amounts, then <b>Submit for Approval</b> when ready.'],
+        approved: ['primary', 'next_step_approved', 'Approved. Waiting to be marked as paid.'],
+        paid: ['primary', 'next_step_paid', 'Paid. Waiting to be locked.'],
+        locked: ['success', 'next_step_locked', 'This run is locked and finalized. No further action is needed.'],
+        rejected: ['danger', 'next_step_rejected', 'Rejected. Review the reason above. Waiting to be revised.'],
+        need_info: ['warning', 'next_step_need_info', 'More information was requested. Review the note above, then revise and resubmit.'],
+        cancelled: ['neutral', 'next_step_cancelled', 'This run was cancelled and is no longer active.'],
     };
-    const [cls, icon, key, fallback] = map[state] || ['muted', 'fa-circle-info', '', ''];
+    const [tone, key, fallback] = map[state] || ['neutral', '', ''];
     const text = langData[key] || fallback;
     if (!text) {
-        return { cls: '', html: '' };
+        return { tone: '', html: '' };
     }
-    return { cls, html: `<i class="fa-solid ${icon}"></i><span>${escapeHtml(text)}</span>` };
+    return { tone, html: text };
 }
 
 /* ---------- Process timeline: a horizontal step tracker across the top of the page, mirroring
@@ -190,148 +228,196 @@ function nextStepBanner(state) {
    RUN_LIFECYCLE_STEPS/runLifecycleSteps() -- shared with index.js's mini-timeline, which used to
    duplicate this exact same logic under its own MINI_TIMELINE_STEPS/computeMiniTimelineProgress().
    renderProcessTimeline() below now just calls runLifecycleSteps(run, {showDates:true}). */
-// Two independent things render into a step's tl-actions slot:
-//  1. "View Timeline" -- pinned PERMANENTLY at step 1 (the Approve station), and only once the run
-//     has actually been submitted (run.submitted_at set). 2026-08-23, explicit request ("ปุ่ม
-//     Timeline ควรมาอยู่ใน Station ของการ Approve มากกว่านะครับ ต้องส่ง Approve ก่อนค่อยขึ้นมาแสดงผล")
-//     -- it used to follow whichever step was "current", which meant it showed at the draft/
-//     Created step before anything had ever been sent for approval; now it has one fixed home and
-//     stays hidden until there's actually an approval history worth viewing.
-//  2. The decision/undo/revise buttons -- still anchor at whichever step is CURRENTLY relevant
-//     (i === the current/branch step -- reachedIdx+1, which for a branched state
-//     (rejected/need_info/cancelled) always equals branch.atIndex too, see
-//     computeRunLifecycleProgress() (app.js) above): Approve/Request Info/Reject/Revert at pending_approval
-//     (step 1 -- the same slot View Timeline lives in, so they render together there),
-//     Undo Decision at approved (step 2), or Revise at the rejected/need_info branch (step 2's
-//     branch slot). can_approve_payroll/can_process_payroll gate which of these actually show, same
-//     as before. Submit is the one exception to both of the above: it moves the run INTO step 1
-//     from step 0, so it renders under the destination step regardless of submitted_at (there's
-//     nothing to submit yet if there were).
-function timelineStepActionsHtml(i, run, currentIndex) {
-    if (run.state === 'draft' && i === 1) {
-        return `<button type="button" id="btnSubmitRun" class="btn btn-sm btn-primary"><i class="fa-solid fa-paper-plane me-1"></i><span data-i18n="action_submit">${langData['action_submit'] || 'Submit for Approval'}</span></button>`;
-    }
-    // 2026-08-27, explicit request ("ปุ่มในหน้า timeline ของ Process detail น่าจะมีคำกำหับในปุ่มให้ดู
-    // ง่าย") -- every button here used to be icon-only with just a hover `title` tooltip, which
-    // isn't discoverable at a glance (especially on a touch device, where hover tooltips don't
-    // really exist). Every button below now carries a visible text label too (icon + `me-1` +
-    // label span, same shape the standalone #btnSubmitRun button above and the Timeline modal's
-    // own footer buttons in renderRunTimelineModal() already used) -- `title` is kept alongside
-    // as a redundant a11y/tooltip hint, not the only way to read what the button does anymore.
-    // .tl-actions-row's own CSS (style.css) was widened to fit a label, not just an icon.
-    const buttons = [];
-    // 2026-08-29, explicit request: "ปุ่ม Timeline และ Approve ควรไปอยู่ที่ Station Approved แล้ว" -- was
-    // pinned at i===1 (the "Pending Approval"/ส่งอนุมัติ station itself); moved to i===2 ("Approved")
-    // to match computeRunLifecycleProgress() (app.js)'s own fix (see that function's own docblock) -- once
-    // submitted, "Pending Approval" is a COMPLETED milestone (shows green/done) and "Approved" is
-    // the station representing the NEXT thing to happen, which is where View Timeline/Approve/etc.
-    // now consistently live.
-    if (i === 2 && run.submitted_at) {
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-view-timeline" title="${langData['action_timeline'] || 'Timeline'}"><i class="fa-solid fa-list-check me-1"></i>${langData['action_timeline'] || 'Timeline'}</button>`);
-    }
-    if (i === currentIndex) {
-        if (run.state === 'pending_approval') {
-            // 2026-08-27, explicit follow-up request ("ปรับ station ตรง Approve ตอนนี้มีหลายปุ่มครับ
-            // สำหรับคนที่มีสิทธิ์อนุมัติ") -- an approver used to see 4 buttons stacked here at once
-            // (Approve/Request Info/Reject/Send Back for Revision), on top of View Timeline right
-            // above -- cluttered, especially once every button gained a text label the same day.
-            // Approve stays its own prominent button (the common-case action); the other 3 collapse
-            // into one "More" dropdown -- same delegated .btn-tl-request-info/.btn-tl-reject/
-            // .btn-tl-revert click handlers still fire either way (class-based, not id-based), so no
-            // JS handler changes were needed, only where these 3 buttons physically render.
-            if (run.can_approve_payroll) {
-                buttons.push(`<button type="button" class="btn btn-sm btn-success btn-tl-approve" title="${langData['action_approve'] || 'Approve'}"><i class="fa-solid fa-check me-1"></i>${langData['action_approve'] || 'Approve'}</button>`);
-                buttons.push(`<div class="dropdown d-inline-block">
-                    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" title="${langData['action_more'] || 'More'}">
-                        <i class="fa-solid fa-ellipsis"></i>
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item btn-tl-request-info" href="#"><i class="fa-solid fa-circle-info me-2"></i>${langData['action_request_info'] || 'Request Info'}</a></li>
-                        <li><a class="dropdown-item text-danger btn-tl-reject" href="#"><i class="fa-solid fa-xmark me-2"></i>${langData['action_reject'] || 'Reject'}</a></li>
-                        <li><a class="dropdown-item btn-tl-revert" href="#"><i class="fa-solid fa-rotate-left me-2"></i>${langData['action_revert'] || 'Send Back for Revision'}</a></li>
-                    </ul>
-                </div>`);
-            } else if (run.can_process_payroll) {
-                // 2026-08-23, explicit request ("ในกรณีที่ส่ง Approve แล้วยังไม่มีใคร Approve สามารถดึง
-                // Process กลับได้") -- the submitter can pull their own still-undecided submission
-                // back too, not just an approver -- see PayrollRunModel::revert()'s own docblock.
-                // Only reachable here when can_approve_payroll is false (the branch above already
-                // folds this same action into its own dropdown when both permissions are held), so
-                // it's a single lone button, not a clutter case.
-                buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-revert" title="${langData['action_revert'] || 'Send Back for Revision'}"><i class="fa-solid fa-rotate-left me-1"></i>${langData['action_revert'] || 'Send Back for Revision'}</button>`);
-            }
-        } else if (run.state === 'approved') {
-            // 2026-08-27, explicit request ("จากอนุมัติแล้ว จะย้ายไป Station จ่ายแล้ว กดปุ่มไหน") --
-            // this was a real gap: PayrollRunModel::markPaid()/the mark-paid endpoint were fully
-            // built already but no button anywhere ever called them. can_finalize_payroll gates
-            // this the same way can_approve_payroll gates Undo Decision right below it.
-            if (run.can_finalize_payroll) {
-                buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-mark-paid" title="${langData['action_mark_paid'] || 'Mark as Paid'}"><i class="fa-solid fa-money-check-dollar me-1"></i>${langData['action_mark_paid'] || 'Mark as Paid'}</button>`);
-            }
-            if (run.can_approve_payroll) {
-                buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-revert" title="${langData['action_undo_decision'] || 'Undo Decision'}"><i class="fa-solid fa-rotate-left me-1"></i>${langData['action_undo_decision'] || 'Undo Decision'}</button>`);
-            }
-        } else if (run.state === 'paid' && run.can_finalize_payroll) {
-            // 2026-08-27, explicit follow-up request ("เพิ่มปุ่ม Lock ให้ด้วยครับ") -- same gap/fix
-            // as Mark as Paid right above: PayrollRunModel::lock()/the lock endpoint were already
-            // fully built (and already had a quick-action shortcut on the Process LIST page's mini
-            // timeline, see index.js's miniTimelineQuickActionHtml()) but the Detail page's own
-            // step-by-step timeline never got an equivalent button at the "Paid" step.
-            // 2026-08-31, explicit request: "ในหน้าทำรอบจ่าย ให้ตัด Process ของปุ่ม Lock ออก ให้เหลือแค่
-            // ปุ่ม Verify" -- pure rename/re-wording, NOT a state-machine change: same endpoint
-            // (api/payroll-run.lock), same PayrollRunModel::lock() method, same paid->locked
-            // transition -- reopen()'s own locked-vs-paid branching and every other 'locked'-state
-            // consumer keep working unchanged, this only relabels the button/confirm copy so the
-            // operator sees "Verify" (with an explicit "can't recalculate again" warning) instead
-            // of the more technical-sounding "Lock". Uses a NEW key (action_verify_run), NOT a
-            // repurposed action_lock -- that key is still legitimately used elsewhere for the
-            // UNRELATED per-employee QA Lock toggle (see verifyLockButtonsRd()) and the Process
-            // List page's own quick-action shortcut for this SAME run-level action (index.js's
-            // miniTimelineQuickActionHtml(), updated to match).
-            buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-tl-lock" title="${langData['action_verify_run'] || 'Verify'}"><i class="fa-solid fa-check-double me-1"></i>${langData['action_verify_run'] || 'Verify'}</button>`);
-            // 2026-08-29, explicit request: "รายการที่ติ๊กว่าทำจ่ายแล้ว หรือปิดรอบไปแล้ว สามารถเปิดให้กลับมา
-            // แก้ไขได้และส่งอนุมัติใหม่ได้ครับ" -- see PayrollRunModel::reopen()'s own docblock.
-            buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger btn-tl-reopen" title="${langData['action_reopen'] || 'Reopen for Editing'}"><i class="fa-solid fa-unlock me-1"></i>${langData['action_reopen'] || 'Reopen for Editing'}</button>`);
-        } else if ((run.state === 'rejected' || run.state === 'need_info') && run.can_process_payroll) {
-            buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-pull-back" title="${langData['action_revise'] || 'Revise'}"><i class="fa-solid fa-pen-to-square me-1"></i>${langData['action_revise'] || 'Revise'}</button>`);
+// 2026-09-13, Phase Design Round 3 item 3a, explicit decision: "stepper เป็น 'สถานะ' ล้วน ไม่มีปุ่มฝัง
+// อีก" (§2/§6, applies to every future page with a stepper, not just this one) -- every action
+// button that used to render INSIDE a `tl-actions-row` under whichever station was current (the OLD
+// timelineStepActionsHtml(), removed outright, see git history for its own per-station docblock/
+// history if ever needed again) now renders in page-header.php's own #phActions instead
+// (renderPageHeaderActions(), app.js), via computeRunHeaderActions() below. renderProcessTimeline()
+// itself (further down) no longer renders any actions at all -- just icon/label/date per station.
+//
+// This is a straight port of the OLD function's exact same state/permission logic into the
+// {primary, secondary, overflow} shape page-header.php's own $primary_action/$secondary_actions/
+// $overflow_actions expect (docs/design/rules.md §2) -- every button KEEPS its original
+// `.btn-tl-*`/`#btnSubmitRun` class or id unchanged, so every existing `$(document).on('click',
+// '.btn-tl-xxx', ...)` delegated handler (all of them ARE delegated on `document`, confirmed before
+// making this change) keeps firing correctly regardless of where in the DOM the button now lives --
+// no click-handler code needed to change at all, only where the button's OWN html string is built.
+//
+// Judgment calls made while porting (flagged in the round-3 report, not silently decided):
+// - Approve/Mark-as-Paid/Verify were previously colored `.btn-success`/`.btn-primary`/
+//   `.btn-outline-secondary` respectively -- ALL become the primary slot now (forced `.btn-primary`,
+//   orange, by page-header.php's own queue-building), consistent with "primary = the one
+//   recommended next action for this state" regardless of what tone it happened to have before.
+// - "View Timeline" (a plain informational view, not a state transition) is now `secondary` (visible
+//   directly, not one level deep in a menu) -- see computeRunHeaderActions()'s own comment further
+//   down (2026-09-13, item 3a follow-up: "decision set" moved). "Undo Decision"/"Reopen" (a REVERSAL
+//   of a decision, not a forward step, nor one of the 3 literal approve-time choices) stay in
+//   `$overflow_actions` (Reopen tagged tone:'danger', matching its own previous `.btn-outline-danger`
+//   styling).
+// - "ยกเลิก" (Cancel run) was NOT ported -- this page's own code comment (right below,
+//   RUN_LIFECYCLE_BRANCH_INFO's neighbor) already states Cancel/Delete were deliberately removed
+//   from this page entirely and only exist on the Process LIST page's row actions; wiring a NEW
+//   cancel capability onto Detail would be adding real functionality, not just re-skinning existing
+//   UI, which is out of this round's "view/CSS/JS-render only" scope (§0.7) -- flagged for
+//   confirmation before wiring, not guessed.
+function computeRunHeaderActions(run) {
+    const t = (key, fallback) => langData[key] || fallback;
+    let primary = null;
+    let decision = null;
+    const overflow = [];
+    // Every state-transition action below carries `extraClass` set to its ORIGINAL `.btn-tl-*` class
+    // (unchanged from the OLD per-station buttons) -- the existing `$(document).on('click',
+    // '.btn-tl-xxx', ...)` delegated handlers key off that class, not the `id` given here (a plain
+    // stable id, new, not read by any existing handler -- present only so a future need to target
+    // one of these individually, e.g. disabling it, has something to select on).
+    if (run.state === 'draft') {
+        primary = { label: t('action_submit', 'Submit for Approval'), id: 'btnSubmitRun', icon: 'fa-solid fa-paper-plane' };
+    } else if (run.state === 'pending_approval') {
+        // 2026-09-13, item 3a follow-up ("decision set"): the approver's own 3 real choices (ขอข้อมูล
+        // เพิ่ม/ไม่อนุมัติ/อนุมัติ) now render together as page-header.php's own `$decision_actions`
+        // cluster, visibly separated (--sp-3) from Timeline/Export/"อื่นๆ" -- NOT buried one level deep
+        // inside the overflow dropdown like an earlier cut of this same task had them.
+        // 2026-09-13, SAME-DAY revision of this same cluster: order is now [อนุมัติ][ขอข้อมูลเพิ่มเติม]
+        // [ไม่อนุมัติ] (was request-info/reject/approve) and each item carries its OWN `tone` --
+        // 'success' (solid, white text)/'warning' (outline)/'danger' (outline) -- picking
+        // page-header.php's new `.btn-decision-*` classes (§4's documented decision-set exception,
+        // rules.md §4) instead of the earlier "every item outline-secondary except the last" rule.
+        // "Send Back for Revision" stays in `overflow` (`.ph-decision-group` cluster is ONLY the 3
+        // literal decision choices, nothing else) -- for a viewer with NEITHER can_approve_payroll NOR
+        // can_process_payroll, neither `decision` nor `overflow` gets anything at all: the header shows
+        // just Timeline+Export, and nextStepBanner()'s own callout explains who still needs to act
+        // (see the `pending_approval` case there, item 3).
+        if (run.can_approve_payroll) {
+            overflow.push({ label: t('action_revert', 'Send Back for Revision'), id: 'btnRevertRunHeader', icon: 'fa-solid fa-rotate-left', extraClass: 'btn-tl-revert' });
+            decision = [
+                { label: t('action_approve', 'Approve'), id: 'btnApproveRunHeader', icon: 'fa-solid fa-check', extraClass: 'btn-tl-approve', tone: 'success' },
+                { label: t('action_request_info', 'Request Info'), id: 'btnRequestInfoRunHeader', icon: 'fa-solid fa-circle-info', extraClass: 'btn-tl-request-info', tone: 'warning' },
+                { label: t('action_reject', 'Reject'), id: 'btnRejectRunHeader', icon: 'fa-solid fa-xmark', extraClass: 'btn-tl-reject', tone: 'danger' },
+            ];
+        } else if (run.can_process_payroll) {
+            overflow.push({ label: t('action_revert', 'Send Back for Revision'), id: 'btnRevertRunHeader', icon: 'fa-solid fa-rotate-left', extraClass: 'btn-tl-revert' });
         }
-    } else if (i === RUN_LIFECYCLE_STEPS.length - 1 && run.state === 'locked' && run.can_finalize_payroll) {
-        // 2026-08-29, explicit request: "ปุ่ม Lock ควรไปอยู่ที่ Lock หลังจากกด Lock แล้วให้ Lock เป็นสีเขียว" --
-        // "Locked" is the LAST station with nothing further ahead of it, so unlike every other
-        // action button above (which now renders one station AHEAD of the state that unlocks it,
-        // matching computeRunLifecycleProgress() (app.js)'s own "reachedIdx=idx" fix), Reopen has nowhere ahead
-        // to go -- it renders at the terminal station itself, which is also exactly where that fix
-        // makes "Locked" show as done/green the moment this state is reached.
-        buttons.push(`<button type="button" class="btn btn-sm btn-outline-danger btn-tl-reopen" title="${langData['action_reopen'] || 'Reopen for Editing'}"><i class="fa-solid fa-unlock me-1"></i>${langData['action_reopen'] || 'Reopen for Editing'}</button>`);
+    } else if (run.state === 'approved') {
+        if (run.can_finalize_payroll) {
+            primary = { label: t('action_mark_paid', 'Mark as Paid'), id: 'btnMarkPaidRunHeader', icon: 'fa-solid fa-money-check-dollar', extraClass: 'btn-tl-mark-paid' };
+        }
+        if (run.can_approve_payroll) {
+            overflow.push({ label: t('action_undo_decision', 'Undo Decision'), id: 'btnRevertRunHeader', icon: 'fa-solid fa-rotate-left', extraClass: 'btn-tl-revert' });
+        }
+    } else if (run.state === 'paid' && run.can_finalize_payroll) {
+        primary = { label: t('action_verify_run', 'Verify'), id: 'btnLockRunHeader', icon: 'fa-solid fa-check-double', extraClass: 'btn-tl-lock' };
+        overflow.push({ label: t('action_reopen', 'Reopen for Editing'), id: 'btnReopenRunHeader', icon: 'fa-solid fa-unlock', tone: 'danger', extraClass: 'btn-tl-reopen' });
+    } else if ((run.state === 'rejected' || run.state === 'need_info') && run.can_process_payroll) {
+        primary = { label: t('action_revise', 'Revise'), id: 'btnPullBackRunHeader', icon: 'fa-solid fa-pen-to-square', extraClass: 'btn-tl-pull-back' };
+    } else if (run.state === 'locked' && run.can_finalize_payroll) {
+        overflow.push({ label: t('action_reopen', 'Reopen for Editing'), id: 'btnReopenRunHeader', icon: 'fa-solid fa-unlock', tone: 'danger', extraClass: 'btn-tl-reopen' });
     }
-    return buttons.length ? `<div class="tl-actions-row">${buttons.join('')}</div>` : '';
+    // Recalculate: unchanged draft-only gating from the OLD table-toolbar button it replaces
+    // (#btnRecalculate, was `d-none` unless draft -- see initRunDetailTable()'s own initComplete/
+    // renderSectionButtons()'s history) -- moved here per explicit decision ("secondary = [คำนวณใหม่]
+    // [ส่งออก ▾]"), same id so its existing delegated click handler needs no change.
+    // Timeline: 2026-09-13, item 3a follow-up -- moved OUT of `overflow` (was hidden one level deep
+    // inside "อื่นๆ") into `secondary`, visible directly next to Export ("[ไทม์ไลน์อนุมัติ] [ส่งออก ▾]")
+    // -- same `run.submitted_at` gate as before, just a different slot; applies to every post-submit
+    // state (not only pending_approval) for consistency, since it's a plain informational view action
+    // in every one of them, not specific to the approval decision itself.
+    const secondary = [];
+    if (run.state === 'draft') {
+        secondary.push({ label: t('action_recalculate', 'Calculate'), id: 'btnRecalculate', icon: 'fa-solid fa-rotate' });
+    } else if (run.submitted_at) {
+        secondary.push({ label: t('action_timeline', 'Timeline'), icon: 'fa-solid fa-list-check', id: 'btnViewRunTimeline', extraClass: 'btn-tl-view-timeline' });
+    }
+    // Export: unchanged ids/delegated click handlers (#btnExportRunRegister/#btnPreviewRunRegisterPdf)
+    // -- was 2 standalone always-visible buttons beside the run-name heading, now 1 secondary
+    // dropdown ("ส่งออก ▾") per explicit decision, same 2 targets inside it.
+    // 2026-09-13, item 3a "เก็บตก" item 1: file-type icons colored via `.file-icon-excel`/
+    // `.file-icon-pdf` (style.css, §1's own documented exception) -- appended straight into the
+    // `icon` class string itself (page-header.php's own dropdown-item renderer just dumps this string
+    // verbatim into `<i class="...">`, no new field needed on the partial's own contract).
+    secondary.push({
+        label: t('export_label', 'ส่งออก'), icon: 'fa-solid fa-file-export', items: [
+            { label: t('export_excel', 'Export Excel'), id: 'btnExportRunRegister', icon: 'fa-solid fa-file-excel file-icon-excel' },
+            { label: t('export_pdf', 'Export PDF'), id: 'btnPreviewRunRegisterPdf', icon: 'fa-solid fa-file-pdf file-icon-pdf' },
+        ]
+    });
+    // Verify All: 2026-09-13, 3a follow-up decision -- moved back to the Employee table's own
+    // `.dt-length` toolbar (initRunDetailTable()'s initComplete, further down this file), next to
+    // "ตรวจสอบที่เลือก (N)" -- both are genuinely table-scoped actions (one acts on every row, the
+    // other on the selected ones), unlike the header's overflow menu which is now state-transition
+    // actions on the RUN ITSELF only (Send Back/Undo Decision/Reopen). A first cut of this change had
+    // moved it into the header overflow menu instead; reverted after review.
+    return { primary, secondary, overflow, decision };
 }
+function renderRunHeaderActions(run) {
+    renderPageHeaderActions('#phActions', computeRunHeaderActions(run));
+}
+// 2026-09-13, Round 3 item 3a follow-up fix: this function's FIRST cut only removed the per-station
+// action buttons but kept rendering the OLD `.process-timeline`/`.tl-*` markup underneath (card
+// wrapper, a differently-colored/gradient icon per step, a clock icon on each date) -- a real miss
+// caught in review against a live screenshot, not the actual §6 status-stepper.php/renderStatusStepper()
+// component the task asked for. Now genuinely calls the shared component: `.process-timeline`/
+// `.tl-*`'s own CSS is NOT deleted (payroll/index.js's mini-timeline and the Approval Timeline modal
+// in layout/modals.php still use it) -- only THIS function stopped generating that markup.
+// runLifecycleSteps()'s own branch-state handling (rejected/need_info/cancelled) is preserved as-is
+// (still the one source of truth for progress/labels) -- a branch step renders as the "current" step
+// with that branch's own label substituted in (e.g. "ไม่อนุมัติ / ส่งกลับแก้ไข" instead of "อนุมัติ").
+//
+// 2026-09-13, SAME-DAY follow-up: the current step's own CIRCLE now also takes its color from
+// statusMapEntry(run.state, 'run_state') (§5) whenever the run is actually in a branch state --
+// `step.cls` at the branch's own index is ALREADY exactly that branch's run_state enum value
+// ('rejected'/'need_info'/'cancelled', see computeRunLifecycleProgress()'s own RUN_LIFECYCLE_BRANCH_INFO
+// keys), so it can be looked up directly with no extra mapping table. A normal forward-flow state
+// (draft/pending_approval/approved/paid/locked) never reaches this branch at all -- `step.cls` for
+// the CURRENT step in that case is the literal string 'current' (set by runLifecycleSteps() itself,
+// not a run_state enum value), which status_map.php's own `run_state` context has no entry for, so
+// `getStatusMapEntry()` correctly returns null and the step gets no tone override -- stays plain
+// orange exactly as before, not a special-cased skip.
 function renderProcessTimeline(run) {
     const { steps, currentIndex } = runLifecycleSteps(run, { showDates: true });
-    let html = '<ul class="process-timeline">';
-    for (let i = 0; i < steps.length; i++) {
-        const step = steps[i];
-        const dateHtml = (step.cls === 'done' || step.cls === 'current') && step.date
-            ? `<span class="tl-date"><i class="fa-regular fa-clock"></i> ${toLocalDateOnlyRd(step.date)}</span>`
-            : '';
-        const actionsHtml = timelineStepActionsHtml(i, run, currentIndex);
-        html += `<li class="tl-step ${step.cls}">
-            <span class="tl-icon"><i class="fa-solid ${step.icon}"></i></span>
-            <span class="tl-label">${escapeHtml(step.label)}</span>
-            ${dateHtml}
-            ${actionsHtml ? `<span class="tl-actions">${actionsHtml}</span>` : ''}
-        </li>`;
-    }
-    html += '</ul>';
-    $('#runProcessTimeline').html(html);
+    const isLocked = run && run.state === 'locked';
+    // §6, 2026-09-13, item 3a "เก็บตก" item 2: "live" pulse on the current step only when the CURRENT
+    // VIEWER genuinely has something clickable waiting -- reuses computeRunHeaderActions() (the exact
+    // same function the header itself renders from) rather than re-deriving permission logic here, so
+    // this can never drift out of sync with what buttons are actually showing. Cheap/pure (no side
+    // effects, just building plain arrays) -- calling it a 2nd time per render (renderRunHeaderActions()
+    // above already calls it once for the header itself) is negligible cost, not worth threading the
+    // result through as a parameter.
+    const viewerActions = computeRunHeaderActions(run);
+    const isActionableForViewer = !!(viewerActions.decision || viewerActions.primary);
+    const stepperSteps = steps.map(function (step, i) {
+        const showDate = (step.cls === 'done' || step.cls === 'current') && step.date;
+        const stepObj = { label: step.label, date: showDate ? toLocalDateOnlyRd(step.date) : null };
+        const toneEntry = getStatusMapEntry(step.cls, 'run_state');
+        if (toneEntry && toneEntry.tone) stepObj.tone = toneEntry.tone;
+        // §6, 2026-09-13: the run's own LAST station renders as the terminal "fully complete" circle
+        // (solid --c-success + white check) only once the run has actually reached `locked` -- never
+        // inferred from currentIndex alone, since a run mid-flow (e.g. currentIndex past the last real
+        // station transiently) is not the same thing as genuinely locked.
+        if (isLocked && i === steps.length - 1) stepObj.final = true;
+        // A branch state (rejected/need_info) already set `stepObj.tone` above -- those read as
+        // settled/waiting, not "act now", so they deliberately never pulse even when some viewer role
+        // could still act on the underlying run.
+        if (i === currentIndex && !stepObj.tone && isActionableForViewer) stepObj.live = true;
+        // §6, 2026-09-13, item C follow-up: the current step's own icon (white, 12px) -- `step.icon`
+        // is ALREADY the right value here for the current index (runLifecycleSteps() never overrides
+        // it away from RUN_LIFECYCLE_STEPS[i].icon/RUN_LIFECYCLE_BRANCH_INFO[type].icon except for a
+        // DONE step, which always becomes 'fa-check' instead -- see that function's own mapping). Only
+        // passed at all for the current step; a done/next step's own icon is status-stepper.php's own
+        // fixed ✓/nothing, never this per-station one.
+        if (i === currentIndex && step.icon) stepObj.icon = step.icon;
+        return stepObj;
+    });
+    $('#runProcessTimeline').html(renderStatusStepper(stepperSteps, currentIndex));
 }
 
 /* ---------- Section-scoped buttons: Edit sits at the top-right of "1. Run Information" (the
-   section it actually edits), Recalculate sits at the top-right of "2. Employee Breakdown" (the
-   section it recomputes) -- both draft-only, same as before, just relocated per explicit request
-   so it's obvious which part of the page each button touches. Button ids stay #btnEditRun/
-   #btnRecalculate; the existing $(document).on(...) delegated handlers don't care where in the
-   DOM they live. */
+   section it actually edits) -- draft-only, same as before. Button id stays #btnEditRun; the
+   existing $(document).on(...) delegated handler doesn't care where in the DOM it lives.
+   2026-09-13, Round 3 item 3a: Recalculate (#btnRecalculate) no longer lives here -- it moved to
+   page-header.php's own #phActions (computeRunHeaderActions(), further up this file), per explicit
+   decision that page-level state-transition/utility actions belong in the header now, not scattered
+   next to individual section headings. */
 // 2026-08-29, same-day follow-up: "ตรงปุ่มออกรายงาน ให้ปรับเป็นเพิ่มอีก Tab ก่อน Action History และแสดงเป็น
 // ตารางรายการไว้ และบอกด้วยว่า Download แล้วทั้งหมดกี่ครั้ง ครั้งล่าสุด Download ไปเมื่อไหร่...มีปุ่มสำหรับกด
 // Download กดแล้วเปิด modal เพื่อ Preview ก่อน...มีอีกปุ่มเพื่อกดดูประวัติการ Download" -- was a header
@@ -1053,14 +1139,19 @@ function renderSectionButtons(run) {
     $('#autoRecalculateWrap').addClass('d-none');
     $('#recalcReminderBanner').addClass('d-none');
     // 2026-09-09: reset here, BEFORE the early return below, same reason as the 2 lines above it --
-    // #btnJoinEmployees/#btnRecalculate/#btnBulkVerify/#btnVerifyAllEmployees all live in the
-    // DataTable's own .dt-search/.dt-length now (injected once, outside this function entirely --
-    // see initRunDetailTable()'s initComplete), so unlike a plain .empty()-then-rebuild wrap these
-    // have to be explicitly hidden every call or they'd keep showing whatever visibility a PREVIOUS
-    // call left them at once a run leaves draft. #btnBulkVerify's own ENABLED/disabled state (as
-    // opposed to shown/hidden) is a separate concern owned by updateRunDetailBulkBar() instead --
-    // untouched here.
-    $('#btnJoinEmployees, #btnRecalculate, #btnBulkVerify, #btnVerifyAllEmployees').addClass('d-none');
+    // #btnJoinEmployees/#btnBulkVerify/#btnVerifyAllEmployees live in the DataTable's own
+    // .dt-search/.dt-length (injected once, outside this function entirely -- see
+    // initRunDetailTable()'s initComplete), so unlike a plain .empty()-then-rebuild wrap these have
+    // to be explicitly hidden every call or they'd keep showing whatever visibility a PREVIOUS call
+    // left them at once a run leaves draft. #btnBulkVerify's own ENABLED/disabled state (as opposed
+    // to shown/hidden) is a separate concern owned by updateRunDetailBulkBar() instead -- untouched
+    // here. 2026-09-13, Round 3 item 3a: #btnRecalculate moved OUT of this table toolbar into
+    // page-header.php's own #phActions (secondary "ส่งออก ▾") -- its visibility is now controlled
+    // entirely by whether computeRunHeaderActions() includes it for the current state, not by a
+    // d-none toggle here anymore. #btnVerifyAllEmployees was ALSO tried in the header (overflow "อื่นๆ
+    // ▾") in a first cut of this change, then moved back here after review -- it's a table-scoped
+    // bulk action like #btnBulkVerify right next to it, not a run-level state transition.
+    $('#btnJoinEmployees, #btnBulkVerify, #btnVerifyAllEmployees').addClass('d-none');
     // 2026-09-11, Batch 3C item 4 sub-step 4d, explicit instruction: #btnEditRun is no longer
     // draft-only -- applyRunFieldLockUi() (app.js) already handles a non-draft run correctly (locks
     // everything except notes, shows a summary explaining why), so there was never a reason a
@@ -1072,16 +1163,16 @@ function renderSectionButtons(run) {
         return;
     }
     // 2026-09-09, explicit request across 3 follow-up rounds -- final layout: "เอาคำนวณใหม่ไปวางต่อ
-    // search แล้วตามด้วย ปุ่ม Add พนักงาน...แล้วเอาปุ่ม Verify All มาไว้ต่อจาก ตรวจสอบแล้ว" --
-    // #btnJoinEmployees/#btnRecalculate/#btnBulkVerify/#btnVerifyAllEmployees no longer live in this
-    // header cluster or the old standalone Verify-All row at all; all 4 are injected ONCE into the
-    // Employee table's own `.dt-search`/`.dt-length` (initRunDetailTable()'s initComplete, see that
-    // function's own comment for the exact left-to-right order), matching this app's own established
+    // search แล้วตามด้วย ปุ่ม Add พนักงาน...แล้วเอาปุ่ม Verify All มาไว้ต่อจาก ตรวจสอบแล้ว" -- #btnJoinEmployees/
+    // #btnBulkVerify/#btnVerifyAllEmployees are injected ONCE into the Employee table's own
+    // `.dt-search`/`.dt-length` (initRunDetailTable()'s initComplete, see that function's own comment
+    // for the exact left-to-right order), matching this app's own established
     // "Add"-button-in-search-bar convention (CLAUDE.md's Table convention) now that this table
-    // finally has real search/length controls. Every one of them is shown on EVERY draft run
-    // (2026-08-21/2026-08-31 explicit requests) -- already reset to hidden above (before the early
-    // return), so this branch (only reached when run.state === 'draft') just un-hides them again.
-    $('#btnJoinEmployees, #btnRecalculate, #btnBulkVerify, #btnVerifyAllEmployees').removeClass('d-none');
+    // finally has real search/length controls. Shown on EVERY draft run (2026-08-21/2026-08-31
+    // explicit requests) -- already reset to hidden above (before the early return), so this branch
+    // (only reached when run.state === 'draft') just un-hides them again. (#btnRecalculate: see this
+    // function's own 2026-09-13 comment above -- no longer toggled here, lives in the header now.)
+    $('#btnJoinEmployees, #btnBulkVerify, #btnVerifyAllEmployees').removeClass('d-none');
 
     // 2026-08-31, explicit request: auto-recalculate checkbox + reminder banner, draft-only (see
     // PayrollRunModel::setAutoRecalculate()'s own docblock). Checkbox always visible once a run is
@@ -1174,11 +1265,32 @@ function renderRunHeader(run) {
     currentRun = run;
     // 2026-09-03, Platform UX review Phase 3: document.title used to be set directly here to JUST
     // run.run_name (losing the "Payroll Process —" breadcrumb prefix and the app suffix entirely) --
-    // app.js's own MutationObserver on .payroll-breadcrumb now derives the full title automatically
-    // the moment #bcRunName's text changes below, so this no longer needs (or should) set it itself.
-    $('#bcRunName').text(run.run_name);
-    $('#runNameHeading').text(run.run_name);
-    $('#runStateBadge').html(stateBadgeRd(run.state));
+    // app.js's own MutationObserver/updateDocumentTitleFromBreadcrumb() now derives the full title
+    // automatically (breadcrumb parts + #phTitle's own text) the moment either one's text changes
+    // below, so this no longer needs (or should) set it itself.
+    // 2026-09-13, §2 REVISED AGAIN (supersedes the earlier "crumb สุดท้าย = ชนิดหน้า, static label,
+    // never touched by JS" decision entirely -- that one is gone, not just this page's own use of it):
+    // the last breadcrumb crumb is now the entity's own CODE (#phBreadcrumbCurrent = run.run_code),
+    // and $title/#phTitle is the entity's own DISPLAY NAME (run.run_name) -- 2 genuinely different
+    // pieces of information again, not a duplicate-avoidance trick. Both get the SAME defensive
+    // fallback chain the run's own Code column (payroll/index.js's runCodeCellHtmlPr()) already
+    // established for a possibly-null run_code (payroll_runs.run_code is nullable by design, confirmed
+    // in PayrollRunModel's own comment -- "a null run_code here is a completely normal, harmless
+    // outcome"): code falls back to `#{id}` if genuinely missing; the H1 falls back to the CODE itself
+    // if `run_name` is somehow empty (accepted duplication in that one edge case only, per explicit
+    // instruction -- "ถ้าไม่มีชื่อ H1 = รหัส ยอมซ้ำได้").
+    const runCodeOrFallback = run.run_code || ('#' + run.id);
+    $('#phBreadcrumbCurrent').text(runCodeOrFallback);
+    $('#phTitle').text(run.run_name || runCodeOrFallback);
+    $('#phTitleBadge').html(stateBadgeRd(run.state));
+    // #phDescription (2026-09-13, item 3a follow-up item 5, revises the FIRST cut's "งวด · วันจ่าย"
+    // decision) -- §2's own rule: "description ของ page header = ข้อมูล 1 ชิ้นที่สำคัญสุดพร้อมคำนำหน้า
+    // ไม่ใช่รายการตัวเลข" -- the period range was dropped (it already lives in the Details tab's own
+    // #infoPeriod, and in the stat cards' context, not a second place this needs repeating), leaving
+    // ONE labeled value: the payment date, using the same toDisplayDateRd() formatting #infoPaymentDate
+    // (Details tab, unchanged, still set below) already uses.
+    const phDescText = `${langData['run_payment_date_label'] || 'Payment date'} ${toDisplayDateRd(run.payment_date)}`;
+    $('#phDescription').text(phDescText).removeClass('d-none');
     $('#infoCycle').text(run.cycle_name || langData['offcycle_run_short'] || 'Off-schedule');
     $('#infoPeriod').text(`${toDisplayDateRd(run.period_start_date)} - ${toDisplayDateRd(run.period_end_date)}`);
     $('#infoPaymentDate').text(toDisplayDateRd(run.payment_date));
@@ -1215,11 +1327,12 @@ function renderRunHeader(run) {
         $('#cancelReasonBox').addClass('d-none').html('');
     }
 
-    const banner = nextStepBanner(run.state);
-    $('#nextStepBanner')
-        .attr('class', `next-step-banner process-next-step ${banner.cls}`.trim())
-        .toggleClass('d-none', !banner.html)
-        .html(banner.html);
+    const banner = nextStepBanner(run);
+    if (banner.html) {
+        $('#nextStepBanner').attr('class', `callout callout-${banner.tone}`).html(banner.html);
+    } else {
+        $('#nextStepBanner').attr('class', 'd-none').html('');
+    }
 
     if (Number(run.has_validation_errors) === 1) {
         const errCount = (run.details || []).filter(d => d.calc_status === 'error').length;
@@ -1230,6 +1343,7 @@ function renderRunHeader(run) {
     }
 
     renderProcessTimeline(run);
+    renderRunHeaderActions(run);
     renderSectionButtons(run);
     updateRunDetailTabVisibility(run);
     loadRunReportsTab();
@@ -2436,10 +2550,12 @@ function updatePaymentMethodSummary(details) {
     const bankLabel = langData['table_payment_bank'] || 'Bank Transfer';
     const cashLabel = langData['table_payment_cash'] || 'Cash';
     // 2026-09-02, explicit request: "Card ผ่านบัญชีและเงินสดปรับให้ font คนละสี" -- was one plain-colored
-    // line; Bank/Cash now each get the SAME accent color their own badge already uses elsewhere on
-    // this page (payment-method column) so the two figures read apart from each other at a glance
-    // instead of blending into one plain-text line.
-    $('#infoPaymentBreakdown').html(`<span class="text-info-emphasis fw-semibold"><i class="fa-solid fa-building-columns me-1"></i>${bankLabel} ${bankCount}</span><span class="mx-2 text-muted">·</span><span class="text-warning-emphasis fw-semibold"><i class="fa-solid fa-money-bill-wave me-1"></i>${cashLabel} ${cashCount}</span>`);
+    // line, each half its own accent color + icon. 2026-09-13, Round 3 item 3a follow-up (explicit
+    // decision, §2's stat-card spec): a stat card's own subtext line is plain `--c-text-muted` text
+    // ONLY -- no icon, no color, matching `.stat-sub`'s own CSS exactly (this element already inherits
+    // that class from the markup, only the CONTENT built here needed to stop overriding it with its
+    // own inline color/icon spans).
+    $('#infoPaymentBreakdown').text(`${bankLabel} ${bankCount} · ${cashLabel} ${cashCount}`);
 }
 // 2026-09-09, real bug found and fixed (explicit report: "วิธีจ่ายเงิน ตอนนี้ติ๊กแล้ว Employee ไม่เปลี่ยนตาม
 // ครับ") -- the Bank/Cash payment-method filter checkboxes already correctly filtered #tb_run_detail's
@@ -2762,48 +2878,37 @@ function initRunDetailTable(details) {
             // 2026-09-09, explicit request (final layout, after 2 follow-up rounds): "เอาคำนวณใหม่ไป
             // วางต่อ search แล้วตามด้วย ปุ่ม Add พนักงาน และตัดให้เหลือแค่คำว่าคำนวณ แล้วเอาปุ่ม Verify All
             // มาไว้ต่อจาก ตรวจสอบแล้ว และเปลี่ยนคำว่าตรวจสอบแล้ว เป็นแค่คำว่าตรวจสอบ และปรับให้ขนาดปุ่มสูงเท่ากับ
-            // ช่อง search" -- final button placement/order, both `.dt-search` (right of the search
-            // box, matching this app's established "Add"-button-in-search-bar convention -- CLAUDE.md's
-            // Table convention, `injectAddButton()` in payroll-configuration.js is the same pattern)
-            // and `.dt-length` (next to "Show N entries", same pattern employee/list.js already uses
-            // for its own "Sync Selected" button) each now hold 2 buttons in a specific left-to-right
-            // order: Search input -> Calculate -> + Employee, and Show N entries -> Verify(N) -> Verify
-            // All. `btn-sm` on all 4 (previously plain `btn`) matches the search input's own
-            // `form-control-sm` height -- Bootstrap's regular `.btn` is taller than `-sm` form
-            // controls, which is what read as mismatched heights. Labels shortened: "action_recalculate"
-            // itself changed from "คำนวณใหม่"/"Recalculate" down to "คำนวณ"/"Calculate" (th.json/en.json,
-            // this key has exactly one caller so changing its VALUE was safe -- no new key needed), and
-            // "action_verify" from "ตรวจสอบแล้ว" down to "ตรวจสอบ" (also just the one other caller,
-            // verifyLockButtonsRd()'s own per-row tooltip, where "ตรวจสอบ" reads BETTER than the old
-            // "ตรวจสอบแล้ว" -- literally "already verified" -- as a prompt on a NOT-yet-verified row's
-            // own action button, so this was a genuine improvement there too, not just a side effect).
-            // "employee"/"action_verify_all" i18n keys unchanged (still reused as-is, not new keys).
+            // ช่อง search" -- `.dt-search` (right of the search box, matching this app's established
+            // "Add"-button-in-search-bar convention -- CLAUDE.md's Table convention,
+            // `injectAddButton()` in payroll-configuration.js is the same pattern) gets "+ Employee";
+            // `.dt-length` (next to "Show N entries", same pattern employee/list.js already uses for
+            // its own "Sync Selected" button) gets "Verify(N)". `btn-sm` matches the search input's
+            // own `form-control-sm` height -- Bootstrap's regular `.btn` is taller than `-sm` form
+            // controls, which is what read as mismatched heights.
+            // 2026-09-13, Round 3 item 3a: Calculate (#btnRecalculate) moved OUT of this toolbar
+            // entirely, into page-header.php's own #phActions (secondary "ส่งออก ▾",
+            // computeRunHeaderActions()) per explicit decision -- it's a run-level utility action, not
+            // scoped to this table. #btnVerifyAllEmployees was ALSO tried in the header (overflow
+            // "อื่นๆ ▾") in a first cut, then moved back here after review: unlike Calculate, it's
+            // genuinely table-scoped (acts on every row in THIS table), same category as
+            // #btnBulkVerify right next to it (§7's own "bulk action ↔ table's own toolbar"
+            // convention, page-header.php's docblock also documents this distinction). Reorganizing
+            // this toolbar onto initSharedDataTable() itself (sticky columns, class-driven columnDefs,
+            // etc.) is 3b's own separate sub-step, not done here.
             // initComplete only ever fires ONCE per table instance (a later reload takes
             // initRunDetailTable()'s "already exists" branch and never gets here again), so initial
-            // visibility for all 4 is set directly from `currentRun` here -- every later state change
+            // visibility for all 3 is set directly from `currentRun` here -- every later state change
             // is handled by renderSectionButtons()'s own toggle instead (see that function's own
             // comment). #btnBulkVerify additionally starts `disabled` and only re-enables once a row is
             // actually checked (updateRunDetailBulkBar(), unchanged logic, toggles `disabled` not
-            // visibility). #btnVerifyAllEmployees moving here retires the now-empty standalone row
-            // above the table (#runVerifyAllButtonWrap) it used to live in -- removed from the view
-            // entirely rather than left as a dead wrapper.
+            // visibility).
             const isDraft = !!currentRun && currentRun.state === 'draft';
             const $container = $(this.api().table().container());
             const $searchDiv = $container.find('.dt-search');
-            if ($searchDiv.find('#btnRecalculate').length === 0) {
+            if ($searchDiv.find('#btnJoinEmployees').length === 0) {
                 // 2026-09-09: no more ms-1/ms-2 margin utilities on these -- .dt-search/.dt-length
                 // themselves are now real flex containers with their own `gap` (style.css), so a
                 // margin utility here would just add EXTRA space on top of that gap redundantly.
-                // 2026-09-09, explicit request: "ปุ่มคำนวณไม่ชอบสีดำครับ ช่วยปรับสีใหม่ แต่ต้องเข้ากับธีม
-                // ทั้งหมด" -- was btn-dark (plain black, no relation to this app's own color language
-                // at all). btn-info reuses the SAME accent this exact page already uses for
-                // "informational/primary-but-not-the-main-action" elements (the "Employees" stat
-                // card's own .stat-card-info, the Bank Transfer badge's text-info-emphasis) -- distinct
-                // from +Employee's brand-orange btn-primary and Verify's btn-outline-success right next
-                // to it in this same control row, so all 3 stay visually distinguishable from each
-                // other while every one of them is a real color from this app's existing palette,
-                // not an arbitrary new one.
-                $searchDiv.append(`<button type="button" id="btnRecalculate" class="btn btn-sm btn-info${isDraft ? '' : ' d-none'}"><i class="fa-solid fa-rotate me-1"></i><span data-i18n="action_recalculate">${langData['action_recalculate'] || 'Calculate'}</span></button>`);
                 $searchDiv.append(`<button type="button" id="btnJoinEmployees" class="btn btn-sm btn-primary${isDraft ? '' : ' d-none'}"><i class="fa-solid fa-plus me-1"></i><span data-i18n="employee">${langData['employee'] || 'Employee'}</span></button>`);
             }
             const $lengthDiv = $container.find('.dt-length');
@@ -2868,9 +2973,9 @@ function applyRunDetailViewMode() {
     // for why (a real ordering bug: this drawCallback fires before the table's own outer variable
     // assignment completes on first load).
     // 2026-09-09: #btnBulkVerify's own show/hide-by-draft-state is owned by renderSectionButtons()
-    // now (same place #btnRecalculate/#btnJoinEmployees are toggled, all 3 live together in
-    // .dt-search/.dt-length) -- this function no longer needs to touch it at all, only its
-    // enabled/disabled-by-selection state (updateRunDetailBulkBar(), called separately below).
+    // now (same place #btnJoinEmployees is toggled, both live together in .dt-search/.dt-length) --
+    // this function no longer needs to touch it at all, only its enabled/disabled-by-selection state
+    // (updateRunDetailBulkBar(), called separately below).
 }
 
 /* ==================== Employee Verify / Lock / Comments (2026-08-29) ====================
