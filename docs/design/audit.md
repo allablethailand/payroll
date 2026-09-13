@@ -97,6 +97,31 @@ for this audit, broken down per file this time.
   `setup-rules/index.php`(17), `setup/tax-statutory.php`(11), `payroll/approval.php`(11). A real
   count needs `check-design.php`'s own exemption logic (round 2) — this is the raw, unfiltered
   number.
+- **[SC13] `showSuccess()`/`showError()` call sites whose message content Round 2 item 7b's toast
+  conversion can't fully verify statically** (§10) — every real call site app-wide parsed (not just
+  grepped): **143 total** (134 `showSuccess`, 9 `showError`, across every `public/js/**/*.js` except
+  `alert.js` itself). Breakdown: **64** resolve to a purely static string (a `langData[...]` key
+  and/or a literal fallback, both checked against the ACTUAL th.json/en.json values, not just the JS
+  source) and are all ≤60 chars — safe as a 3-second toast as-is. **0** resolve to a purely static
+  string >60 chars. **63** put a runtime-controlled value first (`res.message || ...`, or a
+  `${...}`-interpolated template) — length genuinely unknowable until the request actually runs, but
+  this is fine: item 7b's own auto-timer rule (≤60→3s, >60→6s+close button) is evaluated on the REAL
+  string at call time, not decided per call site in advance, so these self-classify correctly with
+  zero code change needed. **16** pass a bare local variable (`msg`/`summary`/`successMessage`/
+  `successMsg`/`html`) — traced each one by hand to its own assignment: 11 are plain
+  string-concatenation summaries (short, single-line, e.g. "`{N} succeeded, {M} failed`") that also
+  self-classify correctly via the same auto-timer rule — **but 5 (`setup/data-sync.js`'s
+  `showSuccess()` at lines 221/268 + `showError()` at 223, `setup/origami-sync-widget.js`'s
+  `showSuccess()`/`showError()` at 95/98) build GENUINE multi-line HTML** via
+  `dsResultSummaryHtml()`/`origamiSyncResultSummaryHtml()` (a `<div>` plus a `<ul>` of up to 5+ sync
+  error lines) — these already fall into the 6-second/close-button branch on length alone (an HTML
+  wrapper is never ≤60 chars), so they won't vanish in 3 seconds, but a scrollable multi-item error
+  list arguably still deserves review as a REAL (non-toast) dialog in round 4, not just "long enough
+  toast." **Separately, and NOT part of this design-pass tally**: these exact 5 call sites also
+  surfaced a genuine, pre-existing logic bug (`showSuccess()`/`showError()` render via Swal2's
+  `text`/`title`, which is plain-text, never `html:` — so this HTML content has always rendered as
+  literal, visible source text, not a formatted list) — logged in `BACKLOG.md`, not fixed here per
+  §0.7 (a rendering bug found during a design pass gets logged, not fixed alongside the design work).
 - **`.station-filter`** (the app's own existing collapsible filter pattern) — **15 files** already
   use it: `reports/annual-summary.php`, `employee/list.php`, `employee/detail.php`,
   `setup/audit-log.php`, `reports/run-audit.php`, `payroll/index.php`, `payroll/approval.php`,

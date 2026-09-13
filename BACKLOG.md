@@ -491,3 +491,34 @@ promoting to a real rules.md §1 token, or (b) give `--bs-primary-text-emphasis`
 new token — a design call, not decided here. Check both real call sites render correctly either way.
 
 **Source:** Phase Design Round 2 item 1b, incidental finding (2026-09-12).
+
+---
+
+## `showSuccess()`/`showError()` render HTML content as literal, visible source text
+
+Found while auditing every real `showSuccess()`/`showError()` call site's message content for
+Round 2 item 7b's toast conversion (see `docs/design/audit.md`'s own [SC13]). Both helpers
+(`public/js/alert.js`) build their Swal2 config with `text: msg` (and, for the new toast form,
+`title: msg`) — Swal2's `text`/`title` options render plain text, never HTML.
+
+5 real call sites pass genuine multi-line HTML into `msg` anyway: `setup/data-sync.js`'s
+`showSuccess()` (lines 221, 268) and `showError()` (line 223), and
+`setup/origami-sync-widget.js`'s `showSuccess()`/`showError()` (lines 95, 98) — all 5 via
+`dsResultSummaryHtml()`/`origamiSyncResultSummaryHtml()`, which build a `<div>` plus a `<ul>` of up
+to 5+ sync-error `<li>` lines (each individually `escapeHtml()`-ed, confirming the ORIGINAL author's
+intent was for this to render as HTML — the escaping would be pointless otherwise). Because of the
+`text:`/`title:` mismatch, users have always seen the raw markup as visible text (literal `<div>`,
+`<ul>`, `<li>` tags and all) on these 2 Data Sync-adjacent pages, not a formatted error list.
+
+**Not fixed this round** — a rendering/logic bug found during a design pass gets logged, not fixed
+alongside the design work (rules.md §0.7).
+
+**Fix, when picked up:** switch these 2 helpers (or add an explicit opt-in, e.g. a 4th
+`{isHtml: true}` option) to pass `html: msg` instead of `text`/`title: msg` for these 2 specific
+call-site families ONLY — do not flip it for every caller unconditionally: the other 138 call sites
+pass a `langData[...]`-sourced or plain-text `msg`, and switching the DEFAULT to `html:` for all of
+them would be a real (if unlikely in practice) stored-XSS risk if any of those ever ends up carrying
+unescaped user-controlled text expecting Swal2's own plain-text escaping as a safety net. Verify
+both pages render a real bulleted list afterward, not just that the tags disappear.
+
+**Source:** Phase Design Round 2 item 7b, incidental finding (2026-09-13).

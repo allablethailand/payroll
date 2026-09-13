@@ -2271,21 +2271,45 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    attribute this app does not use (`[data-swal2-theme="dark"]`, plus its own prefers-color-scheme
    fallback) -- deliberately NOT used here. Wiring that up would need new JS to mirror data-bs-theme
    onto that separate attribute, and would pull in the library's own dark palette (#19191a bg) instead
-   of this app's own (--app-surface-bg #1e232c) -- overriding the underlying CSS variables directly,
-   as done below, is CSS-only (matches this whole step's own scope) and keeps a SweetAlert2 dialog
-   visually consistent with the rest of this app's own cards/modals in dark mode, not merely "also
-   dark" on its own slightly different palette.
+   of this app's own -- overriding the underlying CSS variables directly, as done below, is CSS-only
+   (matches this whole step's own scope) and keeps a SweetAlert2 dialog visually consistent with the
+   rest of this app's own cards/modals in dark mode, not merely "also dark" on its own slightly
+   different palette.
 
-   Confirm/deny/cancel button colors (library defaults: purple/red/gray, all solid-fill + white text)
-   are deliberately left UNCHANGED in both themes -- solid, saturated, white-on-color already has
-   strong contrast against either a light or a dark popup background, same "semantic/action colors
-   stay vivid, don't get flattened into neutral gray" principle T069 Step 2 already established for
-   this file's own status/brand colors. There is also no existing brand-orange override for these
-   buttons anywhere in this app to preserve -- confirmed by grep -- so this is not a regression
-   against anything that used to be there. */
+   2026-09-13, Round 2 item 7b -- `--swal2-background`/`--swal2-color` re-sourced from this file's
+   OLDER `--app-surface-bg`/`--app-text` tokens (T069's own pre-Round-2 dark-mode vocabulary) onto
+   `tokens.css`'s `--c-bg`/`--c-text` (Round 2 item 1's vocabulary) per explicit instruction --
+   `--c-bg`/`--c-text` already carry correct light AND dark values on their own (same tokens
+   `.status-stepper`/`.badge`/every other Round 2 component already reads directly, no theme-gating
+   needed here either), so this single change alone is what makes the popup follow dark mode via the
+   NEWER token set consistently with the rest of this round's own components, not a special case.
+   Every OTHER `--app-*`-sourced property below (footer/input/validation/close-button) is
+   UNCHANGED/out of scope -- not asked for, and none of this app's own showSuccess/showError/
+   showConfirm/showWarning ever pass Swal2's `input:`/`footer:` options anyway, so those tokens are
+   presently unused in practice regardless of which vocabulary they point at.
+
+   Confirm/cancel button colors, border-radius, and the info/question icon color (library defaults:
+   confirm=purple #7066e0, cancel=solid gray fill, all popup/button corners a fixed 0.25-0.3125em,
+   info/question icon=#3fc3ee/#87adbd -- both genuinely BLUE, a real §3 violation that was true for
+   EVERY confirm/plain-info dialog in the app before this) were ALL confirmed unchanged by an
+   earlier, deliberate T069 Step 3 decision (2026-09-05, 8 days before this Round 2 initiative) that
+   explicitly reasoned "no existing brand-orange override... not a regression." That reasoning no
+   longer holds now that this round is actively defining what "primary"/"danger" mean for
+   showConfirm()'s own object form (§10) -- reconfirmed directly with the user this round (2026-09-13)
+   that recoloring should proceed, superseding the 2026-09-05 decision on this one specific point
+   (background/text color sourcing above is unaffected by either decision). The info/question icon
+   recolor specifically fixes a violation nobody had connected to this block before: `--c-info` is
+   this app's OWN token for "info", and its own tokens.css comment already says so explicitly --
+   "info" = เทา ไม่ใช่ฟ้า (gray, not blue) -- confirming the fix direction rather than picking a color
+   from scratch. Popup/button border-radius now reads this file's single `--radius` token (previously
+   Swal2's own unrelated 0.25-0.3125em values) for the same "one radius app-wide" reason every other
+   Round 2 component already follows it. Font-family needed NO change at all: `.swal2-popup`'s own
+   CSS already sets `font-family: inherit` (confirmed by reading the library's source directly), and
+   `html, body { font-family: 'Sarabun', sans-serif; }` above already covers every page a Swal2 popup
+   could ever be appended to -- it was already inheriting Sarabun correctly before this round. */
 :root {
-    --swal2-background: var(--app-surface-bg);
-    --swal2-color: var(--app-text);
+    --swal2-background: var(--c-bg);
+    --swal2-color: var(--c-text);
     --swal2-footer-border-color: var(--app-border);
     --swal2-footer-color: var(--app-text);
     --swal2-input-border: 1px solid var(--app-border);
@@ -2293,6 +2317,32 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     --swal2-validation-message-background: var(--app-hover-bg);
     --swal2-validation-message-color: var(--app-text);
     --swal2-close-button-color: var(--app-text-muted);
+    --swal2-border-radius: var(--radius);
+    --swal2-confirm-button-border-radius: var(--radius);
+    --swal2-deny-button-border-radius: var(--radius);
+    --swal2-cancel-button-border-radius: var(--radius);
+    --swal2-confirm-button-background-color: var(--c-primary);
+    --swal2-cancel-button-background-color: transparent;
+    --swal2-cancel-button-color: var(--c-text);
+}
+/* Cancel button as a genuine `.btn-outline-secondary` look (§9/§10's own "ปุ่มยกเลิก secondary") --
+   the --swal2-cancel-button-* vars above only reach background-color/color/border-radius (confirmed
+   by reading the library's own CSS -- it has no exposed border-color variable at all), so the border
+   itself needs a direct rule. Both selectors below are plain single/double-class selectors, which
+   beat the library's own `:where(...)`-wrapped rules (zero specificity by design) on specificity
+   alone -- no `!important` needed anywhere in this block. */
+.swal2-cancel {
+    border: 1px solid var(--c-border-strong);
+}
+.swal2-cancel:hover {
+    background-color: var(--c-bg-hover);
+}
+/* info/question icon recolor -- see this block's own top comment for why (real §3 blue-icon
+   violation, `--c-info` is this app's own documented "gray, not blue" token for exactly this case). */
+.swal2-icon.swal2-info,
+.swal2-icon.swal2-question {
+    border-color: var(--c-info);
+    color: var(--c-info);
 }
 [data-bs-theme="dark"] {
     /* The timer progress bar (SweetAlert2's own `timer:` option) defaults to a translucent BLACK
@@ -2435,6 +2485,41 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .form-select:focus {
     border-color: var(--c-primary);
     box-shadow: 0 0 0 .25rem rgba(var(--bs-primary-rgb), .25);
+}
+/* Checkbox/Radio/Switch (Round 2 item (2), §3/§9) -- §3's own explicit exception: a "เลือก/เปิด"
+   state is allowed to use brand orange, same as an active tab. Bootstrap hardcodes #0d6efd directly
+   (literal hex, not var()) on `.form-check-input:checked`/`:indeterminate`, AND bakes a separate
+   fill color into `.form-switch`'s own knob as an SVG data-URI parameter for the FOCUS state --
+   confirmed by reading the compiled rule bodies directly, same per-component-gap pattern as
+   `.btn-primary`/`.btn-danger`/`.form-control:focus` above; a root `--bs-primary` override alone
+   does not reach any of these. The switch's CHECKED-state knob is already a plain white circle
+   (`%23fff`) which is correct as-is against an orange track and needs no override. */
+.form-check-input:checked,
+.form-check-input[type=checkbox]:indeterminate {
+    background-color: var(--c-primary);
+    border-color: var(--c-primary);
+}
+.form-check-input:focus {
+    border-color: var(--c-primary);
+    box-shadow: 0 0 0 .25rem rgba(var(--bs-primary-rgb), .25);
+}
+.form-switch .form-check-input:focus {
+    --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23FF9900'/%3e%3c/svg%3e");
+}
+/* Disabled -- this app's own --c-text-faint token instead of Bootstrap's generic opacity:.5 dimming,
+   so a disabled checkbox/switch reads consistently with every other disabled element elsewhere in
+   this app rather than just a faded copy of whatever tone it would otherwise have. */
+.form-check-input:disabled {
+    opacity: 1;
+    background-color: var(--c-bg-subtle);
+    border-color: var(--c-text-faint);
+}
+.form-check-input:disabled:checked {
+    background-color: var(--c-text-faint);
+    border-color: var(--c-text-faint);
+}
+.form-check-label {
+    color: var(--c-text);
 }
 /* Tabs -- §6: "tab ที่เลือก: ตัวหนังสือ --c-text + เส้นใต้ 2px --c-primary; ไม่มีไอคอน; ไม่มี chevron".
    Bootstrap's stock .nav-tabs is a "folder tab" box shape (border on 3 sides, matches page bg on the
@@ -2621,6 +2706,24 @@ td.num,
 th.num {
     text-align: right;
 }
+/* .col-check/.col-avatar/.col-actions/.col-toggle (§7) -- another real gap in the same family as
+   `.num` just above: item 3's own DT_MARKER_CLASSES (app.js) has applied these 4 marker classes to
+   DataTable cells since Round 2 item 3, all 4 documented as "กว้างคงที่" (fixed width) in §7's own
+   column table -- but NONE of them had ever gotten the actual width CSS (confirmed via grep, 0 hits
+   for any of the 4 class names anywhere in this file before this addition), so every column carrying
+   one has been exactly as wide as its own content/header text this whole time, not fixed. `width:1%`
+   + `white-space:nowrap` is the standard DataTables/table-layout trick for "shrink this column to
+   its own content and never let it grow" without needing to hardcode a pixel width that would be
+   wrong for one of these 4 (a checkbox vs. 2 action icons vs. a switch vs. an avatar circle are all
+   different natural sizes) -- `col-toggle` is new this round (item (2)), the other 3 already existed
+   as item 3's own markers. */
+.col-check,
+.col-avatar,
+.col-actions,
+.col-toggle {
+    width: 1%;
+    white-space: nowrap;
+}
 /* Sortable right-aligned header text crowding its own sort arrow (§7's own .num/.col-money right-
    align convention) -- DataTables' native header structure is `div.dt-column-header { display:flex;
    justify-content:space-between; gap:4px; }` wrapping `.dt-column-title` (flex-grow:1) +
@@ -2636,27 +2739,72 @@ th.col-money div.dt-column-header .dt-column-title {
     text-align: right;
     padding-right: 4px;
 }
-/* Row-action icon buttons (§7 "≤ 2 action: ปุ่มไอคอน .btn.btn-sm.btn-icon เทา ... ไม่มีพื้น ไม่มีขอบ,
-   hover พื้น --c-bg-hover") -- real bug found on the components.php demo: a delete/remove icon had
-   `.text-danger` stacked on top, rendering red -- §7 is explicit that row-action icons are NEVER
-   colored by what they do (delete included); only the tooltip/confirm dialog communicates that.
+/* Row-action icon buttons -- Round 2 item (5), RE-DECIDED after review: an earlier version of §4
+   ("ปุ่มกลม...เลิกใช้ทั้งหมด") had this as a flat, borderless icon (no circle) -- that decision is
+   now REVERSED, back to the circle shape that was already approved/rolled out once before
+   (`.btn-circle-action`, 2026-09-02, 14 real files) -- see §4/§7 in rules.md for the full reversal
+   history. `.btn-icon` is now this app's ONE real row-action button spec (32px circle, 1px
+   --c-border, --c-bg fill, 14px --c-text-muted icon); `.btn-circle-action` (below) is a TEMPORARY
+   alias sharing every declaration verbatim -- same "share one definition, don't fork it" pattern
+   already used for `.btn-outline-brand`/`.btn-outline-secondary` in §1/§4 -- so the 14 real files
+   that already carry `.btn-circle-action` get this exact same look with zero markup changes, until
+   round 4 renames each one to `.btn-icon` directly and this alias is deleted.
+   Real bug found on the components.php demo during the FIRST version of this rule and still true
+   now: a delete/remove icon had `.text-danger` (or `.text-primary`/`.text-success`/etc. -- the "7
+   tone" colors §7 explicitly bans on a row-action icon) stacked on top, rendering colored --
    `!important` here is deliberate, not accidental scope creep -- Bootstrap's own `.text-danger`/
    `.text-success`/etc. utilities are themselves declared with `!important` (confirmed by reading
-   bootstrap.css directly), so a plain declaration here would silently lose to one of those if a
-   future edit ever stacks one onto a `.btn-icon` again; this makes "row action icons are always
-   neutral" a real, unbreakable guarantee at the CSS level, not just a convention to remember. */
-.btn-icon {
+   bootstrap.css directly), so a plain declaration here would silently lose to one of those; this
+   makes "row action icons are always neutral, whatever tone class the row's own markup stacks on
+   top" a real, unbreakable guarantee at the CSS level for EVERY ONE of those 14 files' existing
+   `.text-{color}` classes too, not just new markup. */
+.btn-icon,
+.btn-circle-action {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--c-border);
+    background: var(--c-bg);
     color: var(--c-text-muted) !important;
-    background: none;
-    border: none;
-    padding: .25rem .5rem;
-    border-radius: var(--radius);
     line-height: 1;
 }
+/* 2026-09-13, follow-up: 14px read as too large inside the 32px circle (not enough visible ring of
+   background around the glyph) -- reduced to 12px. Considered switching every row-action icon to
+   `fa-regular` (a lighter stroke weight than `fa-solid`) as a second pass if 12px still looked heavy,
+   per explicit instruction -- checked first rather than guessing: this project bundles ONLY
+   `@fortawesome/fontawesome-free` (confirmed via its own webfonts -- `fa-regular-400.woff2` is 19KB
+   vs `fa-solid-900.woff2`'s 113KB) and free-tier `fa-regular` covers only a small fixed icon set that
+   does NOT include most icons this app's row actions actually use (`trash`, `pen`/`pencil`,
+   `ellipsis`/`ellipsis-vertical`, `chevron-down`, `xmark`, `filter` are ALL solid-only in the free
+   metadata -- confirmed via `node_modules/@fortawesome/fontawesome-free/metadata/icon-families.json`
+   directly, not assumed) -- switching would silently blank out the glyph on most of the 14+ real
+   files using `.btn-circle-action`/`.btn-icon` today. Kept `fa-solid` everywhere, 12px only. */
+.btn-icon i,
+.btn-circle-action i {
+    font-size: 12px;
+}
 .btn-icon:hover,
-.btn-icon:focus {
+.btn-icon:focus,
+.btn-circle-action:hover,
+.btn-circle-action:focus {
     color: var(--c-text) !important;
     background-color: var(--c-bg-hover);
+}
+.btn-icon:focus-visible,
+.btn-circle-action:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 .25rem rgba(var(--bs-primary-rgb), .25);
+}
+.btn-icon:disabled,
+.btn-icon[disabled],
+.btn-circle-action:disabled,
+.btn-circle-action[disabled] {
+    color: var(--c-text-faint) !important;
+    background: var(--c-bg);
 }
 
 /* ==========================================================================
@@ -2801,48 +2949,46 @@ th.col-money div.dt-column-header .dt-column-title {
     text-decoration: underline;
 }
 
-/* filter-bar.php (§6), revised same round after explicit feedback -- flat bar, NOT the old
-   `.station-filter`'s fieldset/legend look (a bordered box with "ตัวกรอง" floating over the top edge
-   as a corner label) -- one flat strip (--c-bg-subtle background, --c-border border) that grows
-   downward to show the caller's own field grid when expanded, collapsing back to just the toolbar
-   row via the SAME plain max-height-transition mechanism `.station-filter-body` already used (kept
-   identical on purpose -- "ตอนกาง = grid แบบ .station-filter เดิมเป๊ะ" applies to the COLLAPSE
-   MECHANISM too, not just the field grid's own markup). initFilterBar() (app.js) owns all of the
-   count/visibility/chip-content/expand-collapse LOGIC; these rules are purely the shell's own static
-   layout plus the chip's own look. */
+/* filter-bar.php (§6), revised twice since the first version (see git history for the earlier
+   single-toolbar-row shape) -- flat bar, NOT the old `.station-filter`'s fieldset/legend look (a
+   bordered box with "ตัวกรอง" floating over the top edge as a corner label) -- a flat panel
+   (--c-bg-subtle background, --c-border border, no shadow) split into 3 parts: a HEADER (always
+   visible, label + count + the toggle circle), a collapsible BODY (the caller's own field grid, same
+   plain max-height-transition mechanism `.station-filter-body` already used -- kept identical on
+   purpose, "ตอนกาง = grid แบบ .station-filter เดิมเป๊ะ" applies to the COLLAPSE MECHANISM too, not
+   just the field grid's own markup), and a FOOTER (ALSO always visible regardless of collapse state
+   -- chips/"ไม่ได้กรอง" + the Clear button, "ติดล่างของแผงเสมอ"). initFilterBar() (app.js) owns all of
+   the count/visibility/chip-content/expand-collapse LOGIC; these rules are purely the shell's own
+   static layout plus the chip's own look.
+   2026-09-13, follow-up -- the earlier `toolbarTarget` relocation option (and its
+   `.filter-bar--toolbar-relocated`/`.status-tabs > .filter-bar-toolbar` support rules) is REMOVED
+   entirely this round ("ยกเลิก option toolbarTarget") -- the whole panel always renders in normal
+   document flow now, e.g. directly under a status-tabs.php pipeline for a page like Payroll Process,
+   never spliced into that pipeline's own row. */
 .filter-bar {
     background: var(--c-bg-subtle);
     border: 1px solid var(--c-border);
     border-radius: var(--radius);
     margin-bottom: var(--sp-4);
 }
-/* 2026-09-13, follow-up -- initFilterBar()'s own `toolbarTarget` option relocates `.filter-bar-
-   toolbar` OUT of `.filter-bar` entirely (e.g. into a status-tabs row) -- leaving ONLY the
-   collapsible field panel behind. While collapsed (max-height:0), an empty `.filter-bar` box would
-   otherwise still render its own background/border as a thin visible sliver even at 0 content
-   height -- hide that chrome entirely for the relocated+collapsed combination only; the DEFAULT
-   (toolbar-still-inside) look is completely untouched by this rule. */
-.filter-bar--toolbar-relocated.collapsed {
-    background: transparent;
-    border-color: transparent;
-    margin-bottom: 0;
-}
-/* The relocated toolbar becomes a flex ITEM of whatever row it's appended into (a status-tabs row,
-   `align-items:stretch` by default) -- `margin-left:auto` pushes it flush right against the row's
-   own edge (the row's tabs stay left-packed), `align-self:center` keeps its own natural button
-   height instead of stretching to match the tallest chevron card in the row. Scoped to this exact
-   parent-child relationship so it only ever applies once actually relocated -- the toolbar's DEFAULT
-   position (a plain block inside `.filter-bar`) is untouched. */
-.status-tabs > .filter-bar-toolbar {
-    margin-left: auto;
-    align-self: center;
-}
-.filter-bar-toolbar {
+.filter-bar-header {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: var(--sp-2);
+    justify-content: space-between;
     padding: var(--sp-2) var(--sp-3);
+}
+.filter-bar-label {
+    color: var(--c-text-muted);
+    font-size: var(--fs-sm);
+}
+/* The toggle button is `.btn-icon` (§7's row-action circle, reused here verbatim per explicit
+   instruction) -- its only bespoke rule is the chevron's own rotation, keyed off `.filter-bar`'s own
+   `.collapsed` class so no extra JS state is needed beyond the existing collapse toggle. */
+.filter-bar-toggle i {
+    transition: transform .2s ease;
+}
+.filter-bar:not(.collapsed) .filter-bar-toggle i {
+    transform: rotate(180deg);
 }
 .filter-bar-body {
     overflow: hidden;
@@ -2860,6 +3006,25 @@ th.col-money div.dt-column-header .dt-column-title {
    own for it, keeping the "copy verbatim" migration promise in the partial's own docblock intact. */
 .filter-bar-body > :first-child {
     padding: 0 var(--sp-3) var(--sp-3);
+}
+.filter-bar-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    border-top: 1px solid var(--c-border);
+}
+.filter-bar-footer-left {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-1);
+    min-width: 0;
+}
+.filter-bar-empty-text {
+    color: var(--c-text-faint);
+    font-size: var(--fs-xs);
 }
 .filter-bar-chips {
     display: flex;
@@ -2890,10 +3055,254 @@ th.col-money div.dt-column-header .dt-column-title {
     color: var(--c-text);
 }
 
+/* Notification bell + dropdown (§6, item 6d) -- UI ONLY this round, no backend wiring, no polling.
+   A REAL, already-shipped, backend-connected version of this exists (layout/header.php's
+   `.nav-notif-dropdown`, public/js/notifications.js, NotificationModel, 2026-08-29/-30/-31) -- NOT
+   touched this round ("ไม่แตะ header.php รอบนี้ นอกจาก demo"). Real, deliberate differences from that
+   shipped version are called out explicitly in rules.md §6 (not silently reconciled here): the real
+   per-item icon uses `.row-type-icon rt-N`, a DIFFERENT gradient COLOR per notification type (this
+   spec's own icon plate is ONE uniform `--c-bg-subtle`/`--c-text-muted` regardless of type -- see
+   2026-09-13 revision below); the real unread dot sits on the RIGHT of the item, this spec puts it
+   on the LEFT; the real badge shows "99+" past 99, this spec shows ">99". Header/footer/empty-state
+   COPY reuses the real feature's own existing i18n keys verbatim (notifications/notif_mark_all_read/
+   notif_view_all/notif_empty) rather than forking new keys for near-identical wording -- see rules.md
+   for why (changing those keys' VALUES would alter live header.php text without ever touching that
+   file, the same category of "shared resource affects a real page" this round's other components hit
+   repeatedly -- deliberately not done here without it being asked for).
+   2026-09-13, "เงียบลง" follow-up -- the FIRST version of this design gave each item's icon a
+   different COLOR per tone (success=green/danger=red/warning=orange) with no background plate at
+   all. Corrected per explicit instruction, and per §3 itself ("สีมีหน้าที่บอกว่า...ถ้าสีไม่ได้ตอบสอง
+   คำถามนี้ ให้เป็นเทา") -- a notification's ICON SHAPE still varies by tone (check/xmark/triangle/bell,
+   `NOTIF_TONE_ICON` in app.js, unchanged) since that's informational, but the COLOR does not: every
+   icon is now the same neutral `--c-text-muted` inside a uniform 28px `--c-bg-subtle` circle,
+   regardless of tone. The unread/read distinction moved entirely onto the dot + title weight instead
+   of a background tint (see `.notif-item-unread` below) -- `tone` itself is now READ ONLY for its
+   icon glyph, never for color, anywhere in this block. */
+.notif-bell-btn {
+    position: relative;
+}
+.notif-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 3px;
+    border-radius: var(--radius-pill);
+    background: var(--c-danger);
+    color: #fff;
+    font-size: var(--fs-xs);
+    line-height: 16px;
+    text-align: center;
+    font-weight: 700;
+}
+/* 2026-09-13, real bug found and fixed: this used to be a hand-rolled `.notif-dropdown
+   { position:absolute; right:0 }` shown/hidden via a manual `.toggleClass('d-none')` click handler --
+   correct-looking ONLY when the toggle button sits near the right edge of the viewport (a real top
+   bar's own bell), which the demo's bell did NOT (see components.php's own comment on this same fix).
+   Replaced with a GENUINE Bootstrap dropdown (`.dropdown` wrapper + `data-bs-toggle="dropdown"` +
+   `.dropdown-menu.dropdown-menu-end`) so Popper (already bundled, `bootstrap.bundle.min.js`) owns
+   positioning/auto-flip near an edge -- `.notif-bell-wrap`'s own `position:relative` is no longer
+   needed (Bootstrap's base `.dropdown` class already sets that), removed rather than kept as a
+   redundant duplicate. `position`/`top`/`right`/`z-index` are gone from `.notif-dropdown` entirely --
+   Popper injects its own inline positioning once `.show` is added; declaring any of those here would
+   just fight it. `display` needed its OWN 2-class-specificity rule below (`.notif-dropdown.show`),
+   NOT a plain `.notif-dropdown { display: flex }` -- Bootstrap's own `.dropdown-menu { display: none }`
+   is a single-class selector too, so a same-specificity `display: flex` declared later in this file
+   would have permanently won the tie in BOTH states (open AND closed), the exact same specificity-tie
+   bug class already hit twice in this project (v11's Symbol dropdown, the status-tab idle-pill vs
+   `.badge` rule) -- scoping to `.show` sidesteps the tie instead of depending on declaration order. */
+.notif-dropdown {
+    width: 360px;
+    max-height: 480px;
+    padding: 0;
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    /* --shadow-modal is documented in tokens.css as "modal/dropdown เท่านั้น" -- this IS a dropdown. */
+    box-shadow: var(--shadow-modal);
+}
+.notif-dropdown.show {
+    display: flex;
+    flex-direction: column;
+}
+.notif-dropdown-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    padding: var(--sp-3);
+    border-bottom: 1px solid var(--c-border);
+    flex: none;
+    font-size: var(--fs-base);
+    font-weight: 700;
+    color: var(--c-text);
+}
+.notif-list {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+/* 2026-09-13: footer background --c-bg-subtle added (was plain --c-bg, same as the dropdown body --
+   too little separation from the scrollable list above it). The "ดูทั้งหมด" link itself is now real
+   `.btn.btn-link.btn-sm` markup (§4's own Tertiary spec) instead of a bespoke unclassed `<a>` styled
+   by hand here -- matches the header's own "อ่านทั้งหมดแล้ว" button, which already used real Bootstrap
+   button classes; the old `.notif-dropdown-footer a` color/hover rules this replaced are gone, not
+   left dangling alongside Bootstrap's own button styling. */
+.notif-dropdown-footer {
+    flex: none;
+    padding: var(--sp-2) var(--sp-3);
+    border-top: 1px solid var(--c-border);
+    background: var(--c-bg-subtle);
+    text-align: center;
+}
+.notif-empty {
+    padding: var(--sp-5) var(--sp-3);
+    text-align: center;
+    color: var(--c-text-faint);
+    font-size: var(--fs-sm);
+}
+.notif-item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-2);
+    padding: var(--sp-3) var(--sp-4);
+    border-bottom: 1px solid var(--c-border);
+    text-decoration: none;
+}
+.notif-item:last-child {
+    border-bottom: none;
+}
+.notif-item:hover {
+    background: var(--c-bg-hover);
+}
+/* 2026-09-13, "เงียบลง" follow-up: the unread background tint (`--c-primary-soft`) read as too
+   yellow/heavy for something that fires on every unread row -- removed entirely rather than reduced
+   to a faint opacity (the alternative explicitly offered), since the dot + bold title below already
+   carry the "unread" signal on their own without needing a 3rd cue. tokens.css's own
+   `--c-primary-soft` comment reverted back to its original step/tab-only scope. */
+.notif-item-dot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    margin-top: 11px;
+    border-radius: 50%;
+    background: transparent;
+}
+.notif-item-unread .notif-item-dot {
+    background: var(--c-primary);
+}
+/* 28px circle, ONE neutral color regardless of tone -- see this block's own top comment for why
+   (§3: color needs a reason, a notification TYPE alone isn't one). `NOTIF_TONE_ICON` (app.js) still
+   varies the GLYPH per tone (check/xmark/triangle/bell) -- only color stopped varying. */
+.notif-item-icon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--c-bg-subtle);
+    color: var(--c-text-muted);
+    font-size: 14px;
+}
+.notif-item-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.notif-item-title,
+.notif-item-detail {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+/* Unread = bold; read = normal weight -- this used to be `font-weight: 700` unconditionally on every
+   item regardless of read state, which is what the dot-only signal above was quietly competing
+   against ("ยังไม่อ่าน...ชื่อเรื่อง --c-text หนา...อ่านแล้ว: ชื่อเรื่องน้ำหนักปกติ"). */
+.notif-item-title {
+    color: var(--c-text);
+    font-size: var(--fs-base);
+    font-weight: 400;
+}
+.notif-item-unread .notif-item-title {
+    font-weight: 700;
+}
+.notif-item-detail {
+    color: var(--c-text-muted);
+    font-size: var(--fs-sm);
+}
+.notif-item-time {
+    color: var(--c-text-faint);
+    font-size: var(--fs-xs);
+}
+
+/* empty-state.php + emptyStateHtml() (§6, item 6e) -- one shared "nothing to show" block used in 4
+   real situations (empty table, empty tab/section, empty list, filtered-to-zero). Deliberately no
+   icon background/plate of its own (single-color glyph only -- the Notification item icon, elsewhere
+   in this file, went the OTHER way after its own 2026-09-13 revision and now sits in a uniform
+   `--c-bg-subtle` circle; these are 2 separate, independently-made decisions, not the same rule
+   applied twice) and no card/border of its own -- it's meant to sit directly inside whatever
+   container already has one (a table's own tbody cell, a tab pane, a dropdown list), not add a
+   second nested box. `:last-child` drops the trailing margin on whichever element actually ends the
+   block (the text line when there's no action, the button when there is) instead of a separate
+   "no-action" CSS variant.
+   2026-09-13, real bug found and fixed: the icon rendered flush LEFT instead of centered. Root cause
+   -- FontAwesome's own base rule (`.fa-solid,.fab,.far,.fas`, confirmed by reading the bundled
+   all.min.css directly) sets `width: 1.25em` on every icon at the SAME specificity (one class) as
+   this rule's old `display: block` -- style.css loads after FontAwesome's CSS so `display: block` won
+   its own tie, but the icon's WIDTH stayed FontAwesome's fixed `1.25em` (this rule declared no width
+   of its own to contest it), turning the icon into a small fixed-width block. A block box with an
+   explicit (non-auto) width does NOT stretch to fill its container, and `text-align: center` only
+   centers INLINE content WITHIN a box -- it has no effect on where a block-level box with a fixed
+   width sits, so the icon stayed flush against the container's left edge regardless of `text-align`.
+   Fixed by making `.empty-state` itself a flex column with `align-items: center` -- a flex container
+   centers each of its children along the cross axis based on the CHILD's own box, fixed-width or not,
+   sidestepping the whole block-box/text-align distinction entirely; `display: block` was removed from
+   `.empty-state-icon` since it's no longer doing anything (a flex item's own display is blockified by
+   the spec regardless of what's declared here). */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: var(--sp-6) var(--sp-4);
+}
+.empty-state > *:last-child {
+    margin-bottom: 0;
+}
+.empty-state-icon {
+    font-size: 32px;
+    color: var(--c-text-faint);
+    margin-bottom: var(--sp-3);
+}
+.empty-state-title {
+    color: var(--c-text);
+    font-size: var(--fs-md);
+    font-weight: 700;
+    margin-bottom: var(--sp-1);
+}
+.empty-state-text {
+    color: var(--c-text-muted);
+    font-size: var(--fs-sm);
+    margin-bottom: var(--sp-3);
+}
+/* A DataTable's own empty-row <td> centers this block automatically via .empty-state's own
+   text-align, but the <td> itself still needs to not be left/vertically cramped by the table's
+   normal cell padding -- initSharedDataTable()'s emptyState option injects this class on that <td>
+   specifically so it never depends on a caller's own table CSS happening to look right by accident. */
+td.dt-empty-cell {
+    padding: 0 !important;
+}
+
 /* status-tabs.php (§6, item 4b) -- REVISED after live review: reverted from a plain nav-tabs
    underline shape back to the original chevron pipeline (.station-row/.station-card), retokenized --
-   "คงรูปแบบ chevron pipeline ตามที่ approve แล้ว" -- lighter than the old .station-card (36px tall vs
-   38px, 8px notch vs 12px, no border/shadow). A second, flat "path" visual variant (no colored card,
+   "คงรูปแบบ chevron pipeline ตามที่ approve แล้ว" -- lighter than the old .station-card (was 36px tall,
+   now 34px per a 2026-09-13 follow-up -- see that comment further down for the full before/after --
+   8px notch vs 12px, no border/shadow). A second, flat "path" visual variant (no colored card,
    breadcrumb-style) existed alongside this one for an explicit A/B comparison in components.php --
    decided, chevron won, every `.status-tabs-path`/`.status-tab-path*` rule that variant needed has
    been deleted outright, not left as dead/unused CSS. `:not(.badge)` on the idle pill rule below is
@@ -2902,19 +3311,30 @@ th.col-money div.dt-column-header .dt-column-title {
    with `.badge.badge-{tone}`'s -- without `:not(.badge)` here, whichever rule is declared LATER in
    this file would silently win the tie regardless of which one is semantically correct, the exact
    same specificity-tie bug class already documented once in this project (v11's Symbol-dropdown).
-   Excluding `.badge` here sidesteps the tie entirely instead of depending on declaration order. */
+   Excluding `.badge` here sidesteps the tie entirely instead of depending on declaration order.
+   2026-09-13, "ปรับให้เบาลง" follow-up -- the idle pill was `--c-bg-hover` (a light gray very close in
+   value to the tab's own `--c-bg-subtle` background), which read as visually heavy/dark because the
+   pill barely separated from the background it sat on ("ตอนนี้ดูเข้มเพราะพื้นกับ pill ใกล้กัน" -- fixed
+   by making the pill genuinely WHITE (`--c-bg`) with its own `--c-border` outline instead, so it reads
+   as a distinct chip regardless of how close its background is to the row's own idle color. Also
+   given a fixed 18px height (was padding-driven, no explicit height) via flex centering so the pill's
+   size no longer depends on how tall the font happens to render at `--fs-xs`. */
 .status-tab-count:not(.badge) {
-    display: inline-block;
-    min-width: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    height: 18px;
+    min-width: 18px;
     margin-left: var(--sp-1);
-    padding: 1px 7px;
+    padding: 0 7px;
     border-radius: var(--radius-pill);
-    background: var(--c-bg-hover);
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
     color: var(--c-text-muted);
     font-size: var(--fs-xs);
     font-weight: 600;
     text-align: center;
-    vertical-align: middle;
 }
 .status-tab-count.badge {
     vertical-align: middle;
@@ -2925,6 +3345,11 @@ th.col-money div.dt-column-header .dt-column-title {
     flex-wrap: nowrap;
     overflow-x: auto;
     overflow-y: hidden;
+    /* "ทั้งแถวไม่มีเงา ไม่มีขอบนอก" -- explicit, not just "happens to be true": nothing in this file (or
+       Bootstrap, since this is a plain <div>, never a `.nav`/`.nav-tabs`) puts a shadow/border on this
+       row, stated here so a future reader never has to re-verify that by grep. */
+    box-shadow: none;
+    border: none;
 }
 .status-tab-col {
     display: flex;
@@ -2941,12 +3366,18 @@ th.col-money div.dt-column-header .dt-column-title {
     gap: 2px;
     padding: 2px 2px 6px;
 }
+/* 2026-09-13, "ปรับให้เบาลง" follow-up -- 36px -> 34px (the row also reads shorter overall since this
+   is the ONE height driving both the button box and its own notch triangle below, which is always
+   sized to exactly match). Text size/notch horizontal depth/step gap were ALREADY at their requested
+   target values before this change (`--fs-sm`, 8px, 2px respectively -- confirmed by reading this
+   exact block, not re-changed) -- only the height itself, its 2 dependent triangle values, and the
+   pill's own color/size (below) were the real deltas this round. */
 .status-tab-chevron {
     position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 36px;
+    height: 34px;
     min-width: 110px;
     padding: 0 14px 0 18px;
     background: var(--c-bg-subtle);
@@ -2966,8 +3397,12 @@ th.col-money div.dt-column-header .dt-column-title {
     top: 0;
     width: 0;
     height: 0;
-    border-top: 18px solid transparent;
-    border-bottom: 18px solid transparent;
+    /* Always half of .status-tab-chevron's own height above, so the triangle's total vertical span
+       (top + bottom) exactly fills the button box with no gap/overflow -- kept at 8px horizontal
+       depth, unchanged, per explicit instruction ("ลูกศรตื้นลง (depth 8px)": shallower now that the
+       row itself is shorter, but the horizontal reach stays exactly 8px). */
+    border-top: 17px solid transparent;
+    border-bottom: 17px solid transparent;
 }
 .status-tab-chevron::before {
     left: 0;
@@ -2991,8 +3426,15 @@ th.col-money div.dt-column-header .dt-column-title {
 .status-tab-chevron.active::after {
     border-left-color: var(--c-primary);
 }
+/* Active pill (forward AND back groups both reach this same rule -- a back-group active tab always
+   carries `.active` too, alongside its own `.status-tab-tone-*` modifier below, so "กลุ่มย้อนกลับที่
+   เลือก...pill แบบเดียวกัน" needs no separate selector) -- opacity nudged .3 -> .25 and `border: none`
+   added explicitly, since the idle rule above now puts a real `--c-border` outline on every pill by
+   default that an active (on a solid, already-high-contrast --c-primary/tone background) pill must
+   NOT inherit ("ไม่ต้องขอบ"). */
 .status-tab-chevron.active .status-tab-count {
-    background: rgba(255, 255, 255, .3);
+    background: rgba(255, 255, 255, .25);
+    border: none;
     color: #fff;
 }
 /* Back (reversed/exception) group -- rejected/need-info/cancelled-style -- forms its own group at
@@ -3142,6 +3584,136 @@ th.col-money div.dt-column-header .dt-column-title {
 .status-stepper-step--next .status-stepper-circle {
     background: var(--c-bg);
     border-color: var(--c-border-strong);
+}
+
+/* timeline.php + renderTimeline() (§6, Round 2 item (3)/6b) -- a plain vertical activity log: one
+   continuous --c-border line down the left edge, a small dot per item (colored by `tone`, default
+   --c-border-strong -- same "no pastel colors, no box/card per item" principle status-stepper above
+   already established for the horizontal case). NOT the same component as the payroll run's own
+   5-station spine (that's status-stepper.php, a fixed small N of named milestones) -- this is an
+   arbitrary-length, newest-first activity feed (an audit log, an approval history) the caller
+   already sorted; this partial/function never sorts or dedupes.
+   Checked for a pre-existing collision before naming this: `.apv-timeline-log`/`.apv-log-entry`
+   (further up this file) is an OLDER, unrelated left-border list -- confirmed 0 real call sites
+   anywhere in the app (dead CSS, pre-dates the actual live approval-timeline UI, which is
+   `.apv-stage`/`.apv-timeline` elsewhere in this file) -- not reused, not touched, deliberately
+   different class names (`.timeline*`) to avoid any confusion with either. */
+.timeline {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+.timeline-item {
+    position: relative;
+    padding-left: 24px;
+    padding-bottom: var(--sp-4);
+}
+.timeline-item:last-child {
+    padding-bottom: 0;
+}
+/* The connecting line is drawn PER ITEM, from just below this item's own dot down to the next
+   item's dot -- naturally stops at the last item (no next segment to draw) and naturally pauses at
+   a day-header divider too (a `.timeline-day-header` <li> carries no such line of its own), without
+   needing any extra "is this the last one/next to a divider" JS logic. */
+.timeline-item:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 14px;
+    bottom: calc(-1 * var(--sp-4));
+    width: 1px;
+    background: var(--c-border);
+}
+.timeline-dot {
+    position: absolute;
+    left: 0;
+    top: 4px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--c-border-strong);
+}
+.timeline-dot-warning { background: var(--c-warning); }
+.timeline-dot-danger { background: var(--c-danger); }
+.timeline-dot-success { background: var(--c-success); }
+.timeline-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--sp-2);
+}
+.timeline-actor {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-sm);
+    color: var(--c-text);
+    font-weight: 600;
+}
+.timeline-time {
+    font-size: var(--fs-xs);
+    color: var(--c-text-muted);
+    white-space: nowrap;
+}
+.timeline-title {
+    color: var(--c-text);
+    margin-top: var(--sp-1);
+}
+.timeline-detail {
+    color: var(--c-text-muted);
+    font-size: var(--fs-sm);
+    margin-top: 2px;
+}
+.timeline-day-header {
+    color: var(--c-text-muted);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    padding: 0 0 var(--sp-2) 24px;
+}
+.timeline-day-header:not(:first-child) {
+    padding-top: var(--sp-3);
+}
+
+/* .emp-header-card (§9, Round 2 item 6c) -- the "design phase comes later" this class's own
+   original 2026-09-11 comment (app.js) explicitly deferred. This class had ZERO CSS at all before
+   this addition (confirmed via grep) -- it already had 6 REAL call sites in payroll/detail.js
+   before this round started (Batch 3C item 8), so unlike every other component this round adds,
+   this one's new styling is visible on those 6 real modals immediately, not just a demo -- exactly
+   what that deferred comment was waiting for, not new/unplanned scope. Flat surface, no colored
+   border/shadow -- deliberately quieter than a normal modal-header treatment, since this card is
+   the FIRST block of an already-titled modal, not the modal's own header. */
+.emp-header-card {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    background: var(--c-bg-subtle);
+    border-bottom: 1px solid var(--c-border);
+    padding: var(--sp-3);
+}
+.emp-header-card-body {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.emp-header-card-line1 {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-2);
+}
+.emp-header-card-name {
+    color: var(--c-text);
+    font-weight: 700;
+}
+.emp-header-card-code {
+    color: var(--c-text-muted);
+}
+.emp-header-card-line2 {
+    color: var(--c-text-muted);
+    font-size: var(--fs-sm);
+}
+.emp-header-card-badge {
+    flex: none;
 }
 
 /* ==========================================================================
@@ -3298,6 +3870,21 @@ html, body {
    unaffected). */
 #reportPreviewModal .modal-footer > [data-bs-dismiss="modal"],
 #runRegisterPdfPreviewModal .modal-footer > [data-bs-dismiss="modal"] {
+    order: 0;
+}
+/* 2026-09-13, Round 2 items 7b/6c demo modals -- real, PRE-EXISTING conflict found (not introduced
+   by these 2 demos): the app-wide rule right above this comment block puts the dismiss button on
+   the RIGHT (Save/primary left, per its own 2026-09-02 explicit request, audited across 102 real
+   modals) -- but docs/design/rules.md's own §4 text (and CLAUDE.md's own copy of the same rule) says
+   the OPPOSITE: "[ยกเลิก] [บันทึก]" (secondary LEFT, primary rightmost). That's a genuine, pre-
+   existing discrepancy between this app's documented convention and its own already-shipped,
+   deliberately-audited global CSS -- NOT something decided or resolved here; flagged to the user
+   rather than silently picking a side for the other ~100 real modals this rule already covers.
+   These 2 demo modals specifically follow the user's own explicit instruction for THEM (dismiss
+   left, primary right) via the SAME scoped-override technique already established just above for
+   #reportPreviewModal/#runRegisterPdfPreviewModal -- not a change to the app-wide rule itself. */
+#cpQuickViewModal .modal-footer > [data-bs-dismiss="modal"],
+#cpDirtyModal .modal-footer > [data-bs-dismiss="modal"] {
     order: 0;
 }
 /* ==========================================================================
@@ -7079,27 +7666,17 @@ html, body {
    `<div class="d-flex gap-1 justify-content-center">` (no shared border/background container
    anymore, replaces `.btn-group border rounded-3 bg-white`) and drop `border-start`/`py-1` from each
    button (no longer meaningful once they're not touching) -- keep the existing `btn btn-link
-   text-{color}` classes for icon color, just add `.btn-circle-action` alongside them. */
-.btn-circle-action {
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    border-radius: 50%;
-    border: 1px solid var(--app-border);
-    background: var(--app-surface-bg);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: transform .15s ease, box-shadow .15s ease, background-color .15s ease;
-}
-.btn-circle-action:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 3px 8px rgba(16, 24, 40, .15);
-    background-color: var(--app-hover-bg);
-}
-.btn-circle-action i {
-    font-size: .85rem;
-}
+   text-{color}` classes for icon color, just add `.btn-circle-action` alongside them.
+   2026-09-13, Round 2 item (5): the actual `.btn-circle-action` declarations that used to live here
+   (32px circle, `--app-border`/`--app-surface-bg`, a lift+shadow hover effect) were CONSOLIDATED
+   into the earlier `.btn-icon, .btn-circle-action` shared rule (up near the rest of §4/§7's button
+   CSS) rather than kept as a 2nd, separately-themed definition of the same class -- this file only
+   ever applies the LAST rule that sets a given property when 2 blocks target the same selector, so
+   leaving both here would have made this later, `--app-*`-toned, lift-hover block silently win over
+   the token-driven one for every one of the 14 real files using `.btn-circle-action` today. See that
+   earlier block's own comment for the full §4 reversal history (circle shape approved, then
+   "เลิกใช้ทั้งหมด", now re-approved) and why `.btn-circle-action` is a temporary alias, not a 2nd
+   permanent definition. */
 
 /* ==========================================================================
    Excel-style per-column header filter (public/js/table-column-filter.js) -- 2026-08-27, explicit
@@ -8329,25 +8906,37 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    Injected generically, per-modal, by app.js's own show.bs.modal handler -- see that
    file's own docblock for the injection logic; this is JUST the visual styling for
    whatever gets injected (or already exists) in a modal's header/footer. -->
-/* 2026-08-30, same-day follow-up: "Design การเปลี่ยนภาษาใน modal ให้เป็น design เดียวกับ header" -- the
-   injected control reuses .nav-lang-dropdown/.nav-lang-btn/.nav-lang-menu as-is (same look as the
-   page header's own switcher, see those classes' own rules above) -- .modal-lang-dropdown only
-   overrides what genuinely differs by context: it sits at the LEFT edge of a modal header (the
-   nav's own version is flush right, hence that one's `right:0` menu alignment), and needs a
-   higher z-index than the nav ever did since it must clear the modal's own stacking context. */
-.modal-lang-dropdown {
-    flex: none;
+/* 2026-09-13, Round 2 items 6c/7b follow-up -- REDESIGNED, not removed (confirmed with the user):
+   the flag-icon dropdown this used to reuse verbatim from the page header's own switcher
+   (.nav-lang-dropdown/.nav-lang-btn/.nav-lang-menu, plus the .modal-header .modal-title
+   compensation below for it sitting at the header's far LEFT) is gone -- docs/design/rules.md §1/§9
+   say modal headers carry no flag/icon at all, and app.js's own modalLangDropdownHtml() now injects
+   a plain "TH | EN" text switch positioned AFTER .modal-title instead (see that function's own
+   docblock for the full history/reasoning) -- no more left-edge/title-compensation CSS needed at
+   all, .modal-title stays Bootstrap's own plain default layout. */
+.modal-lang-text-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    margin-left: var(--sp-3);
+    font-size: var(--fs-xs);
 }
-.modal-lang-dropdown .nav-lang-menu {
-    right: auto;
-    left: 0;
-    z-index: 1060;
+.modal-lang-text-btn {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--c-text-muted);
+    font-size: var(--fs-xs);
+    cursor: pointer;
 }
-/* Keeps the title flush against the lang button's right edge (not centered between it and
-   the close X) once the lang button becomes the header's first flex child. */
-.modal-header .modal-title {
-    flex: 1 1 auto;
-    margin-left: .75rem;
+.modal-lang-text-btn.modal-lang-text-active {
+    color: var(--c-text);
+    font-weight: 700;
+    cursor: default;
+}
+.modal-lang-text-sep {
+    color: var(--c-text-faint);
+    font-size: var(--fs-xs);
 }
 /* 2026-08-31, Recheck modal's Mobile No. field (app/views/layout/modals.php) -- same intl-tel-input
    country flag/dial-code picker as Employee Detail's own #mobile_no, same fix needed: the library's

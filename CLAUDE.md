@@ -48,6 +48,11 @@
   the instant it sees that sequence anywhere in the file, comment or not, silently turning everything
   after it into raw output; `php -l` does not catch this. Hit twice for real in one session
   (`app/helpers/helpers.php`, once writing the bug's own explanation) before this rule was added.
+  Mirror-image case, same rule: never type a literal `<?php`/`<?=` opening tag as prose text either
+  (e.g. inside an HTML `<!-- -->` comment explaining what a tag below does) — PHP does not know it's
+  "inside an HTML comment," it tries to parse whatever follows as real code. Hit for real in
+  `docs/design/components.php` (an example snippet describing a cache-busting query string broke
+  `php -l` the same way) — this time caught before commit.
 - When asked for a summary or release note, derive it from git log, never from memory.
 - Follow the given task order. Ask before reordering.
 - Mirror-by-copy is not acceptable: if a new function duplicates an existing one except for a

@@ -124,7 +124,7 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 
 | สี | ใช้ได้กับ | ห้ามใช้กับ |
 |---|---|---|
-| ส้ม `--c-primary` | ปุ่มหลัก (1/หน้า, 1/modal), tab ที่เลือก (เส้นใต้), step ปัจจุบันใน stepper, focus ring | ไอคอน, ตัวเลข, badge, ขอบการ์ด, หัวตาราง, ลิงก์ในเนื้อหา |
+| ส้ม `--c-primary` | ปุ่มหลัก (1/หน้า, 1/modal), tab ที่เลือก (เส้นใต้), step ปัจจุบันใน stepper, focus ring, **checkbox/radio/switch ที่ถูกเลือก/เปิด (§9 — ข้อยกเว้นเดียวกับ tab ที่เลือก, เพิ่มรอบ 2 item (2))** | ไอคอน, ตัวเลข, badge, ขอบการ์ด, หัวตาราง, ลิงก์ในเนื้อหา |
 | เทา (neutral) | ทุกอย่างที่เหลือ: ปุ่มรอง, ไอคอน, badge ข้อมูล, เส้น, พื้น | — |
 | แดง | สถานะ "ผิด/ถูกปฏิเสธ/เกินกำหนด/ต้องแก้", ปุ่มยืนยันลบใน confirm dialog เท่านั้น | ปุ่ม PDF, ปุ่มลบในแถว (ใช้เทา, ไปแดงตอน confirm), ตัวเลขติดลบ (ใช้เครื่องหมายลบ + `--c-text`) |
 | เหลือง | สถานะ "รอ/ต้องตรวจ/ยังไม่ครบ" | แจ้งเตือนทั่วไป, helper text |
@@ -152,7 +152,13 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 - Export หลายแบบ = ปุ่ม secondary 1 ตัว "ส่งออก ▾" เป็น dropdown (Excel / PDF) ไม่ใช่ 2 ปุ่ม
 - ไอคอนในปุ่ม: ใส่ได้เมื่อช่วยแยกแยะ (เช่น ▾ ของ dropdown, ⟳ ของ sync) ไม่ใส่ในปุ่มบันทึก/ยกเลิก/ปิด
 - ขนาด: ปุ่มในหน้า/modal = ขนาดปกติ; ปุ่มในแถวตาราง/filter bar/DataTable toolbar = `.btn-sm` **ทุกตัวขนาดเดียวกัน** (ปัญหา "ปุ่มใน DataTable ไม่เท่ากัน")
-- ปุ่มกลม (`.btn-circle`, `.rounded-circle`, **รวม `.btn-circle-action`**) เลิกใช้ทั้งหมด — **ยืนยันแล้ว ไม่ใช่การเดา**: `.btn-circle-action` คือปัญหาที่ระบุไว้ตั้งแต่ต้นของ phase design นี้เอง (ปุ่มกลมหลายสีต่อแถวในตาราง คือตัวอย่างที่ §0/§3 พูดถึงตรงๆ) แม้จะเป็นมติที่เคย roll out ทั่วระบบมาก่อนหน้านี้ (14 ไฟล์) ก็ถือว่า**ถูกแทนที่**โดย rules.md ฉบับนี้ — row action ใช้ §7 แทน (ไอคอนเทาไม่มีพื้น/ปุ่ม ⋮)
+- **ปุ่มกลม row action — ตัดสินใหม่รอบ 2 item (5), ย้อนกลับข้อความเดิมด้านล่างนี้**: ทรงวงกลม**คงไว้** ตาม
+  ที่เคย approve ไว้ก่อนหน้านี้แล้ว (`.btn-circle-action`, 14 ไฟล์) ไม่ใช่เปลี่ยนเป็นไอคอนลอยไม่มีขอบ —
+  ปัญหาจริงที่ต้องแก้คือ**สีต่อปุ่ม** (7 tone ต่อ action) ไม่ใช่**ทรง** — ดูสเปกเต็มใน §7's "Row actions"
+  ~~ปุ่มกลม (`.btn-circle`, `.rounded-circle`, รวม `.btn-circle-action`) เลิกใช้ทั้งหมด — `.btn-circle-action`
+  คือปัญหาที่ระบุไว้ตั้งแต่ต้นของ phase design นี้เอง (ปุ่มกลมหลายสีต่อแถวในตาราง คือตัวอย่างที่ §0/§3 พูดถึง
+  ตรงๆ) แม้จะเป็นมติที่เคย roll out ทั่วระบบมาก่อนหน้านี้ (14 ไฟล์) ก็ถือว่าถูกแทนที่โดย rules.md ฉบับนี้~~
+  (ข้อความเดิมด้านบน — เก็บไว้ให้เห็นประวัติการกลับมติ ไม่ใช่กฎที่ใช้จริงอีกต่อไป)
 - Save/Cancel วางขวาล่างเสมอ ลำดับ `[ยกเลิก] [บันทึก]` (secondary ซ้าย, primary ขวาสุด) ทั้งใน modal footer และฟอร์มเต็มหน้า — `payroll-configuration` ต้องเป็นแบบนี้ด้วย
 - ปุ่มระหว่างโหลด: `disabled` + spinner ในปุ่มเดิม ไม่เปลี่ยนคำ
 
@@ -222,7 +228,7 @@ switch ไม่เคยเป็น badge เลยที่ไหนในแ
 
 ---
 
-## 6. Tabs, Status tabs, Stepper, Filter bar
+## 6. Tabs, Status tabs, Stepper, Timeline, Filter bar, Notification, Empty state
 
 **Tabs** (`.nav-tabs` ที่ override แล้ว) — top-level page tab (สลับ "หน้า" ทั้งหน้า เช่น Generate Reports / Annual Summary)
 - ไม่มีไอคอนใน tab ทุกหน้า (เอาออกทั้งหมด รวม tab รายงาน)
@@ -238,15 +244,21 @@ approved → ...) ไม่ใช่สลับหน้า)
   status tabs ไปใช้เส้นใต้แบบ "Tabs" ธรรมดา ถูก**ถอนกลับแล้ว**หลัง review: chevron pipeline เดิม
   (`.station-row`/`.station-card` ของ Employee List/Payroll Process) ที่ approve ไว้แต่แรก**ยังคงรูปแบบเดิม**
   งานของ partial นี้คือรวม markup ที่เคยซ้ำกัน 2 ไฟล์ให้เป็นชิ้นเดียว + แทน hex เดิมด้วย token เท่านั้น
-  ไม่ใช่เปลี่ยนรูปแบบภาพ — เบาลงกว่าของเดิมเล็กน้อย: สูง 36px (เดิม 38px), รอยบากลึก 8px (เดิม 12px),
-  ไม่มีเงา/ขอบ, ระยะห่างระหว่างขั้น 2px
+  ไม่ใช่เปลี่ยนรูปแบบภาพ — เบาลงกว่าของเดิมเล็กน้อย: สูง **34px** (เดิม 38px ของ `.station-card`, ผ่าน
+  36px มาก่อนในรอบนี้เอง ลดอีกครั้ง 2026-09-13), รอยบากลึก 8px (เดิม 12px, แนวตั้งของรอยบากเองก็ลดตาม
+  ความสูงใหม่จาก 18px→17px แต่ความลึกแนวนอน 8px ไม่เปลี่ยน), ไม่มีเงา/ขอบนอกทั้งแถว, ระยะห่างระหว่างขั้น 2px
 - partial `status-tabs.php` + JS `initStatusTabs(el, {onChange})` — คืน `{ update(counts) }` ให้ caller
   เรียกทุกครั้งที่มี count ใหม่ (โหลดครั้งแรก/หลัง redraw/หลัง sync ฯลฯ) — **ตัดสินใจแล้ว**: เคยมีอีก
   variant หนึ่ง (`path`, ไม่มีพื้นสีเลย label+pill ในแถบเดียวคั่นด้วย `›`) ให้เทียบคู่กันใน
   components.php ก่อนตัดสินใจ **เลือก chevron แล้ว ลบ `path` ออกจาก partial/JS/CSS/components.php
   ทั้งหมด ไม่เหลือ dead code**
-- **สี**: ไม่ถูกเลือก = พื้น `--c-bg-subtle` ตัวหนังสือ `--c-text-muted`, pill จำนวนพื้น `--c-bg-hover`;
-  ถูกเลือก (ไม่ใช่สถานะย้อนกลับ) = ทั้งการ์ดเป็นส้ม `--c-primary` ตัวหนังสือขาวเสมอ ไม่ว่า `tone` จะเป็นอะไร
+- **สี** (แก้ไข 2026-09-13, "ปรับให้เบาลง" follow-up — pill ของ idle state เดิม `--c-bg-hover` อ่านดูเข้ม
+  เกินไปเพราะสีใกล้กับพื้นหลัง `--c-bg-subtle` ของ tab เอง แยกไม่ออก): ไม่ถูกเลือก = พื้น `--c-bg-subtle`
+  ตัวหนังสือ `--c-text-muted`, pill จำนวนพื้น **`--c-bg` (ขาว) มีขอบ `--c-border`** สูงคงที่ 18px
+  ตัวหนังสือ `--fs-xs`; ถูกเลือก (ไม่ใช่สถานะย้อนกลับ) = ทั้งการ์ดเป็นส้ม `--c-primary` ตัวหนังสือขาวเสมอ
+  ไม่ว่า `tone` จะเป็นอะไร, pill ของ **ทุก** ขั้นที่ถูกเลือก (รวมกลุ่มย้อนกลับด้านล่าง — ใช้ selector
+  `.active` ร่วมกัน จึงไม่ต้องเขียนกฎแยก) เปลี่ยนเป็นขาวโปร่ง `rgba(255,255,255,.25)` ตัวหนังสือขาว
+  **ไม่มีขอบ** (ต่างจาก idle state ด้านบนที่เพิ่งมีขอบใหม่ — ต้อง override กลับเป็น `border: none`)
 - **กลุ่ม "ย้อนกลับ"** (ไม่อนุมัติ/ส่งกลับแก้ไข, ขอข้อมูลเพิ่มเติม, ยกเลิก) — ตั้ง `'direction' => 'back'`
   ต่อ tab (default `'forward'` ถ้าไม่ตั้ง) **มาจาก `status_map.php` เท่านั้น ห้าม hardcode/เดาใน view**
   — แยกเป็น**กลุ่มที่สองท้ายแถว** เว้นช่อง `--sp-4` จากกลุ่มเดินหน้า (เว้นช่องแค่ครั้งเดียวก่อนตัวแรกของ
@@ -295,22 +307,234 @@ approved → ...) ไม่ใช่สลับหน้า)
   ส่งอนุมัติ → อนุมัติ → จ่ายเงิน → ปิดรอบ) ที่ 3 สถานะจริง (`draft`/`approved`/`paid`) — `current` คำนวณตาม
   กฎเดียวกับ `runLifecycleSteps()` จริง (`currentIndex = reachedIdx + 1`)
 
-**Filter bar** (ตัดสินใจแล้วรอบ 2 item 4, แก้ไขรอบเดียวกันหลัง feedback)
-- partial `filter-bar.php`: ปิด (ยุบ) โดย default; ปุ่ม secondary "ตัวกรอง (N)" แสดงจำนวนที่ active; ปุ่ม tertiary "ล้าง" โผล่เมื่อ N > 0
-- filter ที่ active แสดงเป็น chips ใต้ปุ่ม (ปิดได้ทีละตัว) — ผู้ใช้เห็นว่ากรองอะไรอยู่โดยไม่ต้องกาง — chips แสดงตลอดไม่ว่าจะยุบหรือกาง (chips อยู่ใน toolbar แถวเดียวกับปุ่ม ไม่ได้อยู่ใต้ collapse)
+**Timeline** (feed กิจกรรม/audit log — ยาวเท่าไหร่ก็ได้, ไม่ใช่ milestone คงที่แบบ Stepper) — **เสร็จแล้ว
+รอบ 2 item (3)/6b**
+- partial `app/views/partials/timeline.php` (`$items`, `$groupByDay` optional) + JS twin
+  `renderTimeline(items, {groupByDay})` (`app.js`) — render markup เดียวกันจาก item shape เดียวกัน
+  (ยืนยันด้วยการรันจริงทั้ง PHP/JS บนข้อมูล mock เดียวกันแล้วเทียบ structure) — **คนละ component กับ
+  Stepper**: Stepper = milestone คงที่จำนวนน้อยรู้ล่วงหน้า (5 ขั้นของรอบ), Timeline = log เหตุการณ์ยาวไม่
+  จำกัด **caller เรียงใหม่สุดบนสุดมาเอง** partial/ฟังก์ชันนี้ไม่ sort/dedupe ให้
+- item = `{time (string ที่ parse เป็นวันที่ได้), actor?: {name, avatar}, title, detail? (1 บรรทัด),
+  badge?: {enum, context}, tone?: neutral|warning|danger|success (default neutral, สีแค่จุดบนเส้น)}`
+  — `time` แสดงแค่ **เวลา** (HH:MM เท่านั้น, ไม่ใช่วันที่+เวลา — §6 เขียนไว้ตรงๆ ว่า "เวลา" ส่วนวันที่คือสิ่งที่
+  หัววัน (`groupByDay`) ใช้แบ่ง ไม่ซ้ำกันสองที่)
+- layout: เส้นแนวตั้ง `--c-border` ซ้าย (วาดเป็นส่วนต่อรายการ จากจุดของรายการนี้ลงไปจุดถัดไป — จึงหยุดเองที่
+  รายการสุดท้ายและที่หัววันโดยไม่ต้องมี JS พิเศษเช็ค "รายการสุดท้ายไหม"), จุดกลม 10px บนเส้น (สีตาม `tone`,
+  default `--c-border-strong`), ขวา = แถวบน [avatar 24px + ชื่อ] [เวลา `--c-text-muted` `--fs-xs` ชิดขวา],
+  บรรทัด title `--c-text`, detail `--c-text-muted`, badge ถ้ามี (ผ่าน `statusBadge()`/`statusBadgeHtml()`
+  จริง ข้อ 5) — **ไม่มีการ์ดต่อรายการ ไม่มีพื้นสี** (หลักการเดียวกับ Stepper)
+- `groupByDay:true` แทรกหัววัน (`dd/mm/yyyy`) เป็น `<li>` แยก ไม่มีจุด/เส้นของตัวเอง (คั่นสายตาธรรมชาติ)
+- **Avatar**: `apvAvatarHtml()` เป็น JS-only function — PHP เรียกไม่ได้ — `timeline.php` จึง reuse **class
+  `.apv-person-avatar`** เดียวกัน (CSS ตัวเดียวกันไม่ว่าใครเรนเดอร์) แต่ mirror แค่ภาพพื้นฐาน (ตัวอักษรแรก
+  ในวงกลม, หรือ `<img>` ถ้ามี avatar path) ไม่ได้ port ทั้งฟังก์ชัน (ไม่มี employee-quick-view click,
+  timeline ไม่ต้องใช้)
+- **ตรวจแล้วไม่ชนกับของเดิม**: `.apv-timeline-log`/`.apv-log-entry` (มีอยู่แล้วใน `style.css`, hex ตรงๆ
+  ไม่ผ่าน token) เป็น component คนละตัว ยืนยันแล้วว่า**ไม่มี real call site ไหนใช้เลย** (dead CSS ค้างจาก
+  ก่อนที่ approval timeline จริงจะออกแบบเป็น `.apv-stage`/`.apv-timeline` แบบที่ใช้จริงทุกวันนี้) — ไม่แตะ
+  ไม่ reuse ตั้งชื่อ class ใหม่ (`.timeline*`) แยกชัดเจนกันสับสน
+- **ตัวอย่างประกอบกับ Stepper (จำลอง modal ไทม์ไลน์อนุมัติของรอบ, Batch 2/3C)**: `docs/design/components.php`
+  ต่อ Stepper แนวนอนไว้บน + Timeline นี้ไว้ล่าง ให้เห็นว่าถ้า migrate จริงในรอบ 4 จะหน้าตาประมาณไหน —
+  **ไม่แตะโค้ดจริงของ `payroll/detail.js`'s `renderApprovalTimelineBody()` เลยรอบนี้** (ห้ามแตะหน้าจริง §13)
+- Demo จริง: audit log 6 รายการ 2 วัน (สร้าง/แก้/ส่งอนุมัติ/ไม่อนุมัติ `danger`/อนุมัติ `success`/จ่าย
+  `success`) — light/dark ผ่านปุ่มสลับ theme มุมขวาบนของหน้าเดียวกัน
+
+**Filter bar** (ตัดสินใจแล้วรอบ 2 item 4, แก้ไข 2 รอบหลัง feedback — โครงสร้างล่าสุดคือ **แผง 3 ส่วน**
+หัว/ตัว/ท้าย ด้านล่าง, ยกเลิก `toolbarTarget` ที่เคยมี)
+- partial `filter-bar.php` ตอนนี้เป็น**แผงเดียว 3 ส่วน**, ปิด (ยุบ) โดย default:
+  1. **หัว** (`.filter-bar-header`, แสดงตลอด ไม่ว่ากางหรือยุบ) — ซ้าย = ป้าย "ตัวกรอง" (`--c-text-muted`
+     `--fs-sm`) ตามด้วย " (N)" ต่อท้าย **เฉพาะตอน N > 0** (ไม่โชว์ "(0)" ค้างไว้เหมือนเดิม); ขวา = ปุ่ม
+     **`.btn-icon` วงกลมเดียวกับ row action (§7)** ไอคอน chevron หมุน 180° ตามสถานะกาง/ยุบ (CSS ล้วน
+     `.filter-bar:not(.collapsed) .filter-bar-toggle i { transform: rotate(180deg) }` ไม่ต้องมี JS
+     เปลี่ยนไอคอนเอง) — **นี่คือปุ่ม toggle เดียวของแผง** เลิกใช้ปุ่มตัวหนังสือ "ตัวกรอง (N)" แบบเดิม
+  2. **ตัว** (`.filter-bar-body`, ยุบ/กางได้) — grid ฟิลด์ของ caller เหมือนเดิมทุกอย่าง (ดูข้อถัดไป)
+  3. **ท้าย** (`.filter-bar-footer`, **แสดงตลอดเสมอไม่ว่ากางหรือยุบ** — เส้นบน `--c-border` คั่นจากตัว)
+     — ซ้าย = chips ของ filter ที่ active (รูปแบบใหม่ **"label: ค่า ×"** ไม่ใช่ค่าอย่างเดียวแบบเดิม —
+     label มาจาก `<label>` ที่เป็น sibling ของ `<select>` ในช่องเดียวกัน) หรือข้อความ **"ไม่ได้กรอง"**
+     (`--c-text-faint`, i18n key `filter_bar_empty` ใหม่) เมื่อ N=0 (แผงไม่เคยว่างเปล่าเป็นแถบเปล่าๆ);
+     ขวา = ปุ่ม tertiary **"ล้างตัวกรอง"** (`.btn.btn-link` ตาม §4's Tertiary row) ซ่อนเมื่อ N=0
 - **ตอนกาง = ใช้ grid ของ `.station-filter` เดิมเป๊ะ** (คอลัมน์/ขนาดช่อง/ลำดับเหมือนเดิมทุกอย่าง) — `filter-bar.php` เป็น**แค่ wrapper** ไม่บังคับ grid/gutter class ของตัวเอง `$filter_fields_html` ต้องเป็น markup เดิมของ `.station-filter-body` คัดลอกมาแบบคำต่อคำ (รวม `<div class="row g-X">` ของมันเอง) — ย้ายเข้า partial นี้ในรอบ 4 โดยไม่ต้องเขียน field ใหม่เลย
-- **ไม่มีไอคอนหน้า label ของ field ใดๆ ทั้งสิ้น** (ของเดิมมี เช่น `.station-filter-body`'s `<label><i class="fa-solid fa-calendar">...` — ยืนยันแล้วมีจริง ~140 จุดใน 18 ไฟล์ทั่วแอป เป็นงาน migrate ของรอบ 4 — ตัดไอคอนออกตอนย้าย ไม่ใช่คัดลอกมาด้วย) และ**ไม่มี fieldset/legend look แบบเดิม** ("ตัวกรอง" เป็น corner label ลอยทับขอบกรอบ) — เปลี่ยนเป็นแถบเรียบแบนแทน (พื้น `--c-bg-subtle` ขอบ `--c-border`) ไม่มีคำว่า "ตัวกรอง" ซ้ำอยู่ในกล่อง (ปุ่ม toggle เองมีคำนี้อยู่แล้ว)
+- **ไม่มีไอคอนหน้า label ของ field ใดๆ ทั้งสิ้น** (ของเดิมมี เช่น `.station-filter-body`'s `<label><i class="fa-solid fa-calendar">...` — ยืนยันแล้วมีจริง ~140 จุดใน 18 ไฟล์ทั่วแอป เป็นงาน migrate ของรอบ 4 — ตัดไอคอนออกตอนย้าย ไม่ใช่คัดลอกมาด้วย) และ**ไม่มี fieldset/legend look แบบเดิม** ("ตัวกรอง" เป็น corner label ลอยทับขอบกรอบ) — เปลี่ยนเป็นแถบเรียบแบนแทน (พื้น `--c-bg-subtle` ขอบ `--c-border` `--radius` ไม่มีเงา) ไม่มีคำว่า "ตัวกรอง" ซ้ำอยู่ในกล่อง (ป้ายหัวแผงเองมีคำนี้อยู่แล้ว)
 - **จำสถานะกาง/ยุบต่อหน้าได้** ผ่าน `localStorage['filterbar:' + pageKey]` — partial รับ `$pageKey` (optional); ถ้าไม่ส่งมา ไม่จำสถานะเลย เริ่มยุบเสมอ
 - collapse ใช้กลไกเดิมของ `.station-filter-body` (CSS class `.collapsed` + `max-height` transition ธรรมดา) **ไม่ใช่** Bootstrap `.collapse` component — เพื่อให้ "เหมือนเดิมเป๊ะ" ตามที่ตัดสินใจ
 - ควบคุมทั้งหมดใช้ `.form-select-sm` / select2 ขนาดเดียว ปุ่มขนาด `.btn-sm`
-- **หน้าที่มี Status Tabs อยู่ด้วย: ปุ่ม "ตัวกรอง (N)" + chips + "ล้าง" ต้องอยู่ขวาสุดของแถว Status Tabs
-  เดียวกัน (align ขวา) ไม่ใช่แถวแยกของตัวเอง** — `initFilterBar(bar, {toolbarTarget})` (JS option,
-  ไม่ใช่ PHP param ของ partial) รับ selector ของแถว Status Tabs แล้ว**ย้าย** DOM node ของ
-  `.filter-bar-toolbar` เข้าไปในแถวนั้นจริง (`.appendTo()`, ไม่ใช่ clone — ไม่มีปุ่มซ้ำเหลืออยู่ที่เดิม)
-  ส่วนแผงฟิลด์ (`.filter-bar-body`) ยังอยู่ที่เดิมตามตำแหน่งที่ include partial ไว้ (กางลงมาใต้ pipeline
-  ตามปกติ) — `.filter-bar--toolbar-relocated.collapsed` ซ่อนพื้น/ขอบกล่องของ `.filter-bar` เอง (ไม่งั้น
-  จะเหลือเป็นเส้นบางๆ ว่างเปล่าใต้แถว Status Tabs ตอนแผงยุบอยู่) ใช้เฉพาะกรณี relocate เท่านั้น
-  ไม่กระทบรูปแบบ default (toolbar อยู่ในกล่องเดิม) เลย
+- **`toolbarTarget` ถูกยกเลิกแล้ว (2026-09-13)** — เดิมมี option ให้ `initFilterBar()` ย้ายแถวปุ่ม/chips
+  ไปต่อท้ายแถว Status Tabs เดียวกัน (align ขวา) แต่ตัดสินใหม่ว่า**ไม่ต้องยัดเข้าแถวอื่นแล้ว** — ทั้งแผง
+  (หัว/ตัว/ท้าย) วางเป็น block ปกติตามตำแหน่งที่ include partial ไว้เสมอ หน้าที่มี Status Tabs (เช่น
+  Payroll Process) แค่วาง `filter-bar.php` ต่อท้าย `status-tabs.php` ตามลำดับ markup ธรรมดา ไม่มี JS
+  ย้าย DOM node ข้ามที่อีกต่อไป — `.filter-bar--toolbar-relocated`/`.status-tabs > .filter-bar-toolbar`
+  ที่เคยมีถูกลบออกจาก `style.css` ทั้งคู่
+
+**Notification** (ตัดสินใจแล้วรอบ 2 item 6d — **UI เท่านั้น ยังไม่ต่อ backend, ไม่ polling**)
+- **มีกลไกจริงอยู่แล้ว** (`layout/header.php`'s `.nav-notif-dropdown`, `public/js/notifications.js`,
+  `NotificationModel`, 2026-08-29/-30/-31, ต่อ backend จริงครบ) — **ไม่แตะรอบนี้** ("ไม่แตะ header.php
+  รอบนี้ นอกจาก demo") แต่ต่างจาก component อื่นๆ ในรอบนี้ (ที่ของเดิมส่วนใหญ่แค่ "ยังไม่ใช้ token"),
+  ของจริงตัวนี้มี **3 จุดที่ต่างจากสเปกใหม่ด้านล่างจริงๆ ไม่ใช่แค่สีที่ยังไม่ผ่าน token** — บันทึกไว้ตรงๆ
+  ให้รอบ 4 ตัดสินใจตอน migrate จริง ไม่ใช่เดาแทนตอนนี้:
+  1. ไอคอนต่อรายการของจริงใช้ **`.row-type-icon rt-N`** (วงกลมพื้น gradient **สีต่างกันตาม type**, คนละ
+     แบบกับ Report table's row-category icon ที่ confirm ผ่าน AskUserQuestion แล้วตอน 2026-08-30 ว่าต้อง
+     **เหมือนกับหน้า Report ทุกตาราง**) — สเปกใหม่ด้านล่างนี้ (แก้อีกครั้ง 2026-09-13 — ดูรายละเอียดท้าย
+     หัวข้อนี้) ใช้วงกลมพื้น **สีเดียวกันทุก type** (`--c-bg-subtle`/`--c-text-muted`) ไม่ใช่ gradient สี
+     ต่าง type แบบของจริง — ต่างกันตรง "สีเดียวกันหมด vs สีต่างกันตาม type" ไม่ใช่ "ไม่มีพื้น vs มีพื้น"
+     อีกต่อไป (เวอร์ชันแรกของสเปกนี้ไม่มีพื้นเลย ก่อนแก้)
+  2. จุดไม่อ่านของจริงอยู่**ขวา** ของ item (`.nav-notif-item-dot`, ต่อท้าย body) สเปกใหม่อยู่**ซ้าย** (นำ
+     หน้าไอคอน)
+  3. ป้ายจำนวนของจริงโชว์ **"99+"** เมื่อเกิน 99 (`notifUpdateBadge()`) สเปกใหม่โชว์ **">99"**
+  - **จุดร่วมที่ไม่ต่าง**: ข้อความปุ่ม/หัว/ท้าย ("การแจ้งเตือน"/"ทำเครื่องหมายว่าอ่านแล้วทั้งหมด"/"ดูทั้งหมด"/
+    empty state) ใช้ **i18n key เดิมของจริงซ้ำ** (`notifications`/`notif_mark_all_read`/`notif_view_all`/
+    `notif_empty`) — ไม่สร้าง key ใหม่ซ้ำความหมายเดียวกัน แม้ถ้อยคำที่ผู้ใช้ร่างไว้รอบนี้ ("อ่านทั้งหมดแล้ว",
+    "ไม่มีการแจ้งเตือน") จะสั้นกว่าเล็กน้อย — ไม่แก้ค่า i18n เดิม (จะกระทบข้อความจริงบนหน้าจริงทันทีทั้งที่
+    ไม่ได้แตะไฟล์ header.php เอง เหมือนกรณี showConfirm/fmtNum ที่แก้ shared resource แล้วมีผลทั่วแอป —
+    รอบนี้ไม่ใช่การตัดสินใจแบบนั้น เก็บคำถามการปรับถ้อยคำไว้ให้รอบ 4 คู่กับการ migrate จริง)
+- **ปุ่มกระดิ่ง**: `.btn-icon` วงกลมเดียวกับ row action (§7) — ต่างจากของจริง (`<img>` Bell.svg เปล่าไม่มี
+  วงกลม/ขอบ) โดยตั้งใจ ใช้ `<i class="fa-solid fa-bell">` ข้างใน (ไม่ใช่ `<img>` — `.btn-icon i` เท่านั้นที่
+  มี CSS ขนาดไอคอนให้) — ป้ายจำนวนยังไม่อ่าน (`.notif-badge`) ลอยมุมขวาบนของวงกลม (`position:absolute`)
+  pill พื้น `--c-danger` ตัวหนังสือขาว ซ่อนเมื่อ 0 (`d-none`), โชว์ **">99"** ถ้าเกิน 99
+- **Dropdown**: กว้าง **360px** สูงสุด **480px** (flex column, ส่วนกลาง `.notif-list` scroll เอง หัว/ท้าย
+  fix อยู่กับที่ — ไม่ scroll ทั้งกล่อง) เงา `--shadow-modal` (โทเค็นเดียวที่ระบุไว้สำหรับ modal/dropdown)
+  radius `--radius`
+  - หัว: ซ้าย "การแจ้งเตือน" **`--fs-base` หนา**, ขวา ปุ่ม tertiary "ทำเครื่องหมายว่าอ่านแล้วทั้งหมด"
+    (`.btn.btn-link`)
+  - รายการ: item shape `{unread: bool, tone: neutral|warning|danger|success (เซตเดียวกับ Timeline's
+    tone enum เพื่อให้คำศัพท์ tone ใช้ร่วมกันได้ทั้งแอป), title (1 บรรทัด), detail? (1 บรรทัด,
+    `--c-text-muted`), time, link}` — **ไอคอนซ้าย 1 ตัวสีเดียว `--c-text-muted` ในวงกลม 28px พื้น
+    `--c-bg-subtle` (ไม่มีสีต่าง type อีกต่อไป — แก้ 2026-09-13, ดูรายละเอียดท้ายหัวข้อ)** glyph ยังเลือก
+    ตาม tone เหมือนเดิม (ต่างแค่สี ไม่ใช่รูปทรง): success→check (อนุมัติ), danger→xmark (ปฏิเสธ),
+    warning→triangle-exclamation, neutral→bell (ระบบ, default เมื่อไม่ระบุ tone) — จุดไม่อ่าน **6px**
+    `--c-primary` อยู่**ซ้ายสุด** (ก่อนไอคอน) เฉพาะ item ที่ `unread:true`; item ที่อ่านแล้วยังคง render
+    `<span class="notif-item-dot">` เปล่าไว้เป็นที่ว่างขนาดเท่ากัน (สีโปร่งใส) เพื่อให้ไอคอน/title ของทุก
+    item อยู่แนวเดียวกันเป๊ะไม่ขยับตามว่า unread หรือไม่ — **ไม่มีพื้นแถวสำหรับ unread อีกต่อไป** (แก้
+    2026-09-13, ดูรายละเอียดท้ายหัวข้อ), ตัวหนังสือ title: unread = `--c-text` หนา, อ่านแล้ว = `--c-text`
+    น้ำหนักปกติ — item padding `--sp-3 --sp-4`, title `--fs-base`, detail `--fs-sm` `--c-text-muted` 1
+    บรรทัด ellipsis, time `--fs-xs` `--c-text-faint` (ไม่ใช่ `--c-text-muted`), hover พื้น
+    `--c-bg-hover`, เส้นคั่นระหว่างแถว `--c-border`
+  - ท้าย: ปุ่ม tertiary (`.btn.btn-link.btn-sm`, ไม่ใช่ `<a>` เปล่าแบบเดิม) "ดูทั้งหมด" ไป
+    `/notifications` กึ่งกลาง พื้น `--c-bg-subtle` (แยกจากพื้น list ด้านบนที่เป็น `--c-bg`)
+  - ว่าง (0 รายการ): ข้อความ "ยังไม่มีการแจ้งเตือน" `--c-text-faint` แทนที่ list ทั้งหมด
+- **2026-09-13, "ปรับตาม token ให้เงียบลง" follow-up — 2 บั๊ก/ประเด็นจริงที่แก้**:
+  1. **ไอคอน item เคยมีสีต่างกันตาม tone จริง** (success=เขียว/danger=แดง/warning=ส้ม, ไม่มีพื้นสี) —
+     ขัดกับ §3 ตรงๆ ("สีมีหน้าที่บอกว่า...ถ้าสีไม่ได้ตอบสองคำถามนี้ ให้เป็นเทา" — ประเภทการแจ้งเตือนอย่าง
+     เดียวไม่ใช่เหตุผลให้มีสี ไม่ใช่ "ต้องตัดสินใจ/ต้องระวัง") — แก้เป็นสีเดียว `--c-text-muted` ในวงกลม
+     28px พื้น `--c-bg-subtle` ทุก item เหมือนกันหมด **glyph ยังต่างตาม tone** (สื่อความหมายผ่านรูปทรง
+     ไม่ใช่สี) — `tone` ตอนนี้จึงมีผลแค่กับการเลือกไอคอนเท่านั้น ไม่มีผลกับสีที่ไหนในบล็อกนี้เลย
+  2. **พื้นแถว unread (`--c-primary-soft`) อ่านดูเหลืองเกินไป** — ตัดออกทั้งหมด (ทางเลือกที่ให้มาอีกทาง
+     คือลด opacity เหลือ 3–4% แต่เลือกตัดทิ้งไปเลยเพราะจุดส้ม + title หนาสองอย่างนี้พอสื่อ "ยังไม่อ่าน"
+     อยู่แล้วโดยไม่ต้องมีพื้นสีเพิ่ม) `tokens.css`'s own `--c-primary-soft` comment ที่เคยขยาย scope
+     ให้ครอบ notification row ไว้ ถอนกลับเป็น "step/tab ปัจจุบัน เท่านั้น" ตามเดิม (comment ระบุประวัติ
+     การลองแล้วถอนไว้ ไม่ลบทิ้งเงียบๆ)
+- **JS helper 2 ตัวใน `app.js`, ไม่มี polling**: `renderNotifications(items)` (คืน HTML string ของ
+  รายการทั้งหมด รวม empty-state เมื่อ `items` ว่าง — pattern เดียวกับ `renderTimeline()`/
+  `renderStatusStepper()` คือคืนค่าให้ caller เอาไป `.html()` เอง ไม่ inject ตรงเข้า DOM ให้) และ
+  `setNotificationCount(el, n)` (ตั้งตัวเลข/ซ่อน-โชว์ badge ตาม `el` ที่ caller ระบุ — ไม่ผูกกับ id ตายตัว
+  เดียว เพื่อให้ demo กับของจริง (id ต่างกัน) เรียกร่วมกันได้)
+- **หน้า Notifications เต็ม (มีอยู่แล้วจริง ตาม `docs/design/audit.md`'s `/notifications`) ใช้
+  `timeline.php`/`renderTimeline({groupByDay:true})` ตัวเดียวกับข้อ (3)/6b — ไม่มี layout ที่ 3** สำหรับ
+  หน้ารายการเต็ม dropdown ด้านบน (ย่อ, ไม่ group วัน) กับหน้าเต็ม (`groupByDay:true`) ใช้ component เดียวกัน
+  ต่างกันแค่ option — ของจริงตอนนี้ (`app/views/notification/index.php`) เป็น DataTable ของตัวเอง
+  (`notifPageTableInit()`) ไม่ใช่ timeline อย่างที่กฎนี้ตัดสินใจ เป็นอีกจุดที่ต้อง migrate ตอนรอบ 4
+- Demo จริงใน `docs/design/components.php`: กระดิ่งมี badge = 3 (ตั้งผ่าน `setNotificationCount()`
+  ตรงๆ ไม่ได้นับจาก list — ตั้งใจให้เห็นว่าเป็นคนละ state กัน เหมือนของจริงที่ unread-count มาจาก
+  endpoint แยกจาก dropdown's เอง 10 รายการล่าสุด ไม่ใช่ derive จากกันเสมอไป), dropdown มี 5 รายการ (2
+  unread) ผ่าน `renderNotifications()` ตรงๆ — กด "ทำเครื่องหมายว่าอ่านแล้วทั้งหมด" แล้ว badge หาย (n=0) +
+  รายการทั้ง 5 หายจุด/พื้น unread (re-render ผ่าน `renderNotifications()` เดิมด้วย items ที่ตั้ง
+  `unread:false` ทุกตัว) — light/dark ผ่านปุ่มสลับ theme มุมขวาบนของหน้าเดียวกัน (ทุกสีเป็น token ทั้งหมด
+  ไม่มี hex ตรงๆ จึงสลับถูกต้องเองโดยไม่ต้องมี dark-mode override เพิ่ม)
+- **2026-09-13, บั๊กจริงที่เจอและแก้ในเดโม: dropdown หลุดซ้ายนอกจอ** — เวอร์ชันแรกของเดโมเขียน
+  `.notif-dropdown` เองเป็น `position:absolute; right:0` + toggle ด้วย `.toggleClass('d-none')` มือ
+  ซึ่งคือพฤติกรรม `dropdown-menu-end` ที่เขียนเองแบบ hardcode ทิศทาง ใช้ได้ถูกต้องเฉพาะตอนปุ่มกระดิ่งอยู่
+  ใกล้ขอบขวาจอ (top bar จริง) — เดโมวางกระดิ่งไว้ซ้ายของ section ทำให้กล่อง 360px ดันหลุดซ้ายจอไปเลย
+  แก้ 2 จุดร่วมกัน: **(1)** ย้ายกระดิ่งเดโมไปขวาสุดของ section (`.d-flex.justify-content-end`) จำลอง
+  ตำแหน่งจริงบน top bar; **(2)** เปลี่ยนเป็น **Bootstrap dropdown จริง** (`.dropdown` + `data-bs-toggle=
+  "dropdown"` + `.dropdown-menu.dropdown-menu-end`, ใช้ Popper ที่ bundle มาอยู่แล้วคุมตำแหน่ง/พลิกด้าน
+  เองอัตโนมัติเมื่อชิดขอบจอ — `data-bs-display="dynamic"` ระบุไว้ตรงๆ ทั้งที่เป็นค่า default ของ Bootstrap
+  เองอยู่แล้ว กันแก้ผิดเป็น `static` ในอนาคตซึ่งจะปิด Popper) ไม่ hardcode ทิศทางเองอีกต่อไป จะไม่พังถ้า
+  top bar จริงเปลี่ยน layout ตอนรอบ 4 — `display:flex` ของกล่อง dropdown ต้อง scope เป็น
+  `.notif-dropdown.show` (ไม่ใช่ `.notif-dropdown` เฉยๆ) เพราะ Bootstrap's `.dropdown-menu{display:none}`
+  เป็น single-class selector เหมือนกัน specificity เท่ากันจะชนกัน (บั๊ก class เดียวกับ v11's Symbol
+  dropdown/status-tab idle-pill ที่เจอมาแล้ว 2 ครั้งในโปรเจกต์นี้) — ตรวจแล้วว่า `.cp-section` ไม่มี
+  `overflow:hidden` ตัด dropdown จึงไม่ต้องใช้ `popperConfig:{strategy:'fixed'}` ในเดโมนี้ (ถ้า container
+  จริงตอน migrate รอบ 4 ตัดจริง ค่อยเพิ่ม option นี้ตอนนั้น)
+
+**Empty state** (ตัดสินใจแล้วรอบ 2 item 6e)
+- ใช้ **4 ที่**: ตารางว่างทั้งตาราง (แทน `language.emptyTable`/`zeroRecords` ของ DataTable's own
+  single-line text — ผ่าน `initSharedDataTable()`'s `emptyState` option ด้านล่าง), tab/section ว่าง
+  (เช่น Tax & Statutory ยังไม่มีเวอร์ชันอัตรา), รายการว่าง (notification/timeline — ดู `renderNotifications()`
+  เอง ที่เรียก `emptyStateHtml()` ตัวเดียวกันนี้อยู่แล้วตอน item ว่าง), ผลค้นหา/กรองไม่พบ
+- **layout**: กึ่งกลาง, padding แนวตั้ง `--sp-6` (แนวนอน `--sp-4` กันข้อความชิดขอบ container แคบ) —
+  ไอคอน 1 ตัว 32px `--c-text-faint` (**สีเดียว ไม่มีวงกลม/พื้น** — คนละการตัดสินใจกับไอคอน notification
+  item ข้อ 6d ด้านบน ซึ่งกลับไปใช้วงกลมพื้นสีหลังแก้ 2026-09-13 — 2 จุดนี้ตัดสินใจแยกกันตอนนี้ ไม่ใช่กฎ
+  เดียวกันที่ใช้ซ้ำ), title 1 บรรทัด `--c-text` `--fs-md`, text 1 บรรทัด `--c-text-muted` บอกว่าทำอะไร
+  ต่อได้, action (optional) ปุ่ม 1 ตัว — **secondary** (`.btn.btn-outline-secondary`) ถ้าหน้ามีปุ่ม
+  primary อยู่แล้วที่อื่นใน header, **primary** (`.btn.btn-primary`) ได้เฉพาะเมื่อหน้านั้นไม่มีปุ่มหลัก
+  ที่อื่นเลย (การตัดสินใจว่าใช้ variant ไหนเป็นหน้าที่ของ **caller** เสมอ — component เองไม่มีความเห็น
+  ไม่เดาจาก context ให้)
+  - **2026-09-13, บั๊กจริงที่เจอและแก้: ไอคอนไม่อยู่กึ่งกลาง (ชิดซ้าย)** — root cause: FontAwesome's เอง
+    base rule (`.fa-solid,.fab,.far,.fas`, ยืนยันจากอ่าน `all.min.css` ตรงๆ) ตั้ง `width:1.25em` ที่
+    specificity เท่ากับ (single-class) `.empty-state-icon`'s เดิม `display:block` — `display:block`
+    ชนะ tie ได้ (`style.css` โหลดทีหลัง) แต่ `width:1.25em` ของ FA ไม่มีอะไรมาสู้เลยเพราะกฎเดิมไม่เคย
+    ประกาศ `width` ของตัวเอง ผลคือ icon กลายเป็น block กว้างคงที่ ~1.25em — block ที่มีความกว้างชัดเจน
+    (ไม่ใช่ auto) **ไม่ขยายเต็ม container** และ `text-align:center` มีผลแค่กับ inline content ข้างใน box
+    ไม่มีผลกับตำแหน่งของ box ที่มีความกว้างคงที่เอง จึงติดชิดซ้ายเสมอไม่ว่า `text-align` จะเป็นอะไร — แก้
+    โดยเปลี่ยน `.empty-state` เองเป็น `display:flex; flex-direction:column; align-items:center;` (ลบ
+    `display:block` ออกจาก `.empty-state-icon` เพราะไม่มีผลอะไรอีกต่อไป — flex item ถูก blockify ให้เอง
+    ตาม spec) `align-items:center` จัดกึ่งกลางแนวขวางของ flex child ตาม box จริงของมันเอง ไม่สนว่ากว้าง
+    คงที่หรือไม่ แก้ปัญหาตรงจุดแทนที่จะพึ่ง `text-align` ที่ไม่เกี่ยวกับปัญหานี้เลย
+- **2 ความหมายต้องแยกคำ ไม่ใช้ข้อความเดียวกัน**:
+  - **"ยังไม่มีข้อมูล"** (ยังไม่เคยมีใครสร้างอะไรเลย) — text แนะนำให้ **สร้าง**, action (ถ้ามี) คือปุ่ม
+    สร้างของหน้า/tab นั้นเอง
+  - **"ไม่พบตามที่กรอง"** (มีข้อมูลจริงอยู่ แต่ค้นหา/กรองแล้วไม่ตรงสักแถว) — text แนะนำให้ **เปลี่ยน/ล้าง
+    ตัวกรอง**, action = ปุ่ม **tertiary** "ล้างตัวกรอง" (คำเดียวกับ `filter-bar.php`'s own Clear button,
+    key `clear_filter` เดิม — ไม่สร้างคำใหม่)
+  - partial/ฟังก์ชันนี้เอง**ไม่มีความเห็นว่ากรณีไหนใช้ความหมายไหน** — caller เป็นคนตัดสิน ยกเว้น
+    `initSharedDataTable()`'s own `emptyState` option ด้านล่างที่ **auto-pick ให้เอง** สำหรับ DataTable
+    โดยเฉพาะ (ที่เดียวที่ auto-detect จริง)
+- **partial `app/views/partials/empty-state.php`** (`$icon, $title, $text, $action`) + JS twin
+  **`emptyStateHtml({icon, title, text, action})`** (`app.js`) — รูปแบบเดียวกันเป๊ะทั้งสองฝั่ง
+  (`action.onClick` เป็นของ JS ฝั่งเดียวเท่านั้น — จำเป็นเพราะ caller ที่ re-render block นี้ซ้ำๆ เช่น
+  DataTable redraw จะทำลาย DOM node เดิมทุกครั้ง การ bind click จากภายนอกด้วย `$('#id').on('click',...)`
+  ครั้งเดียวจะหยุดทำงานหลัง redraw แรก — ให้ `emptyStateHtml()`'s caller ที่ re-render เองผูก `onClick`
+  มาในตัว action object แทน ส่วน `action.id` ยังใช้ได้ปกติสำหรับ render ครั้งเดียวไม่ re-render ซ้ำ)
+- **`initSharedDataTable()`'s `emptyState:{icon,title,text,action}` option** — render ผ่าน
+  `emptyStateHtml()` ใน `<td class="dt-empty-cell">` (colspan เต็มความกว้างตาราง, นับเฉพาะคอลัมน์ที่
+  visible) แทนข้อความบรรทัดเดียวเดิมของ DataTables เมื่อ 0 แถวแสดงผล — ทำงานทุกครั้งที่ draw ใหม่
+  (พิมพ์ค้นหา/ใช้ filter/เปลี่ยนหน้า) ไม่ใช่แค่ตอน init ครั้งแรก เพราะ "ว่างเพราะอะไร" เปลี่ยนได้ทุกครั้ง
+  ที่ draw — **แยกอัตโนมัติว่าว่างเพราะกรองหรือว่างจริง** ผ่าน DataTables' เอง `page.info()`:
+  `recordsTotal` (ขนาดข้อมูลทั้งหมดไม่ว่าตารางโหมดไหน — client-side คือทุกแถวที่โหลดมา, server-side คือ
+  `COUNT(*)` ดิบจาก backend) เทียบกับ `recordsDisplay` (เหลือเท่าไหร่หลัง global search()/
+  `$.fn.dataTable.ext.search` predicate ของ `initExcelColumnFilters()`'s client mode — หรือ
+  `recordsFiltered` ที่ backend ส่งมาตรงๆ สำหรับ server mode) — **ทั้ง 2 กลไก filter ลงเลข 2 ตัวนี้เอง
+  โดยอัตโนมัติ ไม่ต้องมี API ใหม่เชื่อมเข้า `table-column-filter.js` เลย**: `recordsTotal===0` = ว่างจริง
+  (โชว์ `options.emptyState` ของ caller), `recordsTotal>0 && recordsDisplay===0` = กรองแล้วไม่พบ (โชว์
+  ข้อความคงที่ที่ helper สร้างเอง — title reuse key `zeroRecords` เดิม ไม่สร้าง key ใหม่ซ้ำความหมาย,
+  text เป็น key ใหม่ `empty_state_filtered_text`, action = "ล้างตัวกรอง" ผูก `dt.search('').draw()`
+  ให้เองอัตโนมัติ) — `<td class="dt-empty-cell">` เอง colspan เต็มความกว้างตารางเสมอ และ `.empty-state`
+  เองก็เป็น flex column กึ่งกลางเหมือนกันไม่ว่าจะ render อยู่ใน `<td>` นี้หรือที่อื่น (ไม่มี CSS แยกสำหรับ
+  บริบท DataTable โดยเฉพาะ — component เดียวกันเป๊ะ)
+- Demo จริงใน `docs/design/components.php`: 3 แบบ — **(1)** ตารางว่างจริง + ปุ่มสร้าง (primary, ไม่มี
+  ปุ่มหลักอื่นในหน้าเดโม), **(2)** ค้นหา/กรองไม่พบ + "ล้างตัวกรอง" (auto จาก `emptyState` option, พิมพ์
+  คำค้นหาที่ไม่มีจริงในตารางเดโมแล้วดู), **(3)** รายการว่างไม่มี action (list/tab แบบเปล่าๆ ไม่มีปุ่ม) —
+  light/dark ผ่านปุ่มสลับ theme มุมขวาบนของหน้าเดียวกัน
+
+**2026-09-13, บั๊กจริงที่เจอและแก้ทั้งหน้า components.php: DataTable/notification demo ยังเป็นอังกฤษ
+หลายจุด (Show/entries/Showing/First/Last/No matching records, Notifications/Mark all as read/View
+All)** — ไม่ใช่เพราะหน้านี้ไม่เคยโหลด `th.json` จริง (`app.js`'s own `$(document).ready(async function()
+{...})` เรียก `loadLang(currentLang)` จริงและ `await` มันจริง — เป็น real `fetch()` ของไฟล์ static
+`public/lang/{lang}.json` ที่ทำงานได้เต็มที่บนหน้า standalone นี้เพราะไม่ต้องพึ่ง session/backend เลย)
+แต่เพราะ **jQuery ไม่รอ async work ของ ready callback ตัวหนึ่งก่อนจะยิง ready callback ตัวถัดไป** —
+`$(document).ready(async fn)` แค่เรียก `fn()` แล้วปล่อยให้ทำงานต่อไปเป็น Promise แยก ส่วน ready
+callback **ตัวที่สอง** (script ของเดโมเอง ที่เรียก `initSharedDataTable()`/`renderNotifications()`
+ทันทีแบบ synchronous) รันไปเลยโดยที่ `langData` ยังเป็น `{}` ว่างอยู่ (fetch ยังไม่ resolve) — แก้ตาม
+pattern เดียวกับที่หน้าจริงใช้อยู่แล้วทุกไฟล์ (ยืนยันจาก grep `employee/list.js`/`payroll/index.js`):
+ครอบทั้ง body ของ ready callback เดโมด้วย `(window.langReady || Promise.resolve()).then(function () {
+... })` — `|| Promise.resolve()` กันหน้าที่ไม่มี `langReady` เลยค้าง เดโมนี้ต่อไปนี้จะแสดงภาษาตามที่
+`localStorage['preferred_language']` ตั้งไว้จริง (default `en` ถ้าไม่เคยตั้งค่าเลย — เหมือนหน้าจริงทุก
+ประการ ไม่ได้ force เป็นไทยเอง) — **เจอบั๊กเพิ่มระหว่างแก้**: `renderNotifications()`'s empty-state
+branch เดิมใช้ `data-i18n="notif_empty"` (markup ที่หวังให้ DOM sweep ของ `applyLanguage()` มาแปลทีหลัง)
+แต่ sweep นั้นรันไปแล้วรอบเดียวตอน `loadLang()` เอง **ก่อน** ที่ HTML นี้จะถูก insert เข้า DOM ด้วยซ้ำ —
+`data-i18n` แบบนี้ไม่มีวันถูกแปลเลยไม่ว่าภาษาไหน แก้โดยอ่าน `getLangValue('notif_empty')` ตรงๆ ในฟังก์ชัน
+เอง (แบบเดียวกับที่ `dtRenderEmptyState()` ทำอยู่แล้วสำหรับข้อความ "กรองไม่พบ") — **กฎทั่วไปสำหรับ
+component ทุกตัวของรอบ 2 จากนี้**: markup ที่ JS สร้างขึ้นเองแบบ dynamic (ไม่ใช่ markup คงที่ที่ render
+มาจาก PHP ตั้งแต่โหลดหน้าแรก) ต้องอ่าน `langData`/`getLangValue()` ตรงในฟังก์ชันเสมอ ห้ามพึ่ง `data-i18n`
++ sweep ทีหลัง เพราะ sweep รอบเดียวจะพลาด content ที่เพิ่ง insert เข้ามาทีหลังเสมอ
 
 ---
 
@@ -349,16 +573,43 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 | จำนวนเงิน | ขวา | `.num.col-money` | comma + ทศนิยม 2 ตำแหน่งเสมอ, `data-order` = ค่าดิบ, **ไม่มีสี** ติดลบใช้ "-" นำหน้า |
 | จำนวน/%/ตัวเลขอื่น | ขวา | `.num` | |
 | สถานะ (badge) | ซ้าย | | |
-| checkbox เลือกแถว | กึ่งกลาง | `.col-check` | กว้างคงที่ |
+| checkbox เลือกแถว | กึ่งกลาง | `.col-check` | กว้างคงที่ — checkbox หัวตาราง = "เลือกทั้งหน้า" (แถวที่แสดงอยู่จริง ไม่ใช่ทุกหน้า) เข้า indeterminate เองเมื่อเลือกไม่ครบ (ดู §9 สไตล์) |
 | รูป/avatar | กึ่งกลาง | `.col-avatar` | ใช้ `apvAvatarHtml()` ตัวเดียว |
+| สวิตช์เปิด/ปิดใช้งาน (ใหม่, item (2)) | กึ่งกลาง | `.col-toggle` | กว้างคงที่, ไม่ sort, ไม่ search — `initRowToggles($table, {onChange})` (`app.js`, ใหม่): delegated `change` บน `.row-toggle-switch`, disable ระหว่างรอ response, revert กลับที่เดิมถ้า error/reject |
 | action | ขวา | `.col-actions` | กว้างคงที่, ไม่ sort, ไม่ search |
 | หัวคอลัมน์ | **เหมือน content ของคอลัมน์นั้น** | | ตัวเลขหัวชิดขวาด้วย |
 
-**Row actions**
-- ≤ 2 action: ปุ่มไอคอน `.btn.btn-sm.btn-icon` เทา (ไม่มีพื้น ไม่มีขอบ, hover พื้น `--c-bg-hover`) พร้อม tooltip
-- > 2 action: ปุ่ม ⋮ ตัวเดียว เปิด dropdown (pattern เดียวกับ Detail › รายละเอียดพนักงาน) — รายการลบอยู่ล่างสุดคั่นด้วยเส้น ตัวหนังสือ `--c-danger`
+- **บั๊กจริงที่เจอและแก้ระหว่าง item (2)**: `.col-check`/`.col-avatar`/`.col-actions` (item 3's เดิม)
+  ไม่เคยมี CSS "กว้างคงที่" จริงเลยสักตัว (grep 0 hits ก่อนแก้) แม้ตารางข้างบนจะเขียนไว้ตั้งแต่ต้น —
+  ทุกคอลัมน์เหล่านี้กว้างตามเนื้อหา/หัวคอลัมน์ของตัวเองมาตลอด ไม่ใช่กว้างคงที่จริง — แก้พร้อมกับเพิ่ม
+  `.col-toggle` ใหม่: `width:1%; white-space:nowrap;` ทั้ง 4 class (เทคนิคมาตรฐานของตาราง ให้คอลัมน์
+  หดตามเนื้อหาตัวเองแล้วไม่ขยายอีก โดยไม่ต้อง hardcode พิกเซลที่จะผิดสำหรับบางคอลัมน์)
+
+**Row actions — สเปกทรงกลม ตัดสินใหม่แล้ว รอบ 2 item (5) (ย้อนข้อความ "ไม่มีพื้น ไม่มีขอบ" เดิมด้านล่าง)**
+- `.btn-icon` = วงกลม **32px**, ขอบ 1px `--c-border`, พื้น `--c-bg`, ไอคอน **12px** (ลดจาก 14px เดิม
+  2026-09-13 — 14px ดูใหญ่ไปในวงกลม 32px เว้นระยะรอบไม่พอ) `--c-text-muted`; hover พื้น `--c-bg-hover`
+  ไอคอน `--c-text`; focus ring ส้ม (เหมือนทุก focusable element อื่น); disabled `--c-text-faint` —
+  **ขนาดเดียวทั้งระบบ ไม่มีขนาด/สีต่อ action** (ลบ = เทาเหมือนกันทุกปุ่ม สีแดงใช้ได้แค่ ปุ่มยืนยันใน
+  SweetAlert confirm เท่านั้น ตรงกับ §3/§4)
+  - **ตรวจแล้ว (ไม่ใช้): เปลี่ยนไปใช้ `fa-regular` แทน `fa-solid` เพื่อให้เส้นบางลง** — แอปนี้ bundle
+    เฉพาะ `@fortawesome/fontawesome-free` (ยืนยันจาก `fa-regular-400.woff2` มีขนาดแค่ 19KB เทียบกับ
+    `fa-solid-900.woff2` 113KB) และ free tier's `fa-regular` มีไอคอนให้ใช้แค่ชุดเล็กๆ — เช็คตรงจาก
+    `node_modules/@fortawesome/fontawesome-free/metadata/icon-families.json` แล้วพบว่าไอคอนที่ปุ่มกลม
+    ในระบบนี้ใช้จริง (`trash`, `pen`/`pencil`, `ellipsis`/`ellipsis-vertical`, `chevron-down`,
+    `xmark`, `filter`) **เป็น solid-only ทั้งหมดในระดับ free** — เปลี่ยนไปใช้ `fa-regular` จะทำให้
+    ไอคอนหายไปเงียบๆ ใน 14+ ไฟล์จริงที่ใช้ `.btn-circle-action`/`.btn-icon` อยู่แล้ว จึงคงใช้ `fa-solid`
+    ทุกที่ ลดแค่ font-size เท่านั้น
+- ≤ 2 action: วางเรียง gap `--sp-1` พร้อม tooltip ทุกปุ่ม
+- > 2 action: ปุ่ม ⋮ วงกลม**เดียวกัน** (`.btn-icon`) เปิด dropdown (pattern เดียวกับ Detail › รายละเอียดพนักงาน) — รายการลบอยู่ล่างสุดคั่นด้วยเส้น ตัวหนังสือ `--c-danger`
 - ไอคอนต้องสื่อความหมาย + tooltip เสมอ (BACKLOG: ทบทวนไอคอนทั้งระบบ ทำในรอบ 4)
-- **Migration จาก `.btn-circle-action`**: รอบ 2 ไม่ต้องแตะ 14 ไฟล์เดิม; รอบ 4 ย้ายทีละหน้าเป็นส่วนหนึ่งของการทำหน้านั้น (ไม่ commit แยก) ผ่าน lint แบบผ่อน (เฉพาะไฟล์ที่ mark `design:clean` ถึง fail ดู §12) — ลบ CSS `.btn-circle-action` ทิ้งเมื่อย้ายครบ 14 ไฟล์แล้วเท่านั้น เหมือน pattern เดียวกับ `.stat-card` ใน §2
+- **`.btn-circle-action` เป็น alias ชั่วคราวของ `.btn-icon`** (ประกาศร่วมกันเป็น selector เดียวใน
+  `style.css` — ลบสีทั้ง 7 tone ที่เคยผูกกับ `.text-{color}` ที่บางไฟล์เอาไปวางซ้อนออกแล้ว ด้วย
+  `!important` เดียวกับที่ `.btn-icon` เองใช้กัน tone จริงหลุดมาได้) — รอบ 2 ไม่ต้องแตะ 14 ไฟล์เดิมเลย
+  (ได้สไตล์ใหม่ทันทีที่ commit เพราะเป็นการแก้ shared CSS ไม่ใช่แก้หน้าจริง); รอบ 4 ค่อย rename
+  `.btn-circle-action` → `.btn-icon` ทีละไฟล์เป็นส่วนหนึ่งของการทำหน้านั้น (ไม่ commit แยก) ผ่าน lint
+  แบบผ่อน (เฉพาะไฟล์ที่ mark `design:clean` ถึง fail ดู §12) — ลบ alias ทิ้งเมื่อย้ายครบ 14 ไฟล์แล้วเท่านั้น
+  เหมือน pattern เดียวกับ `.stat-card` ใน §2
+- ~~เดิม (ยกเลิกแล้ว): ปุ่มไอคอน .btn.btn-sm.btn-icon เทา ไม่มีพื้น ไม่มีขอบ~~ — ดูสเปกใหม่ด้านบน
 
 **ข้อความว่าง**: จาก `getTableLang().emptyTable` — ประโยคเดียวบอกว่าทำอะไรต่อได้ (เช่น "ยังไม่มีรายการ — กด 'เพิ่มรายการ' เพื่อเริ่ม")
 
@@ -411,9 +662,63 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 
 **Modal**
 - ขนาด: `modal-lg` เป็นค่าเริ่มต้นสำหรับฟอร์ม, `modal-xl` เฉพาะที่มีตาราง, ไม่ใช้ fullscreen ยกเว้น editor
-- Header: ชื่ออย่างเดียว (H5) + ปุ่ม × — ไม่มีธง/ไอคอน/badge; บริบท (รหัส, ชื่อพนักงาน) เป็นบรรทัดรอง `--c-text-muted` ใต้ชื่อ หรือใช้ `.emp-header-card` (ตอนนี้จัด style ให้: พื้น `--c-bg-subtle`, avatar 40px, ชื่อ + รหัส/แผนก 1 บรรทัด, ไม่มีขอบสี)
+- **Header = ชื่อ + สวิตช์ภาษาแบบข้อความ + × (ตัดสินใจแล้ว รอบ 2 items 6c/7b follow-up)**: ชื่อ (H5) ซ้าย,
+  ปุ่ม × ขวาสุด (Bootstrap default `margin-left:auto` อยู่แล้ว), ระหว่างกลางคือสวิตช์ภาษา — **ไม่ใช่ธง/ไอคอน
+  ตามที่เคยเขียนไว้** แต่ก็ไม่ใช่ "ไม่มีอะไรเลย" — เป็นตัวหนังสือ **"TH | EN"** (ภาษาที่ใช้อยู่ `--c-text`
+  หนา, อีกภาษา `--c-text-muted` คลิกสลับได้, ขนาด `--fs-xs`) วางขวาของชื่อ modal ก่อนปุ่ม ×
+  - **เหตุผลที่ต้องมีสวิตช์ภาษาในนี้เลย ไม่ตัดออกเฉยๆ**: เป็นการแก้บั๊กจริงจาก 2026-08-30
+    ("พอมีการเปิด modal จะกลับไปเปลี่ยนภาษาไม่ได้") — modal backdrop บังตัวสวิตช์ภาษาจริงที่ header หน้า
+    ทำให้กดไม่ได้ตลอดเวลาที่มี modal เปิดอยู่ ถ้าเอาออกทั้งระบบตามที่เคยเขียนไว้ (§1's "ไม่มีธง") จะรีบั๊กนี้
+    กลับมาทันทีใน ~100 modal จริงทั่วแอป — ยืนยันกับผู้ใช้ตรงๆ แล้วว่าให้**เก็บกลไกไว้ แค่เปลี่ยนหน้าตา**
+    ให้ตรง §1 (ไม่ใช้รูปธง/ไอคอน) แทนที่จะลบทิ้งทั้งกลไก
+  - **แก้ที่จุดเดียวใน `app.js`** (`modalLangDropdownHtml()` + `show.bs.modal` global handler ที่มีอยู่
+    แล้ว — ไม่ใช่ partial PHP กลาง, มันคือ JS mechanism ที่ฉีดเข้าไปทุก modal อัตโนมัติ) ไม่ต้องไล่แก้ทีละ
+    modal เหมือนที่กังวลไว้ตอนแรก — เอา `<img class="current-flag" src=".../flags/{th,gb}.png">` +
+    dropdown menu ออก เหลือแค่ปุ่มข้อความ 2 ปุ่ม คั่นด้วย "|" คลิกปุ่มที่ไม่ active เพื่อเรียก
+    `changeLanguage(lang)` ตัวเดียวกับที่ header จริงใช้ (ผูกไปถึง header/หน้าหลักให้ฟรีเหมือนเดิม)
+  - **ตำแหน่งเปลี่ยนด้วย**: ของเดิม prepend เข้า header (อยู่ซ้ายสุด, ก่อนชื่อ) → ย้ายมาแทรกหลัง
+    `.modal-title` (ขวาของชื่อ ก่อน ×) ตามที่ตัดสินใหม่ — ลบ CSS compensation เดิม
+    (`.modal-header .modal-title { flex:1 1 auto; margin-left:.75rem }`) ที่เคยต้องมีไว้เพราะปุ่มธง
+    เคยเป็น flex child ตัวแรกด้วย ไม่ต้องใช้อีกต่อไป
+  - บริบท (รหัส, ชื่อพนักงาน) เป็นบรรทัดรอง `--c-text-muted` ใต้ชื่อ หรือใช้ `.emp-header-card` (สไตล์จริงตอนนี้
+    — ดูรายละเอียดเต็มในหัวข้อ **emp-header-card** ด้านล่าง — เพิ่มบรรทัด 2 + badge สถานะ จากที่เคยร่างไว้
+    แค่ "1 บรรทัด")
 - Footer: พื้น `--c-bg-subtle`, `[ยกเลิก] [บันทึก]` ขวา; ปุ่มทำลาย (ลบ) ถ้ามี = tertiary ซ้ายสุด
-- **confirm ก่อนปิด modal ที่มีข้อมูลค้าง**: ใช้กลไกเดิม `isFormDirty($container, baselineSnapshot)` + `confirmIfDirtyThen($container, baselineSnapshot, onProceed)` (`app.js`, Platform Hardening Phase 1 — มีอยู่แล้ว) **ไม่สร้าง `guardDirtyModal()` ใหม่** (ตัดสินใจแล้วรอบ 0) — track `input`/`change` ในฟอร์ม (ของเดิมทำอยู่แล้ว); ปิดด้วย ×/Esc/backdrop ขณะ dirty → SweetAlert "ยังไม่ได้บันทึก ปิดหรือไม่" ; reset flag หลัง save สำเร็จ/`resetForm`. **รอบ 2 ต้องผูกกลไกนี้กับทุก modal ที่มีฟอร์มจากจุดเดียวใน app.js** (delegated บน `hide.bs.modal`/ปุ่ม ×/Esc ทั่วระบบ, เช็ค `.modal:has(form)` หรือ marker class) — ห้ามผูกทีละ modal เอง (มิฉะนั้น modal ใหม่ทุกตัวต้อง remember to wire เอง ซึ่งเป็นความเสี่ยงเดียวกับที่ §0 ข้อ 4 ห้าม)
+- **confirm ก่อนปิด modal ที่มีข้อมูลค้าง — เสร็จแล้ว รอบ 2 item 7b, เป็น redesign ไม่ใช่การรื้อของเดิมกลับมาตรงๆ**:
+  ใช้กลไกเดิม `isFormDirty($container, baselineSnapshot)` + `confirmIfDirtyThen($container, baselineSnapshot, onProceed, promptOptions)`
+  (`app.js`, Platform Hardening Phase 1 — มีอยู่แล้ว, ขยายรับ `promptOptions` (optional, 4th arg) ให้
+  override title/message/ปุ่ม/danger ได้ต่อ caller โดยยัง backward-compatible 100% กับ 3 real caller
+  เดิม (Employee Detail/Payroll Configuration/Tax & Statutory's page-body Cancel button — Permission
+  Matrix ใช้กลไกของตัวเองแยกต่างหาก ไม่ใช่ `confirmIfDirtyThen()` ตามที่ comment เก่าเข้าใจผิด) —
+  **ไม่สร้างฟังก์ชันที่ 3** (ตัดสินใจแล้วรอบ 0)
+  - **สำคัญ: ก่อนรอบ 2 item 7b ไม่มี modal-level dirty-check ที่ยัง active อยู่เลยสักตัว** — เคยมี
+    (Platform Hardening Phase 1.2, delegated `shown.bs.modal`/`hide.bs.modal` ครอบทุก `.modal` ~100
+    ตัว) แต่ถูก**สั่งปิดทั้งระบบไปแล้วเมื่อ 2026-09-09** ("ปิดทั้งระบบ เอา dirty-check ออกทั้งหมด")
+    เพราะ**สับสนในฟอร์ม/modal ส่วนใหญ่ของแอป** — เป็นการตัดสินใจที่ยืนยันชัดเจนแค่ 4 วันก่อนรอบ 2 นี้จะ
+    เริ่ม ก่อนเขียนโค้ดรอบนี้จึงต้องรายงาน + ถามยืนยันตรงๆ ก่อนว่าจะรื้อกลับมาไหม (ไม่ใช่ทำตาม draft เดิม
+    ของ §9 บรรทัดนี้ที่เขียนไว้ก่อนจะรู้เรื่อง 2026-09-09 อย่างมั่นใจ)
+  - **ยืนยันแล้วให้รื้อกลับ แบบ opt-in ต่างจากเดิม 3 จุด เพื่อไม่ให้กลับไปสับสนซ้ำ**:
+    1. ผูกเฉพาะ `.modal[data-dirty-guard]` (marker attribute ต้องใส่เองต่อ modal) ไม่ใช่ทุก
+       `.modal:has(form)` — modal ดู/เลือก/filter ไม่ใส่; รอบ 4 ตอน migrate แต่ละหน้าค่อยตัดสินใจใส่
+       เฉพาะ modal ที่เป็นฟอร์มแก้ข้อมูลจริง
+    2. dirty = เทียบ snapshot (`snapshotFormState()` เดิม) ที่ถ่ายตอน `shown.bs.modal` กับตอนพยายามปิด
+       — ไม่ใช่ flag จาก event `change`/`input` ใดๆ — เปิดแล้วปิดเฉยๆ หรือแก้แล้วแก้กลับเป็นค่าเดิม =
+       ไม่ถาม ทั้งคู่
+    3. หลัง save สำเร็จ (หรือ `resetForm`) ต้อง snapshot ใหม่เอง ผ่าน `refreshDirtyGuard($modal)`
+       (ใหม่, `app.js`) ก่อนจะปิด modal — ปิดหลัง save จึงไม่ถาม เพราะ baseline อัปเดตตามแล้ว
+  - **ถามเฉพาะ ×/Esc/backdrop** (delegated `hide.bs.modal` บน `.modal[data-dirty-guard]` เท่านั้น,
+    `e.preventDefault()` ยืนยันแล้วว่า Bootstrap 5's `Modal.hide()` เช็ค `hideEvent.defaultPrevented`
+    จริงจากอ่าน source ตรงๆ ไม่ใช่เดา) — **ปุ่ม "ยกเลิก" ในฟอร์มที่เป็น `data-bs-dismiss="modal"` ธรรมดา
+    ผ่านกลไกเดียวกันโดยอัตโนมัติ** (Bootstrap เองส่ง `hide.bs.modal` event เดียวกันไม่ว่าจะปิดทางไหน) —
+    **ไม่ต้องเรียก `confirmIfDirtyThen()` เองทีละปุ่ม Cancel อีกต่อไป**
+  - **ข้อความยืนยัน** (`promptOptions`, i18n key ใหม่ `confirm_modal_dirty_title`/
+    `action_close_without_saving`/`action_back_to_editing`, reuse `confirm_discard_changes_message`
+    เดิมสำหรับเนื้อหา): title "มีข้อมูลที่ยังไม่ได้บันทึก", ปุ่ม **[กลับไปแก้ต่อ]** (secondary/cancel) กับ
+    **[ปิดโดยไม่บันทึก]** (danger, ผ่าน `showConfirm()`'s `danger:true` — ดูข้อ 10) — คนละข้อความกับ
+    default ของ `confirmIfDirtyThen()` เดิม ("Discard unsaved changes?"/Yes/No, ยังใช้อยู่กับ 3 real
+    caller เดิมที่ไม่ส่ง `promptOptions` มา ไม่เปลี่ยน)
+  - `data-dirty-guard` **ยังไม่มีหน้าจริงใช้เลยรอบนี้** (ห้ามแตะหน้าจริง §13) — demo ครบ 3 สถานการณ์ใน
+    `docs/design/components.php`
 - Modal ซ้อน: ใช้ global z-index/scroll fix ใน app.js ที่มีแล้ว ไม่จัดการเองต่อ modal
 - ซ่อน block ที่ว่าง (ทำแล้วใน 3B) เป็นกฎถาวร
 
@@ -422,19 +727,92 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 - required = `*` แดงหลัง label (ที่เดียวที่แดงใช้ได้นอกสถานะ)
 - **Helper text ≤ 1 บรรทัด** (`.form-text`, `--c-text-muted`) ถ้าเกิน → ตัดเหลือประโยคหลัก และย้ายรายละเอียดไป tooltip ไอคอน ⓘ หลัง label หรือเอกสาร; ห้ามมี helper ทุกช่อง ใส่เฉพาะที่ผู้ใช้จะกรอกผิดถ้าไม่มี
 - Validation: inline ใต้ช่อง (`.invalid-feedback`) + focus ช่องแรกที่ผิด; ไม่ใช้ alert สำหรับ validation
-- Segmented/toggle (ใช่-ไม่ใช่): `.btn-group` ของ `.btn-outline-secondary.btn-sm` ตัวที่เลือกเป็น `active` (พื้น `--c-bg-subtle` ขอบ `--c-border-strong`) — ไม่ใช้ส้มกับ toggle
+- Segmented/toggle (ใช่-ไม่ใช่): `.btn-group` ของ `.btn-outline-secondary.btn-sm` ตัวที่เลือกเป็น `active` (พื้น `--c-bg-subtle` ขอบ `--c-border-strong`) — ไม่ใช้ส้มกับ toggle **(คนละ component กับ checkbox/switch ด้านล่าง — segmented toggle เป็นปุ่มคู่แข่งกันเลือกได้ 1 ทาง (เทาเสมอ), checkbox/switch เป็น input จริงที่มีสถานะ checked/unchecked (ส้มตอน checked/on) — อย่าสลับกฎกัน)**
 - ฟอร์ม "รายการจ่าย/หัก", "จัดการรอบ", "ตั้งค่ารอบ": จัดกลุ่มช่องด้วยหัวข้อย่อย (`--fs-sm` หนา) + เส้น `--c-border` ระหว่างกลุ่ม ไม่ใช้ card ซ้อน card
+
+**Checkbox / Radio / Switch — เสร็จแล้ว รอบ 2 item (2)** (Bootstrap `.form-check`/`.form-switch` ตรงๆ,
+ไม่สร้าง component ใหม่ — override สีใน `style.css` เท่านั้น)
+- unchecked: ขอบ `--c-border-strong`, พื้น `--c-bg`
+- checked/on: พื้น `--c-primary` (ส้ม), เครื่องหมายขาว — **ข้อยกเว้นตรงใน §3** (เหมือน tab ที่เลือก) ไม่ใช่กฎใหม่
+- disabled: `--c-text-faint` (แทน opacity เฉยๆ ให้ตรงกับ element disabled อื่นในแอป) — `checked+disabled`
+  พื้น `--c-text-faint` (ไม่ใช่ส้มจาง)
+- label: ตัวหนังสือ `--c-text`; focus ring: ส้ม (เหมือน `.form-control:focus`)
+- **บั๊กจริงที่เจอ**: Bootstrap hardcode `#0d6efd` (hex ตรงๆ ไม่ใช่ CSS variable) ใน
+  `.form-check-input:checked`/`:indeterminate` และฝัง fill สีไว้ใน SVG data-URI ของ `.form-switch`'s
+  own focus state — override ผ่าน root `--bs-primary` เฉยๆ ไปไม่ถึง ต้อง override ราย-component ตรงๆ
+  (เทคนิคเดียวกับที่ `.btn-primary`/`.form-control:focus` ทำไว้แล้วในรอบ 1)
+- ตารางที่ใช้ switch ต่อแถว → `.col-toggle` + `initRowToggles()` ดู §7
 
 **สลิป / รายละเอียดการคำนวณ** (modal รายละเอียดการคำนวณ)
 - partial `payslip-view.php` แบบสลิป 2 คอลัมน์ (รายได้ | รายหัก) + สรุปล่าง (รวมรายได้/รวมหัก/สุทธิ) ตัวเลข `.num` — ใช้ทั้ง modal และหน้าพิมพ์/PDF ตัวเดียวกัน
+
+**emp-header-card — เสร็จแล้ว รอบ 2 item 6c** (หัวการ์ดพนักงาน ใช้เป็นบล็อกแรกของทุก modal ที่เปิดจากแถว
+พนักงาน — quick-view, รายละเอียดคำนวณ, comment, verify, ผูกบัญชีธนาคาร ฯลฯ)
+- พื้น `--c-bg-subtle` ขอบล่าง `--c-border` **ไม่มีขอบสี/เงา**, avatar 40px (`apvAvatarHtml()`)
+- บรรทัด 1 = ชื่อ `--c-text` หนา + รหัสพนักงาน `--c-text-muted`; บรรทัด 2 = แผนก · ตำแหน่ง `--c-text-muted`
+  `--fs-sm`; ขวาสุด = badge สถานะพนักงาน (`statusBadge()`/`statusBadgeHtml()` จริง, context
+  `employee_status` — ข้อ 5) — **badge เป็น optional จริง** ไม่ใช่ fallback ที่พังถ้าไม่มีค่า: caller ไหนไม่มี
+  field `employee_status` จะไม่เห็น badge เลย (ไม่ใช่ badge เทาว่างเปล่า/"undefined")
+- **partial `app/views/partials/emp-header-card.php` (ใหม่) + JS `employeeHeaderCardHtml(emp)`
+  (`app.js`, มีอยู่แล้วตั้งแต่ Batch 3C item 8 — GENERALIZE ของเดิม ไม่สร้างซ้ำ ตามที่ระบุ)** —
+  **ข้อควรระวัง: ต่างจาก component อื่นๆ ในรอบ 2 นี้ ฟังก์ชัน JS ตัวนี้มี 6 real call site ผูกอยู่แล้วจริง
+  ใน `payroll/detail.js`** (Calculation Breakdown/Raw Sync Data/Manage Items/Comments/Adjustments/
+  Bank Account Assignment) **ตั้งแต่ก่อนรอบ 2 นี้จะเริ่ม** — โค้ดเดิมมี comment ตรงๆ ว่า "ยังไม่จัดสไตล์
+  การ์ด — design phase มาทีหลัง" งานรอบนี้คือ design phase ที่ comment นั้นรอไว้ ไม่ใช่ scope ใหม่ — แก้แค่
+  ตัว function เดิม (ชื่อ/signature เดิมทุกอย่าง) ไม่แตะ 6 call site ใน payroll/detail.js เลยสักบรรทัด
+  (นับเป็นการปรับ shared helper ไม่ใช่การแก้หน้าจริง — เหมือน `showConfirm()`/`fmtNum()` ที่แก้ไปแล้วก่อน
+  หน้านี้) — **ผลคือ 6 modal จริงจะได้สไตล์ใหม่ทันทีที่ commit รอบนี้** (avatar 48px→40px ตามขนาดที่ตัดสิน
+  รอบนี้, เพิ่มบรรทัด 2 + badge slot) ต่างจาก component อื่นในรอบ 2 ที่ยังไม่ถูก wire เข้าหน้าจริงเลย
+
+**Quick-view พนักงาน** (จากคลิก avatar ทั่วแอป, ตัดสินใจแล้วรอบ 2 item 6c — migrate จริงรอบ 4)
+- เป็น **modal** (`modal-md`) ไม่ทำ popover — ใช้ `.emp-header-card` เป็นหัว, เนื้อหา 2 คอลัมน์เท่ากัน
+  label/value, footer มีแค่ **[ปิด] [ดูข้อมูลเต็ม]** (ไม่มีปุ่มอื่น)
 
 ---
 
 ## 10. Feedback
 
-- ยืนยัน (ลบ, ส่งอนุมัติ, ปิดรอบ, ย้อนสถานะ): SweetAlert2 ผ่าน helper เดิม **`showConfirm(...)`** (`public/js/alert.js`, มีอยู่แล้วทั่วระบบ) — **ไม่สร้าง `confirmAction()` ใหม่** (ตัดสินใจแล้วรอบ 0: ของเดิมทำหน้าที่เดียวกันอยู่แล้ว สร้างคู่กันจะขัดกับ §0 ข้อ 4 เอง) แก้ `showConfirm()` ให้รับได้ 2 รูปแบบ: **positional เดิม** `showConfirm(title, msg, yesCallback, noCallback)` (ทุก call site เดิมยังทำงานเหมือนเดิม 100%) **หรือ object form ใหม่** `showConfirm({title, message, confirmText, danger, onYes, onNo})` เมื่อ argument แรกเป็น object (เช็คด้วย `typeof arg1 === 'object'`) — object form: ปุ่มยืนยัน primary (หรือ danger ถ้า `danger:true`), ปุ่มยกเลิก secondary, `confirmText` override ข้อความปุ่มยืนยัน (default "ยืนยัน"); ห้ามเรียก `Swal.fire` ตรงๆ ในหน้า
-- สำเร็จ: toast มุมขวาบน 3 วินาที (helper `showSuccess`) ข้อความ = กริยาเดิม + "แล้ว"
-- ผิดพลาดจาก server: `showError` ข้อความบอกสาเหตุ + สิ่งที่ทำได้ ไม่ขอโทษ ไม่คลุมเครือ
+- **ยืนยัน — เสร็จแล้ว รอบ 2 item 7b**: SweetAlert2 ผ่าน helper เดิม **`showConfirm(...)`**
+  (`public/js/alert.js`, มีอยู่แล้วทั่วระบบ) — **ไม่สร้าง `confirmAction()` ใหม่** (ตัดสินใจแล้วรอบ 0)
+  รับได้ 2 รูปแบบ: **positional เดิม** `showConfirm(title, msg, yesCallback, noCallback)` (ทุก call
+  site เดิมยังทำงานเหมือนเดิม 100% — ยืนยันด้วยการอ่าน implementation ตรง ไม่ใช่แค่ test) **หรือ object
+  form ใหม่** `showConfirm({title, message, confirmText, cancelText, danger, onYes, onNo})` เมื่อ
+  argument แรกเป็น object — **`cancelText` เป็นการขยายเพิ่มนอกเหนือ draft เดิมของบรรทัดนี้** (ของเดิม
+  มีแค่ `confirmText`) จำเป็นเพราะ modal dirty-guard (§9) ต้อง override ปุ่มทั้ง 2 ฝั่งพร้อมกัน
+  ("กลับไปแก้ต่อ"/"ปิดโดยไม่บันทึก" ไม่ใช่ "Yes"/"No" default) — ห้ามเรียก `Swal.fire` ตรงๆ ในหน้า
+  - **สไตล์ปุ่ม/ไอคอน — เปลี่ยน default ทั้งระบบ ผ่าน `tokens.css`/`style.css`'s `--swal2-*` block เดียว
+    ไม่ใช่ per-call**: ปุ่มยืนยัน = `--c-primary` (ส้ม), `danger:true` = `--c-danger` (แดง, per-call
+    `confirmButtonColor` override), ปุ่มยกเลิก = ทรง `.btn-outline-secondary` (โปร่งใส + ขอบ
+    `--c-border-strong` + ตัวหนังสือ `--c-text`), popup/ปุ่มทุกปุ่ม border-radius = `--radius` เดียวกับ
+    ที่อื่นทั้งแอป, ฟอนต์ Sarabun **ไม่ต้องแก้อะไรเลย** (`.swal2-popup` เดิมใช้ `font-family:inherit` +
+    `html,body` ตั้ง Sarabun ไว้อยู่แล้ว ยืนยันจาก source ตรงๆ) — **นี่คือการย้อนการตัดสินใจของ T069 Step 3
+    (2026-09-05) ที่เคยเลือกเก็บสีม่วง/แดง/เทา default ของ Swal2 ไว้โดยตั้งใจ** ยืนยันตรงกับผู้ใช้ก่อน
+    เขียนโค้ดแล้วว่าให้เปลี่ยนจริง (เหตุผลเดิมของ T069 ใช้ไม่ได้อีกต่อไปเมื่อรอบนี้กำลังนิยาม
+    "primary"/"danger" ของ object form เองพอดี) — **พบเพิ่มระหว่างแก้จุดเดียวกัน**: ไอคอน
+    `info`/`question` ของ Swal2 default เป็นสีฟ้า (`#3fc3ee`/`#87adbd`, ตรงข้าม §3) แก้เป็น `--c-info`
+    (โทเคนของแอปเองที่ comment ใน tokens.css บอกไว้แล้วว่า "info = เทา ไม่ใช่ฟ้า")
+- **สำเร็จ — เปลี่ยน default ทั้งระบบ, ยืนยันแล้ว**: toast มุมขวาบน (helper `showSuccess`, ไม่ใช่ modal
+  บล็อกกลางจอที่ต้องกด OK เหมือนก่อนรอบนี้อีกต่อไป) — กติกา auto-timer: ข้อความ ≤ 60 ตัวอักษร = 3
+  วินาที ไม่มีปุ่ม; ยาวกว่านั้น = 6 วินาที + ปุ่ม × ปิดเอง (ไม่ใช่ OK); hover ค้าง = timer หยุดนับ
+  (`Swal.stopTimer`/`Swal.resumeTimer` จาก `didOpen`, official Swal2 toast recipe) — caller ที่ส่ง
+  `timer` เอง (7 จุดเดิม) ยังชนะ auto-decision เหมือนเดิม ข้อความ = กริยาเดิม + "แล้ว"
+  - **ตรวจ caller เดิมก่อนเปลี่ยน default (135 จุด)**: 0 จุดพึ่ง `confirm=false` เลย (grep ยืนยัน) จึง
+    เปลี่ยน default ได้โดยไม่มี call site ไหนพังพฤติกรรมจากพารามิเตอร์ตัวนี้
+  - **พบ (ไม่แก้รอบนี้ เพราะเป็นข้อความจาก server/ตัวแปรที่ความยาวจริงรู้ได้แค่ตอน runtime ไม่ใช่แก้ page
+    logic) — 63 จุดที่ข้อความเป็น `res.message ||...`/ตัวแปรอื่นที่ยาวไม่จำกัด**, เข้ากติกา auto-timer
+    ข้างบนได้เองอัตโนมัติที่ runtime ไม่ต้องแก้ต่อไซต์ — แต่มี **2 กลุ่มที่สร้าง HTML หลายบรรทัดจริง**
+    (`setup/data-sync.js`'s `dsResultSummaryHtml()`, `setup/origami-sync-widget.js`'s
+    `origamiSyncResultSummaryHtml()` — ทั้งคู่สร้าง `<div>` + `<ul>` รายการ error สูงสุด 5+ รายการ) ที่
+    ยาวเกิน 60 ตัวอักษรแน่นอนจนตกไปกิ่ง 6 วิ+ปุ่ม × เองอยู่แล้ว **แต่เจอบั๊กจริงแยกต่างหากตรงนี้ที่ไม่ได้
+    แก้** (`showSuccess()`/`showError()` render ผ่าน Swal2's `text`/`title` ธรรมดา ไม่ใช่ `html:` เลย —
+    เนื้อหา HTML นี้จึงโชว์เป็น source code ดิบมาตลอด ไม่ใช่ list ที่จัดรูปแบบแล้ว) — ดู BACKLOG.md
+    entry เดียวกัน (พบระหว่าง design pass, ไม่แก้ปนกันตาม §0.7)
+  - รายการเต็มของทั้ง 143 call site (breakdown ตาม dynamic/HTML/static) → **[SC13] ใน
+    `docs/design/audit.md`**
+- **ผิดพลาด — ไม่เปลี่ยน**: `showError` ยังเป็น dialog บล็อกกลางจอต้องกด OK เหมือนเดิมทุกอย่าง (§10 พูดถึง
+  toast แค่ฝั่งสำเร็จเท่านั้น — ข้อผิดพลาดต้องไม่ถูกมองข้ามได้ง่ายจากมุมจอ/หายไปเองใน 3-6 วินาที) ข้อความ =
+  บอกสาเหตุ + สิ่งที่ทำได้ ไม่ขอโทษ ไม่คลุมเครือ (การไล่ตรวจคำของ caller ทั้ง 9 จุดที่มีอยู่ ไม่ได้ทำรอบนี้ —
+  เป็นการแก้ข้อความหน้าจริงทีละจุด ไม่ใช่ shared helper)
 - Loading: ปุ่ม spinner (ปุ่ม) หรือ `.table-loading` overlay (ตาราง) — ไม่มี spinner เต็มหน้า
 
 ---
@@ -445,16 +823,20 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 |---|---|---|
 | `page-header.php` | `app/views/partials/` | การ์ดหัวหน้าทุกหน้า |
 | `stat-card.php` | partials | การ์ดตัวเลขขอบสี |
-| `filter-bar.php` | partials | filter กางค้าง |
+| `filter-bar.php` (ปรับเป็นแผง 3 ส่วน หัว/ตัว/ท้าย, item 4 revision, ยกเลิก `toolbarTarget` — ดู §6) | partials | filter กางค้าง |
+| `renderNotifications()` / `setNotificationCount()` (ใหม่, item 6d — เสร็จแล้ว, UI เท่านั้นยังไม่ต่อ backend; ของจริงมีอยู่แล้ว `notifications.js`/`NotificationModel` — 3 จุดต่างจริง (ไอคอนมีพื้นสี, จุด unread ขวา, badge "99+") ไม่ใช่แค่ token เดิม บันทึกไว้ให้รอบ 4 ตัดสินใจ — ดู §6) | app.js (ใหม่) | `.row-type-icon`/dot-ขวา ของจริง (คงไว้ ไม่แตะ — แค่ flag ความต่างสำหรับ migrate) |
 | `status-stepper.php` + `renderStatusStepper()` (ใหม่, item 6 — เสร็จแล้ว; render อย่างเดียว ตำแหน่งเทียบ `current` เท่านั้น ไม่มี action/วันที่/branch icon แบบของจริง — logic ขั้นยังอยู่ที่ `runLifecycleSteps()` เดิม, ยังไม่ย้ายหน้าจริงมาใช้ รอรอบ 4 — ดู §6) | `app/views/partials/` + `app.js` | กล่อง 5 สี |
+| `timeline.php` + `renderTimeline()` (ใหม่, item (3)/6b — เสร็จแล้ว; feed กิจกรรมยาวไม่จำกัด, caller เรียงมาเอง, ยังไม่ย้ายหน้าจริง (`renderApprovalTimelineBody()`) มาใช้ รอรอบ 4 — ดู §6) | `app/views/partials/` + `app.js` | `.apv-timeline-log`/`.apv-log-entry` เดิม (dead code, ไม่มี call site — ไม่ reuse ตั้งชื่อใหม่แทน) |
 | `status-tabs.php` + `initStatusTabs()` (ใหม่, item 4b — chevron pipeline เดิม**ยังคงรูปแบบไว้**, retokenize เท่านั้น; **ตัดสินใจแล้ว**: เคยมี variant `path` ให้เทียบคู่กัน ลบออกทั้งหมดแล้ว) | partials + app.js | markup ที่เคยซ้ำ 2 ไฟล์ของ `.station-row`/`.station-card` |
 | `statusBadge()` / `statusBadgeHtml()` + `status_map.php` (ใหม่, item 5 — เสร็จแล้ว; map มีที่เดียวคือ `status_map.php`, JS ไม่มี copy ของตัวเอง อ่านจาก `window.STATUS_MAP` ที่ `layout/header.php` inject ให้ — ยกเว้นกฎ "ห้ามแตะหน้าจริง" เฉพาะจุดนี้จุดเดียว; rename `payroll-configuration.js`'s local `statusBadge(row)` → `pcRowStatusBadge(row)` ทำก่อนเขียนแล้วตามแผน — ดู §5) | `app/helpers/helpers.php` + `app.js` + `app/config/status_map.php` + `layout/header.php` (inject จุดเดียว) | map สถานะกระจาย |
-| `initSharedDataTable()` (ขยาย: layout, export, fixed column, columnDefs alignment) | app.js | init ตรงทุกหน้า |
+| `initSharedDataTable()` (ขยาย: layout, export, fixed column, columnDefs alignment, `emptyState` option ใหม่ item 6e — auto-pick ว่างจริง/กรองไม่พบ — ดู §6) | app.js | init ตรงทุกหน้า |
+| `empty-state.php` + `emptyStateHtml()` (ใหม่, item 6e — เสร็จแล้ว; ใช้ผ่าน `initSharedDataTable()`'s `emptyState` option แล้ว, ยังไม่มีหน้าจริงอื่นเรียกตรง รอรอบ 4 — ดู §6) | `app/views/partials/` + `app.js` | ข้อความบรรทัดเดียวของ `language.emptyTable`/`zeroRecords` เดิม |
+| `initRowToggles($table, {onChange})` (ใหม่, item (2) — เสร็จแล้ว) | app.js | switch ต่อแถวที่แต่ละหน้าเขียน wiring เองคนละแบบ (tax-statutory/company-profile ฯลฯ — ยังไม่ migrate รอบนี้ ห้ามแตะหน้าจริง §13) |
 | `fmtMoney()` (ใหม่, item 7a — เสร็จแล้ว) / `fmtNum()` (มีแล้ว, `format-helpers.js` — **ไม่สร้าง `formatMoney()` ใหม่**, ตัดสินใจแล้วรอบ 2 — ดู §8) / `initMoneyInputs()` (ใหม่, item 7a — เสร็จแล้ว; ยังไม่มีหน้าจริงใช้ `.money-input`, migrate รอบ 4) / `parseMoneyInput()` (ใหม่, item 7a — `format-helpers.js`, จุดร่วมเดียวสำหรับ strip comma ที่ `collect*FormData` 8 ฟังก์ชันของหน้าจริงจะเรียกตอน migrate) | `app/helpers/helpers.php` + `app.js` + `format-helpers.js` | number_format กระจาย |
 | `apvAvatarHtml()` / `apvPersonLineHtml()` | app.js (มีแล้ว) | avatar เขียนเอง |
-| `emp-header-card` (style ตาม §9) | modals (มีแล้ว) | หัว modal ธง+ไอคอน |
-| `isFormDirty()` / `confirmIfDirtyThen()` | app.js (มีแล้ว, Platform Hardening Phase 1) | ผูก dirty-check เองทีละ modal — **ไม่สร้าง `guardDirtyModal()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §9) |
-| `showConfirm()` (ขยายรับ object form) / `showSuccess` / `showError` | app.js/alert.js (มีแล้ว) | Swal.fire ตรง — **ไม่สร้าง `confirmAction()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §10) |
+| `emp-header-card.php` (ใหม่, item 6c) + `employeeHeaderCardHtml()` (generalize ของเดิม Batch 3C item 8 — เสร็จแล้ว, **มี 6 real call site ใน payroll/detail.js อยู่แล้ว ได้สไตล์ใหม่ทันทีที่ commit** ไม่เหมือน component อื่นในรอบนี้ — ดู §9) | `app/views/partials/` + `app.js` | หัว modal ธง+ไอคอน |
+| `isFormDirty()` / `confirmIfDirtyThen()` (ขยายรับ `promptOptions`, item 7b — เสร็จแล้ว) / `refreshDirtyGuard()` (ใหม่, item 7b) / `data-dirty-guard` modal marker (ใหม่, item 7b — opt-in, redesign ของกลไกที่เคยถูกสั่งปิดทั้งระบบไป 2026-09-09, ยังไม่มีหน้าจริงใช้ รอรอบ 4) | app.js (มีแล้ว, Platform Hardening Phase 1) | ผูก dirty-check เองทีละ modal — **ไม่สร้าง `guardDirtyModal()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §9) |
+| `showConfirm()` (ขยายรับ object form + `cancelText`, item 7b — เสร็จแล้ว) / `showSuccess` (เปลี่ยนเป็น toast default, item 7b) / `showError` (ไม่เปลี่ยน) | app.js/alert.js (มีแล้ว) | Swal.fire ตรง — **ไม่สร้าง `confirmAction()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §10) |
 | `resetModalTabs()` | app.js (มีแล้ว) | strip class เอง |
 | `payslip-view.php` | partials | modal คำนวณแบบตาราง |
 
@@ -482,7 +864,7 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 
 ## 13. กระบวนการ phase design
 
-**มติเดิมที่ขัดกับ rules.md ถือว่าถูกแทนที่** — ถ้ามีมติ/convention ที่ตกลงกันไว้ก่อนหน้า phase design นี้ (ไม่ว่าจะ roll out ไปแล้วกว้างแค่ไหน เช่น `.btn-circle-action` ที่เคย "full rollout done app-wide" มาก่อน — ดู §4) ขัดกับกฎในเอกสารนี้ ให้ยึด rules.md เป็นมติล่าสุดเสมอ ไม่ต้องถามซ้ำว่าจะคง convention เดิมไว้ไหม — ของเดิมยังใช้งานได้จนกว่าจะถูกย้ายจริงตามลำดับรอบ (2/3/4 ตามที่ระบุไว้ต่อกรณี) แต่**ห้ามเขียนโค้ดใหม่ตาม convention เดิมอีก** นับจากรอบ 0 นี้เป็นต้นไป
+**มติเดิมที่ขัดกับ rules.md ถือว่าถูกแทนที่** — ถ้ามีมติ/convention ที่ตกลงกันไว้ก่อนหน้า phase design นี้ (ไม่ว่าจะ roll out ไปแล้วกว้างแค่ไหน) ขัดกับกฎในเอกสารนี้ ให้ยึด rules.md เป็นมติล่าสุดเสมอ ไม่ต้องถามซ้ำว่าจะคง convention เดิมไว้ไหม — ของเดิมยังใช้งานได้จนกว่าจะถูกย้ายจริงตามลำดับรอบ (2/3/4 ตามที่ระบุไว้ต่อกรณี) แต่**ห้ามเขียนโค้ดใหม่ตาม convention เดิมอีก** นับจากรอบ 0 นี้เป็นต้นไป (ตัวอย่างที่เคยอ้างตรงนี้ — `.btn-circle-action` — เอง**กลับมติอีกรอบใน item (5)**: rules.md รอบแรกสั่งยกเลิกทรงกลม, item (5) ยกเลิกคำสั่งนั้นอีกที คง**ทรง**ไว้แต่ยกเลิก**สี** — หลักการ "rules.md ล่าสุดชนะ" ยังใช้เหมือนเดิม แค่ "ล่าสุด" ในกรณีนี้ดันเป็นรอบเดียวกันเอง ไม่ใช่ convention ก่อนรอบ 0 อีกต่อไป)
 
 | รอบ | ทำอะไร | ผลลัพธ์ | ห้าม |
 |---|---|---|---|

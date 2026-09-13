@@ -5,8 +5,11 @@
  * approve แล้ว" -- the chevron pipeline (`.station-row`/`.station-card`, Employee List's
  * `#employeeStationRow` + Payroll Process's `#stationRow`) is KEPT as the visual, this partial's own
  * job is only to make it ONE shared component (was duplicated markup in 2 view files) with its
- * hardcoded hex colors replaced by tokens -- lighter than the old version (36px tall vs 38px, 8px
- * notch depth vs 12px, no border/shadow, 2px gap between steps).
+ * hardcoded hex colors replaced by tokens -- lighter than the old version (34px tall vs 38px -- 36px
+ * in this round's first pass, reduced again 2026-09-13 -- 8px notch depth vs 12px, no border/shadow,
+ * 2px gap between steps). 2026-09-13 also whitened the idle count pill (`--c-bg` + `--c-border`
+ * outline, was `--c-bg-hover` which read too close to the tab's own idle background) and gave it a
+ * fixed 18px height -- see style.css's own comment on `.status-tab-count:not(.badge)` for why.
  *
  * A second visual variant ('path' -- flat, no colored card, breadcrumb-style) existed alongside this
  * one for an explicit A/B comparison in components.php -- **decided, chevron won** -- 'path' and its

@@ -165,33 +165,98 @@ function isFormDirty($container, baselineSnapshot) {
 // Shared confirm-if-dirty gate: if $container's current state matches baselineSnapshot, runs
 // onProceed() immediately (no interruption for a form nobody actually touched); otherwise asks via
 // SweetAlert2 first. Reused by every page-body Cancel button below (Employee Detail/Tax &
-// Statutory/Payroll Configuration/Permission Matrix all call this the same way).
-function confirmIfDirtyThen($container, baselineSnapshot, onProceed) {
+// Statutory/Payroll Configuration all call this the same way -- Permission Matrix, despite an older
+// comment claiming otherwise, actually keeps its own separate bespoke dirty-check, confirmed by
+// reading permission-matrix.js directly) AND by the modal dirty-guard mechanism right below this
+// function.
+//
+// `promptOptions` (Round 2 item 7b, optional 4th param -- every existing 3-arg call site above is
+// completely unaffected, `promptOptions` defaults to `{}` and every one of its own fields falls back
+// to the exact same copy this function already used): lets a caller override the confirm dialog's
+// title/message/button text/danger-styling for ITS OWN context, without this function needing a
+// competing 2nd implementation. The modal dirty-guard below is the one real caller that uses this --
+// see its own docblock for why its copy needs to differ from the page-body default.
+function confirmIfDirtyThen($container, baselineSnapshot, onProceed, promptOptions) {
     if (!isFormDirty($container, baselineSnapshot)) {
         onProceed();
         return;
     }
-    showConfirm(
-        (langData && langData['confirm_discard_changes_title']) || 'Discard unsaved changes?',
-        (langData && langData['confirm_discard_changes_message']) || "You have changes that haven't been saved yet. If you continue, they will be lost.",
-        onProceed
-    );
+    const opts = promptOptions || {};
+    showConfirm({
+        title: opts.title || (langData && langData['confirm_discard_changes_title']) || 'Discard unsaved changes?',
+        message: opts.message || (langData && langData['confirm_discard_changes_message']) || "You have changes that haven't been saved yet. If you continue, they will be lost.",
+        confirmText: opts.confirmText,
+        cancelText: opts.cancelText,
+        danger: opts.danger,
+        onYes: onProceed,
+        onNo: opts.onNo,
+    });
 }
 
-// 2026-09-03, Platform Hardening Phase 1.2 -- a GENERIC modal-level dirty-check (delegated
-// `shown.bs.modal`/`hide.bs.modal` handlers intercepting every Bootstrap modal app-wide, ~100 of
-// them) used to live here, asking "Discard unsaved changes?" whenever a modal with an edited field
-// was closed via X/Cancel/backdrop/Esc.
-// 2026-09-09, explicit request: "ปิดทั้งระบบ เอา dirty-check ออกทั้งหมด" -- removed entirely, system-
-// wide, after it was reported as confusing across most forms/modals in the app (explicit exception
-// named: the Payslip/Employment Certificate Template canvas editors' OWN bespoke unsaved-changes
-// handling -- those are standalone pages now, not modals, and were never covered by this mechanism
-// anyway, only ever exempted from it by id-prefix while it still existed). The page-BODY version of
-// this same idea (confirmIfDirtyThen()/snapshotFormState() above, used by explicit Cancel buttons on
-// Employee Detail/Tax & Statutory/Payroll Configuration/Permission Matrix) is UNCHANGED -- this
-// request was specifically about the modal-close interception, not that separate, explicit-button
-// mechanism. Every Bootstrap modal in the app now closes via X/Cancel/backdrop/Esc exactly as it did
-// before Phase 1.2 introduced this, with no confirm interruption.
+// Modal dirty-guard (Round 2 item 7b, docs/design/rules.md §9) -- a GENERIC, but OPT-IN, modal-level
+// dirty-check: only a `.modal` carrying `data-dirty-guard` participates, intercepting its own
+// X/Esc/backdrop/any-`data-bs-dismiss` close attempt (all 4 of those are the SAME Bootstrap
+// `hide.bs.modal` event under the hood, so one delegated handler below covers all 4 -- a plain
+// "Cancel" button using the standard `data-bs-dismiss="modal"` attribute needs no wiring of its own
+// at all, it already funnels through here).
+//
+// This is a deliberate REDESIGN, not a revival, of the mechanism Platform Hardening Phase 1.2 built
+// and then 2026-09-09 explicitly removed system-wide ("ปิดทั้งระบบ เอา dirty-check ออกทั้งหมด") for
+// being confusing across most forms/modals in the app. Confirmed directly with the user before
+// writing this (the alternative was to leave it removed and demo the existing page-body Cancel-
+// button pattern instead) -- 3 concrete differences from the removed version address the actual
+// complaint instead of just reintroducing it:
+//  1. Opt-in via `data-dirty-guard`, not every `.modal:has(form)` -- a view/select/filter modal never
+//     participates; round 4 decides per real modal, when it migrates, whether it's a genuine
+//     data-editing form worth guarding. The removed version intercepted ALL ~100 modals
+//     indiscriminately, which is exactly what made it feel like it was firing everywhere.
+//  2. Dirty = a snapshot taken at `shown.bs.modal` compared against a snapshot taken at the moment of
+//     close (via the SAME snapshotFormState()/isFormDirty() this file already uses for page-body
+//     Cancel buttons), not a "was any change event ever fired" flag -- open then close untouched, or
+//     edit a field then edit it back to its original value, never prompts either way.
+//  3. Refreshed automatically after a successful save (see refreshDirtyGuard() below) -- a save
+//     immediately followed by closing the modal never prompts, since the baseline is already caught
+//     up to what was just saved.
+// `data-dirty-guard` is not used by any real page yet (no view has been migrated to it this round --
+// Round 2 does not touch real page templates, §13); the components.php demo below exercises all 3
+// scenarios directly.
+$(document).on('shown.bs.modal', '.modal[data-dirty-guard]', function () {
+    $(this).data('dirtyGuardBaseline', snapshotFormState($(this)));
+});
+$(document).on('hide.bs.modal', '.modal[data-dirty-guard]', function (e) {
+    const $modal = $(this);
+    // Set by the confirm's own "close without saving" branch right below, immediately before it
+    // re-triggers .hide() on this SAME modal -- without this guard that 2nd .hide() call would just
+    // re-enter this handler and prompt a second time, forever.
+    if ($modal.data('dirtyGuardBypass')) {
+        $modal.removeData('dirtyGuardBypass');
+        return;
+    }
+    if (!isFormDirty($modal, $modal.data('dirtyGuardBaseline'))) return;
+    e.preventDefault();
+    confirmIfDirtyThen($modal, $modal.data('dirtyGuardBaseline'), function () {
+        $modal.data('dirtyGuardBypass', true);
+        const inst = bootstrap.Modal.getInstance($modal[0]);
+        if (inst) inst.hide();
+    }, {
+        title: (langData && langData['confirm_modal_dirty_title']) || 'You have unsaved changes',
+        message: (langData && langData['confirm_discard_changes_message']) || "You have changes that haven't been saved yet. If you continue, they will be lost.",
+        confirmText: (langData && langData['action_close_without_saving']) || 'Close without saving',
+        cancelText: (langData && langData['action_back_to_editing']) || 'Back to editing',
+        danger: true,
+    });
+});
+// Call this right after a successful save (or a resetForm()) on a `data-dirty-guard` modal that
+// STAYS open -- re-captures the baseline against the form's now-current (just-saved) values, so the
+// next close attempt compares against what's actually on the server now, not the state from when the
+// modal first opened. Never needed for a save flow that closes the modal itself immediately
+// afterward, AS LONG AS this is called before that close -- calling `.hide()` first would still see
+// the stale (pre-save) baseline and prompt unnecessarily.
+function refreshDirtyGuard(modalSelectorOrEl) {
+    const $modal = $(modalSelectorOrEl);
+    if (!$modal.length) return;
+    $modal.data('dirtyGuardBaseline', snapshotFormState($modal));
+}
 // 2026-09-02, real bug found and fixed (explicit report: "ใน header กดที่ icon ไหนแล้วมี ui ลงมา ถ้าไปกดตัว
 // อื่นตัวเดิมต้อง hide ไป ตอนนี้ขึ้นซ้อนๆกัน") -- the 4 header flyouts (notification bell, hub/switch-app,
 // language, profile) each only ever toggled THEIR OWN menu, never closing the other 3 -- so opening
@@ -783,6 +848,11 @@ const DT_MARKER_CLASSES = {
     'col-check': { className: 'col-check text-center', orderable: false, searchable: false },
     'col-avatar': { className: 'col-avatar text-center', orderable: false, searchable: false },
     'col-actions': { className: 'col-actions text-end', orderable: false, searchable: false },
+    // Round 2 item (2) -- §7's own row-switch rule: "switch ในแถว = คอลัมน์แรกหรือคอลัมน์ 'ใช้งาน'
+    // กว้างคงที่ กึ่งกลาง ไม่ sort" -- same treatment as .col-check/.col-avatar (fixed width via CSS,
+    // centered, not orderable/searchable), just its own marker name since it's a semantically
+    // different column (an enable/disable toggle, not a row-selection checkbox or a person's photo).
+    'col-toggle': { className: 'col-toggle text-center', orderable: false, searchable: false },
 };
 function dtColumnDefsFromMarkerClasses($table) {
     const defs = [];
@@ -799,9 +869,48 @@ function dtColumnDefsFromMarkerClasses($table) {
         else if (classes.includes('col-check')) matched = DT_MARKER_CLASSES['col-check'];
         else if (classes.includes('col-avatar')) matched = DT_MARKER_CLASSES['col-avatar'];
         else if (classes.includes('col-actions')) matched = DT_MARKER_CLASSES['col-actions'];
+        else if (classes.includes('col-toggle')) matched = DT_MARKER_CLASSES['col-toggle'];
         if (matched) defs.push(Object.assign({ targets: index }, matched));
     });
     return defs;
+}
+// initRowToggles($table, {onChange}) -- Round 2 item (2), docs/design/rules.md §7's shared
+// per-row switch pattern (a DataTable's "ใช้งาน"/enable-disable column -- the pattern
+// setup/tax-statutory.js's/company-profile.js's own per-row active/inactive switches already use,
+// each with its own bespoke wiring today; this is the ONE shared version those migrate onto in
+// round 4, not a parallel mechanism -- §0's own "ซ้ำ=shared" rule). Delegated on `.row-toggle-switch`
+// inside $table (survives DataTables redrawing rows on page/sort/search -- a direct `.on('change',
+// selector, ...)` binding on the element itself would not).
+//
+// `onChange(rowId, checked, $switch)` MUST return a thenable (a `$.ajax()` call already is one) --
+// this helper awaits ONLY to know success/failure, never reads the response body itself (the
+// caller's own `.done()`/`.fail()` on that same promise, if it has one, still runs independently).
+// The switch disables itself the instant it's toggled (no double-clicking while a request is still
+// in flight) and re-enables on success; on failure (rejection OR a synchronous throw inside
+// onChange()) it snaps back to its PRE-click state and re-enables -- a row's on/off state must never
+// silently drift from what the server actually holds just because a request failed.
+function initRowToggles($table, options) {
+    options = options || {};
+    const onChange = options.onChange;
+    $table.off('change.rowToggle').on('change.rowToggle', '.row-toggle-switch', function () {
+        const $switch = $(this);
+        const rowId = $switch.data('id');
+        const checked = $switch.is(':checked');
+        $switch.prop('disabled', true);
+        let result;
+        try {
+            result = onChange ? onChange(rowId, checked, $switch) : null;
+        } catch (e) {
+            $switch.prop('checked', !checked).prop('disabled', false);
+            throw e;
+        }
+        const promise = (result && typeof result.then === 'function') ? result : Promise.resolve(result);
+        promise.then(function () {
+            $switch.prop('disabled', false);
+        }, function () {
+            $switch.prop('checked', !checked).prop('disabled', false);
+        });
+    });
 }
 // 2026-09-12, Round 2 item 3 -- §7's "ส่งออก: dropdown secondary ตัวเดียว (Excel/PDF) ต่อจากช่องค้นหา"
 // injected into the SAME `.dt-search` container the app's existing "Add" button convention already
@@ -910,20 +1019,26 @@ function initSharedDataTable(selector, options) {
     // 2026-09-12, Round 2 item 3 -- §7's "fix คอลัมน์แรก + หัวตาราง + scroll แนวนอน + ลากเลื่อนได้" (the
     // Employee Recheck pattern) and "ครอบหน้าที่ของ initExcelColumnFilters() ให้เอง" (round 0 decision
     // 8) both become opt-in top-level options here -- `options.stickyColumns`/`options.columnFilters`/
-    // `options.export` -- rather than every caller repeating the same drawCallback/initComplete
-    // wiring `reports/annual-summary.js`'s own 4 tables still do by hand today. Composed so a
-    // caller's OWN `dtOptions.drawCallback`/`initComplete` (if present) still runs FIRST, unchanged --
-    // none of the 8 existing callers pass any of these 3 new options, so this composition path is
-    // never even entered for them; their own manually-written drawCallback/initComplete (annual-
-    // summary.js's 4 tables) or complete absence of one (payroll/detail.js's 4 tables) passes through
-    // exactly as before, unaffected.
-    if (options.stickyColumns || options.columnFilters || options.export) {
+    // `options.export` (+ `options.emptyState`, added item 6e, 2026-09-13, §6) -- rather than every
+    // caller repeating the same drawCallback/initComplete wiring `reports/annual-summary.js`'s own 4
+    // tables still do by hand today. Composed so a caller's OWN `dtOptions.drawCallback`/`initComplete`
+    // (if present) still runs FIRST, unchanged -- none of the existing real callers pass any of these
+    // options, so this composition path is never even entered for them; their own manually-written
+    // drawCallback/initComplete (annual-summary.js's 4 tables) or complete absence of one
+    // (payroll/detail.js's 4 tables) passes through exactly as before, unaffected.
+    if (options.stickyColumns || options.columnFilters || options.export || options.emptyState) {
         const userDrawCallback = dtOptions.drawCallback;
         const userInitComplete = dtOptions.initComplete;
-        if (options.stickyColumns) {
+        // 2026-09-13, Round 2 item 6e -- `options.emptyState` needs the SAME every-draw hook
+        // stickyColumns already uses (not just initComplete, which only fires once) since whether the
+        // table is empty -- and why -- can change on any redraw (typing in the search box, applying a
+        // column filter, changing page), not just at load. See dtRenderEmptyState()'s own docblock for
+        // the recordsTotal/recordsDisplay distinction it renders around.
+        if (options.stickyColumns || options.emptyState) {
             dtOptions.drawCallback = function () {
                 if (typeof userDrawCallback === 'function') userDrawCallback.apply(this, arguments);
-                initStickyColumns(selector, options.stickyColumns);
+                if (options.stickyColumns) initStickyColumns(selector, options.stickyColumns);
+                if (options.emptyState) dtRenderEmptyState(this.api(), options.emptyState);
             };
         }
         dtOptions.initComplete = function () {
@@ -960,49 +1075,44 @@ function initSharedDataTable(selector, options) {
     }
     return $table.DataTable(dtOptions);
 }
-// 2026-09-12, Phase Design Round 2 item 4 (docs/design/rules.md §6), revised same round after
-// explicit feedback -- pairs with app/views/partials/filter-bar.php. Reads every real <select>
+// 2026-09-12, Phase Design Round 2 item 4 (docs/design/rules.md §6), revised twice since (see this
+// function's own git history for the single-toolbar-row shape this superseded) -- pairs with
+// app/views/partials/filter-bar.php's 3-part header/body/footer panel. Reads every real <select>
 // inside that partial's own `.filter-bar-body` (select2-enhanced or plain -- select2 is just a UI
 // layer on the same underlying <select>, .val()/change events work identically either way, no
 // special-casing needed) -- NOT a dedicated `.filter-bar-fields` marker div, which the first version
 // of this function required; the partial itself no longer wraps the caller's fields in any class of
-// its own at all (decided this round: "ให้ partial ครอบเป็นแค่ wrapper"), so this function scopes
-// directly to `.filter-bar-body` instead. Derives everything else (the "(N)" count, the Clear
-// button's visibility, one removable chip per active filter, and now also the expanded/collapsed
-// state) purely from CURRENT values/localStorage -- this function owns no filter state of its own
-// beyond that expand/collapse preference, it only reflects what the <select>s already say.
+// its own at all (decided in an earlier round: "ให้ partial ครอบเป็นแค่ wrapper"), so this function
+// scopes directly to `.filter-bar-body` instead. Derives everything else (the header's "(N)" count,
+// the footer's Clear-button visibility, one removable chip per active filter, the footer's own
+// "ไม่ได้กรอง" empty text, and the expanded/collapsed state) purely from CURRENT values/localStorage --
+// this function owns no filter state of its own beyond that expand/collapse preference, it only
+// reflects what the <select>s already say.
 // "Active" = a value that is neither '' nor 'all' -- this app's own 2 established "no filter"
 // sentinel values (confirmed against the existing .station-filter convention this partial replaces).
 // options.onChange() fires once per actual value change (including a chip's own remove button, or
-// the bar-level Clear button even when it resets several selects in one click -- see the debounced
+// the footer's Clear button even when it resets several selects in one click -- see the debounced
 // scheduleNotify() below for why that specific case needed one) -- the caller's own reload/filter
 // logic is never this function's concern.
+//
+// 2026-09-13, follow-up revision -- the earlier `options.toolbarTarget` (relocating the toggle/count/
+// clear/chips row into e.g. a Status Tabs row) is REMOVED entirely this round ("ยกเลิก option
+// toolbarTarget ไม่ต้องยัดปุ่มเข้าแถว status-tabs แล้ว") -- the panel now always renders in normal
+// document flow (header, then the collapsible body, then the always-visible footer) wherever the
+// partial was included; a page with its own Status Tabs pipeline (e.g. Payroll Process) simply
+// places this partial right after it in markup order instead. `$bar.find('.filter-bar-toolbar')`/
+// `.filter-bar--toolbar-relocated` no longer exist anywhere in this function or in style.css.
 function initFilterBar(bar, options) {
     options = options || {};
     const $bar = $(bar);
     if (!$bar.length) return;
     const $fields = $bar.find('.filter-bar-body');
+    const $countWrap = $bar.find('.filter-bar-count-wrap');
     const $count = $bar.find('.filter-bar-count');
     const $clearBtn = $bar.find('.filter-bar-clear');
     const $chips = $bar.find('.filter-bar-chips');
+    const $emptyText = $bar.find('.filter-bar-empty-text');
     const $toggleBtn = $bar.find('.filter-bar-toggle');
-    // 2026-09-13, follow-up: `options.toolbarTarget` (a selector) RELOCATES the whole
-    // `.filter-bar-toolbar` row (toggle button + count + clear + chips) into an existing container
-    // elsewhere on the page -- e.g. the status-tabs row, so "ตัวกรอง (N)"/chips/"ล้าง" sit flush right
-    // of the pipeline instead of in their own row. This MOVES the real DOM node (`.appendTo()`, not a
-    // clone) -- every jQuery reference captured above (`$count`/`$clearBtn`/`$chips`/`$toggleBtn`)
-    // still points at the same live elements afterward, wherever they end up living in the DOM, so
-    // nothing below needs to change to account for this. `.filter-bar--toolbar-relocated` lets
-    // style.css hide the now-toolbar-less `.filter-bar` box's own background/border while collapsed
-    // (it would otherwise render as an empty bordered sliver under the status-tabs row) without
-    // touching the DEFAULT (non-relocated) look at all.
-    if (options.toolbarTarget) {
-        const $toolbarTarget = $(options.toolbarTarget);
-        if ($toolbarTarget.length) {
-            $bar.find('.filter-bar-toolbar').appendTo($toolbarTarget);
-            $bar.addClass('filter-bar--toolbar-relocated');
-        }
-    }
     // 2026-09-12, Round 2 item 4 revision -- expand/collapse persistence (§6 decision 4). Uses the
     // SAME plain CSS-class collapse mechanism the OLD `.station-filter` already used
     // (`.collapsed` + a max-height transition in style.css) rather than Bootstrap's own `.collapse`
@@ -1021,6 +1131,10 @@ function initFilterBar(bar, options) {
         else if (saved === 'collapsed') $bar.addClass('collapsed');
         // saved === null (never toggled before) -- leave the partial's own static default alone.
     }
+    // 2026-09-13: the toggle is now a single `.btn-icon` circle (§7's row-action spec, reused here
+    // per explicit instruction -- "ปุ่ม .btn-icon วงกลมเดียวกับ row action") whose chevron rotates via
+    // a plain CSS rule keyed off `.filter-bar:not(.collapsed) .filter-bar-toggle i` -- no JS needed
+    // to flip the icon itself, only the `.collapsed` class toggle below.
     $toggleBtn.on('click', function () {
         $bar.toggleClass('collapsed');
         if (storageKey) {
@@ -1041,15 +1155,27 @@ function initFilterBar(bar, options) {
         // scheduleNotify()) -- resetSelect() itself never calls either directly.
         $select.val($firstOption.length ? $firstOption.val() : '').trigger('change');
     }
+    // 2026-09-13: chip text widened from value-only to "label: ค่า" -- the field's own <label> (a
+    // SIBLING of the <select>, per this partial's own docblock convention every existing
+    // `.station-filter-body` field already follows) gives the chip context on its own, without
+    // requiring a glance back at which column it came from.
+    function fieldLabelFor($select) {
+        return (($select.siblings('label').first().text() || '').trim());
+    }
     function refresh() {
         const $active = $fields.find('select').filter(function () { return isActive($(this)); });
-        $count.text($active.length);
-        $clearBtn.toggleClass('d-none', $active.length === 0);
-        $chips.empty().toggleClass('d-none', $active.length === 0);
+        const n = $active.length;
+        $count.text(n);
+        $countWrap.toggleClass('d-none', n === 0);
+        $clearBtn.toggleClass('d-none', n === 0);
+        $emptyText.toggleClass('d-none', n > 0);
+        $chips.empty();
         $active.each(function () {
             const $select = $(this);
-            const label = (($select.find('option:selected').text() || '').trim()) || String($select.val());
-            const $chip = $(`<span class="filter-bar-chip">${escapeHtml(label)}<button type="button" class="filter-bar-chip-remove" aria-label="Remove filter"><i class="fa-solid fa-xmark"></i></button></span>`);
+            const fieldLabel = fieldLabelFor($select);
+            const valueLabel = (($select.find('option:selected').text() || '').trim()) || String($select.val());
+            const chipText = fieldLabel ? (fieldLabel + ': ' + valueLabel) : valueLabel;
+            const $chip = $(`<span class="filter-bar-chip">${escapeHtml(chipText)}<button type="button" class="filter-bar-chip-remove" aria-label="Remove filter"><i class="fa-solid fa-xmark"></i></button></span>`);
             $chip.find('.filter-bar-chip-remove').on('click', function () { resetSelect($select); });
             $chips.append($chip);
         });
@@ -1239,6 +1365,178 @@ function renderStatusStepper(steps, current) {
     });
     html += '</ul>';
     return html;
+}
+// Timeline (§6, Round 2 item (3)/6b) -- JS twin of app/views/partials/timeline.php, same 2 plain
+// arguments. A vertical, arbitrary-length activity feed (audit log/approval history) the CALLER has
+// already sorted newest-first -- this function never sorts/dedupes/groups beyond the literal
+// `groupByDay` option below. NOT the payroll run's own 5-station spine (that's
+// status-stepper.php/renderStatusStepper() above, a fixed small N of named milestones) -- a
+// combined "stepper on top, timeline below" is exactly how the real Approval Timeline modal
+// (payroll/detail.js's renderApprovalTimelineBody()) could look once migrated in round 4; this
+// function does not touch that real modal's code at all, only demoed side-by-side in
+// components.php.
+//
+// item = { time (a date/datetime string parseable by `new Date()`), actor?: {name, avatar},
+//   title, detail? (1 line), badge?: {enum, context}, tone?: 'neutral'|'warning'|'danger'|'success'
+//   (default 'neutral' -- dot color only) }. `time` renders as HH:MM (not date+day -- §6's own
+// spec is literally "เวลา", the date is what the optional day-header groups by instead).
+function timelineTimeOfDay(value) {
+    const d = new Date(String(value).replace(' ', 'T'));
+    if (isNaN(d.getTime())) return escapeHtml(String(value));
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function timelineDayLabel(value) {
+    const d = new Date(String(value).replace(' ', 'T'));
+    if (isNaN(d.getTime())) return String(value);
+    return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+}
+function renderTimeline(items, options) {
+    options = options || {};
+    const groupByDay = !!options.groupByDay;
+    let html = '<ul class="timeline">';
+    let lastDayLabel = null;
+    (items || []).forEach(function (item) {
+        if (groupByDay) {
+            const dayLabel = timelineDayLabel(item.time);
+            if (dayLabel !== lastDayLabel) {
+                html += `<li class="timeline-day-header">${escapeHtml(dayLabel)}</li>`;
+                lastDayLabel = dayLabel;
+            }
+        }
+        const tone = item.tone || 'neutral';
+        const actorHtml = item.actor
+            ? apvAvatarHtml(item.actor.name, 24, item.actor.avatar) + `<span>${escapeHtml(item.actor.name || '')}</span>`
+            : '';
+        const badgeHtml = item.badge ? `<div class="mt-1">${statusBadgeHtml(item.badge.enum, item.badge.context)}</div>` : '';
+        const detailHtml = item.detail ? `<div class="timeline-detail">${escapeHtml(item.detail)}</div>` : '';
+        html += `<li class="timeline-item">
+            <span class="timeline-dot timeline-dot-${tone}"></span>
+            <div class="timeline-head">
+                <span class="timeline-actor">${actorHtml}</span>
+                <span class="timeline-time">${timelineTimeOfDay(item.time)}</span>
+            </div>
+            <div class="timeline-title">${escapeHtml(item.title)}</div>
+            ${detailHtml}
+            ${badgeHtml}
+        </li>`;
+    });
+    html += '</ul>';
+    return html;
+}
+// Notification bell dropdown (§6, Round 2 item 6d) -- UI ONLY this round, no backend wiring, no
+// polling (see rules.md §6's own "Notification" section for the 3 real, deliberate differences from
+// the ALREADY-SHIPPED, backend-connected version of this in public/js/notifications.js -- that file
+// is untouched by this round). Both functions follow the same "return a string / let the caller
+// .html() it, own no target selector" convention renderTimeline()/renderStatusStepper() above already
+// use -- neither owns the bell's own markup (button/dropdown shell), only the pieces that change:
+// the list's inner content and the badge's own text/visibility.
+const NOTIF_TONE_ICON = {
+    success: 'fa-check',
+    danger: 'fa-xmark',
+    warning: 'fa-triangle-exclamation',
+    neutral: 'fa-bell',
+};
+function renderNotifications(items) {
+    if (!items || !items.length) {
+        // Resolved via getLangValue() directly, NOT a `data-i18n` attribute for a later DOM sweep to
+        // pick up -- this HTML is inserted by the CALLER well after applyLanguage()'s own one-time
+        // sweep already ran (real bug found and fixed 2026-09-13: a `data-i18n` marker on
+        // JS-generated content that gets inserted AFTER that sweep never gets translated, it just
+        // shows whatever static fallback text was hardcoded here regardless of language -- the exact
+        // same fix already applied to dtRenderEmptyState()'s own filtered-empty text below).
+        return `<div class="notif-empty">${escapeHtml(getLangValue('notif_empty') || 'ยังไม่มีการแจ้งเตือน')}</div>`;
+    }
+    let html = '';
+    items.forEach(function (item) {
+        const tone = item.tone || 'neutral';
+        const icon = NOTIF_TONE_ICON[tone] || NOTIF_TONE_ICON.neutral;
+        const unreadCls = item.unread ? ' notif-item-unread' : '';
+        const detailHtml = item.detail ? `<span class="notif-item-detail">${escapeHtml(item.detail)}</span>` : '';
+        html += `<a href="${escapeHtml(item.link || '#')}" class="notif-item${unreadCls}">
+            <span class="notif-item-dot"></span>
+            <span class="notif-item-icon"><i class="fa-solid ${icon}"></i></span>
+            <span class="notif-item-body">
+                <span class="notif-item-title">${escapeHtml(item.title || '')}</span>
+                ${detailHtml}
+                <span class="notif-item-time">${escapeHtml(item.time || '')}</span>
+            </span>
+        </a>`;
+    });
+    return html;
+}
+// `el` is the badge element itself (a selector/jQuery/DOM node), not the bell button around it --
+// deliberately not hardcoded to one id (e.g. a future real #notifBadge) so this same function serves
+// both the components.php demo's own scoped id and, come round 4, the real header.php badge, without
+// forking a copy for either. Mirrors notifications.js's own real notifUpdateBadge() 1:1 in shape
+// EXCEPT the overflow text -- that real function shows "99+", this one shows ">99" per this round's
+// own spec (see rules.md §6 for why the two aren't reconciled to match this round).
+function setNotificationCount(el, n) {
+    const $badge = $(el);
+    const count = Number(n) || 0;
+    if (count > 0) {
+        $badge.text(count > 99 ? '>99' : count).removeClass('d-none');
+    } else {
+        $badge.addClass('d-none');
+    }
+}
+// Empty state (§6, Round 2 item 6e) -- JS twin of app/views/partials/empty-state.php, same shape,
+// same markup (see that file's own docblock for the 2 meanings that must not share copy, and why
+// only initSharedDataTable()'s own `emptyState` option auto-picks between them). `action.onClick` is
+// the ONE thing this JS version accepts that the PHP partial can't (a real function) -- needed
+// because a caller that re-renders this block repeatedly (a DataTable redraw replaces the whole DOM
+// node every time via .html()) would otherwise have its externally-bound `$('#id').on('click', ...)`
+// handler silently stop working after the very first redraw, since that DOM node no longer exists.
+// `action.id` still works too (for a one-off render that's never rewritten, or just as a CSS/test
+// hook) -- both can be set together, neither is required.
+function emptyStateHtml(config) {
+    config = config || {};
+    const icon = config.icon || 'fa-solid fa-inbox';
+    const action = config.action;
+    const variant = action && ['primary', 'secondary', 'tertiary'].indexOf(action.variant) !== -1 ? action.variant : 'secondary';
+    const btnClass = variant === 'tertiary' ? 'btn btn-link' : (variant === 'primary' ? 'btn btn-primary' : 'btn btn-outline-secondary');
+    const actionHtml = action
+        ? `<button type="button" class="${btnClass} empty-state-action" id="${escapeHtml(action.id || '')}">${escapeHtml(action.label || '')}</button>`
+        : '';
+    return `<div class="empty-state">
+        <i class="empty-state-icon ${escapeHtml(icon)}" aria-hidden="true"></i>
+        <div class="empty-state-title">${escapeHtml(config.title || '')}</div>
+        <div class="empty-state-text">${escapeHtml(config.text || '')}</div>
+        ${actionHtml}
+    </div>`;
+}
+// initSharedDataTable()'s own `emptyState` option (see that function's own comment on the
+// stickyColumns/columnFilters/export composition block, which this hooks into the same way) --
+// distinguishes "genuinely no data" from "filtered/searched to zero real rows" using DataTables' OWN
+// page.info(): `recordsTotal` is the full dataset size regardless of table mode (client-side: every
+// loaded row; server-side: the server's own unfiltered COUNT(*)), `recordsDisplay` is what's left
+// after DataTables' global search() OR any $.fn.dataTable.ext.search predicate (initExcelColumnFilters()'s
+// own client mode pushes exactly that) -- and for server mode, whatever the backend's own
+// recordsFiltered already said. Both filtering mechanisms land in the same 2 numbers, so this needed
+// no new cross-module API into table-column-filter.js to detect correctly either way. Runs on every
+// draw (search/filter/page change), not just init, since whether the table is empty -- and WHY -- can
+// change on any of those.
+function dtRenderEmptyState(dt, emptyState) {
+    const info = dt.page.info();
+    if (info.recordsDisplay !== 0) return;
+    const $tbody = $(dt.table().node()).find('tbody');
+    const colCount = dt.columns(':visible').count() || 1;
+    const filtered = info.recordsTotal > 0;
+    // "ไม่พบตามที่กรอง" reuses this app's OWN existing DataTables-language string (`zeroRecords`,
+    // already shown for exactly this situation everywhere else) as the title instead of forking a new
+    // key with near-identical meaning -- only the supporting "text" line (empty_state_filtered_text)
+    // and the auto "ล้างตัวกรอง" action (reusing `clear_filter`, same key filter-bar.php's own Clear
+    // button uses) are new.
+    const config = filtered ? {
+        icon: 'fa-solid fa-filter-circle-xmark',
+        title: getLangValue('zeroRecords') || 'ไม่พบข้อมูลที่ตรงกัน',
+        text: getLangValue('empty_state_filtered_text') || 'ลองเปลี่ยนคำค้นหาหรือตัวกรอง',
+        action: { label: getLangValue('clear_filter') || 'ล้างตัวกรอง', variant: 'tertiary', onClick: function () { dt.search('').draw(); } },
+    } : emptyState;
+    if (!config) return;
+    $tbody.html(`<tr class="dt-empty-row"><td class="dt-empty-cell" colspan="${colCount}">${emptyStateHtml(config)}</td></tr>`);
+    if (config.action && typeof config.action.onClick === 'function') {
+        $tbody.find('.empty-state-action').on('click', config.action.onClick);
+    }
 }
 // Money input (§8, Round 2 item 7a) -- `<input class="money-input">` + initMoneyInputs($scope),
 // auto-wired below both from $(document).ready() (every field already on the page at load) and from
@@ -1676,7 +1974,8 @@ async function loadLang(lang) {
         if (info) {
             $('.text-current-lang').text(info.label);
             $('.current-flag').attr('src', `${BASE_URL}/public/flags/${info.flag}.png`);
-        } 
+        }
+        updateModalLangTextSwitchState(); // every open modal's own TH|EN text switch, not id-based
         console.log(`[i18n] โหลดภาษาสำเร็จ: ${lang.toUpperCase()}`);
     } catch (e) {
         console.error("Error loading language file:", e);
@@ -1898,24 +2197,41 @@ function buildLanguageMenu($scope) {
 //
 // 2026-08-30, same-day follow-up (explicit request: "Design การเปลี่ยนภาษาใน modal ให้เป็น design เดียวกับ
 // header และถ้าเลือกเปลี่ยนแล้วให้ผูกไปถึง header และการแปลในหน้าหลักด้วย") -- was a simplified single-click
-// toggle button (swap directly to the other language, no menu); now the EXACT same
-// .nav-lang-dropdown/.nav-lang-btn/.nav-lang-menu markup the header's own switcher uses, injected
-// fresh per modal. Every instance shares the SAME .dropdown-lang-item click handler (already
-// delegated, see above) that already calls the one global changeLanguage() -- which was already
-// reaching every open element via loadLang()'s own `$('.text-current-lang')`/`$('.current-flag')`
-// class-based updates (not id-based), so "changing in the modal also updates the header and the
-// page behind it" was already true the moment this reused those same classes -- no extra binding
-// needed for that half of the request, only the visual redesign to match.
+// toggle button (swap directly to the other language, no menu); then (same day) became the EXACT same
+// .nav-lang-dropdown/.nav-lang-btn/.nav-lang-menu markup + flag icon the header's own switcher uses.
+//
+// 2026-09-13, Round 2 items 6c/7b follow-up (explicit report: docs/design/rules.md §1/§9 already say
+// modal headers carry no flag/icon at all -- this flag was found sitting in every modal's own header
+// via this exact mechanism during the item 6c demo review) -- REDESIGNED, not removed: the underlying
+// need this whole mechanism exists for (2026-08-30's own bug -- a modal's backdrop makes the page
+// header's own language switcher physically unclickable, so a language control has to live INSIDE
+// the modal) is still real, confirmed directly with the user before touching this. What changed is
+// the VISUAL only: a plain text "TH | EN" switch (current language --c-text bold, the other
+// --c-text-muted, click the muted one to switch) instead of a flag-icon dropdown -- no image asset,
+// no menu, `--fs-xs` per §1's icon-free/text-based convention. Positioned AFTER `.modal-title`
+// (previously prepended before it, at the header's far left) so it now reads as "title, then the
+// language switch, then ×" per the explicit new instruction -- `.btn-close`'s own `margin-left:auto`
+// (Bootstrap's default) still pins × to the far right regardless of what sits between title and it,
+// so no extra positioning CSS is needed for that part.
+// Clicking either letter calls the SAME global changeLanguage() every other language control in this
+// app already calls -- reaching the header and the page behind the modal for free, via the exact
+// same `$('.text-current-lang')`/`$('.current-flag')`-style class-based update loadLang() already
+// does (widened below to also refresh `.modal-lang-text-btn`'s active state).
 function modalLangDropdownHtml() {
-    const info = langInfo[currentLang] || langInfo.en;
-    return `<div class="nav-lang-dropdown modal-lang-dropdown">
-        <button class="nav-lang-btn" type="button" title="${(langData && langData['switch_language']) || 'Switch language'}">
-            <img class="current-flag" src="${BASE_URL}/public/flags/${info.flag}.png" width="15" alt="">
-            <span class="lang-text text-current-lang">${info.label}</span>
-        </button>
-        <ul class="nav-lang-menu"></ul>
-    </div>`;
+    return `<span class="modal-lang-text-switch">
+        <button type="button" class="modal-lang-text-btn" data-lang="th">TH</button><span class="modal-lang-text-sep">|</span><button type="button" class="modal-lang-text-btn" data-lang="en">EN</button>
+    </span>`;
 }
+function updateModalLangTextSwitchState($scope) {
+    const $root = $scope ? $($scope) : $(document);
+    $root.find('.modal-lang-text-btn').each(function () {
+        $(this).toggleClass('modal-lang-text-active', $(this).data('lang') === currentLang);
+    });
+}
+$(document).on('click', '.modal-lang-text-btn', function () {
+    const lang = $(this).data('lang');
+    if (lang && lang !== currentLang) changeLanguage(lang);
+});
 // 2026-09-10, real bug fix (explicit report: modal แบบฟอร์มทุกตัว (เช่น เงินได้/#eedModal,
 // สร้างรอบ/#payrollRunModal) render footer 2 ชั้นซ้อนกัน) -- root cause was THIS handler's own
 // footer-detection selector, `.find('> .modal-footer')` (direct-child of .modal-content only).
@@ -1974,9 +2290,19 @@ $(document).on('show.bs.modal', '.modal', function () {
     if (!$header.length) {
         $header = $('<div class="modal-header"></div>').prependTo($content);
     }
-    if (!$header.find('.modal-lang-dropdown').length) {
-        const $dropdown = $(modalLangDropdownHtml()).prependTo($header);
-        buildLanguageMenu($dropdown);
+    if (!$header.find('.modal-lang-text-switch').length) {
+        const $langSwitch = $(modalLangDropdownHtml());
+        // "วางขวาของชื่อ modal ก่อนปุ่ม ×" -- right after .modal-title, not prepended to the whole
+        // header anymore (that used to put it at the far LEFT, before the title). Falls back to
+        // prepending only if a modal genuinely has no .modal-title element at all (rare/malformed),
+        // so this never silently fails to inject.
+        const $title = $header.find('.modal-title').first();
+        if ($title.length) {
+            $langSwitch.insertAfter($title);
+        } else {
+            $langSwitch.prependTo($header);
+        }
+        updateModalLangTextSwitchState($langSwitch);
     }
 
     const $existingFooter = $content.find('.modal-footer').first();
@@ -2276,19 +2602,37 @@ function renderEmployeeQuickViewModal(emp) {
 // department, position. Field names match renderEmployeeQuickViewModal() just above (same
 // name_th/surname_th/.../profile_photo_path/department_name_th/en/position_name_th/en convention)
 // so a caller can pass a PayrollRunModel::getDetails() row straight through with no reshaping.
-// Markup/class only for now, no styling pass -- explicit instruction ("ยังไม่จัดสไตล์การ์ด" -- design
-// phase comes later): ONE class, `.emp-header-card`, on the outer wrapper only.
+// Markup/class only originally, no styling pass -- that comment explicitly said "design phase comes
+// later" (ยังไม่จัดสไตล์การ์ด).
+//
+// 2026-09-13, Round 2 item 6c -- THAT deferred design pass, done here: GENERALIZED this existing
+// function in place (same name, same signature, same 6 real call sites in payroll/detail.js keep
+// working completely unchanged and just render with the new styling automatically -- not renamed,
+// not duplicated, per explicit instruction). 2 real content changes: avatar 48px -> 40px (this
+// round's own decided size), and a 2nd line split off (name+code stays line 1, department/position
+// moves to its own line 2) to make room for a new status-badge slot on the right --
+// `emp.employee_status` is genuinely OPTIONAL here (none of the 6 existing real call sites'
+// underlying queries were audited/changed to guarantee they populate it -- real-page/backend work,
+// out of scope this round) -- the badge is only rendered `if (emp.employee_status)`, so a caller
+// missing that field renders exactly the same as before (no badge slot at all), never a broken
+// "undefined" badge. PHP twin: app/views/partials/emp-header-card.php (new, not previously
+// PHP-reachable at all -- this function was JS-only before).
 function employeeHeaderCardHtml(employee) {
     const emp = employee || {};
     const name = (currentLang === 'th' ? `${emp.name_th || ''} ${emp.surname_th || ''}` : `${emp.name_en || emp.name_th || ''} ${emp.surname_en || emp.surname_th || ''}`).trim() || '-';
     const department = (currentLang === 'th' ? emp.department_name_th : emp.department_name_en) || emp.department_name_th || emp.department_name_en || '-';
     const position = (currentLang === 'th' ? emp.position_name_th : emp.position_name_en) || emp.position_name_th || emp.position_name_en || '-';
+    const badgeHtml = emp.employee_status ? statusBadgeHtml(emp.employee_status, 'employee_status') : '';
     return `<div class="emp-header-card">
-        ${apvAvatarHtml(name, 48, emp.profile_photo_path, emp.employee_id ? { employeeId: emp.employee_id } : null)}
-        <div>
-            <div>${escapeHtml(name)}</div>
-            <div>${escapeHtml(emp.employee_no || '-')} &middot; ${escapeHtml(department)} &middot; ${escapeHtml(position)}</div>
+        ${apvAvatarHtml(name, 40, emp.profile_photo_path, emp.employee_id ? { employeeId: emp.employee_id } : null)}
+        <div class="emp-header-card-body">
+            <div class="emp-header-card-line1">
+                <span class="emp-header-card-name">${escapeHtml(name)}</span>
+                <span class="emp-header-card-code">${escapeHtml(emp.employee_no || '-')}</span>
+            </div>
+            <div class="emp-header-card-line2">${escapeHtml(department)} &middot; ${escapeHtml(position)}</div>
         </div>
+        ${badgeHtml ? `<div class="emp-header-card-badge">${badgeHtml}</div>` : ''}
     </div>`;
 }
 // 2026-09-11, Batch 3C item 3, explicit instruction: "ห้าม trigger row click ไปหน้า Detail
