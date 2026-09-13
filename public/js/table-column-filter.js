@@ -426,13 +426,21 @@
             // change needed in updateText() itself for this -- the sweep's own per-element logic was
             // already correct for a genuine leaf element, the bug was purely that the wrong element
             // (the `<th>`, not its label span) carried the marker after this function's own rebuild.
-            // Audited every current initSharedDataTable() caller that also passes `columnFilters`
-            // (the only ones actually exposed to this -- `data-i18n` on a `<th>` this function never
-            // touches is harmless): confirmed via grep only payroll/detail.js does today (4 columns,
-            // Department/Payment Method/Calculation/Verify-Lock) -- this fix is centralized in this one
-            // function, so it also protects every FUTURE `columnFilters` caller with no per-page change
-            // needed.
-            const titleI18nKey = $th.attr('data-i18n');
+            // 2026-09-14, Round 3 "เก็บตกรอบ 7" follow-up, real gap found in the fix above: it only ever
+            // read `$th.attr('data-i18n')` -- correct for the 4 payroll/detail.js columns THIS function
+            // had already audited (their markup put `data-i18n` directly on the `<th>`), but that markup
+            // pattern was itself found to be the wrong app-wide convention the same day (see detail.php's
+            // own 2026-09-14 docblock on its `<thead>`): DataTables' OWN header-construction routine
+            // (`node_modules/datatables.net/js/dataTables.js`) ALWAYS moves a header cell's existing
+            // children into a fresh `.dt-column-title` wrapper it builds, for every `<th>`, whether this
+            // function ever touches that column or not -- so the app-wide convention going forward is
+            // `data-i18n` on a plain inner `<span>`, never the `<th>` itself. `$th.attr('data-i18n')`
+            // alone would now find nothing on any column using the corrected markup, silently dropping
+            // the `data-i18n` marker the moment this function rebuilds the cell. Falls back to the first
+            // descendant `[data-i18n]` element when the `<th>` itself doesn't carry one, so both markup
+            // shapes keep working -- the still-current `<th data-i18n="...">` pattern (any other caller
+            // that hasn't been migrated yet) and the corrected `<th><span data-i18n="...">` pattern.
+            const titleI18nKey = $th.attr('data-i18n') || $th.find('[data-i18n]').first().attr('data-i18n');
             $th.removeAttr('data-i18n');
             const $right = $('<span class="tcf-header-right"></span>');
             if (columnSortable) {

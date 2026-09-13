@@ -5174,26 +5174,27 @@ function refreshPayrollDetailLanguage() {
     if (currentRun) {
         renderRunHeaderText(currentRun);
     }
-    // Defensive re-sync of #tb_run_detail's own column headers: these ARE plain `data-i18n` `<th>`
-    // elements that app.js's generic sweep should already re-translate on its own, and an extensive
-    // grep-based audit (see the same docblock above) found no bug in either the markup or the lang
-    // keys for them specifically -- but since this exact symptom (headers reverting after a language
-    // switch) was already found and fixed once elsewhere in this app for a DIFFERENT root cause
-    // (initExcelColumnFilters() leaving `data-i18n` on the wrong node, see table-column-filter.js's own
-    // 2026-09-13 fix), this stays in as a guaranteed-correct backstop regardless of whether some other,
-    // not-yet-identified mechanism is also touching this table's headers.
-    $('#tb_run_detail thead th[data-i18n]').each(function () {
-        const key = $(this).attr('data-i18n');
-        const value = getLangValue(key);
-        if (value !== undefined) {
-            const $titleSpan = $(this).find('.tcf-header-title');
-            if ($titleSpan.length) {
-                $titleSpan.text(value);
-            } else if ($(this).children().length === 0) {
-                $(this).text(value);
-            }
-        }
-    });
+    // 2026-09-14, Round 3 "เก็บตกรอบ 7" -- the "defensive re-sync" this block used to contain (added
+    // 2026-09-14 "เก็บตกรอบ 6", while the real bug below was still unsolved) is REMOVED: it only ever
+    // handled 2 shapes -- a `.tcf-header-title` span (the 4 tcf-managed columns), or a `<th>` with
+    // ZERO children -- and every one of the 6 still-broken columns (Employee Code/Name/Base Salary/
+    // Gross/Deductions/Net Pay) actually had ONE child by the time this ran (DataTables' own
+    // `.dt-column-header`/`.dt-column-title` wrapper, built at construction for every `<th>`, no
+    // exceptions -- confirmed directly from `node_modules/datatables.net/js/dataTables.js`, not
+    // guessed), so this backstop's own `else if` branch silently did nothing for exactly the columns
+    // it existed to fix. REAL root cause + fix is in detail.php's own `<thead>` docblock (`data-i18n`
+    // now lives on a plain inner `<span>` in every column here, never the `<th>` itself, so app.js's
+    // generic `updateText()` sweep -- `$(root).find('[data-i18n]')`, which finds a marker at ANY
+    // nesting depth -- updates it correctly no matter how DataTables wraps it) and
+    // table-column-filter.js's own initExcelColumnFilters() (now also looks for `data-i18n` on a
+    // descendant, not just the `<th>` attribute, so the 4 tcf-managed columns keep working under the
+    // same corrected markup). Nothing page-specific is needed to re-sync header TEXT anymore.
+    // `columns.adjust()` is the one thing that genuinely still belongs here: header label width can
+    // change between th/en (different string lengths), and DataTables only recalculates column widths
+    // on an explicit `.adjust()` call, not automatically when a header's text content changes underneath
+    // it -- without this, switching language could leave columns visibly misaligned until the next
+    // resize/redraw for an unrelated reason.
+    if (tb_run_detail) tb_run_detail.columns.adjust();
 }
 // 2026-09-13, §1 follow-up: activateTabFromHash() itself moved to app.js (shared with employee/list.js
 // and employee/detail.js's own near-identical versions -- see that function's own docblock) -- the

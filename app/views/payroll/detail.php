@@ -569,22 +569,58 @@
                              own DT_MARKER_CLASSES auto-derives this column's `columnDefs` (fixed-width,
                              centered, not orderable/searchable) from this class alone. -->
                         <th class="col-check"><input type="checkbox" class="form-check-input" id="runDetailSelectAll"></th>
-                        <!-- 2026-09-02, explicit request: "ตารางพนักงาน แยก code และชื่อคนละ Column Code
+                        <!-- 2026-09-14, Round 3 "เก็บตกรอบ 7", REAL root cause found and fixed (explicit
+                             report: Employee Code/Name/Base Salary/Gross/Deductions/Net Pay stayed Thai
+                             on th->en, while Department/Payment Method/Calculation/Verify-Lock -- the 4
+                             columns table-column-filter.js's own initExcelColumnFilters() rebuilds --
+                             translated fine). Confirmed directly from the installed DataTables source
+                             (node_modules/datatables.net/js/dataTables.js, the header-detection routine
+                             every `<th>` passes through at construction): it ALWAYS moves a header
+                             cell's existing child nodes into a fresh `<span class="dt-column-title">`
+                             wrapper (`.append(cell.childNodes)`), for every column, sortable or not --
+                             not just the 4 that initExcelColumnFilters() also happens to touch. A plain
+                             `<th data-i18n="key">Label</th>` therefore ends up as `<th data-i18n="key">
+                             <div class="dt-column-header"><span class="dt-column-title">Label</span>...
+                             </div></th>` after DataTables runs -- the `<th>` now has a child ELEMENT, so
+                             app.js's own updateText() sweep (its own documented child-guard, added
+                             2026-09-13 for a different but related bug) correctly refuses to `.text()`
+                             it (that would destroy the wrapper DataTables just built) and just warns
+                             instead, while `data-i18n` is left stranded on the outer `<th>`, nowhere
+                             near the actual visible text node 2 levels deeper. The 4 tcf-managed columns
+                             only ever looked fine because initExcelColumnFilters() empties and fully
+                             rebuilds the `<th>` itself, incidentally moving `data-i18n` onto a genuine
+                             leaf span of its own in the process -- not because this table's markup
+                             pattern was actually correct. Fixed at the true source, for EVERY column
+                             here uniformly (not just the 4): `data-i18n` now lives on a plain inner
+                             `<span>`, never the `<th>` itself. DataTables' own wrapping still moves that
+                             span deeper (into `.dt-column-title`), but the span is still a genuine leaf
+                             wherever it ends up, so updateText()'s plain `$(root).find('[data-i18n]')`
+                             sweep (which searches descendants, not just direct attributes) finds and
+                             updates it correctly regardless of nesting depth. table-column-filter.js's
+                             own initExcelColumnFilters() updated to match (looks for `data-i18n` on a
+                             descendant now, not just the `<th>` attribute, so Department/Payment Method/
+                             Calculation/Verify-Lock keep translating too) -- see that file's own
+                             docblock. detail.js's old page-specific "defensive re-sync" backstop (added
+                             2026-09-14 "เก็บตกรอบ 6" while this exact bug was still unsolved) is removed
+                             below in favor of this real fix; `dt.columns.adjust()` after the sweep
+                             replaces it instead, since header content changing width on a language
+                             switch is the only thing that still needs a page-specific hook.
+                             2026-09-02, explicit request: "ตารางพนักงาน แยก code และชื่อคนละ Column Code
                              อยู่ก่อน" -- was one combined 2-line cell (name bold on top, code muted
                              underneath); split into its own Code column, placed before Name. -->
-                        <th class="text-nowrap" data-i18n="employee_no">Employee Code</th>
-                        <th class="text-nowrap" data-i18n="table_employee_name">Name</th>
+                        <th class="text-nowrap"><span data-i18n="employee_no">Employee Code</span></th>
+                        <th class="text-nowrap"><span data-i18n="table_employee_name">Name</span></th>
                         <!-- 2026-09-11, Batch 3C item 7, explicit instruction: "เพิ่มคอลัมน์ แผนก ถัดจากชื่อ"
                              -- replaces the old "Source" column in this same slot (see the filter pill
                              above the table instead, #rdDataSourceFilterWrap). -->
-                        <th class="text-nowrap" data-i18n="department">Department</th>
+                        <th class="text-nowrap"><span data-i18n="department">Department</span></th>
                         <!-- 2026-09-02, explicit request: "ในตารางพนักงานให้เพิ่ม Column รับเงินผ่านบัญชี หรือ
                              เงินสด" -- was only visible on the separate "Payment Method Summary" tab;
                              now also its own column here on the main Details table.
                              2026-09-13, Round 3 item 3b follow-up, explicit instruction: "badge = ซ้าย"
                              (§7) -- was text-center (a leftover from before this column routed through
                              statusBadgeHtml()); left-aligned now, matching every other badge column. -->
-                        <th class="text-nowrap" data-i18n="table_payment_method">Payment Method</th>
+                        <th class="text-nowrap"><span data-i18n="table_payment_method">Payment Method</span></th>
                         <!-- 2026-09-13, Round 3 item 3b (§7/§8): `col-money` marker on all 4 money
                              columns -- DT_MARKER_CLASSES auto-applies `num col-money` (tabular-nums,
                              right-align) to each; Gross/Deductions/Net's OWN `.money-gross`/
@@ -593,14 +629,14 @@
                              with, doesn't replace, this marker's className). Base Salary carries no
                              money-color class -- §8 only covers gross/deduction/net, not the base
                              figure itself. -->
-                        <th class="col-money text-nowrap" data-i18n="table_base_salary">Base Salary</th>
-                        <th class="col-money text-nowrap" data-i18n="table_gross_amount">Gross</th>
-                        <th class="col-money text-nowrap" data-i18n="table_deduction_amount">Deductions</th>
-                        <th class="col-money text-nowrap" data-i18n="table_net_pay">Net Pay</th>
-                        <th class="text-nowrap" data-i18n="table_calculation">Calculation</th>
+                        <th class="col-money text-nowrap"><span data-i18n="table_base_salary">Base Salary</span></th>
+                        <th class="col-money text-nowrap"><span data-i18n="table_gross_amount">Gross</span></th>
+                        <th class="col-money text-nowrap"><span data-i18n="table_deduction_amount">Deductions</span></th>
+                        <th class="col-money text-nowrap"><span data-i18n="table_net_pay">Net Pay</span></th>
+                        <th class="text-nowrap"><span data-i18n="table_calculation">Calculation</span></th>
                         <!-- 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "badge = ซ้าย"
                              (§7) -- was text-center. -->
-                        <th class="text-nowrap" data-i18n="table_verify_lock">Verify / Lock</th>
+                        <th class="text-nowrap"><span data-i18n="table_verify_lock">Verify / Lock</span></th>
                         <!-- 2026-08-27, explicit request: blank out any "Action(s)" header, matches
                              the empty-header convention every other Actions column already uses.
                              2026-09-13, Round 3 item 3b (§7): `col-actions` marker class (fixed-width,
