@@ -56,16 +56,10 @@ function stateBadgeRd(state) {
     const text = langData['state_' + state] || state;
     return `<span class="badge ${cls} fs-6">${text}</span>`;
 }
-function calcStatusBadgeRd(status) {
-    const map = {
-        pending: 'bg-secondary-subtle text-secondary',
-        calculated: 'bg-success-subtle text-success',
-        error: 'bg-danger-subtle text-danger',
-    };
-    const cls = map[status] || 'bg-light text-dark';
-    const text = langData['calc_status_' + status] || status;
-    return `<span class="badge ${cls}">${text}</span>`;
-}
+// 2026-09-13, Round 3 item 3b: calcStatusBadgeRd() (its own hardcoded pending/calculated/error map)
+// retired -- its one caller (initRunDetailTable()'s calc_status column) now routes through the shared
+// statusBadgeHtml() + status_map.php's existing 'payroll_calc_status' context instead (see that
+// column's own comment).
 /* ---------- Remark column on the calculation table: payroll_run_details.calc_errors is a
    comma-separated list of machine codes (e.g. "profile_incomplete, missing_base_salary") --
    translate each known code to a readable sentence; an unrecognized code (defensive) falls back
@@ -1136,8 +1130,10 @@ $(document).on('click', '#btnReportHistoryClearFilter', function () {
 });
 function renderSectionButtons(run) {
     const $editWrap = $('#runEditButtonWrap').empty();
-    $('#autoRecalculateWrap').addClass('d-none');
-    $('#recalcReminderBanner').addClass('d-none');
+    // 2026-09-14, Round 3 "เก็บตกรอบ 6": #autoRecalculateWrap now holds ONE settingRowHtml() render
+    // (see the draft-only branch below) instead of static switch+banner markup -- .empty() clears it
+    // out on every reset, same as before, just one call covering the whole thing now.
+    $('#autoRecalculateWrap').addClass('d-none').empty();
     // 2026-09-09: reset here, BEFORE the early return below, same reason as the 2 lines above it --
     // #btnJoinEmployees/#btnBulkVerify/#btnVerifyAllEmployees live in the DataTable's own
     // .dt-search/.dt-length (injected once, outside this function entirely -- see
@@ -1174,24 +1170,28 @@ function renderSectionButtons(run) {
     // function's own 2026-09-13 comment above -- no longer toggled here, lives in the header now.)
     $('#btnJoinEmployees, #btnBulkVerify, #btnVerifyAllEmployees').removeClass('d-none');
 
-    // 2026-08-31, explicit request: auto-recalculate checkbox + reminder banner, draft-only (see
+    // 2026-08-31, explicit request: auto-recalculate checkbox + description, draft-only (see
     // PayrollRunModel::setAutoRecalculate()'s own docblock). Checkbox always visible once a run is
-    // draft; renderRecalcReminder() (called right below) decides the banner's own visibility.
-    $('#autoRecalculateWrap').removeClass('d-none');
-    $('#chkAutoRecalculate').prop('checked', !!run.auto_recalculate);
-    renderRecalcReminder(run);
-}
-
-/**
- * 2026-08-31: the reminder banner is a plain, always-the-same-text nudge -- this run has no way to
- * detect an edit made somewhere ELSE (Employee Detail's salary/PED tab, Setup & Rules, Payroll
- * Configuration, ...), so it can't tell "you changed something, go recalculate" apart from "nothing
- * changed" -- it just reminds every time, unless auto-recalculate is on (in which case there's
- * nothing to remind about, see maybeAutoRecalculateOnLoad() below for what that checkbox actually does).
- */
-function renderRecalcReminder(run) {
-    const show = run.state === 'draft' && !run.auto_recalculate;
-    $('#recalcReminderBanner').toggleClass('d-none', !show).css('display', show ? 'flex' : '');
+    // draft.
+    // 2026-09-14, Round 3 "เก็บตกรอบ 6": rebuilt via the new shared settingRowHtml() (§9/§11,
+    // setting-row.php) instead of static switch markup + a separately-toggled reminder div -- the
+    // description now ALWAYS shows one of desc_on/desc_off (never hidden entirely the way the old
+    // reminder-banner-only-while-off design worked), matching the component's own spec. `checked:
+    // !!run.auto_recalculate` decides BOTH the switch's initial state and which description renders
+    // first -- no separate .prop('checked', ...) + reminder-render call needed anymore, one function
+    // builds the whole row consistently.
+    // 2026-09-14, same day "เก็บตกรอบ 7": `variant` left UNSET on purpose -- this page has exactly
+    // ONE setting here, so it gets the (now-default) `plain` treatment automatically (no box, one
+    // flat `[switch] label · description` line flush against the filter-bar's own left edge below
+    // it) per §9's own "1-2 settings -> plain, 3+ stacked -> card" rule -- pass
+    // `variant: 'card'` explicitly if this section ever grows to 3+ stacked settings.
+    $('#autoRecalculateWrap').removeClass('d-none').html(settingRowHtml({
+        id: 'chkAutoRecalculate',
+        label: langData['auto_recalculate_label'] || 'Automatically recalculate right after editing data',
+        desc_on: langData['recalc_desc_on'] || 'The system will calculate right away whenever data is edited.',
+        desc_off: langData['recalc_desc_off'] || 'If you edit data, click <b>Recalculate</b> yourself every time.',
+        checked: !!run.auto_recalculate,
+    }));
 }
 
 // A run pulled from a cycle or a REGULAR sync process is always full payroll -- editable for a
@@ -1261,8 +1261,28 @@ function updateRunDetailTabVisibility(run) {
         if ($employeeTab) bootstrap.Tab.getOrCreateInstance($employeeTab).show();
     }
 }
-function renderRunHeader(run) {
-    currentRun = run;
+// 2026-09-14, Round 3 "เก็บตกรอบ 6" item 1, real bug found and fixed (explicit report: switching to
+// EN left the stepper labels + "next step" callout stuck in Thai) -- root cause confirmed by reading
+// the actual render path, not guessed: `renderRunHeaderText()` below (extracted verbatim out of
+// `renderRunHeader()`, zero behavior change) builds ALL of this text as plain JS template strings via
+// `langData[key] || fallback` -- e.g. `nextStepBanner()`'s own returned HTML is written directly into
+// `#nextStepBanner` with NO `data-i18n` marker anywhere (confirmed: grepping this whole function finds
+// none), same for the stepper (`renderProcessTimeline()`, built from `runLifecycleSteps()`'s own
+// labels). `updateText()` (app.js's central language sweep, runs on every `changeLanguage()` call) can
+// only ever find and fix a genuine `[data-i18n]` element -- it has no way to reach text that was
+// already baked into a template string at some EARLIER point and never re-hooked. Since `run` data
+// loads ONCE (via `loadRunDetail()`, gated behind the page's OWN initial `langReady` so the FIRST
+// render is always correct) and nothing previously called `renderRunHeader()`/this text-only subset of
+// it AGAIN on a later language switch, everything built here stayed frozen in whatever language was
+// active the moment the run first loaded -- exactly the symptom reported. Same root cause, same
+// established fix pattern this app already uses on ~6 other pages for this exact class of bug (see
+// `changeLanguage()`'s own series of `if (typeof someRefreshLanguage === 'function') ...` hooks,
+// app.js) -- `refreshPayrollDetailLanguage()` (bottom of this file) is Payroll Detail's own missing
+// hook, calling this function again (pure/no side effects -- no AJAX, no data mutation, safe to
+// re-run any number of times) plus a defensive re-sync of the Employee Breakdown table's own column
+// headers (see that function's own docblock for why that 2nd part exists even though these ARE plain
+// `data-i18n` `<th>` elements that should already be covered by the generic sweep).
+function renderRunHeaderText(run) {
     // 2026-09-03, Platform UX review Phase 3: document.title used to be set directly here to JUST
     // run.run_name (losing the "Payroll Process —" breadcrumb prefix and the app suffix entirely) --
     // app.js's own MutationObserver/updateDocumentTitleFromBreadcrumb() now derives the full title
@@ -1345,6 +1365,13 @@ function renderRunHeader(run) {
     renderProcessTimeline(run);
     renderRunHeaderActions(run);
     renderSectionButtons(run);
+}
+// The original renderRunHeader(run) -- sets currentRun, calls the pure text-render subset above, then
+// everything else (AJAX-driven sub-tab loads, settings panel) that must run once per real data load,
+// NOT on every language switch (see renderRunHeaderText()'s own docblock for why the split).
+function renderRunHeader(run) {
+    currentRun = run;
+    renderRunHeaderText(run);
     updateRunDetailTabVisibility(run);
     loadRunReportsTab();
     loadRunCashTab();
@@ -1843,11 +1870,16 @@ $(document).on('submit', '#runMarkPaidForm', function (e) {
 // these lines are the only source of pay; for any other run they're an additive one-off adjustment
 // on top of the normal calculation (see PayrollRunModel::recalculate()'s manual-lines block, added
 // to the non-incentive branch alongside standing PED assignments/attendance bonus).
+// 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "row action: โชว์ 3 ปุ่มวงกลม [ดูรายละเอียด
+// การคำนวณ] [ความคิดเห็น (count)] [ปรับรายการ] + ⋮ สำหรับที่เหลือ" -- was a dropdown-item; now its own
+// standalone .btn-circle-action circle (one of the row's 3, draft-only so effectively 2 outside draft
+// -- §7 revised to "≤3 ปุ่ม + ⋮", not always exactly 3). Click handler (.btn-manage-manual-lines)
+// unchanged.
 function manageItemsButtonRd(row) {
     if (!currentRun || currentRun.state !== 'draft') {
         return '';
     }
-    return `<li><button type="button" class="dropdown-item btn-manage-manual-lines" data-employee-id="${row.employee_id}"><i class="fa-solid fa-list-check text-primary me-2"></i>${langData['action_manage_items'] || 'Items'}</button></li>`;
+    return `<button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-manual-lines" data-employee-id="${row.employee_id}" title="${langData['action_manage_items'] || 'Items'}"><i class="fa-solid fa-list-check"></i></button>`;
 }
 // Raw Sync Data viewer (2026-08-21, explicit request: "ถ้าเป็นการ Sync ข้อมูลมาจาก Origami...เพิ่มปุ่ม
 // ดูข้อมูลดิบได้") -- only for a row that actually came from the sync payload; a manually-added
@@ -1892,77 +1924,131 @@ function removeEmployeeButtonRd(row) {
 // the button's own current-state is read back off `data-*` by the click handler (.btn-verify-
 // employee) so a toggle click always flips whatever the row is CURRENTLY showing, not a stale value
 // captured at render time. Read-only when the run isn't draft -- shows a plain badge instead.
+// 2026-09-13, Round 3 item 3b follow-up -- the ⋮ menu's own "Unverify" item (verified draft rows
+// only); rendered now as the DROPDOWN MENU CONTENT OF THE BADGE ITSELF (statusBadgeHtml()'s own new
+// {menu:...} option, see verifyLockButtonsRd() below and app.js's own docblock on that option) rather
+// than a row of the row-action ⋮ menu -- reuses the EXACT same .btn-verify-employee class +
+// data-employee-id/-name/-verified attrs the column's own button used to carry when showing the
+// verified state, so the existing delegated click handler needs no change at all to serve this new
+// location -- it already reads data-verified off whichever element was clicked.
+function unverifyItemRd(row) {
+    if (!currentRun || currentRun.state !== 'draft' || !row.is_verified) return '';
+    return `<li><button type="button" class="dropdown-item btn-verify-employee" data-employee-id="${row.employee_id}" data-employee-name="${escapeAttr(employeeDisplayNameRd(row))}" data-verified="true"><i class="fa-solid fa-rotate-left text-secondary me-2"></i>${langData['action_unverify'] || 'Unverify'}</button></li>`;
+}
+// Available on any draft run only (same gating as manageItemsButtonRd()/removeEmployeeButtonRd()); the
+// button's own current-state is read back off `data-*` by the click handler (.btn-verify-employee) so
+// a toggle click always flips whatever the row is CURRENTLY showing, not a stale value captured at
+// render time. Read-only when the run isn't draft -- shows a plain badge instead.
+// 2026-09-13, Round 3 item 3b, real fix (explicit instruction: "'ตรวจสอบแล้ว': badge success + ไอคอน ▾
+// เล็กต่อท้าย...กดแล้วเปิด dropdown รายการ 'ยกเลิกการตรวจสอบ' (draft เท่านั้น; non-draft ไม่มี ▾)") -- the
+// verified badge now passes unverifyItemRd(row)'s own HTML as statusBadgeHtml()'s {menu} option ONLY
+// while draft (unverifyItemRd() itself already gates draft+verified, but the ternary below is what
+// decides whether the ▾/dropdown-toggle machinery renders AT ALL -- a non-draft verified row gets the
+// exact same plain, non-interactive badge as before, no menu option passed).
 function verifyLockButtonsRd(row) {
     if (!currentRun || currentRun.state !== 'draft') {
-        return row.is_verified
-            ? `<span class="badge bg-success-subtle text-success" title="${langData['verify_status_verified'] || 'Verified'}"><i class="fa-solid fa-check-double"></i></span>`
-            : '<span class="text-muted">-</span>';
+        return row.is_verified ? statusBadgeHtml('verified', 'verify_status') : '<span class="text-muted">-</span>';
+    }
+    if (row.is_verified) {
+        return statusBadgeHtml('verified', 'verify_status', { menu: unverifyItemRd(row) });
     }
     // 2026-09-10, real gap found and fixed (explicit report: "ก่อน/หลัง verify ต่างกันแค่สีไอคอน มองไม่
-    // ออก") -- the 2026-09-09 .btn-circle-action version below only ever differed by icon color
-    // (text-success/text-secondary), invisible in grayscale/for anyone who can't rely on color alone.
-    // This ONE button (not the row's other action buttons) steps back out of .btn-circle-action's
-    // icon-only convention to add a real text label + filled-vs-outline shape, both of which survive
-    // grayscale: unverified is btn-outline-secondary + "action_verify" ("ตรวจสอบ"), verified is a
-    // filled btn-success + "verify_status_verified" ("ตรวจสอบแล้ว", the SAME key the read-only
-    // (non-draft) branch above already uses for the identical concept). data-verified/data-employee-id
-    // and the .btn-verify-employee click handler are unchanged.
-    const verifyTitle = row.is_verified ? (langData['action_unverify'] || 'Unverify') : (langData['action_verify'] || 'Verify');
-    const verifyLabel = row.is_verified ? (langData['verify_status_verified'] || 'Verified') : (langData['action_verify'] || 'Verify');
-    const verifyBtnCls = row.is_verified ? 'btn-success' : 'btn-outline-secondary';
-    // 2026-09-11, Batch 3C item 9: data-employee-name feeds the confirm dialog's own "{name}"
-    // placeholder (see the .btn-verify-employee click handler) -- avoids a round trip back through
-    // the DataTable row data at click time.
-    return `<div class="d-flex gap-1 justify-content-center">
-        <button type="button" class="btn btn-sm ${verifyBtnCls} rounded-pill btn-verify-employee" data-employee-id="${row.employee_id}" data-employee-name="${escapeAttr(employeeDisplayNameRd(row))}" data-verified="${row.is_verified ? 'true' : 'false'}" title="${verifyTitle}"><i class="fa-solid fa-check-double me-1"></i>${escapeHtml(verifyLabel)}</button>
-    </div>`;
+    // ออก") -- text label + shape survive grayscale, not just icon color.
+    // 2026-09-13, Round 3 item 3b follow-up: dropped the fa-check-double icon ("คำบอกแล้ว" -- the
+    // button's own text already says what it does) and the filled-success/rounded-pill styling (now
+    // unreachable anyway since this branch only ever renders for the unverified case) -- plain
+    // .btn-outline-secondary.btn-sm, same family as the toolbar's own 3 buttons above.
+    return `<button type="button" class="btn btn-outline-secondary btn-sm btn-verify-employee" data-employee-id="${row.employee_id}" data-employee-name="${escapeAttr(employeeDisplayNameRd(row))}" data-verified="false" title="${langData['action_verify'] || 'Verify'}">${escapeHtml(langData['action_verify'] || 'Verify')}</button>`;
+}
+// 2026-09-14, Round 3 "เก็บตกรอบ 5" item 2, real bug found and fixed (explicit report: this column's
+// own Excel-style filter list showed "ยกเลิกการตรวจสอบ" -- the hidden ⋮-menu item's OWN text, not a
+// real filter value) -- root cause: this column's own DataTables columnDef (initRunDetailTable()'s
+// `columns[10]`) was a PLAIN render function (`render: (d,t,row) => verifyLockButtonsRd(row)`), not
+// the object-form `{display, filter}` CLAUDE.md's own Table convention already mandates for any
+// column whose displayed HTML differs from its filter/sort value -- table-column-filter.js's own
+// `renderedCellText()` calls `dt.cell().render('filter')`, and DataTables falls back to the SAME
+// single function for EVERY render type when no object-form is given, so 'filter' returned the exact
+// same HTML `verifyLockButtonsRd()` builds for a verified+draft row: statusBadgeHtml({menu:...})'s own
+// output, which embeds BOTH the visible badge label AND the hidden <ul class="dropdown-menu"> markup
+// (unverifyItemRd()'s own "ยกเลิกการตรวจสอบ" <li>) as ONE HTML string (see that function's own
+// docblock) -- stripping HTML off THAT string pulls the menu item's text in right along with the
+// real label. Fixed by giving this column its own dedicated `filter` renderer (below) that returns
+// ONLY the plain label text for each of the 4 states verifyLockButtonsRd() itself branches on --
+// never the menu HTML -- and switching the column's own render option to object-form
+// `{display, filter}` (initRunDetailTable()) so `.render('filter')` actually reaches this function
+// instead of falling back to the display one. statusBadgeHtml() itself is UNCHANGED -- its own
+// {menu} option's return shape (one HTML string, used as the CELL'S DISPLAY content by every one of
+// its many other callers across the app) stays exactly as documented; the fix lives entirely in this
+// column's own render split, not in the shared badge helper.
+function verifyLockFilterTextRd(row) {
+    if (!currentRun || currentRun.state !== 'draft') {
+        return row.is_verified ? (langData['verify_status_verified'] || 'Verified') : '-';
+    }
+    return row.is_verified
+        ? (langData['verify_status_verified'] || 'Verified')
+        : (langData['action_verify'] || 'Verify');
 }
 // Comment always available (any state) -- same reasoning as the Breakdown button (read-only/non-
 // destructive, "ไว้เตือนตัวเอง" -- a reminder note is useful regardless of where the run currently is).
 // 2026-08-29: "ถ้ามีการใส่ Comment ไปกี่ Comment แล้วให้แสดงตัวเลขที่ปุ่ม Comment ด้วยเป็นจุดแดงๆเหมือนการ
-// แจ้งเตือน" -- a small red notification-dot badge showing the current comment count, read from
-// row.comment_count (see initRunDetailTable()'s ajax/data source -- PayrollRunModel::getDetails()
-// now includes it per employee). Re-rendered after every add/edit/delete via loadRunDetail(), same
-// refresh pattern every other mutating action on this page already uses.
+// แจ้งเตือน" -- a small count badge showing the current comment count, read from row.comment_count (see
+// initRunDetailTable()'s ajax/data source -- PayrollRunModel::getDetails() now includes it per
+// employee). Re-rendered after every add/edit/delete via loadRunDetail(), same refresh pattern every
+// other mutating action on this page already uses.
+// 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "row action: โชว์ 3 ปุ่มวงกลม...
+// [ความคิดเห็น (count)]..." -- was a dropdown-item; now one of the row's 3 standalone .btn-circle-action
+// circles, count rendered as countBadgeHtml() (§5's own neutral-count-badge rule) overlaid on the
+// circle's own top-right corner (.btn-circle-action-badge, style.css) rather than inline text, since a
+// 32px icon-only circle has no room for a text label next to the number. Click handler
+// (.btn-comment-employee) unchanged.
+// 2026-09-13, same-day follow-up, explicit instruction: "tone primary เมื่อมีรายการ 'ใหม่/ยังไม่อ่าน'
+// เท่านั้น...comment ยังไม่มี flag ยังไม่อ่าน → เทาไว้ก่อน" -- deliberately still the plain default call
+// (no `{tone:'primary'}`) -- row.comment_count has no unread/read distinction anywhere in this run's
+// data today (PayrollRunModel::getDetails() only ever returns a total count), so there is nothing to
+// base a "new" tone on yet; passing 'primary' here now would just mean "always primary whenever
+// count>0," not genuinely "unread," which is the opposite of what was asked. See BACKLOG.md ("Comment
+// count badge has no unread/new tracking (Employee Breakdown row action)") for what unlocks this.
+// The icon itself is NOT part of this decision -- it stays the single flat --c-text-muted §7 already
+// mandates for every row-action icon regardless of the badge's own tone.
 function commentButtonRd(row) {
     const count = Number(row.comment_count || 0);
-    const countBadge = count > 0
-        ? `<span class="badge rounded-pill bg-danger ms-2">${count}</span>`
-        : '';
-    // 2026-09-11, Batch 3C item 8: data-employee-label removed -- the click handler now looks up the
-    // full row (runDetailRowByEmployeeId()) to build employeeHeaderCardHtml() instead of reading a
-    // plain name string off the button, so this attribute had no other reader left.
-    return `<li><button type="button" class="dropdown-item btn-comment-employee" data-employee-id="${row.employee_id}"><i class="fa-solid fa-comments text-warning me-2"></i>${langData['action_comments'] || 'Comments'}${countBadge}</button></li>`;
+    const countBadge = count > 0 ? `<span class="btn-circle-action-badge">${countBadgeHtml(count)}</span>` : '';
+    return `<div class="position-relative d-inline-block">
+        <button type="button" class="btn btn-link btn-circle-action text-warning btn-comment-employee" data-employee-id="${row.employee_id}" title="${langData['action_comments'] || 'Comments'}"><i class="fa-solid fa-comments"></i></button>
+        ${countBadge}
+    </div>`;
 }
 // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
 // ".btn-circle-action" section) replace the old adjacent .btn-group/border-start convention this
 // whole cluster previously followed (2026-08-21/29).
-// 2026-09-10, Batch 2 item 7: only View Breakdown stays a standalone button; the other 4
-// (conditionally present) collapse into one dropdown menu -- click handlers below still bind by
-// the same classes (.btn-manage-manual-lines/.btn-raw-sync-data/.btn-comment-employee/
-// .btn-remove-manual-employee) so nothing needed to change there.
+// 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "row action: โชว์ 3 ปุ่มวงกลม [ดูรายละเอียด
+// การคำนวณ] [ความคิดเห็น (count)] [ปรับรายการ] + ⋮ สำหรับที่เหลือ" -- was folded into the ⋮ menu's own
+// first item earlier this same round (the "รวมเข้า ⋮" instruction), now un-folded back out as its own
+// standalone circle -- unconditional (always available regardless of run state), same .btn-view-
+// breakdown class the existing delegated click handler already binds to, unchanged.
+function viewBreakdownButtonRd(row) {
+    return `<button type="button" class="btn btn-link btn-circle-action text-info btn-view-breakdown" data-employee-id="${row.employee_id}" title="${langData['action_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-magnifying-glass-dollar"></i></button>`;
+}
+// §7, revised this round: "≤ 3 ปุ่ม + ⋮" (was "≤2 ปุ่ม inline, >2 พับเป็น ⋮ ทั้งหมด") -- the 3 circles
+// above (View Breakdown/Comments/Manage Items, "≤3" since Manage Items is draft-only so a non-draft
+// row shows only 2) always stay inline; everything else (Raw Sync Data, conditional; Remove,
+// draft-only) collapses into the ⋮ menu. Unverify is NOT part of this menu anymore -- see the Verify
+// column's own badge dropdown instead (verifyLockButtonsRd()).
 function runDetailActionsRd(row) {
-    const topItems = [rawSyncDataButtonRd(row), manageItemsButtonRd(row), commentButtonRd(row)].filter(Boolean);
+    const circles = [viewBreakdownButtonRd(row), commentButtonRd(row), manageItemsButtonRd(row)].filter(Boolean).join('');
+    const menuItems = [rawSyncDataButtonRd(row)].filter(Boolean);
     const removeItem = removeEmployeeButtonRd(row);
     // 2026-09-10, explicit request: Remove sits at the bottom with a divider above it, only when
     // there's actually something above it to divide from.
-    const divider = (topItems.length && removeItem) ? '<li><hr class="dropdown-divider"></li>' : '';
-    const items = topItems.join('') + divider + removeItem;
+    const divider = (menuItems.length && removeItem) ? '<li><hr class="dropdown-divider"></li>' : '';
+    const items = menuItems.join('') + divider + removeItem;
     const menu = items
         ? `<div class="dropdown">
             <button type="button" class="btn btn-link btn-circle-action text-secondary dropdown-toggle" data-bs-toggle="dropdown" title="${langData['action_more'] || 'More'}"><i class="fa-solid fa-ellipsis-vertical"></i></button>
             <ul class="dropdown-menu dropdown-menu-end">${items}</ul>
         </div>`
         : '';
-    // 2026-09-09, explicit request: "ใน column สุดท้ายของแต่ละแถว ปุ่มให้เรียงเป็นแถวเดียวห้ามตกบรรทัด" --
-    // flex-nowrap keeps this cluster on one line always -- .rd-detail-table-flush's own min-width +
-    // the table's existing .table-responsive wrapper (unchanged) is the fallback that lets the
-    // whole table scroll horizontally instead, same "no DataTables scrollX" convention this app
-    // already established elsewhere.
-    return `<div class="d-flex gap-1 justify-content-center flex-nowrap">
-        <button type="button" class="btn btn-link btn-circle-action text-info btn-view-breakdown" data-employee-id="${row.employee_id}" title="${langData['action_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-magnifying-glass-dollar"></i></button>
-        ${menu}
-    </div>`;
+    return `<div class="d-flex gap-1 align-items-center justify-content-center flex-nowrap">${circles}${menu}</div>`;
 }
 
 /* ---------- Formula popover (2026-08-29, explicit request: "ถ้าส่วนไหนที่เป็นสูตรการคำนวณให้มีปุ่มกดดูได้
@@ -2587,64 +2673,86 @@ function updateSummaryCardsFromTable() {
 // payroll/index.js is, scoped to this one table's id so it never affects any other DataTable on the
 // page) rather than re-pushed every time initRunDetailTable() runs.
 let paymentMethodSearchFilterRegistered = false;
+// 2026-09-13, Round 3 item 3b: reads the new #rdPaymentMethodFilter SELECT's own value (filter-bar.php,
+// see initRunDetailFilterBarOnce() below) instead of 2 checkboxes -- same 2 reachable boolean states as
+// before (bankOn/cashOn), just derived from ONE value now: 'all' means both on, 'bank'/'cash' means
+// only that one. No change to the predicate itself (still isBankishPaymentMethod()/isCashishPaymentMethod()
+// against payment_method_code, still lets 'mixed' pass if EITHER is on).
 function registerPaymentMethodSearchFilter() {
     if (paymentMethodSearchFilterRegistered) return;
     paymentMethodSearchFilterRegistered = true;
     $.fn.dataTable.ext.search.push(function (settings, searchData, dataIndex, rowData) {
         if (!settings.nTable || settings.nTable.id !== 'tb_run_detail') return true;
-        const bankOn = $('#filterPaymentBank').is(':checked');
-        const cashOn = $('#filterPaymentCash').is(':checked');
+        const val = $('#rdPaymentMethodFilter').val() || 'all';
+        const bankOn = val === 'all' || val === 'bank';
+        const cashOn = val === 'all' || val === 'cash';
         const code = (rowData && rowData.payment_method_code) || 'transfer';
-        // 2026-09-02, follow-up: 'mixed' passes the filter if EITHER checkbox is on (see
-        // updatePaymentMethodSummary()'s own comment on why it isn't forced into just one bucket).
         return (isBankishPaymentMethod(code) && bankOn) || (isCashishPaymentMethod(code) && cashOn);
     });
 }
-// Confirmed via AskUserQuestion: 2 independent checkboxes, both checked by default (show everyone);
-// unticking one hides that group; unticking BOTH is disallowed -- falls back to Bank rather than
-// letting the table go empty with no visible way back in.
-// 2026-09-02, same-day follow-up: "ให้เลือกทั้งหมดได้ด้วย" -- #filterPaymentAll is a plain select-all
-// convenience, not a 3rd filter state: checking it ticks both Bank/Cash, unchecking it clears both
-// (re-guarded right back to Bank-only by the same "never let both end up unchecked" rule below).
-// The actual DataTables search predicate (registerPaymentMethodSearchFilter()) still only ever
-// reads filterPaymentBank/filterPaymentCash directly, so this stays a pure client-side .draw() --
-// no ajax, no data reload, same as before.
-$(document).on('change', '#filterPaymentAll', function () {
-    const checked = $(this).is(':checked');
-    $('#filterPaymentBank, #filterPaymentCash').prop('checked', checked);
-    if (!checked) $('#filterPaymentBank').prop('checked', true);
-    if (tb_run_detail) tb_run_detail.draw();
-});
-$(document).on('change', '#filterPaymentBank, #filterPaymentCash', function () {
-    if (!$('#filterPaymentBank').is(':checked') && !$('#filterPaymentCash').is(':checked')) {
-        $('#filterPaymentBank').prop('checked', true);
-    }
-    $('#filterPaymentAll').prop('checked', $('#filterPaymentBank').is(':checked') && $('#filterPaymentCash').is(':checked'));
-    if (tb_run_detail) tb_run_detail.draw();
-});
 
 // 2026-09-11, Batch 3C item 7, explicit instruction: "ตัดคอลัมน์ แหล่งที่มา ออก (ย้ายไปเป็น filter pill
 // 'ที่มา: ทั้งหมด/Sync/เพิ่มเอง' เหนือตาราง ถ้ายังต้องกรอง)" -- same registered-once-per-table-id guard as
 // registerPaymentMethodSearchFilter() above, filtering on row.data_source ('sync'/'manual', same
-// field the old Source column's badge used to render) against the 3-way radio pill instead of a
-// per-column dropdown. #rdDataSourceFilterWrap's own visibility (hidden for a run that never brings
-// base salary into the calculation, since data_source doesn't apply there either) is still owned by
-// initRunDetailTable() -- see its own showDataSourceFilter comment.
+// field the old Source column's badge used to render). #rdDataSourceFilterWrap's own visibility
+// (hidden for a run that never brings base salary into the calculation, since data_source doesn't
+// apply there either) is still owned by initRunDetailTable() -- see its own showDataSourceFilter
+// comment. 2026-09-13, Round 3 item 3b: reads the new #rdSourceFilter SELECT instead of a 3-way
+// radio-pill group (same 3 values -- all/sync/manual -- same predicate, view-only change).
 let dataSourceSearchFilterRegistered = false;
-let currentRdDataSourceFilter = 'all';
 function registerDataSourceSearchFilter() {
     if (dataSourceSearchFilterRegistered) return;
     dataSourceSearchFilterRegistered = true;
     $.fn.dataTable.ext.search.push(function (settings, searchData, dataIndex, rowData) {
         if (!settings.nTable || settings.nTable.id !== 'tb_run_detail') return true;
-        if (currentRdDataSourceFilter === 'all') return true;
-        return (rowData && rowData.data_source) === currentRdDataSourceFilter;
+        const val = $('#rdSourceFilter').val() || 'all';
+        if (val === 'all') return true;
+        return (rowData && rowData.data_source) === val;
     });
 }
-$(document).on('change', '.rd-data-source-filter-radio', function () {
-    currentRdDataSourceFilter = $(this).val();
-    if (tb_run_detail) tb_run_detail.draw();
-});
+// 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "เพิ่มช่อง 'แผนก' (select2-remote
+// /api/department.get เหมือน Employee list) เป็นช่องแรก" -- filters on row.department_id, the SAME
+// column PayrollRunModel::getDetails()'s own SQL already SELECTs (`e.department_id`, confirmed via
+// grep -- it just had no reader in this file before now, departmentNameRd() only ever read the
+// display-name columns). Number()-coerced on both sides since select2's own `.val()` returns a
+// string, while row.department_id (JSON-decoded from a SQL integer column) is already a number.
+let departmentSearchFilterRegistered = false;
+function registerDepartmentSearchFilter() {
+    if (departmentSearchFilterRegistered) return;
+    departmentSearchFilterRegistered = true;
+    $.fn.dataTable.ext.search.push(function (settings, searchData, dataIndex, rowData) {
+        if (!settings.nTable || settings.nTable.id !== 'tb_run_detail') return true;
+        const val = $('#rdDepartmentFilter').val();
+        if (!val) return true;
+        return Number(rowData && rowData.department_id) === Number(val);
+    });
+}
+// 2026-09-13, Round 3 item 3b -- registered ONCE (same guard shape as the 3 search-filter registrars
+// above), separate from them since this wires the shared filter-bar.php shell itself (chevron/count/
+// chips/Clear -- see initFilterBar()'s own docblock in app.js), not a DataTables search predicate.
+// #rdPaymentMethodFilter/#rdSourceFilter go through initSelect2(..., {mode:'static'}) per this app's
+// own mandatory Select2 convention (CLAUDE.md) -- 'select2-static' is already on each <select>'s own
+// class in detail.php, so this only needs to explicitly set each one's default value to 'all'
+// afterward (this app's own established select2-static convention leaves a freshly-initialized static
+// select on its EMPTY placeholder by default, not its first real option -- see employee/reports.js's
+// own #employee_structure_filter_group_by for the same pattern) so both filters visibly start as "show
+// everyone", matching the OLD checkbox/radio defaults exactly. #rdDepartmentFilter is a genuine
+// select2-remote (ajax mode, data-api/data-type already on its own <select>, exactly Employee List's
+// #employee_filter_department convention) -- its own resting empty value already means "no filter" via
+// initFilterBar()'s own isActive() check, no explicit default-value step needed the way the 2 static
+// selects above do.
+let runDetailFilterBarInitialized = false;
+function initRunDetailFilterBarOnce() {
+    if (runDetailFilterBarInitialized) return;
+    runDetailFilterBarInitialized = true;
+    initSelect2('#rdDepartmentFilter');
+    initSelect2('#rdPaymentMethodFilter, #rdSourceFilter', { mode: 'static' });
+    $('#rdPaymentMethodFilter').val('all').trigger('change');
+    $('#rdSourceFilter').val('all').trigger('change');
+    initFilterBar('#runDetailFilterBar', {
+        onChange: function () { if (tb_run_detail) tb_run_detail.draw(); },
+    });
+}
 
 // 2026-08-31: raw per-employee rows kept module-level (was also read by the now-removed Payment
 // Method Summary tab, see the 2026-09-02 removal note above initRunDetailTable()).
@@ -2661,17 +2769,22 @@ function initRunDetailTable(details) {
     currentRunDetails = details;
     registerPaymentMethodSearchFilter();
     registerDataSourceSearchFilter();
+    registerDepartmentSearchFilter();
+    initRunDetailFilterBarOnce();
     // 2026-09-09: no longer called directly here with the FULL, unfiltered `details` array -- see
     // updateSummaryCardsFromTable()'s own docblock (called from drawCallback below instead, which
     // also fires right after this function's own initial construction/reload, so the first paint is
     // unaffected -- only every subsequent filter/redraw now also gets it right).
-    $('#noDetailsYet').toggleClass('d-none', details.length > 0);
-    $('#tb_run_detail').toggleClass('d-none', details.length === 0);
+    // 2026-09-13, Round 3 item 3b: the manual #noDetailsYet/#tb_run_detail show-hide pair is retired --
+    // see initSharedDataTable()'s own `emptyState` option below (the table itself always stays visible
+    // now, its own tbody shows the empty-state row instead).
     // 2026-08-29, real bug found and fixed (explicit report: "checkbox ในกรณีที่ส่งไปอนุมัติแล้วยังขึ้นอยู่
     // ต้องไม่ขึ้น") -- computed HERE, synchronously, from the SAME currentRun that
     // renderRunHeader() always sets immediately before this function runs (see loadRunDetail()),
-    // rather than inside drawCallback's own applyRunDetailViewMode() reading the outer
-    // `tb_run_detail` variable. Root cause: drawCallback fires synchronously DURING the
+    // rather than inside drawCallback itself reading the outer `tb_run_detail` variable (the function
+    // that used to do that read there, applyRunDetailViewMode(), was retired 2026-09-13 along with the
+    // View Mode callout it existed to toggle -- this comment's own underlying reasoning about WHY the
+    // computation has to happen here, synchronously, still applies regardless). Root cause: drawCallback fires synchronously DURING the
     // `$(...).DataTable({...})` constructor call below, i.e. BEFORE the `tb_run_detail = ...`
     // assignment on that call has actually completed -- so on the very FIRST load of a run that is
     // already non-draft (e.g. opening a run that's already pending_approval), that first
@@ -2705,7 +2818,54 @@ function initRunDetailTable(details) {
     // means nothing ever collapses behind an expand-row arrow -- app/views/payroll/detail.php's own
     // .table-responsive wrapper gives a plain horizontal scrollbar as the only narrow-viewport
     // fallback instead, matching every other wide DataTable in this app.
-    tb_run_detail = $('#tb_run_detail').DataTable({
+    // 2026-09-13, Round 3 item 3b, explicit instruction: "initSharedDataTable() เต็ม §7" -- was a
+    // direct `$(...).DataTable({...})` call, the one real remaining §7 violation on this page (this
+    // page's OTHER 4 tables -- Reports/Cash/Bank Account/Remittance -- already route through
+    // initSharedDataTable(), see each one's own comment). Only the CONSTRUCTOR call changes here --
+    // the "already exists -> clear().rows.add().draw()" branch above (which is what actually runs on
+    // every reload after the first) is untouched, so this table keeps preserving the user's current
+    // page/sort/search across a data refresh exactly as before; initSharedDataTable()'s own internal
+    // destroy-and-rebuild logic only ever runs the ONE time this branch is reached, on first
+    // construction, same as the raw call it replaces.
+    tb_run_detail = initSharedDataTable('#tb_run_detail', {
+        // §7: "sticky คอลัมน์ชื่อ" -- freezes the first 3 columns (checkbox+Code+Name) together, not
+        // Name alone: initStickyColumns()'s own `left` option freezes N columns counting from column 0,
+        // there's no way to pin a single column out of sequence, and un-pinning checkbox/Code while
+        // pinning Name would leave those 2 scrolling independently underneath a floating frozen column
+        // -- freezing all 3 identity columns together is what actually keeps "who is this row" legible
+        // while scrolling. Known gap, not fixed here (a shared-function limitation, not specific to
+        // this table): initStickyColumns()'s own footHasRealColumns check only recognizes `<td>`
+        // footer cells, but this table's own <tfoot> (detail.php) uses `<th>` (matching its header/
+        // §7 convention) -- so the footer totals row does NOT get frozen along with the header/body.
+        stickyColumns: { left: 3 },
+        // §7: per-column Excel-style filter -- moved here from a manual initExcelColumnFilters() call
+        // inside this table's own initComplete below (initSharedDataTable() now owns wiring it in
+        // automatically per §7's own "ครอบหน้าที่ของ initExcelColumnFilters() ให้เอง" decision). Same 4
+        // columns/keys as before, unchanged.
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 3, key: 'department' },
+                { index: 4, key: 'payment_method_code' },
+                { index: 9, key: 'calc_status' },
+                { index: 10, key: 'verify_status' },
+            ],
+        },
+        // §6: "empty state 2 แบบ" -- this config is the "genuinely no data yet" variant (reuses the
+        // exact copy/icon #noDetailsYet used to show); dtRenderEmptyState() (app.js) auto-swaps to its
+        // OWN built-in "filtered to zero results" variant instead whenever the table has real rows but
+        // the CURRENT search/filter hides all of them -- no separate config needed for that 2nd case.
+        // Known gap, not fixed here (a shared-function limitation, affects every initSharedDataTable()
+        // caller, not specific to this table): that built-in filtered-state "Clear Filter" action only
+        // clears the DataTables global search box (`dt.search('').draw()`), not this table's OWN
+        // #rdPaymentMethodFilter/#rdSourceFilter selects (custom ext.search predicates, a different
+        // mechanism) -- a user who filtered to zero via those selects and clicks "Clear Filter" would
+        // see the search box clear but the select-driven filter stay active.
+        emptyState: {
+            icon: 'fa-solid fa-calculator',
+            title: getLangValue('no_details_yet') || 'No employees calculated yet. Click "Recalculate" to compute this run.',
+        },
+        dtOptions: {
         responsive: false,
         data: details,
         columns: [
@@ -2714,7 +2874,7 @@ function initRunDetailTable(details) {
             // this run can be verified/locked/bulk-actioned anymore -- visible: showCheckboxColumn
             // (computed just above from currentRun.state, see this function's own top-of-function
             // comment for why it's set HERE at construction time and not inside drawCallback).
-            { data: null, className: 'text-center', orderable: false, visible: showCheckboxColumn, render: (d, t, row) => `<input type="checkbox" class="form-check-input run-detail-row-check" data-employee-id="${row.employee_id}">` },
+            { data: null, orderable: false, visible: showCheckboxColumn, render: (d, t, row) => `<input type="checkbox" class="form-check-input run-detail-row-check" data-employee-id="${row.employee_id}">` },
             // 2026-08-29, explicit follow-up request (own earlier suggestion, accepted): "มีไอคอน
             // เล็กๆ บนแถวพนักงานที่บอกว่าคนนี้ถูกปรับแต่งอะไรไปแล้วบ้าง" -- shown here (not tied to the
             // "Items" button, which disappears entirely once the run leaves draft -- see
@@ -2734,8 +2894,12 @@ function initRunDetailTable(details) {
                 // PayrollRunModel::employeeAdjustments()'s own docblock), clickable to open a
                 // view-only modal listing each one (item/old value/new value/who/when).
                 const adjustedCount = Number(row.line_override_count || 0) + Number(row.manual_line_count || 0);
+                // 2026-09-13, Round 3 item 3b: was its own hardcoded warning-colored badge holding a
+                // "Adjusted {n}" template string; now plain text (this app's own established
+                // "count badge = neutral, unless a tone is genuinely needed" rule, §5) + countBadgeHtml()
+                // (app.js) for just the number, same shape as commentButtonRd()'s own count badge below.
                 if (adjustedCount > 0) {
-                    badges.push(`<button type="button" class="badge bg-warning-subtle text-warning-emphasis border-0 ms-1 btn-view-emp-adjustments" data-employee-id="${row.employee_id}" title="${langData['row_badge_item_override'] || 'Has item override(s)'}">${(langData['row_badge_adjusted_n'] || 'Adjusted {n}').replace('{n}', adjustedCount)}</button>`);
+                    badges.push(`<button type="button" class="btn btn-link btn-sm p-0 border-0 ms-1 btn-view-emp-adjustments" data-employee-id="${row.employee_id}" title="${langData['row_badge_item_override'] || 'Has item override(s)'}">${escapeHtml(langData['row_badge_adjusted'] || 'Adjusted')} ${countBadgeHtml(adjustedCount)}</button>`);
                 }
                 if (row.has_calc_override) {
                     badges.push(`<i class="fa-solid fa-file-invoice-dollar text-info ms-1" title="${langData['row_badge_calc_override'] || 'Has tax/SSO override'}"></i>`);
@@ -2766,12 +2930,18 @@ function initRunDetailTable(details) {
             // 2026-09-02, follow-up: widened from a bank/cash-only binary to the real 4-code
             // payment_method_code (transfer/cash/check/mixed) -- check gets the same cash-style badge
             // (no bank account involved either), mixed gets its own distinct badge since it's neither.
-            { data: 'payment_method_code', className: 'text-center', render: d => {
-                if (d === 'cash') return `<span class="badge bg-warning-subtle text-warning-emphasis"><i class="fa-solid fa-money-bill-wave me-1"></i>${langData['table_payment_cash'] || 'Cash'}</span>`;
-                if (d === 'check') return `<span class="badge bg-warning-subtle text-warning-emphasis"><i class="fa-solid fa-money-check me-1"></i>${langData['payment_method_check'] || 'Check'}</span>`;
-                if (d === 'mixed') return `<span class="badge bg-primary-subtle text-primary-emphasis"><i class="fa-solid fa-shuffle me-1"></i>${langData['payment_method_mixed'] || 'Mixed'}</span>`;
-                return `<span class="badge bg-info-subtle text-info-emphasis"><i class="fa-solid fa-building-columns me-1"></i>${langData['table_payment_bank'] || 'Bank Transfer'}</span>`;
-            } },
+            // 2026-09-13, Round 3 item 3b: was 4 hardcoded per-value badge strings (own ad-hoc colors,
+            // one of them blue -- §3 kills blue outright); routed through the shared statusBadgeHtml()
+            // (§5) + status_map.php's new 'payment_method' context instead. Real, flagged trade-off:
+            // statusBadgeHtml() has no icon slot, so the per-value icon (money-bill-wave/money-check/
+            // shuffle/building-columns) is lost -- every other statusBadgeHtml() badge in this app is
+            // already icon-less, so this brings Payment Method in line with that convention rather than
+            // being a one-off regression.
+            // 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "badge = ซ้าย" (§7) -- was
+            // className:'text-center', a leftover from before this column routed through
+            // statusBadgeHtml(); dropped so it falls back to the default left alignment every other
+            // badge column already uses.
+            { data: 'payment_method_code', render: d => statusBadgeHtml(d || 'transfer', 'payment_method') },
             // 2026-08-29, explicit follow-up request: "ตรงเงินได้เงินหักสุทธิ์ ปรับการแสดงผลให้ชัดขึ้น หรือแยก
             // Column ไปเลย" -- the combined "Amounts" cell from the previous round packed Base
             // Salary/Gross/Deduction/Net into one cell and wasn't clear enough; split back into their
@@ -2785,25 +2955,55 @@ function initRunDetailTable(details) {
             // this column is still sortable -- sort/filter stay on the raw numeric value regardless
             // of which text the display side renders, so a client-side sort never turns into
             // lexicographic string ordering for the excluded rows.
-            { data: 'base_salary_amount', className: 'text-end', render: {
+            // 2026-09-13, Round 3 item 3b (§8 money-color system, "ที่ยังไม่ทำ" list closed out): Base
+            // Salary itself is NOT one of the 3 money-color classes (§8 only defines gross/deduction/
+            // net -- a base figure is neither an income nor a deduction nor a total) so it keeps its own
+            // text-muted/text-danger-excluded rendering unchanged; only the `.num`/`.col-money` marker
+            // class moved from this column's own `className` here onto its `<th>` in detail.php (§7:
+            // alignment/tabular-nums driven by the `<th>`'s own class, not repeated per-column in JS).
+            { data: 'base_salary_amount', render: {
                 display: (d, t, row) => row.base_salary_excluded
                     ? `<span class="text-danger fw-semibold small">${langData['base_salary_excluded_label'] || 'Not Calculated'}</span>`
                     : `<span class="text-muted">${fmtNum(d)}</span>`,
                 sort: d => d,
                 filter: d => d,
             } },
-            { data: 'gross_amount', className: 'text-end text-success fw-semibold', render: d => fmtNum(d) },
-            { data: 'total_deduction_amount', className: 'text-end text-danger fw-semibold', render: d => fmtNum(d) },
-            { data: 'net_amount', className: 'text-end', render: d => `<span class="rd-net-pill">${fmtNum(d)}</span>` },
+            // 2026-09-13, Round 3 item 3b (§8): was a plain function render (sortable column, comma-
+            // formatted display used for sort too -- the exact lexicographic-sort bug CLAUDE.md's own
+            // Table convention warns about) with a raw `text-success fw-semibold` className (§12's lint
+            // now forbids `text-success`/`text-danger` combined with `.num` outright). Object-form
+            // render (raw number for sort/filter) + `.money-gross`/`.money-deduction` class (paired with
+            // `.num`/`.col-money` from the `<th>` marker, same as Base Salary above) fixes both at once.
+            { data: 'gross_amount', className: 'money-gross', render: { display: d => fmtNum(d), sort: d => d, filter: d => d } },
+            { data: 'total_deduction_amount', className: 'money-deduction', render: { display: d => fmtNum(d), sort: d => d, filter: d => d } },
+            // `.rd-net-pill` (own orange-tinted pill background) retired per explicit instruction ("ตัด
+            // ...พื้นส้มของสุทธิออก") -- `.money-net` (§8: bold 600, --c-text, no color -- a total isn't
+            // "good/bad") is now what makes Net Pay read as the headline figure instead.
+            { data: 'net_amount', className: 'money-net', render: { display: d => fmtNum(d), sort: d => d, filter: d => d } },
+            // 2026-09-13, Round 3 item 3b: calcStatusBadgeRd() (a local hardcoded pending/calculated/
+            // error map) retired -- status_map.php already had an identical 'payroll_calc_status'
+            // context (same 3 values, same tones) from an earlier round with no consumer yet; this is
+            // its first real one.
             { data: 'calc_status', render: {
-                display: (d, t, row) => `${calcStatusBadgeRd(d)}<div class="small mt-1">${calcErrorsRemarkRd(row.calc_errors)}</div>`,
+                display: (d, t, row) => `${statusBadgeHtml(d, 'payroll_calc_status')}<div class="small mt-1">${calcErrorsRemarkRd(row.calc_errors)}</div>`,
                 sort: d => d,
                 filter: (d, t, row) => `${d} ${row.calc_errors || ''}`,
             } },
-            { data: null, className: 'text-center', orderable: false, render: (d, t, row) => verifyLockButtonsRd(row) },
-            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
-            // Responsive expand row (kept even with responsive:false, harmless no-op either way).
-            { data: null, className: 'all', orderable: false, render: (d, t, row) => runDetailActionsRd(row) },
+            // 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "badge = ซ้าย" (§7) -- was
+            // className:'text-center'.
+            // 2026-09-14, Round 3 "เก็บตกรอบ 5" item 2, real bug fix -- object-form `render:
+            // {display, filter}` (was a plain function) so the Excel-style column filter reads
+            // verifyLockFilterTextRd()'s own plain-label text instead of accidentally picking up the
+            // verified badge's own hidden dropdown-menu markup -- see that function's own docblock.
+            { data: null, orderable: false, render: {
+                display: (d, t, row) => verifyLockButtonsRd(row),
+                filter: (d, t, row) => verifyLockFilterTextRd(row),
+            } },
+            // 2026-09-13, Round 3 item 3b: className:'all' (a Responsive-extension-only marker, dead
+            // weight since responsive:false) replaced by the `col-actions` marker class on this column's
+            // own `<th>` in detail.php instead (§7) -- DT_MARKER_CLASSES' own columnDef already supplies
+            // `className:'col-actions text-end', orderable:false, searchable:false` for it.
+            { data: null, render: (d, t, row) => runDetailActionsRd(row) },
         ],
         // 2026-09-09, explicit request: "ตาราง Employee ใน Tab Employee ให้เป็น Datatable ครับ" -- this
         // table was already DataTables-initialized (sort/footer totals/Excel-column-filter all
@@ -2842,7 +3042,6 @@ function initRunDetailTable(details) {
         drawCallback: function () {
             getTableLang();
             updateRunDetailBulkBar();
-            applyRunDetailViewMode();
             updateSummaryCardsFromTable();
         },
         // 2026-08-29, same-day follow-up: "ตอนนี้เหมือนมี Summary ด้านขวาเล็กๆ ให้ตัดออก...อยากให้มี Summary
@@ -2902,8 +3101,20 @@ function initRunDetailTable(details) {
             // comment). #btnBulkVerify additionally starts `disabled` and only re-enables once a row is
             // actually checked (updateRunDetailBulkBar(), unchanged logic, toggles `disabled` not
             // visibility).
+            // 2026-09-13, Round 3 item 3b follow-up, explicit toolbar layout (2nd revision, reported
+            // as a real §2/§4 exception): "'+ พนักงาน': ย้ายไปขวา ต่อจากช่องค้นหา เป็น .btn-primary (ส้ม) --
+            // ข้อยกเว้น: 'ปุ่มสร้างรายการในตาราง เป็น primary ได้ เมื่อ page header primary เป็น state
+            // action' ... toolbar ซ้ายเหลือ [แสดง N][ตรวจสอบที่เลือก (N)][ตรวจสอบทั้งหมด]" -- #btnJoinEmployees
+            // moves from `.dt-length` (left) to `.dt-search` (right, after the search box), restyled
+            // back to `btn-primary`. The exception this reverses the PREVIOUS round's own reasoning
+            // (§2's "1 หน้า = ปุ่มส้มได้ตัวเดียว" already spoken for by the page header) -- the resolved
+            // reading: the page header's own primary button is a STATE action (Recalculate/Submit/
+            // Approve -- moves the RUN forward), while "+ Employee" is a genuinely different kind of
+            // action (CREATES a row in a table), so both being orange doesn't create 2 competing "the
+            // one thing to do here" signals -- see §2/§4's own newly-documented exception text.
             const isDraft = !!currentRun && currentRun.state === 'draft';
             const $container = $(this.api().table().container());
+            const $lengthDiv = $container.find('.dt-length');
             const $searchDiv = $container.find('.dt-search');
             if ($searchDiv.find('#btnJoinEmployees').length === 0) {
                 // 2026-09-09: no more ms-1/ms-2 margin utilities on these -- .dt-search/.dt-length
@@ -2911,27 +3122,19 @@ function initRunDetailTable(details) {
                 // margin utility here would just add EXTRA space on top of that gap redundantly.
                 $searchDiv.append(`<button type="button" id="btnJoinEmployees" class="btn btn-sm btn-primary${isDraft ? '' : ' d-none'}"><i class="fa-solid fa-plus me-1"></i><span data-i18n="employee">${langData['employee'] || 'Employee'}</span></button>`);
             }
-            const $lengthDiv = $container.find('.dt-length');
+            // The count is countBadgeHtml() (app.js, §5's own "count badge = neutral" rule) instead of
+            // plain "(N)" text, same shape as the Adjusted-N/Comments-count badges elsewhere on this
+            // page -- updateRunDetailBulkBar() below sets its .html(), not .text(), to match. Both stay
+            // btn-outline-secondary, no icon (the button's own text already says what it does).
             if ($lengthDiv.find('#btnBulkVerify').length === 0) {
-                $lengthDiv.append(`<button type="button" id="btnBulkVerify" class="btn btn-sm btn-outline-success${isDraft ? '' : ' d-none'}" disabled><i class="fa-solid fa-check-double me-1"></i><span data-i18n="action_verify">${langData['action_verify'] || 'Verify'}</span> (<span id="runDetailBulkCount">0</span>)</button>`);
-                $lengthDiv.append(`<button type="button" id="btnVerifyAllEmployees" class="btn btn-sm btn-outline-success${isDraft ? '' : ' d-none'}"><i class="fa-solid fa-check-double me-1"></i><span data-i18n="action_verify_all">${langData['action_verify_all'] || 'Verify All'}</span></button>`);
+                $lengthDiv.append(`<button type="button" id="btnBulkVerify" class="btn btn-sm btn-outline-secondary${isDraft ? '' : ' d-none'}" disabled><span data-i18n="action_verify_selected">${langData['action_verify_selected'] || 'Verify Selected'}</span> <span id="runDetailBulkCount">${countBadgeHtml(0)}</span></button>`);
+                $lengthDiv.append(`<button type="button" id="btnVerifyAllEmployees" class="btn btn-sm btn-outline-secondary${isDraft ? '' : ' d-none'}"><span data-i18n="action_verify_all">${langData['action_verify_all'] || 'Verify All'}</span></button>`);
             }
-            // 2026-09-10, Batch 2 item 7: filter icon restricted to genuinely-filterable columns
-            // with multiple discrete values (data source/payment method/calc status/verify status)
-            // -- dropped from the 4 numeric amount columns and the name column per explicit request.
-            // 2026-09-11, Batch 3C item 7: index 3's key changed from 'data_source' (retired, now a
-            // filter pill instead -- see registerDataSourceSearchFilter()) to 'department' (the new
-            // column in that same slot) -- same index, no shift.
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 3, key: 'department' },
-                    { index: 4, key: 'payment_method_code' },
-                    { index: 9, key: 'calc_status' },
-                    { index: 10, key: 'verify_status' },
-                ]
-            });
-        }
+            // 2026-09-13, Round 3 item 3b: initExcelColumnFilters() itself no longer called here --
+            // initSharedDataTable()'s own `columnFilters` option (passed at the top of this call)
+            // wires it in automatically now (§7's own "ครอบหน้าที่ของ initExcelColumnFilters() ให้เอง").
+        },
+        },
     });
 }
 
@@ -2964,19 +3167,14 @@ function allRunDetailRowCheckboxes() {
     if (!tb_run_detail) return $();
     return tb_run_detail.rows({ search: 'applied' }).nodes().to$().find('.run-detail-row-check');
 }
-function applyRunDetailViewMode() {
-    if (!currentRun) return;
-    const isViewMode = currentRun.state !== 'draft';
-    $('#runDetailViewModeBadge').toggleClass('d-none', !isViewMode);
-    // Checkbox column visibility is handled in initRunDetailTable() itself now (both the initial-
-    // construction and reload-existing-table paths), not here -- see that function's own comment
-    // for why (a real ordering bug: this drawCallback fires before the table's own outer variable
-    // assignment completes on first load).
-    // 2026-09-09: #btnBulkVerify's own show/hide-by-draft-state is owned by renderSectionButtons()
-    // now (same place #btnJoinEmployees is toggled, both live together in .dt-search/.dt-length) --
-    // this function no longer needs to touch it at all, only its enabled/disabled-by-selection state
-    // (updateRunDetailBulkBar(), called separately below).
-}
+// 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "ตัด callout 'โหมดดูอย่างเดียว' ออกทั้งหมด
+// (สถานะรอบ + ปุ่มที่หายไปบอกอยู่แล้ว)" -- applyRunDetailViewMode() (the function that used to toggle
+// #runDetailViewModeCallout, itself a same-round replacement of an even older badge) is retired
+// entirely -- it had nothing left to do once the callout it existed for was removed (checkbox column
+// visibility already lives in initRunDetailTable() itself, #btnBulkVerify's own show/hide already
+// lives in renderSectionButtons() -- both moved out of this function in earlier rounds, confirmed by
+// re-reading its own body before deleting it, not assumed). Its one call site (drawCallback, above)
+// was removed along with it.
 
 /* ==================== Employee Verify / Lock / Comments (2026-08-29) ====================
    Explicit request: per-employee Verify + Lock/Unlock (single-row buttons + multi-select checkbox
@@ -2991,7 +3189,9 @@ function applyRunDetailViewMode() {
 function updateRunDetailBulkBar() {
     const $all = allRunDetailRowCheckboxes();
     const count = $all.filter(':checked').length;
-    $('#runDetailBulkCount').text(count);
+    // 2026-09-13, Round 3 item 3b: was plain .text(count) inside a literal "(N)" -- now countBadgeHtml()
+    // (see #btnBulkVerify's own markup comment in initComplete above).
+    $('#runDetailBulkCount').html(countBadgeHtml(count));
     $('#btnBulkVerify').prop('disabled', count === 0);
     const total = $all.length;
     $('#runDetailSelectAll').prop('checked', total > 0 && count === total)
@@ -3574,6 +3774,16 @@ $(document).on('click', '#btnMergeIntoTarget', function () {
 // separate Save button for a single switch" convention this app uses elsewhere) -- reverts the
 // checkbox visually on failure since currentRun.auto_recalculate would otherwise disagree with what
 // the box shows.
+// 2026-09-14, Round 3 "เก็บตกรอบ 6": #chkAutoRecalculate now lives inside a .setting-row
+// (setting-row.php/settingRowHtml(), §9/§11) whose own description auto-swaps on the SAME native
+// 'change' event via app.js's always-on delegated handler -- that handler and this one both fire off
+// the same real click, so a SUCCESSFUL save needs no extra work here, the description is already
+// showing the right text by the time this callback runs. On FAILURE, `.prop('checked', !value)`
+// reverts the box WITHOUT firing 'change' (jQuery's .prop() never does) -- `syncSettingRowDesc()`
+// (app.js, exported alongside settingRowHtml() for exactly this) re-syncs the description to match,
+// WITHOUT using `.trigger('change')` -- that would re-invoke THIS SAME id-scoped handler again
+// (jQuery fires every matching delegated handler on a real 'change', including this one), triggering
+// a duplicate save attempt.
 $(document).on('change', '#chkAutoRecalculate', function () {
     const $chk = $(this);
     const value = $chk.is(':checked');
@@ -3583,14 +3793,15 @@ $(document).on('change', '#chkAutoRecalculate', function () {
         success: function (res) {
             if (res.status) {
                 if (currentRun) currentRun.auto_recalculate = value ? 1 : 0;
-                renderRecalcReminder(currentRun || { state: 'draft', auto_recalculate: value ? 1 : 0 });
             } else {
                 $chk.prop('checked', !value);
+                syncSettingRowDesc($chk);
                 showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
             }
         },
         error: function () {
             $chk.prop('checked', !value);
+            syncSettingRowDesc($chk);
             showWarning(langData['save_failed'] || 'An error occurred while saving.');
         }
     });
@@ -4955,14 +5166,38 @@ $(document).on('shown.bs.tab', '#run-bank-account-tab', function () {
 $(document).on('shown.bs.tab', '#run-remittance-tab', function () {
     if (tb_run_remittance_dt) tb_run_remittance_dt.columns.adjust();
 });
-function activateTabFromHash() {
-    const hash = (location.hash || '').replace('#', '');
-    if (!hash) return;
-    const $btn = $('#' + CSS.escape(hash));
-    if ($btn.length && $btn.attr('data-bs-toggle') === 'tab') {
-        bootstrap.Tab.getOrCreateInstance($btn[0]).show();
+// 2026-09-14, Round 3 "เก็บตกรอบ 6" item 1 -- Payroll Detail's own missing changeLanguage() hook (see
+// renderRunHeaderText()'s own docblock, further up this file, for the full root-cause explanation).
+// Registered in app.js's changeLanguage() alongside the other ~6 per-page `refreshXxxLanguage()` hooks
+// this app already has for this exact bug class.
+function refreshPayrollDetailLanguage() {
+    if (currentRun) {
+        renderRunHeaderText(currentRun);
     }
+    // Defensive re-sync of #tb_run_detail's own column headers: these ARE plain `data-i18n` `<th>`
+    // elements that app.js's generic sweep should already re-translate on its own, and an extensive
+    // grep-based audit (see the same docblock above) found no bug in either the markup or the lang
+    // keys for them specifically -- but since this exact symptom (headers reverting after a language
+    // switch) was already found and fixed once elsewhere in this app for a DIFFERENT root cause
+    // (initExcelColumnFilters() leaving `data-i18n` on the wrong node, see table-column-filter.js's own
+    // 2026-09-13 fix), this stays in as a guaranteed-correct backstop regardless of whether some other,
+    // not-yet-identified mechanism is also touching this table's headers.
+    $('#tb_run_detail thead th[data-i18n]').each(function () {
+        const key = $(this).attr('data-i18n');
+        const value = getLangValue(key);
+        if (value !== undefined) {
+            const $titleSpan = $(this).find('.tcf-header-title');
+            if ($titleSpan.length) {
+                $titleSpan.text(value);
+            } else if ($(this).children().length === 0) {
+                $(this).text(value);
+            }
+        }
+    });
 }
+// 2026-09-13, §1 follow-up: activateTabFromHash() itself moved to app.js (shared with employee/list.js
+// and employee/detail.js's own near-identical versions -- see that function's own docblock) -- the
+// call site below is unchanged, since this page never scoped it to a container to begin with.
 // 2026-09-10, real bug fix -- was `$(document).ready(function () { loadRunDetail(); ... })` directly,
 // which ran before app.js's own `langData` fetch had necessarily resolved (see window.langReady's
 // own docblock in app.js). Deferred to `window.langReady.then(...)` so the FIRST render of the run

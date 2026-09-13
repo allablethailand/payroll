@@ -239,6 +239,16 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 
 ทดสอบง่ายๆ: ถ้าเปลี่ยนหน้าให้เป็นขาวดำ ผู้ใช้ยังรู้ไหมว่าต้องกดอะไร ถ้ารู้ = ถูก สีที่เหลือคือของแถม
 
+**2026-09-13, "เก็บตกรอบ 4", บั๊กจริงบน switch ที่ถูกเลือก/เปิด (checked)** — ติ๊กสวิตช์แล้วจุดขาวหายไปจนกว่า
+จะคลิกที่อื่น (เสีย focus) — ต้นตอ: `.form-switch .form-check-input:focus`'s เองมี `--bs-form-switch-bg`
+override เป็นวงกลม**สีส้มตัน**ไม่มีเงื่อนไข ชนกับพื้น track สีส้มเดียวกันตอน checked (จุดกลายเป็นส้มบนส้ม
+มองไม่เห็น) — Bootstrap เองแก้กรณี checked+focused ถูกอยู่แล้ว (declare `:checked` หลัง `:focus`ในซอร์สตัวเอง
+ชนะ tie ได้ถูก) แต่ override ของแอปนี้ที่โหลดทีหลัง (specificity เท่ากัน) ดันชนะทับแม้ตอน checked ด้วย —
+แก้โดย scope override เหลือแค่ `:not(:checked):focus` (ให้ `:checked`'s จุดขาวเดิมของ Bootstrap ชนะเสมอตอน
+ติ๊กอยู่ ไม่ว่า focus หรือไม่) ใช้ ring ส้มรอบนอก (`.form-check-input:focus`'s border+box-shadow เดิม) เป็น
+สัญญาณ focus แทนการเปลี่ยนสีจุดเอง — ดูรายละเอียดเต็มใน `style.css`'s own comment บน rule นี้ (Round 2
+item (2) section) มีผลทุกสวิตช์ในแอปอัตโนมัติ
+
 **ข้อยกเว้นของกฎ "การ์ด/กล่องห้ามมีสี tone บนขอบ/พื้นตัวเอง" (เพิ่ม 2026-09-13)** — 2 กรณีนี้เท่านั้นที่ให้สี
 tone ปรากฏบนตัว container ได้ ไม่ใช่แค่ badge/ไอคอน/ตัวเลขเดี่ยว เพราะเป็น "หน้าที่ทั้งหมด" ของ component นั้นเอง
 ไม่ใช่การตกแต่งเพิ่ม:
@@ -307,6 +317,16 @@ tone ปรากฏบนตัว container ได้ ไม่ใช่แค
     ตลอดจากปุ่ม trigger ถึงปุ่มยืนยันจริง — ไอคอนไม่เปลี่ยน (glyph/ตำแหน่งเดิม แค่สีตามตัวหนังสือที่เปลี่ยนไป
     โดยอัตโนมัติ เพราะไม่มี CSS override สีไอคอนแยก) — **ปุ่มอื่นทั้งหมดนอกชุดนี้ยังตามลำดับชั้น 4 ระดับเดิม
     ข้างบนไม่เปลี่ยน** ข้อยกเว้นนี้ไม่ใช่ใบอนุญาตให้ปุ่มไหนก็ได้มีสีของตัวเอง
+- **ข้อยกเว้น: ปุ่มสร้างรายการในตาราง (ใหม่, 2026-09-13, Round 3 item 3b follow-up — Payroll Detail's
+  `#btnJoinEmployees` "+ พนักงาน")** — ปุ่มสร้างรายการใหม่ใน**ตารางย่อยภายในหน้า** (ไม่ใช่ปุ่มหลักของทั้งหน้า)
+  เป็น **`.btn-primary` (ส้ม) ได้** เมื่อ **ปุ่ม primary ของ page header เป็น state action** (เช่น
+  คำนวณ/ส่งอนุมัติ/อนุมัติ — ปุ่มที่เปลี่ยน**สถานะของ record ทั้งก้อน**) ไม่ใช่ปุ่ม "สร้าง/เพิ่ม" แบบเดียวกัน —
+  เหตุผล: ทั้งสองไม่ได้แข่งกันเป็น "สิ่งเดียวที่ต้องทำในหน้านี้" (§2's "1 หน้า = ปุ่มส้มได้ตัวเดียว" เขียนขึ้นมา
+  เพื่อกันปุ่มส้ม 2 ตัวที่ชิงความสนใจเรื่อง "อันไหนคือ action หลัก" กัน แต่ state action ของทั้ง run กับ
+  "เพิ่มพนักงานเข้าตารางนี้" เป็นคนละคำถามกันจริงๆ ไม่ใช่ 2 คำตอบของคำถามเดียวกัน) — **ไม่ใช่ใบอนุญาตทั่วไป**
+  สำหรับปุ่ม "+เพิ่ม" ทุกตัวในทุกตาราง ใช้ได้เฉพาะเมื่อเงื่อนไข "page header primary เป็น state action"
+  เป็นจริงจริงๆ เท่านั้น — ตารางที่ page header ของหน้าเดียวกันมีปุ่ม primary เป็น "บันทึก"/"สร้าง" อยู่แล้ว
+  (ชนกับความหมายเดียวกัน) ปุ่ม "+เพิ่ม" ในตารางย่อยยังคง `.btn-outline-secondary` ตามปกติ
 
 ---
 
@@ -338,6 +358,31 @@ tone ปรากฏบนตัว container ได้ ไม่ใช่แค
     `updateText()` เหมือนกัน ไม่ใช่เพราะจำเป็นต่อการ render ครั้งแรก)
   - **enum ที่ไม่มีใน map**: badge เทา (`badge-neutral`) + label เป็นค่า enum ดิบ (ไม่มี `data-i18n`
     เพราะไม่มี key จริงให้สลับ) — PHP บันทึกผ่าน `error_log()`, JS ผ่าน `console.warn()` ไม่ throw/พังหน้า
+  - **`statusBadgeHtml(enum, context, options)` — option `{menu: htmlString}` (ใหม่, 2026-09-13, Round 3
+    item 3b follow-up — Payroll Detail's "ตรวจสอบแล้ว" badge เป็นจุดใช้จริงจุดแรก)**: badge ที่บางสถานะ
+    ต้อง**ยกเลิก/แก้ไขสถานะนั้นได้จากตัวมันเอง** (เช่น กด "ตรวจสอบแล้ว" แล้วเปิดเมนู "ยกเลิกการตรวจสอบ")
+    ส่ง `options.menu` เป็น HTML ดิบของ `<li>` รายการเมนู (caller เป็นคนสร้างเนื้อหาเมนูเอง — ฟังก์ชันนี้
+    **ไม่รู้ความหมายของ action ข้างใน** แค่ห่อเป็น dropdown ให้) — badge กลายเป็น `<button>` จริง (ต้อง
+    focusable/คลิกได้ ต่างจาก `<span>` ปกติ) มีคลาส `dropdown-toggle` เพิ่ม (ได้ลูกศร ▾ เล็กจาก CSS ของ
+    Bootstrap เอง โดยไม่ต้องเขียนไอคอนเอง) + `data-bs-toggle="dropdown"` — ไม่ส่ง `menu` มา = badge ปกติ
+    เหมือนเดิมทุกอย่าง (backward-compatible, ทุก call site เดิมไม่กระทบ) — `button.badge` มี CSS reset
+    ของตัวเอง (`border:0`) กัน browser default ของปุ่มหลุดออกมาทับหน้าตา badge — **เงื่อนไขว่าจะส่ง `menu`
+    เมื่อไหร่เป็นหน้าที่ของ caller ตัดสินเอง** (เช่น "ตรวจสอบแล้ว" ส่ง menu เฉพาะตอน draft เท่านั้น,
+    non-draft ไม่ส่ง = ไม่มี ▾ เลย) ไม่ใช่ logic ในฟังก์ชันกลางนี้
+- **`countBadgeHtml(n, options)` (`public/js/app.js`, Round 3 item 3b — ตัวเลขล้วนบน pill, คนละอย่างกับ
+  `statusBadgeHtml()`)** — สำหรับ "จำนวน" ที่ไม่ได้มาจาก enum/`status_map.php` (เช่น จำนวนรายการที่ปรับ,
+  จำนวนคอมเมนต์) รับตัวเลขตรงๆ ไม่ใช่ (enum, context) คู่ — ใช้ `.badge.badge-{tone}` CSS เดียวกับ
+  `statusBadgeHtml()` เป๊ะ แค่เนื้อหาเป็นตัวเลขล้วน (ไม่มี `data-i18n` เพราะไม่มี label ให้แปล)
+  - **tone: `neutral` (เทา) เป็นค่า default เสมอ** — ส่ง `{tone: 'x'}` เฉพาะเมื่อ "จำนวนนี้เองต้องการความ
+    สนใจ" เท่านั้น ไม่ใช่แค่ "มีจำนวน > 0"
+  - **บน count badge ที่ overlay ทับปุ่มวงกลม `.btn-circle-action` โดยเฉพาะ (2026-09-13, Round 3 item 3b
+    follow-up, ยืนยันแล้ว)**: `{tone: 'primary'}` สงวนไว้เฉพาะ **"มีรายการใหม่/ยังไม่อ่าน"** เท่านั้น —
+    ไม่ใช่ "จำนวนเยอะ" หรือ "มีข้อมูลอยู่" เฉยๆ — **ไอคอนของปุ่มวงกลมเองไม่เปลี่ยนสีตามนี้** ยังเป็น
+    `--c-text-muted` สีเดียวตาม §7 เสมอไม่ว่า badge จะ tone ไหน (badge เป็นตัวส่งสัญญาณ "ใหม่" ไม่ใช่ไอคอน)
+    — caller ที่ยังไม่มี concept "ยังไม่อ่าน" จริง (เช่น Payroll Detail's Comments count — ดึงมาจาก
+    `row.comment_count` รวมทั้งหมด ไม่มี flag อ่านแล้ว/ยังไม่อ่านเลย) **ต้องอยู่ที่ neutral default ไปก่อน**
+    ไม่ใช่เดาว่า "count>0 = ใหม่" — ดู BACKLOG.md ("Comment count badge has no unread/new tracking")
+    สำหรับสิ่งที่ต้องมีก่อนถึงจะเปิดใช้ primary tone ได้จริง
 - Tone มี 4 ค่า: `neutral` (เทา), `warning`, `danger`, `success` — เลือกจากคำถาม "ผู้ใช้ต้องทำอะไรกับสถานะนี้ไหม": ต้องทำ → warning/danger, จบแล้ว → success, แค่รู้ → neutral
 - รูปแบบเดียว: `.badge.badge-{tone}` พื้น `--c-{tone}-soft` ตัวหนังสือ `--c-{tone}` `--radius-pill` ไม่มีไอคอน ไม่มีขอบ
 - ไม่แสดง badge ซ้ำในทุกแถวถ้าค่าเหมือนกันทั้งตาราง (เช่น "Origami" ทุกแถว) → ย้ายไปเป็น filter หรือหัวตาราง
@@ -381,6 +426,13 @@ switch ไม่เคยเป็น badge เลยที่ไหนในแ
 - ไม่มี chevron / ลูกศร
 - tab ที่เลือก: ตัวหนังสือ `--c-text` + เส้นใต้ 2px `--c-primary`; ไม่เลือก: `--c-text-muted`
 - จำนวนที่ต้องแสดง (เช่น "รออนุมัติ 3") ใช้ตัวเลขเทาในวงเล็บหลังชื่อ tab ไม่ใช่ badge สี
+- **`.tab-content` ไม่มี card ครอบ** (ตัดสินใจแล้ว, Round 3 item 3b follow-up — ตัวอย่างจริง: Payroll
+  Detail's `#runDetailTabsContent`) — ตัวครอบเดียวที่ห่อ `.tab-pane` ทุกอันร่วมกัน (border/พื้น/เงา/
+  border-radius) ต้องไม่มี แต่ละ `.tab-pane` ชิดเนื้อหาโดยตรง เว้นระยะห่างจาก tab bar แค่ `--sp-4`
+  เท่านั้น ไม่มีขอบ/พื้น/padding ข้างของตัวเอง — ตารางและ filter-bar ภายใน pane จึงกว้างเต็ม content
+  ได้จริง (ไม่ใช่เต็มแค่ "ภายในการ์ด") ใช้กับทุกหน้าที่มี top-level page tab ไม่ใช่เฉพาะ Payroll Detail
+  — ถ้าเนื้อใน pane ใดยังพึ่ง padding ของ card เดิมอยู่ (ยังไม่ถูกจัดใหม่ในรอบเดียวกัน) ให้ใส่ padding
+  แบบเดิมกลับเข้าไป **ที่ตัว pane นั้นโดยตรง** (scoped ต่อ id) เป็นการชั่วคราวแทน ไม่ใช่คืน card กลับมา
 
 **Status tabs** (ตัดสินใจแล้วรอบ 2 item 4b, **แก้ไขหลัง review**: คนละ component กับ "Tabs" ด้านบน แม้
 หน้าตาคล้ายกัน — อันนี้ใช้ **กรองตาราง** ตาม status ที่**เป็นลำดับ/workflow** (draft → pending_approval →
@@ -618,6 +670,100 @@ approved → ...) ไม่ใช่สลับหน้า)
      แทน ให้ใช้ได้ทั้งกรณี 2 ลูก (ปกติ) และ 3 ลูก (ยุบ, มี chips แทรกกลาง) โดยปุ่ม toggle ชิดขวาเสมอ —
      ปุ่ม "ล้างตัวกรอง" หายไปพร้อมกับ `.filter-bar-footer` ตอนยุบ (ตามที่สั่ง "เหลือหัว + chips" ไม่ได้
      พูดถึงปุ่มล้าง) กลับมาตอนกางเหมือนเดิม
+- **2026-09-13, Round 3 item 3b follow-up — 8 จุด (จากการทดสอบหน้าจริง Payroll Detail):**
+  1. **บั๊กจริงที่เจอและแก้แล้ว: ปุ่ม "ล้างตัวกรอง"/× บน chip กดไม่ทำงาน** — `initFilterBar()` เดิมผูก
+     click handler ทั้งสองแบบ**ตรง** (`$clearBtn.on('click', ...)`, `$chip.find(...).on('click', ...)`)
+     ไปที่ node เฉพาะจุดที่จับไว้ครั้งเดียว — แผงนี้มี `syncCollapsedLayout()` ที่ย้าย
+     `.filter-bar-footer-left` ไปมาระหว่างกางกับยุบอยู่แล้ว และ chip เองก็ถูกสร้างใหม่ทุกครั้งที่
+     `refresh()` ทำงาน (`$chips.empty()` แล้วสร้างใหม่) — pattern ที่ทนทานกับ DOM ที่เปลี่ยนบ่อยแบบนี้คือ
+     **delegated binding บน `$bar` เอง** (node เดียวในแผงทั้งหมดที่ไม่เคยถูกย้าย/แทนที่) ไม่ใช่ direct
+     binding แก้แล้วทั้งคู่ — chip's × ใช้ `data-target="{select id}"` แทน closure (delegation ไม่มี
+     closure ต่อ chip ให้ใช้) เพราะฉะนั้น **ทุกช่องที่ใช้กับ partial นี้ต้องมี `id` จริงไม่ซ้ำกัน** (ข้อกำหนด
+     ใหม่ ระบุไว้ใน `filter-bar.php`'s docblock ของตัวเอง) — ยืนยันด้วย components.php's demo ทั้ง 2 จุด
+     เดิมมี `id` ครบอยู่แล้วจึงไม่ต้องแก้ demo
+  2. **ไอคอน `fa-filter` หน้า "ตัวกรอง"** — สี `--c-text-muted` สีเดียว (inherit จาก `.filter-bar-label`
+     เอง ไม่ต้องมี CSS สีแยก) เป็น**ข้อยกเว้นเฉพาะหัว filter-bar เท่านั้น** ไม่ใช่การยกเลิกกฎ "ไม่มีไอคอนหน้า
+     label ของ field" ด้านบน (field label ในตัวแผงยังห้ามมีไอคอนเหมือนเดิม)
+  3. **N=0 ไม่แสดง "ไม่ได้กรอง" อีกต่อไป** — ข้อความ placeholder เดิม (`filter_bar_empty` i18n key)
+     **ถูกลบทิ้งทั้งหมด** (ไม่ใช่แค่ซ่อน) `.filter-bar-footer-left` (chips' own container) ซ่อนตัวเองแทน
+     เมื่อ N=0 (`.toggleClass('d-none', n===0)`) — แผงเมื่อไม่ได้กรองเลยจึงเป็นพื้นที่ว่างเงียบๆ ไม่ใช่
+     ประโยคบอกว่า "ไม่ได้กรอง"
+  4. **chips ตอนยุบ (restyle รอบใหม่)**: `--fs-xs` พื้น `--c-bg-hover` ขอบ `--c-border` ตัวหนังสือ label
+     `--c-text-muted` ค่า `--c-text` (รูปแบบ "label: ค่า" เดิมไม่เปลี่ยน) ปุ่ม × ขนาด **10px** — ตั้งใจให้
+     chip อ่านเป็น "ป้ายบอกค่าที่กรองอยู่" ชัดเจน ไม่กลืนไปกับพื้น/ตัวหนังสือของหัวแผงข้างบน (ก่อนหน้านี้
+     chip กับหัวแผงใช้โทนใกล้กันเกินไป แยกไม่ออกว่าอันไหนคืออะไร)
+  5. **ระยะภายในแผงตอนกาง แน่นลง**: หัว→ช่อง `--sp-3`, ช่อง→ท้าย `--sp-3` (มาจากแหล่งเดียวไม่ซ้อน 2 ชั้น —
+     ดู style.css's own comment บน `#runDetailTabsContent`... ไม่ใช่, ดู comment บน `.filter-bar-header`/
+     `.filter-bar-body > :first-child`/`.filter-bar-footer` โดยตรง), padding รอบแผง `--sp-3 --sp-4`
+     (แนวตั้ง/แนวนอน) ทุกจุด — ของเดิมมี padding ซ้อนกัน 2 ชั้นที่รอยต่อ ช่อง→ท้าย จนได้ 24px ทั้งที่ไม่มี
+     กฎไหนตั้งใจให้เยอะขนาดนั้น (บั๊กจริงที่เจอระหว่างแก้ข้อนี้)
+  6. **`$header_extra_html` (optional slot ใหม่)** — เพิ่มเข้ามาเพื่อทดลองวางสวิตช์ "คำนวณอัตโนมัติ" ของ
+     Payroll Detail ไว้ขวาของหัวแผง แล้ว**ถูกเลือกไม่ใช้ในหน้านั้น**หลัง feedback (สวิตช์กลับไปเป็นบรรทัด
+     ของตัวเองเหนือแผงแทน ตามที่ผู้ใช้ยืนยัน) — slot ยังคงอยู่ใน `filter-bar.php` (documented, ใช้ได้จริง
+     กับ caller อื่นในอนาคต) ไม่ได้ถูกลบทิ้งเพียงเพราะหน้านี้ไม่ได้ใช้แล้ว
+- **2026-09-13, footer ถูกตัดออกทั้งหมด — แผงเหลือ 2 ส่วน (หัว + ตัว) ไม่ใช่ 3 ส่วนอีกต่อไป (ยกเลิกทุกข้อ
+  ด้านบนที่พูดถึง `.filter-bar-footer`/`.filter-bar-footer-left`/`syncCollapsedLayout()`) — 4 จุด:**
+  1. **ตอนกาง**: chips หายไปทั้งหมด (`.filter-bar:not(.collapsed) .filter-bar-chips { display:none }`,
+     CSS ล้วน) เหลือแค่ปุ่ม "ล้างตัวกรอง" — ย้ายจากท้ายแผง (footer) ไปอยู่ **หัวแผงฝั่งขวา ข้าง chevron**
+     ตามที่ผู้ใช้เลือก ("ประหยัดที่" กว่าคงแถวท้ายไว้เฉพาะปุ่มเดียว) `.filter-bar-footer` ทั้งก้อนถูกลบออก
+     จาก `filter-bar.php`/`style.css` เลย ไม่เหลือ wrapper เปล่าค้างไว้
+  2. **ตอนยุบ**: chips แสดงตามที่เคยทำไว้ (ไม่เปลี่ยน) — อยู่ในหัวแผงเหมือนเดิม แต่ตอนนี้เป็น**ตำแหน่งถาวร**
+     ของ chips (ไม่ใช่ JS ย้าย node เข้า-ออกจากหัวแผงตามสถานะกางอีกต่อไป — `.filter-bar-chips` เป็นลูกถาวร
+     ของ `.filter-bar-header` ใน markup เอง `syncCollapsedLayout()` ทั้งฟังก์ชันถูกลบออกจาก `initFilterBar()`
+     ไม่มีการ reparent DOM ใดๆ เหลืออยู่ในกลไกนี้แล้ว — เหตุผลเดียวกับที่เคยแก้บั๊กปุ่มกดไม่ทำงานไปแล้วรอบก่อน
+     คือยิ่งลด DOM reparenting ยิ่งทนบั๊กแบบนั้นได้มากขึ้น)
+  3. **ระยะภายในแผงตอนกาง แน่นลงอีก**: padding รอบแผง (`.filter-bar-header`) ยังคง `--sp-3 --sp-4`
+     (แนวตั้ง/แนวนอน) แต่ระยะหัว→ช่อง (`.filter-bar-header`'s padding-bottom) ลดจาก `--sp-3` เหลือ **`--sp-2`**
+     โดยเฉพาะ (แนวนอนซ้าย/ขวา/บนไม่เปลี่ยน) — ยิ่งเตี้ยลงอีกขั้นจากรอบก่อนหน้า
+  4. **ช่องที่มีค่า**: field wrapper (div เดียวกับที่ label เป็น sibling ของ `<select>`) ได้ class ใหม่
+     `.filter-bar-field-active` (toggle ใน `refresh()` ทุกครั้งที่ filter เปลี่ยน, เช็คด้วย `isActive()`
+     ตัวเดิมที่ใช้นับ N อยู่แล้ว) → ขอบ `--c-border-strong` บน select2/native select ข้างใน — ให้เห็นว่าช่อง
+     นี้ไม่ใช่ค่า default **โดยไม่ต้องพึ่ง chips** (ตอนกาง chips ถูกซ่อนตาม item 1 ข้างบน ขอบช่องนี้เลยเป็น
+     สัญญาณเดียวที่เหลือ) — CSS: `.filter-bar-field-active .select2-selection,
+     .filter-bar-field-active select:not(.select2-hidden-accessible) { border-color: var(--c-border-strong) }`
+     (ยืนยันแล้วว่า specificity ชนะ select2-bootstrap-5-theme's own `.select2-selection` border ผ่าน
+     source order ปกติ ไม่ต้องใช้ `!important`)
+- ดู `docs/design/components.php`'s Filter Bar (§6) demo section — แก้คำอธิบาย/ขั้นตอนทดสอบให้ตรงกับ
+  โครงสร้าง 2 ส่วนนี้แล้วในรอบเดียวกัน (ของเดิมอธิบายแผง 3 ส่วนพร้อม footer และอ้างถึงข้อความ "ไม่ได้กรอง"
+  ที่ถูกลบไปตั้งแต่รอบก่อนหน้านี้แล้ว)
+- **2026-09-13, defensive hardening follow-up — บั๊กรายงาน "× บน chip และ 'ล้างตัวกรอง' กดติดบ้างไม่ติดบ้าง"
+  ตอนยุบ:** ไล่โค้ดจริงแล้วไม่พบ double-init บนหน้าจริง (payroll/detail.js มี once-guard ระดับโมดูลอยู่แล้ว
+  ปุ่ม toggle เดิมก็ผูกกับวงกลม chevron เท่านั้น ไม่เคยครอบทั้งแถวหัว) — ไม่มีสภาพแวดล้อม browser จริงให้
+  reproduce ยืนยัน root cause เดียวแบบคาหนังคาเขาได้ จึงเพิ่ม defensive hardening 3 จุดแทนการปล่อยผ่าน:
+  1. `initFilterBar()` (app.js) ได้ once-guard ระดับ**ตัว element เอง** (`$bar.data('filterBarInitialized')`)
+     ไม่ใช่แค่พึ่ง once-guard ระดับหน้าที่ caller ต้องเขียนเอง — กัน handler ซ้อนทุกตัว (toggle/chip-remove/
+     clear/change) หาก caller ในอนาคตเรียกซ้ำโดยไม่ตั้งใจ scope ต่อ element ไม่ใช่ module-level flag เดียว
+     ทั้งไฟล์ จึงยังรองรับ 2 filter-bar instance แยกกันบนหน้าเดียว (เช่น demo's `#cpFilterBarDemo` +
+     `#cpFullFilterBar`) ได้ปกติ
+  2. zone สำหรับกาง/ยุบชัดเจนขึ้น — รวมป้าย "ตัวกรอง" (`.filter-bar-label`, ได้ `cursor:pointer` เป็น
+     สัญญาณ) เข้ากับวงกลม chevron เป็น zone เดียว (`$bar.find('.filter-bar-toggle, .filter-bar-label')`)
+     — chips/ปุ่ม "ล้างตัวกรอง" อยู่นอก zone นี้เสมอ และได้ `e.stopPropagation()` ในตัว handler ของตัวเอง
+     กันชนกับ zone นี้ (หรือ ancestor click zone ใดๆ ในอนาคต) แม้ปัจจุบันยังไม่เจอการชนจริงก็ตาม
+  3. ยืนยันแล้วว่า onChange/reload ยิงครั้งเดียวต่อ action เสมอ (debounce ผ่าน `setTimeout(0)` เดียวใน
+     `scheduleNotify()`, ของเดิมถูกต้องอยู่แล้ว ไม่ต้องแก้) — เพิ่ม stress-test panel ใน components.php's
+     demo (2 counter: จำนวนคลิกที่จับได้ vs. จำนวน onChange ที่ยิงจริง + ปุ่ม "ตั้งค่าตัวอย่างใหม่") ให้กด
+     × สลับกาง/ยุบซ้ำได้จริงด้วยตา ไม่ใช่แค่อ่านโค้ดแล้วเชื่อ
+- **2026-09-13, บั๊กจริงที่ 3 วันเดียวกัน — repro ชัดจากผู้ใช้ยืนยัน root cause ได้จริง (ไม่ใช่เดา):**
+  "เลือก 2 ช่อง → × ของช่องที่ 2 (static) ทำงาน, ช่องที่ 1 (แผนก = select2-remote) × ไม่ทำงาน; 'ล้างตัวกรอง'
+  ล้างได้แค่ช่อง static; เลือกแผนกช่องเดียว × ไม่ทำงานเลย" — components.php's demo เดิมทุกช่องเป็น
+  `select2-native` (มี option ครบในมาร์กอัปเสมอ) จึง repro บั๊กนี้ไม่ได้เลย จนกว่าจะเปลี่ยนช่องแรก
+  (`#cpFilterDept`) เป็น `select2-remote` จริง ชี้ `/api/department.get` เหมือน `#rdDepartmentFilter`
+  ของหน้าจริงทุกประการ (ตามที่สั่ง) — root cause: `resetSelect()` เดิมใช้ `.find('option').first()` เป็นค่า
+  "default" เสมอ ถูกสำหรับ static/native (option แรกในมาร์กอัปคือ `value="all"` จริง) แต่**ผิดสำหรับ
+  select2-remote** เพราะช่อง ajax ไม่มี option ใดๆ ในมาร์กอัปเลยตอนเริ่มต้น (ดู `initSelect2()`'s ajax
+  branch, input.js) — option เดียวที่เคยมีคือตัวที่ select2 append ตอนผู้ใช้เลือกค่าจริง ดังนั้น
+  `.find('option').first()` จึงเจอ**ตัวเดียวกับค่าที่กำลังจะล้าง**เสมอ ตั้งค่ากลับไปที่ตัวมันเอง = no-op
+  ตรงกับทุกอาการที่รายงาน แก้ 3 จุด:
+  1. `resetSelect()` แยก branch ตาม `.select2-remote`: ลบ option ที่ select2 append ไว้ทั้งหมดก่อน
+     (`$select.find('option').remove()`) แล้วค่อย `$select.val(null).trigger('change')` — คืนช่องกลับ
+     สภาพเปล่าเป๊ะเหมือนมาร์กอัปเริ่มต้น ไม่ใช่แค่ตั้งค่าว่างทิ้ง option ค้างไว้
+  2. sentinel "ทั้งหมด" ไม่ hardcode `'all'` ทุกช่องอีกต่อไป — `defaultValueFor($select)` ใหม่อ่าน
+     `data-filter-default` attribute ก่อน (optional, ระบุได้ต่อช่อง) ถ้าไม่มีค่อย fallback ตาม type:
+     `select2-remote` → `''`, อื่นๆ → `'all'` (ของเดิมเท่ากับ fallback นี้พอดี ไม่กระทบ field เดิมที่ไม่ได้
+     ตั้ง attribute) — `isActive()`/`resetSelect()` ทั้งคู่อ่านผ่านฟังก์ชันเดียวนี้ ไม่ hardcode ซ้ำ
+  3. "ล้างตัวกรอง" เก็บ snapshot รายการช่อง (`.toArray()`) ก่อนวน + `try/catch` ต่อช่องกัน 1 ช่องพังแล้ว
+     ช่องที่เหลือไม่ถูกล้างตาม (debounce เดิมของ `scheduleNotify()` ยิง onChange ครั้งเดียวหลังจบลูปอยู่แล้ว
+     ไม่ต้องแก้) — `filter-bar.php`'s docblock บันทึก `data-filter-default` contract ใหม่ไว้แล้ว
 
 **Dropdown ของปุ่ม** (⋮/ส่งออก/action menu ทั่วไป — `.dropdown-menu:not(.notif-dropdown)` — REVISED
 2026-09-13, item 3a "เก็บตก" item 1, แล้วปรับละเอียดอีกรอบวันเดียวกัน)
@@ -896,6 +1042,156 @@ component ทุกตัวของรอบ 2 จากนี้**: markup �
 
 **Per-column sort/filter (ช่องว่างที่พบรอบ 0, ตัดสินแล้ว)**: CLAUDE.md's Table convention เดิมบังคับว่าทุก `<th>` ที่มีข้อมูลจริงต้องเรียก **`initExcelColumnFilters(dt, options)`** (`public/js/table-column-filter.js`) เอง ต่อตาราง ใน `initComplete` — กฎนั้นยังใช้อยู่ ไม่ถูกยกเลิก แต่ **`initSharedDataTable()` ต้องครอบหน้าที่นี้ให้เองจากรอบ 2 เป็นต้นไป** (อ่าน `columnDefs`/`columns` ที่ caller ส่งมา แล้วเรียก `initExcelColumnFilters()` ให้อัตโนมัติตาม mode ที่เหมาะกับตาราง client/server — หน้าเรียกทีเดียวผ่าน `initSharedDataTable()` ไม่ต้องเรียก `initExcelColumnFilters()` แยกเองอีก) รายละเอียด mode/exemption ตาม CLAUDE.md's Table convention เดิม (`mode:'client'`/`mode:'server'`, exempt คอลัมน์ปุ่ม/widget ภาพ/ตารางที่มี top-level filter อยู่แล้ว) — รายละเอียดการ implement (จะ auto-detect คอลัมน์ที่ควร filter ยังไง) ตัดสินตอนรอบ 2
 
+**2026-09-13, Round 3 "เก็บตก" item 2 — column-filter popup migrate เข้าระบบ token/component ปัจจุบัน**
+(สร้างไว้ 2026-08-27 ก่อน Phase Design Round 2/3 จะมีอยู่ด้วยซ้ำ ไม่เคยผ่าน migration รอบไหนเลย):
+- **(a)** ทุกข้อความผ่าน `langData` แล้วครบ — ปุ่ม "ล้าง"/"ใช้ตัวกรอง" ได้ key ใหม่ของตัวเอง
+  `column_filter_clear`/`column_filter_apply` (**ไม่ใช่** reuse `clear_filter`/`apply` เดิมที่ค่าเป็นคำอื่น
+  อยู่แล้วและใช้ร่วมกับหน้า/ปุ่มอื่นอีก 22+ จุดทั่วแอป — แก้ค่า key เดิมจะกระทบข้อความที่อื่นโดยไม่ตั้งใจ)
+  `column_filter_title`/`select_all`/`close`/`loading` เดิมตรงกับที่ต้องการอยู่แล้ว ไม่ต้องแก้ — `search`
+  key (ใช้ร่วมกับอีก 4 จุดทั่วแอป ทุกจุดเป็น placeholder ล้วนไม่มีจุดไหนเป็น label) ค่าเปลี่ยนจาก "ค้นหา"
+  เป็น "ค้นหา..." (ตามธรรมเนียม "..." 3 จุดที่ th.json ใช้อยู่แล้ว 19 จุด ไม่ใช่ "…" ตัวเดียว) ให้ตรงกับ
+  fallback ที่ HTML เดิมก็ hardcode ไว้แบบนี้อยู่แล้วทุกจุด
+- **(b)** checkbox (select-all + รายการค่า) ได้ `.form-check-input` จริง (ติ๊กส้มมาตรฐาน §3) — ของเดิม
+  **ไม่มี class ใดๆ เลย** เป็น native browser checkbox ล้วนๆ ไม่ใช่แค่ "style ของตัวเอง" ตามที่สงสัยไว้ —
+  ไม่ต้องห่อ `.form-check` เพราะ `.tcf-item`'s เองเป็น flex row ธรรมดาอยู่แล้ว ไม่ได้พึ่ง Bootstrap's
+  margin-left:-1.5em trick ที่ `.form-check` wrapper มีไว้ให้ (บั๊กคนละแบบกับที่เคยเจอใน Payslip/ECT
+  Assign-To checkboxes รอบก่อน — ยืนยันแล้วว่าไม่ใช่เคสเดียวกันก่อนมั่นใจว่าไม่ต้องห่อ)
+- **(c)** กล่อง (`.tcf-panel`) ย้ายจาก token คู่ขนานเดิม `--app-*` (ของ T069, ยัง theme-aware ปกติแต่คนละ
+  ระบบกับ `tokens.css`) เป็น `--c-border`/`--shadow-soft`/`--radius`/`--sp-3` ครบ (migrate ทั้งกล่องรวม
+  ถึง background/hover/border ของ sub-element ข้างในด้วย ไม่ใช่แค่ 4 property ที่สั่งตรงๆ — เหตุผล: ทิ้งไว้
+  ครึ่งๆ กลางๆ จะได้กล่องที่ขอบอ้าง token หนึ่งระบบ พื้นอ้างอีกระบบ เสี่ยงเฉดไม่ตรงกันใน dark mode แม้ทั้งคู่
+  จะ valid — ตรงกับกฎ §1 เดิมอยู่แล้วที่ห้าม component มี dark override แยกจาก `--c-*`, งานรอบนี้แค่เป็น
+  ตัวกระตุ้นให้ทำจริงสักที) หัว (`.tcf-panel-title`) เป็น `--fs-sm` 600 (ของเดิม 1.0417rem เดี่ยวๆ ไม่มี
+  token), ปุ่ม × เปลี่ยนเป็น `.btn-icon.btn-icon-ghost` จริง (§7 ข้างบน) — CSS ของตัวเองเหลือแค่ `flex:none`
+  ที่ยังจำเป็นสำหรับ layout, ปุ่มท้าย [ล้าง]/[ใช้ตัวกรอง] **เดิมถูกต้องอยู่แล้ว** (`.btn.btn-link`
+  ซ้าย/`.btn.btn-primary` ขวา ตรง §4 เป๊ะ ไม่ต้องแก้ class แก้แค่ข้อความผ่าน (a))
+- **(d)** ไอคอนหัวคอลัมน์: สีปกติเปลี่ยนจาก `--app-text-muted` เป็น `--c-text-faint` ตามที่สั่ง สี active
+  (`--c-primary`) เดิมถูกต้องอยู่แล้วไม่ต้องแก้ — **glyph เปลี่ยนไปมา 2 รอบ**: รอบนี้เอง (2026-09-13) เปลี่ยน
+  จาก `fa-filter` เป็น `fa-chevron-down` (อ่าน "▼" เป็นตัว caret ตรงตัว) — **รอบถัดมาวันเดียวกัน ("เก็บตกรอบ
+  4") กลับเป็น `fa-filter` เดิม** ตามคำสั่งแก้ไข "ใช้ fa-filter ตัวเดียวกับ filter-bar (ไม่ใช่ ▾)" — สรุป
+  ปัจจุบัน = `fa-filter` ตัวเดียวกับ `filter-bar-label-icon`, ขนาด 11px (`0.9167rem`, ของเดิมอยู่แล้ว ไม่ได้
+  แก้ตาม) สี `--c-text-faint`/`--c-primary` ตามด้านบน
+
+Demo: `docs/design/components.php`'s DataTable (§7) section's own `#cpDemoTable` (ผ่าน
+`initSharedDataTable()`'s `columnFilters` option อยู่แล้วตั้งแต่รอบ 2 — ไม่ต้องสร้าง demo แยกใหม่) — กด
+ตัวกรองที่หัวคอลัมน์ "สถานะ" เห็นทุกจุดข้างบนพร้อมกัน
+
+**2026-09-13, "เก็บตกรอบ 4" — 2 บั๊กจริงในกลไกภาษา + popup ไม่รีเฟรชข้อความ:**
+- **บั๊กที่ 1 (ร้ายแรง): สลับภาษา TH→EN→TH ทำไอคอน sort + column filter บนหัวคอลัมน์หายทั้งคู่** —
+  ต้นตอ: มาร์กอัปเดิมใส่ `data-i18n="{key}"` ตรงบน `<th>` เอง (เช่น `<th data-i18n="table_calculation">`)
+  — `initExcelColumnFilters()` (`table-column-filter.js`) rebuild ลูกของ `<th>` ใหม่ทั้งหมด (sort-arrow
+  span + ปุ่ม filter) แต่ไม่เคยแตะ attribute ของ `<th>` เอง ดังนั้น `data-i18n` เดิมยังติดอยู่ — sweep
+  ภาษากลาง (`updateText()`, app.js) กวาดเจอ `<th>` นี้ทุกครั้งที่สลับภาษา และเนื่องจาก children ของมันตอนนี้
+  ไม่ใช่ `<i>`/`<svg>` ตรงๆ อีกต่อไป (เป็น `.tcf-header-row` div ซ้อนอยู่) จึงตกไป branch `$el.text(value)`
+  ซึ่งเหมือน `.html()` คือ**ลบ child node ทั้งหมดทิ้งก่อนเสมอ** — DOM ที่ `initExcelColumnFilters()` เพิ่ง
+  สร้างไว้จึงหายไปพร้อมกัน ไม่ใช่บั๊กของ `updateText()` เองที่ทำงานผิด แต่เป็น `data-i18n` ติดอยู่ผิดตำแหน่ง
+  หลัง DOM ถูก restructure — แก้ที่ต้นตอจริง: `initExcelColumnFilters()` จับค่า `data-i18n` เดิมของ `<th>`
+  ไว้ก่อน rebuild, ลบออกจาก `<th>` เอง, แล้วย้ายไปใส่บน `.tcf-header-title` span (leaf แท้ ไม่มีลูก) แทน —
+  sweep เดิมทำงานถูกอยู่แล้วสำหรับ leaf element ไม่ต้องแก้ logic ส่วนนั้น — เพิ่ม defensive backstop ใน
+  `updateText()` เองด้วย (ทั่วทั้งแอป ไม่ใช่เฉพาะ `<th>`): element ที่มี `data-i18n` **และ**มี child element
+  จริงอยู่แล้ว (ไม่ใช่แค่ icon-prefix case ที่รองรับอยู่แล้ว) จะ**ข้าม**การเขียน `.text()` ทับ (แค่
+  `console.warn()`) แทนที่จะเดาลบ/แทนที่บางส่วนซึ่งพิสูจน์แล้วว่าอาจไปไม่ถึง text จริงที่ซ้อนลึกอยู่ (กรณีนี้
+  `.tcf-header-title` ซ้อนอยู่ชั้นที่ 2 ของ `<th>` ไม่ใช่ child ตรง) — ตรวจแล้วตอนนี้มีแค่ `payroll/detail.js`
+  ตัวเดียวที่เรียก `columnFilters` จริง (grep ยืนยัน) แต่ fix อยู่ที่ helper กลาง จึงป้องกันทุกตารางในอนาคตด้วย
+  โดยไม่ต้องแก้ไฟล์หน้าเพิ่มเลย
+- **บั๊กที่ 2: popup column filter ไม่เปลี่ยนภาษาตาม** — ป้าย/placeholder ทั้งหมดถูกตั้งครั้งเดียวตอน
+  `ensurePanel()` สร้าง DOM ครั้งแรก (ฟังก์ชันนี้ทำงานครั้งเดียวตลอดอายุหน้าตามเจตนา — panel ตัวเดียวใช้ซ้ำ
+  ทุกคอลัมน์/ตาราง) ภาษาที่ active ตอนเปิด popup ครั้งแรกจึงค้างอยู่แบบนั้นตลอดไป — แยก
+  `applyPanelLabels()` ออกมาเป็นฟังก์ชันของตัวเอง เรียกทั้งจาก `ensurePanel()` (ครั้งแรก) **และ**
+  `openPanelFor()` (ทุกครั้งที่เปิด) — อ่าน `langData` สดทุกครั้ง ไม่ cache
+- ผลข้างเคียงที่ต้องแก้คู่กัน (label/placeholder ของช่องค้นหาตาราง เห็นตอนไล่โค้ด `search` key) — ดู "Search
+  toolbar" ด้านล่าง
+
+**2026-09-14, "เก็บตกรอบ 5" — root cause จริงของบั๊ก i18n ที่ค้างมา 3-4 รอบ (item 1) + บั๊กค่า filter ผิด
+เพราะอ่านจาก DOM แทน render.filter (item 2):**
+- **บั๊กที่ 1 — เจอ root cause จริงแล้ว**: ทุก label lookup ใน `table-column-filter.js` เดิมใช้
+  `(window.langData && langData['key'])` — `app.js` ประกาศ `let langData = {}` ที่ top level ของ plain
+  `<script>` (ไม่ห่อ IIFE/module) ซึ่ง**ไม่เคยผูกเข้ากับ `window` object เลย** (เป็นแค่ script-scope lexical
+  binding ที่ script อื่นบนหน้าเดียวกัน "เห็น" ได้ผ่านชื่อเปล่า `langData` แต่ `window.langData` เป็น
+  `undefined` เสมอไม่ว่าภาษาไหน) — guard นี้จึง short-circuit ทุกครั้งก่อนจะถึง lookup จริงด้วยซ้ำ ทุกรอบก่อน
+  หน้า (ย้าย timing ไปตอนเปิด, เพิ่ม key ใหม่) แก้ถูกทิศแต่ไม่มีทางได้ผลเลยตราบที่ guard นี้ยังพัง ไม่มีไฟล์
+  อื่นในแอปใช้ pattern นี้ (grep ยืนยัน — ทุกที่อื่นใช้ `langData['key'] || fallback`/`getLangValue()`
+  ถูกต้องอยู่แล้ว) — แก้โดยเปลี่ยนทุกจุดเป็น `getLangValue()` (helper กลางที่ถูกต้องอยู่แล้ว) พร้อม
+  รวม key เดิมทั้งหมด (`column_filter_title/_clear/_apply` + `search`/`select_all` ที่ borrow มา) เป็น
+  ชุดใหม่ของตัวเอง 5 key `dt_filter_title/_search/_select_all/_clear/_apply` — decouple จากทุก key ที่ใช้
+  ร่วมกับหน้าอื่นสมบูรณ์
+- **บั๊กที่ 2**: คอลัมน์ "ตรวจสอบ" (verify_status) เดิม `render` เป็น plain function
+  (`(d,t,row)=>verifyLockButtonsRd(row)`) ไม่ใช่ object-form `{display,filter}` ตามที่ CLAUDE.md's Table
+  convention บังคับไว้แล้วสำหรับคอลัมน์ที่ HTML ที่แสดงต่างจากค่าที่ใช้ filter — `renderedCellText()`
+  (table-column-filter.js) เรียก `.render('display')` ซึ่งสำหรับคอลัมน์แบบนี้คืนค่า HTML เดียวกับที่ตาเห็น
+  ทุกตัวอักษร รวม `statusBadgeHtml({menu})`'s เอง `<ul class="dropdown-menu">` ที่ฝังอยู่ในสตริงเดียวกัน
+  (ไม่ใช่ DOM ซ้อนแยกจากกัน) — strip HTML แล้วเจอ "ยกเลิกการตรวจสอบ" (ข้อความใน `<li>` ที่ซ่อนอยู่) ติดมาด้วย
+  — แก้ 2 จุด: (1) `renderedCellText()` เปลี่ยนเป็น `.render('filter')` (fallback เป็นฟังก์ชันเดิมอัตโนมัติ
+  สำหรับคอลัมน์อื่นที่ยังไม่ split display/filter — ไม่กระทบ) (2) คอลัมน์ verify_status
+  (`initRunDetailTable()`) เปลี่ยนเป็น object-form `{display: verifyLockButtonsRd, filter:
+  verifyLockFilterTextRd}` ฟังก์ชันใหม่ `verifyLockFilterTextRd(row)` คืนแค่ label ข้อความล้วนของแต่ละ
+  4 สถานะ (ไม่มี HTML/menu เลย) — `statusBadgeHtml()` เองไม่ถูกแตะ ยัง return HTML string เดียวเหมือนเดิม
+  ทุก caller อื่นไม่กระทบ
+
+**Footer (`<tfoot>`) class propagation, item 3, real bug found and fixed (repro: "ตรวจสอบแล้ว 1/1"/
+"คำนวณแล้ว 1/1" ไม่ชิดซ้ายตามคอลัมน์ §7 badge=left)** — DataTables' own `columnDefs.className`
+(`dtColumnDefsFromMarkerClasses()`, app.js) never reaches a page's own static `<tfoot>` markup at all
+(construction-time option, only ever applied to `<thead>`/body `<td>`) — confirmed by reading
+`dataTables.bootstrap5.css` directly: the library DOES ship its own `tfoot th/td { text-align:left }`
+default, but Payroll Detail's own `#rdFootVerifyLock` had a hardcoded `class="text-center"`
+overriding it (Bootstrap's `.text-center` carries `!important`, beats the library default regardless
+of specificity) — real page bug, not a framework gap. Fixed 2 ways together: removed the wrong
+hardcoded class from `payroll/detail.php`, **and** added a new `applyTfootMarkerClasses($table,
+columnDefs)` (app.js, called from `initSharedDataTable()` right after building `autoColumnDefs`) that
+mirrors any §7 marker class (`.num`/`.col-money`/`.col-date`/`.col-check`/`.col-avatar`/
+`.col-actions`/`.col-toggle`) from a column's own `<thead>` `<th>` onto its `<tfoot>` cell at the same
+index automatically, for EVERY `initSharedDataTable()` caller going forward — `.addClass()`, never
+`.attr('class', ...)`, so a page's own additional footer-only classes (e.g. `#rdFootGross`'s own
+`fw-bold money-gross` running-total styling) are always preserved, only added to. A table with no
+`<tfoot>`, or a column with nothing in it, is a safe no-op.
+
+**2026-09-14, "เก็บตกรอบ 6" (สุดท้ายก่อน commit) — หัวตาราง (thead) ทุก DataTable + language-refresh hook
+สำหรับ Payroll Detail's JS-templated text (item 1/2):**
+- **item 2 — หัวตาราง (`thead th`) ทุก DataTable ในแอป**: ยังไม่เคย implement เป็น CSS จริงเลยแม้ §7's
+  own layout diagram (ด้านบน, บรรทัด "หัวตาราง พื้น --c-bg-subtle ตัวหนังสือ --c-text-muted ไม่หนา")
+  จะระบุเจตนาไว้แล้วตั้งแต่รอบ 2 — confirmed ผ่าน grep ว่าไม่มี rule ไหนเคย override
+  `table.dataTable thead th` เลยจริงๆ ทุกตารางเลยยังใช้ native browser/Bootstrap default (ตัวหนา ดำ) อยู่
+  — เพิ่ม `table.dataTable thead th { color: var(--c-text-muted); font-weight: 500; font-size:
+  var(--fs-sm); }` เป็น shared rule เดียว ไม่ scope เฉพาะหน้าไหน (public/css/style.css, ต่อจาก
+  `.pagination` override block) มีผลทุก DataTable ทันที — ไอคอน sort (`.dt-column-order`,
+  `dataTables.bootstrap5.css` เอง) เป็น glyph ▲▼ สี `currentColor` ไม่มีสีของตัวเอง จะ inherit
+  `--c-text-muted` จากหัวข้อความแทนถ้าปล่อยไว้ ทำให้ต่างจากไอคอน filter (`.tcf-filter-btn`,
+  `--c-text-faint` อยู่แล้วตั้งแต่รอบก่อน) — เพิ่ม `table.dataTable thead th .dt-column-order { color:
+  var(--c-text-faint); }` แยกให้สีตรงกันตามที่สั่ง ("ไอคอน sort/filter สีเดียวกัน")
+- **item 1 — EN mode ค้างข้อความไทย: stepper labels / "ขั้นต่อไป" callout / หัวคอลัมน์ 6 ตัว** —
+  grep audit ยืนยันแล้วว่าหัวคอลัมน์ทั้ง 6 (`employee_no`/`table_employee_name`/`table_base_salary`/
+  `table_gross_amount`/`table_deduction_amount`/`table_net_pay`) มี `data-i18n` markup ถูกต้อง **และ**
+  key ครบทั้ง 2 ไฟล์ ค่าต่างกันจริง (ไม่ใช่ key หาย/ค่า en ว่าง/ค่า en=th) — ไม่ใช่ data bug — root cause
+  จริงคือ **stepper/callout** (`renderProcessTimeline()`/`nextStepBanner()` ผ่าน `renderRunHeaderText()`
+  ใหม่, `public/js/payroll/detail.js`) build ข้อความเป็น JS template string ล้วนผ่าน `langData[key] ||
+  fallback` **ไม่มี `data-i18n` ที่ไหนเลย** (ยืนยันจาก grep) — `run` data โหลดครั้งเดียวตอนหน้าเปิด
+  (gate หลัง `langReady` อยู่แล้ว ทำให้ render แรกถูกเสมอ) แต่ไม่มีอะไรเรียก render ซ้ำตอนสลับภาษาทีหลัง —
+  รูปแบบบั๊กเดียวกับที่แอปนี้เคยเจอและแก้แล้ว ~6 หน้า (ดู `changeLanguage()`'s เอง series ของ
+  `if (typeof refreshXxxLanguage === 'function') ...` hooks, app.js) — Payroll Detail เป็นหน้าเดียวที่
+  ขาด hook นี้ — แก้โดย **แยก `renderRunHeader(run)` เดิมออกเป็น 2 ฟังก์ชัน**: `renderRunHeaderText(run)`
+  (subset ล้วนที่ pure/ไม่มี side-effect — text/badge/stepper/callout ทั้งหมด, ตรวจสอบทีละ sub-call
+  ก่อนว่าไม่มี AJAX ก่อนรวมเข้ามา) กับ `renderRunHeader(run)` เดิม (slim wrapper: ตั้ง `currentRun` +
+  เรียก `renderRunHeaderText()` + AJAX-driven calls ที่เหลือ เช่น `loadRunReportsTab()`/
+  `renderRunSettingsPanel()` ซึ่งยืนยันแล้วว่าเรียก `loadRunSettingsPanel()` ที่มี AJAX จริง จึงต้องอยู่ฝั่ง
+  ที่ไม่ re-run ซ้ำ) — เพิ่ม `refreshPayrollDetailLanguage()` (payroll/detail.js, hook ใหม่, เรียก
+  `renderRunHeaderText(currentRun)` ซ้ำถ้ามี `run` โหลดแล้ว) ลงทะเบียนใน `changeLanguage()` (app.js) ตาม
+  pattern เดิมทุกอย่าง — **บวกด้วย defensive re-sync ของ `#tb_run_detail`'s เอง column header** (แม้จะ
+  ยืนยันแล้วว่า markup/key ถูกต้องและควรถูก sweep กลางแปลให้อยู่แล้ว) เป็น backstop เผื่อกลไกอื่นที่ยังไม่
+  พบชัดเจนกระทบหัวคอลัมน์กลุ่มนี้อยู่ — ความจริงใจ: **ไม่พบ root cause ทางเลือกที่ชัดเจนสำหรับหัวคอลัมน์ 6
+  ตัวโดยเฉพาะ** นอกจาก stepper/callout ที่ยืนยันแล้ว หลังตัดทิ้งไปแล้วว่าไม่ใช่ key/markup/`initStickyColumns()`
+  (อ่าน source เต็มยืนยันว่าทำแค่ CSS positioning)/DataTables' `drawCallback`/`initComplete` — การ resync
+  แบบ defensive จึงเป็นการรับประกันความถูกต้องแทนการเดาสาเหตุที่ยังไม่ยืนยันแน่ชัด
+- **check-lang.php เพิ่มกฎเตือนใหม่ (ไม่ fail)**: `findSuspiciousTranslations()` — flag ทุก key ที่ค่า
+  `en` ว่าง/whitespace ล้วน หรือเหมือนกับค่า `th` เป๊ะๆ ทุกตัวอักษร เป็น**คำเตือน**เท่านั้น (ไม่กระทบ
+  `hasProblem`/exit code, ไม่ assert ใน `tests/lang_check_test.php`) — เหตุผล: สแกนจริงพบ 25 key ที่
+  เหมือนกันโดยตั้งใจ (proper noun เช่น "Origami"/"PDF", placeholder เช่น "0-4"/"e.g., Somchai", ค่า
+  format string ที่ไม่ต้องแปล) fail จุดนี้จะเป็น noise ค้างตลอดไปไม่ใช่สัญญาณจริง — เป็นรายงานให้อ่านทบทวน
+  ไม่ใช่ gate ที่ต้องผ่าน
+- **item 3 — `setting-row-plain-label` น้ำหนัก 500 ไม่ใช่ 700** — ของเดิม (รอบ "เก็บตกรอบ 7") ตั้งไว้ 600
+  (ไม่ใช่ 700 ตามที่รายงานผิด แต่ยังไม่ตรงสเปก) แก้เป็น `font-weight: 500` ตามที่สั่งชัดเจน ("ปรับ label
+  น้ำหนัก 500 ไม่ใช่ 700 ตามสเปก") — เบากว่า label ของ variant card (`.setting-row-label`, ยังคง 600
+  ไม่เปลี่ยน เพราะเป็นหัวข้อกล่องแยก ไม่ใช่ inline caption แถวเดียวแบบ plain)
+
 **Layout มาตรฐาน** (helper จัด `layout`/`dom` ให้เอง หน้าไม่ต้องกำหนด — ตัดสินใจแล้วรอบ 2 item 3b,
 แก้ไขอีกครั้งวันเดียวกัน (รอบก่อนเขียนกลับด้าน): ซ้าย = length เดี่ยวๆ (`layout.topStart:'pageLength'`
 — ค่า default ของ DataTables เองอยู่แล้ว ตั้งให้ชัดเจนไว้กันค่า default เปลี่ยนในอนาคต), ขวา = ค้นหา +
@@ -914,6 +1210,24 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
   ช่องค้นหาตรงๆ (`d-inline-block`, ไม่ใช่ block ใหม่ที่จะตกลงบรรทัดถัดไป) เปิดให้เมื่อ `export: true` —
   ติดกับช่องค้นหาเสมอ (ฝั่งขวาตาม layout ปัจจุบัน)
 - แถวน้อย (≤ threshold ของ helper): ไม่มีค้นหา/paging (ทำอยู่แล้ว)
+- **2026-09-13, "เก็บตกรอบ 4" — Search toolbar, 2 จุด:**
+  - **ระยะห่าง label "ค้นหา" ↔ input ↔ ปุ่ม (เช่น "+ พนักงาน") = `--sp-2` ทุกจุด** — บั๊กจริงที่เจอ: มี
+    override เฉพาะหน้า `#tb_run_detail_wrapper .dt-search`/`.dt-length` (2026-09-09, เพื่อแก้บั๊กตกแถว
+    คนละเรื่อง) ตั้ง `gap: 0.35rem` ค้างไว้ (specificity สูงกว่า rule กลาง `.dt-container .dt-search {
+    gap: var(--sp-2) }` ที่เพิ่มทีหลังในรอบ 2 — เลยชนะทับอยู่ตลอด ไม่มีใครสังเกต) แก้เป็น
+    `gap: var(--sp-2)` ตรงๆ (คง `flex-wrap:nowrap` เดิมไว้ ยังจำเป็นอยู่) — label/input/ปุ่มที่ inject
+    เข้ามาทั้งหมดเป็น direct child ของ `.dt-search` เดียวกัน (ยืนยันจาก DataTables source ตรงๆ: label ที่
+    ลงท้ายด้วย `_INPUT_` marker ทำให้ input ออกมาเป็น sibling ของ label ไม่ใช่ nested ข้างใน) แก้จุดเดียว
+    บน container พอ ไม่ต้องมี gap แยกข้างในของ label เอง
+  - **ตัด "…" ท้าย label "ค้นหา" ออก (placeholder ในช่องพอ)** — `langData.search` เองยังคงมี "..." เหมือน
+    เดิม (ถูกสำหรับ consumer อื่นที่เป็น placeholder จริงๆ อีก 4+ จุดทั่วแอป) แต่ DataTables' เองมี 2 key
+    แยกกันจริง: `language.search` (ข้อความ label) กับ `language.searchPlaceholder` (attribute
+    `placeholder` ของ `<input>` จริง — ยืนยันจากซอร์ส DataTables ตรงๆ, `opts.placeholder =
+    language.sSearchPlaceholder`) — `getTableLang()` (app.js) แยก 2 ค่านี้แล้ว: `search` ตัด "..." ท้าย
+    ออกด้วย `.replace(/\.+$/, '')` สำหรับ label, `searchPlaceholder` คงค่าดิบมี "..." ไว้ใส่ placeholder
+    จริง — `refreshAllDataTablesLanguage()`'s เอง DOM-patch ก็ต้องอัปเดตทั้งคู่คู่กัน (label text +
+    input's placeholder attribute) เพราะทั้ง 2 ถูกสร้างครั้งเดียวตอน construct เหมือนกัน ไม่ re-read จาก
+    settings ตอน redraw (จุดเดียวกับที่ comment เดิมของฟังก์ชันนี้อธิบายไว้แล้วสำหรับ label/length-menu)
 - ตาราง **เต็มความกว้าง** container ไม่มี padding รอบ (`.table-responsive` ไม่มี margin)
 
 **คอลัมน์ — การจัดวาง (บังคับทั้งระบบ, helper ใส่ class ให้จาก `columnDefs` กลาง)**
@@ -951,8 +1265,13 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
     `xmark`, `filter`) **เป็น solid-only ทั้งหมดในระดับ free** — เปลี่ยนไปใช้ `fa-regular` จะทำให้
     ไอคอนหายไปเงียบๆ ใน 14+ ไฟล์จริงที่ใช้ `.btn-circle-action`/`.btn-icon` อยู่แล้ว จึงคงใช้ `fa-solid`
     ทุกที่ ลดแค่ font-size เท่านั้น
-- ≤ 2 action: วางเรียง gap `--sp-1` พร้อม tooltip ทุกปุ่ม
-- > 2 action: ปุ่ม ⋮ วงกลม**เดียวกัน** (`.btn-icon`) เปิด dropdown (pattern เดียวกับ Detail › รายละเอียดพนักงาน) — รายการลบอยู่ล่างสุดคั่นด้วยเส้น ตัวหนังสือ `--c-danger`
+- **≤ 3 ปุ่ม + ⋮ (แก้ไขแล้ว 2026-09-13, Round 3 item 3b follow-up — เดิม "≤ 2")** — ปุ่มวงกลมที่ใช้บ่อย/
+  สำคัญสุด (เช่น Detail › รายละเอียดพนักงาน: ดูรายละเอียดการคำนวณ/ความคิดเห็น/ปรับรายการ) วางเรียง gap
+  `--sp-1` พร้อม tooltip ทุกปุ่ม เสมอไม่ว่ารายการที่เหลือจะมีกี่ตัว ("≤3" ไม่ใช่ "เสมอ 3" — action ที่มีเงื่อนไข
+  เช่น draft-only หายไปได้ตามปกติ เหลือน้อยกว่า 3 ก็ไม่เป็นไร); ที่เหลือทั้งหมด (ไม่ว่ากี่ตัว) พับเข้า ⋮
+  เดียวเสมอ ไม่ใช่แสดงเพิ่มเป็นปุ่มที่ 4/5/6 ทีละตัว — จำนวนตัดที่ 3 ใน "3 ปุ่มวงกลม" นี้ ไม่ผูกกับ
+  action ตัวใดตัวหนึ่งตายตัว ระบุตามหน้าจริงที่ใช้ (Detail › รายละเอียดพนักงาน ระบุไว้แล้วข้างบน)
+- > 3 action ที่เหลือ: ปุ่ม ⋮ วงกลม**เดียวกัน** (`.btn-icon`) เปิด dropdown (pattern เดียวกับ Detail › รายละเอียดพนักงาน) — รายการลบอยู่ล่างสุดคั่นด้วยเส้น ตัวหนังสือ `--c-danger`
 - ไอคอนต้องสื่อความหมาย + tooltip เสมอ (BACKLOG: ทบทวนไอคอนทั้งระบบ ทำในรอบ 4)
 - **`.btn-circle-action` เป็น alias ชั่วคราวของ `.btn-icon`** (ประกาศร่วมกันเป็น selector เดียวใน
   `style.css` — ลบสีทั้ง 7 tone ที่เคยผูกกับ `.text-{color}` ที่บางไฟล์เอาไปวางซ้อนออกแล้ว ด้วย
@@ -1120,6 +1439,36 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
   (เทคนิคเดียวกับที่ `.btn-primary`/`.form-control:focus` ทำไว้แล้วในรอบ 1)
 - ตารางที่ใช้ switch ต่อแถว → `.col-toggle` + `initRowToggles()` ดู §7
 
+**Setting row — ใหม่ 2026-09-14 (Round 3 "เก็บตกรอบ 6"), 2 variant เพิ่มวันเดียวกัน ("เก็บตกรอบ 7")** —
+แถวตั้งค่า: label + คำอธิบาย (เปลี่ยนตามสถานะสวิตช์ได้) + switch — ดู §11 สำหรับ component/API เต็ม
+(`setting-row.php` + `settingRowHtml()`) มาจาก Payroll Detail's เองสวิตช์ "คำนวณอัตโนมัติ" ที่เคยลองเป็น
+page-local block มา 2 รอบก่อนหน้า (callout ก่อน แล้วข้อความเปล่าใต้สวิตช์) ก่อนถูกดึงออกมาเป็น component
+จริง
+- **`variant` 2 แบบ, กฎเลือก**: **1-2 setting ในหน้า/section = `plain` (default)**, **3+ แถวซ้อนกัน =
+  `card`** (พื้นร่วมกันทำให้เห็นว่า "กลุ่มนี้อยู่ด้วยกัน" เหมือนที่ `.filter-bar`/panel อื่นทำอยู่แล้ว — แถว
+  `plain` เดี่ยวๆ อ่านได้ปกติบนพื้นหน้าเปล่า แต่หลายแถว `plain` ซ้อนกันเริ่มอ่านเป็นข้อความหลวมๆ ไม่เป็นกลุ่ม)
+- **`plain` (default)**: **ไม่มีกล่อง/พื้น/padding เลย** — แถวเดียวแบน `[switch] label · คำอธิบาย` สูง
+  ~24px (ความสูงธรรมชาติของ switch เอง ไม่เพิ่ม padding ทับ) ชิดซ้ายไม่มี inset ของตัวเอง (align กับ
+  filter-bar ที่วางต่อกันพอดี) — switch มาก่อน (ซ้ายสุด), ตามด้วย label ตัวหนา (`--fs-sm` 600 `--c-text`,
+  เป็น `<label for="...">` จริง กดที่ label ก็ toggle switch ได้เหมือนกดที่ switch เอง), คั่นด้วย "·"
+  (`--c-text-muted`), แล้วคำอธิบาย (`--fs-xs` `--c-text-muted`) ทั้งหมดอยู่บรรทัดเดียว ellipsis ถ้ายาวเกิน
+  — ใช้จริงที่ Payroll Detail (1 setting เท่านั้น)
+- **`card` (`variant:'card'`)**: รูปแบบเดิมจากรอบแรก — พื้น `--c-bg-subtle` `--radius` padding
+  `--sp-3 --sp-4` ไม่มีขอบ — ข้อความซ้าย 2 บรรทัด (label `--fs-sm` 600 `--c-text` บรรทัดบน, คำอธิบาย
+  `--fs-xs` `--c-text-muted` บรรทัดล่าง ellipsis ถ้ายาวเกิน), switch ขวา `align-items:center` กับ block
+  ข้อความ — ใช้เมื่อมี 3+ setting ซ้อนกันในหน้าเดียว (ยังไม่มีหน้าจริงใช้ variant นี้รอบนี้ — demo เท่านั้น)
+- ทั้ง 2 variant: คำอธิบายสลับ `desc_on`/`desc_off` อัตโนมัติทุกครั้งที่สวิตช์ถูกติ๊ก ผ่าน delegated
+  `change` handler กลางใน `app.js` (auto-wired ทั้งแอป ไม่ต้อง init) อ่าน `data-desc-on`/`data-desc-off`
+  จาก `.setting-row-desc` เอง (มาร์กอัปร่วมกันทั้ง 2 variant, เป็น `<span>` เดียวกัน — variant `card`
+  เพิ่ม `display:block` scoped ให้มันขึ้นบรรทัดใหม่แทนที่จะ inline) — caller ที่เปลี่ยน checked แบบ
+  programmatic (sync จาก server, revert ตอน save พลาด) ต้องเรียก `syncSettingRowDesc($switchInput)` เอง
+  (**ไม่ใช่** `.trigger('change')` เพราะจะไป re-fire handler อื่นที่อาจผูกกับ switch ตัวเดียวกันไว้แล้วโดย
+  ไม่ตั้งใจ — เจอจริงกับ Payroll Detail's เอง `#chkAutoRecalculate` ที่มี id-scoped save-on-toggle
+  handler อยู่ก่อนแล้ว)
+- ใช้จริงแล้ว: Payroll Detail's สวิตช์ "คำนวณอัตโนมัติ" (variant `plain`) — `#recalcReminderBanner`/
+  `#autoRecalculateWrap .form-check-label`'s เอง page-scoped CSS จาก 2 รอบก่อนถูกลบทิ้งทั้งคู่ แทนที่ด้วย
+  component นี้
+
 **สลิป / รายละเอียดการคำนวณ** (modal รายละเอียดการคำนวณ)
 - partial `payslip-view.php` แบบสลิป 2 คอลัมน์ (รายได้ | รายหัก) + สรุปล่าง (รวมรายได้/รวมหัก/สุทธิ) ตัวเลข `.num` — ใช้ทั้ง modal และหน้าพิมพ์/PDF ตัวเดียวกัน
 
@@ -1226,6 +1575,7 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 | `calendar-widget.php` + `renderCalendarWidget(el, {month, events, onSelect})` (ใหม่, item 9 — เสร็จแล้ว; โครงคงเดิมจาก dashboard จริงแต่ class namespace ใหม่ทั้งหมด, ยังไม่มีหน้าจริงเรียกใช้ รอรอบ 4 — ดู §14) | `app/views/partials/` + `app.js` | `.dash-calendar-*` ของจริง (ไม่แตะ, ไม่ reuse ชื่อเดิม) |
 | `chartColor()` / `chartColors()` / `chartDefaults(overrides)` (ใหม่, item 9 — เสร็จแล้ว; อ่าน token `--chart-*`/`--chart-grid`/`--c-*` สดจาก `getComputedStyle` ทุกครั้งที่เรียก ไม่ cache ค่า) | `app.js` | สี/font/grid ที่แต่ละกราฟ (8 กราฟทั้งแอป) ตั้งเองแยกกันตอนนี้ — ยังไม่ migrate หน้าจริง รอรอบ 4 |
 | `initTimepicker($scope, options)` (ใหม่, item 9 — เสร็จแล้ว; flatpickr time-only, **auto-init** ต่างจาก `initDatepicker()` — ดู §14) | `input.js` | native `<input type="time">` ที่ปรับสไตล์ popup ไม่ได้เลย — ของเดิมใน `layout/modals.php`/`setup-rules` ยังไม่แตะ รอรอบ 4 |
+| `setting-row.php` + `settingRowHtml({id,label,desc_on,desc_off,checked,variant})` (ใหม่, 2026-09-14 "เก็บตกรอบ 6", 2 variant เพิ่มวันเดียวกัน "เก็บตกรอบ 7" — เสร็จแล้ว; `variant:'plain'` default ไม่มีกล่อง แถวเดียว `[switch] label · คำอธิบาย`, `variant:'card'` กล่องพื้นเดิม label+คำอธิบาย 2 บรรทัด/switch ขวา — กฎเลือก: 1-2 setting = plain, 3+ = card — auto-wired description-swap ผ่าน delegated `change` handler กลาง (ใช้ร่วมกันทั้ง 2 variant), `syncSettingRowDesc()` สำหรับ caller ที่ set checked แบบ programmatic — ดู §9) | `app/views/partials/` + `app.js` | `#recalcReminderBanner`/page-local switch+banner block ของ Payroll Detail (2 รอบก่อนหน้า ลบ CSS แล้ว) |
 
 เพิ่ม component ใหม่ต้องเสนอชื่อ + API + ที่ใช้ ≥ 2 จุด ก่อนเขียน
 
@@ -1436,6 +1786,32 @@ label ปุ่มจริง (เช่น `<b>คำนวณ</b>` ตรง�
 ต่อ state ของรอบเงินเดือนเป็น **judgment call ที่ flag ไว้ตรงๆ** (ผู้ใช้ระบุชัดแค่ locked=success/
 rejected=danger/need_info=warning): draft/pending_approval/approved/paid → `primary`, cancelled →
 `neutral`
+
+**2026-09-13, Round 3 "เก็บตก" item 1 — 2nd real consumer, ภายหลัง REVERTED ในรอบ "เก็บตกรอบ 4" เดียวกัน
+วัน (ดูด้านล่าง) — เหลือไว้เป็นประวัติ ไม่ใช่สถานะปัจจุบันอีกต่อไป**: Payroll Detail's `#recalcReminderBanner`
+เคยเปลี่ยนจาก `.alert.alert-warning` เดิมมาเป็น `.callout.callout-warning` รอบนี้ — ตัวหนา
+`<b>คำนวณ</b>`/`<b>Recalculate</b>` ให้ตรงกับปุ่ม `#btnRecalculate`'s เอง label จริงคำต่อคำ (ของเดิมเป็น
+"คำนวณใหม่" ซึ่งไม่ตรงกับปุ่มจริงที่เขียนแค่ "คำนวณ" — แก้ข้อความให้ตรงพร้อมกับใส่ตัวหนา, ยังคงอยู่หลัง revert)
+ยังใช้ได้เหมือนเดิม ไม่ได้ถูกแตะ
+
+**2026-09-13, "เก็บตกรอบ 4" — REVERT ออกจาก callout: "ไม่ใช้ callout (ดูหนักเมื่อต่อท้ายสวิตช์)"** —
+`#recalcReminderBanner` เลิกใช้ `.callout` แล้ว กลับไปเป็นข้อความล้วนหน้าตาเบา (`--fs-sm`/`--c-text-muted`,
+ไม่มีเส้นซ้าย/พื้น/radius ใดๆ, CSS scope เฉพาะ id นี้ใน `style.css` ไม่ใช่ shared component อีกต่อไป) วาง
+**บรรทัดใต้สวิตช์** (ไม่ใช่ inline ข้างสวิตช์แบบ flex-wrap ที่ทำไว้ก่อนหน้านี้ในวันเดียวกัน — ก็ revert เช่นกัน)
+ห่าง `--sp-1` เท่านั้น (แน่นกว่า `--sp-2` เดิมมาก เพราะเป็น caption ของสวิตช์ ไม่ใช่ block อิสระ) —
+`renderRecalcReminder()` (detail.js) เปลี่ยนจาก `.attr('class', 'callout callout-warning')` เป็นแค่
+`.removeClass('d-none')`/`.addClass('d-none')` ธรรมดา (ไม่มี class ให้สลับอีกแล้วนอกจาก `d-none`) — element
+ยังเป็น empty `<div id="recalcReminderBanner">` เดิม ไม่เปลี่ยน mechanism การ show/hide (gate ตาม state
+สวิตช์ + draft-only เหมือนเดิมทุกอย่าง) **บทเรียน**: component ที่มีขอบ/พื้น/padding ของตัวเอง (`.callout`)
+เหมาะกับข้อความที่ยืนอิสระเป็น block ของตัวเอง ไม่เหมาะเป็น caption สั้นๆ ต่อท้าย control อื่นที่ควรเบากว่านั้น
+— ไม่ใช่ทุกข้อความเตือนต้องเป็น callout เสมอไป ให้เลือกตามน้ำหนักภาพที่ต้องการจริงๆ
+
+**2026-09-14, "เก็บตกรอบ 5" item 3, follow-up — caption ยังอ่านเป็น text ปกติขนาดใหญ่**: `--fs-sm` (รอบ
+ก่อนหน้าเลือกไว้) ยังใกล้กับขนาด label/เนื้อความปกติเกินไปจนไม่รู้สึกว่าเบากว่า — ลดเป็น `--fs-xs` (token
+เล็กสุด ระดับ chip/badge) พร้อมเพิ่ม `line-height:1.4` (ประโยคยาว 2 บรรทัดต้องมี leading จริง ไม่ใช่ default
+1) และ `max-width:640px` (กันบรรทัดยืดเต็มความกว้าง tab-pane) — label ของสวิตช์เอง (`#chkAutoRecalculate`)
+ก็แก้ไปพร้อมกัน: ตัด Bootstrap's `.small` utility ออก (`.875em`, ค่า relative ไม่ใช่ token จริง ขนาดจริงลอย
+ตามฟอนต์ parent) แทนที่ด้วย `--fs-sm` ตรงๆ ผ่าน scoped rule `#autoRecalculateWrap .form-check-label`
 
 Demo จริงใน `docs/design/components.php` ("Callout (§15)"): 5 tone ผ่าน partial จริง (ไม่ใช่ mockup) ข้อความ
 ดึงมาจาก i18n string จริงของ Payroll Detail (`next_step_draft`/`_locked`/`_need_info`/`_rejected`/

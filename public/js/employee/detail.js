@@ -16,7 +16,7 @@ function refreshEmployeeFormBaseline() {
 // form (mirrors company-profile.js's own .cancel-company-profile reference implementation -- AJAX
 // re-fetch + repopulate, not a hard page reload) -- deliberately does NOT re-run
 // loadEmployeeIfEditing()'s one-time side effects (loadAllChildTables()/loadDocumentList()/
-// activateEmployeeTabFromHash()), since those already ran once and child-table data wasn't part of
+// activateTabFromHash('#employeeTabs')), since those already ran once and child-table data wasn't part of
 // what the user was editing on this form. A brand-new, not-yet-saved employee has nothing on the
 // server to revert to -- per the playbook's own "reset to blank/default" rule for that case, a full
 // page reload IS the reset (an unsaved new-employee form has no persisted data to lose).
@@ -1195,7 +1195,7 @@ function loadEmployeeIfEditing() {
         // 2026-08-30, real bug found and fixed (explicit report: "เข้าใช้งานใน tab ที่เป็น data
         // table refresh แล้ว data table ไม่ทำงาน") -- a brand-new employee (this branch) has
         // nothing async to wait for, so the URL-hash tab restore is safe to run immediately.
-        activateEmployeeTabFromHash();
+        activateTabFromHash('#employeeTabs');
         refreshEmployeeFormBaseline();
         return;
     }
@@ -1242,11 +1242,11 @@ function loadEmployeeIfEditing() {
             // showed up before hash-restore existed. Moved here, after currentEmployeeId is
             // definitely set (or the fetch has definitely failed), so restoring a DataTable-
             // bearing tab on refresh now sees the same state a real click always would.
-            activateEmployeeTabFromHash();
+            activateTabFromHash('#employeeTabs');
         },
         error: function () {
             showWarning(langData['load_employee_failed'] || 'Failed to load employee data.');
-            activateEmployeeTabFromHash();
+            activateTabFromHash('#employeeTabs');
         }
     });
 }
@@ -1472,8 +1472,8 @@ $(function () {
 
 // 2026-08-29, explicit request: "ในหน้า Employee Detail ก็อยากให้คลิกที่ Tab ไหน ถ้า Refresh ให้อยู่ที่ Tab
 // นั้น" -- same URL-hash + history.replaceState mechanism already built for Payroll Process
-// Detail/List (payroll/detail.js's own activateTabFromHash()/shown.bs.tab handler) -- persist
-// whichever tab is active across a refresh instead of always resetting to Employee Info.
+// Detail/List -- persist whichever tab is active across a refresh instead of always resetting to
+// Employee Info.
 // 2026-09-07: also re-runs the tab-bar overflow layout below on every tab switch (whichever tab just
 // became active must never be one of the ones tucked into "More").
 $(document).on('shown.bs.tab', '#employeeTabs button[data-bs-toggle="tab"]', function (e) {
@@ -1482,14 +1482,10 @@ $(document).on('shown.bs.tab', '#employeeTabs button[data-bs-toggle="tab"]', fun
     }
     layoutEmployeeTabs();
 });
-function activateEmployeeTabFromHash() {
-    const hash = (location.hash || '').replace('#', '');
-    if (!hash) return;
-    const $btn = $('#' + CSS.escape(hash));
-    if ($btn.length && $btn.attr('data-bs-toggle') === 'tab' && $btn.closest('#employeeTabs').length) {
-        bootstrap.Tab.getOrCreateInstance($btn[0]).show();
-    }
-}
+// 2026-09-13, §1 follow-up: the restore function itself (was activateEmployeeTabFromHash(), a
+// near-verbatim copy of Employee List's own version and Payroll Detail's own unscoped version) moved
+// to app.js's shared activateTabFromHash(containerSelector) -- see that function's own docblock (incl.
+// a real focus-ring bug fixed there too). Every call site below now passes '#employeeTabs' directly.
 
 /* ==================== Employee Detail tab-bar overflow ("More" dropdown) ====================
  * 2026-09-07, explicit request: "อยากให้ปรับส่วนของ tab ให้ดูสวยขึ้น และถ้าเลยจอการแสดงผลให้ขึ้น more กับ

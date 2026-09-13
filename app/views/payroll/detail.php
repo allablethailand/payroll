@@ -258,7 +258,13 @@
             </button>
         </li>
     </ul>
-    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5" id="runDetailTabsContent">
+    <!-- 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "ตัด card/ขอบที่ครอบ .tab-content
+         ของ Detail ออกทุก tab" -- `border-top-0 bg-white rounded-bottom` (the utility-class half of the
+         card look, its other half was a #runDetailTabsContent CSS rule in style.css, also retired)
+         dropped; only `mb-5` (bottom margin before whatever follows this tab group) stays, unrelated
+         to the card styling itself. See style.css's own comment on #runDetailTabsContent/the per-pane
+         padding rules that replace this for the full reasoning + §6's new rule. -->
+    <div class="tab-content mb-5" id="runDetailTabsContent">
         <div class="tab-pane fade show active" id="run-details-pane" role="tabpanel" aria-labelledby="run-details-tab" tabindex="0">
           <!-- 2026-09-09, explicit request: "ใน Tab Information เอา หัวข้อออกมาไว้นอก detail-section ครับ" --
                the section heading (numbered badge + title + any header-row action button) now sits
@@ -439,23 +445,20 @@
              directly in the tab-pane's own padding, matching the Cash Payments/Bank Account
              Assignment/Third-Party Remittance tabs, none of which ever used .detail-section either. -->
         <div class="tab-pane fade" id="run-employee-pane" role="tabpanel" aria-labelledby="run-employee-tab" tabindex="0">
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                <h6 class="text-secondary fw-bold mb-0">
-                    <span data-i18n="employee_breakdown">Employee Breakdown</span>
-                    <!-- 2026-08-29, explicit request: "ตอน View Mode...อยากให้ปรับให้ดูเป็น View อยากเดียว
-                         ...จะได้ดูแตกต่างจากตอนสร้างและแก้ไข" -- shown whenever currentRun.state !== 'draft'
-                         (applyRunDetailViewMode() in detail.js), the one always-visible cue that this
-                         run's Employee Breakdown is read-only, on top of the individual controls
-                         (checkboxes, bulk bar, Verify/Lock, Manage Items) that already disable/hide
-                         themselves per-control. -->
-                    <span class="badge bg-secondary-subtle text-secondary ms-2 d-none" id="runDetailViewModeBadge"><i class="fa-solid fa-eye me-1"></i><span data-i18n="view_mode">View Mode</span></span>
-                </h6>
-                <!-- 2026-09-09, explicit request: "ย้ายปุ่มคำนวณใหม่...มาแสดงต่อ แสดง 50 รายการ" -- #btnRecalculate
-                     no longer renders here; it's injected into the Employee table's own `.dt-length`
-                     (initRunDetailTable()'s initComplete in detail.js), next to the "Show 50 entries"
-                     control, same as the Join Employees button living in `.dt-search` on the other
-                     side of that same row. -->
-            </div>
+            <!-- 2026-09-13, Round 3 item 3b, explicit instruction: "ตัดหัวข้อซ้ำออก (tab บอกแล้ว)" -- the
+                 "Employee Breakdown" h6 heading was a duplicate of the tab button's own label right
+                 above it; removed entirely. #btnRecalculate itself is NOT here -- injected into the
+                 Employee table's own `.dt-length` (initRunDetailTable()'s initComplete in detail.js),
+                 next to "Show 50 entries", same as the Join Employees button.
+                 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "ตัด callout 'โหมดดูอย่างเดียว'
+                 ออกทั้งหมด (สถานะรอบ + ปุ่มที่หายไปบอกอยู่แล้ว)" -- the callout this comment used to
+                 describe (#runDetailViewModeCallout, added earlier this same round replacing an even
+                 older badge) is gone entirely now, not replaced by anything -- the run's own status
+                 (stepper/badge in the page header) plus each individual control's own per-control
+                 disable/hide (checkboxes, bulk bar, Verify/Lock, Manage Items all already gate on
+                 currentRun.state !== 'draft' on their own) already say "this is read-only" without a
+                 redundant banner repeating it. applyRunDetailViewMode() in detail.js no longer touches
+                 any callout -- see that function's own comment. -->
             <!-- 2026-08-31, explicit request: "ต้องการให้มี Block เตือนว่า...ให้กดคำนวณใหม่ทุกครั้ง...และเพิ่ม
                  Function ให้มี checkbox ติ๊กว่าคำนวณอัตโนมัติหลังจากที่แก้ไขข้อมูลทันที...แต่ถ้าติ๊กคำนวณอัตโนมัติ
                  Recommend ให้กดจะไม่แสดง" -- the checkbox itself (persisted per-run, see
@@ -463,74 +466,75 @@
                  never ambiguous; the reminder banner beneath toggles with it (renderRecalcReminder()
                  in detail.js) -- hidden while auto-recalculate is on, shown otherwise. Draft-only
                  (recalculate() itself is only ever meaningful for a draft run), same visibility gate
-                 as #runRecalculateButtonWrap's own buttons. -->
-            <div class="d-flex align-items-center gap-2 mb-2 d-none" id="autoRecalculateWrap">
-                <div class="form-check form-switch mb-0">
-                    <input class="form-check-input" type="checkbox" id="chkAutoRecalculate">
-                    <label class="form-check-label small text-secondary" for="chkAutoRecalculate" data-i18n="auto_recalculate_label">Automatically recalculate right after editing data</label>
+                 as #runRecalculateButtonWrap's own buttons.
+                 2026-09-13, Round 3 item 3b, 3rd placement this round (reported in the task response
+                 each time) -- tried "right of the filter-bar header" (via filter-bar.php's own new
+                 $header_extra_html slot) and "under the table" before this; user's own explicit final
+                 choice is back HERE, its original spot: its own standalone line, left-aligned, above
+                 the filter-bar. filter-bar.php's $header_extra_html slot itself is NOT removed (kept,
+                 documented, unused by this page now) -- it's a genuine reusable capability of that
+                 shared component now, independent of whether this ONE page ends up using it. -->
+            <!-- 2026-09-14, Round 3 "เก็บตกรอบ 6", explicit instruction: new shared component
+                 `setting-row.php`/`settingRowHtml()` (§9/§11) -- supersedes the previous 2 "เก็บตก"
+                 rounds' own page-local attempts at this exact shape (a static switch + a separate
+                 #recalcReminderBanner div, styled/positioned by hand each round). #autoRecalculateWrap
+                 stays as the OUTER draft-only show/hide wrapper (renderSectionButtons() in detail.js,
+                 unchanged gating) but is now EMPTY here -- the switch + label + state-dependent
+                 description all come from ONE settingRowHtml() call in detail.js instead (the run's own
+                 auto_recalculate value isn't known at PHP-render time, same reason #nextStepBanner right
+                 above this tab is also JS-rendered into an empty shell rather than included via PHP
+                 directly). See setting-row.php's own docblock for the full component spec. -->
+            <div class="d-none" id="autoRecalculateWrap"></div>
+            <!-- 2026-09-13, Round 3 item 3b: #noDetailsYet (a standalone "no employees yet" block
+                 outside the table, manually toggled by initRunDetailTable() itself) is retired --
+                 initSharedDataTable()'s own `emptyState` option (§6) now renders this INSIDE the
+                 table's own tbody instead, auto-picking between this "genuinely no data yet" copy and
+                 a "filtered to zero results" variant depending on WHY the table is empty (see
+                 initRunDetailTable()'s own emptyState config in detail.js) -- the table itself no
+                 longer hides as a whole when there's nothing to show, it shows its own empty-state row
+                 with the toolbar/filters still usable above it, same as every other table using this
+                 option. -->
+            <!-- 2026-09-13, Round 3 item 3b, explicit instruction: "checkbox วิธีจ่าย + segmented แหล่งที่มา
+                 ย้ายเข้า filter-bar.php (2 ช่อง select)" -- the independent Bank/Cash checkboxes AND the
+                 Source radio-pill group both retired in favor of ONE shared filter-bar.php panel (§6)
+                 holding real `<select>` fields (this app's own mandatory Select2 convention, CLAUDE.md
+                 -- initSelect2(...), wired in initRunDetailFilterBarOnce() in detail.js). Payment
+                 Method's 3 options (All/Bank Transfer/Cash) reach the exact same 2 reachable filter
+                 states the old 2-checkbox pair did (both boolean flags
+                 registerPaymentMethodSearchFilter() already computed from bank/cash-on booleans -- now
+                 derived from this ONE select's value instead of 2 checkboxes, same predicate, no logic
+                 change). #rdDataSourceFilterWrap keeps its id (now the Source field's own column div)
+                 so its existing run-level d-none toggle in initRunDetailTable() (a run that never
+                 brings base salary into the calculation) still works unchanged.
+                 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "เพิ่มช่อง 'แผนก'
+                 (select2-remote /api/department.get เหมือน Employee list) เป็นช่องแรก" -- same
+                 markup/data-api/data-type convention as Employee List's own #employee_filter_department
+                 (app/views/employee/list.php), filtered client-side against row.department_id (already
+                 selected by PayrollRunModel::getDetails()'s own SQL -- confirmed via grep, just never
+                 read by this file's JS before now -- see registerDepartmentSearchFilter() in detail.js).
+                 "grid 6 ช่อง/แถว = col-lg-2 ต่อช่องเสมอ" -- all 3 fields now col-lg-2 (was col-sm-3, which
+                 read too stretched at 3-up); the other 3 of the 6 grid slots are simply left empty. -->
+            <?php
+            ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-lg-2">
+                    <label class="form-label small mb-1" for="rdDepartmentFilter" data-i18n="department">Department</label>
+                    <select class="form-select form-select-sm select2-remote" id="rdDepartmentFilter" data-api="/api/department.get" data-type="department"></select>
+                </div>
+                <div class="col-lg-2">
+                    <label class="form-label small mb-1" for="rdPaymentMethodFilter" data-i18n="table_payment_method">Payment Method</label>
+                    <select class="form-select form-select-sm select2-static" id="rdPaymentMethodFilter" data-option-keys="filter_all,table_payment_bank,table_payment_cash" data-option-values="all,bank,cash"></select>
+                </div>
+                <div class="col-lg-2" id="rdDataSourceFilterWrap">
+                    <label class="form-label small mb-1" for="rdSourceFilter" data-i18n="table_source">Source</label>
+                    <select class="form-select form-select-sm select2-static" id="rdSourceFilter" data-option-keys="filter_all,data_source_sync,data_source_manual" data-option-values="all,sync,manual"></select>
                 </div>
             </div>
-            <div class="alert alert-warning small d-none align-items-center gap-2 mb-3" id="recalcReminderBanner">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <span data-i18n="recalc_reminder_message">If you've edited employee data or anything related to these numbers, click "Recalculate" every time to keep this run up to date.</span>
-            </div>
-            <div id="noDetailsYet" class="text-center text-secondary py-4 d-none">
-                <i class="fa-solid fa-calculator fa-2x mb-3 text-secondary opacity-50"></i>
-                <span data-i18n="no_details_yet">No employees calculated yet. Click "Recalculate" to compute this run.</span>
-            </div>
-            <!-- 2026-08-31, explicit request: "ก่อนตารางพนักงาน ให้มี checkbox ขึ้นมาเพื่อให้เลือกกรองข้อมูล
-                 พนักงานที่รับผ่านบัญชี และเงินสดครับ" -- confirmed via AskUserQuestion: 2 independent
-                 checkboxes (not a 3-way radio), both checked by default (= show everyone); unticking
-                 one hides that group. Filters #tb_run_detail client-side against its own
-                 payment_method_code column (see registerPaymentMethodSearchFilter() in detail.js) --
-                 purely a view filter, changes nothing about the underlying data.
-                 2026-09-09, explicit follow-up: "วิธีจ่ายเงิน ตัดออกครับ ไม่ใช่การตั้งค่า แต่ให้เพิ่มเป็น filter
-                 ใน Tab employee" -- this had briefly moved to the "Details" tab (as its own numbered
-                 section) in the same day's earlier tab-split round; moved back here, right above the
-                 table it actually filters, since it's a view filter, not a saved run setting. The
-                 checkbox ids are unchanged either way -- the Summary Cards above the tabs
-                 (#runSummaryCards) still update live from this filter regardless of which tab it
-                 lives on (see updateSummaryCardsFromTable()'s own docblock in detail.js). -->
-            <!-- 2026-09-02, same-day follow-up: "ให้เลือกทั้งหมดได้ด้วย" -- filterPaymentAll is a plain
-                 select-all checkbox (checks/unchecks both Bank and Cash together, see
-                 syncPaymentMethodAllCheckbox() in detail.js), NOT a 3rd filter state of its own --
-                 the actual filtering still only ever reads filterPaymentBank/filterPaymentCash (same
-                 registerPaymentMethodSearchFilter() as before), so this stays a pure client-side
-                 .draw() with no ajax/reload either way. -->
-            <div class="d-flex align-items-center gap-3 mb-2" id="paymentMethodFilterWrap">
-                <span class="small text-muted" data-i18n="table_payment_method">Payment Method</span>
-                <div class="form-check form-check-inline m-0">
-                    <input class="form-check-input" type="checkbox" id="filterPaymentAll" checked>
-                    <label class="form-check-label small fw-semibold" for="filterPaymentAll" data-i18n="filter_all">All</label>
-                </div>
-                <div class="form-check form-check-inline m-0">
-                    <input class="form-check-input" type="checkbox" id="filterPaymentBank" checked>
-                    <label class="form-check-label small" for="filterPaymentBank" data-i18n="table_payment_bank">Bank Transfer</label>
-                </div>
-                <div class="form-check form-check-inline m-0">
-                    <input class="form-check-input" type="checkbox" id="filterPaymentCash" checked>
-                    <label class="form-check-label small" for="filterPaymentCash" data-i18n="table_payment_cash">Cash</label>
-                </div>
-            </div>
-            <!-- 2026-09-11, Batch 3C item 7, explicit instruction: "ตัดคอลัมน์ แหล่งที่มา ออก (ย้ายไปเป็น
-                 filter pill 'ที่มา: ทั้งหมด/Sync/เพิ่มเอง' เหนือตาราง)" -- 3 mutually-exclusive states, so a
-                 radio-pill group (same .btn-check/btn-group idiom payroll/index.js's own
-                 .sync-item-filter-radio uses) rather than the independent-checkbox shape
-                 #paymentMethodFilterWrap above uses for its own genuinely-independent Bank/Cash
-                 states. Hidden entirely (d-none, toggled in initRunDetailTable()) for the same
-                 run-level condition that used to hide the old Source COLUMN -- see
-                 registerDataSourceSearchFilter()'s own comment in detail.js. -->
-            <div class="d-flex align-items-center gap-2 mb-2" id="rdDataSourceFilterWrap">
-                <span class="small text-muted" data-i18n="table_source">Source</span>
-                <div class="btn-group" role="group" aria-label="employee data source filter">
-                    <input type="radio" class="btn-check rd-data-source-filter-radio" name="rdDataSourceFilter" id="rdSourceFilterAll" value="all" autocomplete="off" checked>
-                    <label class="btn btn-outline-secondary btn-sm" for="rdSourceFilterAll" data-i18n="filter_all">All</label>
-                    <input type="radio" class="btn-check rd-data-source-filter-radio" name="rdDataSourceFilter" id="rdSourceFilterSync" value="sync" autocomplete="off">
-                    <label class="btn btn-outline-secondary btn-sm" for="rdSourceFilterSync" data-i18n="data_source_sync">Sync</label>
-                    <input type="radio" class="btn-check rd-data-source-filter-radio" name="rdDataSourceFilter" id="rdSourceFilterManual" value="manual" autocomplete="off">
-                    <label class="btn btn-outline-secondary btn-sm" for="rdSourceFilterManual" data-i18n="data_source_manual">Manual</label>
-                </div>
-            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'runDetailFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <!-- 2026-08-29, explicit request: "สามารถมี checkbox เลือกได้ทีละหลายคนในการ Verify" -- Lock
                  retired 2026-08-31 (Verify itself now freezes recalculation).
                  2026-09-09, explicit follow-up across 3 rounds -- final layout: "เอาคำนวณใหม่ไปวางต่อ
@@ -561,7 +565,10 @@
             <table class="table table-hover table-border align-middle w-100 rd-detail-table-flush" id="tb_run_detail">
                 <thead class="table-light text-secondary">
                     <tr>
-                        <th class="text-center"><input type="checkbox" class="form-check-input" id="runDetailSelectAll"></th>
+                        <!-- 2026-09-13, Round 3 item 3b (§7): `col-check` marker class -- initSharedDataTable()'s
+                             own DT_MARKER_CLASSES auto-derives this column's `columnDefs` (fixed-width,
+                             centered, not orderable/searchable) from this class alone. -->
+                        <th class="col-check"><input type="checkbox" class="form-check-input" id="runDetailSelectAll"></th>
                         <!-- 2026-09-02, explicit request: "ตารางพนักงาน แยก code และชื่อคนละ Column Code
                              อยู่ก่อน" -- was one combined 2-line cell (name bold on top, code muted
                              underneath); split into its own Code column, placed before Name. -->
@@ -573,17 +580,32 @@
                         <th class="text-nowrap" data-i18n="department">Department</th>
                         <!-- 2026-09-02, explicit request: "ในตารางพนักงานให้เพิ่ม Column รับเงินผ่านบัญชี หรือ
                              เงินสด" -- was only visible on the separate "Payment Method Summary" tab;
-                             now also its own column here on the main Details table. -->
-                        <th class="text-center text-nowrap" data-i18n="table_payment_method">Payment Method</th>
-                        <th class="text-end text-nowrap" data-i18n="table_base_salary">Base Salary</th>
-                        <th class="text-end text-nowrap" data-i18n="table_gross_amount">Gross</th>
-                        <th class="text-end text-nowrap" data-i18n="table_deduction_amount">Deductions</th>
-                        <th class="text-end text-nowrap" data-i18n="table_net_pay">Net Pay</th>
+                             now also its own column here on the main Details table.
+                             2026-09-13, Round 3 item 3b follow-up, explicit instruction: "badge = ซ้าย"
+                             (§7) -- was text-center (a leftover from before this column routed through
+                             statusBadgeHtml()); left-aligned now, matching every other badge column. -->
+                        <th class="text-nowrap" data-i18n="table_payment_method">Payment Method</th>
+                        <!-- 2026-09-13, Round 3 item 3b (§7/§8): `col-money` marker on all 4 money
+                             columns -- DT_MARKER_CLASSES auto-applies `num col-money` (tabular-nums,
+                             right-align) to each; Gross/Deductions/Net's OWN `.money-gross`/
+                             `.money-deduction`/`.money-net` color class is set directly in detail.js's
+                             own `columns:` config instead (see that file's own comment -- concatenates
+                             with, doesn't replace, this marker's className). Base Salary carries no
+                             money-color class -- §8 only covers gross/deduction/net, not the base
+                             figure itself. -->
+                        <th class="col-money text-nowrap" data-i18n="table_base_salary">Base Salary</th>
+                        <th class="col-money text-nowrap" data-i18n="table_gross_amount">Gross</th>
+                        <th class="col-money text-nowrap" data-i18n="table_deduction_amount">Deductions</th>
+                        <th class="col-money text-nowrap" data-i18n="table_net_pay">Net Pay</th>
                         <th class="text-nowrap" data-i18n="table_calculation">Calculation</th>
-                        <th class="text-center text-nowrap" data-i18n="table_verify_lock">Verify / Lock</th>
+                        <!-- 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "badge = ซ้าย"
+                             (§7) -- was text-center. -->
+                        <th class="text-nowrap" data-i18n="table_verify_lock">Verify / Lock</th>
                         <!-- 2026-08-27, explicit request: blank out any "Action(s)" header, matches
-                             the empty-header convention every other Actions column already uses. -->
-                        <th class="text-center"></th>
+                             the empty-header convention every other Actions column already uses.
+                             2026-09-13, Round 3 item 3b (§7): `col-actions` marker class (fixed-width,
+                             right-aligned, not orderable/searchable via DT_MARKER_CLASSES). -->
+                        <th class="col-actions"></th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -601,6 +623,26 @@
                      of a plain "verified/total" count text, and the Calculation column (previously
                      blank in the footer) gets the same "calculated/total" treatment via the new
                      rdFootCalcStatus id. -->
+                <!-- 2026-09-13, Round 3 item 3b, explicit instruction: "แถวรวมท้ายตาราง (footer) ใช้ .num
+                     ตัวหนา สีเงินเดียวกับคอลัมน์" -- each money total now carries `.num` (tabular digits) +
+                     `fw-bold` + the SAME `.money-gross`/`.money-deduction`/`.money-net` class its own
+                     column uses (§8: the color/weight lives on the number itself, not a wrapping badge)
+                     -- Base Salary's own footer total stays plain `.num.fw-bold` with no money-color
+                     class, matching its column (§8 doesn't cover it). Text content itself is still set
+                     by footerCallback() in detail.js -- only the static class list changed here.
+                     2026-09-13, Round 3 "เก็บตก" item 3, real bug found and fixed (explicit report:
+                     "ตรวจสอบแล้ว 1/1" ไม่ชิดซ้ายตามคอลัมน์) -- `#rdFootVerifyLock`'s own hardcoded
+                     `text-center` (removed) was overriding DataTables' own default left-aligned
+                     footer cell (`!important` on Bootstrap's `.text-center` utility beats the
+                     library's plain `text-align:left`) -- its own column ("Verify / Lock") is a badge
+                     column, left per §7, matching its `<thead>` `<th>` right above it (no `.text-
+                     center` there either). `applyTfootMarkerClasses()` (app.js, new this round) now
+                     mirrors any §7 marker class from a column's own `<thead>` `<th>` onto its `<tfoot>`
+                     cell automatically for every `initSharedDataTable()` caller -- this specific
+                     column has no marker class upstream (it's not money/date/checkbox/etc, just a
+                     plain left-aligned badge column), so simply deleting the wrong hardcoded class was
+                     enough here; the new helper exists so a FUTURE table's marker-classed footer cells
+                     never need a page to hand-guess the right class at all. -->
                 <tfoot class="table-light text-secondary">
                     <tr>
                         <th></th>
@@ -608,12 +650,12 @@
                         <th></th>
                         <th></th>
                         <th></th>
-                        <th class="text-end" id="rdFootBaseSalary"></th>
-                        <th class="text-end" id="rdFootGross"></th>
-                        <th class="text-end" id="rdFootDeduction"></th>
-                        <th class="text-end" id="rdFootNet"></th>
+                        <th class="num fw-bold" id="rdFootBaseSalary"></th>
+                        <th class="num fw-bold money-gross" id="rdFootGross"></th>
+                        <th class="num fw-bold money-deduction" id="rdFootDeduction"></th>
+                        <th class="num fw-bold money-net" id="rdFootNet"></th>
                         <th id="rdFootCalcStatus"></th>
-                        <th class="text-center" id="rdFootVerifyLock"></th>
+                        <th id="rdFootVerifyLock"></th>
                         <th></th>
                     </tr>
                 </tfoot>

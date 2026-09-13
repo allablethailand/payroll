@@ -179,6 +179,29 @@ return [
         'suspended' => ['label_key' => 'paused', 'tone' => 'warning'],
     ],
 
+    // payroll_run_details.payment_method_code (transfer/cash/check/mixed) -- Round 3 item 3b. Same
+    // "category tag, not a real status" reasoning as data_source below (§5: "Badge = สถานะเท่านั้น" --
+    // no tone question genuinely applies to WHICH payment method was picked, no state is "better" than
+    // another), so every value is 'neutral' on purpose. label_key values reuse this app's existing,
+    // already-translated keys verbatim (table_payment_bank/table_payment_cash/payment_method_check/
+    // payment_method_mixed) -- none invented for this context.
+    'payment_method' => [
+        'transfer' => ['label_key' => 'table_payment_bank', 'tone' => 'neutral'],
+        'cash' => ['label_key' => 'table_payment_cash', 'tone' => 'neutral'],
+        'check' => ['label_key' => 'payment_method_check', 'tone' => 'neutral'],
+        'mixed' => ['label_key' => 'payment_method_mixed', 'tone' => 'neutral'],
+    ],
+
+    // Payroll Run Detail's own per-employee is_verified flag (Round 3 item 3b) -- a real boolean, not
+    // an enum, so this context only ever needs ONE entry: 'verified' => success (reuses the existing
+    // verify_status_verified label, same key the interactive draft-mode button already shows). An
+    // unverified row intentionally has NO entry here -- it renders as plain muted "-" text (not a
+    // badge at all) in verifyLockButtonsRd()'s own read-only branch, same as every other "nothing to
+    // report" cell elsewhere in this app; "not verified yet" isn't a status worth a colored pill.
+    'verify_status' => [
+        'verified' => ['label_key' => 'verify_status_verified', 'tone' => 'success'],
+    ],
+
     // data_source (manual/sync/import) -- confirmed: this is NOT a status at all (§5: "Badge =
     // สถานะเท่านั้น ไม่ใช่ label ทั่วไป...ที่มา -> เป็นข้อความธรรมดา"), it's a category/origin tag. Kept
     // here ONLY as a temporary bridge so any page migrated to statusBadge() in round 4 before this

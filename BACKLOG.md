@@ -522,3 +522,60 @@ unescaped user-controlled text expecting Swal2's own plain-text escaping as a sa
 both pages render a real bulleted list afterward, not just that the tags disappear.
 
 **Source:** Phase Design Round 2 item 7b, incidental finding (2026-09-13).
+
+---
+
+## Comment count badge has no unread/new tracking (Employee Breakdown row action)
+
+Phase Design Round 3 item 3b's own row-action redesign put the per-employee comment count on
+Payroll Detail's Employee Breakdown table onto a real `.btn-circle-action` circle (View Breakdown /
+Comments / Manage Items) with the count rendered via `countBadgeHtml()` (app.js, §5) overlaid on
+the circle's own corner. The explicit design decision for this badge (confirmed same round): stays
+`tone: 'neutral'` (gray) always **unless** the count genuinely represents something "new/unread"
+the current viewer hasn't seen yet — that gets `tone: 'primary'` instead (a new `.badge.badge-primary`
+CSS rule was added this round specifically for this future case, `--c-primary-soft` background +
+`--bs-primary-text-emphasis` text, verified ~4.24:1 contrast — see style.css's own comment on that
+rule).
+
+**Why it stays neutral today**: `row.comment_count` (`PayrollRunModel::getDetails()`) is a flat
+total — there is no read/unread distinction anywhere in the comment data model at all (no
+`read_at`/`read_by`/per-viewer read-state column, no notification-style unread tracking the way
+`notifications`/`nav-notif-item-unread` already has for the header bell). Passing `{tone:'primary'}`
+today would only ever mean "count > 0," which is explicitly NOT what was asked for (a still count
+that's just nonzero is not the same thing as "something new since I last looked").
+
+**Fix, when picked up**: needs a real per-viewer read-state concept for run-employee comments first
+(new column(s)/table, needs a migration + a decision on what "read" even means here — per-viewer? per-
+session? does opening the Comments modal mark everything read, or only what was visible at the time?)
+before `commentButtonRd()` (public/js/payroll/detail.js) can compute a genuine unread sub-count and
+pass `{tone:'primary'}` only when it's > 0. Likely belongs alongside a broader "notification"-style
+batch given the closest existing precedent in this app is the header bell's own unread mechanism
+(`notifications.js`/`nav-notif-item-unread`) — worth checking whether that same read-state pattern
+can be reused rather than inventing a second one specific to run comments.
+
+**Source:** Phase Design Round 3 item 3b follow-up, explicit instruction (2026-09-13).
+
+---
+
+## Other select2-remote fields may have the same stale-appended-option pattern `initFilterBar()`'s reset bug had
+
+While fixing `initFilterBar()`'s `resetSelect()` (a select2-remote field's underlying `<select>`
+never carries a baked-in placeholder option, so clearing it needs to actually remove the option(s)
+select2 itself appended, not just set the value to something else — see rules.md §6's own 2026-09-13
+entry for the full root cause), noticed several OTHER select2-remote clear sites in
+`public/js/payroll/detail.js` use the plain `.val(null).trigger('change')` pattern without removing
+the appended option first (e.g. `#joinFilterDepartment`/`#joinFilterTeam`/`#joinFilterPosition`/
+`#joinFilterCycle` around line 4739/4754, `#recurringDestPayeeEmployeeSelect`/
+`#recurringDestBankAccountSelect` etc. around line 4222-4234, `#manualLinePayeeEmployee`/
+`#manualLineBankAccount` etc. around line 4367-4455).
+
+**Not necessarily the same bug** — those fields all still WORK for their own actual "clear it and
+let the user pick a different one" purpose (`.val(null)` does deselect visually; the concern is only
+a stray leftover `<option>` element lingering in the DOM after a value the user is no longer using,
+not a functional no-op the way `initFilterBar()`'s `.find('option').first()` bug was) — this is a
+possible latent DOM-hygiene issue (accumulating stray options over many selections), not a confirmed
+reproducible bug like the filter-bar one, so **not fixed proactively this round** (scope was
+specifically `initFilterBar()`, not a general select2-remote-clear audit).
+
+**Source:** Found incidentally while fixing the filter-bar select2-remote clear bug (2026-09-13),
+not itself reported or investigated further.

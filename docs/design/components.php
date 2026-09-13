@@ -130,6 +130,12 @@ function cpLangText(string $key, string $fallback = ''): string {
     .cp-swatch-label .cp-swatch-values { color: var(--c-text-muted); }
     .cp-empty { border: 1px dashed var(--c-border-strong); border-radius: var(--radius); padding: var(--sp-5); color: var(--c-text-faint); text-align: center; }
     .cp-theme-toggle { position: sticky; top: var(--sp-3); z-index: 10; }
+    /* 2026-09-13, filter-bar "กดติดบ้างไม่ติดบ้าง" bug report -- manual stress-test QA panel, this
+       demo page only (not a real component, no style.css entry needed). */
+    .cp-stress-test-panel { margin-top: var(--sp-3); padding: var(--sp-3); background: var(--c-bg-subtle); border: 1px dashed var(--c-border-strong); border-radius: var(--radius); }
+    .cp-stress-test-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-4); }
+    .cp-stress-test-counter { font-size: var(--fs-sm); color: var(--c-text-muted); }
+    .cp-stress-test-hint { margin: var(--sp-2) 0 0; font-size: var(--fs-xs); color: var(--c-text-faint); }
 </style>
 </head>
 <body>
@@ -503,7 +509,25 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
         เรียกผ่าน <code>initSharedDataTable(selector, { stickyColumns:{left:2,right:1}, columnFilters:{...},
         export:{onSelect}, dtOptions:{} })</code> -- ไม่ต้องเขียน <code>drawCallback</code>/<code>initComplete</code>/
         <code>initExcelColumnFilters()</code> เองอีกเลย ทุกอย่างมาจาก class บน <code>&lt;th&gt;</code> + option 3 ตัวนี้
-        ล้วนๆ (ลองลากตารางแนวนอน, ลองกดตัวกรองที่หัวคอลัมน์ "สถานะ", ลองกด "Export" ด้านบนขวา).</p>
+        ล้วนๆ (ลองลากตารางแนวนอน, ลองกดตัวกรองที่หัวคอลัมน์ "สถานะ", ลองกด "Export" ด้านบนขวา).
+        <b>column-filter popup (<code>table-column-filter.js</code>, สร้างไว้ตั้งแต่ 2026-08-27 ก่อน Phase
+        Design Round 2/3 จะมีอยู่ด้วยซ้ำ) migrate เข้าระบบ token/component ปัจจุบันครบแล้ว (2026-09-13-14,
+        4 รอบ):</b> checkbox ทั้ง select-all และรายการค่าได้ <code>.form-check-input</code> จริง (ติ๊กส้ม
+        มาตรฐาน), กล่อง popup เป็น <code>--c-border</code>/<code>--shadow-soft</code>/<code>--radius</code>/
+        <code>--sp-3</code> เต็มกล่อง, ปุ่ม × เป็น <code>.btn-icon.btn-icon-ghost</code> จริง (§7), ไอคอน
+        หัวคอลัมน์เป็น <code>fa-filter</code> ตัวเดียวกับ filter-bar สี <code>--c-text-faint</code> ปกติ/
+        <code>--c-primary</code> เมื่อ active.
+        <b>2026-09-14, "เก็บตกรอบ 5" item 1 -- root cause จริงของบั๊ก i18n ที่ค้างมา 3-4 รอบ พบแล้ว:</b>
+        ทุก label lookup ในไฟล์นี้เดิมใช้ <code>(window.langData && langData['key'])</code> -- แต่
+        <code>app.js</code> ประกาศ <code>let langData = {}</code> ที่ top level ของ plain script (ไม่ห่อ
+        IIFE/module) ซึ่ง <b>ไม่เคยผูกเข้ากับ <code>window</code> object เลย</b> (เป็นแค่ script-scope
+        lexical binding) -- <code>window.langData</code> จึงเป็น <code>undefined</code> เสมอไม่ว่าภาษาไหน
+        ทำให้ guard นี้ short-circuit ทุกครั้งก่อนจะถึง lookup จริงด้วยซ้ำ ทุกรอบก่อนหน้าที่แก้ timing/เพิ่ม
+        key ใหม่จึงไม่มีทางได้ผลเลยตราบใดที่ guard นี้ยังพัง -- แก้โดยเปลี่ยนทุกจุดเป็น <code>getLangValue()</code>
+        (helper กลางของ <code>app.js</code> เอง อ่าน <code>langData</code> ตรงๆ ถูกต้องอยู่แล้ว) พร้อมเปลี่ยน
+        key เป็นชุดใหม่ของตัวเอง 5 ตัว <code>dt_filter_title/_search/_select_all/_clear/_apply</code>
+        (แยกขาดจาก key ที่ใช้ร่วมกับหน้าอื่นทั้งหมด ไม่ borrow <code>search</code>/<code>select_all</code>
+        อีกต่อไป) -- ลองสลับภาษาแล้วกดตัวกรองที่หัวคอลัมน์ "สถานะ" ดูว่าเป็นภาษาไทยล้วนแล้ว.</p>
     <p class="cp-section-note"><b>checkbox เลือกแถว (ข้อ (2)):</b> checkbox หัวตาราง = "เลือกทั้งหน้า" จริง (เฉพาะแถวที่แสดงอยู่หน้านี้ -- DataTables paging) เข้า indeterminate เองเมื่อเลือกบางแถวไม่ครบ, เคลียร์กลับเป็นว่างเมื่อเปลี่ยนหน้า/sort/ค้นหา (ผูกกับ DataTables' <code>draw</code> event) -- ลองติ๊กบางแถวแล้วดู header, ติ๊กที่ header แล้วดูทั้งหน้าติ๊กตาม.
         <b>switch "ใช้งาน" (ข้อ (2)):</b> <code>initRowToggles($table, {onChange})</code> (<code>app.js</code>, ใหม่) -- ปิด switch ระหว่างรอ response, revert กลับที่เดิมถ้า error -- <b>แถวที่ id=3 จงใจให้ error เสมอ</b> ลองปิด/เปิดแถวนั้นดู switch จะ disable ชั่วครู่แล้ว revert กลับที่เดิมพร้อม toast error ส่วนแถวอื่นจะสำเร็จปกติ.</p>
     <table id="cpDemoTable" class="table table-sm table-hover w-100">
@@ -727,11 +751,34 @@ $cpStats = [
 <!-- ==================== Filter Bar (§6) ==================== -->
 <div class="cp-section">
     <h2>Filter Bar (§6)</h2>
-    <p class="cp-section-note"><code>app/views/partials/filter-bar.php</code> + JS <code>initFilterBar()</code> -- 6 ช่องตามหน้า Employee List จริง (ดู/สถานะ/แผนก/ทีม/ตำแหน่ง/สาขา) <code>col-sm-2</code> เท่ากันทุกช่อง เหมือน <code>.station-filter</code> เดิม, ไม่มีไอคอนหน้า label. panel แบ่ง 3 ส่วน: <b>หัว</b> (ป้าย "ตัวกรอง (N)" ซ้าย + วงกลม <code>.btn-icon</code> chevron ขวา -- กดเพื่อกาง/ยุบเท่านั้น), <b>ตัว</b> (grid ฟิลด์ กางเมื่อกดวงกลม), <b>ท้าย</b> (ติดล่างเสมอไม่ว่ากางหรือยุบ -- chips ซ้าย/"ล้างตัวกรอง" ขวา). ตั้งค่าเริ่มต้นเป็น "สถานะ=ทำงานอยู่" + "แผนก=ไอที" (N=2, ยุบ, เห็น chips ที่ท้ายแผง) ไว้แล้วให้ทดสอบครบ 3 สถานะได้ทันที: <b>(1) ยุบ N=2 มี chips "สถานะ: ทำงานอยู่ ×"/"แผนก: ไอที ×"</b> (สถานะเริ่มต้นตอนนี้), <b>(2) กาง</b> (กดวงกลม chevron), <b>(3) ยุบ N=0 เห็นข้อความ "ไม่ได้กรอง" แทน chips</b> (กด × ที่ chip ทั้ง 2 หรือกด "ล้างตัวกรอง"). สถานะกาง/ยุบจำไว้ต่อ reload ผ่าน <code>pageKey</code> ที่ตั้งไว้ (ลอง reload หน้านี้หลังกางดู). ทุกช่องเป็น <code>select2-native</code> จริง (เหมือน Employee List จริงทุกช่องเป็น Select2) -- <code>initFilterBar()</code> อ่าน/ล้างค่าผ่าน <code>.val()</code>/<code>.val(x).trigger('change')</code> บน <code>&lt;select&gt;</code> เดิมที่ Select2 ครอบอยู่ ซึ่งคือ Select2 v4's เอง official API สำหรับตั้งค่าแบบ programmatic (v4 ไม่มี <code>.select2('val')</code> แยกต่างหากแบบ v3 แล้ว) -- ลอง "ล้างตัวกรอง"/กด × ที่ chip แล้วดู Select2 dropdown ที่ถูกครอบเปลี่ยนค่าตามจริง ไม่ใช่แค่ underlying select.</p>
+    <p class="cp-section-note"><code>app/views/partials/filter-bar.php</code> + JS <code>initFilterBar()</code> -- 6 ช่องตามหน้า Employee List จริง (ดู/สถานะ/แผนก/ทีม/ตำแหน่ง/สาขา) <code>col-sm-2</code> เท่ากันทุกช่อง เหมือน <code>.station-filter</code> เดิม, ไม่มีไอคอนหน้า label. <b>2026-09-13, restructured -- panel เหลือ 2 ส่วน (footer แยกถูกตัดออกแล้ว):</b> <b>หัว</b> (ป้าย "ตัวกรอง (N)" ซ้าย + chips/ปุ่ม "ล้างตัวกรอง"/วงกลม <code>.btn-icon</code> chevron ทางขวา ทั้งหมดแถวเดียว) และ <b>ตัว</b> (grid ฟิลด์ กางเมื่อกดวงกลม). <b>chips แสดงเฉพาะตอนยุบเท่านั้น</b> (ตอนกาง ฟิลด์เองมีขอบ <code>--c-border-strong</code> บอกว่ามีค่าแล้วแทน ไม่ต้องพึ่ง chips) ส่วนปุ่ม "ล้างตัวกรอง" อยู่ในหัวเสมอทั้ง 2 สถานะ. ตั้งค่าเริ่มต้นเป็น "สถานะ=ทำงานอยู่" + "แผนก=ไอที" (N=2, ยุบ) ไว้แล้วให้ทดสอบได้ทันที: <b>(1) ยุบ N=2</b> เห็น chips "สถานะ: ทำงานอยู่ ×"/"แผนก: ไอที ×" ในหัว (สถานะเริ่มต้นตอนนี้), <b>(2) กาง</b> (กดวงกลม chevron) -- chips หายไป เห็นขอบเข้มบน 2 ช่องที่มีค่าแทน, <b>(3) ล้างทั้งหมด</b> (กด × ที่ chip ตอนยุบ หรือปุ่ม "ล้างตัวกรอง" สถานะไหนก็ได้) -- N=0, ปุ่ม "ล้างตัวกรอง" หายไป, ขอบฟิลด์กลับปกติ. สถานะกาง/ยุบจำไว้ต่อ reload ผ่าน <code>pageKey</code> ที่ตั้งไว้ (ลอง reload หน้านี้หลังกางดู). ทุกช่องเป็น <code>select2-native</code> จริง (เหมือน Employee List จริงทุกช่องเป็น Select2) -- <code>initFilterBar()</code> อ่าน/ล้างค่าผ่าน <code>.val()</code>/<code>.val(x).trigger('change')</code> บน <code>&lt;select&gt;</code> เดิมที่ Select2 ครอบอยู่ ซึ่งคือ Select2 v4's เอง official API สำหรับตั้งค่าแบบ programmatic (v4 ไม่มี <code>.select2('val')</code> แยกต่างหากแบบ v3 แล้ว) -- ลอง "ล้างตัวกรอง"/กด × ที่ chip แล้วดู Select2 dropdown ที่ถูกครอบเปลี่ยนค่าตามจริง ไม่ใช่แค่ underlying select (ปุ่มทั้งคู่เป็น delegated binding บน panel เอง แก้บั๊กกดไม่ทำงานจากรอบก่อน). <b>2026-09-13, สืบต้นตอบั๊กใหม่ "กดติดบ้างไม่ติดบ้าง":</b> ไล่โค้ดจริงแล้วไม่พบ double-init บนหน้าจริง (payroll/detail.php มี once-guard ระดับโมดูลของตัวเองอยู่แล้ว, demo นี้เรียก <code>initFilterBar()</code> ครั้งเดียว) และปุ่ม toggle เดิมผูกกับวงกลม chevron เท่านั้น ไม่เคยครอบทั้งแถวหัว -- ไม่สามารถยืนยัน root cause เดียวที่จับได้คาหนังคาเขาได้ (ไม่มีสภาพแวดล้อม browser จริงให้ reproduce) จึงเพิ่ม defensive hardening ตามที่สั่งครบ 3 จุดแทนการปล่อยผ่าน: <b>(1)</b> เพิ่ม once-guard ระดับ element เองใน <code>initFilterBar()</code> (<code>$bar.data('filterBarInitialized')</code>) กัน double-bind ทุก handler หากมี caller ในอนาคตเรียกซ้ำโดยไม่ตั้งใจ (ไม่ใช่แค่พึ่ง once-guard ระดับหน้าเหมือนที่ payroll/detail.js ทำ) <b>(2)</b> zone สำหรับกาง/ยุบชัดเจนขึ้น (ไม่ใช่แค่วงกลม chevron อีกต่อไป แต่รวมป้าย "ตัวกรอง" ด้วย, cursor:pointer เป็นสัญญาณ) และ chips/ปุ่มล้างได้ <code>e.stopPropagation()</code> กันชนกับ zone นี้ (หรือ ancestor click zone ใดๆ ในอนาคต) แม้ปัจจุบันจะยังไม่เจอการชนจริงก็ตาม <b>(3)</b> ยืนยันแล้วว่าการยิง onChange/reload อยู่ครั้งเดียวต่อ action เสมออยู่แล้ว (debounce ผ่าน <code>setTimeout(0)</code> เดียวใน <code>scheduleNotify()</code>) -- เพิ่ม stress-test panel ข้างล่างนี้ให้ทดสอบ "กด × 10 ครั้งติดกันสลับกับกาง/ยุบ" ได้จริงด้วยตา ไม่ใช่แค่อ่านโค้ดแล้วเชื่อ. <b>2026-09-13, บั๊กที่ 3 ในวันเดียวกัน -- ยืนยัน root cause จริงจาก repro ที่ผู้ใช้ให้มา (ไม่ใช่เดา):</b> <code>#cpFilterDept</code> เปลี่ยนเป็น <code>select2-remote</code> จริง (ชี้ <code>/api/department.get</code> เหมือน <code>#rdDepartmentFilter</code> ของหน้าจริงทุกประการ) แทน <code>select2-native</code> เดิม เพราะของเดิมไม่มีทาง repro บั๊กนี้ได้เลย -- <code>resetSelect()</code> เดิมใช้ <code>.find('option').first()</code> เป็น "ค่า default" เสมอ ซึ่งถูกสำหรับช่อง static/native (มี <code>&lt;option value="all"&gt;</code> เป็นตัวแรกจริงในมาร์กอัป) แต่ **ผิดสำหรับ select2-remote**: ช่องแบบ ajax ไม่มี option ใดๆ ในมาร์กอัปเลยตอนเริ่มต้น (<code>&lt;select&gt;&lt;/select&gt;</code> เปล่าล้วน) -- option เดียวที่เคยมีคือตัวที่ select2 เอง append ตอนผู้ใช้เลือกค่าจริง ดังนั้น <code>.find('option').first()</code> จึงเจอ**ตัวเดียวกับค่าที่กำลังจะล้าง**เสมอ แล้วตั้งค่ากลับไปที่ตัวมันเอง -- true no-op ตรงกับอาการที่รายงานทุกอย่าง (ช่องเดียวไม่ทำงานเลย, หลายช่องเฉพาะ static ทำงาน, "ล้างตัวกรอง" ล้างได้แค่ครึ่งเดียว). แก้ 3 จุดตามที่สั่ง: (1) <code>resetSelect()</code> แยก branch ตาม <code>.select2-remote</code> -- ลบ option ที่ค้างอยู่ทั้งหมดแล้วค่อย <code>.val(null).trigger('change')</code> คืนช่องกลับสู่สภาพเปล่าเป๊ะเหมือนตอนเริ่มต้น (2) <code>isActive()</code>/<code>resetSelect()</code> ทั้งคู่อ่าน sentinel ผ่าน <code>defaultValueFor()</code> ใหม่ -- อ่าน <code>data-filter-default</code> ถ้ามีระบุไว้ ไม่งั้น fallback ตาม type (<code>select2-remote</code> -&gt; <code>''</code>, อื่นๆ -&gt; <code>'all'</code>) ไม่ hardcode 'all' ทุกช่องอีกต่อไป (3) ปุ่ม "ล้างตัวกรอง" วนลูปบน snapshot ที่เก็บไว้ก่อน + <code>try/catch</code> ต่อช่อง กันช่องใดช่องหนึ่งพังแล้วช่องที่เหลือไม่ถูกล้างตาม -- ลองสร้าง N=2 ผ่านปุ่ม "ตั้งค่าตัวอย่างใหม่" แล้วกด × ที่ chip ของ "แผนก" (ตัวแรก, remote) ก่อนเป็นตัวอย่าง repro เดิม ควรหายไปทันทีเหมือนช่อง static.</p>
+    <div class="cp-stress-test-panel" id="cpFilterBarStressPanel">
+        <div class="cp-stress-test-row">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="cpFilterBarStressReset">ตั้งค่าตัวอย่างใหม่ (สถานะ=ทำงานอยู่, แผนก=ไอที)</button>
+            <span class="cp-stress-test-counter">คลิก × / ล้างตัวกรอง ที่จับได้: <b id="cpFilterBarStressClickCount">0</b></span>
+            <span class="cp-stress-test-counter">onChange ที่ยิงจริง: <b id="cpFilterBarStressChangeCount">0</b></span>
+        </div>
+        <p class="cp-stress-test-hint">วิธีทดสอบ: กด "ตั้งค่าตัวอย่างใหม่" แล้วกด × บน chip สลับกับกดวงกลม chevron กาง/ยุบ ทำซ้ำ 10 ครั้ง -- ตัวเลข "คลิกที่จับได้" ต้องขึ้นทุกครั้งที่กด × จริง (ไม่มีครั้งไหนกดแล้วเงียบ) ตั้งค่าตัวอย่างใหม่ได้เรื่อยๆ ไม่จำกัดจำนวนรอบ.</p>
+    </div>
     <?php
     ob_start();
     ?>
     <div class="row g-3">
+        <div class="col-sm-2">
+            <!-- 2026-09-13, real bug repro fix: MUST be a genuine select2-remote (ajax) field, matching
+                 payroll/detail.php's own #rdDepartmentFilter EXACTLY (same class, same data-api/data-type)
+                 -- the native `select2-native` version this field used to be could never reproduce the
+                 "× ไม่ทำงานเลย" bug at all, since a select2-remote's underlying <select> starts and
+                 returns to being genuinely EMPTY (no baked-in <option> list to fall back to), which is
+                 exactly what resetSelect() got wrong. Pre-seeded with ONE selected <option> (matches how
+                 a real page pre-fills a remote field with an existing saved value) so the demo still
+                 starts at N=2 active filters like before. Initialized by app.js's own app-wide
+                 `initSelect2Remote('.select2-remote')` bootstrap -- no extra JS needed in this file. -->
+            <label class="form-label small mb-1" for="cpFilterDept">แผนก</label>
+            <select class="form-select form-select-sm select2-remote" id="cpFilterDept" data-api="/api/department.get" data-type="department">
+                <option value="3" selected>ไอที</option>
+            </select>
+        </div>
         <div class="col-sm-2">
             <label class="form-label small mb-1">มุมมอง</label>
             <select class="form-select form-select-sm select2-native" id="cpFilterView">
@@ -745,15 +792,6 @@ $cpStats = [
                 <option value="all">ทั้งหมด</option>
                 <option value="active" selected>ทำงานอยู่</option>
                 <option value="resigned">ลาออก</option>
-            </select>
-        </div>
-        <div class="col-sm-2">
-            <label class="form-label small mb-1">แผนก</label>
-            <select class="form-select form-select-sm select2-native" id="cpFilterDept">
-                <option value="all">ทั้งหมด</option>
-                <option value="1">บัญชี</option>
-                <option value="3" selected>ไอที</option>
-                <option value="2">ขาย</option>
             </select>
         </div>
         <div class="col-sm-2">
@@ -920,6 +958,60 @@ $cpCallouts = [
             <?php include __DIR__ . '/../../app/views/partials/callout.php'; ?>
         </div>
         <?php endforeach; ?>
+    </div>
+</div>
+
+<!-- ==================== Setting row (§9/§11) ==================== -->
+<div class="cp-section">
+    <h2>Setting row (§9/§11) — ใหม่ 2026-09-14, 2 variant เพิ่ม 2026-09-14 (วันเดียวกัน)</h2>
+    <p class="cp-section-note"><code>app/views/partials/setting-row.php</code> + JS <code>settingRowHtml({id,label,desc_on,desc_off,checked,variant})</code> (<code>app.js</code>) -- แถวตั้งค่า: label + คำอธิบายที่เปลี่ยนตามสถานะสวิตช์ได้ (ซ้าย) + switch. <b><code>variant</code> 2 แบบ ตามกฎ §9: 1-2 setting ในหน้า/section = <code>plain</code> (default), 3+ แถวซ้อนกัน = <code>card</code></b> (ทำให้เห็นว่า "กลุ่มนี้อยู่ด้วยกัน" เหมือนที่ <code>.filter-bar</code>/panel อื่นทำอยู่แล้ว -- แถว <code>plain</code> เดี่ยวๆ อ่านได้ปกติบนพื้นหน้าเปล่า แต่หลายแถว <code>plain</code> ซ้อนกันเริ่มอ่านเป็นข้อความหลวมๆ ไม่เป็นกลุ่ม). <b>คำอธิบายเปลี่ยนตามสถานะสวิตช์อัตโนมัติทั้ง 2 variant</b> ผ่าน <code>data-desc-on</code>/<code>data-desc-off</code> บน <code>.setting-row-desc</code> เอง -- delegated <code>change</code> handler กลางใน <code>app.js</code> (auto-wired ทั้งแอป ไม่ต้องเรียก init ใดๆ) สลับ <code>.html()</code> ให้เอง. เปลี่ยนที่มาจาก DOM programmatically (เช่น sync ค่าจาก server, revert ตอน save พลาด) ให้เรียก <code>syncSettingRowDesc($switchInput)</code> ตรงๆ แทน <code>.trigger('change')</code> -- กัน re-fire handler อื่นที่อาจผูกกับ switch ตัวเดียวกันอยู่แล้ว (เช่น save-on-toggle ของหน้าจริง) โดยไม่ตั้งใจ. ทั้ง 2 variant มี <code>margin-bottom: var(--sp-3)</code> ของตัวเอง (เหมือน <code>.filter-bar</code> มี <code>--sp-4</code> ของตัวเองอยู่แล้ว) ใช้จริงแล้วที่สวิตช์ "คำนวณอัตโนมัติ" ของ Payroll Detail (variant <code>plain</code>, แทน <code>#recalcReminderBanner</code> เดิมที่เคยลองมาแล้ว 2 รอบก่อนหน้า -- callout ก่อน แล้วข้อความเปล่าใต้สวิตช์).</p>
+    <p class="cp-section-note mb-1"><b><code>plain</code> (default) -- ไม่มีกล่อง/พื้นเลย แถวเดียว <code>[switch] label · คำอธิบาย</code> สูง ~24px ชิดซ้าย (align กับ filter-bar ด้านล่างพอดี ไม่มี inset ของตัวเอง) -- ใช้จริงที่ Payroll Detail (1 setting เท่านั้น). Render จริงผ่าน PHP partial ตรงๆ, 2 สถานะเริ่มต้น -- สลับ theme มุมขวาบนดู light/dark ด้วย, ลองกดสวิตช์ดู:</b></p>
+    <div class="d-flex flex-column mb-3" style="max-width:640px;">
+        <?php
+        $id = 'cpSettingRowPlainOn';
+        $label = 'คำนวณอัตโนมัติทันทีหลังแก้ไขข้อมูล';
+        $desc_on = 'ระบบจะคำนวณให้ทันทีเมื่อแก้ไขข้อมูล';
+        $desc_off = 'หากแก้ไขข้อมูล ให้กด <b>คำนวณ</b> เองทุกครั้ง';
+        $checked = true;
+        // $variant omitted -- defaults to 'plain'.
+        include __DIR__ . '/../../app/views/partials/setting-row.php';
+        ?>
+        <?php
+        $id = 'cpSettingRowPlainOff';
+        // $label/$desc_on/$desc_off already set above (same copy, reused -- only $checked differs).
+        $checked = false;
+        include __DIR__ . '/../../app/views/partials/setting-row.php';
+        ?>
+    </div>
+    <p class="cp-section-note mb-1"><b>Render ผ่าน JS twin (<code>settingRowHtml()</code>), <code>plain</code>, byte-identical markup:</b></p>
+    <div id="cpSettingRowJs" class="mb-4" style="max-width:640px;"></div>
+    <p class="cp-section-note mb-1"><b><code>card</code> (<code>variant:'card'</code>) -- กล่องพื้น <code>--c-bg-subtle</code> เดิมจากรอบก่อน, label+คำอธิบายซ้อน 2 บรรทัดซ้าย/switch ขวา -- ใช้เมื่อมี 3+ setting ซ้อนกัน (จำลอง 3 แถวด้านล่าง):</b></p>
+    <div style="max-width:640px;">
+        <?php
+        $id = 'cpSettingRowCard1';
+        $label = 'คำนวณอัตโนมัติทันทีหลังแก้ไขข้อมูล';
+        $desc_on = 'ระบบจะคำนวณให้ทันทีเมื่อแก้ไขข้อมูล';
+        $desc_off = 'หากแก้ไขข้อมูล ให้กด <b>คำนวณ</b> เองทุกครั้ง';
+        $checked = true;
+        $variant = 'card';
+        include __DIR__ . '/../../app/views/partials/setting-row.php';
+        ?>
+        <?php
+        $id = 'cpSettingRowCard2';
+        $label = 'แจ้งเตือนทางอีเมลเมื่อมีคำขออนุมัติใหม่';
+        $desc_on = 'ส่งอีเมลแจ้งเตือนทันทีที่มีคำขอใหม่เข้ามา';
+        $desc_off = 'จะไม่ได้รับอีเมลแจ้งเตือน ต้องเข้ามาดูเอง';
+        $checked = false;
+        include __DIR__ . '/../../app/views/partials/setting-row.php';
+        ?>
+        <?php
+        $id = 'cpSettingRowCard3';
+        $label = 'ล็อกรายการอัตโนมัติหลังจ่ายเงินแล้ว';
+        $desc_on = 'ระบบจะล็อกรายการทันทีหลังจ่ายเงินสำเร็จ';
+        $desc_off = 'ต้องกดล็อกรายการเองหลังจ่ายเงิน';
+        $checked = true;
+        include __DIR__ . '/../../app/views/partials/setting-row.php';
+        ?>
     </div>
 </div>
 
@@ -1274,10 +1366,39 @@ $(function () {
         },
     });
 
+    // 2026-09-13, "กดติดบ้างไม่ติดบ้าง" bug report -- manual stress-test panel wiring. 2 counters,
+    // deliberately from 2 DIFFERENT sources so a real miss is visible as a mismatch, not just a low
+    // number: cpFilterBarStressClickCount increments on every raw click the delegated listener below
+    // actually receives (proves the click reached the handler at all); cpFilterBarStressChangeCount
+    // increments once per debounced onChange (proves the whole pipeline -- select reset -> change
+    // event -> refresh() -> onChange -- completed). The 2 numbers are NOT expected to always match 1:1
+    // ("ล้างตัวกรอง" is 1 click but can reset 2 selects, still 1 onChange via the shared debounce; 2
+    // rapid × clicks within the same tick coalesce into 1 onChange too, by design -- see
+    // scheduleNotify()'s own comment above) -- what matters for THIS test is that the click counter
+    // itself never stalls while repeatedly pressing × / Clear / the toggle in sequence.
+    let cpStressClickCount = 0;
+    let cpStressChangeCount = 0;
+    $('#cpFilterBarDemo').on('click', '.filter-bar-chip-remove, .filter-bar-clear', function () {
+        cpStressClickCount++;
+        $('#cpFilterBarStressClickCount').text(cpStressClickCount);
+    });
     initFilterBar('#cpFilterBarDemo', {
         onChange: function () {
+            cpStressChangeCount++;
+            $('#cpFilterBarStressChangeCount').text(cpStressChangeCount);
             console.log('[filter-bar demo] onChange fired -- a real caller would reload its own table here.');
         },
+    });
+    // Re-populate both default filters so the tester can click ×/Clear, then reset, repeatedly --
+    // without this there's nothing left to click after the first 1-2 removals.
+    $('#cpFilterBarStressReset').on('click', function () {
+        $('#cpFilterStatus').val('active').trigger('change');
+        // 2026-09-13: #cpFilterDept is now a genuine select2-remote field (the repro fix below) -- a
+        // static `.val('3').trigger('change')` would silently do nothing here, since a remote select
+        // has no matching <option value="3"> to select unless one is actually appended first (the
+        // SAME app-wide convention used to pre-fill any select2-remote field programmatically, e.g.
+        // payroll/index.js's own #run_cycle_id populate call).
+        $('#cpFilterDept').empty().append(new Option('ไอที', '3', true, true)).trigger('change');
     });
 
     // Notification (§6, item 6d) -- UI only, no polling/backend. The dropdown itself is a REAL
@@ -1488,6 +1609,17 @@ $(function () {
         $block.append(renderStatusStepper(cpStepperSteps(demo.current, demo.override, demo.final, demo.live), demo.current));
         $cpStepperShowcase.append($block);
     });
+
+    // Setting row (§9/§11) -- JS twin demo, byte-identical markup to the PHP partial rendered above.
+    // Starts unchecked so clicking it demonstrates the on/off desc swap in the SAME direction as the
+    // real Payroll Detail usage (a draft run's own switch starts off more often than on).
+    $('#cpSettingRowJs').html(settingRowHtml({
+        id: 'cpSettingRowJsSwitch',
+        label: 'คำนวณอัตโนมัติทันทีหลังแก้ไขข้อมูล',
+        desc_on: 'ระบบจะคำนวณให้ทันทีเมื่อแก้ไขข้อมูล',
+        desc_off: 'หากแก้ไขข้อมูล ให้กด <b>คำนวณ</b> เองทุกครั้ง',
+        checked: false,
+    }));
 
     // Timeline (ข้อ (3)/6b) -- 6 รายการ 2 วัน, เรียงใหม่สุดบนสุดเอง (renderTimeline() ไม่ sort เอง) --
     // เรื่องราวเดียวกับที่ combo demo ด้านล่างใช้ประกอบกับ stepper.

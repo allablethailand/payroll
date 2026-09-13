@@ -229,6 +229,36 @@ function isKeyReferenced(string $key, string $projectRoot): bool {
 }
 
 /**
+ * 2026-09-14, Round 3 "เก็บตกรอบ 6" item 1 follow-up ("check-lang เพิ่มกฎเตือน 'key ที่ en ว่าง/เท่ากับไทย'")
+ * -- a WARNING, not a failure: flags every key whose 'en' value is an empty/whitespace-only string,
+ * OR is a non-empty string byte-for-byte IDENTICAL to its 'th' value, as a candidate for exactly the
+ * "someone forgot to translate this" bug class Round 3 item 1 found and fixed (stepper/callout text
+ * that stayed Thai in EN mode). Deliberately does NOT fail checkLangFiles()'s own `hasProblem` (and
+ * is NOT asserted against in tests/lang_check_test.php) -- a real, manual scan of this app's own
+ * en.json turned up 25 keys that are correctly, intentionally identical between th/en (proper nouns
+ * like "Origami"/"PDF"/"IP Address", format placeholders like "0-4"/"e.g., Somchai", a raw JSON
+ * example string) -- failing the suite on those would be constant, ignorable noise, not a real
+ * signal. This is a report to read, not a gate to pass.
+ */
+function findSuspiciousTranslations(array $flatByLang): array {
+    if (!isset($flatByLang['th']) || !isset($flatByLang['en'])) return [];
+    $th = $flatByLang['th'];
+    $en = $flatByLang['en'];
+    $out = [];
+    foreach ($th as $key => $thVal) {
+        if (!array_key_exists($key, $en)) continue;
+        $enVal = $en[$key];
+        if (!is_string($enVal) || !is_string($thVal)) continue;
+        if (trim($enVal) === '') {
+            $out[] = ['key' => $key, 'th' => $thVal, 'en' => $enVal, 'reason' => 'empty'];
+        } elseif ($enVal === $thVal) {
+            $out[] = ['key' => $key, 'th' => $thVal, 'en' => $enVal, 'reason' => 'same_as_th'];
+        }
+    }
+    return $out;
+}
+
+/**
  * Runs the full check against the given {lang => path} file map and returns a structured result
  * (no output, no exit) -- the one function both the CLI report below and
  * tests/lang_check_test.php call, so the parser/detection logic exists in exactly one place.
@@ -237,6 +267,7 @@ function isKeyReferenced(string $key, string $projectRoot): bool {
  * {
  *   parsed: {lang => {value, duplicates}},   // duplicates: see parseJsonTracked()'s own docblock
  *   onlyIn: {lang => [dot-path keys present in this lang's file but missing from every other]},
+ *   suspicious: [{key, th, en, reason}],     // WARNING-only, see findSuspiciousTranslations() above
  *   hasProblem: bool
  * }
  */
@@ -279,7 +310,9 @@ function checkLangFiles(array $files, string $projectRoot): array {
         }
     }
 
-    return ['parsed' => $parsed, 'onlyIn' => $onlyIn, 'hasProblem' => $hasProblem, 'flatByLang' => $flatByLang];
+    $suspicious = findSuspiciousTranslations($flatByLang);
+
+    return ['parsed' => $parsed, 'onlyIn' => $onlyIn, 'suspicious' => $suspicious, 'hasProblem' => $hasProblem, 'flatByLang' => $flatByLang];
 }
 
 function printLangCheckReport(array $result, string $projectRoot): void {
@@ -318,6 +351,19 @@ function printLangCheckReport(array $result, string $projectRoot): void {
     }
     if (!$anyMissing) {
         echo "None -- all files have exactly the same key set.\n";
+    }
+
+    echo "=== WARNING: EN value empty or identical to TH (review, not a hard failure) ===\n\n";
+    if (empty($result['suspicious'])) {
+        echo "None found.\n\n";
+    } else {
+        foreach ($result['suspicious'] as $s) {
+            $label = $s['reason'] === 'empty' ? 'en is empty' : 'en === th';
+            echo "  - {$s['key']} ($label): th=\"{$s['th']}\" en=\"{$s['en']}\"\n";
+        }
+        echo "\n  (" . count($result['suspicious']) . " total -- some of these are legitimate, e.g. proper\n";
+        echo "   nouns/placeholders/format strings that are the same in both languages by design.\n";
+        echo "   Review each one; this list does not affect the exit code.)\n\n";
     }
 
     echo "=== Summary ===\n";

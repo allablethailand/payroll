@@ -51,13 +51,55 @@
     let $panel = null; // one shared floating panel, reused across every table/column
     let panelOwner = null; // { dt, key, index, config } the panel is currently open for
 
+    // 2026-09-13, Round 3 "เก็บตก" item 2, real gaps found and fixed (this popup was built 2026-08-27,
+    // before Phase Design Round 2/3 even started -- confirmed via git history/its own top-of-file date
+    // -- so it never got migrated to the shared component vocabulary at all, unlike everything else
+    // touched this round):
+    //   (b) `.tcf-select-all`/`.tcf-value-cb` had NO class beyond their own -- true native unstyled
+    //       browser checkboxes (confirmed, not just "using a custom style" -- there was no CSS rule
+    //       for either at all). `.form-check-input` (Bootstrap's own class, already overridden orange
+    //       app-wide -- style.css's `.form-check-input:checked` rule) needs no `.form-check` wrapper
+    //       to render correctly here since `.tcf-item`'s own layout is a plain flex row with `gap`, not
+    //       Bootstrap's own margin-left:-1.5em positioning trick that DOES require that wrapper (the
+    //       exact bug class already found once this session in the Payslip/ECT Assign-To checkboxes --
+    //       confirmed NOT applicable here before relying on it).
+    //   (c) close button becomes a real `.btn-icon.btn-icon-ghost` (§7) -- `.tcf-panel-close` itself
+    //       keeps NO visual CSS of its own anymore (see style.css), just enough to sit correctly in the
+    //       header's flex row; kept as a class here too so the existing `$(document).on('click',
+    //       '.tcf-panel-close', ...)` delegated handler needs no change.
+    // 2026-09-14, Round 3 "เก็บตกรอบ 5" item 1, REAL ROOT CAUSE found (explicit report: this is the
+    // 4th round in a row where this popup's text stayed English no matter what) -- every label lookup
+    // in this file used `(window.langData && langData['key'])`, guarding on `window.langData`
+    // specifically. `app.js` declares its own `langData` with `let langData = {}` at the TRUE top
+    // level of a plain classic `<script>` (not `type="module"`, no wrapping IIFE) -- a `let`/`const`
+    // declared that way creates a binding in the shared global LEXICAL scope (visible to every other
+    // `<script>` on the page as a bare `langData` reference, confirmed this is exactly how
+    // `getLangValue()`/every other file in this app already reads it) but it is NEVER attached to the
+    // `window` OBJECT the way a `var` or bare `function` declaration would be -- confirmed directly:
+    // `typeof window.langData` is `'undefined'` always, unconditionally, regardless of whether
+    // `langData` itself is genuinely populated. That means `window.langData && ...` short-circuited
+    // to `undefined` on EVERY single call, in EVERY language, before ever reaching the real
+    // `langData['key']` lookup that WOULD have worked -- every previous round's fix (moving the lookup
+    // to open-time, adding new lang keys) was necessary but could never have worked while this guard
+    // stayed broken underneath it. No other file in this app uses this `window.langData &&` pattern
+    // (confirmed via grep) -- every other consumer already uses the correct, established
+    // `langData['key'] || 'fallback'` (bare reference) or `getLangValue('key')`. Fixed by switching
+    // every lookup below to `getLangValue()` (app.js's own canonical helper, reads the bare `langData`
+    // directly, exactly what every other i18n consumer in this app already calls) instead of
+    // reinventing an equivalent inline. Also renamed the 3 popup-specific keys this file owns
+    // (`column_filter_title/_clear/_apply` -> `dt_filter_title/_clear/_apply`) and stopped reusing the
+    // shared generic `search`/`select_all` keys, giving this popup its OWN complete, independent set
+    // of 5 keys (`dt_filter_title/_search/_select_all/_clear/_apply`, public/lang/*.json) -- one
+    // consistent prefix, fully decoupled from any other page's wording (same "don't couple unrelated
+    // call sites through a shared key" reasoning `column_filter_clear`/`column_filter_apply` already
+    // established last round, just completed for the other 2 that were still borrowed).
     function ensurePanel() {
         if ($panel) return $panel;
         $panel = $(`
             <div class="tcf-panel d-none">
                 <div class="tcf-panel-header">
                     <span class="tcf-panel-title"></span>
-                    <button type="button" class="tcf-panel-close" title=""><i class="fa-solid fa-xmark"></i></button>
+                    <button type="button" class="btn-icon btn-icon-ghost tcf-panel-close" title=""><i class="fa-solid fa-xmark"></i></button>
                 </div>
                 <div class="tcf-search-wrap">
                     <i class="fa-solid fa-magnifying-glass"></i>
@@ -65,7 +107,7 @@
                 </div>
                 <div class="tcf-select-all-row">
                     <label class="tcf-item">
-                        <input type="checkbox" class="tcf-select-all" checked>
+                        <input type="checkbox" class="tcf-select-all form-check-input" checked>
                         <span class="tcf-select-all-label"></span>
                     </label>
                 </div>
@@ -76,13 +118,26 @@
                 </div>
             </div>
         `).appendTo('body');
-        $panel.find('.tcf-panel-title').text((window.langData && langData['column_filter_title']) || 'Filter');
-        $panel.find('.tcf-panel-close').attr('title', (window.langData && langData['close']) || 'Close');
-        $panel.find('.tcf-search-wrap input').attr('placeholder', (window.langData && langData['search']) || 'Search...');
-        $panel.find('.tcf-select-all-label').text((window.langData && langData['select_all']) || 'Select All');
-        $panel.find('.tcf-clear-btn').text((window.langData && langData['clear_filter']) || 'Clear');
-        $panel.find('.tcf-apply-btn').text((window.langData && langData['apply']) || 'Apply');
+        applyPanelLabels();
         return $panel;
+    }
+    // 2026-09-13, Round 3 "เก็บตกรอบ 4", real bug found and fixed (explicit report: switching language
+    // did NOT update this popup's own text) -- the 6 label/placeholder lines used to live INSIDE
+    // ensurePanel(), which only ever runs its body ONCE (the shared `$panel` node is built a single
+    // time then reused for every table/column, per this file's own top-of-file docblock) -- so
+    // whatever language was active the FIRST time any column filter was ever opened stuck permanently
+    // after that, regardless of later language switches. Extracted so `openPanelFor()` below can call
+    // it fresh on every single open (`langData` read live, never cached) -- "render สดใน open handler
+    // ไม่ cache ข้อความตอน init", per the explicit instruction. Also called once from ensurePanel()
+    // itself so the panel is never actually left with its raw HTML placeholders even in the split
+    // second before the first real open call runs it again.
+    function applyPanelLabels() {
+        $panel.find('.tcf-panel-title').text(getLangValue('dt_filter_title') || 'Filter');
+        $panel.find('.tcf-panel-close').attr('title', getLangValue('close') || 'Close');
+        $panel.find('.tcf-search-wrap input').attr('placeholder', getLangValue('dt_filter_search') || 'Search...');
+        $panel.find('.tcf-select-all-label').text(getLangValue('dt_filter_select_all') || 'Select All');
+        $panel.find('.tcf-clear-btn').text(getLangValue('dt_filter_clear') || 'Clear');
+        $panel.find('.tcf-apply-btn').text(getLangValue('dt_filter_apply') || 'Apply Filter');
     }
 
     function tableState(dt) {
@@ -122,11 +177,23 @@
     // `column(index).data()` on a `data:null` column returns the WHOLE ROW OBJECT, not a scalar, so
     // reading it directly (the original version of this function) would have produced literal
     // "[object Object]" as every "unique value" for any such column. Using the column's own RENDERED
-    // ('display') output instead -- exactly what the user actually sees on screen, and exactly what
-    // DataTables' own built-in global search already keys off by default -- fixes this generically
-    // for every column shape without needing a per-table special case. Rendered output is frequently
-    // HTML (badges, `<strong>` wrappers, icons) rather than plain text, so it's stripped through a
-    // detached DOM node before being used as either a checkbox label or a filter-match key.
+    // output instead -- exactly what DataTables' own built-in global search already keys off by
+    // default -- fixes this generically for every column shape without needing a per-table special
+    // case. Rendered output is frequently HTML (badges, `<strong>` wrappers, icons) rather than plain
+    // text, so it's stripped through a detached DOM node before being used as either a checkbox label
+    // or a filter-match key.
+    // 2026-09-14, Round 3 "เก็บตกรอบ 5" item 2, real bug found and fixed (explicit report: the
+    // "ตรวจสอบ" column's own filter list showed "ยกเลิกการตรวจสอบ" -- the verified badge's own hidden
+    // ⋮-menu item text, not a real filter value) -- was `.render('display')`, which for ANY column
+    // whose own render option is a plain function (no `{display, filter}` object-form split) returns
+    // the exact SAME HTML the user sees on screen, menus and all, since DataTables falls back to that
+    // one function for every render type when no split is given. Switched to `.render('filter')` --
+    // DataTables' own dedicated "the value to use for filtering" render type -- which correctly picks
+    // up a column's own `filter` variant when one is configured (payroll/detail.js's Verify/Lock
+    // column now has one, see verifyLockFilterTextRd()) and transparently falls back to the SAME
+    // single function as before for every OTHER column that hasn't split display/filter apart (no
+    // behavior change for those -- confirmed this is how DataTables' own `.render(type)` API always
+    // behaves for a plain, non-object `render` option, not assumed).
     function stripHtml(html) {
         if (html === null || html === undefined) return '';
         const div = document.createElement('div');
@@ -136,7 +203,7 @@
     function renderedCellText(dt, rowIndex, colIndex) {
         let out;
         try {
-            out = dt.cell(rowIndex, colIndex).render('display');
+            out = dt.cell(rowIndex, colIndex).render('filter');
         } catch (e) {
             out = dt.cell(rowIndex, colIndex).data();
         }
@@ -163,7 +230,7 @@
             const checked = !checkedSet || checkedSet.has(val);
             $list.append(
                 $('<label class="tcf-item"></label>').append(
-                    $('<input type="checkbox" class="tcf-value-cb">').val(val).prop('checked', checked),
+                    $('<input type="checkbox" class="tcf-value-cb form-check-input">').val(val).prop('checked', checked),
                     $('<span></span>').text(val)
                 )
             );
@@ -182,6 +249,7 @@
 
     function openPanelFor(dt, col, $th) {
         const panel = ensurePanel();
+        applyPanelLabels(); // read langData live on every open -- see this function's own docblock
         const state = tableState(dt);
         panelOwner = { dt: dt, key: col.key, index: col.index, config: col };
 
@@ -197,7 +265,7 @@
                 $(this).toggleClass('d-none', text.indexOf(q) === -1);
             });
         });
-        panel.find('.tcf-list').html(`<div class="tcf-loading text-secondary small py-2 text-center"><i class="fa-solid fa-spinner fa-spin me-1"></i>${(window.langData && langData['loading']) || 'Loading...'}</div>`);
+        panel.find('.tcf-list').html(`<div class="tcf-loading text-secondary small py-2 text-center"><i class="fa-solid fa-spinner fa-spin me-1"></i>${getLangValue('loading') || 'Loading...'}</div>`);
 
         function afterValuesLoaded(values) {
             const checkedSet = state.selected[col.key] || null; // null = everything checked (no filter yet)
@@ -337,16 +405,54 @@
             const columnSettings = dt.settings()[0].aoColumns[col.index];
             const columnSortable = tableSortingEnabled && !!(columnSettings && columnSettings.bSortable);
             const titleText = $th.text().trim();
+            // 2026-09-13, Round 3 "เก็บตกรอบ 4", real bug found and fixed (explicit repro: switch
+            // language TH->EN->TH, sort-arrow + filter icon vanish from every column header this
+            // function has already wired up). Root cause: the view's own static markup puts
+            // `data-i18n="{key}"` directly on the `<th>` itself (e.g. `<th data-i18n="table_calculation">
+            // Calculation</th>`) -- this function empties and rebuilds the `<th>`'s CHILDREN right
+            // below, but never touched the `<th>` element's OWN attributes, so that `data-i18n` stayed
+            // on it. app.js's own updateText() (the central language sweep) finds EVERY `[data-i18n]`
+            // element on the page on each language switch and, for one with no `> i`/`> svg` direct
+            // child (true of this `<th>` post-rebuild -- its real children are now nested inside a
+            // `.tcf-header-row` div, not a bare icon), falls through to a plain `.text(value)` call --
+            // which, exactly like `.html()`, wipes out EVERY child node first. That silently destroyed
+            // the sort-arrow span + filter button this function had just built, replacing the whole
+            // `<th>` with a bare translated text node -- confirmed by reading updateText()'s own
+            // branches directly, not guessed. Fixed at the source: capture the `<th>`'s own
+            // `data-i18n` (if any) BEFORE rebuilding, strip it from the `<th>` itself, and move it onto
+            // the new `.tcf-header-title` span instead -- that span is a true leaf (no children of its
+            // own), so updateText()'s EXISTING plain-text branch updates it correctly on every future
+            // language switch without ever touching the sort-arrow/filter button siblings again. No
+            // change needed in updateText() itself for this -- the sweep's own per-element logic was
+            // already correct for a genuine leaf element, the bug was purely that the wrong element
+            // (the `<th>`, not its label span) carried the marker after this function's own rebuild.
+            // Audited every current initSharedDataTable() caller that also passes `columnFilters`
+            // (the only ones actually exposed to this -- `data-i18n` on a `<th>` this function never
+            // touches is harmless): confirmed via grep only payroll/detail.js does today (4 columns,
+            // Department/Payment Method/Calculation/Verify-Lock) -- this fix is centralized in this one
+            // function, so it also protects every FUTURE `columnFilters` caller with no per-page change
+            // needed.
+            const titleI18nKey = $th.attr('data-i18n');
+            $th.removeAttr('data-i18n');
             const $right = $('<span class="tcf-header-right"></span>');
             if (columnSortable) {
                 $right.append($('<span class="dt-column-order"></span>'));
             }
+            // 2026-09-13, Round 3 "เก็บตกรอบ 4", explicit instruction: "ใช้ fa-filter ตัวเดียวกับ filter-bar
+            // (ไม่ใช่ ▾)" -- REVERTS the previous "เก็บตก" round's own change to fa-chevron-down (that
+            // round read "▼" as literally wanting a caret glyph; this round's explicit correction is
+            // the opposite -- match filter-bar.php's own `.filter-bar-label-icon` glyph choice exactly,
+            // fa-filter, not a chevron/caret at all). Size/color unchanged by this revert -- 0.9167rem
+            // already equals 11px at Medium (this rule's own font-size below), --c-text-faint resting/
+            // --c-primary active were already correct from the previous round.
             $right.append(`<button type="button" class="tcf-filter-btn" data-tcf-key="${col.key}" title=""><i class="fa-solid fa-filter"></i></button>`);
+            const $titleSpan = $('<span class="dt-column-title tcf-header-title"></span>').text(titleText).attr('title', titleText);
+            if (titleI18nKey) $titleSpan.attr('data-i18n', titleI18nKey);
             $th.empty()
                 .addClass('tcf-th')
                 .append(
                     $('<div class="tcf-header-row"></div>').append(
-                        $('<span class="dt-column-title tcf-header-title"></span>').text(titleText).attr('title', titleText),
+                        $titleSpan,
                         $right
                     )
                 );

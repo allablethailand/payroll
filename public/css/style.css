@@ -2474,6 +2474,39 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     --bs-box-shadow: var(--shadow-modal);   /* §1: "modal/dropdown เท่านั้น" -- these 2 are the only
                                                 Bootstrap components that read this root shadow var */
     --bs-box-shadow-sm: var(--shadow-modal);
+    /* 2026-09-13, §1 "focus ring ส้ม", explicit instruction: "override ทั่วระบบ --bs-focus-ring-color
+       เป็น rgba(var(--bs-primary-rgb), .35)" -- real gap found: this variable is Bootstrap's OWN
+       documented focus-ring token, but confirmed by reading the compiled CSS directly that almost
+       nothing in Bootstrap 5.3 actually CONSUMES it except the rarely-used `.focus-ring`/`.focus-ring-*`
+       utility classes -- every component's own `:focus-visible` ring (`.nav-link`, `.form-control`,
+       `.btn` via `--bs-btn-focus-shadow-rgb`) hardcodes its OWN blue literal instead. Set here anyway
+       (the "one token, change it once" contract this file already keeps for every other Bootstrap var)
+       AND explicitly wired into `.nav-link:focus-visible`/`.btn-icon:focus-visible` below, since setting
+       the variable alone would silently fix nothing for those. */
+    --bs-focus-ring-color: rgba(var(--bs-primary-rgb), .35);
+}
+/* `.btn`'s own base rule (bootstrap.min.css) only ever sets `z-index` on plain `:focus` -- no outline
+   reset, no ring -- relying entirely on `:focus-visible` (below) to decide when a ring is warranted.
+   `--bs-btn-focus-shadow-rgb` itself has NO default on plain `.btn`, only on each variant class
+   (`.btn-primary`/`.btn-danger`/etc, confirmed by reading the compiled CSS) -- so any `.btn` using a
+   variant this app hasn't explicitly retuned (`.btn-success`, `.btn-warning`, `.btn-link`, ...) was
+   still ringing Bootstrap's own blue. One base default here, placed BEFORE every `.btn-*` variant
+   block in this file (`.btn-primary`/`.btn-danger` etc. further down) -- same specificity (0,1,0) as
+   `.btn` itself, so on the same element a variant class's OWN `--bs-btn-focus-shadow-rgb` still wins
+   via normal source-order cascade, only a variant with no override of its own (e.g. `.btn-success`,
+   `.btn-warning`, `.btn-link`) falls back to this default -- closes that gap app-wide in one place
+   instead of retuning every variant one at a time. */
+.btn {
+    --bs-btn-focus-shadow-rgb: var(--bs-primary-rgb);
+}
+/* Same plain-`:focus`-vs-`:focus-visible` split as `.nav-link`/`.btn-icon` above/below -- Bootstrap's
+   own `.btn:focus` (confirmed from the compiled CSS) sets only `z-index:5`, never touches `outline`,
+   so a plain (mouse/JS) focus left the browser's own native outline showing. `.btn:focus-visible`
+   itself already resets `outline:0` on its own (Bootstrap's own rule, confirmed) and reads the ring
+   from `--bs-btn-focus-box-shadow`, which now resolves to orange via `--bs-btn-focus-shadow-rgb` above
+   -- no separate `.btn:focus-visible` override needed here, only this plain-`:focus` reset. */
+.btn:focus {
+    outline: none;
 }
 .btn-primary {
     --bs-btn-bg: var(--c-primary);
@@ -2540,6 +2573,42 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     background-color: var(--c-bg-subtle);
     border-color: var(--c-border-strong);
 }
+/* 2026-09-13, Round 3 item 3b follow-up, real bug found and fixed (explicit report: "paging: หน้าปัจจุบัน
+   เป็นสีฟ้า (Bootstrap default)") -- DataTables' own pagination controls are plain Bootstrap
+   `.pagination`/`.page-item`/`.page-link` markup, same per-component gap as `.btn-primary`/
+   `.form-check-input:checked` above: Bootstrap hardcodes the ACTIVE page's bg/border/text
+   (`--bs-pagination-active-bg:#0d6efd` etc.) and the hover state directly on `.pagination` ITSELF
+   (not derived from `--bs-primary`/`--bs-link-color` anywhere in Bootstrap's own CSS, confirmed by
+   reading the compiled rule body directly) -- the root-level `--bs-primary`/`--bs-link-color`
+   overrides above never reach it, same reason `.btn-primary` needed its own block. This affects EVERY
+   paginated table in the app (DataTables' own shared markup), not just this one -- placed in this
+   shared Round-2 override section on purpose, not scoped to Payroll Detail. */
+.pagination {
+    --bs-pagination-active-bg: var(--c-primary);
+    --bs-pagination-active-border-color: var(--c-primary);
+    --bs-pagination-active-color: #fff;
+    --bs-pagination-hover-bg: var(--c-bg-hover);
+    --bs-pagination-hover-border-color: var(--c-border-strong);
+    --bs-pagination-hover-color: var(--c-text);
+    --bs-pagination-focus-box-shadow: 0 0 0 .25rem rgba(var(--bs-primary-rgb), .25);
+}
+/* 2026-09-14, Round 3 "เก็บตกรอบ 6" item 2, real gap found -- ยังไม่เคย implement เป็น CSS จริงเลยแม้จะ
+   ระบุไว้แล้วใน §7's own layout diagram ("หัวตาราง พื้น --c-bg-subtle ตัวหนังสือ --c-text-muted ไม่หนา") --
+   ไม่มี rule ไหนเคย override `table.dataTable thead th` เลย (confirmed via grep) จึงยังใช้ native
+   browser/Bootstrap default (ตัวหนา ดำ) อยู่ทุกตารางในแอป. เช่นเดียวกับ pagination ข้างบน -- ตัวเดียวใน
+   shared section นี้ ไม่ scope เฉพาะหน้าไหน มีผลทุก DataTable ทันที.
+   ไอคอน sort (`.dt-column-order`, dataTables.bootstrap5.css เอง) เป็นตัวอักษร glyph ▲▼ สี `currentColor`
+   ไม่มี color ของตัวเอง -- ถ้าปล่อยไว้จะ inherit สี --c-text-muted จากหัวข้อความแทน ทำให้สีต่างจากไอคอน
+   filter (`.tcf-filter-btn`, ตั้งไว้ `--c-text-faint` ตั้งแต่รอบก่อน) -- override สีแยกให้ตรงกันตามที่สั่ง
+   ("ไอคอน sort/filter สีเดียวกัน") แทนที่จะปล่อยให้ inherit เฉยๆ. */
+table.dataTable thead th {
+    color: var(--c-text-muted);
+    font-weight: 500;
+    font-size: var(--fs-sm);
+}
+table.dataTable thead th .dt-column-order {
+    color: var(--c-text-faint);
+}
 /* Form controls -- .form-control/.form-select already reference --bs-border-color/--bs-border-radius/
    --bs-body-color via var() at rest (root override above already reaches them), but BOTH hardcode
    their own focus ring directly (#86b7fe border + rgba(13,110,253,...) shadow) -- confirmed by
@@ -2567,8 +2636,29 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     border-color: var(--c-primary);
     box-shadow: 0 0 0 .25rem rgba(var(--bs-primary-rgb), .25);
 }
-.form-switch .form-check-input:focus {
-    --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='%23FF9900'/%3e%3c/svg%3e");
+/* 2026-09-13, Round 3 "เก็บตกรอบ 4", real bug found and fixed (explicit repro: check a switch on --
+   its own white knob disappears until you click somewhere else). Root cause confirmed by reading
+   Bootstrap's own compiled CSS directly: `.form-switch .form-check-input:focus` and
+   `.form-switch .form-check-input:checked` carry IDENTICAL selector specificity, and Bootstrap's
+   OWN source declares `:checked` (a plain white knob, `fill='%23fff'`) AFTER `:focus` (its own
+   light-blue knob) -- meaning Bootstrap's own unmodified cascade already resolves "checked AND
+   focused" (exactly the instant right after a click, before blur) correctly in favor of the white
+   knob. The line this replaces broke that: it set its OWN `--bs-form-switch-bg` on `.form-switch
+   .form-check-input:focus` unconditionally (to fix Bootstrap's blue knob for the UNCHECKED+focused
+   case), but being declared in THIS file -- which loads after bootstrap.min.css -- it won this same
+   specificity tie regardless of which pseudo-class actually mattered, beating `:checked`'s white
+   knob too. Track color is ALSO orange while checked (`background-color` above) -- an orange knob on
+   an orange track is invisible, exactly the reported symptom, until focus is lost and only
+   `:checked` still applies. Fixed per explicit instruction: scope the custom knob color to
+   `:not(:checked)` so it never competes with `:checked`'s own (correct, unmodified) white knob, and
+   rely on the OUTER focus ring (`.form-check-input:focus`'s own border/box-shadow right above, "focus
+   ring ส้มรอบนอก") as the sole focus indicator instead of also recoloring the knob itself. The
+   replacement SVG matches Bootstrap's own UNCHECKED+UNFOCUSED default knob color exactly
+   (`rgba(0,0,0,.25)`) rather than inventing a new shade -- an unchecked switch's knob should look the
+   same whether it's focused or not, only the outer ring signals focus, so this is the one value that
+   keeps that true while still not being Bootstrap's own blue. */
+.form-switch .form-check-input:not(:checked):focus {
+    --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='rgba%280, 0, 0, 0.25%29'/%3e%3c/svg%3e");
 }
 /* Disabled -- this app's own --c-text-faint token instead of Bootstrap's generic opacity:.5 dimming,
    so a disabled checkbox/switch reads consistently with every other disabled element elsewhere in
@@ -2609,6 +2699,26 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     border-color: transparent;
     color: var(--c-text);
     isolation: isolate;
+}
+/* 2026-09-13, §1 "focus ring ส้ม", real bug found and fixed (explicit report: "focus ring ฟ้า...ให้
+   ring ขึ้นเฉพาะ :focus-visible (คีย์บอร์ด) ไม่ขึ้นตอน focus ด้วย mouse/JS") -- app-wide, not scoped to
+   `.nav-tabs` (every `.nav-link` in the app, e.g. a future plain `.nav-tabs`-less nav, gets this too).
+   Bootstrap's OWN `.nav-link:focus` (confirmed from the compiled CSS) only ever sets `color`, never
+   touches `outline` -- so a plain (non-keyboard) focus left the BROWSER'S OWN native outline showing
+   through unstyled, which is what actually read as "a blue ring" (Bootstrap's own `:focus-visible`
+   ring is a `box-shadow`, a different thing, and was ALREADY `:focus-visible`-scoped natively -- the
+   real gap was the native outline on plain `:focus`, not Bootstrap's own ring leaking onto mouse
+   clicks). Explicitly reset to nothing on plain `:focus`; `.nav-link:focus-visible` below is the ONLY
+   place any ring shows now, and its own hardcoded blue box-shadow (`0 0 0 .25rem rgba(13,110,253,.25)`,
+   confirmed from the compiled CSS -- NOT derived from --bs-focus-ring-color despite that variable
+   existing) is replaced with the shared token. */
+.nav-link:focus {
+    outline: none;
+    box-shadow: none;
+}
+.nav-link:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 .25rem var(--bs-focus-ring-color);
 }
 .nav-tabs .nav-link.active,
 .nav-tabs .nav-item.show .nav-link {
@@ -2861,13 +2971,32 @@ th.num {
    explain, so weight (not color) is what should make it stand out. Scope is narrow and explicit: only
    the number itself changes color -- its label, icon, and any card/background around it stay exactly
    as neutral as any other value (§3: "การ์ด/stat ยังห้าม" carry status color on their own chrome). */
-.money-gross {
+/* 2026-09-13, Round 3 item 3b follow-up, real bug found and fixed (explicit report: "สีเงินในตารางยังไม่
+   ขึ้น...สุทธิหนาขึ้นแล้วแปลว่า class net มา แต่สีของ gross/deduction ไม่มา") -- these 3 rules were plain
+   single-class selectors (0,1,0 specificity), which worked fine in the stat-card context they were
+   first proven in (a `<div class="stat-value num money-gross">`, no table involved) but silently LOST
+   inside a DataTables `<td>`: Bootstrap 5's own `.table > :not(caption) > * > * { color: var(...) }`
+   (bundled in node_modules/bootstrap/dist/css/bootstrap.min.css) targets every table cell and has
+   specificity (0,1,1) -- `:not(caption)`'s own specificity is that of its argument, a type selector,
+   so it contributes (0,0,1) on top of `.table`'s (0,1,0) -- which is HIGHER than a bare `.money-gross`
+   and wins regardless of stylesheet load order. `.money-net`'s font-weight wasn't affected (Bootstrap's
+   rule only sets `color`), which is exactly why Net showed bold correctly while Gross/Deduction showed
+   no color at all -- both silently forced back to the inherited/default table text color. Root cause
+   confirmed by grepping the actual compiled Bootstrap CSS directly, not guessed. Fixed the general way
+   rules.md §8 already mandates these 3 classes be used ("ใส่คู่กับ .num เสมอ ไม่แทนที่" -- always paired
+   WITH .num) -- qualifying the base rule as `.num.money-*` (0,2,0) beats BOTH this Bootstrap table rule
+   (0,1,1) and the earlier stat-value tie (see the `.stat-value.money-*` overrides further down, kept
+   as-is, now redundant-but-harmless belt-and-braces) in every context this system is used in, not just
+   this one table -- every real call site already carries `.num` alongside the money class (stat-card.php's
+   own `class="stat-value num money-gross"`, DT_MARKER_CLASSES' own `'num col-money'` on every DataTable
+   money column), so this narrows nothing that wasn't already true in practice. */
+.num.money-gross {
     color: var(--c-success);
 }
-.money-deduction {
+.num.money-deduction {
     color: var(--c-danger);
 }
-.money-net {
+.num.money-net {
     color: var(--c-text);
     font-weight: 600;
 }
@@ -2950,7 +3079,10 @@ th.col-money div.dt-column-header .dt-column-title {
    files using `.btn-circle-action`/`.btn-icon` today. Kept `fa-solid` everywhere, 12px only. */
 .btn-icon i,
 .btn-circle-action i {
-    font-size: 12px;
+    /* 2026-09-13, Round 3 item 3b follow-up, §1 font-size audit -- was a literal 12px, silently never
+       scaling with the S/M/L Font Size setting; exact match to --fs-xs at Medium (12px), no visual
+       change at rest, now scales like everything else. */
+    font-size: var(--fs-xs);
 }
 .btn-icon:hover,
 .btn-icon:focus,
@@ -2958,11 +3090,22 @@ th.col-money div.dt-column-header .dt-column-title {
 .btn-circle-action:focus {
     color: var(--c-text) !important;
     background-color: var(--c-bg-hover);
+    /* 2026-09-13, real bug found and fixed (explicit report: "focus ring ฟ้า...ให้ ring ขึ้นเฉพาะ
+       :focus-visible") -- `.btn-icon`/`.btn-circle-action` don't always also carry a plain `.btn`
+       class (e.g. filter-bar.php's own toggle circle, class="btn-icon btn-icon-ghost filter-bar-toggle"
+       only), so nothing was resetting the BROWSER'S OWN native focus outline on a plain (non-keyboard)
+       `:focus` -- confirmed neither this rule nor any other touched `outline` for that state before
+       this fix. Reset here (harmless on `:hover` too, outline is invisible without focus anyway); the
+       real ring only ever shows via `:focus-visible` below now. */
+    outline: none;
 }
 .btn-icon:focus-visible,
 .btn-circle-action:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 .25rem rgba(var(--bs-primary-rgb), .25);
+    /* 2026-09-13, §1 "focus ring ส้ม" -- was its own hardcoded .25-opacity literal; now the shared
+       --bs-focus-ring-color token (:root override further up) so every focus ring in the app reads
+       the same orange, one value to change if it's ever retuned again. */
+    box-shadow: 0 0 0 .25rem var(--bs-focus-ring-color);
 }
 .btn-icon:disabled,
 .btn-icon[disabled],
@@ -2970,6 +3113,28 @@ th.col-money div.dt-column-header .dt-column-title {
 .btn-circle-action[disabled] {
     color: var(--c-text-faint) !important;
     background: var(--c-bg);
+}
+/* 2026-09-13, Round 3 item 3b follow-up, real bug found and fixed (explicit report: "⋮ มีลูกศร ▾ ต่อท้าย")
+   -- a `.btn-icon`/`.btn-circle-action` used as a Bootstrap dropdown trigger (`data-bs-toggle="dropdown"`,
+   e.g. the Employee Breakdown row's own "..." menu) inherits Bootstrap's own `.dropdown-toggle::after`
+   caret glyph -- correct on a normal labeled dropdown button, but redundant/cramped on a 32px icon-only
+   circle that's ALREADY an unambiguous "..." glyph. `display:none` on the pseudo-element removes just
+   the caret, not the dropdown behavior itself (still `data-bs-toggle="dropdown"`-driven, unchanged). */
+.btn-icon.dropdown-toggle::after,
+.btn-circle-action.dropdown-toggle::after {
+    display: none;
+}
+/* .btn-circle-action-badge (§7 follow-up, Round 3 item 3b) -- overlays a countBadgeHtml() (§5) pill on
+   a `.btn-circle-action`'s own top-right corner (Payroll Detail's own Comments row-action, wrapped in
+   a `.position-relative` container by its own caller) -- the standard "notification count on an
+   icon-only button" placement, needed since a 32px icon-only circle has no room for a text label next
+   to the number the way a labeled button (e.g. the toolbar's own "Verify Selected (N)") does.
+   `pointer-events:none` so the badge itself never steals the click meant for the circle underneath it. */
+.btn-circle-action-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    pointer-events: none;
 }
 /* .btn-icon-ghost (§7, 2026-09-13 filter-bar "ซอฟต์ลง" follow-up) -- a `.btn-icon` variant for a
    circle that sits INSIDE an already-toned panel (e.g. filter-bar's own --c-bg-subtle header) where
@@ -3218,8 +3383,10 @@ th.col-money div.dt-column-header .dt-column-title {
 }
 .stat-icon {
     /* 2026-09-13, Round 3 item 3a follow-up: 20px (the original Round 2 decision) read too large
-       once seen on a real page (Payroll Detail) -- sized down to 16px per explicit correction. */
-    font-size: 16px;
+       once seen on a real page (Payroll Detail) -- sized down to 16px per explicit correction.
+       2026-09-13, item 3b follow-up, §1 font-size audit: that 16px was still a literal px, not
+       scaling with the S/M/L setting -- exact match to --fs-md at Medium, no visual change at rest. */
+    font-size: var(--fs-md);
     line-height: 1;
     color: var(--c-text-faint);
     flex: 0 0 auto;
@@ -3254,46 +3421,76 @@ th.col-money div.dt-column-header .dt-column-title {
     text-decoration: underline;
 }
 
-/* filter-bar.php (§6), revised twice since the first version (see git history for the earlier
-   single-toolbar-row shape) -- flat bar, NOT the old `.station-filter`'s fieldset/legend look (a
-   bordered box with "ตัวกรอง" floating over the top edge as a corner label) -- a flat panel
-   (--c-bg-subtle background, --c-border border, no shadow) split into 3 parts: a HEADER (always
-   visible, label + count + the toggle circle), a collapsible BODY (the caller's own field grid, same
-   plain max-height-transition mechanism `.station-filter-body` already used -- kept identical on
-   purpose, "ตอนกาง = grid แบบ .station-filter เดิมเป๊ะ" applies to the COLLAPSE MECHANISM too, not
-   just the field grid's own markup), and a FOOTER (ALSO always visible regardless of collapse state
-   -- chips/"ไม่ได้กรอง" + the Clear button, "ติดล่างของแผงเสมอ"). initFilterBar() (app.js) owns all of
-   the count/visibility/chip-content/expand-collapse LOGIC; these rules are purely the shell's own
-   static layout plus the chip's own look.
-   2026-09-13, follow-up -- the earlier `toolbarTarget` relocation option (and its
-   `.filter-bar--toolbar-relocated`/`.status-tabs > .filter-bar-toolbar` support rules) is REMOVED
-   entirely this round ("ยกเลิก option toolbarTarget") -- the whole panel always renders in normal
-   document flow now, e.g. directly under a status-tabs.php pipeline for a page like Payroll Process,
-   never spliced into that pipeline's own row. */
+/* filter-bar.php (§6), rebuilt several times since the first version (see git history for the
+   earlier single-toolbar-row and 3-part-panel-with-footer shapes) -- flat bar, NOT the old
+   `.station-filter`'s fieldset/legend look (a bordered box with "ตัวกรอง" floating over the top edge
+   as a corner label) -- a flat panel (--c-bg-subtle background, --c-border border, no shadow) with 2
+   parts now: a HEADER (always visible -- label, chips while collapsed, the Clear button, the toggle
+   circle, all packed into one row) and a collapsible BODY (the caller's own field grid, same plain
+   max-height-transition mechanism `.station-filter-body` already used -- kept identical on purpose,
+   "ตอนกาง = grid แบบ .station-filter เดิมเป๊ะ" applies to the COLLAPSE MECHANISM too, not just the
+   field grid's own markup). initFilterBar() (app.js) owns all of the count/visibility/chip-content/
+   expand-collapse LOGIC; these rules are purely the shell's own static layout plus the chip's own
+   look.
+   2026-09-13, this round's own restructure -- the FOOTER is retired entirely (both its own row AND
+   the "ไม่ได้กรอง" placeholder text an earlier revision showed there, already gone before this round)
+   -- explicit feedback: "ตอนกาง ซ่อน chips เหลือแค่ปุ่ม 'ล้างตัวกรอง'...ย้ายไปอยู่แถวหัวขวา ข้าง chevron
+   แล้วตัดแถวท้ายทิ้งตอนกาง". Chips now live permanently in the header (visible only while collapsed,
+   see `.filter-bar-chips` below); the Clear button moved permanently into the header too -- once
+   neither of the footer's only 2 possible contents ever needed a separate row, the row itself had
+   nothing left to show, in either state. */
 .filter-bar {
     background: var(--c-bg-subtle);
     border-radius: var(--radius-lg);
     margin-bottom: var(--sp-4);
 }
+/* 2026-09-13, explicit instruction: "padding แผงตอนกาง --sp-3 --sp-4 ระยะหัว→ช่อง --sp-2 ให้เตี้ยลงอีก"
+   -- panel's own outer top edge stays --sp-3 (bottom edge is `.filter-bar-body > :first-child`'s own
+   bottom padding, unchanged, still --sp-3 -- see below), every side's horizontal inset stays --sp-4;
+   only the header→field GAP (this rule's own bottom padding, paired with the body wrapper's own
+   zero top padding right below -- a single-source gap, not stacked, per the previous round's own fix)
+   shrinks further, --sp-3 -> --sp-2. */
 .filter-bar-header {
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    padding: var(--sp-2) var(--sp-3);
+    padding: var(--sp-3) var(--sp-4) var(--sp-2);
 }
-/* `margin-left: auto` (not `justify-content: space-between` on the header) so this keeps working
-   whether the header has 2 children (label, toggle -- expanded) or 3 (label, the relocated
-   `.filter-bar-footer-left` chips, toggle -- collapsed, see initFilterBar()'s syncCollapsedLayout()):
-   the toggle always lands at the far right, everything before it packs to the left instead of being
-   evenly spread apart. */
 .filter-bar-toggle {
-    margin-left: auto;
     flex-shrink: 0;
 }
+/* .filter-bar-header-right -- wraps EVERYTHING that packs to the header's right edge (chips, the
+   optional $header_extra_html slot, the Clear button, the toggle circle) as ONE flex group with its
+   own `margin-left:auto`, instead of the earlier revision's per-element auto-margin-plus-sibling-
+   selector juggling (which only had to exist because those elements used to be scattered across a
+   header AND a separate footer, getting relocated between them). With everything now permanently
+   inside this one wrapper, `margin-left:auto` on the wrapper itself is enough -- the label packs left,
+   this whole cluster packs right, regardless of how many of its optional children (header-extra/
+   chips-while-collapsed) happen to be present at a given moment. */
+.filter-bar-header-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+}
+.filter-bar-header-extra {
+    display: flex;
+    align-items: center;
+}
+/* 2026-09-13, same-day follow-up (intermittent × /Clear click bug report) -- the label text is now
+   PART of the toggle click zone too (app.js's own initFilterBar(), `$toggleZone`), not just the
+   chevron circle -- cursor:pointer is this rule's own matching visual affordance for that. */
 .filter-bar-label {
     color: var(--c-text-muted);
     font-size: var(--fs-sm);
     font-weight: 500;
+    cursor: pointer;
+}
+/* 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "ไอคอน fa-filter สีเดียว --c-text-muted
+   หน้า 'ตัวกรอง' (ข้อยกเว้น §6 เฉพาะหัว filter-bar)" -- color comes from `.filter-bar-label`'s own
+   `color` above via normal inheritance (no separate color rule needed here), just spacing. */
+.filter-bar-label-icon {
+    margin-right: var(--sp-1);
 }
 /* select fields inside the body already resolve to --c-bg background / --c-border border at rest
    for free (Bootstrap's own --bs-body-bg/--bs-border-color root tokens, overridden to --c-*
@@ -3323,7 +3520,7 @@ th.col-money div.dt-column-header .dt-column-title {
    own existing `.station-filter-body` convention) without needing the caller to add a class of its
    own for it, keeping the "copy verbatim" migration promise in the partial's own docblock intact. */
 .filter-bar-body > :first-child {
-    padding: 0 var(--sp-3) var(--sp-3);
+    padding: 0 var(--sp-4) var(--sp-3);
 }
 /* Field labels inside the caller's own copied-verbatim grid -- Bootstrap's `.form-label` default
    (bold-ish, --bs-body-color, margin-bottom .5rem) reads as too heavy/dark for a field caption in
@@ -3335,40 +3532,50 @@ th.col-money div.dt-column-header .dt-column-title {
     font-weight: 500;
     margin-bottom: var(--sp-1);
 }
-.filter-bar-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-2);
-    padding: var(--sp-3) var(--sp-3) var(--sp-2);
-}
-.filter-bar-footer-left {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--sp-2);
-    min-width: 0;
-}
-.filter-bar-empty-text {
-    color: var(--c-text-faint);
-    font-size: var(--fs-xs);
-}
+/* 2026-09-13, explicit instruction: "chips แสดงเฉพาะตอนยุบ" -- lives permanently inside
+   `.filter-bar-header-right` now (filter-bar.php), so its own visibility by collapse state is pure
+   CSS, no JS relocation needed. While EXPANDED, the fields themselves are visible in the body below
+   and carry their own "has a value" signal instead (`.filter-bar-field-active`, right below) -- chips
+   would just be redundant there. */
 .filter-bar-chips {
     display: flex;
     flex-wrap: wrap;
     gap: var(--sp-2);
 }
-/* Chips: no border (soft-fill pill instead), --c-bg-hover background -- same "a pill sitting on a
-   toned panel needs a fill, not another border" reasoning as .btn-icon-ghost above. */
+.filter-bar:not(.collapsed) .filter-bar-chips {
+    display: none;
+}
+/* 2026-09-13, explicit instruction: "ช่องที่มีค่า: ขอบ --c-border-strong ให้เห็นว่าไม่ใช่ default โดยไม่ต้อง
+   พึ่ง chips" -- toggled by initFilterBar()'s own refresh() onto each field's wrapping column div (the
+   `<select>`'s own direct parent, per filter-bar.php's docblock contract), independent of collapse
+   state. Targets select2's own RENDERED selection box (`.select2-selection`, what a viewer actually
+   sees -- the real `<select>` underneath is visually hidden by select2 itself) plus a plain
+   non-select2 `<select>` as a defensive fallback for a field that somehow isn't select2-enhanced. */
+.filter-bar-field-active .select2-selection,
+.filter-bar-field-active select:not(.select2-hidden-accessible) {
+    border-color: var(--c-border-strong);
+}
+/* 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "chips ตอนยุบ: --fs-xs พื้น --c-bg-hover
+   ขอบ --c-border ตัวหนังสือ --c-text-muted ค่าเป็น --c-text (label: ค่า) × 10px -- ให้เห็นว่าเป็น 'ป้ายค่า
+   ที่กรอง' ไม่กลืนกับหัว" -- the fill-only (no border) look this round's own earlier "ซอฟต์ลง" pass
+   chose read too close to the panel's own header tone once tested live; a 1px border brings it back to
+   reading as its own distinct pill. Label vs value now 2 separate spans (were one plain text node) so
+   each half can carry its own color. */
 .filter-bar-chip {
     display: inline-flex;
     align-items: center;
     gap: var(--sp-1);
     background: var(--c-bg-hover);
-    color: var(--c-text);
+    border: 1px solid var(--c-border);
     border-radius: var(--radius-pill);
     padding: 2px var(--sp-3);
-    font-size: var(--fs-sm);
+    font-size: var(--fs-xs);
+}
+.filter-bar-chip-label {
+    color: var(--c-text-muted);
+}
+.filter-bar-chip-value {
+    color: var(--c-text);
 }
 .filter-bar-chip-remove {
     display: inline-flex;
@@ -3377,7 +3584,12 @@ th.col-money div.dt-column-header .dt-column-title {
     border: none;
     padding: 0;
     color: var(--c-text-muted);
-    font-size: 12px;
+    /* 2026-09-13, Round 3 item 3b follow-up, §1 font-size audit -- flagged, not silently resolved:
+       the explicit "10px" spec from earlier this same round (item 7c) has no matching --fs-* token
+       (--fs-xs, the smallest, is 12px) -- item 8's own later, broader mandate ("ทุกจุดใช้ token") wins
+       over the earlier literal-px spec where the two conflict, so this becomes --fs-xs too (a ~2px
+       increase for this one xmark glyph, accepted as the cost of full token compliance). */
+    font-size: var(--fs-xs);
 }
 .filter-bar-chip-remove:hover {
     color: var(--c-text);
@@ -3923,6 +4135,42 @@ td.dt-empty-cell {
     border-radius: var(--radius-pill);
     font-weight: 400;
 }
+/* 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "count badge บนปุ่มวงกลม: neutral (เทา)
+   โดย default, tone primary เมื่อมีรายการ 'ใหม่/ยังไม่อ่าน' เท่านั้น (countBadgeHtml(n,{tone:'primary'}))"
+   -- a real gap found while adding this: no `.badge.badge-primary` rule existed at all (only the 4
+   status tones above -- countBadgeHtml()'s own tone vocabulary reuses this exact class family, so a
+   caller passing `{tone:'primary'}` before this addition would have rendered with NO color styling
+   whatsoever). `--c-primary`/`--c-primary-soft` themselves as a TEXT/background pair were already
+   flagged unsafe for this once: `--c-primary-soft`'s own tokens.css comment documents a full-row
+   background wash using it for unread notification items being tried and reverted the same day
+   ("อ่านดูเหลืองไป"); the pairing that DID stick afterward is the notification dropdown's own
+   `.notif-item-unread .notif-item-icon` (--c-primary-soft background + --c-primary ICON color, §3's
+   own documented "unread/needs-attention" exception) -- but that is a large 36px glyph, not small
+   badge TEXT, and `#FF9900` text on `#FFF4E0` computes to only ~2:1 contrast, well under WCAG's 4.5:1
+   text minimum (checked directly, not assumed). Used `--bs-primary-text-emphasis` (`#b45f00`) instead
+   for the text color -- an ALREADY-ESTABLISHED token in this file (the Bootstrap primary-recolor
+   block, §1) for exactly this "dark-enough orange for text on a pale orange background" need,
+   computing to ~4.24:1 against `--c-primary-soft` (clears the relaxed 3:1 bold-text threshold with
+   room to spare, and lands close to full 4.5:1 AA even at this badge family's own normal 400 weight)
+   -- reusing it here instead of inventing a new hex keeps exactly one "primary-on-soft" text color in
+   the whole app. */
+.badge.badge-primary {
+    background: var(--c-primary-soft);
+    color: var(--bs-primary-text-emphasis);
+    border-radius: var(--radius-pill);
+    font-weight: 400;
+}
+/* 2026-09-13, §5 follow-up -- statusBadgeHtml()'s own new `{menu:...}` option (app.js) renders the
+   badge as a real `<button>` when a dropdown is attached (needs to be focusable/clickable, a `<span>`
+   isn't), which brings along the BROWSER'S own default button chrome (border, background) that
+   `.badge`'s own CSS (Bootstrap's base rule + this file's `.badge-{tone}` blocks above) never needed
+   to reset before now, since every prior badge was a plain `<span>`. Cleared here so a dropdown-enabled
+   badge still reads as a badge, not a button. */
+button.badge {
+    border: 0;
+    cursor: pointer;
+    line-height: inherit;
+}
 
 /* status-stepper.php + renderStatusStepper() (§6, Round 2 item 6, revised 2026-09-13 Round 3 item 3a
    follow-up -- "แยก 3 สถานะชัด") -- a plain, generic N-step progress indicator, now genuinely used by
@@ -4025,7 +4273,8 @@ td.dt-empty-cell {
     color: #fff;
 }
 .status-stepper-current-icon {
-    font-size: 12px;
+    /* 2026-09-13, Round 3 item 3b follow-up, §1 font-size audit -- exact match to --fs-xs at Medium. */
+    font-size: var(--fs-xs);
 }
 .status-stepper-step--current .status-stepper-label {
     color: var(--c-text);
@@ -4959,6 +5208,96 @@ html, body {
 #nextStepBanner.callout {
     margin-top: var(--sp-3);
 }
+/* Setting row (§9/§11, new 2026-09-14, Round 3 "เก็บตกรอบ 6") -- app/views/partials/setting-row.php's
+   own CSS contract, see that file's docblock for the full spec/rationale. Supersedes
+   #recalcReminderBanner/#autoRecalculateWrap's own page-scoped rules from the 2 previous "เก็บตก"
+   rounds (--fs-sm callout, then a plain --fs-xs caption line under the switch) -- both were trying to
+   reinvent this exact shape (label + a state-dependent description + a switch) as one-off page CSS
+   before it was recognized as a real, reusable component; see this file's own git history for that
+   lineage if it's ever needed again.
+   2026-09-14, same day "เก็บตกรอบ 7" -- 2 variants added, `plain` (new default, no box at all -- a
+   single `[switch] label · description` line) and `card` (this rule's own ORIGINAL boxed shape,
+   renamed from the bare `.setting-row` base into its own `.setting-row-card` modifier) -- §9's own
+   rule for which one to reach for: 1-2 settings on a page/section -> plain, 3+ stacked together ->
+   card (a shared surface reads as "these belong together" the way it already does for
+   `.filter-bar`/other panel components -- a single `plain` row on bare page background reads fine on
+   its own, but several stacked loose lines start reading as ungrouped). `.setting-row` itself is now
+   ONLY the shared base (flex row + its own stacking margin) -- every visual property that actually
+   differs between variants moved onto the 2 modifier classes below. */
+.setting-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-3);
+}
+.setting-row .form-check.form-switch {
+    flex: none;
+    margin: 0;
+}
+.setting-row-desc {
+    font-size: var(--fs-xs);
+    color: var(--c-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.setting-row-desc b {
+    font-weight: 600;
+}
+/* .setting-row-card -- the original 2026-09-14 boxed shape: flat surface, label+description stacked
+   on their own 2 lines LEFT, switch RIGHT. */
+.setting-row-card {
+    justify-content: space-between;
+    background: var(--c-bg-subtle);
+    border-radius: var(--radius);
+    padding: var(--sp-3) var(--sp-4);
+}
+.setting-row-card .setting-row-text {
+    /* Lets .setting-row-desc's own ellipsis truncation actually engage -- a flex child's default
+       min-width:auto would otherwise let it overflow its own container before wrapping/truncating. */
+    min-width: 0;
+}
+.setting-row-card .setting-row-label {
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--c-text);
+}
+.setting-row-card .setting-row-desc {
+    /* .setting-row-desc is a <span> (shared markup with the `plain` variant, which needs it inline) --
+       this variant needs it on its OWN line under the label instead. */
+    display: block;
+}
+/* .setting-row-plain -- new default: no box, no padding, one flat line, flush left (lines up with
+   .filter-bar's own left edge directly above/below it -- no box of its own to inset from it). Switch
+   FIRST (left), then the label (weight 500, a real <label for="..."> so clicking it toggles the
+   switch same as clicking the switch itself), then a muted separator, then the description -- all
+   inline, one line, ~24px tall (the switch's own natural height, nothing padded on top of it). */
+.setting-row-plain {
+    justify-content: flex-start;
+    gap: var(--sp-2);
+}
+/* 2026-09-14, "เก็บตกรอบ 6" item 3, explicit correction: 500 ไม่ใช่ 600/700 -- แบบเบา (plain) ตั้งใจให้
+   น้ำหนักเบากว่าป้าย label ของ variant card (.setting-row-label, ยังคง 600 ไม่เปลี่ยน) ให้สมกับที่เป็น
+   inline caption แถวเดียว ไม่ใช่หัวข้อกล่องแยก. */
+.setting-row-plain-label {
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    color: var(--c-text);
+    margin: 0;
+    cursor: pointer;
+}
+.setting-row-sep {
+    color: var(--c-text-muted);
+    font-size: var(--fs-xs);
+}
+/* min-width:0 + flex:1 1 auto -- lets THIS specific flex item (the last one in the row) actually
+   shrink below its own content width so `.setting-row-desc`'s shared ellipsis rule above can engage
+   on a narrow container, instead of just overflowing the row (a plain flex item defaults to
+   min-width:auto, which refuses to shrink past its own content size). */
+.setting-row-plain .setting-row-desc {
+    min-width: 0;
+    flex: 1 1 auto;
+}
 
 /* ==========================================================================
    Approval Flow timeline (2026-08-23, explicit request: "ปุ่มการดูFlow การอนุมัต ให้ล้อมาจาก
@@ -5334,6 +5673,17 @@ html, body {
     transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(16, 24, 40, .08);
 }
+/* 2026-09-13, Round 3 item 3b follow-up, §1 font-size audit -- this shape (`.stat-card`/`.stat-card-*`)
+   is shared with the Dashboard page, but also still renders Payroll Detail's own Cash Payments/
+   Remittance tab summary cards (the top-level run summary cards migrated to the newer `.stat`/
+   `.stat-value` shape in 3a -- see this file's own 2026-09-13 comment near `.stat-value` -- these 2
+   tabs did not, a known/flagged gap, not fixed here). Font-size values below were plain hardcoded
+   rem/px, matching none of §1's `--fs-*` tokens (color tokens `--app-text-muted`/`--app-heading` are
+   untouched -- out of scope, this pass is font-size only) -- mapped onto the page's own stated
+   standard scale (icon -> --fs-md, matching `.stat-icon`'s own already-token-based 16px; label ->
+   --fs-sm; value -> --fs-xl, matching `.stat-value`'s own already-token-based size) so both stat-card
+   shapes on this page finally read at the same weight, and both now scale with the S/M/L Font Size
+   setting where neither did before. */
 .stat-card-icon {
     flex: 0 0 auto;
     width: 42px;
@@ -5342,14 +5692,14 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.05rem;
+    font-size: var(--fs-md);
 }
 .stat-card-label {
-    font-size: 0.78rem;
+    font-size: var(--fs-sm);
     color: var(--app-text-muted);
 }
 .stat-card-value {
-    font-size: 1.2rem;
+    font-size: var(--fs-xl);
     font-weight: 700;
     color: var(--app-heading);
 }
@@ -5358,7 +5708,9 @@ html, body {
    purpose, a supporting detail rather than the card's own headline number. Empty when unset (no
    fixed height reserved) so cards that never populate it don't show a blank gap. */
 .stat-card-sub {
-    font-size: 0.72rem;
+    /* 2026-09-13, Round 3 item 3b follow-up, §1 font-size audit -- matches `.stat-sub`'s (new shape)
+       own already-token-based --fs-sm, same reasoning as `.stat-card-icon`/`-label`/`-value` above. */
+    font-size: var(--fs-sm);
     color: var(--app-text-muted);
     margin-top: 2px;
 }
@@ -5851,7 +6203,10 @@ html, body {
     align-items: center;
     justify-content: center;
     color: #fff;
-    font-size: 0.95rem;
+    /* 2026-09-13, Round 3 item 3b follow-up, §1 font-size audit -- was a stray 0.95rem (~11.4px at
+       Medium, not on any token's own value); closest match is --fs-xs (12px), ~0.6px difference,
+       imperceptible for an icon-tile glyph. */
+    font-size: var(--fs-xs);
 }
 .rd-report-tile-orange { background: var(--c-primary); }
 .rd-report-tile-purple { background: #6f5fd6; }
@@ -5860,33 +6215,52 @@ html, body {
     color: #b45f00;
     font-weight: 600;
 }
+/* 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "ตัด card/ขอบที่ครอบ .tab-content ของ
+   Detail ออกทุก tab (ตัวครอบเดียว ไม่ใช่เนื้อในแต่ละ tab)" -- the single shared border/box-shadow/radius
+   "card" that used to wrap #runDetailTabsContent (all 7 tab-panes together) is retired -- §6 rule
+   (docs/design/rules.md): "tab-content ไม่มี card ครอบ", applies to every page, this is the first real
+   page to adopt it. Only vertical spacing from the tab bar remains (--sp-4) -- no border/background of
+   its own anymore (the HTML's own `border-top-0 bg-white rounded-bottom` utility classes that used to
+   carry part of this look were removed from detail.php at the same time, see that file). */
 #runDetailTabsContent {
-    border: 1px solid #eef0f2;
-    border-top: none;
-    border-radius: 0 0 14px 14px;
-    box-shadow: 0 2px 10px rgba(16, 24, 40, .04);
+    margin-top: var(--sp-4);
 }
-/* 2026-09-09, real bug found and fixed (explicit report: "ใน tab-pane ตอนนี้บาง Tab มี Padding บาง Tab
-   ชิดขอบ") -- this rule used to name only 3 specific tab-pane ids (#run-details-pane/#run-history-
-   pane/#run-reports-pane) instead of targeting every pane generically, so every OTHER tab on this
-   page (#run-employee-pane, #run-cash-pane, #run-bank-account-pane, #run-remittance-pane) got ZERO
-   padding from here and read flush against #runDetailTabsContent's own border -- not a deliberate
-   design choice, just 3 ids that happened to exist when this rule was first written, with every
-   later tab added without updating it to match. Switched to a child selector so EVERY tab-pane
-   inside this tab-content gets the same padding automatically, including any future one, with
-   nothing to remember to add here again. */
-#runDetailTabsContent > .tab-pane {
+/* 2026-09-13, Round 3 item 3b follow-up -- the retired card's own generic per-pane padding (below,
+   removed) supersedes 2026-09-09's "every pane gets the same padding automatically" fix; that fix's
+   OWN reasoning (every pane should look consistent, not just 3 hardcoded ids) is preserved here, just
+   inverted: #run-employee-pane (this round's own focus) is now the ONE deliberately flush/full-width
+   exception -- its table+filter-bar reach the full content width -- while every OTHER pane below
+   still visually depends on this padding for its CURRENT look (Details/#run-details-pane's own
+   .detail-section boxes below, Action History/#run-history-pane's timeline, Reports/Cash Payments/
+   Bank Account Assignment/Third-Party Remittance's own tables -- none of these 6 are in this round's
+   own scope). TEMPORARY, per-pane instead of global on purpose (explicit instruction: "จะจัดจริงใน
+   3e") -- 3e is where each of these tabs gets its own real content-width decision, this is a
+   stopgap copy of the old card's exact padding values so nothing else visibly changes yet. */
+#run-details-pane,
+#run-reports-pane,
+#run-cash-pane,
+#run-bank-account-pane,
+#run-remittance-pane,
+#run-history-pane {
     padding: 1.75rem 1.5rem;
 }
 @media (min-width: 768px) {
-    #runDetailTabsContent > .tab-pane {
+    #run-details-pane,
+    #run-reports-pane,
+    #run-cash-pane,
+    #run-bank-account-pane,
+    #run-remittance-pane,
+    #run-history-pane {
         padding: 2rem 2rem;
     }
 }
 /* Run Information / Employee Breakdown as two visually distinct sub-sections within the Details
    tab (per explicit request) -- deliberately lighter than .card-surface (no shadow, thinner
-   border) since they already sit inside #runDetailTabsContent's own bordered/shadowed card;
-   stacking two full .card-surface-strength cards there would look like cards-within-cards. */
+   border). 2026-09-13 update: the "since they already sit inside #runDetailTabsContent's own
+   bordered/shadowed card" reasoning this comment originally gave no longer applies (that outer card
+   is retired, see above) -- kept lighter-than-.card-surface anyway, now simply because two full
+   .card-surface-strength cards stacked directly on the page would look heavier than this content
+   needs, independent of whatever does or doesn't wrap them. */
 .detail-section {
     border: 1px solid #eef0f2;
     border-radius: 12px;
@@ -5967,12 +6341,23 @@ html, body {
    the fallback that lets the whole row scroll horizontally on a genuinely narrow viewport, same
    "no DataTables scrollX" convention `.rd-detail-table-flush`'s own min-width rule above already
    established for the table itself. */
+/* 2026-09-13, Round 3 "เก็บตกรอบ 4", real bug found and fixed (explicit report: "label 'ค้นหา…' ↔ input
+   ↔ ปุ่ม + พนักงาน ตอนนี้ติดกันเกิน") -- this rule's own `gap: 0.35rem` (~4.2px at Medium) predates the
+   shared `.dt-container .dt-search { gap: var(--sp-2) }` rule added later in Round 2 (see that rule's
+   own comment) and was quietly winning over it this whole time -- higher specificity (ID + class vs.
+   2 plain classes) beats the newer shared rule regardless of source order. `<label>`/`<input>`/any
+   appended `<button>` (#btnJoinEmployees) are all DIRECT children of this flex container (confirmed
+   directly from the installed DataTables source: its own search-feature builder appends the label's
+   own text ending in the `_INPUT_` marker, which puts the real `<input>` OUTSIDE the `<label>` as a
+   sibling, not nested inside it) -- one `gap` value on this container alone was always enough to
+   space label/input/button apart evenly; it just had the wrong value. `flex-wrap:nowrap` (this file's
+   own real, still-needed page-specific addition -- the shared rule doesn't set it) is unchanged. */
 #tb_run_detail_wrapper .dt-search,
 #tb_run_detail_wrapper .dt-length {
     display: flex;
     align-items: center;
     flex-wrap: nowrap;
-    gap: 0.35rem;
+    gap: var(--sp-2);
 }
 /* ==========================================================================
    Approval Workflow editor (public/js/setup/approval-workflow.js) -- redesign (2026-08-23,
@@ -8443,16 +8828,32 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    custom chrome, not the DataTables library's own -- confirmed the underlying datatables.net-bs5
    package already re-themes its own native row-hover/stripe/sort-ordering under [data-bs-theme=dark]
    for free (see the --dt-html-background bridge in the main token block above), so this widget is
-   the one real piece of "DataTables" that actually needed hand conversion. Every hardcoded hex below
-   is swapped in place for the matching --app-* token -- one rule works in both themes, same pattern
-   used throughout this file since Step 2 -- rather than a second dark-only duplicate block. */
+   the one real piece of "DataTables" that actually needed hand conversion.
+   2026-09-13, Round 3 "เก็บตก" item 2c/2d -- this widget was built 2026-08-27 (T069's own dark-mode
+   pass above included it, but Phase Design Round 2/3's own `--c-*`/`--sp-*`/`--fs-*`/`--radius*`/
+   `--shadow-*` token system didn't exist yet) -- confirmed still 100% on the OLDER, separate `--app-*`
+   token pair (also fully theme-aware, just a parallel system, not the `tokens.css` one this whole
+   phase design initiative is standardizing on) instead of `tokens.css`'s `--c-*` family everywhere
+   else in this file now routes through -- migrated the full block below (not just the specific
+   border/shadow/radius/padding properties explicitly asked for) rather than leaving one small box
+   with 2 different theme-token systems fighting for the same visual coherence, which risks a subtle
+   mismatched shade between (e.g.) a `--c-border`-toned edge and an `--app-surface-bg`-toned fill even
+   though both individually are legitimate, theme-aware colors -- also the literal §1 rule this project
+   already has ("ห้าม component ไหนมี dark override ของตัวเองแยกต่างหาก...ทุก component ต้องอ้าง var(--c-*)
+   เท่านั้น"), which this widget was in violation of the whole time, this task is simply the trigger to
+   finally bring it into line. Mapping used: --app-surface-bg/--app-bg -> --c-bg, --app-border ->
+   --c-border, --app-heading/--app-text -> --c-text, --app-text-muted -> --c-text-muted, --app-hover-bg
+   -> --c-bg-hover. */
 .tcf-filter-btn {
     position: relative;
     background: none;
     border: none;
     padding: 2px 4px;
     margin: 0;
-    color: var(--app-text-muted);
+    /* 2026-09-13, item 2d, explicit instruction: "ไอคอน ▼ บนหัวคอลัมน์: --c-text-faint ปกติ, --c-primary
+       เมื่อคอลัมน์นั้นมี filter active" -- was --app-text-muted (a step darker than --c-text-faint) at
+       rest; active state (.tcf-filter-active below) was already --c-primary, unchanged. */
+    color: var(--c-text-faint);
     font-size: 0.9167rem;
     line-height: 1;
     cursor: pointer;
@@ -8467,16 +8868,21 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     color: var(--c-primary);
     background: rgba(var(--bs-primary-rgb), .15);
 }
+/* 2026-09-13, item 2c, explicit instruction: "กล่อง: ขอบ --c-border เงา --shadow-soft radius --radius
+   padding --sp-3" -- was a hardcoded 10px radius / raw rgba() shadow / .6rem padding, none from any
+   token system at all (not even --app-*). font-size 1.0833rem happens to already equal --fs-sm
+   exactly (both independently converged on "scale with the root font-size setting" via rem units,
+   see tokens.css's own --fs-sm value) -- byte-identical swap to the real token, not a visual change. */
 .tcf-panel {
     position: absolute;
     z-index: 2000;
     width: 260px;
-    background: var(--app-surface-bg);
-    border: 1px solid var(--app-border);
-    border-radius: 10px;
-    box-shadow: 0 10px 30px rgba(16, 24, 40, .18);
-    padding: .6rem;
-    font-size: 1.0833rem;
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-soft);
+    padding: var(--sp-3);
+    font-size: var(--fs-sm);
 }
 .tcf-panel-header {
     display: flex;
@@ -8485,31 +8891,21 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     gap: .5rem;
     margin-bottom: .5rem;
     padding-bottom: .35rem;
-    border-bottom: 1px solid var(--app-border);
+    border-bottom: 1px solid var(--c-border);
 }
+/* 2026-09-13, item 2c, explicit instruction: "หัว --fs-sm 600" -- was its own literal 1.0417rem. */
 .tcf-panel-title {
     font-weight: 600;
-    color: var(--app-heading);
-    font-size: 1.0417rem;
+    color: var(--c-text);
+    font-size: var(--fs-sm);
 }
+/* 2026-09-13, item 2c, explicit instruction: "× เป็น .btn-icon-ghost" -- this button now carries
+   `class="btn-icon btn-icon-ghost tcf-panel-close"` in the markup (table-column-filter.js); every
+   visual property (size/icon-size/color/hover/focus) comes from those 2 shared §7 classes now, so
+   this rule keeps ONLY the one thing still specific to sitting inside THIS popup's header row -- its
+   own `:hover` rule is gone entirely, superseded by `.btn-icon:hover`/`.btn-icon-ghost:hover`. */
 .tcf-panel-close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    border: none;
-    background: transparent;
-    color: var(--app-text-muted);
-    border-radius: 6px;
-    font-size: 1rem;
-    line-height: 1;
-    cursor: pointer;
     flex: none;
-}
-.tcf-panel-close:hover {
-    color: var(--app-heading);
-    background: var(--app-hover-bg);
 }
 .tcf-search-wrap {
     position: relative;
@@ -8520,21 +8916,17 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     left: 9px;
     top: 50%;
     transform: translateY(-50%);
-    color: var(--app-text-muted);
+    color: var(--c-text-muted);
     font-size: 0.9167rem;
 }
 .tcf-search-wrap input {
     width: 100%;
     padding: .3rem .5rem .3rem 1.75rem;
-    border: 1px solid var(--app-border);
+    border: 1px solid var(--c-border);
     border-radius: 6px;
     font-size: 1.0417rem;
-    /* Real gap, not just a dark-mode fix -- this rule never set an explicit background/text color
-       at all before (relying on the browser's plain default white/black), which would have stayed
-       wrong-looking even in light mode against this file's own design system; explicit now in both
-       themes via the token. */
-    background-color: var(--app-bg);
-    color: var(--app-text);
+    background-color: var(--c-bg);
+    color: var(--c-text);
 }
 .tcf-search-wrap input:focus {
     outline: none;
@@ -8542,7 +8934,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     box-shadow: 0 0 0 2px rgba(var(--bs-primary-rgb), .15);
 }
 .tcf-select-all-row {
-    border-bottom: 1px solid var(--app-border);
+    border-bottom: 1px solid var(--c-border);
     padding-bottom: .35rem;
     margin-bottom: .35rem;
 }
@@ -8555,10 +8947,10 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     border-radius: 5px;
     cursor: pointer;
     font-weight: 400;
-    color: var(--app-text);
+    color: var(--c-text);
 }
 .tcf-item:hover {
-    background: var(--app-hover-bg);
+    background: var(--c-bg-hover);
 }
 .tcf-item span {
     overflow: hidden;
@@ -8578,7 +8970,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     align-items: center;
     margin-top: .5rem;
     padding-top: .5rem;
-    border-top: 1px solid var(--app-border);
+    border-top: 1px solid var(--c-border);
 }
 
 /* ==========================================================================
@@ -9533,8 +9925,9 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    so it reads as visually distinct from a plain, not-yet-actioned row at a glance. Lock was retired
    entirely 2026-08-31 (Verify itself now carries the freeze-from-recalculation behavior Lock used
    to have) -- its own .rd-row-locked tint/border rules were removed along with it. .rd-net-pill
-   makes the Net Pay column read clearly as the one figure people scan for first, distinct from the
-   plain-text Base Salary/Gross/Deduction cells beside it. */
+   (its own orange pill background for the Net Pay column) was retired 2026-09-13, Round 3 item 3b
+   ("ตัด...พื้นส้มของสุทธิออก") -- replaced by the app-wide `.money-net` class (§8 money-color system,
+   see that section further down in this file), so Net Pay reads bold instead of pill-shaped. */
 /* --bs-table-hover-bg is overridden per-row too (not just background-color) -- Bootstrap 5's
    .table-hover paints the hover tint on the <td>/<th> cells themselves (via that CSS variable),
    which sits on top of a plain background-color set on the <tr>, so without this override the
@@ -9550,8 +9943,8 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    (not flattened to a neutral dark surface), per T069 Step 2's own "status/semantic colors stay
    vivid across both themes" principle -- just a translucent green wash over --app-surface-bg instead
    of the light mode's near-white green tint, which would otherwise look like a plain washed-out gray
-   smear on a dark surface. border-left/.rd-net-pill's solid #16a34a/var(--c-primary) are already vivid,
-   saturated colors with enough contrast against a dark surface on their own -- left unchanged. */
+   smear on a dark surface. border-left's own solid #16a34a is already vivid, saturated with enough
+   contrast against a dark surface on its own -- left unchanged. */
 [data-bs-theme="dark"] #tb_run_detail tbody tr.rd-row-verified {
     --bs-table-hover-bg: rgba(22, 163, 74, .22);
     background-color: rgba(22, 163, 74, .15);
@@ -9561,14 +9954,6 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
         --bs-table-hover-bg: rgba(22, 163, 74, .22);
         background-color: rgba(22, 163, 74, .15);
     }
-}
-.rd-net-pill {
-    display: inline-block;
-    font-weight: 700;
-    color: var(--c-primary);
-    background: rgba(var(--bs-primary-rgb), 0.1);
-    border-radius: 6px;
-    padding: 2px 10px;
 }
 
 /* 2026-08-30, explicit bug report: "/payroll/reports ติดกันไปหมดไม่มี padding เลยครับ ปรับให้ area เป็น

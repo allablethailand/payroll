@@ -766,7 +766,19 @@ $(document).ready(function () {
 });
 function getTableLang() {
     return {
-        search: langData.search || "Search",
+        // 2026-09-13, Round 3 "เก็บตกรอบ 4", real bug found and fixed (explicit report: "ตัด '…' ท้าย
+        // label ออก (placeholder ในช่องพอ)") -- `langData.search` itself keeps its trailing "..."
+        // (correct for its OTHER, genuine placeholder consumers app-wide -- table-column-filter.js's
+        // own popup, 3 Assign-To scope search boxes in layout/modals.php) but DataTables' own search
+        // FEATURE reads 2 SEPARATE language keys for 2 different DOM targets: `search` becomes the
+        // visible `<label>` text next to the input, `searchPlaceholder` becomes the actual `<input
+        // placeholder>` attribute (confirmed directly from the installed DataTables source --
+        // `opts.placeholder = language.sSearchPlaceholder`, a wholly separate property from
+        // `opts.text = language.sSearch`). Trailing dots belong on the placeholder (inside the field,
+        // where the hint is actually read) not doubled onto the label too -- `.replace(/\.+$/, '')`
+        // strips them for the label only, leaving the shared key's own canonical value untouched.
+        search: (langData.search || "Search...").replace(/\.+$/, ''),
+        searchPlaceholder: langData.search || "Search...",
         lengthMenu: langData.lengthMenu || "Show _MENU_ entries",
         zeroRecords: langData.zeroRecords || "No matching records found",
         // 2026-09-11, Batch 3C item 6 follow-up: genuinely missing until now (confirmed via grep --
@@ -873,6 +885,31 @@ function dtColumnDefsFromMarkerClasses($table) {
         if (matched) defs.push(Object.assign({ targets: index }, matched));
     });
     return defs;
+}
+// 2026-09-13, Round 3 "เก็บตก" item 3, real gap found (explicit report: footer cells like "ตรวจสอบแล้ว
+// 1/1"/"คำนวณแล้ว 1/1" not left-aligned to match their own column -- §7 badge=left) -- DataTables'
+// own columnDefs `className` (dtColumnDefsFromMarkerClasses() above) is a construction-time option
+// that only ever applies to `<thead>`/body `<td>` cells; it never reaches a page's own static
+// `<tfoot>` markup at all, confirmed by reading dataTables.bootstrap5.css directly (it DOES ship a
+// `table.dataTable tfoot th, tfoot td { text-align:left }` default, but a page's own hardcoded class
+// on one specific footer cell -- e.g. `class="text-center"`, a real one found on
+// payroll/detail.php's own `#rdFootVerifyLock` -- easily overrides that library default with zero
+// warning, since Bootstrap's `.text-center` utility carries `!important`). Rather than trust every
+// page to hand-write the correct alignment class on its own `<tfoot>` cells (or worse, guess wrong
+// the way `#rdFootVerifyLock` did), this reuses the SAME marker-class detection already run against
+// `<thead>` and mirrors each match onto the `<tfoot>` cell at the identical column index --
+// `.addClass()`, never `.attr('class', ...)`, so a page's own additional footer-only classes (e.g.
+// `#rdFootGross`'s own `fw-bold money-gross` running total styling) are always preserved, only
+// ADDED to. A table with no `<tfoot>` at all, or a column index with nothing in `<tfoot>` (mismatched
+// column count), is a safe no-op either way -- `.find()` on a missing element chain just yields an
+// empty jQuery set. Static markup, so this runs once at `initSharedDataTable()`'s own setup, not on
+// every draw the way body-row rendering needs to.
+function applyTfootMarkerClasses($table, columnDefs) {
+    const $tfootCells = $table.find('> tfoot > tr').first().find('> th, > td');
+    if (!$tfootCells.length) return;
+    columnDefs.forEach(function (def) {
+        if (def.className) $tfootCells.eq(def.targets).addClass(def.className);
+    });
 }
 // initRowToggles($table, {onChange}) -- Round 2 item (2), docs/design/rules.md §7's shared
 // per-row switch pattern (a DataTable's "ใช้งาน"/enable-disable column -- the pattern
@@ -1015,6 +1052,7 @@ function initSharedDataTable(selector, options) {
     const autoColumnDefs = dtColumnDefsFromMarkerClasses($table);
     if (autoColumnDefs.length) {
         dtOptions.columnDefs = autoColumnDefs.concat(dtOptions.columnDefs || []);
+        applyTfootMarkerClasses($table, autoColumnDefs);
     }
     // 2026-09-12, Round 2 item 3 -- §7's "fix คอลัมน์แรก + หัวตาราง + scroll แนวนอน + ลากเลื่อนได้" (the
     // Employee Recheck pattern) and "ครอบหน้าที่ของ initExcelColumnFilters() ให้เอง" (round 0 decision
@@ -1077,7 +1115,9 @@ function initSharedDataTable(selector, options) {
 }
 // 2026-09-12, Phase Design Round 2 item 4 (docs/design/rules.md §6), revised twice since (see this
 // function's own git history for the single-toolbar-row shape this superseded) -- pairs with
-// app/views/partials/filter-bar.php's 3-part header/body/footer panel. Reads every real <select>
+// app/views/partials/filter-bar.php's 2-part header/body panel (the header/body/footer shape this
+// comment used to describe was retired later the same round -- see that partial's own docblock).
+// Reads every real <select>
 // inside that partial's own `.filter-bar-body` (select2-enhanced or plain -- select2 is just a UI
 // layer on the same underlying <select>, .val()/change events work identically either way, no
 // special-casing needed) -- NOT a dedicated `.filter-bar-fields` marker div, which the first version
@@ -1106,34 +1146,38 @@ function initFilterBar(bar, options) {
     options = options || {};
     const $bar = $(bar);
     if (!$bar.length) return;
+    // 2026-09-13, real bug report: "× บน chip และ 'ล้างตัวกรอง' กดติดบ้างไม่ติดบ้าง" -- investigated
+    // fresh (delegated binding was already correct from the previous round's fix, and there was only
+    // ONE real call site for #runDetailFilterBar with its own module-level once-guard, so double-init
+    // was NOT reproducible on the real page as shipped). Added anyway as a systemic guard rather than
+    // trusting every future caller to remember its own once-guard the way payroll/detail.js's
+    // `runDetailFilterBarInitialized` does -- a caller that accidentally calls this twice on the same
+    // element (e.g. re-running page-init logic after an ajax reload, a mistake this app has hit before
+    // elsewhere) would otherwise silently double-bind EVERY handler below (toggle, chip-remove, clear,
+    // the change listener) without any visible error, and a doubled toggle handler is a textbook cause
+    // of "click sometimes does nothing" -- 2 bound clicks flip `.collapsed` on then immediately back
+    // off in the same tick. Scoped to the element itself (jQuery `.data()`), not a module-level flag,
+    // so it correctly still allows 2 SEPARATE filter-bar instances on the same page (e.g.
+    // components.php's own #cpFilterBarDemo + #cpFullFilterBar) to each init once.
+    if ($bar.data('filterBarInitialized')) return;
+    $bar.data('filterBarInitialized', true);
     const $fields = $bar.find('.filter-bar-body');
     const $countWrap = $bar.find('.filter-bar-count-wrap');
     const $count = $bar.find('.filter-bar-count');
     const $clearBtn = $bar.find('.filter-bar-clear');
     const $chips = $bar.find('.filter-bar-chips');
-    const $emptyText = $bar.find('.filter-bar-empty-text');
     const $toggleBtn = $bar.find('.filter-bar-toggle');
-    const $footer = $bar.find('.filter-bar-footer');
-    const $footerLeft = $bar.find('.filter-bar-footer-left');
-    // 2026-09-13, "ซอฟต์ลง" follow-up -- explicit spec: "ตอนยุบ เหลือหัว + chips แถวเดียวกัน (chips
-    // ต่อจากหัวทางซ้าย, chevron ขวา) สูงแถวเดียว ไม่ต้องมี 2 แถว". The header and footer are 2 separate
-    // flex rows in normal document flow -- CSS alone (no shared parent to re-flex, `.filter-bar-body`
-    // sits between them in DOM order even though it's visually 0-height while collapsed) can't merge
-    // them into one row without restructuring markup that other code (refresh(), the docblock's own
-    // "verbatim caller markup" contract) depends on staying put. Relocating the ONE node that actually
-    // needs to move (`.filter-bar-footer-left`, chips + empty-text -- NOT the Clear button, which the
-    // spec's own "เหลือหัว + chips" wording doesn't mention keeping while collapsed) is simpler and
-    // more robust than a CSS grid-area rewrite: `.filter-bar-chips`' own content (rebuilt by refresh()
-    // below) is unaffected either way, since it's addressed by class, not by its parent's position.
-    function syncCollapsedLayout() {
-        if ($bar.hasClass('collapsed')) {
-            $footerLeft.insertBefore($toggleBtn);
-            $footer.addClass('d-none');
-        } else {
-            $footerLeft.prependTo($footer);
-            $footer.removeClass('d-none');
-        }
-    }
+    // 2026-09-13, real live-page feedback (Payroll Detail), explicit instruction: "ตอนกาง ซ่อน chips
+    // เหลือแค่ปุ่ม 'ล้างตัวกรอง'...ย้ายไปอยู่แถวหัวขวา ข้าง chevron แล้วตัดแถวท้ายทิ้งตอนกาง" -- the whole
+    // footer-relocation dance this function used to do (syncCollapsedLayout(), moving
+    // .filter-bar-footer-left between the header and a separate footer row on every expand/collapse)
+    // is GONE now -- .filter-bar-chips lives permanently inside .filter-bar-header (filter-bar.php),
+    // and its own visibility by collapse state is pure CSS
+    // (`.filter-bar:not(.collapsed) .filter-bar-chips { display:none }`) needing zero JS. The Clear
+    // button also lives permanently in the header now (no footer left for it to have ever needed
+    // moving out of). Simpler and more robust than the relocation approach: nothing here ever gets
+    // reparented, so there's nothing that CAN break the way the direct-click-binding bug did.
+    //
     // 2026-09-12, Round 2 item 4 revision -- expand/collapse persistence (§6 decision 4). Uses the
     // SAME plain CSS-class collapse mechanism the OLD `.station-filter` already used
     // (`.collapsed` + a max-height transition in style.css) rather than Bootstrap's own `.collapse`
@@ -1152,31 +1196,78 @@ function initFilterBar(bar, options) {
         else if (saved === 'collapsed') $bar.addClass('collapsed');
         // saved === null (never toggled before) -- leave the partial's own static default alone.
     }
-    syncCollapsedLayout(); // after the persisted-state class is applied above, not before
     // 2026-09-13: the toggle is now a single `.btn-icon` circle (§7's row-action spec, reused here
     // per explicit instruction -- "ปุ่ม .btn-icon วงกลมเดียวกับ row action") whose chevron rotates via
     // a plain CSS rule keyed off `.filter-bar:not(.collapsed) .filter-bar-toggle i` -- no JS needed
-    // to flip the icon itself, only the `.collapsed` class toggle below.
-    $toggleBtn.on('click', function () {
+    // to flip the icon itself, only the `.collapsed` class toggle below (which the chips' own
+    // collapsed-only visibility CSS also keys off of, same class, no separate JS state to track).
+    //
+    // 2026-09-13, same-day follow-up (the intermittent-click bug report above): the clickable
+    // expand/collapse ZONE is explicitly the chevron circle PLUS the "ตัวกรอง" label text only --
+    // `$bar.find('.filter-bar-toggle, .filter-bar-label')`, never the whole `.filter-bar-header` row
+    // (confirmed by re-reading this function: it never was bound to the whole row, but the header's
+    // OWN chips/Clear button sit close enough to the toggle circle that a bigger hit-zone here would
+    // risk swallowing clicks meant for them -- the label gets `cursor:pointer` in style.css as the
+    // matching visual affordance for this widened zone, a genuine UX improvement, not just a bug fix).
+    // Chips/Clear each also get `e.stopPropagation()` in their own delegated handlers below, as a
+    // defensive belt-and-suspenders isolation from this (or any future) ancestor click zone -- not
+    // reproducible as a live bug today, but cheap insurance against exactly this class of regression.
+    const $toggleZone = $bar.find('.filter-bar-toggle, .filter-bar-label');
+    $toggleZone.on('click', function () {
         $bar.toggleClass('collapsed');
-        syncCollapsedLayout();
         if (storageKey) {
             try { localStorage.setItem(storageKey, $bar.hasClass('collapsed') ? 'collapsed' : 'expanded'); } catch (e) {}
         }
     });
 
+    // 2026-09-13, real bug fixed (explicit repro: select 2 fields -> × on the 2nd (static) works, ×
+    // on the 1st (select2-remote, "แผนก") does nothing at all; "ล้างตัวกรอง" only clears the static
+    // one; a lone remote selection -> × never works AT ALL) -- root cause confirmed by reading
+    // input.js's own initSelect2() ajax branch: a select2-remote field's underlying `<select>` never
+    // carries a baked-in "all" placeholder `<option>` the way a static/native field's markup always
+    // does (`#rdDepartmentFilter`'s own markup is a bare `<select ...></select>`, zero options) --
+    // select2 only ever appends ONE `<option>` dynamically, for whatever value the user actually
+    // picked. The OLD resetSelect() (below) always reset via `.find('option').first()` -- for a
+    // remote field that's the SAME option that's currently selected, so "reset" just set the value
+    // back to itself, a true no-op. This function reads each field's own "no filter" sentinel via
+    // defaultValueFor() instead of assuming 'all' everywhere -- an optional `data-filter-default`
+    // attribute on the `<select>` wins if present (filter-bar.php's own docblock documents this),
+    // else falls back by field TYPE: `.select2-remote` -> '' (matches how a cleared remote field's
+    // `.val()` reads once it truly has no options left), everything else -> 'all' (unchanged from
+    // before, matches every existing static/native field's own markup convention).
+    function defaultValueFor($select) {
+        const explicit = $select.attr('data-filter-default');
+        if (explicit !== undefined) return explicit;
+        return $select.hasClass('select2-remote') ? '' : 'all';
+    }
     function isActive($select) {
         const val = $select.val();
-        return val !== null && val !== '' && val !== 'all';
+        if (val === null || val === '') return false;
+        return val !== defaultValueFor($select);
     }
     function resetSelect($select) {
-        const $firstOption = $select.find('option').first();
         // .trigger('change') (not '.select2') is deliberate -- select2 itself listens for the plain
         // native 'change' event to refresh its own displayed text, the same convention this app's
         // language switcher already relies on elsewhere; it is also what re-fires the delegated
         // handler below, which is the ONE place refresh()/onChange() actually get called from (see
         // scheduleNotify()) -- resetSelect() itself never calls either directly.
-        $select.val($firstOption.length ? $firstOption.val() : '').trigger('change');
+        if ($select.hasClass('select2-remote')) {
+            // Remove every option select2 appended FIRST, returning the field to the exact same
+            // empty-<select> state its own markup started in, THEN clear the value -- doing it in
+            // this order (rather than clearing first) means there is never a moment where a stale,
+            // no-longer-selected `<option>` is the only thing left in the DOM for some other code to
+            // stumble on (e.g. a future `.find('option').first()` elsewhere). `.val(null)` on an
+            // option-less `<select>` is the correct select2 v4 API for "nothing selected" (confirmed
+            // against this app's own established Select2 v4 convention -- see this file's CLAUDE.md
+            // section -- v4 has no separate `.select2('val')` call).
+            $select.find('option').remove();
+            $select.val(null).trigger('change');
+            return;
+        }
+        const def = defaultValueFor($select);
+        const $defaultOption = $select.find('option[value="' + CSS.escape(def) + '"]');
+        const $target = $defaultOption.length ? $defaultOption : $select.find('option').first();
+        $select.val($target.length ? $target.val() : '').trigger('change');
     }
     // 2026-09-13: chip text widened from value-only to "label: ค่า" -- the field's own <label> (a
     // SIBLING of the <select>, per this partial's own docblock convention every existing
@@ -1185,21 +1276,52 @@ function initFilterBar(bar, options) {
     function fieldLabelFor($select) {
         return (($select.siblings('label').first().text() || '').trim());
     }
+    // 2026-09-13, real bug found and fixed (explicit report: "ปุ่ม 'ล้างตัวกรอง' และ × บน chip กดแล้วไม่
+    // ทำงาน") -- both were bound DIRECTLY (`$clearBtn.on('click', ...)`, `$chip.find(...).on('click', ...)`)
+    // to a specific node reference captured at ONE point in time: `$clearBtn` at `initFilterBar()`'s own
+    // init, and each chip's own remove button freshly at every `refresh()` (chips are torn down via
+    // `$chips.empty()` and rebuilt from scratch on every filter change). A direct binding is only ever
+    // as reliable as "this exact node is still the one in the DOM" -- true for `$clearBtn` itself, but
+    // this panel's OWN `syncCollapsedLayout()` above already reparents a SIBLING node
+    // (`.filter-bar-footer-left`) on every expand/collapse, and the whole POINT of a shared, reusable
+    // helper like this one is that a future caller's markup/JS around it can change in ways this
+    // function's own author can't fully predict -- direct bindings are fragile in exactly that
+    // scenario. Rebuilt both as DELEGATED bindings on `$bar` itself (the one node in this whole panel
+    // that is genuinely never replaced, moved, or recreated by anything here), which keeps working
+    // regardless of how many times the chips/footer/header get rebuilt or reparented around it -- this
+    // is the standard, correct jQuery pattern for a click target that may not exist yet (or may be
+    // replaced later), not a page-specific patch. A chip's own remove button no longer closes over its
+    // `$select` (delegation has no per-chip closure to rely on) -- `data-target` on the chip itself
+    // (the filter field's own `id`, required from here on for any field used with this partial) is
+    // looked up by id instead.
     function refresh() {
-        const $active = $fields.find('select').filter(function () { return isActive($(this)); });
+        const $allSelects = $fields.find('select');
+        const $active = $allSelects.filter(function () { return isActive($(this)); });
         const n = $active.length;
         $count.text(n);
         $countWrap.toggleClass('d-none', n === 0);
         $clearBtn.toggleClass('d-none', n === 0);
-        $emptyText.toggleClass('d-none', n > 0);
+        // 2026-09-13, explicit instruction: "ช่องที่มีค่า: ขอบ --c-border-strong ให้เห็นว่าไม่ใช่ default
+        // โดยไม่ต้องพึ่ง chips" -- chips are now hidden while the panel is EXPANDED (see the CSS this
+        // function's own docblock references), i.e. exactly the state where the fields themselves are
+        // the only thing visible -- so each field's own wrapping column div (its `<select>`'s direct
+        // parent, per this partial's own docblock contract) gets `.filter-bar-field-active` toggled
+        // onto it directly, independent of collapse state, so a filled-in field still visibly reads as
+        // "not default" even with no chip anywhere to say so.
+        $allSelects.each(function () {
+            $(this).parent().toggleClass('filter-bar-field-active', isActive($(this)));
+        });
         $chips.empty();
         $active.each(function () {
             const $select = $(this);
             const fieldLabel = fieldLabelFor($select);
             const valueLabel = (($select.find('option:selected').text() || '').trim()) || String($select.val());
-            const chipText = fieldLabel ? (fieldLabel + ': ' + valueLabel) : valueLabel;
-            const $chip = $(`<span class="filter-bar-chip">${escapeHtml(chipText)}<button type="button" class="filter-bar-chip-remove" aria-label="Remove filter"><i class="fa-solid fa-xmark"></i></button></span>`);
-            $chip.find('.filter-bar-chip-remove').on('click', function () { resetSelect($select); });
+            // 2026-09-13, explicit instruction: "chips...ตัวหนังสือ --c-text-muted ค่าเป็น --c-text
+            // (label: ค่า)" -- label and value are now 2 separate spans (were one plain text node) so
+            // each half can carry its own color via CSS (.filter-bar-chip-label/-value, style.css)
+            // instead of the whole chip being one flat color.
+            const labelHtml = fieldLabel ? `<span class="filter-bar-chip-label">${escapeHtml(fieldLabel)}: </span>` : '';
+            const $chip = $(`<span class="filter-bar-chip" data-target="${escapeAttr($select.attr('id') || '')}">${labelHtml}<span class="filter-bar-chip-value">${escapeHtml(valueLabel)}</span><button type="button" class="filter-bar-chip-remove" aria-label="Remove filter"><i class="fa-solid fa-xmark"></i></button></span>`);
             $chips.append($chip);
         });
     }
@@ -1216,8 +1338,35 @@ function initFilterBar(bar, options) {
         }, 0);
     }
     $fields.on('change', 'select', scheduleNotify);
-    $clearBtn.on('click', function () {
-        $fields.find('select').each(function () { resetSelect($(this)); });
+    // e.stopPropagation() on both -- see the toggle-zone comment above; these buttons sit right next
+    // to the widened toggle zone in the header, so a click on either must never also be interpreted
+    // as a click on an ancestor toggle target.
+    $bar.on('click', '.filter-bar-chip-remove', function (e) {
+        e.stopPropagation();
+        const targetId = $(this).closest('.filter-bar-chip').data('target');
+        if (targetId) resetSelect($fields.find('#' + CSS.escape(String(targetId))));
+    });
+    $bar.on('click', '.filter-bar-clear', function (e) {
+        e.stopPropagation();
+        // 2026-09-13, explicit instruction: snapshot the field list BEFORE iterating (`.toArray()`
+        // materializes it once, up front -- jQuery's own `.find()` result is already a static
+        // array-like snapshot, not a live NodeList, but made explicit here rather than relying on
+        // that implicit guarantee) and never let ONE field's own reset throwing abort the rest of the
+        // loop -- a select2-remote field's DOM manipulation (resetSelect()'s own `.find('option')
+        // .remove()` branch above) is exactly the kind of operation that could throw on a field in an
+        // unexpected state, and one bad field must not leave every field after it in the loop
+        // un-cleared. scheduleNotify()'s shared debounce timer still guarantees refresh()/onChange()
+        // fire exactly once after the whole loop finishes (every resetSelect() call below runs
+        // synchronously within this same tick, so only the LAST scheduled setTimeout(0) survives) --
+        // unchanged, already correct before this round.
+        const selects = $fields.find('select').toArray();
+        selects.forEach(function (el) {
+            try {
+                resetSelect($(el));
+            } catch (err) {
+                console.error('[filter-bar] resetSelect() failed for one field during "ล้างตัวกรอง" -- continuing with the rest', el, err);
+            }
+        });
     });
     refresh();
 }
@@ -1352,7 +1501,20 @@ function getStatusMapEntry(enumValue, context) {
 // throwing and breaking whatever table/card row it was rendering for. `data-badge="status"` (both
 // branches) is the marker §12's own lint rule #8 checks for -- present from day one, see PHP's
 // statusBadge() own docblock for the full reasoning (identical here).
-function statusBadgeHtml(enumValue, context) {
+// 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "'ตรวจสอบแล้ว': badge success + ไอคอน
+// ▾ เล็กต่อท้าย (ใน badge เดียวกัน) กดแล้วเปิด dropdown...ทำเป็น option ของ statusBadgeHtml({menu:[...]})
+// ไม่เขียนเฉพาะที่นี่" -- `options.menu` (optional, 3rd param) is a caller-supplied raw HTML string of
+// `<li>` items (this function stays generic -- it has no idea what "unverify" even means, the SAME
+// separation of concerns every other menu-building function in this app already keeps between "how
+// to render a dropdown" and "what goes in THIS one"). When present, the badge itself becomes a real
+// `<button>` (not a `<span>` -- needs to be focusable/clickable for Bootstrap's own dropdown JS +
+// keyboard use) styled with the SAME `.badge.badge-{tone}` classes (button.badge's own CSS reset
+// clears the browser's default button chrome so it still reads as a badge, not a button) plus
+// `dropdown-toggle` for the small ▾ caret Bootstrap's own CSS already draws via `::after` on that
+// class, element-agnostic. No menu = the exact same plain `<span>` badge as before, byte-identical to
+// every existing call site.
+function statusBadgeHtml(enumValue, context, options) {
+    options = options || {};
     const entry = getStatusMapEntry(enumValue, context);
     if (!entry) {
         console.warn(`status_map: missing enum '${enumValue}' for context '${context}'`);
@@ -1360,7 +1522,37 @@ function statusBadgeHtml(enumValue, context) {
     }
     const tone = entry.tone || 'neutral';
     const label = getLangValue(entry.label_key) || entry.label_key;
+    if (options.menu) {
+        return `<div class="dropdown d-inline-block">
+            <button type="button" class="badge badge-${tone} dropdown-toggle" data-badge="status" data-bs-toggle="dropdown" data-i18n="${escapeHtml(entry.label_key)}">${escapeHtml(label)}</button>
+            <ul class="dropdown-menu">${options.menu}</ul>
+        </div>`;
+    }
     return `<span class="badge badge-${tone}" data-badge="status" data-i18n="${escapeHtml(entry.label_key)}">${escapeHtml(label)}</span>`;
+}
+// Count badge (§5, Round 3 item 3b) -- a plain NUMBER shown as a small pill, e.g. "how many items were
+// adjusted" or "how many comments exist" -- a genuinely different thing from statusBadgeHtml() above
+// (which always renders an ENUM value's own fixed label): a count is caller-supplied data, not looked
+// up from status_map.php, so this takes the number directly rather than an (enum, context) pair.
+// Reuses the SAME `.badge.badge-{tone}` CSS statusBadgeHtml() already defines (§5's own tone
+// vocabulary), just with the raw number as content and no data-i18n (there's no translatable label
+// here, the digits are the whole content). Default tone is 'neutral' per this app's own decided rule
+// ("count badge เป็น neutral เสมอ ยกเว้นระบุ tone เมื่อต้องสนใจ") -- a caller passes `{tone:'warning'}`
+// etc. only when the count itself is something that needs attention, not merely informational.
+// 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "count badge บนปุ่มวงกลม: neutral (เทา)
+// โดย default, tone primary เมื่อมีรายการ 'ใหม่/ยังไม่อ่าน' เท่านั้น" -- for a count badge specifically
+// overlaid on a `.btn-circle-action` row-action button (style.css's own `.btn-circle-action-badge`
+// overlay position), `{tone:'primary'}` is reserved for "this count includes something new/unread the
+// viewer hasn't seen yet," never for "this count is just large" or "this thing has data at all" --
+// the row-action ICON itself always stays the single flat `--c-text-muted` §7 already mandates
+// regardless of the badge's own tone (the badge, not the icon, carries the "new" signal). A caller
+// with no real unread/new CONCEPT yet (e.g. Payroll Detail's own Comments count, see
+// commentButtonRd() in payroll/detail.js) has nothing to pass 'primary' for and correctly stays at
+// the plain neutral default until that concept exists.
+function countBadgeHtml(n, options) {
+    options = options || {};
+    const tone = options.tone || 'neutral';
+    return `<span class="badge badge-${tone}" data-badge="count">${escapeHtml(String(n))}</span>`;
 }
 // Status stepper (§6, Round 2 item 6, extended 2026-09-13 Round 3 item 3a -- see
 // status-stepper.php's own docblock for the full per-step date/tone shape and the branch-state
@@ -1852,6 +2044,53 @@ function calloutHtml(text, tone) {
     return `<div class="callout callout-${escapeHtml(tone || 'neutral')}">${text}</div>`;
 }
 
+// Setting row (§9/§11, new 2026-09-14, 2 variants added same day "เก็บตกรอบ 7") -- see
+// app/views/partials/setting-row.php's own docblock for the full spec/example/variant-picking rule;
+// this is its JS twin, same signature, byte-identical markup per variant. `label`/`desc_on`/
+// `desc_off` are RAW HTML/text the caller has already authored (same "caller-authored copy, not
+// escaped twice" contract as calloutHtml() above) -- `id` IS escaped (an attribute value the caller
+// may build from data, not authored copy). `options.variant` -- `'plain'` (default, no box, one flat
+// `[switch] label · description` line) or `'card'` (the original boxed shape, label+description
+// stacked left / switch right) -- §9's own rule: 1-2 settings -> plain, 3+ stacked -> card.
+function settingRowHtml(options) {
+    options = options || {};
+    const checked = !!options.checked;
+    const descNow = checked ? (options.desc_on || '') : (options.desc_off || '');
+    const id = escapeAttr(options.id || '');
+    const switchHtml = `<div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" id="${id}"${checked ? ' checked' : ''}></div>`;
+    const descHtml = `<span class="setting-row-desc" data-desc-on="${escapeAttr(options.desc_on || '')}" data-desc-off="${escapeAttr(options.desc_off || '')}">${descNow}</span>`;
+    if (options.variant === 'card') {
+        return `<div class="setting-row setting-row-card">
+            <div class="setting-row-text">
+                <div class="setting-row-label">${options.label || ''}</div>
+                ${descHtml}
+            </div>
+            ${switchHtml}
+        </div>`;
+    }
+    return `<div class="setting-row setting-row-plain">
+        ${switchHtml}
+        <label class="setting-row-plain-label" for="${id}">${options.label || ''}</label>
+        <span class="setting-row-sep" aria-hidden="true">&middot;</span>
+        ${descHtml}
+    </div>`;
+}
+// Public, exported alongside settingRowHtml() -- see setting-row.php's own docblock ("A caller that
+// changes the checkbox's own .prop('checked', ...) PROGRAMMATICALLY") for when to call this directly
+// instead of `.trigger('change')`: a switch that ALSO carries its own id-scoped business-logic
+// `change` handler (e.g. save-on-toggle) would have that handler re-fire unintentionally on a
+// synthetic trigger -- this updates ONLY the description, with no such risk.
+function syncSettingRowDesc($switchInput) {
+    const $desc = $switchInput.closest('.setting-row').find('.setting-row-desc');
+    $desc.html($switchInput.is(':checked') ? $desc.attr('data-desc-on') : $desc.attr('data-desc-off'));
+}
+// Always-on, delegated on document (no init call needed, no page has to wire this itself) -- the
+// normal path: a real user click on the switch fires native 'change', this catches it and calls the
+// same sync logic syncSettingRowDesc() exposes for the programmatic case above.
+$(document).on('change', '.setting-row .form-check-input', function () {
+    syncSettingRowDesc($(this));
+});
+
 // Money input (§8, Round 2 item 7a) -- `<input class="money-input">` + initMoneyInputs($scope),
 // auto-wired below both from $(document).ready() (every field already on the page at load) and from
 // a delegated shown.bs.modal handler (every field inside a modal that just opened -- same pattern
@@ -2089,6 +2328,11 @@ async function changeLanguage(lang) {
     // server-fetched HTML with no data-i18n, so applyLanguage() above never touches it -- see
     // terms-and-conditions.js's own docblock on termsRefreshLanguage() for the real bug this fixes.
     if (typeof termsRefreshLanguage === 'function') termsRefreshLanguage();
+    // 2026-09-14, Round 3 "เก็บตกรอบ 6" item 1, same pattern: Payroll Detail's run-header text
+    // (stepper labels, "next step" callout) is JS-templated via langData[key]||fallback with no
+    // data-i18n path -- only defined when payroll/detail.js is loaded. See that file's own
+    // refreshPayrollDetailLanguage()/renderRunHeaderText() docblocks for the full root cause.
+    if (typeof refreshPayrollDetailLanguage === 'function') refreshPayrollDetailLanguage();
 }
 // 2026-08-29, explicit request: per-user Font Size (S/M/L) + Language, persisted server-side (see
 // UserPreferenceModel's own docblock) -- FONT_SIZE_STEPS maps the Settings modal's 0-2 slider
@@ -2617,6 +2861,36 @@ $(document).on('click', '.modal-lang-text-btn', function () {
 function resetModalTabs($modal) {
     $modal.find('[data-bs-toggle="tab"]').removeClass('active').attr('aria-selected', 'false');
     $modal.find('.tab-pane').removeClass('show active');
+}
+// 2026-09-13, §1 follow-up, explicit instruction -- consolidates 3 near-identical per-page functions
+// that all did exactly this (payroll/detail.js's own activateTabFromHash(), employee/list.js's own
+// activateEmployeeTopTabFromHash(), employee/detail.js's own activateEmployeeTabFromHash() -- this
+// app's own "ซ้ำ=shared"/"ห้าม mirror-copy" rule, not previously applied here) into ONE shared helper,
+// each page's own call site now just passes its own container scope (or nothing, for an unscoped
+// page like Payroll Detail).
+//
+// Also fixes a real bug found while doing this (explicit report: "focus ring ฟ้า...ตอน restore tab
+// จาก hash หลัง refresh"): confirmed by reading Bootstrap's own bundled tab.js source directly --
+// `Tab.show()` itself never calls `.focus()` on the newly-activated button (it only `.blur()`s the
+// one being DEactivated) -- so the stray ring was never coming from Bootstrap's own JS here. The real
+// source is the BROWSER'S OWN native URL-fragment behavior: on an actual page load (not a client-side
+// tab click), the browser itself tries to focus whatever element matches the current URL's #hash, if
+// that element exists and is focusable, completely independent of any JS -- and it does this BEFORE
+// this function even runs. An explicit `.blur()` right after `.show()` clears that regardless of
+// exactly which mechanism focused it (harmless no-op if nothing was actually focused).
+//
+// `containerSelector` (optional) scopes the match the same way employee/list.js's own
+// #employeeTopTabs-scoped version already did (so a hash matching some OTHER tab-toggle button
+// elsewhere on the page, e.g. inside a modal, is never mistakenly activated) -- omit it for an
+// unscoped page (payroll/detail.js's own usage, which only ever had one tab group to begin with).
+function activateTabFromHash(containerSelector) {
+    const hash = (location.hash || '').replace('#', '');
+    if (!hash) return;
+    const $btn = $('#' + CSS.escape(hash));
+    if (!$btn.length || $btn.attr('data-bs-toggle') !== 'tab') return;
+    if (containerSelector && !$btn.closest(containerSelector).length) return;
+    bootstrap.Tab.getOrCreateInstance($btn[0]).show();
+    $btn.trigger('blur');
 }
 function modalFooterTypeOf($modal) {
     const type = String($modal.data('footer') || '').trim();
@@ -3242,7 +3516,7 @@ function updateText(root = document) {
     const $elements = $(root).find('[data-i18n]').add($(root).filter('[data-i18n]'));
     $elements.each(function () {
         const $el = $(this);
-        const key = $el.attr('data-i18n'); 
+        const key = $el.attr('data-i18n');
         const value = getLangValue(key);
         if (value !== undefined && value !== null) {
             if ($el.is('input, textarea')) {
@@ -3252,7 +3526,28 @@ function updateText(root = document) {
             } else if ($el.find('> i, > svg').length > 0) {
                 const $icon = $el.find('> i, > svg').first();
                 $el.html($icon[0].outerHTML + ' ' + value);
-            } 
+            }
+            // 2026-09-13, Round 3 "เก็บตกรอบ 4", defensive backstop added alongside the REAL fix (see
+            // table-column-filter.js's own initExcelColumnFilters(), which now moves data-i18n off a
+            // `<th>` onto its own leaf title span instead of leaving it on the `<th>` after rebuilding
+            // that cell's children) -- explicit report: switching language destroyed the sort-arrow/
+            // filter-button DOM that function injects into a column header, because a plain
+            // `.text(value)` on an element -- same as `.html()` -- wipes out EVERY child node first,
+            // and the `<th>` still carried its OWN original `data-i18n` attribute after being
+            // restructured by other code. That specific case is fixed at its real source now (an
+            // element's own `data-i18n` marker should always live on the true leaf that holds just its
+            // label, not on a container something else also manages), but this sweep is the ONE place
+            // in the whole app any `[data-i18n]` element passes through -- hardened here too so a
+            // FUTURE mistake of the same shape (some other mechanism injects real child elements into
+            // a container that still carries its own `data-i18n`) degrades to "this one label's text
+            // didn't update" instead of "silently deletes whatever real DOM was living inside it".
+            // `$el.children().length` (real ELEMENT children, e.g. the icon-prefix case above already
+            // handles the ONE legitimate reason for those) is 0 for the overwhelming majority of this
+            // app's data-i18n consumers (a plain `<span data-i18n="...">label</span>`) -- those still
+            // take the plain `.text(value)` branch below, byte-identical to before this change.
+            else if ($el.children().length > 0) {
+                console.warn('[updateText] [data-i18n="' + key + '"] has child elements -- skipping .text() to avoid destroying them. Move the data-i18n marker onto a leaf element instead.', $el[0]);
+            }
             else {
                 $el.text(value);
             }
@@ -3402,6 +3697,7 @@ function _refreshAllDataTablesLanguageInner() {
         }
         $.extend(true, settings.oLanguage, {
             sSearch: lang.search,
+            sSearchPlaceholder: lang.searchPlaceholder,
             sLengthMenu: lang.lengthMenu,
             sZeroRecords: lang.zeroRecords,
             sInfo: lang.info,
@@ -3417,8 +3713,15 @@ function _refreshAllDataTablesLanguageInner() {
         table.draw(false);
 
         const $wrapper = $(table.table().container());
-        const searchLabelText = (lang.search || 'Search:').replace('_INPUT_', '').trim();
+        const searchLabelText = (lang.search || 'Search').replace('_INPUT_', '').trim();
         $wrapper.find('.dt-search > label').text(searchLabelText);
+        // 2026-09-13, same fix as the label above, same reason -- the input's own `placeholder`
+        // attribute is ALSO written once at construction time and never re-read from
+        // settings.oLanguage on a later redraw (confirmed directly from the DataTables source, same
+        // as the label/length-menu text this comment block already documents) -- patched here too so
+        // a live language switch updates it instead of leaving it stuck in whatever language was
+        // active the first time this table was ever built.
+        $wrapper.find('.dt-search > input').attr('placeholder', lang.searchPlaceholder || '');
 
         const menuTemplate = lang.lengthMenu || 'Show _MENU_ entries';
         const menuIdx = menuTemplate.indexOf('_MENU_');

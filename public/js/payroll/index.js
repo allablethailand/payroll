@@ -389,7 +389,7 @@ $(document).on('click', '.btn-view-run-errors', function (e) {
 // eye icon, the only other action already pointing at the Detail page for a non-draft run) now
 // doubles as the "export report" shortcut for every non-draft state -- icon swaps to a download
 // icon and the link's own hash targets the Detail page's Reports tab id directly
-// (payroll/detail.js's activateTabFromHash(), same mechanism a manual tab click + refresh
+// (app.js's shared activateTabFromHash(), same mechanism a manual tab click + refresh
 // persists through). Not gated to only approved/paid/locked here -- the Reports tab itself always
 // shows its row set now (2026-08-29 "แต่ยังกดไม่ได้" fix, see loadRunReportsTab()'s own docblock),
 // just with actions disabled until ready, so landing there early is a feature, not a dead end.
@@ -1312,7 +1312,7 @@ function renderSyncDetail(data) {
 
 // 2026-08-29, same-day follow-up: "อยากให้เลือก Station ไหนอยู่ ถ้า Refresh แล้ว ให้อยู่ Station เดิม" --
 // persisted the exact same way Process Detail's own active-tab persistence works (URL hash +
-// history.replaceState, see payroll/detail.js's own activateTabFromHash()/shown.bs.tab handler) so
+// history.replaceState, see app.js's shared activateTabFromHash()/shown.bs.tab handler) so
 // a browser refresh keeps whichever station card was selected instead of always resetting to Draft.
 function showStation(state, opts) {
     currentStation = state;

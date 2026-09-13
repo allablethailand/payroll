@@ -63,12 +63,14 @@ check('loadStatusMap() context keys match status_map.php required directly', arr
 
 // Every context this round's own status_map.php shipped with (docs/design/rules.md §5's own table) --
 // fails loudly if a future edit accidentally drops one instead of just changing its contents.
+// 2026-09-13, Round 3 item 3b: 'payment_method'/'verify_status' added (Payroll Run Detail's Employee
+// Breakdown table, see detail.js's own comment on its Payment Method/Verify columns).
 $expectedContexts = [
     'run_state', 'payroll_process_tab', 'approval_status', 'payslip_request_status',
     'employment_certificate_request_status', 'employee_status', 'employment_status',
     'document_delivery_status', 'sync_batch_status', 'payroll_calc_status', 'eed_status',
     'eed_installment_status', 'remittance_status', 'attendance_status',
-    'recurring_earning_status', 'data_source',
+    'recurring_earning_status', 'payment_method', 'verify_status', 'data_source',
 ];
 sort($expectedContexts);
 $actualContexts = array_keys($mapViaHelper);

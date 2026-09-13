@@ -8,29 +8,40 @@
  * own `<label class="form-label small mb-1"><i class="fa-solid fa-calendar ...">...` -- confirmed
  * ~140 such icon-prefixed field labels across 18 files app-wide, round 4's own migration count).
  *
- * 2026-09-13, revised again after explicit feedback into a 3-part panel (header / collapsible body /
- * always-visible footer) -- see this file's own git history for the earlier single-toolbar-row shape.
- * Deliberately a THIN wrapper when expanded (unchanged from the earlier revision) -- `$filter_fields_html`
- * must be the caller's OWN EXISTING `.station-filter-body` inner content copied VERBATIM, including
- * that content's own `<div class="row g-X">...</div>` wrapper and column classes (`col-sm-2` etc.) --
- * this partial adds NO grid/gutter class of its own, so a page's real field markup moves here in
- * round 4 completely unchanged (just minus each label's own icon, and minus the outer
- * `.station-filter-body`/`.station-filter-label`/`.station-filter-clear-row` wrapper markup, which
- * this partial's own shell now owns instead).
+ * 2026-09-13, restructured AGAIN after live-page feedback (Payroll Detail) -- the FOOTER row is gone
+ * entirely now. Confirmed reasoning ("ตอนกาง ซ่อน chips เหลือแค่ปุ่ม 'ล้างตัวกรอง'...ย้ายไปอยู่แถวหัวขวา ข้าง
+ * chevron แล้วตัดแถวท้ายทิ้งตอนกาง"): chips are now a PERMANENT child of `.filter-bar-header` itself
+ * (never relocated via JS anymore -- pure CSS shows/hides them by collapse state, see below), and the
+ * "ล้างตัวกรอง" button moved into the header too, permanently, next to the toggle -- once both of the
+ * footer's only 2 possible contents live in the header instead, the footer row itself has nothing left
+ * to ever show, in either state, so it's removed rather than kept as a permanently-empty wrapper. See
+ * this file's own git history for the earlier "3-part panel, footer always visible" shape this
+ * supersedes.
  *
- * Panel shape (3 parts, header/footer independent of the collapse state):
- *   - HEADER (`.filter-bar-header`, always visible): left = "ตัวกรอง (N)" label (count only shown
- *     when N>0), right = one `.btn-icon` circle (the SAME row-action circle spec every other part of
- *     the app uses, §7) whose chevron rotates to reflect expanded/collapsed state -- this is the
- *     ONLY expand/collapse control now; the old text "ตัวกรอง (N)" button is gone.
+ * Panel shape (2 parts now, HEADER always visible + collapsible BODY):
+ *   - HEADER (`.filter-bar-header`, always visible), left to right:
+ *     1. "ตัวกรอง (N)" label (count only shown when N > 0) -- `fa-filter` icon in front, single flat
+ *        `--c-text-muted` color (§6's own documented exception, scoped to just this header).
+ *     2. `.filter-bar-chips` -- one chip per active filter ("label: ค่า ×"), **visible ONLY while
+ *        COLLAPSED** (`.filter-bar:not(.collapsed) .filter-bar-chips { display:none }`, pure CSS, no
+ *        JS relocation needed anymore) -- while EXPANDED, the fields themselves are visible in the
+ *        body below and carry their own "has a value" signal instead (`.filter-bar-field-active`,
+ *        border `--c-border-strong` -- see `$filter_fields_html`'s own contract note below), so the
+ *        chips would be redundant there and are hidden to save vertical space.
+ *     3. optional `$header_extra_html` slot (see its own var doc below).
+ *     4. the tertiary "ล้างตัวกรอง" button (`.btn.btn-link` per rules.md §4's own Tertiary row),
+ *        hidden when N=0 -- visible in EITHER collapse state now (unlike chips), since clearing is
+ *        just as meaningful with the fields visible (expanded) as with only chips visible (collapsed).
+ *     5. the toggle -- one `.btn-icon` circle (the SAME row-action circle spec every other part of the
+ *        app uses, §7) whose chevron rotates to reflect expanded/collapsed state (CSS-only, keyed off
+ *        `.filter-bar:not(.collapsed) .filter-bar-toggle i`) -- this is the ONLY expand/collapse
+ *        control.
+ *     Items 2-5 together sit in `.filter-bar-header-right` (one flex wrapper, `margin-left:auto`) so
+ *     the label packs left and everything else packs right as a group, regardless of how many of the
+ *     optional pieces (chips/header-extra/clear) are actually present at a given moment -- simpler
+ *     than the earlier revision's per-element sibling-selector auto-margin juggling, since there's
+ *     only ONE thing that needs `margin-left:auto` now, not N of them.
  *   - BODY (`.filter-bar-body`, collapsible): the caller's own field grid, unchanged mechanism.
- *   - FOOTER (`.filter-bar-footer`, ALWAYS visible regardless of collapse state -- decided this
- *     round, "ติดล่างของแผงเสมอ"): left = one chip per active filter, each now "label: ค่า ×" (the
- *     field's own <label> text + its selected option's text -- widened from the earlier revision's
- *     value-only chip, which gave no context for what was being filtered without also glancing at
- *     the header count), or a plain muted "ไม่ได้กรอง" string when N=0 (`filter_bar_empty` i18n key,
- *     new this round) so the footer is never a blank strip; right = the tertiary "ล้างตัวกรอง"
- *     button (`.btn.btn-link` per rules.md §4's own Tertiary row), hidden when N=0.
  *
  * Variables the calling view must set BEFORE including this file:
  *
@@ -46,27 +57,61 @@
  *                                  here in round 4, don't carry it over). Each field's `<label>` must
  *                                  stay a SIBLING of its `<select>` (e.g. both direct children of the
  *                                  same `.col-sm-2` div, this app's existing convention) -- the chip
- *                                  label text is read from `$select.siblings('label')`.
+ *                                  label text is read from `$select.siblings('label')`, and that same
+ *                                  parent div is what gets `.filter-bar-field-active` toggled onto it
+ *                                  (2026-09-13 follow-up: a `--c-border-strong` border on the field
+ *                                  itself while it holds a non-default value, "โดยไม่ต้องพึ่ง chips" --
+ *                                  chips alone can't signal this anymore now that they're hidden while
+ *                                  expanded, i.e. exactly when the fields are the only thing visible).
+ *                                  Each `<select>` must also carry its own unique `id` (2026-09-13,
+ *                                  real bug fix -- see initFilterBar()'s own docblock in app.js) -- a
+ *                                  chip's own × button is looked up back to its field by that id, not
+ *                                  by a closure reference, since the chip-remove/Clear buttons are
+ *                                  delegated bindings. A field's own "no filter" sentinel value is
+ *                                  inferred by TYPE (2026-09-13, real bug fix -- `.select2-remote`
+ *                                  fields, which never carry a baked-in "all" `<option>` in their own
+ *                                  markup, default to `''`; every other field defaults to `'all'`,
+ *                                  matching this app's own long-standing static/native convention) --
+ *                                  set an explicit `data-filter-default="..."` attribute on a
+ *                                  `<select>` to override that inference for a field whose own "no
+ *                                  filter" value genuinely differs (initFilterBar()'s own
+ *                                  `defaultValueFor()` reads it first, before falling back by type).
  * @var string|null $pageKey       Optional. When set, this bar's own expanded/collapsed state
  *                                  persists in `localStorage['filterbar:' + pageKey]` across page
  *                                  reloads (initFilterBar() reads/writes it) -- omit entirely for a
  *                                  bar that should never remember its state (e.g. one that should
  *                                  always start collapsed).
+ * @var string|null $header_extra_html  Optional, added 2026-09-13 (Round 3 item 3b follow-up,
+ *                                  Payroll Detail's own auto-recalculate switch was the first real
+ *                                  consumer, later reverted back to its own standalone spot on that
+ *                                  ONE page -- the slot itself stays, genuinely reusable). Raw HTML
+ *                                  rendered inside `.filter-bar-header-right` (see the panel-shape
+ *                                  note above), between the chips and the "ล้างตัวกรอง" button -- for a
+ *                                  SMALL control that genuinely belongs next to the filter bar but
+ *                                  isn't itself a filter field (so it doesn't belong in
+ *                                  `$filter_fields_html`'s own body grid, and doesn't need a chip).
+ *                                  Omit entirely (or pass '') for a bar with no such control.
  *
  * JS pairing (see public/js/app.js's own initFilterBar() docblock for the full API):
  *   initFilterBar('#employeeFilter', {
  *       onChange: function () { reloadEmployeeTable(); }  // caller's own reload logic
  *   });
- *   -- the earlier `toolbarTarget` option (relocating the toolbar row into a Status Tabs row) has
- *   been REMOVED this round ("ยกเลิก option toolbarTarget") -- the panel (header+body+footer, all of
- *   it) now always renders in normal document flow wherever this partial was included, e.g. directly
- *   under a status-tabs.php pipeline for the Payroll Process page's own full layout.
+ *   -- the earlier `toolbarTarget` option (relocating the toolbar row into a Status Tabs row) is gone
+ *   (removed an earlier round) -- the panel (header+body, both of it) always renders in normal
+ *   document flow wherever this partial was included, e.g. directly under a status-tabs.php pipeline
+ *   for the Payroll Process page's own full layout.
+ * @note initFilterBar() is safe to call more than once on the same element (a $bar.data() guard,
+ *       2026-09-13) -- it only ever fully initializes once, so an accidental double-call from a
+ *       careless caller can't double-bind the toggle/chip-remove/Clear handlers. Still call it
+ *       exactly once per real usage though; the guard is a safety net, not a license to skip a
+ *       caller's own once-guard where one is cheap to keep (see payroll/detail.js's own
+ *       `runDetailFilterBarInitialized` for that pattern).
  *
  * Example call site (round 4, not written yet -- this file has no consumer this round):
  *   ob_start(); ?>
  *     <div class="row g-3">
- *       <div class="col-sm-2"><label class="form-label small mb-1">แผนก</label><select ...></div>
- *       <div class="col-sm-2"><label class="form-label small mb-1">สถานะ</label><select ...></div>
+ *       <div class="col-sm-2"><label class="form-label small mb-1" for="fDept">แผนก</label><select id="fDept" ...></div>
+ *       <div class="col-sm-2"><label class="form-label small mb-1" for="fStatus">สถานะ</label><select id="fStatus" ...></div>
  *     </div>
  *   <?php $filter_fields_html = ob_get_clean();
  *   $id = 'employeeFilter';
@@ -78,20 +123,24 @@ $pageKeyAttr = !empty($pageKey) ? ' data-page-key="' . htmlspecialchars($pageKey
 <div class="filter-bar collapsed" id="<?=htmlspecialchars($id)?>"<?=$pageKeyAttr?>>
     <div class="filter-bar-header">
         <span class="filter-bar-label">
+            <!-- 2026-09-13, explicit instruction: "ไอคอน fa-filter สีเดียว --c-text-muted หน้า 'ตัวกรอง'
+                 (ข้อยกเว้น §6 เฉพาะหัว filter-bar)" -- §6's own general rule ("ตัดไอคอนหน้า label ของ filter
+                 field ออก") still applies to every FIELD's own <label> inside the body below; this is
+                 the panel's own header identifying itself as a filter panel, a different thing --
+                 single flat color, no tone, not a per-field icon. -->
+            <i class="fa-solid fa-filter filter-bar-label-icon" aria-hidden="true"></i>
             <span data-i18n="filter_title">ตัวกรอง</span><span class="filter-bar-count-wrap d-none"> (<span class="filter-bar-count">0</span>)</span>
         </span>
-        <button type="button" class="btn-icon btn-icon-ghost filter-bar-toggle" aria-label="Toggle filter">
-            <i class="fa-solid fa-chevron-down"></i>
-        </button>
+        <div class="filter-bar-header-right">
+            <div class="filter-bar-chips"></div>
+            <?php if (!empty($header_extra_html)): ?><div class="filter-bar-header-extra"><?=$header_extra_html?></div><?php endif; ?>
+            <button type="button" class="btn btn-link btn-sm filter-bar-clear d-none"><span data-i18n="filter_clear">ล้างตัวกรอง</span></button>
+            <button type="button" class="btn-icon btn-icon-ghost filter-bar-toggle" aria-label="Toggle filter">
+                <i class="fa-solid fa-chevron-down"></i>
+            </button>
+        </div>
     </div>
     <div class="filter-bar-body">
         <?=$filter_fields_html?>
-    </div>
-    <div class="filter-bar-footer">
-        <div class="filter-bar-footer-left">
-            <div class="filter-bar-chips"></div>
-            <span class="filter-bar-empty-text" data-i18n="filter_bar_empty">ไม่ได้กรอง</span>
-        </div>
-        <button type="button" class="btn btn-link btn-sm filter-bar-clear d-none"><span data-i18n="filter_clear">ล้างตัวกรอง</span></button>
     </div>
 </div>
