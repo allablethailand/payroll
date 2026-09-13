@@ -1,4 +1,5 @@
 <?php
+// design:clean -- docs/design/rules.md §12, Round 2 item 8. Passes scripts/check-design.php with 0 hits.
 /**
  * Timeline -- docs/design/rules.md §6, Round 2 item (3)/6b.
  *

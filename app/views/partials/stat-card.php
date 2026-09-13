@@ -1,4 +1,5 @@
 <?php
+// design:clean -- docs/design/rules.md §12, Round 2 item 8. Passes scripts/check-design.php with 0 hits.
 /**
  * Stat card -- docs/design/rules.md §2. Renders with the class `.stat` (deliberately NOT
  * `.stat-card`, per rules.md §2's own decision to kill the old colored+iconed class rather than

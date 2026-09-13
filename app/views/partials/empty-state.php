@@ -1,4 +1,5 @@
 <?php
+// design:clean -- docs/design/rules.md §12, Round 2 item 8. Passes scripts/check-design.php with 0 hits.
 /**
  * Empty state -- docs/design/rules.md §6, item 6e. One shared "there's nothing to show" block for
  * the 4 real situations this app has: a genuinely empty table, an empty tab/section (e.g. no rate

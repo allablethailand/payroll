@@ -1,3 +1,6 @@
+/* design:clean -- docs/design/rules.md §12, Round 2 item 8. Passes scripts/check-design.php with 0
+ * hits (rule #1's hex check is the one rule that deliberately does not apply to this file at all --
+ * it's the canonical SOURCE of those hex values, that's the entire point of this file existing). */
 /* Design tokens -- Origami Payroll Phase Design, Round 2 item 1 (docs/design/rules.md §1).
  * Single source of color/spacing/type/shape for the whole app. Loaded before style.css via an
  * @import at the top of style.css (not a <link> in layout/header.php -- round 2's own scope is

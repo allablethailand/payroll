@@ -1,4 +1,14 @@
 <?php
+// design:clean -- docs/design/rules.md §12, Round 2 item 8. Passes scripts/check-design.php with 0
+// hits. 3 genuine violations were fixed while writing that script: 3 raw money-formatting calls
+// (2 in the employee-list demo table, 1 in a stat-card value) switched to fmtMoney(); 2 hand-rolled
+// status pills switched to statusBadge(); 1 avatar built from a generic rounded-corner utility class
+// switched to the shared avatar span class. The rest of the FIRST lint pass's hits on this file were
+// false positives (a naive whole-line scan matching this file's own prose/token-reference tables,
+// not real markup) -- fixed in the lint script itself, not by editing this file further -- see that
+// script's own docblock. 2 lines here are marked with the OTHER, line-level marker for cases that
+// remain genuinely fine on purpose (a live per-token color preview, and one demo intentionally
+// keeping an old utility class to prove a shared override neutralizes it).
 /**
  * Phase Design Round 2, item 2 (docs/design/rules.md §13 row 2). One page showing every shared
  * component built so far, side by side, for a visual sanity check -- NOT a real app page (no
@@ -151,7 +161,7 @@ require_once __DIR__ . '/../../app/helpers/helpers.php';
         foreach ($tokens as [$name, $light, $dark]):
         ?>
         <div class="cp-swatch">
-            <div class="cp-swatch-color" style="background: var(<?=htmlspecialchars($name)?>);"></div>
+            <!-- design:ignore: style="" is a live per-token color PREVIEW (var(--token), never a hardcoded literal) --><div class="cp-swatch-color" style="background: var(<?=htmlspecialchars($name)?>);"></div>
             <div class="cp-swatch-label">
                 <span class="cp-swatch-name"><?=htmlspecialchars($name)?></span>
                 <span class="cp-swatch-values">light <?=htmlspecialchars($light)?> / dark <?=htmlspecialchars($dark)?></span>
@@ -323,8 +333,8 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
                 <td class="col-avatar">R<?=$cpFull?></td>
                 <td>รอบเงินเดือน กันยายน #<?=$cpFull?></td>
                 <td class="col-date" data-order="2026-09-<?=str_pad((string)$cpFull, 2, '0', STR_PAD_LEFT)?>"><?=str_pad((string)$cpFull, 2, '0', STR_PAD_LEFT)?>/09/2026</td>
-                <td class="num col-money" data-order="<?=$cpFull * 125000?>"><?=number_format($cpFull * 125000, 2)?></td>
-                <td><span class="badge bg-secondary-subtle text-secondary">ฉบับร่าง</span></td>
+                <td class="num col-money" data-order="<?=$cpFull * 125000?>"><?=fmtMoney($cpFull * 125000)?></td>
+                <td><?=statusBadge('draft', 'run_state')?></td>
                 <td class="col-actions">
                     <button type="button" class="btn btn-icon btn-sm" title="ดู"><i class="fa-solid fa-eye"></i></button>
                 </td>
@@ -473,13 +483,12 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
         </thead>
         <tbody>
             <?php
-            $cpStatuses = [
-                ['label' => 'ทำงานอยู่', 'tone' => 'success'],
-                ['label' => 'รอตรวจสอบ', 'tone' => 'warning'],
-                ['label' => 'ลาออก', 'tone' => 'danger'],
-            ];
+            // Cycles through real employee_status enum keys (app/config/status_map.php) instead of a
+            // made-up label/tone pair, so this demo row's badge renders through statusBadge() itself
+            // exactly like a real page would -- not a hand-picked color that happens to look similar.
+            $cpEmpStatuses = ['active', 'probation', 'resigned'];
             for ($i = 1; $i <= 30; $i++):
-                $status = $cpStatuses[$i % 3];
+                $cpEmpStatus = $cpEmpStatuses[$i % 3];
                 $salary = 18000 + ($i * 733);
                 $pct = ($i * 7) % 100;
                 $day = str_pad((string)(($i % 28) + 1), 2, '0', STR_PAD_LEFT);
@@ -488,12 +497,12 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
             ?>
             <tr>
                 <td class="col-check"><input type="checkbox"></td>
-                <td class="col-avatar"><span class="rounded-circle bg-secondary-subtle d-inline-flex align-items-center justify-content-center" style="width:32px;height:32px;font-size:.75rem;">E<?=$i?></span></td>
+                <td class="col-avatar"><span class="apv-person-avatar" style="width:32px;height:32px;min-width:32px;font-size:.75rem;">E</span></td>
                 <td>พนักงานตัวอย่าง <?=$i?></td>
                 <td class="col-date" data-order="<?=$iso?>"><?=$dmy?></td>
-                <td class="num col-money" data-order="<?=$salary?>"><?=number_format($salary, 2)?></td>
+                <td class="num col-money" data-order="<?=$salary?>"><?=fmtMoney($salary)?></td>
                 <td class="num"><?=$pct?>.0</td>
-                <td><span class="badge bg-<?=$status['tone']?>-subtle text-<?=$status['tone']?>"><?=$status['label']?></span></td>
+                <td><?=statusBadge($cpEmpStatus, 'employee_status')?></td>
                 <td class="col-toggle">
                     <div class="form-check form-switch form-switch-sm d-inline-block m-0">
                         <input class="form-check-input row-toggle-switch" type="checkbox" role="switch" data-id="<?=$i?>"<?=$i % 5 !== 0 ? ' checked' : ''?>>
@@ -538,7 +547,7 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
 // forcing every badge shown here through the real app/config/status_map.php, not a hand-typed label.
 $cpStats = [
     ['label' => 'พนักงานทั้งหมด', 'value' => '128', 'icon' => 'fa-solid fa-users', 'sub' => null, 'badge' => null, 'link' => null],
-    ['label' => 'เงินเดือนรวม (บาท)', 'value' => number_format(2456000, 2), 'icon' => 'fa-solid fa-sack-dollar', 'sub' => 'เดือนนี้', 'badge' => null, 'link' => null],
+    ['label' => 'เงินเดือนรวม (บาท)', 'value' => fmtMoney(2456000), 'icon' => 'fa-solid fa-sack-dollar', 'sub' => 'เดือนนี้', 'badge' => null, 'link' => null],
     ['label' => 'รออนุมัติ', 'value' => '3', 'icon' => 'fa-solid fa-hourglass-half', 'sub' => null, 'badge' => ['enum' => 'pending_approval', 'context' => 'run_state'], 'link' => ['label' => 'ดูทั้งหมด', 'href' => '#']],
     ['label' => 'ค้างนาน (ถูกปฏิเสธ)', 'value' => '2', 'icon' => 'fa-solid fa-triangle-exclamation', 'sub' => null, 'badge' => ['enum' => 'rejected', 'context' => 'run_state'], 'link' => null],
 ];
@@ -718,7 +727,7 @@ $cpStats = [
         <div>
             <div class="small text-muted mb-1"><code>.btn-circle-action</code> (alias, 14 ไฟล์จริงใช้ชื่อนี้ -- เคยมี <code>text-danger</code> ซ้อนมาด้วย)</div>
             <div class="d-flex gap-1">
-                <button type="button" class="btn btn-circle-action text-primary" title="ดู"><i class="fa-solid fa-eye"></i></button>
+                <!-- design:ignore: text-primary deliberately kept HERE to prove the shared !important override neutralizes it -- removing it would defeat this exact demo's own point --><button type="button" class="btn btn-circle-action text-primary" title="ดู"><i class="fa-solid fa-eye"></i></button>
                 <button type="button" class="btn btn-circle-action text-danger" title="ลบ"><i class="fa-solid fa-trash"></i></button>
             </div>
         </div>

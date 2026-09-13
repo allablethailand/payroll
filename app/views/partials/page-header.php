@@ -1,4 +1,5 @@
 <?php
+// design:clean -- docs/design/rules.md §12, Round 2 item 8. Passes scripts/check-design.php with 0 hits.
 /**
  * Page header -- docs/design/rules.md §2. Replaces the old "card หัวหน้า + ไอคอน" pattern
  * (`.page-header-card`, 31 files per docs/design/audit.md's own SC1) -- NO card wrapper, NO icon,

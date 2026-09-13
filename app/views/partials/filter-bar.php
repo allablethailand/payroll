@@ -1,4 +1,5 @@
 <?php
+// design:clean -- docs/design/rules.md §12, Round 2 item 8. Passes scripts/check-design.php with 0 hits.
 /**
  * Filter bar -- docs/design/rules.md §6. Replaces the old `.station-filter` pattern (15 files per
  * docs/design/audit.md -- kept working today, NOT itself a violation, just missing §6's chip display

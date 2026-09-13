@@ -1,4 +1,5 @@
 <?php
+// design:clean -- docs/design/rules.md §12, Round 2 item 8. Passes scripts/check-design.php with 0 hits.
 /**
  * Status stepper -- docs/design/rules.md §6 ("Stepper: ไทม์ไลน์ 5 ขั้นของรอบ"), Round 2 item 6.
  *

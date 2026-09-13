@@ -1,4 +1,5 @@
 <?php
+// design:clean -- docs/design/rules.md §12, Round 2 item 8. Passes scripts/check-design.php with 0 hits.
 /**
  * Employee header card -- docs/design/rules.md §9, Round 2 item 6c. Every modal opened from an
  * employee row uses this as its FIRST block (quick-view, calculation breakdown, comments, verify,
