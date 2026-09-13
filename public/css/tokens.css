@@ -44,9 +44,21 @@
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
 
   /* shape */
-  --radius: 6px;                    /* ค่าเดียวทั้งระบบ */
+  --radius: 6px;                    /* ปุ่ม/input/การ์ดในหน้า */
+  --radius-lg: 12px;                /* 2026-09-13, notification card redesign -- surface ที่ "ลอย"
+                                        เหนือหน้า (dropdown/popover/toast/Swal popup + การ์ดต่อรายการ
+                                        ข้างในนั้น) มุมมนกว่า --radius ปกติเจตนา ให้ดูนุ่มกว่าองค์ประกอบ
+                                        ที่ฝังอยู่ในหน้าโดยตรง -- ค่าเดิม 10px ตอนเพิ่ม token นี้ครั้งแรก
+                                        ปรับเป็น 12px วันเดียวกันหลัง feedback "ยังแข็ง" (การ์ดต้องการ
+                                        ความมนขึ้นอีกระดับ ใช้ค่าเดียวกันทั้ง dropdown และการ์ดข้างใน
+                                        ไม่ใช่ 2 ค่าต่างกันซ้อนกัน -- มุมการ์ดข้างในโค้งกว่ากรอบนอกจะดูแปลก) */
   --radius-pill: 999px;             /* badge เท่านั้น */
-  --shadow-modal: 0 8px 24px rgba(0, 0, 0, .12);   /* modal/dropdown เท่านั้น -- การ์ดในหน้าไม่มีเงา */
+  --shadow-modal: 0 8px 24px rgba(0, 0, 0, .12);   /* modal/dropdown ที่ต้องการความรู้สึก "หนักแน่น" --
+                                        เช่น modal ยืนยัน/แจ้งเตือนจริงจัง */
+  --shadow-soft: 0 12px 32px rgba(0, 0, 0, .10);   /* 2026-09-13 -- dropdown/popover ที่ต้องการความรู้สึก
+                                        นุ่มกว่า --shadow-modal (กระจายกว้างกว่า, ทึบน้อยกว่า) เช่น
+                                        notification -- คนละโทนกับ --shadow-modal เจตนา ไม่ใช่ค่าเดียว
+                                        ที่ปรับเผื่อทุกที่ */
 }
 
 /* ==========================================================================
@@ -85,6 +97,7 @@
     --c-success: #4ADE80;     --c-success-soft: #12301E;
     --c-info: #9AA3AE;        --c-info-soft: #232830;
     --shadow-modal: 0 8px 24px rgba(0, 0, 0, .6);
+    --shadow-soft: 0 12px 32px rgba(0, 0, 0, .5);
 }
 @media (prefers-color-scheme: dark) {
     :root:not([data-bs-theme="light"]) {
@@ -103,5 +116,6 @@
         --c-success: #4ADE80;     --c-success-soft: #12301E;
         --c-info: #9AA3AE;        --c-info-soft: #232830;
         --shadow-modal: 0 8px 24px rgba(0, 0, 0, .6);
+        --shadow-soft: 0 12px 32px rgba(0, 0, 0, .5);
     }
 }

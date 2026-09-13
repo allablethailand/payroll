@@ -2317,7 +2317,15 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     --swal2-validation-message-background: var(--app-hover-bg);
     --swal2-validation-message-color: var(--app-text);
     --swal2-close-button-color: var(--app-text-muted);
-    --swal2-border-radius: var(--radius);
+    /* 2026-09-13, notification card redesign: the POPUP/TOAST container itself (a "floating surface")
+       now reads --radius-lg to match the dropdown/notification card family -- the 3 BUTTON radii
+       below stay --radius (buttons keep the normal, smaller radius everywhere, per --radius-lg's own
+       tokens.css comment: "--radius 6px เดิมยังใช้กับปุ่ม/input/การ์ดในหน้า"). Confirmed this ALSO
+       covers showSuccess()'s own toast mode (Swal.fire({toast:true,...})) automatically -- Swal2's
+       own bundled CSS renders a toast via the SAME `.swal2-popup` base rule/variable, not a separate
+       toast-specific radius rule (verified by reading sweetalert2.css directly), so one token change
+       here reaches both. */
+    --swal2-border-radius: var(--radius-lg);
     --swal2-confirm-button-border-radius: var(--radius);
     --swal2-deny-button-border-radius: var(--radius);
     --swal2-cancel-button-border-radius: var(--radius);
@@ -3055,29 +3063,63 @@ th.col-money div.dt-column-header .dt-column-title {
     color: var(--c-text);
 }
 
+/* Shared thin-scrollbar utility (§6/§11) -- 2026-09-13, notification dropdown "ซอฟต์ลง" follow-up,
+   explicit instruction: "ให้ทำเป็น CSS กลาง .scroll-thin ใช้กับ dropdown/panel ที่ scroll ทั้งระบบ" --
+   built as a standalone, reusable class from the start rather than baked directly into
+   `.notif-list`'s own rule, so any future scrollable dropdown/panel can opt in the same way (add the
+   class, no new CSS needed). `scrollbar-width`/`scrollbar-color` cover Firefox; the `::-webkit-*`
+   pair covers Chromium/Safari -- both are needed, neither alone reaches every real browser this app
+   supports. */
+.scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--c-border-strong) transparent;
+}
+.scroll-thin::-webkit-scrollbar {
+    width: 6px;
+}
+.scroll-thin::-webkit-scrollbar-track {
+    background: transparent;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+    background: var(--c-border-strong);
+    border-radius: var(--radius-pill);
+}
+
 /* Notification bell + dropdown (§6, item 6d) -- UI ONLY this round, no backend wiring, no polling.
    A REAL, already-shipped, backend-connected version of this exists (layout/header.php's
    `.nav-notif-dropdown`, public/js/notifications.js, NotificationModel, 2026-08-29/-30/-31) -- NOT
    touched this round ("ไม่แตะ header.php รอบนี้ นอกจาก demo"). Real, deliberate differences from that
    shipped version are called out explicitly in rules.md §6 (not silently reconciled here): the real
    per-item icon uses `.row-type-icon rt-N`, a DIFFERENT gradient COLOR per notification type (this
-   spec's own icon plate is ONE uniform `--c-bg-subtle`/`--c-text-muted` regardless of type -- see
-   2026-09-13 revision below); the real unread dot sits on the RIGHT of the item, this spec puts it
-   on the LEFT; the real badge shows "99+" past 99, this spec shows ">99". Header/footer/empty-state
-   COPY reuses the real feature's own existing i18n keys verbatim (notifications/notif_mark_all_read/
+   spec's own icon plate is ONE uniform `--c-bg-subtle`/`--c-text-muted` when read, and `--c-primary-
+   soft`/`--c-primary` when unread -- see 2026-09-13 "การ์ดต่อรายการ" revision below); the real unread
+   dot sits on the RIGHT of the item, this spec has no dot at all anymore (color moved onto the icon
+   itself); the real badge shows "99+" past 99, this spec shows ">99". Header/footer/empty-state COPY
+   reuses the real feature's own existing i18n keys verbatim (notifications/notif_mark_all_read/
    notif_view_all/notif_empty) rather than forking new keys for near-identical wording -- see rules.md
    for why (changing those keys' VALUES would alter live header.php text without ever touching that
    file, the same category of "shared resource affects a real page" this round's other components hit
    repeatedly -- deliberately not done here without it being asked for).
-   2026-09-13, "เงียบลง" follow-up -- the FIRST version of this design gave each item's icon a
-   different COLOR per tone (success=green/danger=red/warning=orange) with no background plate at
-   all. Corrected per explicit instruction, and per §3 itself ("สีมีหน้าที่บอกว่า...ถ้าสีไม่ได้ตอบสอง
-   คำถามนี้ ให้เป็นเทา") -- a notification's ICON SHAPE still varies by tone (check/xmark/triangle/bell,
-   `NOTIF_TONE_ICON` in app.js, unchanged) since that's informational, but the COLOR does not: every
-   icon is now the same neutral `--c-text-muted` inside a uniform 28px `--c-bg-subtle` circle,
-   regardless of tone. The unread/read distinction moved entirely onto the dot + title weight instead
-   of a background tint (see `.notif-item-unread` below) -- `tone` itself is now READ ONLY for its
-   icon glyph, never for color, anywhere in this block. */
+   2026-09-13, "การ์ดต่อรายการ" (per-item card) redesign -- 2 revisions same day: the FIRST version
+   gave each item's icon a different COLOR per tone with no plate at all; that was corrected to ONE
+   uniform gray circle + a separate 6px unread dot; a 3rd revision (still same day) drops the
+   divider-list look entirely in favor of soft floating cards (no lines between items, `--radius-lg`
+   everywhere a surface "floats" over the page) and folds the unread signal INTO the icon itself (dot
+   removed) -- §3 gained an explicit exception for this exact case (an unread/needs-attention item may
+   use `--c-primary-soft`/`--c-primary` on its own icon, the same meaning as a stepper's "current step"
+   already had -- this is not a new precedent, it's naming one that already existed).
+   2026-09-13, "ซอฟต์ลง" follow-up (4th revision, still same day -- explicit feedback: "ยังแข็งเพราะทุก
+   ชั้นมีเส้นขอบ"): every remaining `border` in this block is gone (the item card's own 1px --c-border,
+   which was the last hard edge left after the dropdown's own border was already dropped in the
+   previous revision) -- a card is now told apart from the dropdown's --c-bg-subtle background by
+   plain color contrast alone, hover changed from "darken the border" to a background tint since
+   there's no border left to darken. New `--shadow-soft` token (wider/softer than --shadow-modal)
+   replaces --shadow-modal on the dropdown itself. `--radius-lg` bumped 10px->12px (one shared value
+   for the dropdown AND its cards, not 2 different values nested inside each other). Read-state icon
+   color went one step fainter (--c-text-muted -> --c-text-faint), both title-weight thresholds eased
+   from 700 (full bold) to 600 (semi-bold), and a new line-height:1.4 was added to the text column.
+   `NOTIF_TONE_ICON` (app.js) still varies the item's GLYPH per tone (check/xmark/triangle/bell) --
+   only the plate/icon COLOR is driven by read state, tone never colors anything in this block. */
 .notif-bell-btn {
     position: relative;
 }
@@ -3096,64 +3138,99 @@ th.col-money div.dt-column-header .dt-column-title {
     text-align: center;
     font-weight: 700;
 }
-/* 2026-09-13, real bug found and fixed: this used to be a hand-rolled `.notif-dropdown
-   { position:absolute; right:0 }` shown/hidden via a manual `.toggleClass('d-none')` click handler --
-   correct-looking ONLY when the toggle button sits near the right edge of the viewport (a real top
-   bar's own bell), which the demo's bell did NOT (see components.php's own comment on this same fix).
-   Replaced with a GENUINE Bootstrap dropdown (`.dropdown` wrapper + `data-bs-toggle="dropdown"` +
-   `.dropdown-menu.dropdown-menu-end`) so Popper (already bundled, `bootstrap.bundle.min.js`) owns
-   positioning/auto-flip near an edge -- `.notif-bell-wrap`'s own `position:relative` is no longer
-   needed (Bootstrap's base `.dropdown` class already sets that), removed rather than kept as a
-   redundant duplicate. `position`/`top`/`right`/`z-index` are gone from `.notif-dropdown` entirely --
-   Popper injects its own inline positioning once `.show` is added; declaring any of those here would
-   just fight it. `display` needed its OWN 2-class-specificity rule below (`.notif-dropdown.show`),
-   NOT a plain `.notif-dropdown { display: flex }` -- Bootstrap's own `.dropdown-menu { display: none }`
-   is a single-class selector too, so a same-specificity `display: flex` declared later in this file
-   would have permanently won the tie in BOTH states (open AND closed), the exact same specificity-tie
-   bug class already hit twice in this project (v11's Symbol dropdown, the status-tab idle-pill vs
-   `.badge` rule) -- scoping to `.show` sidesteps the tie instead of depending on declaration order. */
+/* 2026-09-13, real bug found and fixed (earlier the same day, before the card redesign below): this
+   used to be a hand-rolled `.notif-dropdown { position:absolute; right:0 }` shown/hidden via a manual
+   `.toggleClass('d-none')` click handler -- correct-looking ONLY when the toggle button sits near the
+   right edge of the viewport (a real top bar's own bell), which the demo's bell did NOT (see
+   components.php's own comment on this same fix). Replaced with a GENUINE Bootstrap dropdown
+   (`.dropdown` wrapper + `data-bs-toggle="dropdown"` + `.dropdown-menu.dropdown-menu-end`) so Popper
+   (already bundled, `bootstrap.bundle.min.js`) owns positioning/auto-flip near an edge --
+   `.notif-bell-wrap`'s own `position:relative` is no longer needed (Bootstrap's base `.dropdown`
+   class already sets that), removed rather than kept as a redundant duplicate. `position`/`top`/
+   `right`/`z-index` are gone from `.notif-dropdown` entirely -- Popper injects its own inline
+   positioning once `.show` is added; declaring any of those here would just fight it. `display`
+   needed its OWN 2-class-specificity rule below (`.notif-dropdown.show`), NOT a plain `.notif-dropdown
+   { display: flex }` -- Bootstrap's own `.dropdown-menu { display: none }` is a single-class selector
+   too, so a same-specificity `display: flex` declared later in this file would have permanently won
+   the tie in BOTH states (open AND closed), the exact same specificity-tie bug class already hit
+   twice in this project (v11's Symbol dropdown, the status-tab idle-pill vs `.badge` rule) -- scoping
+   to `.show` sidesteps the tie instead of depending on declaration order.
+   2026-09-13, card redesign: width 360->380px, background --c-bg (a plain white/dark surface) ->
+   --c-bg-subtle (so the WHITE item cards below read as distinct surfaces floating on top of it, not
+   blended into the same flat background), padding 0 -> --sp-2 (the header/list/footer all sit
+   INSIDE this inset now, no more edge-to-edge divider rules needing their own full-bleed borders),
+   radius --radius -> --radius-lg (a "floating surface", per that token's own tokens.css comment).
+   The dropdown's own `border` is dropped entirely -- it relied on `--shadow-modal` plus a 1px border
+   before, but a soft floating card family reads cleaner off the shadow alone (no other surface in
+   this new design -- the item cards, the dropdown itself -- pairs a border with a shadow). */
 .notif-dropdown {
-    width: 360px;
+    width: 380px;
     max-height: 480px;
-    padding: 0;
-    background: var(--c-bg);
-    border: 1px solid var(--c-border);
-    border-radius: var(--radius);
-    /* --shadow-modal is documented in tokens.css as "modal/dropdown เท่านั้น" -- this IS a dropdown. */
-    box-shadow: var(--shadow-modal);
+    padding: var(--sp-2);
+    background: var(--c-bg-subtle);
+    border-radius: var(--radius-lg);
+    /* 2026-09-13, "ซอฟต์ลง" follow-up: --shadow-modal (a harder, tighter shadow meant for a serious
+       confirm/warning modal) swapped for the new --shadow-soft (wider spread, lower opacity) -- a
+       notification dropdown isn't a decision the user must resolve before doing anything else, it
+       shouldn't carry the same visual weight as one. */
+    box-shadow: var(--shadow-soft);
 }
 .notif-dropdown.show {
     display: flex;
     flex-direction: column;
 }
+/* No more border-bottom divider (the card redesign drops every divider line in this component) --
+   separation from the list below now comes from spacing alone, matching how the item cards
+   themselves are separated by gap, not lines. */
 .notif-dropdown-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--sp-2);
-    padding: var(--sp-3);
-    border-bottom: 1px solid var(--c-border);
+    padding: var(--sp-2) var(--sp-1) var(--sp-3);
     flex: none;
     font-size: var(--fs-base);
-    font-weight: 700;
+    /* 2026-09-13, "ซอฟต์ลง" follow-up: 700 (full bold) -> 600 (semi-bold) -- "หนา" per an earlier
+       instruction literally meant "heavier than body text", not "as bold as possible"; 600 still
+       reads as a clear header weight without looking as heavy-handed as 700 next to the rest of this
+       now-much-softer component. */
+    font-weight: 600;
     color: var(--c-text);
 }
+/* Both tertiary buttons ("ทำเครื่องหมายว่าอ่านแล้วทั้งหมด" in the header, "ดูทั้งหมด" in the footer)
+   share this exact treatment -- explicit instruction: muted color, underline ONLY on hover (not
+   Bootstrap's own `.btn-link` default, which this app never actually overrode globally -- confirmed
+   by grepping style.css for an existing `.btn-link` text-decoration rule before adding this scoped
+   one, rather than assuming). */
+.notif-dropdown-header .btn-link,
+.notif-dropdown-footer .btn-link {
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+    text-decoration: none;
+}
+.notif-dropdown-header .btn-link:hover,
+.notif-dropdown-footer .btn-link:hover {
+    color: var(--c-text-muted);
+    text-decoration: underline;
+}
+/* `gap` spaces the item CARDS apart (§ спец "เว้นช่องระหว่างการ์ด --sp-2 ไม่มีเส้นคั่น") -- this is what
+   replaced the old border-bottom-per-item divider mechanism entirely. */
 .notif-list {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
 }
-/* 2026-09-13: footer background --c-bg-subtle added (was plain --c-bg, same as the dropdown body --
-   too little separation from the scrollable list above it). The "ดูทั้งหมด" link itself is now real
-   `.btn.btn-link.btn-sm` markup (§4's own Tertiary spec) instead of a bespoke unclassed `<a>` styled
-   by hand here -- matches the header's own "อ่านทั้งหมดแล้ว" button, which already used real Bootstrap
-   button classes; the old `.notif-dropdown-footer a` color/hover rules this replaced are gone, not
-   left dangling alongside Bootstrap's own button styling. */
+/* No more --c-bg-subtle footer background -- that existed to separate the footer from a WHITE
+   dropdown body; the whole dropdown is --c-bg-subtle now, so a distinct footer background would
+   look like an accidental extra layer instead of intentional separation. No border-top either, same
+   "no dividers" reasoning as the header/list above -- spacing (this element's own padding-top) reads
+   as separation on its own now that everything else in the dropdown also has breathing room around it. */
 .notif-dropdown-footer {
     flex: none;
-    padding: var(--sp-2) var(--sp-3);
-    border-top: 1px solid var(--c-border);
-    background: var(--c-bg-subtle);
+    padding: var(--sp-3) var(--sp-1) var(--sp-1);
     text-align: center;
 }
 .notif-empty {
@@ -3162,50 +3239,53 @@ th.col-money div.dt-column-header .dt-column-title {
     color: var(--c-text-faint);
     font-size: var(--fs-sm);
 }
+/* 2026-09-13, "ซอฟต์ลง" follow-up: the item card had its own 1px --c-border before -- with the
+   dropdown's own border ALSO just removed, that left every remaining bordered layer (the card) as
+   the only hard edge in an otherwise soft component, still reading "stiff" per direct feedback.
+   Border dropped entirely -- the card is now distinguished from the dropdown's own --c-bg-subtle
+   background purely by its OWN --c-bg fill (a plain color contrast, no line needed to see the
+   boundary). Hover changed from "darken the border" (meaningless now that there is no border) to a
+   plain background tint, --c-bg-hover -- still no shadow/lift, same "don't stack a 2nd elevation cue
+   on an already-shadowed dropdown" reasoning as before. Padding widened from a uniform --sp-3 to
+   --sp-3 (vertical) / --sp-4 (horizontal) -- more horizontal breathing room reads softer than a
+   perfectly square inset. */
 .notif-item {
     display: flex;
     align-items: flex-start;
     gap: var(--sp-2);
     padding: var(--sp-3) var(--sp-4);
-    border-bottom: 1px solid var(--c-border);
+    background: var(--c-bg);
+    border-radius: var(--radius-lg);
     text-decoration: none;
-}
-.notif-item:last-child {
-    border-bottom: none;
+    transition: background-color .15s ease;
 }
 .notif-item:hover {
     background: var(--c-bg-hover);
 }
-/* 2026-09-13, "เงียบลง" follow-up: the unread background tint (`--c-primary-soft`) read as too
-   yellow/heavy for something that fires on every unread row -- removed entirely rather than reduced
-   to a faint opacity (the alternative explicitly offered), since the dot + bold title below already
-   carry the "unread" signal on their own without needing a 3rd cue. tokens.css's own
-   `--c-primary-soft` comment reverted back to its original step/tab-only scope. */
-.notif-item-dot {
-    flex: none;
-    width: 6px;
-    height: 6px;
-    margin-top: 11px;
-    border-radius: 50%;
-    background: transparent;
-}
-.notif-item-unread .notif-item-dot {
-    background: var(--c-primary);
-}
-/* 28px circle, ONE neutral color regardless of tone -- see this block's own top comment for why
-   (§3: color needs a reason, a notification TYPE alone isn't one). `NOTIF_TONE_ICON` (app.js) still
-   varies the GLYPH per tone (check/xmark/triangle/bell) -- only color stopped varying. */
+/* Rounded SQUARE, 10px corner (was 8px -- "ซอฟต์ลง" follow-up, a hair softer to match the card's own
+   larger --radius-lg) -- unread items use --c-primary-soft/--c-primary (§3's explicit exception for
+   "a needs-attention item", the same meaning a stepper's current-step circle already carries) instead
+   of the plain gray plate every read item gets. `NOTIF_TONE_ICON` (app.js) still varies the GLYPH per
+   tone (check/xmark/triangle/bell) -- color depends ONLY on read state here, never on tone, for the
+   same §3 reason this block's own top comment already explains. */
 .notif-item-icon {
     flex: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
     background: var(--c-bg-subtle);
-    color: var(--c-text-muted);
-    font-size: 14px;
+    /* 2026-09-13: --c-text-muted -> --c-text-faint for the READ state specifically ("จางกว่าเดิม 1
+       ระดับ") -- widens the visual gap to the unread state's own --c-primary icon, which otherwise
+       looked too close in weight to a merely-muted (not actually faint) gray. */
+    color: var(--c-text-faint);
+    font-size: 16px;
+}
+.notif-item-unread .notif-item-icon {
+    background: var(--c-primary-soft);
+    color: var(--c-primary);
 }
 .notif-item-body {
     flex: 1 1 auto;
@@ -3213,6 +3293,10 @@ th.col-money div.dt-column-header .dt-column-title {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    /* 2026-09-13: applies to title/detail/time uniformly (all 3 are direct children) -- a touch
+       looser than the browser default reads calmer, part of the same "ซอฟต์ลง" pass as everything
+       else in this block. */
+    line-height: 1.4;
 }
 .notif-item-title,
 .notif-item-detail {
@@ -3220,16 +3304,16 @@ th.col-money div.dt-column-header .dt-column-title {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-/* Unread = bold; read = normal weight -- this used to be `font-weight: 700` unconditionally on every
-   item regardless of read state, which is what the dot-only signal above was quietly competing
-   against ("ยังไม่อ่าน...ชื่อเรื่อง --c-text หนา...อ่านแล้ว: ชื่อเรื่องน้ำหนักปกติ"). */
+/* Unread = semi-bold; read = normal weight. */
 .notif-item-title {
     color: var(--c-text);
     font-size: var(--fs-base);
     font-weight: 400;
 }
+/* 2026-09-13: 700 (full bold) -> 600 (semi-bold) -- same "หนา ≠ หนักที่สุด" reasoning as the dropdown
+   header's own title weight change above. */
 .notif-item-unread .notif-item-title {
-    font-weight: 700;
+    font-weight: 600;
 }
 .notif-item-detail {
     color: var(--c-text-muted);

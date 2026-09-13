@@ -65,9 +65,18 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
 
   /* shape */
-  --radius: 6px;                    /* ค่าเดียวทั้งระบบ */
+  --radius: 6px;                    /* ปุ่ม/input/การ์ดในหน้า */
+  --radius-lg: 12px;                /* surface ที่ "ลอย" เหนือหน้า — dropdown/popover/toast/Swal popup
+                                        + การ์ดต่อรายการข้างในนั้น (เพิ่ม 2026-09-13, notification card
+                                        redesign — ค่าเดิม 10px ปรับเป็น 12px วันเดียวกันหลัง feedback
+                                        "ยังแข็ง" ดูรายละเอียดในประวัติ revision ท้ายหัวข้อ Notification) */
   --radius-pill: 999px;             /* badge เท่านั้น */
-  --shadow-modal: 0 8px 24px rgba(0,0,0,.12);   /* modal/dropdown เท่านั้น — การ์ดในหน้าไม่มีเงา */
+  --shadow-modal: 0 8px 24px rgba(0,0,0,.12);   /* modal/dropdown ที่ต้องการความรู้สึก "หนักแน่น" — เช่น
+                                        modal ยืนยัน/แจ้งเตือนจริงจัง — การ์ดในหน้าไม่มีเงา */
+  --shadow-soft: 0 12px 32px rgba(0,0,0,.10);   /* เพิ่ม 2026-09-13 — dropdown/popover ที่ต้องการความรู้สึก
+                                        นุ่มกว่า --shadow-modal (กระจายกว้างกว่า ทึบน้อยกว่า) เช่น
+                                        notification — คนละโทนกับ --shadow-modal เจตนา ไม่ใช่ค่าเดียวที่
+                                        ปรับเผื่อทุกที่ */
 }
 ```
 
@@ -77,6 +86,16 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 - ไม่ใช้ `btn-info`, `btn-success`, `btn-warning`, `bg-primary`, `text-primary` ฯลฯ ที่ไม่ได้ map (ดู §12 lint)
 - ตัวเลขทุกที่ (ตาราง, stat, สลิป) ใช้ `.num` → `font-variant-numeric: tabular-nums; text-align:right`
 - ไอคอน: Font Awesome ชุดเดียว น้ำหนักเดียว (`fa-regular` หรือ `fa-solid` เลือกอันเดียวทั้งระบบ) สี = สีข้อความปัจจุบัน (`currentColor`) เสมอ ไม่มีไอคอนหลากสี
+- **`--radius-lg` (12px, เพิ่ม 2026-09-13 ที่ 10px ปรับเป็น 12px วันเดียวกัน)** — ใช้เฉพาะ surface ที่
+  "ลอย" เหนือหน้า: dropdown (เช่น notification), popover, toast, Swal popup, และการ์ดต่อรายการที่อยู่
+  *ข้างใน* surface ลอยเหล่านั้น (เช่น การ์ดต่อรายการใน notification dropdown) — ใช้**ค่าเดียวกัน**ทั้ง
+  surface ลอยเองและการ์ดข้างในนั้น ไม่ใช่ 2 ค่าต่างกันซ้อนกัน (การ์ดข้างในโค้งกว่ากรอบนอกจะดูแปลก) —
+  `--radius` (6px) เดิมยังใช้กับปุ่ม/input/การ์ดที่ฝังอยู่ในหน้าโดยตรงเหมือนเดิมทุกที่ ไม่เปลี่ยน มี 2 token
+  คู่กันเจตนา ไม่ใช่เปลี่ยนค่าเดียวทั้งระบบ
+- **`--shadow-soft` (เพิ่ม 2026-09-13)** — เงานุ่มกว่า `--shadow-modal` (`0 12px 32px rgba(0,0,0,.10)`
+  กระจายกว้างกว่า ทึบน้อยกว่า) สำหรับ surface ลอยที่ต้องการความรู้สึก "เงียบ/นุ่ม" ไม่ใช่ "หนักแน่นจริงจัง"
+  เช่น notification dropdown — `--shadow-modal` ยังคงไว้สำหรับ modal ยืนยัน/แจ้งเตือนจริงจังเหมือนเดิม
+  คนละโทนกันเจตนา ไม่ใช่ทดแทนกัน
 - **ธง (flag icon) เลิกใช้ทั้งหมด — ไม่มีข้อยกเว้น** (ตัดสินใจแล้วรอบ 2, ปิดช่องว่างที่รอบ 1 audit เจอ: `public/flags/th.png`/`gb.png` เป็นภาพสีตายตัว recolor ด้วย `currentColor` ไม่ได้ จึงไม่มีทางทำให้ตรงกับกฎไอคอนข้อบนได้ — ไม่ใช่ "หาข้อยกเว้นให้" แต่ตัดออกไปเลย) ทุกที่ที่ใช้ธงตัวเปลี่ยนภาษา (navbar language switcher, Payslip Template/Employment Certificate Template editor's TH/EN language tabs) เปลี่ยนเป็น**ข้อความ "TH | EN"** (ตัวที่ active = `--c-text` ตัวหนา, ตัวที่ไม่ active = `--c-text-muted`, คั่นด้วย `|` สีเทา, คลิกได้ทั้ง 2 ฝั่ง) — migrate เป็นส่วนหนึ่งของรอบ 4 (navbar อยู่ใน `layout/header.php`, canvas editor 2 ตัวอยู่ใน `_editor_content.php` — ไม่ใช่ไฟล์ที่รอบ 2 แก้ได้ ตาม scope limit ของรอบนี้)
 
 ---
@@ -124,7 +143,7 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 
 | สี | ใช้ได้กับ | ห้ามใช้กับ |
 |---|---|---|
-| ส้ม `--c-primary` | ปุ่มหลัก (1/หน้า, 1/modal), tab ที่เลือก (เส้นใต้), step ปัจจุบันใน stepper, focus ring, **checkbox/radio/switch ที่ถูกเลือก/เปิด (§9 — ข้อยกเว้นเดียวกับ tab ที่เลือก, เพิ่มรอบ 2 item (2))** | ไอคอน, ตัวเลข, badge, ขอบการ์ด, หัวตาราง, ลิงก์ในเนื้อหา |
+| ส้ม `--c-primary` | ปุ่มหลัก (1/หน้า, 1/modal), tab ที่เลือก (เส้นใต้), step ปัจจุบันใน stepper, focus ring, **checkbox/radio/switch ที่ถูกเลือก/เปิด (§9 — ข้อยกเว้นเดียวกับ tab ที่เลือก, เพิ่มรอบ 2 item (2))**, **รายการที่ยังไม่อ่าน/ต้องสนใจ ใช้ `--c-primary-soft` เป็นพื้น + `--c-primary` ที่ไอคอนได้ (ความหมายเดียวกับ step ปัจจุบัน — "นี่คือสิ่งที่ต้องดู/ตัดสินใจตอนนี้" ไม่ใช่ตกแต่ง — เพิ่ม 2026-09-13, notification item ข้อ 6d)** | ไอคอน (ปกติ — ยกเว้นข้อบน), ตัวเลข, badge, ขอบการ์ด, หัวตาราง, ลิงก์ในเนื้อหา |
 | เทา (neutral) | ทุกอย่างที่เหลือ: ปุ่มรอง, ไอคอน, badge ข้อมูล, เส้น, พื้น | — |
 | แดง | สถานะ "ผิด/ถูกปฏิเสธ/เกินกำหนด/ต้องแก้", ปุ่มยืนยันลบใน confirm dialog เท่านั้น | ปุ่ม PDF, ปุ่มลบในแถว (ใช้เทา, ไปแดงตอน confirm), ตัวเลขติดลบ (ใช้เครื่องหมายลบ + `--c-text`) |
 | เหลือง | สถานะ "รอ/ต้องตรวจ/ยังไม่ครบ" | แจ้งเตือนทั่วไป, helper text |
@@ -376,8 +395,9 @@ approved → ...) ไม่ใช่สลับหน้า)
      หัวข้อนี้) ใช้วงกลมพื้น **สีเดียวกันทุก type** (`--c-bg-subtle`/`--c-text-muted`) ไม่ใช่ gradient สี
      ต่าง type แบบของจริง — ต่างกันตรง "สีเดียวกันหมด vs สีต่างกันตาม type" ไม่ใช่ "ไม่มีพื้น vs มีพื้น"
      อีกต่อไป (เวอร์ชันแรกของสเปกนี้ไม่มีพื้นเลย ก่อนแก้)
-  2. จุดไม่อ่านของจริงอยู่**ขวา** ของ item (`.nav-notif-item-dot`, ต่อท้าย body) สเปกใหม่อยู่**ซ้าย** (นำ
-     หน้าไอคอน)
+  2. จุดไม่อ่านของจริงอยู่**ขวา** ของ item (`.nav-notif-item-dot`, ต่อท้าย body) — สเปกนี้เคยมีจุดซ้าย
+     ก่อนหน้านี้ (revision ก่อน) แต่ **ตัดจุดออกทั้งหมดแล้ว** ในการ์ดต่อรายการ (แก้ 2026-09-13 อีกรอบ —
+     ดูรายละเอียดท้ายหัวข้อ) ย้ายสัญญาณ unread ไปไว้ที่สี icon plate + น้ำหนัก title แทน
   3. ป้ายจำนวนของจริงโชว์ **"99+"** เมื่อเกิน 99 (`notifUpdateBadge()`) สเปกใหม่โชว์ **">99"**
   - **จุดร่วมที่ไม่ต่าง**: ข้อความปุ่ม/หัว/ท้าย ("การแจ้งเตือน"/"ทำเครื่องหมายว่าอ่านแล้วทั้งหมด"/"ดูทั้งหมด"/
     empty state) ใช้ **i18n key เดิมของจริงซ้ำ** (`notifications`/`notif_mark_all_read`/`notif_view_all`/
@@ -389,26 +409,39 @@ approved → ...) ไม่ใช่สลับหน้า)
   วงกลม/ขอบ) โดยตั้งใจ ใช้ `<i class="fa-solid fa-bell">` ข้างใน (ไม่ใช่ `<img>` — `.btn-icon i` เท่านั้นที่
   มี CSS ขนาดไอคอนให้) — ป้ายจำนวนยังไม่อ่าน (`.notif-badge`) ลอยมุมขวาบนของวงกลม (`position:absolute`)
   pill พื้น `--c-danger` ตัวหนังสือขาว ซ่อนเมื่อ 0 (`d-none`), โชว์ **">99"** ถ้าเกิน 99
-- **Dropdown**: กว้าง **360px** สูงสุด **480px** (flex column, ส่วนกลาง `.notif-list` scroll เอง หัว/ท้าย
-  fix อยู่กับที่ — ไม่ scroll ทั้งกล่อง) เงา `--shadow-modal` (โทเค็นเดียวที่ระบุไว้สำหรับ modal/dropdown)
-  radius `--radius`
-  - หัว: ซ้าย "การแจ้งเตือน" **`--fs-base` หนา**, ขวา ปุ่ม tertiary "ทำเครื่องหมายว่าอ่านแล้วทั้งหมด"
-    (`.btn.btn-link`)
-  - รายการ: item shape `{unread: bool, tone: neutral|warning|danger|success (เซตเดียวกับ Timeline's
-    tone enum เพื่อให้คำศัพท์ tone ใช้ร่วมกันได้ทั้งแอป), title (1 บรรทัด), detail? (1 บรรทัด,
-    `--c-text-muted`), time, link}` — **ไอคอนซ้าย 1 ตัวสีเดียว `--c-text-muted` ในวงกลม 28px พื้น
-    `--c-bg-subtle` (ไม่มีสีต่าง type อีกต่อไป — แก้ 2026-09-13, ดูรายละเอียดท้ายหัวข้อ)** glyph ยังเลือก
-    ตาม tone เหมือนเดิม (ต่างแค่สี ไม่ใช่รูปทรง): success→check (อนุมัติ), danger→xmark (ปฏิเสธ),
-    warning→triangle-exclamation, neutral→bell (ระบบ, default เมื่อไม่ระบุ tone) — จุดไม่อ่าน **6px**
-    `--c-primary` อยู่**ซ้ายสุด** (ก่อนไอคอน) เฉพาะ item ที่ `unread:true`; item ที่อ่านแล้วยังคง render
-    `<span class="notif-item-dot">` เปล่าไว้เป็นที่ว่างขนาดเท่ากัน (สีโปร่งใส) เพื่อให้ไอคอน/title ของทุก
-    item อยู่แนวเดียวกันเป๊ะไม่ขยับตามว่า unread หรือไม่ — **ไม่มีพื้นแถวสำหรับ unread อีกต่อไป** (แก้
-    2026-09-13, ดูรายละเอียดท้ายหัวข้อ), ตัวหนังสือ title: unread = `--c-text` หนา, อ่านแล้ว = `--c-text`
-    น้ำหนักปกติ — item padding `--sp-3 --sp-4`, title `--fs-base`, detail `--fs-sm` `--c-text-muted` 1
-    บรรทัด ellipsis, time `--fs-xs` `--c-text-faint` (ไม่ใช่ `--c-text-muted`), hover พื้น
-    `--c-bg-hover`, เส้นคั่นระหว่างแถว `--c-border`
-  - ท้าย: ปุ่ม tertiary (`.btn.btn-link.btn-sm`, ไม่ใช่ `<a>` เปล่าแบบเดิม) "ดูทั้งหมด" ไป
-    `/notifications` กึ่งกลาง พื้น `--c-bg-subtle` (แยกจากพื้น list ด้านบนที่เป็น `--c-bg`)
+- **Dropdown (แก้เป็นโครง "การ์ดต่อรายการ" 2026-09-13, ซอฟต์ลงอีกรอบวันเดียวกัน — ดูประวัติ revision
+  ท้ายหัวข้อ)**: กว้าง **380px** (เดิม 360px) สูงสุด **480px** (flex column, ส่วนกลาง `.notif-list`
+  scroll เอง ผ่าน `.scroll-thin` utility ดู §11 — หัว/ท้าย fix อยู่กับที่ ไม่ scroll ทั้งกล่อง) พื้น
+  **`--c-bg-subtle`** (เดิม `--c-bg`) padding **`--sp-2`** รอบกล่อง (เดิม 0) เงา **`--shadow-soft`**
+  (เดิม `--shadow-modal` — เปลี่ยนพร้อม token ใหม่ ให้ความรู้สึกนุ่ม/เงียบกว่า) radius **`--radius-lg`**
+  (เดิม `--radius` — surface ลอย ดู §1) **ไม่มีขอบ (`border`) อีกต่อไปที่ชั้นไหนเลย** (เดิมมี 1px
+  `--c-border` คู่กับเงา — ตัดออก ให้เงาอย่างเดียวคุมความรู้สึก "ลอย" พอ ไม่ซ้อน 2 สัญญาณ)
+  - หัว: ซ้าย "การแจ้งเตือน" `--fs-base` น้ำหนัก **600** (เดิม 700 หนามาก — ผ่อนลงพร้อมรอบ "ซอฟต์ลง"),
+    ขวา ปุ่ม tertiary "ทำเครื่องหมายว่าอ่านแล้วทั้งหมด" (`.btn.btn-link`, ปรับสไตล์ชัดเจนแล้ว: `--fs-sm`
+    `--c-text-muted` ไม่ underline ปกติ, underline เฉพาะ hover) — **ไม่มีเส้นคั่นใต้หัวอีกต่อไป** (ของเดิม
+    มี `border-bottom`) เพราะโครงการ์ดใหม่ไม่มีเส้นคั่นที่ไหนในบล็อกนี้เลย
+  - รายการ = **การ์ด** (ของเดิมเป็นแถวคั่นเส้น) — พื้น `--c-bg` (สวนทางกับพื้น `--c-bg-subtle` ของกล่อง
+    ทั้งใบ ให้อ่านเป็น surface ลอยซ้อนอีกชั้น โดยแยกกันด้วยพื้นเท่านั้น **ไม่มีขอบ**) radius `--radius-lg`
+    padding **`--sp-3` `--sp-4`** เว้นช่องระหว่างการ์ด `--sp-2` (ผ่าน `gap` บน `.notif-list`, ไม่มีเส้น
+    คั่นระหว่างรายการเลย) hover เปลี่ยนพื้นเป็น **`--c-bg-hover`** (เดิม hover เปลี่ยนสีขอบ — ตอนนี้ไม่มี
+    ขอบให้เปลี่ยนแล้ว จึงย้ายสัญญาณ hover ไปที่พื้นแทน) **ไม่มีเงาไม่ยก** (การ์ดที่ลอยอยู่แล้วในกล่องที่ก็
+    ลอยอยู่แล้ว ไม่ต้องมี elevation คู่ที่สองซ้อนกัน)
+  - item shape `{unread: bool, tone: neutral|warning|danger|success (เซตเดียวกับ Timeline's tone enum),
+    title (1 บรรทัด), detail? (1 บรรทัด, `--c-text-muted`), time, link}` — ไอคอนซ้ายเป็นสี่เหลี่ยมมน
+    36px radius **10px** (เดิม 8px, ก่อนหน้านั้นเป็นวงกลม 28px) **ไม่มีขอบ**: อ่านแล้ว = พื้น
+    `--c-bg-subtle` ไอคอน **`--c-text-faint`** (เดิม `--c-text-muted` — จางลงอีกระดับพร้อมรอบ "ซอฟต์ลง"
+    ให้ตัดกับ unread ชัดขึ้น); ยังไม่อ่าน = พื้น `--c-primary-soft` ไอคอน `--c-primary` (ข้อยกเว้นของ §3 —
+    ความหมายเดียวกับ step ปัจจุบัน "นี่คือสิ่งที่ต้องดูตอนนี้", ไม่เปลี่ยน) glyph ยังเลือกตาม tone เหมือนเดิม
+    ไม่เปลี่ยน (สื่อความหมายผ่านรูปทรง คนละเรื่องกับสีที่ผูกกับ read state ล้วนๆ): success→check
+    (อนุมัติ), danger→xmark (ปฏิเสธ), warning→triangle-exclamation, neutral→bell (ระบบ, default) —
+    ไม่มีจุด unread แยกต่างหากอีกต่อไป (สัญญาณ unread อยู่ที่สี icon plate + น้ำหนัก title เท่านั้น) —
+    ตัวหนังสือ title: unread = `--c-text` น้ำหนัก **600** (เดิม 700), อ่านแล้ว = `--c-text` น้ำหนักปกติ
+    (400), `--fs-base`, **`line-height:1.4`** (เพิ่มใหม่ ให้ข้อความ 2 บรรทัดขึ้นไปอ่านง่ายขึ้น ใช้ร่วมกับ
+    detail/time ในคอลัมน์เดียวกัน); detail `--fs-sm` `--c-text-muted` 1 บรรทัด ellipsis; time `--fs-xs`
+    `--c-text-faint`
+  - ท้าย: ปุ่ม tertiary (`.btn.btn-link.btn-sm`) "ดูทั้งหมด" ไป `/notifications` กึ่งกลาง — ไม่มีพื้นแยก/
+    เส้นคั่นบน (ทั้งกล่องพื้น `--c-bg-subtle` เหมือนกันหมดแล้ว) สไตล์เหมือนปุ่ม tertiary ของหัว
+    (`--fs-sm` `--c-text-muted`, underline เฉพาะ hover)
   - ว่าง (0 รายการ): ข้อความ "ยังไม่มีการแจ้งเตือน" `--c-text-faint` แทนที่ list ทั้งหมด
 - **2026-09-13, "ปรับตาม token ให้เงียบลง" follow-up — 2 บั๊ก/ประเด็นจริงที่แก้**:
   1. **ไอคอน item เคยมีสีต่างกันตาม tone จริง** (success=เขียว/danger=แดง/warning=ส้ม, ไม่มีพื้นสี) —
@@ -421,6 +454,56 @@ approved → ...) ไม่ใช่สลับหน้า)
      อยู่แล้วโดยไม่ต้องมีพื้นสีเพิ่ม) `tokens.css`'s own `--c-primary-soft` comment ที่เคยขยาย scope
      ให้ครอบ notification row ไว้ ถอนกลับเป็น "step/tab ปัจจุบัน เท่านั้น" ตามเดิม (comment ระบุประวัติ
      การลองแล้วถอนไว้ ไม่ลบทิ้งเงียบๆ)
+- **2026-09-13, "การ์ดต่อรายการ" follow-up (รอบที่ 3 ของวันเดียวกัน) — เปลี่ยนจาก list คั่นเส้นเป็นการ์ด
+  นุ่มๆ ต่อรายการ**:
+  1. เพิ่ม token ใหม่ `--radius-lg` (10px, §1) สำหรับ surface ที่ "ลอย" ทั้งหมด (dropdown/popover/
+     toast/Swal popup + การ์ดข้างในนั้น) — `--radius` (6px) เดิมยังคุมปุ่ม/input/การ์ดในหน้าเหมือนเดิม
+  2. dropdown ทั้งกล่องเปลี่ยนพื้นเป็น `--c-bg-subtle` + padding `--sp-2` + radius `--radius-lg` (ดู
+     bullet "Dropdown" ด้านบนที่แก้ตามแล้ว) ตัดขอบกล่องออก เหลือแค่เงา
+  3. แต่ละรายการกลายเป็นการ์ดจริง (พื้น `--c-bg` ขอบ `--c-border` radius `--radius-lg`) เว้นช่องด้วย
+     `gap` แทนเส้นคั่น — **ไม่มีเส้นคั่นเหลืออยู่ที่ไหนในบล็อกนี้เลย** ทั้งหัว/รายการ/ท้าย
+  4. **ย้อนกลับการตัดสินใจก่อนหน้า (bullet "เงียบลง" ด้านบน) เรื่องพื้น unread**: ตอนนั้นตัดพื้น
+     `--c-primary-soft` ออกทั้งหมดเพราะกลัวดูเหลือง — รอบนี้**เอากลับมาใช้ แต่ใช้กับ icon plate แทนพื้น
+     ทั้งแถว** (พื้นที่เล็กกว่ามาก ไม่ล้นเป็นแถบเหลืองทั้งแถวเหมือนเดิม) พร้อมเพิ่มเป็น**ข้อยกเว้นใหม่ใน
+     §3's ตาราง** (`--c-primary-soft`/`--c-primary` ใช้กับรายการที่ยังไม่อ่าน/ต้องสนใจได้ — ความหมาย
+     เดียวกับ step ปัจจุบัน) ไม่ใช่แค่ hack เฉพาะ component นี้เฉยๆ
+  5. ตัดจุดส้ม 6px ที่เพิ่งเพิ่มไปออกอีกครั้ง (สัญญาณ unread ย้ายไปที่สี icon plate + น้ำหนัก title
+     ล้วนๆ ไม่ต้องมีจุดแยกอีกจุดหนึ่ง)
+  6. ไอคอนเปลี่ยนจากวงกลม 28px → สี่เหลี่ยมมน 36px radius 8px (ให้พื้นที่พอสำหรับสีสองสถานะข้างบน)
+  7. `--radius-lg` ยังถูกนำไปใช้กับ Swal2 popup/toast ด้วย (`--swal2-border-radius`, ตัวปุ่มข้างในยังคง
+     `--radius` เหมือนเดิม) ให้ "ชุดเดียวกัน" ตามที่สั่งตรงๆ — ยืนยันจากอ่าน `sweetalert2.css` ตรงๆ ว่า
+     toast mode (`showSuccess()`) กับ popup ปกติใช้ CSS variable ตัวเดียวกัน ไม่มี rule แยกสำหรับ toast
+     โดยเฉพาะ จึงแก้จุดเดียวครอบคลุมทั้งคู่
+- **2026-09-13, "ซอฟต์ลง" follow-up (รอบที่ 4 ของวันเดียวกัน) — feedback ตรงๆ: "ยังแข็งเพราะทุกชั้นมี
+  เส้นขอบ"**:
+  1. **ตัดเส้นขอบออกทุกชั้นที่เหลือ**: การ์ดต่อรายการ (รอบก่อนหน้ายังมีขอบ 1px `--c-border` อยู่) ตอนนี้
+     ไม่มีขอบเลย แยกจากพื้น dropdown ด้วยพื้น `--c-bg` บนพื้น `--c-bg-subtle` เท่านั้น — dropdown เองไม่มี
+     ขอบอยู่แล้วตั้งแต่รอบก่อน (ไม่เปลี่ยน) แต่เปลี่ยนเงาจาก `--shadow-modal` เป็น **`--shadow-soft`**
+     (token ใหม่ ดู §1) ให้ความรู้สึกนุ่มกว่าเดิม — hover การ์ดเปลี่ยนจาก "เข้มขอบ" เป็น **เปลี่ยนพื้นเป็น
+     `--c-bg-hover`** แทน (ไม่มีขอบให้เข้มอีกต่อไป)
+  2. ไอคอน: ไม่มีขอบ (ไม่เคยมี ไม่เปลี่ยน) radius **8px → 10px**, อ่านแล้วสีจาง **`--c-text-muted` →
+     `--c-text-faint`** (จางกว่าเดิม 1 ระดับ ให้ตัดกับ unread ชัดขึ้น) ยังไม่อ่านคงเดิม
+     `--c-primary-soft`/`--c-primary`
+  3. ตัวอักษร: title น้ำหนัก **700 → 600** เฉพาะยังไม่อ่าน (อ่านแล้วคงน้ำหนักปกติ 400 `--c-text`),
+     detail/time คงเดิม (`--fs-sm` `--c-text-muted` / `--fs-xs` `--c-text-faint`), เพิ่ม
+     **`line-height:1.4`** ใหม่ให้คอลัมน์ข้อความ, padding การ์ดขยายเป็น **`--sp-3` `--sp-4`** (เดิม
+     `--sp-3` รอบเดียว)
+  4. **`.scroll-thin` — utility กลางใหม่** (`scrollbar-width:thin` + `scrollbar-color` + WebKit
+     scrollbar 6px thumb `--c-border-strong` radius `--radius-pill`) แทนที่จะผูก scrollbar บาง/โปร่งไว้
+     เฉพาะ `.notif-list` — ทำเป็น class กลางใน `style.css` ให้ dropdown/panel ที่ scroll ตัวไหนก็ตามในระบบ
+     เรียกใช้ซ้ำได้ (ดู §11's ตาราง shared component) — `.notif-list` ใช้ผ่าน `class="notif-list
+     scroll-thin"`
+  5. หัว/ท้าย: ปุ่ม tertiary ("อ่านทั้งหมดแล้ว"/"ดูทั้งหมด") ได้สไตล์ชัดเจนเป็นครั้งแรก — `--fs-sm`
+     `--c-text-muted` ไม่ underline ปกติ, underline เฉพาะ hover เท่านั้น (ก่อนหน้านี้ได้สี `--c-text` มา
+     ฟรีจาก `--bs-link-color` แต่ไม่มี size/underline rule ของตัวเองเลย)
+  6. **บั๊กจริงที่เจอและแก้ในรอบเดียวกัน (ไม่ใช่ design แต่เกี่ยวเนื่องกับ demo หน้านี้)**: `components.php`
+     ยัง render คำอังกฤษ (Notifications/Mark all as read/View All) ทั้งที่ i18n key มีครบทั้ง th/en —
+     root cause ไม่ใช่ wiring บั๊ก (ยืนยันด้วย curl ว่า `th.json`/`en.json` โหลดสำเร็จและมี key ครบ) แต่
+     เป็นพฤติกรรมที่ถูกต้องของทั้งแอป: `currentLang = localStorage.getItem('preferred_language') ||
+     'en'` (`app.js`) fallback เป็นอังกฤษบนเบราว์เซอร์ที่ยังไม่เคยตั้งค่าภาษาไว้เลย — แก้แบบ scoped เฉพาะ
+     หน้า demo นี้เท่านั้น: seed `localStorage['preferred_language'] = 'th'` ใน `components.php` เอง
+     เฉพาะตอนที่ยังไม่มีการตั้งค่าใดๆ มาก่อนเลย (ไม่เคยเขียนทับค่าที่ผู้ใช้เคยเลือกไว้จริง) ไม่แตะ
+     default logic ของ `app.js` ที่ใช้จริงทั้งแอป
 - **JS helper 2 ตัวใน `app.js`, ไม่มี polling**: `renderNotifications(items)` (คืน HTML string ของ
   รายการทั้งหมด รวม empty-state เมื่อ `items` ว่าง — pattern เดียวกับ `renderTimeline()`/
   `renderStatusStepper()` คือคืนค่าให้ caller เอาไป `.html()` เอง ไม่ inject ตรงเข้า DOM ให้) และ
@@ -435,8 +518,10 @@ approved → ...) ไม่ใช่สลับหน้า)
   ตรงๆ ไม่ได้นับจาก list — ตั้งใจให้เห็นว่าเป็นคนละ state กัน เหมือนของจริงที่ unread-count มาจาก
   endpoint แยกจาก dropdown's เอง 10 รายการล่าสุด ไม่ใช่ derive จากกันเสมอไป), dropdown มี 5 รายการ (2
   unread) ผ่าน `renderNotifications()` ตรงๆ — กด "ทำเครื่องหมายว่าอ่านแล้วทั้งหมด" แล้ว badge หาย (n=0) +
-  รายการทั้ง 5 หายจุด/พื้น unread (re-render ผ่าน `renderNotifications()` เดิมด้วย items ที่ตั้ง
-  `unread:false` ทุกตัว) — light/dark ผ่านปุ่มสลับ theme มุมขวาบนของหน้าเดียวกัน (ทุกสีเป็น token ทั้งหมด
+  ไอคอนการ์ดทั้ง 5 ใบเปลี่ยนจาก `--c-primary-soft`/`--c-primary` (2 ใบที่เคยยังไม่อ่าน) กลับเป็นเทาปกติ
+  `--c-bg-subtle`/`--c-text-muted` เหมือนกันหมด + title กลับเป็นน้ำหนักปกติ (re-render ผ่าน
+  `renderNotifications()` เดิมด้วย items ที่ตั้ง `unread:false` ทุกตัว) — light/dark ผ่านปุ่มสลับ theme
+  มุมขวาบนของหน้าเดียวกัน (ทุกสีเป็น token ทั้งหมด
   ไม่มี hex ตรงๆ จึงสลับถูกต้องเองโดยไม่ต้องมี dark-mode override เพิ่ม)
 - **2026-09-13, บั๊กจริงที่เจอและแก้ในเดโม: dropdown หลุดซ้ายนอกจอ** — เวอร์ชันแรกของเดโมเขียน
   `.notif-dropdown` เองเป็น `position:absolute; right:0` + toggle ด้วย `.toggleClass('d-none')` มือ
@@ -839,6 +924,7 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 | `showConfirm()` (ขยายรับ object form + `cancelText`, item 7b — เสร็จแล้ว) / `showSuccess` (เปลี่ยนเป็น toast default, item 7b) / `showError` (ไม่เปลี่ยน) | app.js/alert.js (มีแล้ว) | Swal.fire ตรง — **ไม่สร้าง `confirmAction()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §10) |
 | `resetModalTabs()` | app.js (มีแล้ว) | strip class เอง |
 | `payslip-view.php` | partials | modal คำนวณแบบตาราง |
+| `.scroll-thin` (ใหม่, notification "ซอฟต์ลง" follow-up 2026-09-13 — CSS utility class ล้วนๆ ไม่มี JS, scrollbar บาง 6px โปร่ง) | `style.css` | scrollbar เริ่มต้นหนาของ browser บน dropdown/panel ที่ scroll — ใช้กับ `.notif-list` แล้ว, ตัวไหนใน dropdown/panel ที่ scroll ต่อไปในระบบให้เรียกซ้ำ ไม่เขียน scrollbar CSS เองใหม่ |
 
 เพิ่ม component ใหม่ต้องเสนอชื่อ + API + ที่ใช้ ≥ 2 จุด ก่อนเขียน
 

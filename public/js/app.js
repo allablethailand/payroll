@@ -1453,7 +1453,6 @@ function renderNotifications(items) {
         const unreadCls = item.unread ? ' notif-item-unread' : '';
         const detailHtml = item.detail ? `<span class="notif-item-detail">${escapeHtml(item.detail)}</span>` : '';
         html += `<a href="${escapeHtml(item.link || '#')}" class="notif-item${unreadCls}">
-            <span class="notif-item-dot"></span>
             <span class="notif-item-icon"><i class="fa-solid ${icon}"></i></span>
             <span class="notif-item-body">
                 <span class="notif-item-title">${escapeHtml(item.title || '')}</span>

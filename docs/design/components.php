@@ -641,7 +641,7 @@ $cpStats = [
 <!-- ==================== Notification (§6, item 6d) ==================== -->
 <div class="cp-section">
     <h2>Notification (ข้อ 6d) — UI เท่านั้น ยังไม่ต่อ backend</h2>
-    <p class="cp-section-note">ของจริงมีอยู่แล้ว (<code>layout/header.php</code>'s bell + <code>public/js/notifications.js</code> + <code>NotificationModel</code>, ต่อ backend จริงครบ) -- <b>ไม่แตะรอบนี้</b> demo นี้คือ target design ใหม่ที่ต่างจากของจริงจริงๆ 3 จุด (ไม่ใช่แค่สีที่ยังไม่ผ่าน token): <b>(1)</b> ไอคอนของจริงมีพื้นสี (<code>.row-type-icon</code>, เหมือนหน้า Report) อันนี้ไม่มีพื้นสี สีที่ตัวไอคอนเอง <b>(2)</b> จุดยังไม่อ่านของจริงอยู่ขวาของ item อันนี้อยู่ซ้าย <b>(3)</b> ป้ายจำนวนของจริงโชว์ "99+" อันนี้โชว์ ">99" -- บันทึกไว้ใน rules.md §6 ให้รอบ 4 ตัดสินใจตอน migrate จริง ไม่ใช่เดาแทนตอนนี้. กระดิ่งเป็น <code>.btn-icon</code> วงกลมเดียวกับ row action (ของจริงเป็น <code>&lt;img&gt;</code> เปล่าไม่มีวงกลม) วางไว้ขวาสุดของ section นี้จำลองตำแหน่งจริงบน top bar (มุมขวาบน) -- dropdown เป็น Bootstrap dropdown จริง (<code>data-bs-toggle="dropdown"</code> + <code>dropdown-menu-end</code>, Popper คุมตำแหน่ง/พลิกด้านเองอัตโนมัติเมื่อชิดขอบจอ ไม่ hardcode ทิศทางเอง) กว้าง 360px สูงสุด 480px ส่วนรายการ scroll เอง หัว/ท้ายอยู่กับที่, badge เริ่มต้น = 3 (ตั้งตรงผ่าน <code>setNotificationCount()</code> ไม่ได้นับจาก list -- คนละ state กับของจริงที่ unread-count มาจาก endpoint แยกจาก dropdown เอง), list มี 5 รายการ (2 ยังไม่อ่าน) ผ่าน <code>renderNotifications()</code> -- กด "ทำเครื่องหมายว่าอ่านแล้วทั้งหมด" แล้วดู badge หาย + จุด/พื้น unread ของทั้ง 5 รายการหายไปด้วย (re-render ผ่าน <code>renderNotifications()</code> เดิม, ไม่ใช่ฟังก์ชันแยก -- เมนูไม่ปิดตอนกดปุ่มนี้เพราะไม่ใช่ <code>.dropdown-item</code> และ Bootstrap ปิด dropdown แค่ตอนคลิกนอกเมนูหรือคลิก <code>.dropdown-item</code>). ทุกสีเป็น token ล้วน ลองสลับ theme มุมขวาบนดูด้วย.</p>
+    <p class="cp-section-note">ของจริงมีอยู่แล้ว (<code>layout/header.php</code>'s bell + <code>public/js/notifications.js</code> + <code>NotificationModel</code>, ต่อ backend จริงครบ) -- <b>ไม่แตะรอบนี้</b> demo นี้คือ target design ใหม่ (แก้เป็นโครง "การ์ดต่อรายการ" ล่าสุด 2026-09-13) ที่ต่างจากของจริงจริงๆ 3 จุด (ไม่ใช่แค่สีที่ยังไม่ผ่าน token): <b>(1)</b> ไอคอนของจริงมีพื้นสีต่างกันตาม type (<code>.row-type-icon</code>, เหมือนหน้า Report) อันนี้พื้นสีเดียวกันทุก type ต่างแค่ตามอ่านแล้ว/ยังไม่อ่าน (เทา vs ส้มอ่อน) <b>(2)</b> จุดยังไม่อ่านของจริงอยู่ขวาของ item อันนี้ไม่มีจุดเลย (สัญญาณย้ายไปที่สี icon plate + น้ำหนัก title แทน) <b>(3)</b> ป้ายจำนวนของจริงโชว์ "99+" อันนี้โชว์ ">99" -- บันทึกไว้ใน rules.md §6 ให้รอบ 4 ตัดสินใจตอน migrate จริง ไม่ใช่เดาแทนตอนนี้. กระดิ่งเป็น <code>.btn-icon</code> วงกลมเดียวกับ row action (ของจริงเป็น <code>&lt;img&gt;</code> เปล่าไม่มีวงกลม) วางไว้ขวาสุดของ section นี้จำลองตำแหน่งจริงบน top bar (มุมขวาบน) -- dropdown เป็น Bootstrap dropdown จริง (<code>data-bs-toggle="dropdown"</code> + <code>dropdown-menu-end</code>, Popper คุมตำแหน่ง/พลิกด้านเองอัตโนมัติเมื่อชิดขอบจอ) กว้าง 380px สูงสุด 480px พื้น <code>--c-bg-subtle</code> radius <code>--radius-lg</code> (12px, surface ลอย ดู §1) เงานุ่ม <code>--shadow-soft</code> (ใหม่ 2026-09-13 -- กว้าง/จางกว่า <code>--shadow-modal</code>) <b>ไม่มีขอบเลยทั้งกล่อง</b> -- แต่ละรายการเป็นการ์ดจริง (พื้น <code>--c-bg</code> ล้วนๆ <b>ไม่มีขอบเช่นกัน</b>, radius <code>--radius-lg</code>) แยกจากพื้นกล่องด้วยสีพื้นต่างกันเท่านั้น เว้นช่องกันด้วย <code>gap</code> ไม่มีเส้นคั่นเลยทั้งบล็อก hover เปลี่ยนพื้นเป็น <code>--c-bg-hover</code> (ไม่มีขอบให้เปลี่ยนสีแล้ว) -- ส่วนรายการ scroll ด้วย <code>.scroll-thin</code> (class กลางใหม่, scrollbar บาง 6px ใช้ซ้ำได้ทั้งระบบ), badge เริ่มต้น = 3 (ตั้งตรงผ่าน <code>setNotificationCount()</code> ไม่ได้นับจาก list -- คนละ state กับของจริงที่ unread-count มาจาก endpoint แยกจาก dropdown เอง), list มี 5 รายการ (2 ยังไม่อ่าน) ผ่าน <code>renderNotifications()</code> -- กด "ทำเครื่องหมายว่าอ่านแล้วทั้งหมด" แล้วดู badge หาย + ไอคอนการ์ดทั้ง 5 ใบเปลี่ยนเป็นเทาปกติเหมือนกันหมด + title กลับเป็นน้ำหนักปกติ (re-render ผ่าน <code>renderNotifications()</code> เดิม, ไม่ใช่ฟังก์ชันแยก -- เมนูไม่ปิดตอนกดปุ่มนี้เพราะไม่ใช่ <code>.dropdown-item</code> และ Bootstrap ปิด dropdown แค่ตอนคลิกนอกเมนูหรือคลิก <code>.dropdown-item</code>). ทุกสีเป็น token ล้วน ลองสลับ theme มุมขวาบนดูด้วย.</p>
     <div class="d-flex justify-content-end">
         <div class="dropdown d-inline-block">
             <button type="button" class="btn-icon notif-bell-btn" id="cpNotifBellBtn" data-bs-toggle="dropdown" data-bs-display="dynamic" aria-expanded="false" aria-label="Notifications">
@@ -653,7 +653,7 @@ $cpStats = [
                     <span data-i18n="notifications">การแจ้งเตือน</span>
                     <button type="button" class="btn btn-link btn-sm" id="cpNotifMarkAllBtn" data-i18n="notif_mark_all_read">ทำเครื่องหมายว่าอ่านแล้วทั้งหมด</button>
                 </div>
-                <div class="notif-list" id="cpNotifList"></div>
+                <div class="notif-list scroll-thin" id="cpNotifList"></div>
                 <div class="notif-dropdown-footer">
                     <a href="#" class="btn btn-link btn-sm" data-i18n="notif_view_all">ดูทั้งหมด</a>
                 </div>
@@ -916,14 +916,39 @@ $cpStats = [
        session-guard.js/quick-links.js read them -- neither is loaded on this page, so defining
        those would be dead weight, not a real fix). BASE_URL specifically is derived from the
        CURRENT page's own URL rather than hardcoded, so this file stays correct in any environment
-       (any host/port), not just this session's own dev server. LANG_VERSION/
-       COMPANY_CURRENCY_CODE get harmless static placeholders -- this page never actually needs
-       real i18n/currency data for its own demo purpose, they only need to EXIST so nothing throws
-       a ReferenceError touching them. -->
+       (any host/port), not just this session's own dev server. COMPANY_CURRENCY_CODE gets a harmless
+       static placeholder (this page never actually needs real currency data). LANG_VERSION gets a
+       static placeholder too, but -- correction to this comment's own earlier claim, 2026-09-13 --
+       real i18n DOES matter on this page now (Round 2's own DataTable/notification demos render
+       real langData-driven chrome text): loadLang() (app.js) fetches `public/lang/{lang}.json`
+       directly over HTTP, a plain static file needing no session/backend, confirmed working from
+       this standalone page exactly like any real one. LANG_VERSION only feeds that fetch's cache-
+       busting query string, so a static value is still fine (worst case, a stale cache on this one
+       dev page -- never wrong content). -->
 <script>
     var BASE_URL = window.location.origin + window.location.pathname.replace(/\/docs\/design\/components\.php$/, '');
     var LANG_VERSION = { th: 1, en: 1 };
     var COMPANY_CURRENCY_CODE = 'THB';
+    // 2026-09-13, real bug found and fixed (explicit report: notification/DataTable chrome text
+    // showing English -- "Notifications"/"Mark all as read"/"View All" -- instead of Thai). Root
+    // cause was NOT a wiring bug in this page's own i18n (public/lang/{th,en}.json both fetch fine,
+    // both keys exist correctly in both files, confirmed directly) -- it's app.js's own real,
+    // app-wide default: `currentLang = localStorage.getItem('preferred_language') || 'en'`, which
+    // falls back to English on any browser profile that has never visited this app before (or
+    // cleared its own localStorage). That default is correct and untouched for every REAL page,
+    // where it should track whatever the actual logged-in user last chose. This demo page is
+    // different: every OTHER piece of copy on it is hardcoded Thai directly in the PHP, so an
+    // i18n-driven fragment falling back to English (purely because of an absent browser preference,
+    // unrelated to anything this page's own code does) reads as broken/inconsistent even though the
+    // underlying mechanism is working exactly as designed. Seeded here, once, only when NO preference
+    // has EVER been set yet (never overwrites an existing explicit choice, including a real prior
+    // "English" pick) -- scoped to this one dev-only page, not a change to app.js's own shared
+    // default, which stays correct for every real page.
+    try {
+        if (!localStorage.getItem('preferred_language')) {
+            localStorage.setItem('preferred_language', 'th');
+        }
+    } catch (e) {}
     // Same single line layout/header.php now injects on every real page (§5) -- from the REAL
     // app/config/status_map.php via the same loadStatusMap() this page already required at the top,
     // not a hand-typed copy. Must run before app.js loads below (app.js's own top-level `const
