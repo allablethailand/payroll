@@ -372,7 +372,7 @@ approved → ...) ไม่ใช่สลับหน้า)
      (`--c-text-faint`, i18n key `filter_bar_empty` ใหม่) เมื่อ N=0 (แผงไม่เคยว่างเปล่าเป็นแถบเปล่าๆ);
      ขวา = ปุ่ม tertiary **"ล้างตัวกรอง"** (`.btn.btn-link` ตาม §4's Tertiary row) ซ่อนเมื่อ N=0
 - **ตอนกาง = ใช้ grid ของ `.station-filter` เดิมเป๊ะ** (คอลัมน์/ขนาดช่อง/ลำดับเหมือนเดิมทุกอย่าง) — `filter-bar.php` เป็น**แค่ wrapper** ไม่บังคับ grid/gutter class ของตัวเอง `$filter_fields_html` ต้องเป็น markup เดิมของ `.station-filter-body` คัดลอกมาแบบคำต่อคำ (รวม `<div class="row g-X">` ของมันเอง) — ย้ายเข้า partial นี้ในรอบ 4 โดยไม่ต้องเขียน field ใหม่เลย
-- **ไม่มีไอคอนหน้า label ของ field ใดๆ ทั้งสิ้น** (ของเดิมมี เช่น `.station-filter-body`'s `<label><i class="fa-solid fa-calendar">...` — ยืนยันแล้วมีจริง ~140 จุดใน 18 ไฟล์ทั่วแอป เป็นงาน migrate ของรอบ 4 — ตัดไอคอนออกตอนย้าย ไม่ใช่คัดลอกมาด้วย) และ**ไม่มี fieldset/legend look แบบเดิม** ("ตัวกรอง" เป็น corner label ลอยทับขอบกรอบ) — เปลี่ยนเป็นแถบเรียบแบนแทน (พื้น `--c-bg-subtle` ขอบ `--c-border` `--radius` ไม่มีเงา) ไม่มีคำว่า "ตัวกรอง" ซ้ำอยู่ในกล่อง (ป้ายหัวแผงเองมีคำนี้อยู่แล้ว)
+- **ไม่มีไอคอนหน้า label ของ field ใดๆ ทั้งสิ้น** (ของเดิมมี เช่น `.station-filter-body`'s `<label><i class="fa-solid fa-calendar">...` — ยืนยันแล้วมีจริง ~140 จุดใน 18 ไฟล์ทั่วแอป เป็นงาน migrate ของรอบ 4 — ตัดไอคอนออกตอนย้าย ไม่ใช่คัดลอกมาด้วย) และ**ไม่มี fieldset/legend look แบบเดิม** ("ตัวกรอง" เป็น corner label ลอยทับขอบกรอบ) — เปลี่ยนเป็นแถบเรียบแบนแทน (พื้น `--c-bg-subtle` **ไม่มีขอบ** radius **`--radius-lg`** ไม่มีเงา — เดิมมีขอบ `--c-border` + `--radius` ก่อน "ซอฟต์ลง" follow-up ดูประวัติ revision ท้ายหัวข้อ) ไม่มีคำว่า "ตัวกรอง" ซ้ำอยู่ในกล่อง (ป้ายหัวแผงเองมีคำนี้อยู่แล้ว)
 - **จำสถานะกาง/ยุบต่อหน้าได้** ผ่าน `localStorage['filterbar:' + pageKey]` — partial รับ `$pageKey` (optional); ถ้าไม่ส่งมา ไม่จำสถานะเลย เริ่มยุบเสมอ
 - collapse ใช้กลไกเดิมของ `.station-filter-body` (CSS class `.collapsed` + `max-height` transition ธรรมดา) **ไม่ใช่** Bootstrap `.collapse` component — เพื่อให้ "เหมือนเดิมเป๊ะ" ตามที่ตัดสินใจ
 - ควบคุมทั้งหมดใช้ `.form-select-sm` / select2 ขนาดเดียว ปุ่มขนาด `.btn-sm`
@@ -382,6 +382,36 @@ approved → ...) ไม่ใช่สลับหน้า)
   Payroll Process) แค่วาง `filter-bar.php` ต่อท้าย `status-tabs.php` ตามลำดับ markup ธรรมดา ไม่มี JS
   ย้าย DOM node ข้ามที่อีกต่อไป — `.filter-bar--toolbar-relocated`/`.status-tabs > .filter-bar-toolbar`
   ที่เคยมีถูกลบออกจาก `style.css` ทั้งคู่
+- **2026-09-13, "ซอฟต์ลง" follow-up (ตามรอบเดียวกับ notification/datepicker/timepicker) — 7 จุด**:
+  1. ภาษา: ป้ายหัว "ตัวกรอง"/ปุ่ม "ล้างตัวกรอง" ได้ i18n key ใหม่ของตัวเอง **`filter_title`/
+     `filter_clear`** (แยกจาก `label_filter`/`clear_filter` เดิมที่ 18 ไฟล์หน้าจริง/`.station-filter`
+     ใช้อยู่แล้ว — **ไม่แตะของเดิม** เพราะ `filter-bar.php` ยังไม่มีหน้าจริงเรียกใช้เลยรอบนี้ คนละ
+     lifecycle กัน แม้ค่าจะเหมือนกันตอนนี้ก็ตาม) มีครบทั้ง th/en
+  2. แผง: ตัดขอบออก (`border: none`) เหลือพื้น `--c-bg-subtle` radius `--radius-lg` (เดิม `--radius` +
+     ขอบ `--c-border`) — ช่อง select ข้างในไม่ต้องเพิ่ม CSS ใหม่ ได้พื้น `--c-bg`/ขอบ `--c-border` ฟรีอยู่
+     แล้วจาก root Bootstrap override เดิม (§1) ตัดกับพื้นแผงเองพอโดยไม่ต้องเข้มขึ้น
+  3. label เหนือช่อง (`.filter-bar-body label`): `--fs-xs` `--c-text-muted` น้ำหนัก **500** (เดิมรับ
+     ค่า default ของ Bootstrap `.form-label` ที่ดำ/หนักกว่า) ระยะ label→ช่อง `--sp-1`
+  4. หัว "ตัวกรอง (N)": เพิ่มน้ำหนัก **500** ให้ `.filter-bar-label` (เดิมไม่ได้ระบุน้ำหนัก) — ปุ่ม
+     chevron toggle ได้ variant ใหม่ **`.btn-icon-ghost`** (§7: ไม่มีขอบ/พื้นนิ่ง, hover พื้น
+     `--c-bg-hover` เหมือนเดิม) เพราะวงกลม `.btn-icon` ปกติ (มีขอบ+พื้นขาว) จะดูเป็นชิ้นลอยแยกออกจาก
+     แผงที่มีพื้นสีของตัวเองอยู่แล้ว
+  5. chips: ตัดขอบออก พื้นเปลี่ยนจาก `--c-bg` เป็น **`--c-bg-hover`** (พื้นเติมแทนขอบ เหตุผลเดียวกับ
+     `.btn-icon-ghost`) ตัวหนังสือ `--fs-sm` `--c-text` (เดิม `--fs-xs` `--c-text-muted`) ×
+     **12px** `--c-text-muted` hover `--c-text` ระยะระหว่าง chip `--sp-2` (เดิม `--sp-1`)
+  6. ท้าย: ตัดเส้นบนออก (`border-top` เดิม) แยกจากตัวด้วยระยะ `padding-top: --sp-3` แทน — "ล้างตัวกรอง"
+     ได้สไตล์ tertiary ชัดเจนเป็นครั้งแรก (`--fs-sm` `--c-text-muted` ไม่ underline ปกติ underline
+     เฉพาะ hover — แบบเดียวกับปุ่ม tertiary ของ notification dropdown รอบเดียวกัน)
+  7. **ตอนยุบ: หัว+chips รวมเป็นแถวเดียว** (chips ต่อจากป้ายหัวทางซ้าย, chevron ชิดขวาเสมอ) — ทำผ่าน
+     JS ไม่ใช่ CSS ล้วน (`initFilterBar()`'s `syncCollapsedLayout()`, app.js): ย้าย
+     `.filter-bar-footer-left` (chips + ข้อความ "ไม่ได้กรอง") เข้าไปเป็นลูกของ `.filter-bar-header`
+     (ก่อนปุ่ม toggle) แล้วซ่อนทั้ง `.filter-bar-footer` เมื่อยุบ ย้ายกลับตอนกาง — เหตุผลที่ไม่ใช้ CSS
+     ล้วน: header/footer เป็น flex row คนละก้อนคั่นด้วย `.filter-bar-body` ใน DOM (แม้ตอนยุบจะสูง 0px
+     ก็ตาม) ไม่มีทางรวมเป็น flex row เดียวกันได้โดยไม่ย้าย node จริง — `.filter-bar-header` เปลี่ยนจาก
+     `justify-content: space-between` เป็น `flex-start` + `.filter-bar-toggle { margin-left: auto }`
+     แทน ให้ใช้ได้ทั้งกรณี 2 ลูก (ปกติ) และ 3 ลูก (ยุบ, มี chips แทรกกลาง) โดยปุ่ม toggle ชิดขวาเสมอ —
+     ปุ่ม "ล้างตัวกรอง" หายไปพร้อมกับ `.filter-bar-footer` ตอนยุบ (ตามที่สั่ง "เหลือหัว + chips" ไม่ได้
+     พูดถึงปุ่มล้าง) กลับมาตอนกางเหมือนเดิม
 
 **Notification** (ตัดสินใจแล้วรอบ 2 item 6d — **UI เท่านั้น ยังไม่ต่อ backend, ไม่ polling**)
 - **มีกลไกจริงอยู่แล้ว** (`layout/header.php`'s `.nav-notif-dropdown`, `public/js/notifications.js`,
@@ -695,6 +725,13 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
   แบบผ่อน (เฉพาะไฟล์ที่ mark `design:clean` ถึง fail ดู §12) — ลบ alias ทิ้งเมื่อย้ายครบ 14 ไฟล์แล้วเท่านั้น
   เหมือน pattern เดียวกับ `.stat-card` ใน §2
 - ~~เดิม (ยกเลิกแล้ว): ปุ่มไอคอน .btn.btn-sm.btn-icon เทา ไม่มีพื้น ไม่มีขอบ~~ — ดูสเปกใหม่ด้านบน
+- **`.btn-icon-ghost` — variant ใหม่ (2026-09-13, filter-bar "ซอฟต์ลง" follow-up)**: ใช้ร่วมกับ
+  `.btn-icon` เสมอ (`class="btn-icon btn-icon-ghost"`, ไม่ใช่ class แทนที่) สำหรับวงกลมที่อยู่ **ข้างใน
+  panel ที่มีพื้นสีของตัวเองอยู่แล้ว** (เช่น filter-bar's หัวพื้น `--c-bg-subtle`) ซึ่งขอบ+พื้น `--c-bg`
+  ของ `.btn-icon` ปกติจะดูเป็นชิ้นลอยแยกออกจากพื้นรอบข้าง — ตัด `border`/`background` ที่ resting state
+  ออก (โปร่งใสทั้งคู่) ขนาด/ไอคอน/สี/hover (`--c-bg-hover`)/disabled เหมือน `.btn-icon` ทุกอย่างไม่เปลี่ยน
+  ใช้แล้วที่ filter-bar's chevron toggle (`.filter-bar-toggle`, ดู Filter bar ด้านบน) — ตัวถัดไปที่ต้อง
+  "ปิด/toggle ใน panel ที่มีพื้นตัวเอง" ให้ใช้ variant นี้แทนที่จะเขียน override เฉพาะจุดใหม่
 
 **ข้อความว่าง**: จาก `getTableLang().emptyTable` — ประโยคเดียวบอกว่าทำอะไรต่อได้ (เช่น "ยังไม่มีรายการ — กด 'เพิ่มรายการ' เพื่อเริ่ม")
 

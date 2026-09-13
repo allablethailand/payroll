@@ -35,6 +35,31 @@ if (!in_array($__remote, ['127.0.0.1', '::1'], true)) {
 // deliberately skips the app's normal bootstrap (see docblock above) -- helpers.php itself has no
 // dependency on config.php/BASE_URL/a session, safe to require in isolation like this.
 require_once __DIR__ . '/../../app/helpers/helpers.php';
+
+// 2026-09-13, Round 2 item 9 leftover fix #1: the notification dropdown's chrome text (title/"mark
+// all read"/"view all") kept rendering in English on this page despite an earlier fix that seeded
+// localStorage's preferred_language to Thai -- that seed only ran "if unset", so a leftover English
+// value from earlier testing on this same browser origin (before the seed existed, or a real
+// language-switcher click) survived it indefinitely, and the page's whole i18n mechanism (this app's
+// only one, everywhere -- data-i18n attributes swapped client-side by app.js's updateText(), see
+// CLAUDE.md/rules.md) is entirely client-side, so a curl fetch could never have caught this class of
+// bug either. Fixed at the root instead of patching the symptom again: this page now resolves its own
+// language SERVER-SIDE via `?lang=` (default Thai) and renders the correct text directly in the HTML
+// via cpLangText() below -- deterministic, and verifiable with a plain HTTP fetch + grep, no browser/
+// JS execution needed. The client-side localStorage seed (further below) is also changed from
+// "only if unset" to "always match this page's own resolved language" for the same reason -- a dev
+// tool page has no real user preference worth preserving across visits, so removing that guard is
+// safe here specifically (NOT a change to app.js's own real, session-driven default elsewhere).
+$CP_LANG = (isset($_GET['lang']) && $_GET['lang'] === 'en') ? 'en' : 'th';
+function cpLangText(string $key, string $fallback = ''): string {
+    static $data = null;
+    if ($data === null) {
+        global $CP_LANG;
+        $path = __DIR__ . '/../../public/lang/' . $CP_LANG . '.json';
+        $data = is_file($path) ? (json_decode(file_get_contents($path), true) ?: []) : [];
+    }
+    return $data[$key] ?? $fallback;
+}
 ?>
 <!doctype html>
 <html lang="th">
@@ -649,18 +674,18 @@ $cpStats = [
     <p class="cp-section-note">ของจริงมีอยู่แล้ว (<code>layout/header.php</code>'s bell + <code>public/js/notifications.js</code> + <code>NotificationModel</code>, ต่อ backend จริงครบ) -- <b>ไม่แตะรอบนี้</b> demo นี้คือ target design ใหม่ (แก้เป็นโครง "การ์ดต่อรายการ" ล่าสุด 2026-09-13) ที่ต่างจากของจริงจริงๆ 3 จุด (ไม่ใช่แค่สีที่ยังไม่ผ่าน token): <b>(1)</b> ไอคอนของจริงมีพื้นสีต่างกันตาม type (<code>.row-type-icon</code>, เหมือนหน้า Report) อันนี้พื้นสีเดียวกันทุก type ต่างแค่ตามอ่านแล้ว/ยังไม่อ่าน (เทา vs ส้มอ่อน) <b>(2)</b> จุดยังไม่อ่านของจริงอยู่ขวาของ item อันนี้ไม่มีจุดเลย (สัญญาณย้ายไปที่สี icon plate + น้ำหนัก title แทน) <b>(3)</b> ป้ายจำนวนของจริงโชว์ "99+" อันนี้โชว์ ">99" -- บันทึกไว้ใน rules.md §6 ให้รอบ 4 ตัดสินใจตอน migrate จริง ไม่ใช่เดาแทนตอนนี้. กระดิ่งเป็น <code>.btn-icon</code> วงกลมเดียวกับ row action (ของจริงเป็น <code>&lt;img&gt;</code> เปล่าไม่มีวงกลม) วางไว้ขวาสุดของ section นี้จำลองตำแหน่งจริงบน top bar (มุมขวาบน) -- dropdown เป็น Bootstrap dropdown จริง (<code>data-bs-toggle="dropdown"</code> + <code>dropdown-menu-end</code>, Popper คุมตำแหน่ง/พลิกด้านเองอัตโนมัติเมื่อชิดขอบจอ) กว้าง 380px สูงสุด 480px พื้น <code>--c-bg-subtle</code> radius <code>--radius-lg</code> (12px, surface ลอย ดู §1) เงานุ่ม <code>--shadow-soft</code> (ใหม่ 2026-09-13 -- กว้าง/จางกว่า <code>--shadow-modal</code>) <b>ไม่มีขอบเลยทั้งกล่อง</b> -- แต่ละรายการเป็นการ์ดจริง (พื้น <code>--c-bg</code> ล้วนๆ <b>ไม่มีขอบเช่นกัน</b>, radius <code>--radius-lg</code>) แยกจากพื้นกล่องด้วยสีพื้นต่างกันเท่านั้น เว้นช่องกันด้วย <code>gap</code> ไม่มีเส้นคั่นเลยทั้งบล็อก hover เปลี่ยนพื้นเป็น <code>--c-bg-hover</code> (ไม่มีขอบให้เปลี่ยนสีแล้ว) -- ส่วนรายการ scroll ด้วย <code>.scroll-thin</code> (class กลางใหม่, scrollbar บาง 6px ใช้ซ้ำได้ทั้งระบบ), badge เริ่มต้น = 3 (ตั้งตรงผ่าน <code>setNotificationCount()</code> ไม่ได้นับจาก list -- คนละ state กับของจริงที่ unread-count มาจาก endpoint แยกจาก dropdown เอง), list มี 5 รายการ (2 ยังไม่อ่าน) ผ่าน <code>renderNotifications()</code> -- กด "ทำเครื่องหมายว่าอ่านแล้วทั้งหมด" แล้วดู badge หาย + ไอคอนการ์ดทั้ง 5 ใบเปลี่ยนเป็นเทาปกติเหมือนกันหมด + title กลับเป็นน้ำหนักปกติ (re-render ผ่าน <code>renderNotifications()</code> เดิม, ไม่ใช่ฟังก์ชันแยก -- เมนูไม่ปิดตอนกดปุ่มนี้เพราะไม่ใช่ <code>.dropdown-item</code> และ Bootstrap ปิด dropdown แค่ตอนคลิกนอกเมนูหรือคลิก <code>.dropdown-item</code>). ทุกสีเป็น token ล้วน ลองสลับ theme มุมขวาบนดูด้วย.</p>
     <div class="d-flex justify-content-end">
         <div class="dropdown d-inline-block">
-            <button type="button" class="btn-icon notif-bell-btn" id="cpNotifBellBtn" data-bs-toggle="dropdown" data-bs-display="dynamic" aria-expanded="false" aria-label="Notifications">
+            <button type="button" class="btn-icon notif-bell-btn" id="cpNotifBellBtn" data-bs-toggle="dropdown" data-bs-display="dynamic" aria-expanded="false" aria-label="<?=htmlspecialchars(cpLangText('notifications', 'การแจ้งเตือน'))?>">
                 <i class="fa-solid fa-bell"></i>
                 <span class="notif-badge d-none" id="cpNotifBadge">0</span>
             </button>
             <div class="dropdown-menu dropdown-menu-end notif-dropdown" id="cpNotifDropdown">
                 <div class="notif-dropdown-header">
-                    <span data-i18n="notifications">การแจ้งเตือน</span>
-                    <button type="button" class="btn btn-link btn-sm" id="cpNotifMarkAllBtn" data-i18n="notif_mark_all_read">ทำเครื่องหมายว่าอ่านแล้วทั้งหมด</button>
+                    <span data-i18n="notifications"><?=htmlspecialchars(cpLangText('notifications', 'การแจ้งเตือน'))?></span>
+                    <button type="button" class="btn btn-link btn-sm" id="cpNotifMarkAllBtn" data-i18n="notif_mark_all_read"><?=htmlspecialchars(cpLangText('notif_mark_all_read', 'ทำเครื่องหมายว่าอ่านแล้วทั้งหมด'))?></button>
                 </div>
                 <div class="notif-list scroll-thin" id="cpNotifList"></div>
                 <div class="notif-dropdown-footer">
-                    <a href="#" class="btn btn-link btn-sm" data-i18n="notif_view_all">ดูทั้งหมด</a>
+                    <a href="#" class="btn btn-link btn-sm" data-i18n="notif_view_all"><?=htmlspecialchars(cpLangText('notif_view_all', 'ดูทั้งหมด'))?></a>
                 </div>
             </div>
         </div>
@@ -962,25 +987,26 @@ $cpStats = [
     var BASE_URL = window.location.origin + window.location.pathname.replace(/\/docs\/design\/components\.php$/, '');
     var LANG_VERSION = { th: 1, en: 1 };
     var COMPANY_CURRENCY_CODE = 'THB';
-    // 2026-09-13, real bug found and fixed (explicit report: notification/DataTable chrome text
-    // showing English -- "Notifications"/"Mark all as read"/"View All" -- instead of Thai). Root
-    // cause was NOT a wiring bug in this page's own i18n (public/lang/{th,en}.json both fetch fine,
-    // both keys exist correctly in both files, confirmed directly) -- it's app.js's own real,
-    // app-wide default: `currentLang = localStorage.getItem('preferred_language') || 'en'`, which
-    // falls back to English on any browser profile that has never visited this app before (or
-    // cleared its own localStorage). That default is correct and untouched for every REAL page,
-    // where it should track whatever the actual logged-in user last chose. This demo page is
-    // different: every OTHER piece of copy on it is hardcoded Thai directly in the PHP, so an
-    // i18n-driven fragment falling back to English (purely because of an absent browser preference,
-    // unrelated to anything this page's own code does) reads as broken/inconsistent even though the
-    // underlying mechanism is working exactly as designed. Seeded here, once, only when NO preference
-    // has EVER been set yet (never overwrites an existing explicit choice, including a real prior
-    // "English" pick) -- scoped to this one dev-only page, not a change to app.js's own shared
-    // default, which stays correct for every real page.
+    // 2026-09-13, real bug found and fixed TWICE (a first attempt earlier the same day did not
+    // actually resolve it -- explicit follow-up report + screenshot confirmed the notification
+    // dropdown's chrome text was still rendering in the demo page's non-default language). Root cause
+    // was NOT a wiring bug in this page's own i18n (public/lang/{th,en}.json both fetch fine, both
+    // keys exist correctly in both files, confirmed directly) -- it's app.js's own real, app-wide
+    // default: `currentLang = localStorage.getItem('preferred_language') || 'en'`. The first fix
+    // attempt only seeded this value "if unset", which is correct behavior for a REAL page (never
+    // clobber an actual logged-in user's saved choice) but not enough for THIS page: a leftover value
+    // from earlier manual testing on this same browser origin (from before that seed existed, or a
+    // real language-switcher click) survives an "if unset" guard forever, and a plain curl fetch can
+    // never catch a client-side-only bug like this at all regardless. Fixed properly this time at 2
+    // levels: (1) this page's own chrome text that used to be hardcoded Thai directly in the PHP (see
+    // cpLangText()/$CP_LANG at the top of this file) now resolves via a real `?lang=` query param
+    // instead, server-side, so its correctness is verifiable with a plain HTTP fetch + grep, no
+    // browser/JS execution needed; (2) the seed below no longer checks "if unset" -- a dev-only tool
+    // page has no real user preference worth preserving across visits, so always forcing it to match
+    // this page's own resolved language is the right call, unlike the "if unset" guard app.js's own
+    // REAL, session-driven default (used by every actual page) correctly still uses everywhere else.
     try {
-        if (!localStorage.getItem('preferred_language')) {
-            localStorage.setItem('preferred_language', 'th');
-        }
+        localStorage.setItem('preferred_language', <?=json_encode($CP_LANG)?>);
     } catch (e) {}
     // Same single line layout/header.php now injects on every real page (§5) -- from the REAL
     // app/config/status_map.php via the same loadStatusMap() this page already required at the top,

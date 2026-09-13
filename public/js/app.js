@@ -1113,6 +1113,27 @@ function initFilterBar(bar, options) {
     const $chips = $bar.find('.filter-bar-chips');
     const $emptyText = $bar.find('.filter-bar-empty-text');
     const $toggleBtn = $bar.find('.filter-bar-toggle');
+    const $footer = $bar.find('.filter-bar-footer');
+    const $footerLeft = $bar.find('.filter-bar-footer-left');
+    // 2026-09-13, "ซอฟต์ลง" follow-up -- explicit spec: "ตอนยุบ เหลือหัว + chips แถวเดียวกัน (chips
+    // ต่อจากหัวทางซ้าย, chevron ขวา) สูงแถวเดียว ไม่ต้องมี 2 แถว". The header and footer are 2 separate
+    // flex rows in normal document flow -- CSS alone (no shared parent to re-flex, `.filter-bar-body`
+    // sits between them in DOM order even though it's visually 0-height while collapsed) can't merge
+    // them into one row without restructuring markup that other code (refresh(), the docblock's own
+    // "verbatim caller markup" contract) depends on staying put. Relocating the ONE node that actually
+    // needs to move (`.filter-bar-footer-left`, chips + empty-text -- NOT the Clear button, which the
+    // spec's own "เหลือหัว + chips" wording doesn't mention keeping while collapsed) is simpler and
+    // more robust than a CSS grid-area rewrite: `.filter-bar-chips`' own content (rebuilt by refresh()
+    // below) is unaffected either way, since it's addressed by class, not by its parent's position.
+    function syncCollapsedLayout() {
+        if ($bar.hasClass('collapsed')) {
+            $footerLeft.insertBefore($toggleBtn);
+            $footer.addClass('d-none');
+        } else {
+            $footerLeft.prependTo($footer);
+            $footer.removeClass('d-none');
+        }
+    }
     // 2026-09-12, Round 2 item 4 revision -- expand/collapse persistence (§6 decision 4). Uses the
     // SAME plain CSS-class collapse mechanism the OLD `.station-filter` already used
     // (`.collapsed` + a max-height transition in style.css) rather than Bootstrap's own `.collapse`
@@ -1131,12 +1152,14 @@ function initFilterBar(bar, options) {
         else if (saved === 'collapsed') $bar.addClass('collapsed');
         // saved === null (never toggled before) -- leave the partial's own static default alone.
     }
+    syncCollapsedLayout(); // after the persisted-state class is applied above, not before
     // 2026-09-13: the toggle is now a single `.btn-icon` circle (§7's row-action spec, reused here
     // per explicit instruction -- "ปุ่ม .btn-icon วงกลมเดียวกับ row action") whose chevron rotates via
     // a plain CSS rule keyed off `.filter-bar:not(.collapsed) .filter-bar-toggle i` -- no JS needed
     // to flip the icon itself, only the `.collapsed` class toggle below.
     $toggleBtn.on('click', function () {
         $bar.toggleClass('collapsed');
+        syncCollapsedLayout();
         if (storageKey) {
             try { localStorage.setItem(storageKey, $bar.hasClass('collapsed') ? 'collapsed' : 'expanded'); } catch (e) {}
         }

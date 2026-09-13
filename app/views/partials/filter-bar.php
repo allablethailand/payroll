@@ -78,9 +78,9 @@ $pageKeyAttr = !empty($pageKey) ? ' data-page-key="' . htmlspecialchars($pageKey
 <div class="filter-bar collapsed" id="<?=htmlspecialchars($id)?>"<?=$pageKeyAttr?>>
     <div class="filter-bar-header">
         <span class="filter-bar-label">
-            <span data-i18n="label_filter">ตัวกรอง</span><span class="filter-bar-count-wrap d-none"> (<span class="filter-bar-count">0</span>)</span>
+            <span data-i18n="filter_title">ตัวกรอง</span><span class="filter-bar-count-wrap d-none"> (<span class="filter-bar-count">0</span>)</span>
         </span>
-        <button type="button" class="btn-icon filter-bar-toggle" aria-label="Toggle filter">
+        <button type="button" class="btn-icon btn-icon-ghost filter-bar-toggle" aria-label="Toggle filter">
             <i class="fa-solid fa-chevron-down"></i>
         </button>
     </div>
@@ -92,6 +92,6 @@ $pageKeyAttr = !empty($pageKey) ? ' data-page-key="' . htmlspecialchars($pageKey
             <div class="filter-bar-chips"></div>
             <span class="filter-bar-empty-text" data-i18n="filter_bar_empty">ไม่ได้กรอง</span>
         </div>
-        <button type="button" class="btn btn-link btn-sm filter-bar-clear d-none"><span data-i18n="clear_filter">ล้างตัวกรอง</span></button>
+        <button type="button" class="btn btn-link btn-sm filter-bar-clear d-none"><span data-i18n="filter_clear">ล้างตัวกรอง</span></button>
     </div>
 </div>

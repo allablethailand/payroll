@@ -1433,6 +1433,8 @@
     "error_kor20kor_no_pvd_contributions": "ไม่มีพนักงานที่มีการสมทบกองทุนสำรองเลี้ยงชีพในปี พ.ศ. {year}",
     "label_filter": "ตัวกรอง",
     "filter_bar_empty": "ไม่ได้กรอง",
+    "filter_title": "ตัวกรอง",
+    "filter_clear": "ล้างตัวกรอง",
     "filter_all": "ทั้งหมด",
     "station_all": "ทั้งหมด",
     "table_process_no": "เลขที่รายการ",

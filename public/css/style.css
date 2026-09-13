@@ -2617,8 +2617,24 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     color: var(--c-text);
     font-weight: 600;
 }
-/* Dropdown -- border/radius/shadow already reach it via the root vars above; the one thing that
-   doesn't is the SELECTED/active item background, which Bootstrap hardcodes to #0d6efd directly on
+/* Dropdown -- radius/shadow already reach it via the root vars above (--bs-border-radius/
+   --bs-box-shadow). Border is different: --bs-dropdown-border-color inherits from
+   --bs-border-color-translucent (root override above), which DOES correctly resolve to --c-border
+   already -- not Bootstrap's own hardcoded translucent black, contrary to what a naive read of this
+   comment's own PREVIOUS wording implied was the whole story. 2026-09-13, real bug found (explicit
+   report + screenshot: the notification dropdown still showed a visible 1px border) -- root cause is
+   that this app's own "soften" direction this round (notification dropdown/datepicker/flatpickr, all
+   converging on shadow-only floating surfaces, no border at all) was never actually applied to
+   .dropdown-menu's own border ITSELF -- `.notif-dropdown` (style.css) never set `border: none`
+   because nothing needed to: the border was already a subtle --c-border gray, not an obviously-wrong
+   color, so it read as "already fine" during review until seen live. Overridden to fully transparent
+   here (not just a lighter gray) so EVERY `.dropdown-menu` in the app gets this borderless treatment
+   consistently, matching §14's own "no border, shadow only" convention for floating surfaces --
+   `.notif-dropdown`'s own box-shadow (--shadow-soft) already carries the "floating" cue alone. */
+.dropdown-menu {
+    --bs-dropdown-border-color: transparent;
+}
+/* The SELECTED/active item background, which Bootstrap hardcodes to #0d6efd directly on
    .dropdown-item.active/:active (confirmed) -- §3: ฟ้าไม่ใช้เลย. */
 .dropdown-item.active,
 .dropdown-item:active {
@@ -2870,6 +2886,25 @@ th.col-money div.dt-column-header .dt-column-title {
     color: var(--c-text-faint) !important;
     background: var(--c-bg);
 }
+/* .btn-icon-ghost (§7, 2026-09-13 filter-bar "ซอฟต์ลง" follow-up) -- a `.btn-icon` variant for a
+   circle that sits INSIDE an already-toned panel (e.g. filter-bar's own --c-bg-subtle header) where
+   the base variant's own resting border+white background would read as a separate floating chip
+   rather than a quiet in-panel control. Same size/icon-size/color/disabled rules as `.btn-icon`
+   (only added via the base class staying on the element too, `class="btn-icon btn-icon-ghost"` --
+   this is a modifier, not a standalone replacement), just border and resting background removed;
+   hover still lands on --c-bg-hover like every other in-panel hover this round uses. */
+.btn-icon-ghost {
+    border: none;
+    background: transparent;
+}
+.btn-icon-ghost:hover,
+.btn-icon-ghost:focus {
+    background-color: var(--c-bg-hover);
+}
+.btn-icon-ghost:disabled,
+.btn-icon-ghost[disabled] {
+    background: transparent;
+}
 
 /* ==========================================================================
    Phase Design Round 2 item 4 -- CSS for the 3 new partials (app/views/partials/page-header.php,
@@ -3031,20 +3066,33 @@ th.col-money div.dt-column-header .dt-column-title {
    never spliced into that pipeline's own row. */
 .filter-bar {
     background: var(--c-bg-subtle);
-    border: 1px solid var(--c-border);
-    border-radius: var(--radius);
+    border-radius: var(--radius-lg);
     margin-bottom: var(--sp-4);
 }
 .filter-bar-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: var(--sp-2);
     padding: var(--sp-2) var(--sp-3);
+}
+/* `margin-left: auto` (not `justify-content: space-between` on the header) so this keeps working
+   whether the header has 2 children (label, toggle -- expanded) or 3 (label, the relocated
+   `.filter-bar-footer-left` chips, toggle -- collapsed, see initFilterBar()'s syncCollapsedLayout()):
+   the toggle always lands at the far right, everything before it packs to the left instead of being
+   evenly spread apart. */
+.filter-bar-toggle {
+    margin-left: auto;
+    flex-shrink: 0;
 }
 .filter-bar-label {
     color: var(--c-text-muted);
     font-size: var(--fs-sm);
+    font-weight: 500;
 }
+/* select fields inside the body already resolve to --c-bg background / --c-border border at rest
+   for free (Bootstrap's own --bs-body-bg/--bs-border-color root tokens, overridden to --c-*
+   app-wide long before this round -- see the "Bootstrap primary recolor" block above) -- contrast
+   against the panel's own --c-bg-subtle background without needing a darker border here. */
 /* The toggle button is `.btn-icon` (§7's row-action circle, reused here verbatim per explicit
    instruction) -- its only bespoke rule is the chevron's own rotation, keyed off `.filter-bar`'s own
    `.collapsed` class so no extra JS state is needed beyond the existing collapse toggle. */
@@ -3071,19 +3119,28 @@ th.col-money div.dt-column-header .dt-column-title {
 .filter-bar-body > :first-child {
     padding: 0 var(--sp-3) var(--sp-3);
 }
+/* Field labels inside the caller's own copied-verbatim grid -- Bootstrap's `.form-label` default
+   (bold-ish, --bs-body-color, margin-bottom .5rem) reads as too heavy/dark for a field caption in
+   this quiet panel; §14 "ซอฟต์ลง" direction applied here too. Scoped to `.filter-bar-body label` so
+   it only affects labels inside THIS panel, not `.form-label` app-wide. */
+.filter-bar-body label {
+    font-size: var(--fs-xs);
+    color: var(--c-text-muted);
+    font-weight: 500;
+    margin-bottom: var(--sp-1);
+}
 .filter-bar-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--sp-2);
-    padding: var(--sp-2) var(--sp-3);
-    border-top: 1px solid var(--c-border);
+    padding: var(--sp-3) var(--sp-3) var(--sp-2);
 }
 .filter-bar-footer-left {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: var(--sp-1);
+    gap: var(--sp-2);
     min-width: 0;
 }
 .filter-bar-empty-text {
@@ -3093,18 +3150,19 @@ th.col-money div.dt-column-header .dt-column-title {
 .filter-bar-chips {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--sp-1);
+    gap: var(--sp-2);
 }
+/* Chips: no border (soft-fill pill instead), --c-bg-hover background -- same "a pill sitting on a
+   toned panel needs a fill, not another border" reasoning as .btn-icon-ghost above. */
 .filter-bar-chip {
     display: inline-flex;
     align-items: center;
     gap: var(--sp-1);
-    background: var(--c-bg);
-    border: 1px solid var(--c-border);
-    color: var(--c-text-muted);
+    background: var(--c-bg-hover);
+    color: var(--c-text);
     border-radius: var(--radius-pill);
     padding: 2px var(--sp-3);
-    font-size: var(--fs-xs);
+    font-size: var(--fs-sm);
 }
 .filter-bar-chip-remove {
     display: inline-flex;
@@ -3113,10 +3171,22 @@ th.col-money div.dt-column-header .dt-column-title {
     border: none;
     padding: 0;
     color: var(--c-text-muted);
-    font-size: var(--fs-xs);
+    font-size: 12px;
 }
 .filter-bar-chip-remove:hover {
     color: var(--c-text);
+}
+/* "ล้างตัวกรอง" -- tertiary text button, same treatment as the notification dropdown's own header/
+   footer tertiary buttons this round (--fs-sm/--c-text-muted, underline only on hover, not at rest --
+   Bootstrap's own .btn-link defaults to an always-on underline). */
+.filter-bar-clear {
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+    text-decoration: none;
+}
+.filter-bar-clear:hover {
+    color: var(--c-text-muted);
+    text-decoration: underline;
 }
 
 /* Shared thin-scrollbar utility (§6/§11) -- 2026-09-13, notification dropdown "ซอฟต์ลง" follow-up,

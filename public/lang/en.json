@@ -1433,6 +1433,8 @@
     "error_kor20kor_no_pvd_contributions": "No employees had a provident fund contribution in B.E. {year}.",
     "label_filter": "Filter",
     "filter_bar_empty": "No filter applied",
+    "filter_title": "Filter",
+    "filter_clear": "Clear Filter",
     "filter_all": "All",
     "station_all": "All",
     "table_process_no": "Process No",
