@@ -755,47 +755,50 @@
                              fields, via detail.js's refreshEmployeeCommentAddFormDisabledState())
                              while an existing comment is open for inline edit further up in the
                              list -- only 1 thing editable at a time. -->
+                        <!-- 2026-09-14, Round 3 Phase B, explicit instruction: card box + standalone
+                             "แท็ก" heading both removed -- textarea sits directly in the modal-body's
+                             own flow (no boxed surface of its own anymore), tag row follows right
+                             under it. #employeeCommentFormArea itself is kept as a plain (unstyled)
+                             wrapper -- still the one hook detail.js's own
+                             refreshEmployeeCommentAddFormDisabledState() disables/enables against,
+                             just no longer a `.apv-comment-footer`-era card. -->
                         <div id="employeeCommentFormArea">
-                        <!-- 2026-08-29, explicit request: "ตรงใส่ Comment Tag ให้กดเลือกเป็น radio" -- was a
-                             select2-static dropdown, now Bootstrap's btn-check/btn-outline-* radio-as-
-                             button component (real <input type="radio"> underneath, styled as a
-                             segmented toggle) so each tag's own color is visible without opening a
-                             dropdown first. -->
-                        <!-- 2026-08-29, same-day follow-up: "ตรงเลือก Tag ปรับให้สวยขึ้นอีกได้ไหมครับ" --
-                             was a plain Bootstrap btn-check/btn-outline-* segmented toggle; now
-                             icon+label gradient pill chips, each tag's own color visible without
-                             opening a dropdown first.
-                             2026-09-14, Round 3 item 3c-3: this picker is UNCHANGED by that round's
-                             migration of the LIST above onto the shared timeline component -- an
-                             already-posted comment's tag now renders via the central status_map
-                             system (statusBadgeHtml(), 'employee_comment_tag' context) instead of
-                             its own bespoke gradient-pill renderer (removed), so the picker's own
-                             gradient chips and the posted tag's badge no longer share one literal
-                             palette the way an old comment here used to describe -- a deliberate,
-                             confirmed tradeoff of adopting the shared component, not an oversight.
-                             The SAME picker markup is reused (byte-for-byte) by detail.js's own
-                             employeeCommentInlineEditFormHtml() for an inline edit -- just with
-                             per-comment-id ids/name so the 2 pickers (this one + whichever item is
-                             being edited) never collide. -->
-                        <div class="mb-2">
-                            <label class="form-label small text-muted mb-1" data-i18n="employee_comment_tag">Tag</label>
-                            <div class="apv-comment-tag-picker" id="employeeCommentTagGroup">
-                                <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagNone" value="" checked>
-                                <label class="apv-comment-tag-option apv-comment-tag-opt-none" for="employeeCommentTagNone"><i class="fa-solid fa-comment-slash"></i><span data-i18n="employee_comment_tag_none">No tag</span></label>
-                                <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagInProgress" value="in_progress">
-                                <label class="apv-comment-tag-option apv-comment-tag-opt-in_progress" for="employeeCommentTagInProgress"><i class="fa-solid fa-hourglass-half"></i><span data-i18n="employee_comment_tag_in_progress">In Progress</span></label>
-                                <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagCompleted" value="completed">
-                                <label class="apv-comment-tag-option apv-comment-tag-opt-completed" for="employeeCommentTagCompleted"><i class="fa-solid fa-check"></i><span data-i18n="employee_comment_tag_completed">Completed</span></label>
-                                <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagError" value="error">
-                                <label class="apv-comment-tag-option apv-comment-tag-opt-error" for="employeeCommentTagError"><i class="fa-solid fa-triangle-exclamation"></i><span data-i18n="employee_comment_tag_error">Error</span></label>
-                            </div>
-                        </div>
                         <div class="mb-2">
                             <!-- 2026-09-14, Round 3 item 3c-3, explicit instruction: "textarea ขยายอัตโนมัติ
                                  (min 3 แถว)" -- auto-grow itself needs zero markup/JS here at all
                                  (input.js's own T002 already auto-expands EVERY <textarea> app-wide,
                                  zero-config); `rows="3"` is only the STARTING size floor. -->
                             <textarea class="form-control form-control-sm" id="employeeCommentText" rows="3" data-i18n="employee_comment_placeholder" placeholder="Write a comment..."></textarea>
+                        </div>
+                        <!-- 2026-09-14, Round 3 Phase B, explicit instruction: the picker moves onto
+                             statusBadge()/statusBadgeHtml() too -- the SAME visual language (tone/
+                             label) an already-posted comment's own badge in the list above uses
+                             (rules.md §5's status_map system, 'employee_comment_tag' context, now 4
+                             entries incl. the picker-only 'none' -- see status_map.php's own comment
+                             on why 'none' is never used to render a POSTED comment's badge). No icon
+                             (statusBadgeHtml() never renders one), same size as the list's badge (no
+                             size override here at all -- inherits the shared `.badge` rule directly).
+                             Unselected = outline (tone-colored border+text, transparent fill),
+                             selected = filled (tone's own `-fill`/`-on-fill` pair, §4's decision-set
+                             tokens reused here since they already solve "solid bg + readable text,
+                             both themes" correctly -- see style.css's own `.comment-tag-picker` rule
+                             for the CSS side of this toggle). Label + chips share ONE row (was 2
+                             stacked lines before this round).
+                             The SAME markup shape is reused (byte-for-byte structure, not literal
+                             bytes -- ids/name are per-comment-id there) by detail.js's own
+                             employeeCommentInlineEditFormHtml() for an inline edit. -->
+                        <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+                            <span class="small text-muted flex-shrink-0" data-i18n="employee_comment_tag">Tag</span>
+                            <div class="comment-tag-picker" id="employeeCommentTagGroup">
+                                <input type="radio" class="d-none" name="employeeCommentTag" id="employeeCommentTagNone" value="" checked>
+                                <label for="employeeCommentTagNone"><?=statusBadge('none', 'employee_comment_tag')?></label>
+                                <input type="radio" class="d-none" name="employeeCommentTag" id="employeeCommentTagInProgress" value="in_progress">
+                                <label for="employeeCommentTagInProgress"><?=statusBadge('in_progress', 'employee_comment_tag')?></label>
+                                <input type="radio" class="d-none" name="employeeCommentTag" id="employeeCommentTagCompleted" value="completed">
+                                <label for="employeeCommentTagCompleted"><?=statusBadge('completed', 'employee_comment_tag')?></label>
+                                <input type="radio" class="d-none" name="employeeCommentTag" id="employeeCommentTagError" value="error">
+                                <label for="employeeCommentTagError"><?=statusBadge('error', 'employee_comment_tag')?></label>
+                            </div>
                         </div>
                         </div>
                     </div>

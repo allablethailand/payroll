@@ -5890,26 +5890,19 @@ html, body {
    -edited-tag/-spacer/-action-btn/-body/-date) is REMOVED here, genuinely dead now (confirmed via
    grep -- 0 remaining call sites anywhere in the app): renderEmployeeCommentTimelineFromCache()
    (payroll/detail.js) renders through the shared `.timeline-*`/`.timeline-action-btn` classes
-   (shared with every other renderTimeline() consumer) instead. The FOOTER FORM below
-   (.apv-comment-footer and the Tag picker's own .apv-comment-tag-*) is UNCHANGED and kept -- this
-   round never touched that part of the modal, only the list above it. */
+   (shared with every other renderTimeline() consumer) instead. */
 
 /* 2026-09-14, Round 3 item 3c-4 (review follow-up), explicit instruction: the 2026-08-29 "form lives
-   in a sticky modal-footer" layout (the .apv-comment-footer wrapper this rule used to be scoped
-   under) is reverted -- #employeeCommentFormArea (tag picker + textarea) moved back into the
-   scrollable modal-body, right after the timeline/empty-state and the read-only notice; the footer
-   is now the standard [primary][secondary] button pair every other modal uses
-   (modalFooterButtonsHtml(), app.js), constant regardless of view/edit state -- see
-   app/views/payroll/detail.php's own comment on the modal for the full reasoning.
-   .apv-comment-footer no longer exists anywhere in the markup (confirmed via grep) -- this rule now
-   targets #employeeCommentFormArea directly, still the same "boxed surface sitting inside
-   modal-body" look (the 2026-09-14 dark-mode token fix below is unaffected either way), just without
-   a separate footer wrapper div around it. */
+   in a sticky modal-footer" layout is reverted -- #employeeCommentFormArea (tag picker + textarea)
+   moved back into the scrollable modal-body, right after the timeline/empty-state and the read-only
+   notice; the footer is now the standard [primary][secondary] button pair every other modal uses
+   (modalFooterButtonsHtml(), app.js), constant regardless of view/edit state.
+   2026-09-14, Round 3 Phase B, explicit instruction: card box (background/border/border-radius/
+   padding) removed entirely -- the textarea + tag row now sit directly in modal-body's own flow, no
+   boxed surface of their own. `margin-top` alone is kept (spacing from the timeline/empty-state
+   above); #employeeCommentFormArea itself stays as a plain wrapper div purely as the hook
+   detail.js's own refreshEmployeeCommentAddFormDisabledState() disables/enables against. */
 #employeeCommentFormArea {
-    background: var(--c-bg-subtle);
-    border: 1px solid var(--c-border);
-    border-radius: 12px;
-    padding: 12px 12px 8px;
     margin-top: var(--sp-3);
 }
 #employeeCommentFormArea textarea#employeeCommentText,
@@ -5959,37 +5952,69 @@ html, body {
     .item-checklist-cols { column-count: 3; }
 }
 
-/* Tag picker (2026-08-29, same-day follow-up: "ตรงเลือก Tag ปรับให้สวยขึ้นอีกได้ไหมครับ") -- icon+label
-   pill chips sharing the same gradient palette as the rendered tag pill (.apv-comment-tag-pill /
-   employeeCommentTagMeta() in detail.js) so picking a tag and seeing it on a saved comment feel
-   like the same visual language. Still plain radio .btn-check inputs underneath (hidden via
-   Bootstrap's own .btn-check rule) -- only the sibling <label> is restyled here. */
-/* 2026-08-31, explicit request: "ตรงส่วนที่ใส่ Comment Tag ใหญ่ไปอยากให้ลดขนาด และบังคับให้อยู่แถวเดียว" --
-   smaller pills (padding/font-size/icon-size all reduced) + flex-wrap changed from wrap to nowrap so
-   the 4 options never break onto a second row; overflow-x:auto is a safety net (not the primary fix)
-   for a genuinely too-narrow container, so a pill scrolls into view instead of being clipped/forcing
-   the row to wrap anyway. */
-.apv-comment-tag-picker { display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; }
-/* 2026-09-14, same dark-mode fix as .apv-comment-footer just above -- this pill's RESTING state was
-   also hardcoded hex (white pill/gray text/gray border), invisible-ish against the footer's own
-   (also-hardcoded, also just fixed) white background before, but a glaring white-pill-on-dark-form
-   regression the moment only the footer's bg got token-ified without also fixing this. The CHECKED
-   state's own colored gradients (input:checked + ..., below) are untouched -- solid color + white
-   text needs no theme awareness either way. */
-.apv-comment-tag-option {
-    display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
-    padding: 3px 8px; border-radius: 999px;
-    border: 1.5px solid var(--c-border); background: var(--c-bg); color: var(--c-text-muted);
-    font-size: 0.75rem; font-weight: 600; cursor: pointer; white-space: nowrap;
-    transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
-    user-select: none;
+/* Tag picker (2026-09-14, Round 3 Phase B, explicit instruction) -- REPLACES the old bespoke
+   gradient-pill design (.apv-comment-tag-*, removed, 0 remaining call sites confirmed via grep) with
+   a toggle built directly on top of statusBadgeHtml()'s own `.badge.badge-{tone}` output (the exact
+   same markup an already-posted comment's tag badge in the list renders, and the exact same size --
+   no size override anywhere in this block). Structure: a hidden radio + a `<label>` wrapping one
+   `.badge` each (detail.php/detail.js both build it this way) -- `.comment-tag-picker label` is the
+   click target, `input:checked + label .badge` is the selected one.
+   Unselected = OUTLINE: the shared `.badge.badge-{tone}` rule already sets `color` to that tone's
+   token (elsewhere in this file) -- overriding its normally-soft `background` to transparent and
+   adding a `currentColor` border turns that same coloring into an outline instead, no per-tone
+   color list needed here.
+   Selected = FILLED: reuses the `--c-{tone}-fill`/`-on-fill` token pairs `.btn-decision-*` (§4's
+   decision-set exception) already established for "solid background, guaranteed-readable text, both
+   themes" -- a 4th consumer of an already-solved problem, not a new one (see tokens.css's own
+   comment on `--c-neutral-fill`, added this round for the 'no tag' chip specifically, for the
+   contrast numbers). `font-weight: 600` matches `.btn-decision-*`'s own requirement for the same
+   reason (warning's fill only clears WCAG's bold-text 3:1 threshold, not the regular 4.5:1) --
+   applied to all 4 tones uniformly here too, same "consistent, not just where strictly needed"
+   choice tokens.css's own comment documents for the buttons. */
+.comment-tag-picker {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: var(--sp-1);
+    overflow-x: auto;
 }
-.apv-comment-tag-option i { font-size: 0.6875rem; }
-.apv-comment-tag-option:hover { border-color: var(--c-primary-soft); color: var(--c-primary); background: var(--c-bg-hover); }
-.apv-comment-tag-picker input:checked + .apv-comment-tag-opt-none { background: linear-gradient(135deg,#9aa3ad,#6b7280); border-color: #6b7280; color: #fff; box-shadow: 0 2px 6px rgba(107,114,128,.3); }
-.apv-comment-tag-picker input:checked + .apv-comment-tag-opt-in_progress { background: linear-gradient(135deg,#f59e0b,#d97706); border-color: #d97706; color: #fff; box-shadow: 0 2px 6px rgba(217,119,6,.3); }
-.apv-comment-tag-picker input:checked + .apv-comment-tag-opt-completed { background: linear-gradient(135deg,#22c55e,#15803d); border-color: #15803d; color: #fff; box-shadow: 0 2px 6px rgba(21,128,61,.3); }
-.apv-comment-tag-picker input:checked + .apv-comment-tag-opt-error { background: linear-gradient(135deg,#f87171,#dc2626); border-color: #dc2626; color: #fff; box-shadow: 0 2px 6px rgba(220,38,38,.3); }
+.comment-tag-picker input {
+    display: none;
+}
+.comment-tag-picker label {
+    margin: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.comment-tag-picker .badge {
+    background: transparent;
+    border: 1px solid currentColor;
+    cursor: pointer;
+}
+.comment-tag-picker input:checked + label .badge-warning {
+    background: var(--c-warning-fill);
+    border-color: var(--c-warning-fill);
+    color: var(--c-warning-on-fill);
+    font-weight: 600;
+}
+.comment-tag-picker input:checked + label .badge-danger {
+    background: var(--c-danger-fill);
+    border-color: var(--c-danger-fill);
+    color: var(--c-danger-on-fill);
+    font-weight: 600;
+}
+.comment-tag-picker input:checked + label .badge-success {
+    background: var(--c-success-fill);
+    border-color: var(--c-success-fill);
+    color: var(--c-success-on-fill);
+    font-weight: 600;
+}
+.comment-tag-picker input:checked + label .badge-neutral {
+    background: var(--c-neutral-fill);
+    border-color: var(--c-neutral-fill);
+    color: var(--c-neutral-on-fill);
+    font-weight: 600;
+}
 
 /* ==========================================================================
    Generic Approval Request timeline (`#requestDetailModal`, public/js/setup/approval-request-

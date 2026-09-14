@@ -1634,7 +1634,6 @@
     "confirm_verify_all_message": "Every employee in this run will no longer be recalculated and cannot be edited until unverified.",
     "employee_comment_timeline_title": "Comments",
     "employee_comment_timeline_empty": "No comments yet.",
-    "employee_comment_timeline_empty_hint": "Add the first comment below.",
     "employee_comment_tag": "Tag",
     "employee_comment_tag_none": "No tag",
     "employee_comment_tag_in_progress": "In Progress",

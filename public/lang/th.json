@@ -1634,7 +1634,6 @@
     "confirm_verify_all_message": "พนักงานทุกคนในรอบนี้จะไม่ถูกคำนวณใหม่และไม่สามารถแก้ไขได้จนกว่าจะยกเลิกการตรวจสอบ",
     "employee_comment_timeline_title": "คอมเมนต์",
     "employee_comment_timeline_empty": "ยังไม่มีคอมเมนต์",
-    "employee_comment_timeline_empty_hint": "เพิ่มความคิดเห็นแรกได้ด้านล่าง",
     "employee_comment_tag": "แท็ก",
     "employee_comment_tag_none": "ไม่มีแท็ก",
     "employee_comment_tag_in_progress": "กำลังดำเนินการ",

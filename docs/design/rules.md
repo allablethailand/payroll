@@ -68,6 +68,11 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
   --c-success-hover: #066D41; --c-warning-hover: #A74107; --c-danger-hover: #C8291D;
   --c-success-fill: var(--c-success); --c-warning-fill: #D97706; --c-danger-fill: var(--c-danger);
   --c-warning-fill-hover: #C86D06;
+  --c-neutral-fill: var(--c-text-muted); --c-neutral-on-fill: #fff;  /* เพิ่ม 2026-09-14, Round 3 Phase B —
+                                        4th -fill/-on-fill คู่ (ไม่ใช่แค่ .btn-decision-* อีกต่อไป) สำหรับ
+                                        chip "ไม่มีแท็ก" ที่ถูกเลือก (.comment-tag-picker); dark mode
+                                        -on-fill flip เป็น #1F2328 เหมือน success/danger (เหตุผลเดียวกัน:
+                                        ตัวหนังสือขาวบน --c-text-muted dark วัดได้แค่ 2.55:1) */
 
   /* type */
   --font-sans: "Sarabun", system-ui, sans-serif;   /* ฟอนต์เดียวทั้งระบบ ทุกน้ำหนักจาก Sarabun */

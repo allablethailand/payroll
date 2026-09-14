@@ -3426,27 +3426,37 @@ let employeeCommentEditingId = null;
 let employeeCommentsCache = [];
 // 2026-09-14, Round 3 item 3c-4 (review follow-up), explicit instruction, item 1: "กดดินสอแล้วรายการ
 // นั้นเปลี่ยนเป็น textarea (ข้อความเดิม) + tag picker + ปุ่ม [บันทึก][ยกเลิก] ใต้ textarea ภายในรายการ" --
-// builds the SAME apv-comment-tag-* picker markup the compose form above uses (byte-for-byte, see
-// style.css's own comment on #employeeCommentFormArea), just with per-comment-id ids/name so this
-// picker and the always-present compose one never collide in the DOM at the same time.
+// per-comment-id ids/name so this picker and the always-present compose one never collide in the DOM
+// at the same time.
+// 2026-09-14, Round 3 Phase B, explicit instruction: same structure as the compose form's own markup
+// now uses (detail.php) -- textarea first, then ONE ROW with a small gray "แท็ก" label + 4 chips
+// rendered through statusBadgeHtml() ('employee_comment_tag' context, the SAME call the compose
+// picker/an already-posted comment's own badge both use) instead of the old bespoke
+// .apv-comment-tag-option gradient pills. Outline (unselected) vs filled (selected) is a pure CSS
+// toggle on `.comment-tag-picker` (style.css) keyed off the hidden radio's :checked state -- no class
+// juggling needed here, just render `checked` on whichever `<input>` matches this comment's current
+// tag. statusBadgeHtml() bakes its own `data-i18n` onto each chip's label (a small improvement over
+// the old hand-written version, which had none -- language-switch relabeling now works here too, for
+// free, not something this round specifically set out to fix).
 function employeeCommentInlineEditFormHtml(c) {
     const tag = c.tag || '';
-    function tagOption(value, optClass, icon, label) {
-        const id = `employeeCommentEditTag_${c.id}_${optClass}`;
+    function tagOption(value, enumKey) {
+        const id = `employeeCommentEditTag_${c.id}_${enumKey}`;
         const checkedAttr = (tag === value) ? ' checked' : '';
-        return `<input type="radio" class="btn-check" name="employeeCommentEditTag_${c.id}" id="${id}" value="${escapeAttr(value)}"${checkedAttr}>
-            <label class="apv-comment-tag-option apv-comment-tag-opt-${optClass}" for="${id}"><i class="fa-solid ${icon}"></i><span>${escapeHtml(label)}</span></label>`;
+        return `<input type="radio" class="d-none" name="employeeCommentEditTag_${c.id}" id="${id}" value="${escapeAttr(value)}"${checkedAttr}>
+            <label for="${id}">${statusBadgeHtml(enumKey, 'employee_comment_tag')}</label>`;
     }
     return `<div class="mb-2">
-            <div class="apv-comment-tag-picker">
-                ${tagOption('', 'none', 'fa-comment-slash', langData['employee_comment_tag_none'] || 'No tag')}
-                ${tagOption('in_progress', 'in_progress', 'fa-hourglass-half', langData['employee_comment_tag_in_progress'] || 'In Progress')}
-                ${tagOption('completed', 'completed', 'fa-check', langData['employee_comment_tag_completed'] || 'Completed')}
-                ${tagOption('error', 'error', 'fa-triangle-exclamation', langData['employee_comment_tag_error'] || 'Error')}
-            </div>
-        </div>
-        <div class="mb-2">
             <textarea class="form-control form-control-sm employee-comment-inline-edit-text" id="employeeCommentEditText_${c.id}" data-id="${c.id}" rows="3">${escapeHtml(c.comment || '')}</textarea>
+        </div>
+        <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+            <span class="small text-muted flex-shrink-0" data-i18n="employee_comment_tag">${escapeHtml(langData['employee_comment_tag'] || 'Tag')}</span>
+            <div class="comment-tag-picker">
+                ${tagOption('', 'none')}
+                ${tagOption('in_progress', 'in_progress')}
+                ${tagOption('completed', 'completed')}
+                ${tagOption('error', 'error')}
+            </div>
         </div>
         <div class="d-flex gap-2">
             <button type="button" class="btn btn-primary btn-sm btn-save-inline-comment-edit" data-id="${c.id}" data-i18n="save">${escapeHtml(langData['save'] || 'Save')}</button>
@@ -3503,12 +3513,16 @@ function employeeCommentToTimelineItem(c) {
 // is the "ยังไม่มีข้อมูล" meaning (nothing posted yet, not a filtered-zero-results case) -- no
 // `action` button needed, the compose form is already visible right below in the body, unlike a
 // table's own separate "Add" trigger.
+// 2026-09-14, Round 3 Phase B, explicit instruction: subline dropped -- single heading only. No
+// `text` passed at all (emptyStateHtml()'s own `config.text || ''` already renders nothing visible
+// either way, but omitting it here is the source of truth, not a blank string happening to look
+// empty) -- the now-orphaned `employee_comment_timeline_empty_hint` key (confirmed via grep: this
+// was its only call site anywhere in the app) is removed from both lang files.
 function renderEmployeeCommentTimelineFromCache() {
     if (!employeeCommentsCache.length) {
         $('#employeeCommentTimeline').html(emptyStateHtml({
             icon: 'fa-solid fa-comments',
             title: langData['employee_comment_timeline_empty'] || 'No comments yet.',
-            text: langData['employee_comment_timeline_empty_hint'] || 'Add the first comment below.',
         }));
         return;
     }
@@ -3604,13 +3618,19 @@ $(document).on('click', '.btn-comment-employee', function () {
     const rowData = runDetailRowByEmployeeId(employeeCommentEmployeeId);
     $('#employeeCommentHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
     const readOnly = commentsReadOnlyRd();
-    // 2026-09-14, Round 3 item 3c-4, explicit instruction, item 2: footer = [เพิ่มคอมเมนต์][ปิด] via the
-    // new shared modalFooterButtonsHtml() (app.js) -- rebuilt fresh on every open since `readOnly` can
-    // differ per employee/run state, but otherwise constant for the lifetime of this modal being open
-    // (never swapped/relabeled while editing -- see employeeCommentToTimelineItem()'s own per-item
-    // inline Save/Cancel buttons for the actual edit affordance instead).
+    // 2026-09-14, Round 3 item 3c-4, footer = [primary][ปิด] via the shared modalFooterButtonsHtml()
+    // (app.js) -- rebuilt fresh on every open since `readOnly` can differ per employee/run state, but
+    // otherwise constant for the lifetime of this modal being open (never swapped/relabeled while
+    // editing -- see employeeCommentToTimelineItem()'s own per-item inline Save/Cancel buttons for
+    // the actual edit affordance instead).
+    // 2026-09-14, Round 3 Phase B, explicit instruction: label changed from "เพิ่มคอมเมนต์"
+    // (employee_comment_add) to "บันทึก" -- reuses the app-wide `save` key already shared by every
+    // other modal's own primary button, rather than this modal keeping its own one-off wording for
+    // the same action. `employee_comment_add` itself is left in both lang files (still a real i18n
+    // key, just no longer referenced from here -- not this task's own "ลบ key" instruction, which was
+    // specifically about the empty-state hint key).
     $('#employeeCommentModalFooter').html(modalFooterButtonsHtml({
-        primary: readOnly ? null : { id: 'btnAddEmployeeComment', key: 'employee_comment_add', fallback: 'Add Comment' },
+        primary: readOnly ? null : { id: 'btnAddEmployeeComment', key: 'save', fallback: 'Save' },
         secondary: { key: 'close', fallback: 'Close', dismiss: true },
     }));
     resetEmployeeCommentForm();

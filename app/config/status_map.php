@@ -223,12 +223,20 @@ return [
     // EXISTING keys the old renderer already used verbatim (employee_comment_tag_in_progress/
     // _completed/_error) -- none invented for this migration. Tone: 'in_progress' = warning (still
     // needs attention/follow-up, same "ต้องทำ" framing §5 uses elsewhere), 'completed' = success
-    // (done), 'error' = danger (a real problem flagged on this employee's payroll). The compose-time
-    // TAG PICKER (the 3 gradient pill radio buttons in the modal's own form) is UNCHANGED -- this
-    // context only affects how an ALREADY-POSTED comment's tag renders in the list, not the picker
-    // UI itself (out of scope for this round, a deliberate/distinct design already confirmed twice
-    // in earlier rounds).
+    // (done), 'error' = danger (a real problem flagged on this employee's payroll).
+    // 2026-09-14, Round 3 Phase B, explicit instruction: the compose-time TAG PICKER (previously its
+    // own bespoke gradient-pill markup, "out of scope"/unchanged per the note above -- now IN scope)
+    // moves onto `statusBadge()`/`statusBadgeHtml()` too, the exact same call this context's other 3
+    // entries already serve for an already-posted comment's badge -- one visual language for "what a
+    // tag looks like" everywhere this context appears, not two. `'none'` is a 4th entry added purely
+    // for the picker's own "no tag" option (tone 'neutral', reuses the pre-existing
+    // `employee_comment_tag_none` label key, never invented for this) -- it is NEVER used to render
+    // an already-posted comment's badge (a comment's `tag` column is genuinely NULL for "no tag", and
+    // `employeeCommentToTimelineItem()`'s own `c.tag ? {...} : null` guard, detail.js, already skips
+    // the badge entirely in that case, unchanged by this addition) -- 'none' only exists for the
+    // picker to have a real enum to call `statusBadge('none', 'employee_comment_tag')` with.
     'employee_comment_tag' => [
+        'none' => ['label_key' => 'employee_comment_tag_none', 'tone' => 'neutral'],
         'in_progress' => ['label_key' => 'employee_comment_tag_in_progress', 'tone' => 'warning'],
         'completed' => ['label_key' => 'employee_comment_tag_completed', 'tone' => 'success'],
         'error' => ['label_key' => 'employee_comment_tag_error', 'tone' => 'danger'],

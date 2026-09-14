@@ -961,6 +961,34 @@ $cpStats = [
     <h2>Badge / สถานะ (ข้อ 5)</h2>
     <p class="cp-section-note"><code>app/config/status_map.php</code> (data เดียวที่มา, ที่เดียวจริงๆ) + PHP <code>statusBadge($enum, $context)</code> (<code>app/helpers/helpers.php</code>) + JS <code>statusBadgeHtml(enum, context)</code> (<code>app.js</code>). <code>layout/header.php</code> (จุดเดียวกับที่ inject <code>BASE_URL</code>/<code>LANG_VERSION</code> อยู่แล้ว, ยกเว้นจากกฎ "ห้ามแตะหน้าจริง" เฉพาะบรรทัดนี้) ใส่ <code>window.STATUS_MAP = &lt;?=json_encode(loadStatusMap())?&gt;;</code> จาก PHP ตรงๆ ทุกหน้า -- <code>app.js</code> อ่านจาก <code>window.STATUS_MAP</code> เท่านั้น (ไม่มี copy ของตัวเองแล้ว ไม่มีความเสี่ยงเรื่อง drift อีกต่อไป) หน้านี้เองก็ใส่บรรทัดเดียวกันจาก <code>loadStatusMap()</code> จริงที่ require ไว้ตอนต้นไฟล์. ทุก context/enum ด้านล่าง render จริงผ่าน <code>statusBadgeHtml()</code> (ไม่ใช่ hardcode) -- enum ที่ไม่มีใน map จะเห็น badge เทา + label ดิบ + <code>console.warn()</code> (ลองเปิด console ดู "unmapped_demo" ท้ายสุด). <code>tone</code> ของ <code>run_state.approved</code> เป็น <code>warning</code> (ไม่ใช่ success) เพราะ "อนุมัติแล้ว" สำหรับคนทำเงินเดือนคือ "ต้องไปจ่ายต่อ" -- คนละความหมายกับ <code>approval_status.approved</code> ที่เป็น success (คำขอจบแล้ว) ตั้งใจให้ต่างกัน ไม่ใช่ bug. <code>data_source</code> ไม่ใช่สถานะจริง (§5) ใส่ไว้ชั่วคราวเป็น neutral ทั้งหมดเพื่อไม่พังตอน migrate รอบ 4.</p>
     <div id="cpBadgeShowcase"></div>
+    <!-- 2026-09-14, Round 3 Phase B -- outline/ถม toggle (.comment-tag-picker, style.css), tone neutral
+         specifically since that's this round's own new token pair (--c-neutral-fill/-on-fill, see the
+         §1 token table above). Real markup, not a mockup: byte-identical structure to what
+         app/views/payroll/detail.php's own compose-form tag picker renders (hidden radio + <label>
+         wrapping one statusBadge() span each) -- 2 independent radio groups here purely so this demo
+         can show BOTH states side by side at once (a real picker only ever has 1 active group). The
+         SAME statusBadge('none', 'employee_comment_tag') call the real picker uses -- 'none' exists in
+         status_map.php only for this picker use (never renders an already-posted comment's own badge,
+         see that file's own comment on why). -->
+    <div class="mb-3">
+        <div class="fw-semibold small text-uppercase text-muted mb-1">tone: neutral — outline vs ถม (Round 3 Phase B, .comment-tag-picker toggle)</div>
+        <div class="d-flex flex-wrap gap-4 align-items-center">
+            <div>
+                <div class="small text-muted mb-1">ไม่เลือก (outline)</div>
+                <div class="comment-tag-picker">
+                    <input type="radio" class="d-none" name="cpNeutralToggleOutlineDemo" id="cpNeutralToggleOutline">
+                    <label for="cpNeutralToggleOutline"><?=statusBadge('none', 'employee_comment_tag')?></label>
+                </div>
+            </div>
+            <div>
+                <div class="small text-muted mb-1">เลือกแล้ว (ถม)</div>
+                <div class="comment-tag-picker">
+                    <input type="radio" class="d-none" name="cpNeutralToggleFilledDemo" id="cpNeutralToggleFilled" checked>
+                    <label for="cpNeutralToggleFilled"><?=statusBadge('none', 'employee_comment_tag')?></label>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="cp-section">

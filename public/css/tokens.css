@@ -102,6 +102,20 @@
   --c-warning-fill: #D97706;
   --c-danger-fill: var(--c-danger);
   --c-warning-fill-hover: #C86D06;
+  /* 2026-09-14, Round 3 Phase B -- 4th consumer of this "-fill/-on-fill" pattern, not a new one:
+     the Comments modal's tag picker (docs/design/rules.md §10/detail.js) needs a solid/selected
+     state for its "no tag" chip (tone 'neutral' in status_map.php), same "selected = filled tone"
+     interaction the 3 real tag tones already get by reusing THEIR OWN -fill/-on-fill pair above.
+     Alias of --c-text-muted (same "-fill = alias of the plain status token" shape success/danger
+     already use) -- light mode: white text on #6B7280 measures 4.84:1 (passes full AA, no bold
+     needed on THIS tone specifically, though the picker applies 600 to all 4 uniformly anyway to
+     match .btn-decision-*'s own "bold on all buttons uniformly" precedent). Dark mode's own
+     --c-text-muted (#9AA3AE) is too light for white text (2.55:1, fails even the relaxed 3:1 bold
+     threshold) -- same exact problem success/danger already had in dark mode, fixed the same way
+     (flip -on-fill to dark text instead of retuning the fill color): dark #1F2328 text on #9AA3AE
+     measures 6.19:1. */
+  --c-neutral-fill: var(--c-text-muted);
+  --c-neutral-on-fill: #fff;
 
   /* type */
   --font-sans: "Sarabun", system-ui, sans-serif;   /* ฟอนต์เดียวทั้งระบบ -- ตรงกับ layout/header.php's
@@ -224,6 +238,7 @@
     --c-success-on-fill: #1F2328;
     --c-warning-on-fill: #fff;
     --c-danger-on-fill: #1F2328;
+    --c-neutral-on-fill: #1F2328;
     --c-success-hover: #44CC76;
     --c-warning-hover: #E1A346;
     --c-danger-hover: #E5675E;
@@ -259,6 +274,7 @@
         --c-success-on-fill: #1F2328;
         --c-warning-on-fill: #fff;
         --c-danger-on-fill: #1F2328;
+        --c-neutral-on-fill: #1F2328;
         --c-success-hover: #44CC76;
         --c-warning-hover: #E1A346;
         --c-danger-hover: #E5675E;
