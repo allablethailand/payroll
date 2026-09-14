@@ -3404,78 +3404,187 @@ let employeeCommentEmployeeId = null;
 // on modal close/cancel/successful add so reopening the modal for a different employee, or for the
 // same one later, always starts fresh in "add" mode.
 let employeeCommentEditingId = null;
-// 2026-08-29 same-day redesign ("ช่วยปรับปรุง Design ทั้ง Form และ List ให้หน่อยครับ") -- own
-// dedicated .apv-comment-* tone/icon mapping (was a plain badge-only distinction before); mirrors
-// the tone vocabulary this page's shared .apv-stage component already uses (see app.js's own
-// APV_COLORS) without touching that shared map, since it's also used by the unrelated Timeline/
-// Action-History components on this same page.
-const EMPLOYEE_COMMENT_TAG_META = {
-    in_progress: { icon: 'fa-hourglass-half', color: '#f59e0b', bg: 'linear-gradient(135deg,#f59e0b,#d97706)', key: 'employee_comment_tag_in_progress', fallback: 'In Progress' },
-    completed: { icon: 'fa-check', color: '#16a34a', bg: 'linear-gradient(135deg,#22c55e,#15803d)', key: 'employee_comment_tag_completed', fallback: 'Completed' },
-    error: { icon: 'fa-triangle-exclamation', color: '#dc2626', bg: 'linear-gradient(135deg,#f87171,#dc2626)', key: 'employee_comment_tag_error', fallback: 'Error' },
-};
-function employeeCommentTagMeta(tag) {
-    return EMPLOYEE_COMMENT_TAG_META[tag] || { icon: 'fa-comment', bg: 'linear-gradient(135deg,#9aa3ad,#6b7280)', key: null, fallback: '' };
+// 2026-09-14, Round 3 item 3c-3, explicit instruction: "รายการความคิดเห็นใช้ shared timeline
+// component" -- migrated off this modal's own bespoke .apv-comment-* markup/tag-meta-map (the
+// hardcoded gradient pills/per-item icon-circle marker are GONE, this was the only real call site)
+// onto timeline.php's JS twin, renderTimeline() (app.js) -- comments is the FIRST real page this
+// shared component renders for (its own docblock previously said "not used by any real page yet").
+// A comment's tag now renders through the CENTRAL status_map system instead of its own bespoke
+// color map -- app/config/status_map.php's new 'employee_comment_tag' context (same 3 existing
+// employee_comment_tag_in_progress/_completed/_error label keys, not reinvented) supplies both the
+// badge AND the timeline dot's own tone. The compose-time TAG PICKER (3 gradient pill radio
+// buttons) is UNCHANGED -- only how an already-posted comment's tag is DISPLAYED in the list moved.
+//
+// employeeCommentsCache holds the CURRENTLY loaded list (server order = newest-first, see
+// PayrollRunModel::employeeComments()'s own docblock) -- kept in memory (not just re-fetched every
+// time) so a just-added comment can be unshifted onto it and the list re-rendered locally, no 2nd
+// network round trip (explicit instruction, item 4: "ส่งแล้ว append เข้า timeline ทันทีโดยไม่ reload").
+// Also lets .btn-edit-employee-comment below read back the RAW (un-escaped) comment text from this
+// cache directly instead of scraping a `data-raw-comment` DOM attribute the old bespoke markup used
+// to carry (the shared timeline component's own markup has no such attribute, and shouldn't need one
+// just for this).
+let employeeCommentsCache = [];
+// 2026-09-14, Round 3 item 3c-4 (review follow-up), explicit instruction, item 1: "กดดินสอแล้วรายการ
+// นั้นเปลี่ยนเป็น textarea (ข้อความเดิม) + tag picker + ปุ่ม [บันทึก][ยกเลิก] ใต้ textarea ภายในรายการ" --
+// builds the SAME apv-comment-tag-* picker markup the compose form above uses (byte-for-byte, see
+// style.css's own comment on #employeeCommentFormArea), just with per-comment-id ids/name so this
+// picker and the always-present compose one never collide in the DOM at the same time.
+function employeeCommentInlineEditFormHtml(c) {
+    const tag = c.tag || '';
+    function tagOption(value, optClass, icon, label) {
+        const id = `employeeCommentEditTag_${c.id}_${optClass}`;
+        const checkedAttr = (tag === value) ? ' checked' : '';
+        return `<input type="radio" class="btn-check" name="employeeCommentEditTag_${c.id}" id="${id}" value="${escapeAttr(value)}"${checkedAttr}>
+            <label class="apv-comment-tag-option apv-comment-tag-opt-${optClass}" for="${id}"><i class="fa-solid ${icon}"></i><span>${escapeHtml(label)}</span></label>`;
+    }
+    return `<div class="mb-2">
+            <div class="apv-comment-tag-picker">
+                ${tagOption('', 'none', 'fa-comment-slash', langData['employee_comment_tag_none'] || 'No tag')}
+                ${tagOption('in_progress', 'in_progress', 'fa-hourglass-half', langData['employee_comment_tag_in_progress'] || 'In Progress')}
+                ${tagOption('completed', 'completed', 'fa-check', langData['employee_comment_tag_completed'] || 'Completed')}
+                ${tagOption('error', 'error', 'fa-triangle-exclamation', langData['employee_comment_tag_error'] || 'Error')}
+            </div>
+        </div>
+        <div class="mb-2">
+            <textarea class="form-control form-control-sm employee-comment-inline-edit-text" id="employeeCommentEditText_${c.id}" data-id="${c.id}" rows="3">${escapeHtml(c.comment || '')}</textarea>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-primary btn-sm btn-save-inline-comment-edit" data-id="${c.id}" data-i18n="save">${escapeHtml(langData['save'] || 'Save')}</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm btn-cancel-inline-comment-edit" data-id="${c.id}" data-i18n="cancel">${escapeHtml(langData['cancel'] || 'Cancel')}</button>
+        </div>`;
 }
-function employeeCommentTagBadge(tag) {
-    const meta = employeeCommentTagMeta(tag);
-    if (!meta.key) return '';
-    return `<span class="apv-comment-tag-pill" style="background:${meta.bg};"><i class="fa-solid ${meta.icon} me-1"></i>${langData[meta.key] || meta.fallback}</span>`;
+function employeeCommentToTimelineItem(c) {
+    const name = currentLang === 'th' ? (c.created_by_name_th || c.created_by_name_en) : (c.created_by_name_en || c.created_by_name_th);
+    const isEditing = employeeCommentEditingId !== null && Number(employeeCommentEditingId) === Number(c.id);
+    const tone = (typeof getStatusMapEntry === 'function' && getStatusMapEntry(c.tag, 'employee_comment_tag')) ? getStatusMapEntry(c.tag, 'employee_comment_tag').tone : 'neutral';
+    if (isEditing) {
+        // Actions (edit/delete) are suppressed while this exact item is the one being edited --
+        // matches "แก้ได้ทีละรายการ" (only 1 item editable at a time), and there's nothing useful
+        // Edit/Delete would do on a row that's already mid-edit.
+        return {
+            time: c.created_at,
+            actor: { name: name || '-', avatar: c.created_by_photo || null },
+            bodyHtml: employeeCommentInlineEditFormHtml(c),
+            tone: tone,
+            actions: null,
+        };
+    }
+    // 2026-08-29, explicit request: "สามารถแก้ไข Comment และลบ Comment ได้ด้วย" -- a small "(edited)"
+    // marker only when updated_at is actually set (a never-edited comment keeps both updated_by/
+    // updated_at null, see PayrollRunModel::employeeCommentUpdate()'s own docblock) -- folded into
+    // `detail` (the shared component's own "1 line, muted" slot) since there's no bespoke inline-tag
+    // slot to put it in anymore.
+    const editedSuffix = c.updated_at ? ` (${langData['employee_comment_edited'] || 'edited'})` : '';
+    // 2026-08-29, explicit follow-up: "ดูได้เท่านั้น ไม่สามารถเพิ่ม แก้ไข ลบได้" -- edit/delete icons per
+    // comment are dropped entirely once the run has finished (commentsReadOnlyRd()), not just
+    // disabled, matching the same "view-only means the control isn't there at all" pattern Verify/
+    // Lock's own View Mode already uses elsewhere on this page.
+    // 2026-09-14, Round 3 item 3c-4, explicit instruction, item 5: both icons are the same resting
+    // gray (.btn-icon-ghost/.timeline-action-btn) -- delete opts into .timeline-action-btn-danger
+    // (style.css) instead of the old always-red .text-danger, so it only turns --c-danger on hover.
+    const actions = commentsReadOnlyRd() ? '' : `
+        <button type="button" class="btn-icon-ghost timeline-action-btn btn-edit-employee-comment" data-id="${c.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
+        <button type="button" class="btn-icon-ghost timeline-action-btn timeline-action-btn-danger btn-delete-employee-comment" data-id="${c.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
+    return {
+        time: c.created_at,
+        actor: { name: name || '-', avatar: c.created_by_photo || null },
+        title: c.comment,
+        detail: editedSuffix ? editedSuffix.trim() : null,
+        // 2026-09-14, Round 3 item 3c-4, explicit instruction, item 5: the dot's own tone (and this
+        // badge) comes from the tag's status_map entry -- a comment with NO tag (or a tag that maps
+        // to no entry) falls back to 'neutral', which is the shared timeline component's own default
+        // gray dot (.timeline-dot with no tone suffix, style.css), not a bespoke color of its own.
+        badge: c.tag ? { enum: c.tag, context: 'employee_comment_tag' } : null,
+        tone: tone,
+        actions: actions,
+    };
 }
-function renderEmployeeCommentTimeline(comments) {
-    $('#employeeCommentEmpty').toggleClass('d-none', comments.length > 0);
-    if (!comments.length) {
-        $('#employeeCommentTimeline').html('');
+// Shared empty-state (§6 item 6e, app.js's emptyStateHtml()) -- explicit instruction, item 5. This
+// is the "ยังไม่มีข้อมูล" meaning (nothing posted yet, not a filtered-zero-results case) -- no
+// `action` button needed, the compose form is already visible right below in the body, unlike a
+// table's own separate "Add" trigger.
+function renderEmployeeCommentTimelineFromCache() {
+    if (!employeeCommentsCache.length) {
+        $('#employeeCommentTimeline').html(emptyStateHtml({
+            icon: 'fa-solid fa-comments',
+            title: langData['employee_comment_timeline_empty'] || 'No comments yet.',
+            text: langData['employee_comment_timeline_empty_hint'] || 'Add the first comment below.',
+        }));
         return;
     }
-    const html = comments.map(function (c, idx) {
-        const isLast = idx === comments.length - 1;
-        const name = currentLang === 'th' ? (c.created_by_name_th || c.created_by_name_en) : (c.created_by_name_en || c.created_by_name_th);
-        const meta = employeeCommentTagMeta(c.tag);
-        // 2026-08-29, explicit request: "สามารถแก้ไข Comment และลบ Comment ได้ด้วย" -- a small
-        // "(edited)" marker only when updated_at is actually set (see
-        // PayrollRunModel::employeeCommentUpdate()'s own docblock -- a never-edited comment keeps
-        // both updated_by/updated_at null).
-        const editedTag = c.updated_at ? `<span class="apv-comment-edited-tag">(${langData['employee_comment_edited'] || 'edited'})</span>` : '';
-        // 2026-08-29, explicit follow-up: "ดูได้เท่านั้น ไม่สามารถเพิ่ม แก้ไข ลบได้" -- edit/delete icons
-        // per comment are dropped entirely once the run has finished (commentsReadOnlyRd()), not
-        // just disabled, matching the same "view-only means the control isn't there at all" pattern
-        // Verify/Lock's own View Mode already uses elsewhere on this page.
-        const editDeleteIcons = commentsReadOnlyRd() ? '' : `
-                        <button type="button" class="apv-comment-action-btn btn-edit-employee-comment" data-id="${c.id}" data-tag="${c.tag || ''}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
-                        <button type="button" class="apv-comment-action-btn text-danger btn-delete-employee-comment" data-id="${c.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
-        return `<div class="apv-comment-item${isLast ? ' apv-comment-item-last' : ''}">
-            <div class="apv-comment-marker">
-                <div class="apv-comment-icon" style="background:${meta.bg};"><i class="fa-solid ${meta.icon}"></i></div>
-                ${isLast ? '' : '<div class="apv-comment-line"></div>'}
-            </div>
-            <div class="apv-comment-card">
-                <div class="apv-comment-head">
-                    <span class="apv-comment-author"><i class="fa-solid fa-circle-user me-1"></i>${escapeHtml(name || '-')}</span>
-                    ${employeeCommentTagBadge(c.tag)}${editedTag}
-                    <span class="apv-comment-spacer"></span>
-                    ${editDeleteIcons}
-                </div>
-                <div class="apv-comment-body" data-raw-comment="${escapeAttr(c.comment)}">${escapeHtml(c.comment).replace(/\n/g, '<br>')}</div>
-                <div class="apv-comment-date"><i class="fa-regular fa-clock me-1"></i>${formatDisplayDateTime ? formatDisplayDateTime(c.created_at) : c.created_at}</div>
-            </div>
-        </div>`;
-    }).join('');
-    $('#employeeCommentTimeline').html(html);
+    const items = employeeCommentsCache.map(employeeCommentToTimelineItem);
+    // relativeTime:true -- explicit instruction, item 1 ("เวลาแบบ relative + tooltip เวลาเต็ม"), see
+    // renderTimeline()'s own docblock (app.js) for why this is opt-in per call, not this shared
+    // component's new default.
+    $('#employeeCommentTimeline').html(renderTimeline(items, { relativeTime: true }));
 }
 function loadEmployeeComments() {
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.employee-comment.list`, method: 'GET',
         data: { id: PAYROLL_RUN_ID, employee_id: employeeCommentEmployeeId }, dataType: 'json',
-        success: function (res) { if (res.status) renderEmployeeCommentTimeline(res.data || []); }
+        success: function (res) {
+            if (res.status) {
+                employeeCommentsCache = res.data || [];
+                renderEmployeeCommentTimelineFromCache();
+            }
+        }
     });
+}
+// 2026-09-14, Round 3 item 3c-4, explicit instruction, item 2: submit button disabled until there's
+// real text, OR while an inline edit is open elsewhere in the list (item 1: "ฟอร์มเพิ่มด้านล่าง disabled
+// ระหว่างแก้") -- reused on every place the compose textarea's value (or the editing state) can
+// change, so the button's state never lags behind either.
+function refreshEmployeeCommentSubmitState() {
+    const hasText = (($('#employeeCommentText').val() || '') + '').trim() !== '';
+    $('#btnAddEmployeeComment').prop('disabled', !hasText || employeeCommentEditingId !== null);
+}
+// 2026-09-14, Round 3 item 3c-4, explicit instruction, item 1: "ฟอร์มเพิ่มด้านล่าง disabled ระหว่างแก้" --
+// disables the compose form's own 3 fields (4 tag radios + textarea) while ANY item further up the
+// list is open for inline edit, re-enabling them the moment that edit exits (save or cancel). Reused
+// by resetEmployeeCommentForm() (modal open/close) and enter/exitEmployeeCommentInlineEdit() below --
+// the single source of truth for this disabled state, so it can never drift between call sites.
+function refreshEmployeeCommentAddFormDisabledState() {
+    const editing = employeeCommentEditingId !== null;
+    $('#employeeCommentFormArea').find('input, textarea').prop('disabled', editing);
+    refreshEmployeeCommentSubmitState();
 }
 function resetEmployeeCommentForm() {
     employeeCommentEditingId = null;
     $('#employeeCommentTagNone').prop('checked', true);
     $('#employeeCommentText').val('');
-    $('#btnAddEmployeeCommentLabel').text(langData['employee_comment_add'] || 'Add Comment');
-    $('#btnCancelEditEmployeeComment').addClass('d-none');
+    refreshEmployeeCommentAddFormDisabledState();
+}
+// 2026-09-14, Round 3 item 3c-4, explicit instruction, item 1: "กดดินสอแล้วรายการนั้นเปลี่ยนเป็น textarea
+// ...แก้ได้ทีละรายการ" -- enter/exit are the only 2 places employeeCommentEditingId ever changes once
+// the modal is open (resetEmployeeCommentForm(), called on modal open/close, is the 3rd). Re-rendering
+// the WHOLE list from cache on every enter/exit (rather than patching just the 1 affected <li>) keeps
+// employeeCommentToTimelineItem() the single place that decides "is THIS item the one being edited" --
+// simpler than 2 divergent render paths, and this list is never long enough for a full re-render to
+// be a real perf concern.
+function enterEmployeeCommentInlineEdit(id) {
+    employeeCommentEditingId = Number(id);
+    refreshEmployeeCommentAddFormDisabledState();
+    renderEmployeeCommentTimelineFromCache();
+    const $textarea = $(`#employeeCommentEditText_${id}`);
+    $textarea.trigger('focus');
+    // The inline textarea is injected already pre-filled with the existing comment text -- input.js's
+    // own T002 auto-grow only fires on a real `input` event, so a freshly-injected multi-line value
+    // needs this one explicit call to size correctly from the start instead of showing a clipped
+    // 3-row box until the user's first keystroke.
+    if ($textarea.length) autoExpandTextarea($textarea[0]);
+}
+function exitEmployeeCommentInlineEdit() {
+    employeeCommentEditingId = null;
+    refreshEmployeeCommentAddFormDisabledState();
+    renderEmployeeCommentTimelineFromCache();
+}
+// Mirrors refreshEmployeeCommentSubmitState() above, for whichever item's own inline Save button
+// this is -- `id` scopes both the textarea read and the button written to, since several comments
+// could in principle each carry their own (currently-disabled, per item 1's "ทีละรายการ") Save button
+// in the DOM at once, even though only 1 is ever actually enabled/visible-as-a-form at a time.
+function refreshInlineEditSaveState(id) {
+    const hasText = (($(`#employeeCommentEditText_${id}`).val() || '') + '').trim() !== '';
+    $(`.btn-save-inline-comment-edit[data-id="${id}"]`).prop('disabled', !hasText);
 }
 // 2026-08-29, explicit follow-up request: "ถ้าการดำเนินเสร็จแล้ว Comment ดูได้เท่านั้น ไม่สามารถเพิ่ม แก้ไข
 // ลบได้" -- deliberately a NARROWER cutoff than isViewMode (currentRun.state !== 'draft') used
@@ -3494,9 +3603,18 @@ $(document).on('click', '.btn-comment-employee', function () {
     // name in the modal-header (#employeeCommentModalEmployeeName removed from the view).
     const rowData = runDetailRowByEmployeeId(employeeCommentEmployeeId);
     $('#employeeCommentHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
-    resetEmployeeCommentForm();
     const readOnly = commentsReadOnlyRd();
-    $('#employeeCommentFormArea, #btnAddEmployeeComment').toggleClass('d-none', readOnly);
+    // 2026-09-14, Round 3 item 3c-4, explicit instruction, item 2: footer = [เพิ่มคอมเมนต์][ปิด] via the
+    // new shared modalFooterButtonsHtml() (app.js) -- rebuilt fresh on every open since `readOnly` can
+    // differ per employee/run state, but otherwise constant for the lifetime of this modal being open
+    // (never swapped/relabeled while editing -- see employeeCommentToTimelineItem()'s own per-item
+    // inline Save/Cancel buttons for the actual edit affordance instead).
+    $('#employeeCommentModalFooter').html(modalFooterButtonsHtml({
+        primary: readOnly ? null : { id: 'btnAddEmployeeComment', key: 'employee_comment_add', fallback: 'Add Comment' },
+        secondary: { key: 'close', fallback: 'Close', dismiss: true },
+    }));
+    resetEmployeeCommentForm();
+    $('#employeeCommentFormArea').toggleClass('d-none', readOnly);
     $('#employeeCommentReadOnlyNotice').toggleClass('d-none', !readOnly);
     loadEmployeeComments();
     new bootstrap.Modal(document.getElementById('employeeCommentModal')).show();
@@ -3505,16 +3623,48 @@ $(document).on('hidden.bs.modal', '#employeeCommentModal', function () {
     resetEmployeeCommentForm();
 });
 $(document).on('click', '.btn-edit-employee-comment', function () {
-    employeeCommentEditingId = $(this).data('id');
-    const rawComment = $(this).closest('.apv-comment-card').find('.apv-comment-body').attr('data-raw-comment') || '';
-    $('#employeeCommentText').val(rawComment).trigger('focus');
-    const tag = $(this).data('tag') || '';
-    $(`#employeeCommentTagGroup input[value="${tag}"]`).prop('checked', true);
-    $('#btnAddEmployeeCommentLabel').text(langData['employee_comment_update'] || 'Update Comment');
-    $('#btnCancelEditEmployeeComment').removeClass('d-none');
+    enterEmployeeCommentInlineEdit($(this).data('id'));
 });
-$(document).on('click', '#btnCancelEditEmployeeComment', function () {
-    resetEmployeeCommentForm();
+$(document).on('click', '.btn-cancel-inline-comment-edit', function () {
+    exitEmployeeCommentInlineEdit();
+});
+$(document).on('click', '.btn-save-inline-comment-edit', function () {
+    const id = $(this).data('id');
+    const comment = ($(`#employeeCommentEditText_${id}`).val() || '').trim();
+    if (!comment) {
+        showWarning(langData['employee_comment_required'] || 'Please write a comment first.');
+        return;
+    }
+    const tag = $(`input[name="employeeCommentEditTag_${id}"]:checked`).val() || null;
+    const $btn = $(this);
+    setButtonLoading($btn, true);
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.employee-comment.update`, method: 'POST', contentType: 'application/json', dataType: 'json',
+        data: JSON.stringify({ id: PAYROLL_RUN_ID, comment_id: id, tag: tag, comment: comment }),
+        success: function (res) {
+            setButtonLoading($btn, false);
+            if (res.status) {
+                // res.comment is the full updated row (PayrollRunModel::employeeCommentUpdate()'s own
+                // widened response, same shape employeeComments() itself returns) -- patched straight
+                // into the cache in place so the just-saved `updated_at`/"(edited)" marker shows up
+                // without a 2nd network round trip, same "no reload" pattern item 4 of the previous
+                // round already established for a new comment.
+                if (res.comment) {
+                    const idx = employeeCommentsCache.findIndex(function (c) { return Number(c.id) === Number(id); });
+                    if (idx !== -1) employeeCommentsCache[idx] = res.comment;
+                }
+                exitEmployeeCommentInlineEdit();
+                // Re-captures the dirty-guard baseline -- without this, closing the modal right after
+                // a successful inline save would still compare against the PRE-save baseline (which
+                // had this item NOT in edit mode, i.e. matches the post-exit state anyway here), but
+                // this is the correct general pattern (see refreshDirtyGuard()'s own docblock, app.js).
+                if (typeof refreshDirtyGuard === 'function') refreshDirtyGuard('#employeeCommentModal');
+            } else {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            }
+        },
+        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+    });
 });
 $(document).on('click', '.btn-delete-employee-comment', function () {
     const commentId = $(this).data('id');
@@ -3524,7 +3674,7 @@ $(document).on('click', '.btn-delete-employee-comment', function () {
             data: JSON.stringify({ id: PAYROLL_RUN_ID, comment_id: commentId }),
             success: function (res) {
                 if (res.status) {
-                    if (employeeCommentEditingId === commentId) resetEmployeeCommentForm();
+                    if (employeeCommentEditingId === commentId) exitEmployeeCommentInlineEdit();
                     loadEmployeeComments();
                     loadRunDetail(); // refreshes the comment-count badge on the row's Comment button
                 } else {
@@ -3544,20 +3694,32 @@ $(document).on('click', '#btnAddEmployeeComment', function () {
     const tag = $('#employeeCommentTagGroup input:checked').val() || null;
     const $btn = $(this);
     setButtonLoading($btn, true);
-    const isEdit = employeeCommentEditingId !== null;
-    const url = isEdit ? '/api/payroll-run.employee-comment.update' : '/api/payroll-run.employee-comment.add';
-    const payload = isEdit
-        ? { id: PAYROLL_RUN_ID, comment_id: employeeCommentEditingId, tag: tag, comment: comment }
-        : { id: PAYROLL_RUN_ID, employee_id: employeeCommentEmployeeId, tag: tag, comment: comment };
     $.ajax({
-        url: `${BASE_URL}${url}`, method: 'POST', contentType: 'application/json', dataType: 'json',
-        data: JSON.stringify(payload),
+        url: `${BASE_URL}/api/payroll-run.employee-comment.add`, method: 'POST', contentType: 'application/json', dataType: 'json',
+        data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: employeeCommentEmployeeId, tag: tag, comment: comment }),
         success: function (res) {
             setButtonLoading($btn, false);
             if (res.status) {
+                // 2026-09-14, Round 3 item 3c-3, explicit instruction, item 4: a NEW comment appends
+                // straight into the in-memory cache/re-renders locally -- no 2nd network round trip.
+                // res.comment is the full new row (PayrollRunModel::employeeCommentAdd()'s own
+                // widened response, same shape employeeComments() itself returns) -- unshift, not
+                // push, since the list is newest-first now.
+                if (res.comment) {
+                    employeeCommentsCache.unshift(res.comment);
+                    renderEmployeeCommentTimelineFromCache();
+                } else {
+                    loadEmployeeComments();
+                }
                 resetEmployeeCommentForm();
-                loadEmployeeComments();
-                if (!isEdit) loadRunDetail(); // refreshes the comment-count badge on the row's Comment button
+                // Re-captures the dirty-guard baseline against the now-cleared form -- without this,
+                // closing the modal right after a successful submit would incorrectly still compare
+                // against the PRE-submit (empty) baseline and never prompt anyway in THIS specific
+                // case (empty -> empty is never dirty), but this is the correct general pattern any
+                // future save-that-keeps-the-modal-open flow needs (see refreshDirtyGuard()'s own
+                // docblock, app.js).
+                if (typeof refreshDirtyGuard === 'function') refreshDirtyGuard('#employeeCommentModal');
+                loadRunDetail(); // refreshes the comment-count badge on the row's Comment button
             } else {
                 showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
             }
@@ -3565,6 +3727,49 @@ $(document).on('click', '#btnAddEmployeeComment', function () {
         error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 });
+// 2026-09-14, Round 3 item 3c-3, explicit instruction, item 2: submit button disabled until there's
+// real text (typing/pasting/clearing all keep this in sync -- see refreshEmployeeCommentSubmitState()'s
+// own docblock for the other call sites that also need it).
+$(document).on('input', '#employeeCommentText', function () {
+    refreshEmployeeCommentSubmitState();
+});
+// Ctrl/Cmd+Enter submits (explicit instruction, item 2) -- only when the button isn't already
+// disabled (empty text) or mid-request (setButtonLoading() above already disables it while an
+// add/update is in flight), same guard a real click on the button gets for free from its own
+// `disabled` attribute.
+$(document).on('keydown', '#employeeCommentText', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (!$('#btnAddEmployeeComment').prop('disabled')) {
+            $('#btnAddEmployeeComment').trigger('click');
+        }
+    }
+});
+// Same 2 conveniences (submit-state sync + Ctrl/Cmd+Enter), delegated for whichever comment's own
+// inline-edit textarea is currently in the DOM -- mirrors the compose textarea's own pair above.
+$(document).on('input', '.employee-comment-inline-edit-text', function () {
+    refreshInlineEditSaveState($(this).data('id'));
+});
+$(document).on('keydown', '.employee-comment-inline-edit-text', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        const id = $(this).data('id');
+        const $saveBtn = $(`.btn-save-inline-comment-edit[data-id="${id}"]`);
+        if (!$saveBtn.prop('disabled')) $saveBtn.trigger('click');
+    }
+});
+// 2026-09-14, Round 3 item 3c-4, explicit instruction, item 1: "Esc = ยกเลิกแก้ (ไม่ปิด modal -- ใช้
+// capture-phase แบบ popover)" -- same pattern app.js's own popover Esc handler already uses
+// (document-level, CAPTURE phase so this runs on the way DOWN before the event reaches the modal's
+// own Esc-closes-modal behavior, stopPropagation() there to stop delivery to everything still ahead
+// of it including that handler) -- but only intercepts when an inline edit is actually open; an Esc
+// press with none open must still reach the modal normally (e.g. to close the modal itself).
+document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (employeeCommentEditingId === null) return;
+    e.stopPropagation();
+    exitEmployeeCommentInlineEdit();
+}, true);
 
 // 2026-09-10: moved to app.js as auditActionLabel() -- shared with index.js/approval.js's own
 // Timeline modals so all 3 pages can never drift out of sync on action-code wording again.

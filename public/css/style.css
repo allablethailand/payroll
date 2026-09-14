@@ -4582,9 +4582,66 @@ button.badge {
     color: var(--c-text-muted);
     white-space: nowrap;
 }
+/* 2026-09-14, Round 3 item 3c-3 -- renderTimeline()'s own new `item.actions`/`options.relativeTime`
+   (app.js). `.timeline-head-right` groups time+actions as ONE flex child so `.timeline-head`'s
+   existing `justify-content: space-between` (actor | this group) still holds with a 3rd element
+   involved -- without it, 3 direct children would spread across the row instead of actions sitting
+   right next to the time it belongs with. */
+.timeline-head-right {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    flex: none;
+}
+.timeline-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+}
+/* Small ghost icon button for a timeline item's own inline actions (edit/delete on a comment) --
+   markup pairs this with `.btn-icon-ghost` (the shared transparent-until-hover background every
+   other small icon control in this app already uses -- .formula-info-btn/.popover-close-btn are
+   the 2 existing pairings), this class only supplies the sizing/icon-size/resting color, same
+   "small ghost icon sitting inline in content" shape as `.formula-info-btn` at a slightly larger
+   20px (comfortable click target for edit/delete specifically) -- not reused directly since that
+   class name is specific to the formula popover trigger, a different component. */
+.timeline-action-btn {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--c-text-faint);
+}
+.timeline-action-btn:hover {
+    color: var(--c-text-muted);
+}
+.timeline-action-btn i {
+    font-size: 12px;
+}
+/* 2026-09-14, Round 3 item 3c-4 (review follow-up), explicit instruction: "ไอคอนแก้ไข/ลบสีเทาเดียว,
+   แดงเฉพาะ hover ของลบ" -- both icons are the same resting .timeline-action-btn gray; delete opts
+   into this class INSTEAD of the old always-red .text-danger pairing so it only turns --c-danger on
+   hover, matching edit's own until-you-mean-it treatment rather than permanently flagging delete as
+   dangerous just for existing. */
+.timeline-action-btn-danger:hover {
+    color: var(--c-danger);
+}
 .timeline-title {
     color: var(--c-text);
     margin-top: var(--sp-1);
+    /* 2026-09-14, Round 3 item 3c-3, explicit instruction: "เนื้อหา --fs-base" -- this shared
+       component had no explicit font-size of its own before (inherited whatever the page's ambient
+       body size was); comments is the first real caller and needs this set explicitly. Safe as the
+       component's own new DEFAULT (not scoped to a comments-only class) -- no existing caller
+       depended on an unstated smaller size, since there were none before this round. */
+    font-size: var(--fs-base);
+    /* A multi-line comment needs its own line breaks preserved -- renderTimeline() passes `title`
+       through plain escapeHtml() (no manual <br> injection, keeps this field a safe plain string for
+       every caller), so newlines in the text only survive visually via CSS whitespace handling. */
+    white-space: pre-wrap;
 }
 .timeline-detail {
     color: var(--c-text-muted);
@@ -4601,6 +4658,15 @@ button.badge {
 }
 .timeline-day-header:not(:first-child) {
     padding-top: var(--sp-3);
+}
+/* 2026-09-14, Round 3 item 3c-4 (review follow-up), explicit instruction: "ข้อความและ chip แท็กชิด
+   คอลัมน์ชื่อ" -- renderTimeline()'s new item.bodyHtml/actor-aware wrapper (app.js). Body content
+   (title/detail/badge, or a caller's own bodyHtml override such as an inline-edit form) sits flush
+   under the dot by default; when an actor row is rendered above it (24px avatar + var(--sp-2) gap
+   before the name text starts), this pushes body content over by the same amount so it lines up
+   under the NAME column instead of the avatar/dot edge. */
+.timeline-body-content--with-actor {
+    margin-left: calc(24px + var(--sp-2));
 }
 
 /* Calendar widget (docs/design/rules.md §14, Round 2 item 9) -- new `.calendar-widget-*` namespace,
@@ -5800,85 +5866,47 @@ html, body {
 .apv-history-row-date { font-size: .78rem; color: #9ca3af; white-space: nowrap; }
 .apv-history-row-actor { font-size: .82rem; color: #4b5563; margin-top: 2px; margin-bottom: 4px; }
 
-/* 2026-08-29, same-day follow-up: "ตรงการใส่ Comments ในหน้าทำเงินเดือน ช่วยปรับปรุง Design ทั้ง Form และ
-   List ให้หน่อยครับ ย้าย Form มาไว้ Footer เพื่อถ้า Comment เยอะๆให้ค้างอยู่กับที่ แล้วใน Body ก็เลื่อนได้" --
-   own dedicated .apv-comment-* classes (list) — same "give a redesigned consumer new class names,
-   don't touch the shared component" precedent as .apv-history-row-* above; the per-employee
-   Comments modal (#employeeCommentModal, payroll/detail.php) used to reuse .apv-stage verbatim,
-   which now stays untouched for the Timeline modal's own Created/Approval/Paid summary. */
-.apv-comment-list { padding: 2px 2px 4px; }
-.apv-comment-item { position: relative; display: flex; gap: 14px; padding-bottom: 18px; }
-.apv-comment-item-last { padding-bottom: 0; }
-.apv-comment-marker { position: relative; flex: none; width: 36px; display: flex; justify-content: center; }
-.apv-comment-icon {
-    width: 36px; height: 36px;
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    color: #fff;
-    font-size: 1.0833rem;
-    position: relative;
-    z-index: 2;
-    box-shadow: 0 0 0 4px #fff, 0 2px 6px rgba(16, 24, 40, .12);
-}
-.apv-comment-line {
-    position: absolute;
-    top: 36px; bottom: -18px; left: 50%;
-    width: 2px;
-    margin-left: -1px;
-    background: linear-gradient(180deg, #e5e7eb, #eef0f2);
-    z-index: 1;
-}
-.apv-comment-card {
-    flex: 1;
-    min-width: 0;
-    background: #fff;
-    border: 1px solid #eef0f2;
-    border-radius: 12px;
-    padding: 10px 14px;
-    box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
-    transition: box-shadow .15s ease, border-color .15s ease;
-}
-.apv-comment-card:hover { box-shadow: 0 4px 12px rgba(16, 24, 40, .07); border-color: #ffe3b3; }
-.apv-comment-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.apv-comment-author { font-weight: 700; color: #1f2937; font-size: 1.0833rem; }
-.apv-comment-tag-pill {
-    display: inline-flex; align-items: center;
-    color: #fff; font-size: 0.875rem; font-weight: 700;
-    padding: 2px 9px; border-radius: 999px;
-    letter-spacing: .01em;
-}
-.apv-comment-edited-tag { font-size: 0.9167rem; font-style: italic; color: #9ca3af; }
-.apv-comment-spacer { flex: 1 1 auto; }
-.apv-comment-action-btn {
-    border: none; background: transparent; color: #9ca3af;
-    width: 24px; height: 24px; border-radius: 7px;
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: 1rem;
-    transition: background .12s ease, color .12s ease;
-}
-.apv-comment-action-btn:hover { background: #f3f4f6; color: var(--c-primary); }
-.apv-comment-action-btn.text-danger:hover { background: #fef2f2; color: #dc2626 !important; }
-.apv-comment-body { font-size: 1.0833rem; color: #374151; line-height: 1.55; margin-top: 4px; white-space: pre-line; }
-.apv-comment-date { font-size: 0.9167rem; color: #9ca3af; margin-top: 8px; }
+/* 2026-09-14, Round 3 item 3c-3, explicit instruction: "รายการความคิดเห็นใช้ shared timeline
+   component" -- every rule this block used to define for the LIST itself
+   (.apv-comment-list/-item/-item-last/-marker/-icon/-line/-card/-head/-author/-tag-pill/
+   -edited-tag/-spacer/-action-btn/-body/-date) is REMOVED here, genuinely dead now (confirmed via
+   grep -- 0 remaining call sites anywhere in the app): renderEmployeeCommentTimelineFromCache()
+   (payroll/detail.js) renders through the shared `.timeline-*`/`.timeline-action-btn` classes
+   (shared with every other renderTimeline() consumer) instead. The FOOTER FORM below
+   (.apv-comment-footer and the Tag picker's own .apv-comment-tag-*) is UNCHANGED and kept -- this
+   round never touched that part of the modal, only the list above it. */
 
-/* Sticky footer form (the actual point of this redesign): Bootstrap's own .modal-footer is a plain
-   flex ROW meant for a button bar; #employeeCommentModal's footer now stacks a column instead (see
-   the .flex-column.align-items-stretch utility classes already added in the view), so this block
-   only needs to add the visual polish (surface tint, separator, spacing) — the layout override
-   itself is handled by those Bootstrap utilities, kept out of this file on purpose. */
-.apv-comment-footer {
-    background: #fbfbfc;
-    border-top: 1px solid #eef0f2;
-    padding: 14px 16px;
-    gap: 10px;
-}
-.apv-comment-footer #employeeCommentFormArea {
-    background: #fff;
-    border: 1px solid #eef0f2;
+/* 2026-09-14, Round 3 item 3c-4 (review follow-up), explicit instruction: the 2026-08-29 "form lives
+   in a sticky modal-footer" layout (the .apv-comment-footer wrapper this rule used to be scoped
+   under) is reverted -- #employeeCommentFormArea (tag picker + textarea) moved back into the
+   scrollable modal-body, right after the timeline/empty-state and the read-only notice; the footer
+   is now the standard [primary][secondary] button pair every other modal uses
+   (modalFooterButtonsHtml(), app.js), constant regardless of view/edit state -- see
+   app/views/payroll/detail.php's own comment on the modal for the full reasoning.
+   .apv-comment-footer no longer exists anywhere in the markup (confirmed via grep) -- this rule now
+   targets #employeeCommentFormArea directly, still the same "boxed surface sitting inside
+   modal-body" look (the 2026-09-14 dark-mode token fix below is unaffected either way), just without
+   a separate footer wrapper div around it. */
+#employeeCommentFormArea {
+    background: var(--c-bg-subtle);
+    border: 1px solid var(--c-border);
     border-radius: 12px;
     padding: 12px 12px 8px;
+    margin-top: var(--sp-3);
 }
-.apv-comment-footer textarea#employeeCommentText { resize: vertical; }
+#employeeCommentFormArea textarea#employeeCommentText,
+.employee-comment-inline-edit-text {
+    resize: vertical;
+}
+/* Comment list itself (§6's shared timeline component) -- --sp-4 gap under emp-header-card (explicit
+   instruction, item 4) and horizontal padding matching emp-header-card's own --sp-3 inset (modal-body
+   keeps Bootstrap's default padding; emp-header-card's own --sp-3 padding is additional inset on top
+   of that) so the dot/line column lines up under the header card's own avatar instead of sitting
+   flush against modal-body's raw edge. */
+#employeeCommentTimeline {
+    margin-top: var(--sp-4);
+    padding: 0 var(--sp-3);
+}
 
 /* 2026-08-29, same-day follow-up: "ปรับ radio group...ให้ดูสวยขึ้น หรือเป็นแค่ checkbox เรียงกัน 3 แถวหรือ
    แถวเดียวกันแบบ Basic" -- the pill/gradient .calc-toggle-* treatment this block used to hold (tried
@@ -5924,16 +5952,22 @@ html, body {
    for a genuinely too-narrow container, so a pill scrolls into view instead of being clipped/forcing
    the row to wrap anyway. */
 .apv-comment-tag-picker { display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; }
+/* 2026-09-14, same dark-mode fix as .apv-comment-footer just above -- this pill's RESTING state was
+   also hardcoded hex (white pill/gray text/gray border), invisible-ish against the footer's own
+   (also-hardcoded, also just fixed) white background before, but a glaring white-pill-on-dark-form
+   regression the moment only the footer's bg got token-ified without also fixing this. The CHECKED
+   state's own colored gradients (input:checked + ..., below) are untouched -- solid color + white
+   text needs no theme awareness either way. */
 .apv-comment-tag-option {
     display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
     padding: 3px 8px; border-radius: 999px;
-    border: 1.5px solid #e5e7eb; background: #fff; color: #6b7280;
+    border: 1.5px solid var(--c-border); background: var(--c-bg); color: var(--c-text-muted);
     font-size: 0.75rem; font-weight: 600; cursor: pointer; white-space: nowrap;
     transition: background .15s ease, border-color .15s ease, color .15s ease, box-shadow .15s ease;
     user-select: none;
 }
 .apv-comment-tag-option i { font-size: 0.6875rem; }
-.apv-comment-tag-option:hover { border-color: #ffd699; color: #b45f00; background: #fff8ee; }
+.apv-comment-tag-option:hover { border-color: var(--c-primary-soft); color: var(--c-primary); background: var(--c-bg-hover); }
 .apv-comment-tag-picker input:checked + .apv-comment-tag-opt-none { background: linear-gradient(135deg,#9aa3ad,#6b7280); border-color: #6b7280; color: #fff; box-shadow: 0 2px 6px rgba(107,114,128,.3); }
 .apv-comment-tag-picker input:checked + .apv-comment-tag-opt-in_progress { background: linear-gradient(135deg,#f59e0b,#d97706); border-color: #d97706; color: #fff; box-shadow: 0 2px 6px rgba(217,119,6,.3); }
 .apv-comment-tag-picker input:checked + .apv-comment-tag-opt-completed { background: linear-gradient(135deg,#22c55e,#15803d); border-color: #15803d; color: #fff; box-shadow: 0 2px 6px rgba(21,128,61,.3); }

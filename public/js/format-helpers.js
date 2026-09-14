@@ -69,3 +69,31 @@ function parseMoneyInput(str) {
     const num = Number(String(str).replace(/,/g, ''));
     return isNaN(num) ? null : num;
 }
+/**
+ * 2026-09-14, Round 3 item 3c-3 (Comments timeline), explicit instruction: relative time
+ * ("N นาทีที่แล้ว") for a comment's timestamp, full absolute date+time as its hover tooltip (the
+ * CALLER attaches that via `formatDisplayDateTime()`, app.js -- not duplicated here). JS-only on
+ * purpose: this app has no PHP-side `langData`/`getLangValue()` (confirmed -- see this same
+ * codebase's other PHP partials' own docblocks on that point), so a translated relative-time string
+ * can only ever be produced client-side; `renderTimeline()`'s own PHP twin (timeline.php) is left
+ * untouched (still plain HH:MM, its own already-shipped §6 spec) since it has no real page caller
+ * that would need this today. Same naive Date-diff shape formatDisplayDateTime() already uses
+ * (naive 'YYYY-MM-DD HH:MM:SS' strings from this app's DB are treated as UTC).
+ * Buckets: <60s "just now", <60m "N minutes ago", <24h "N hours ago", <7d "N days ago", else falls
+ * back to the plain absolute date (formatDisplayDate()) -- a week-plus-old comment reads better as
+ * a real date than "9 days ago".
+ */
+function formatRelativeTime(value) {
+    if (!value) return '';
+    let isoUtc = String(value).trim().replace(' ', 'T');
+    if (!/[Zz]|[+-]\d{2}:?\d{2}$/.test(isoUtc)) isoUtc += 'Z';
+    const d = new Date(isoUtc);
+    if (isNaN(d.getTime())) return String(value);
+    const diffSec = Math.max(0, Math.floor((Date.now() - d.getTime()) / 1000));
+    const ld = (typeof langData !== 'undefined' && langData) ? langData : {};
+    if (diffSec < 60) return ld['time_just_now'] || 'Just now';
+    if (diffSec < 3600) return (ld['time_minutes_ago'] || '{n} minutes ago').replace('{n}', String(Math.floor(diffSec / 60)));
+    if (diffSec < 86400) return (ld['time_hours_ago'] || '{n} hours ago').replace('{n}', String(Math.floor(diffSec / 3600)));
+    if (diffSec < 7 * 86400) return (ld['time_days_ago'] || '{n} days ago').replace('{n}', String(Math.floor(diffSec / 86400)));
+    return typeof formatDisplayDate === 'function' ? formatDisplayDate(value) : String(value).substring(0, 10);
+}

@@ -986,7 +986,18 @@ class PayrollRunModel {
         $this->db->prepare("INSERT INTO `payroll_run_employee_comments` (run_id, employee_id, tag, comment, created_by)
                 VALUES (:run_id, :employee_id, :tag, :comment, :created_by)")
             ->execute([':run_id' => $runId, ':employee_id' => $employeeId, ':tag' => $tag, ':comment' => $comment, ':created_by' => $userId]);
-        return ['status' => true, 'message' => 'Saved successfully.', 'id' => (int)$this->db->lastInsertId()];
+        $newId = (int)$this->db->lastInsertId();
+        // 2026-09-14, Round 3 item 3c-3, explicit instruction: "ส่งแล้ว append เข้า timeline ทันทีโดยไม่
+        // reload" -- widened this response (was just {status,message,id}) to include the full new row,
+        // same shape employeeComments() itself returns (same JOIN), so the client can render it through
+        // the exact same item-mapping code a normal list fetch uses, no 2nd request/special-casing.
+        $stmtNew = $this->db->prepare("SELECT c.*, e.name_th AS created_by_name_th, e.name_en AS created_by_name_en,
+                e.profile_photo_path AS created_by_photo
+            FROM `payroll_run_employee_comments` c
+            LEFT JOIN `employees` e ON e.id = c.created_by
+            WHERE c.id = :id");
+        $stmtNew->execute([':id' => $newId]);
+        return ['status' => true, 'message' => 'Saved successfully.', 'id' => $newId, 'comment' => $stmtNew->fetch(PDO::FETCH_ASSOC)];
     }
 
     /** 2026-08-29, explicit follow-up: "สามารถแก้ไข Comment และลบ Comment ได้ด้วย". Not restricted to
@@ -1019,7 +1030,18 @@ class PayrollRunModel {
         if ($stmt->rowCount() === 0) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
-        return ['status' => true, 'message' => 'Saved successfully.'];
+        // 2026-09-14, Round 3 item 3c-4, explicit instruction (inline edit-in-place): widened the same
+        // way employeeCommentAdd() already was -- the client needs the SERVER's own real updated_at
+        // (for the "(edited)" marker) to patch its in-memory cache without a 2nd list refetch;
+        // guessing it client-side from the browser's own clock would risk a timezone/clock-skew
+        // mismatch against what a later real refetch would show.
+        $stmtNew = $this->db->prepare("SELECT c.*, e.name_th AS created_by_name_th, e.name_en AS created_by_name_en,
+                e.profile_photo_path AS created_by_photo
+            FROM `payroll_run_employee_comments` c
+            LEFT JOIN `employees` e ON e.id = c.created_by
+            WHERE c.id = :id");
+        $stmtNew->execute([':id' => $commentId]);
+        return ['status' => true, 'message' => 'Saved successfully.', 'comment' => $stmtNew->fetch(PDO::FETCH_ASSOC)];
     }
 
     /** Hard delete -- see this table's own migration docblock for why (a lightweight reminder note,
@@ -1043,17 +1065,26 @@ class PayrollRunModel {
         return ['status' => true, 'message' => 'Deleted successfully.'];
     }
 
-    /** Oldest-first (a chronological timeline read top-to-bottom), unlike the run-level audit log
-     *  which reads newest-last too -- kept consistent with that same convention. */
+    /** 2026-09-14, Round 3 item 3c-3, explicit instruction: "ล่าสุดบนสุด" (newest-first) -- REVERSES
+     *  this method's own prior convention (was `ORDER BY c.id ASC`, oldest-first, deliberately kept
+     *  consistent with the run-level audit log's own oldest-first-read convention at the time). That
+     *  older reasoning doesn't hold for THIS explicit request -- a per-employee comment thread reads
+     *  more naturally with the latest note on top (same convention `.apv-comment-list` already used
+     *  visually before this round, just now backed by the query order instead of client-side
+     *  reversal). The run-level audit log itself is UNTOUCHED -- still oldest-first, that convention
+     *  was never asked to change. `created_by_photo` added to the SELECT (a plain widen, no schema/
+     *  logic change) so the shared timeline component (renderTimeline(), app.js) can render a real
+     *  avatar photo instead of always falling back to an initial-letter circle. */
     public function employeeComments(int $runId, int $compId, int $employeeId): array {
         if (!$this->get($runId, $compId)) {
             return [];
         }
-        $stmt = $this->db->prepare("SELECT c.*, e.name_th AS created_by_name_th, e.name_en AS created_by_name_en
+        $stmt = $this->db->prepare("SELECT c.*, e.name_th AS created_by_name_th, e.name_en AS created_by_name_en,
+                e.profile_photo_path AS created_by_photo
             FROM `payroll_run_employee_comments` c
             LEFT JOIN `employees` e ON e.id = c.created_by
             WHERE c.run_id = :run_id AND c.employee_id = :employee_id
-            ORDER BY c.id ASC");
+            ORDER BY c.id DESC");
         $stmt->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }

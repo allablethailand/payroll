@@ -214,6 +214,11 @@ function confirmIfDirtyThen($container, baselineSnapshot, onProceed, promptOptio
         message: opts.message || (langData && langData['confirm_discard_changes_message']) || "You have changes that haven't been saved yet. If you continue, they will be lost.",
         confirmText: opts.confirmText,
         cancelText: opts.cancelText,
+        // 2026-09-14, Round 3 item 3c-3, explicit instruction: a caller can now pass `tone` directly
+        // (showConfirm()'s own real 'danger'/'warning'/'success' vocabulary) instead of only the
+        // coarser `danger:true/false` this took before -- `danger` still works unchanged for the 3
+        // existing page-body Cancel-button callers that never pass `tone` at all.
+        tone: opts.tone,
         danger: opts.danger,
         onYes: onProceed,
         onNo: opts.onNo,
@@ -270,7 +275,13 @@ $(document).on('hide.bs.modal', '.modal[data-dirty-guard]', function (e) {
         message: (langData && langData['confirm_discard_changes_message']) || "You have changes that haven't been saved yet. If you continue, they will be lost.",
         confirmText: (langData && langData['action_close_without_saving']) || 'Close without saving',
         cancelText: (langData && langData['action_back_to_editing']) || 'Back to editing',
-        danger: true,
+        // 2026-09-14, Round 3 item 3c-3, explicit instruction: "showConfirm tone warning" for the
+        // Comments modal specifically -- was hardcoded `danger:true` (red confirm button) for every
+        // `data-dirty-guard` modal with no per-modal override. Opt-in via a `data-dirty-guard-tone`
+        // attribute on the modal itself (falls back to the original 'danger' when absent, so this
+        // stays a no-op for any other modal that migrates to data-dirty-guard later without setting
+        // it) -- `tone` (not `danger`) is what showConfirm()/confirmIfDirtyThen() actually reads.
+        tone: $modal.attr('data-dirty-guard-tone') || 'danger',
     });
 });
 // Call this right after a successful save (or a resetForm()) on a `data-dirty-guard` modal that
@@ -1653,9 +1664,22 @@ function timelineDayLabel(value) {
     if (isNaN(d.getTime())) return String(value);
     return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
 }
+// 2026-09-14, Round 3 item 3c-3 (Comments timeline), explicit instruction, extends this shared
+// function with 2 new OPTIONAL pieces -- comments is the FIRST real caller of this component (see
+// this function's own original docblock: "not used by any real page yet"), and needed both:
+// - `options.relativeTime` (default false, §6's own documented default of plain HH:MM is
+//   unaffected for every other/future caller that doesn't pass this): renders the time as
+//   formatRelativeTime()'s output instead, with the full absolute date+time as a native `title`
+//   hover tooltip (formatDisplayDateTime()) -- JS-only, see formatRelativeTime()'s own docblock for
+//   why timeline.php (the PHP twin) is deliberately NOT given this same option.
+// - `item.actions` (optional raw HTML string, e.g. edit/delete icon buttons) -- rendered in the head
+//   row, grouped with the time inside a new `.timeline-head-right` wrapper so the row's own
+//   `justify-content: space-between` (actor | everything-else) still holds with a 3rd element
+//   involved, instead of 3 flex children spreading unevenly across the row.
 function renderTimeline(items, options) {
     options = options || {};
     const groupByDay = !!options.groupByDay;
+    const relativeTime = !!options.relativeTime;
     let html = '<ul class="timeline">';
     let lastDayLabel = null;
     (items || []).forEach(function (item) {
@@ -1672,15 +1696,28 @@ function renderTimeline(items, options) {
             : '';
         const badgeHtml = item.badge ? `<div class="mt-1">${statusBadgeHtml(item.badge.enum, item.badge.context)}</div>` : '';
         const detailHtml = item.detail ? `<div class="timeline-detail">${escapeHtml(item.detail)}</div>` : '';
+        const actionsHtml = item.actions ? `<span class="timeline-actions">${item.actions}</span>` : '';
+        const timeLabel = relativeTime ? formatRelativeTime(item.time) : timelineTimeOfDay(item.time);
+        const timeTitleAttr = relativeTime ? ` title="${escapeAttr(formatDisplayDateTime(item.time))}"` : '';
+        // item.bodyHtml replaces the default title/detail/badge block wholesale (e.g. an inline-edit
+        // form in place of a comment's own text) -- caller owns escaping for that HTML.
+        // .timeline-body-content--with-actor indents body content under the actor name column
+        // (avatar 24px + gap var(--sp-2)) only when an actor is actually rendered above it, so
+        // text/chips line up with the name instead of sitting flush left under the dot.
+        const bodyClass = item.actor ? 'timeline-body-content timeline-body-content--with-actor' : 'timeline-body-content';
+        const bodyHtml = (item.bodyHtml !== undefined)
+            ? item.bodyHtml
+            : `<div class="timeline-title">${escapeHtml(item.title)}</div>${detailHtml}${badgeHtml}`;
         html += `<li class="timeline-item">
             <span class="timeline-dot timeline-dot-${tone}"></span>
             <div class="timeline-head">
                 <span class="timeline-actor">${actorHtml}</span>
-                <span class="timeline-time">${timelineTimeOfDay(item.time)}</span>
+                <span class="timeline-head-right">
+                    <span class="timeline-time"${timeTitleAttr}>${escapeHtml(timeLabel)}</span>
+                    ${actionsHtml}
+                </span>
             </div>
-            <div class="timeline-title">${escapeHtml(item.title)}</div>
-            ${detailHtml}
-            ${badgeHtml}
+            <div class="${bodyClass}">${bodyHtml}</div>
         </li>`;
     });
     html += '</ul>';
@@ -1765,6 +1802,37 @@ function emptyStateHtml(config) {
         <div class="empty-state-text">${escapeHtml(config.text || '')}</div>
         ${actionHtml}
     </div>`;
+}
+// 2026-09-14, Round 3 item 3c-4, explicit instruction -- a shared helper for a modal's own standard
+// [primary][secondary] footer button pair (§9/§4: primary left, secondary/dismiss right -- the
+// app-wide `.modal-footer` CSS's own `order` rule, not anything this function needs to position
+// itself), built ONCE by construction so the 2 buttons can never independently drift out of sync on
+// size/class the way #employeeCommentModal's own old static markup once did (`btn-sm` on one button,
+// a plain (non-outline) `btn-secondary` on the other). #employeeCommentModal is the first real
+// caller -- called once (detail.js) to populate a modal's own `<div class="modal-footer" id="...">`
+// shell, not re-rendered per state change (a footer built this way stays "คงที่ตลอด" for free -- its
+// caller toggles `disabled`/`d-none` on the rendered buttons afterward instead of re-calling this).
+//
+// `primary`/`secondary`: { id, key (a real langData/lang-json key), fallback (English literal),
+// dismiss? (secondary only -- adds data-bs-dismiss="modal") }. Either can be omitted (a view-only
+// modal might want secondary/[Close] alone) -- omitted means no button rendered, not a broken one.
+// `key` is always set as `data-i18n` on the rendered button too (not just used to look up the
+// INITIAL text) -- the exact fix a real bug needed 2 rounds ago (a JS-injected footer button with no
+// data-i18n marker never updated on a live language switch, see that fix's own comment on
+// app.js's `show.bs.modal` handler above) -- this helper bakes that in by construction so a future
+// caller can't reintroduce the same gap by forgetting it.
+function modalFooterButtonsHtml(config) {
+    config = config || {};
+    function buttonHtml(spec, extraClass, isPrimary) {
+        if (!spec) return '';
+        const cls = isPrimary ? 'btn btn-primary btn-sm' : 'btn btn-outline-secondary btn-sm';
+        const dismissAttr = (!isPrimary && spec.dismiss) ? ' data-bs-dismiss="modal"' : '';
+        const idAttr = spec.id ? ` id="${escapeAttr(spec.id)}"` : '';
+        const i18nAttr = spec.key ? ` data-i18n="${escapeAttr(spec.key)}"` : '';
+        const label = (spec.key && langData && langData[spec.key]) || spec.fallback || '';
+        return `<button type="button" class="${cls}${extraClass || ''}"${idAttr}${i18nAttr}${dismissAttr}>${escapeHtml(label)}</button>`;
+    }
+    return buttonHtml(config.primary, '', true) + buttonHtml(config.secondary, '', false);
 }
 // initSharedDataTable()'s own `emptyState` option (see that function's own comment on the
 // stickyColumns/columnFilters/export composition block, which this hooks into the same way) --

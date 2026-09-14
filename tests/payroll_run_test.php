@@ -1291,7 +1291,11 @@ try {
 
     $timeline = $runModel->employeeComments($runId, $compId, $employeeFullId);
     check('3 comments in the timeline (2 tagged + 1 untagged; the 2 rejected calls above never inserted)', count($timeline), 3);
-    check('timeline is oldest-first (chronological)', [$timeline[0]['tag'], $timeline[1]['tag'], $timeline[2]['tag']], ['in_progress', 'completed', null]);
+    // 2026-09-14, Round 3 item 3c-3, explicit instruction: "ล่าสุดบนสุด" (newest-first) -- REVERSES
+    // this assertion (was oldest-first/chronological) along with employeeComments()'s own ORDER BY
+    // (see that method's own docblock, app/models/PayrollRunModel.php). Add order was in_progress,
+    // completed, then the untagged one -- newest-first reads back untagged, completed, in_progress.
+    check('timeline is newest-first', [$timeline[0]['tag'], $timeline[1]['tag'], $timeline[2]['tag']], [null, 'completed', 'in_progress']);
     check('each comment records who posted it (created_by)', (int)($timeline[0]['created_by'] ?? 0), $adminUserId);
 
     $detailsWithCommentCount = $runModel->getDetails($runId, $compId);

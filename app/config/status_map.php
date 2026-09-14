@@ -214,4 +214,23 @@ return [
         'sync' => ['label_key' => 'source_sync', 'tone' => 'neutral'],
         'import' => ['label_key' => 'source_import', 'tone' => 'neutral'],
     ],
+
+    // payroll_run_employee_comments.tag (Round 3 item 3c-3) -- migrated off its own bespoke
+    // gradient-pill renderer (payroll/detail.js's old employeeCommentTagBadge()/
+    // EMPLOYEE_COMMENT_TAG_META, removed) now that the comment list itself moved onto the shared
+    // timeline component (renderTimeline(), which only accepts a badge via {enum,context} ->
+    // statusBadge()/statusBadgeHtml(), no raw-HTML badge option). label_key values reuse the 3
+    // EXISTING keys the old renderer already used verbatim (employee_comment_tag_in_progress/
+    // _completed/_error) -- none invented for this migration. Tone: 'in_progress' = warning (still
+    // needs attention/follow-up, same "ต้องทำ" framing §5 uses elsewhere), 'completed' = success
+    // (done), 'error' = danger (a real problem flagged on this employee's payroll). The compose-time
+    // TAG PICKER (the 3 gradient pill radio buttons in the modal's own form) is UNCHANGED -- this
+    // context only affects how an ALREADY-POSTED comment's tag renders in the list, not the picker
+    // UI itself (out of scope for this round, a deliberate/distinct design already confirmed twice
+    // in earlier rounds).
+    'employee_comment_tag' => [
+        'in_progress' => ['label_key' => 'employee_comment_tag_in_progress', 'tone' => 'warning'],
+        'completed' => ['label_key' => 'employee_comment_tag_completed', 'tone' => 'success'],
+        'error' => ['label_key' => 'employee_comment_tag_error', 'tone' => 'danger'],
+    ],
 ];
