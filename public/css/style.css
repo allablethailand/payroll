@@ -2681,6 +2681,30 @@ table.dataTable thead th .dt-column-order {
 .form-switch .form-check-input:not(:checked):focus {
     --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='rgba%280, 0, 0, 0.25%29'/%3e%3c/svg%3e");
 }
+/* 2026-09-14, real bug found and fixed (explicit report: "dark, สถานะปิด: กดปิดแล้วจุดขาวหาย จนคลิกที่อื่น")
+   -- the fix right above only ever wrote ONE color (`rgba(0,0,0,.25)`, matching Bootstrap's own
+   LIGHT-mode unchecked+unfocused default), with no dark-mode variant, so it silently applied that
+   same near-black dot in dark mode too the instant an unchecked switch gained focus -- invisible
+   against a dark track/background. Confirmed by reading the compiled bootstrap.min.css directly:
+   Bootstrap 5.3 itself ALREADY ships a dark-mode white dot (`rgba(255,255,255,.25)`) for this exact
+   unchecked+unfocused case, scoped `[data-bs-theme=dark] .form-switch .form-check-input:not(:checked)
+   :not(:focus)` -- note its OWN `:not(:focus)`, which is exactly why that rule stops applying (and
+   this file's un-theme-aware focus override took over) the moment the switch is focused. Matching
+   that same white value here for the FOCUSED case too (rather than inventing a new shade) keeps this
+   file's own stated intent true: "an unchecked switch's knob should look the same whether it's
+   focused or not, only the outer ring signals focus" (see the comment above) -- now true in dark
+   mode as well, not just light. Higher specificity than the light rule above via the `[data-bs-
+   theme="dark"]` attribute selector (no !important needed) -- same 3-selector dark-mode pattern
+   (explicit attribute + prefers-color-scheme fallback) this file already uses elsewhere for a token
+   that can't be expressed as a CSS variable inside an SVG data-URI's own `fill=` parameter. */
+[data-bs-theme="dark"] .form-switch .form-check-input:not(:checked):focus {
+    --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='rgba%28255, 255, 255, 0.25%29'/%3e%3c/svg%3e");
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-bs-theme="light"]) .form-switch .form-check-input:not(:checked):focus {
+        --bs-form-switch-bg: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3e%3ccircle r='3' fill='rgba%28255, 255, 255, 0.25%29'/%3e%3c/svg%3e");
+    }
+}
 /* Disabled -- this app's own --c-text-faint token instead of Bootstrap's generic opacity:.5 dimming,
    so a disabled checkbox/switch reads consistently with every other disabled element elsewhere in
    this app rather than just a faded copy of whatever tone it would otherwise have. */
@@ -3128,6 +3152,23 @@ th.col-money div.dt-column-header .dt-column-title {
        the same orange, one value to change if it's ever retuned again. */
     box-shadow: 0 0 0 .25rem var(--bs-focus-ring-color);
 }
+/* 2026-09-14, real bug found and fixed (explicit report: "focus ring ฟ้าบน .btn-close ของ modal") --
+   same class of gap as the fix above, 2 more call sites: `.btn-close` (Bootstrap's own modal ×)
+   hardcodes its own blue box-shadow directly on plain `:focus` (confirmed in bootstrap.min.css --
+   `.btn-close:focus{box-shadow:0 0 0 .25rem rgba(13,110,253,.25)}`, unconditional, not just
+   `:focus-visible`), and bare `.btn-icon-ghost` (the popover ✕/formula-info-btn -- these 2 don't
+   always pair with `.btn-icon` the way this class was originally scoped for, so the fix above never
+   reached them). Same pattern: reset unconditionally, ring only on real keyboard `:focus-visible`. */
+.btn-close:focus,
+.btn-icon-ghost:focus {
+    outline: none;
+    box-shadow: none;
+}
+.btn-close:focus-visible,
+.btn-icon-ghost:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 .25rem var(--bs-focus-ring-color);
+}
 .btn-icon:disabled,
 .btn-icon[disabled],
 .btn-circle-action:disabled,
@@ -3175,6 +3216,98 @@ th.col-money div.dt-column-header .dt-column-title {
 .btn-icon-ghost:disabled,
 .btn-icon-ghost[disabled] {
     background: transparent;
+}
+/* 2026-09-14, real bug found and fixed (explicit report: "ปุ่มวงกลม .btn-icon ในแถวมีขีดเส้นใต้") --
+   root cause confirmed: several real call sites render `.btn-icon`/`.btn-circle-action` on an `<a>`
+   tag (row-action links, not `<button>`), and this file's own `--bs-link-color`/`--bs-link-hover-color`
+   override (§3 "ลิงก์ = --c-text + underline on hover", ~line 2491) makes EVERY plain `<a>` in the app
+   underline on hover by default -- these 3 classes never opted back out of that, so any `<a>`-based
+   instance underlines on hover exactly like a text link would, even though visually it's an icon-only
+   circle button. `!important` here is deliberate (same posture as the icon-color `!important` on
+   `.btn-icon`/`.btn-circle-action` just above) -- it beats Bootstrap's own un-important `a:hover`
+   text-decoration regardless of pseudo-class/specificity, so ONE rule (no separate `:hover`/`:focus`
+   duplicates needed) correctly covers every state including hover/focus/active. `.badge` included too
+   (the "ตรวจสอบแล้ว ▾" verify-status dropdown-toggle badge, statusBadgeHtml()'s own `{menu:...}`
+   option) -- same defensive posture, in case any current/future badge instance is ever an `<a>`. */
+.btn-icon,
+.btn-circle-action,
+.btn-icon-ghost,
+.btn,
+.badge {
+    text-decoration: none !important;
+}
+/* .formula-info-btn (Round 3 item 3c-2 follow-up) -- the small "?" info button sitting inline in a
+   payslip-view line's name cell (formulaButtonRd(), payroll/detail.js), explicit instruction:
+   ".btn-icon-ghost 14px --c-text-faint". Paired with `.btn-icon-ghost` in markup for the shared
+   transparent-until-hover background, but NOT `.btn-icon` -- that class's own 32px fixed circle
+   (§7's row-action button size) and `!important` --c-text-muted color are sized for a standalone
+   row action, not an icon sitting mid-sentence in table text, so this defines its own smaller
+   box/color instead of fighting those `!important`s. */
+.formula-info-btn {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--c-text-faint);
+    vertical-align: -3px;
+}
+.formula-info-btn i {
+    font-size: 14px;
+}
+/* Shared popover (§9/§11, Round 3 item 3c-2 follow-up, explicit instruction) -- overrides Bootstrap's
+   OWN --bs-popover-* CSS custom properties (exact names confirmed in bootstrap.min.css) rather than
+   fighting its positioning/arrow mechanics with a hand-rolled box -- the arrow reads these same
+   variables internally, so it stays correctly colored/positioned for free. Every value is a --c-*/
+   --fs-*/--radius*/--shadow-* token, so dark mode needs no separate block here (tokens.css already
+   carries the dark value for each one). initPopovers() (app.js) is what actually creates every
+   popover with this template/behavior -- see its own docblock for the ✕-button/single-open/Esc/
+   click-outside mechanics this CSS is styling. */
+.popover {
+    --bs-popover-bg: var(--c-bg);
+    --bs-popover-border-color: var(--c-border);
+    --bs-popover-border-radius: var(--radius-lg);
+    --bs-popover-inner-border-radius: calc(var(--radius-lg) - 1px);
+    --bs-popover-box-shadow: var(--shadow-soft);
+    --bs-popover-header-color: var(--c-text);
+    --bs-popover-header-font-size: var(--fs-sm);
+    --bs-popover-body-color: var(--c-text);
+    --bs-popover-font-size: var(--fs-sm);
+    max-width: 320px;
+}
+/* 2026-09-14, same-day follow-up, explicit instruction: "× เบี้ยว/หนา...จัด align-items:center กับหัว"
+   -- .popover-header's OWN background/border-bottom (previously driven by --bs-popover-header-bg,
+   removed above) move to THIS wrapper instead, since the header text and the ✕ button are now flex
+   siblings inside it (see POPOVER_TEMPLATE_RD, app.js) -- keeping the background only on the text
+   side would leave a visible gap/seam under the ✕. `border-top-*-radius` reads the SAME
+   --bs-popover-inner-border-radius value set on the ancestor `.popover` just above (custom
+   properties inherit) rather than repeating `calc(var(--radius-lg) - 1px)` a 2nd time. */
+.popover-head-row {
+    display: flex;
+    align-items: center;
+    background-color: var(--c-bg-subtle);
+    border-bottom: 1px solid var(--c-border);
+    border-top-left-radius: var(--bs-popover-inner-border-radius);
+    border-top-right-radius: var(--bs-popover-inner-border-radius);
+}
+.popover .popover-header {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    font-weight: 600;
+}
+.popover-close-btn {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    margin-right: var(--sp-2);
+}
+.popover-close-btn i {
+    font-size: 12px;
 }
 
 /* ==========================================================================
@@ -4704,6 +4837,123 @@ button.badge {
     color: var(--c-text);
     font-size: var(--fs-base);
     font-weight: 500;
+}
+
+/* payslip-view (§9 "สลิป / รายละเอียดการคำนวณ", Round 3 item 3c-2, revised 3 times same-day) --
+   app/views/partials/payslip-view.php + payslipViewHtml() (app.js): 2-column Income | Deductions
+   (Deductions now a single merged list -- statutory + item/manual rows, an optional small subheader
+   only when both groups are present -- see the PHP partial's own docblock) + a bottom "ยอดจ่ายสุทธิ"
+   line. Used inside runDetailBreakdownModal's #breakdownModalBody today -- kept modal-agnostic (no
+   selector here is scoped to that modal's id) so a future print/PDF payslip page can reuse it
+   unstyled-changed. §8's own rule ("only the number itself changes color -- its label...stays
+   neutral") is why `.payslip-col-title` stays `--c-text`, not `--c-success`/`--c-danger` like the
+   old per-section header this replaces (breakdownSectionHtml(), removed) used to -- only
+   `.num.money-*` on each amount carries the earning/deduction color now.
+   "ลดเส้น" (explicit instruction): removed Bootstrap's own default per-row `<tr>` border entirely
+   (`.payslip-line-table td { border: 0 }` below) -- row separation is padding alone now, not a
+   line. §9's own modal size rule ("modal-lg เป็นค่าเริ่มต้นสำหรับฟอร์ม") already matched --
+   runDetailBreakdownModal's own markup already carries `modal-lg`, confirmed unchanged.
+   2nd same-day follow-up: `.payslip-col-total` is a plain flex row (a sibling of the `<table>`, NOT
+   a `<tfoot>` row inside it), pinned to the bottom of its own column via `margin-top: auto` on a
+   flex column (`.payslip-col`) + `align-items: stretch` on `.payslip-columns` (CSS Grid's own
+   default -- makes both columns share the taller one's height so a short column's own total still
+   lands on the same bottom line as a long column's).
+   3rd same-day follow-up, explicit instruction -- density + highlighted totals:
+   - `.payslip-row` (NEW, explicit marker class on every real line-item `<tr>` -- not the subgroup-
+     label row, not a peer of `.payslip-line-table td`'s old blanket selector) carries the `--sp-2`
+     vertical row padding (≈32px row height at this app's default --fs-sm/line-height, confirmed via
+     computed style) -- `.payslip-line-table td` itself now only resets `border: 0` for every row
+     kind (including the subgroup-label/"-" placeholder rows, which do NOT get `.payslip-row`'s own
+     padding).
+   - The gap right after each column's own title, and right before `.payslip-col-total`, is `--sp-3`
+     (was `--sp-2`) -- `.payslip-col-title`'s own `margin-bottom` and `.payslip-col-total`'s own
+     `padding-top` below.
+   - `.payslip-col-total` and `.payslip-summary-row-net` (the "ยอดจ่ายสุทธิ" line) both get a
+     `background-color` band so the 2 column subtotals and the final net figure read as distinct
+     "answer" rows, not just more list rows -- `--c-surface-2` (as literally requested) does NOT
+     exist anywhere in this app's token set (checked tokens.css directly) -- substituted
+     `--c-bg-subtle`, the established "raised surface distinct from base bg" token already used for
+     modal footer/table header/filter bar (already dark-mode-aware, already proven distinct from
+     `--c-bg` -- the modal's own background -- in both themes, so it does not blend into the modal in
+     dark mode either). Flush to each box's own existing left/right edges (no horizontal
+     padding/bleed) on purpose: `.payslip-col-total`'s label/amount then stay perfectly right-aligned
+     with the `.num` column above it (2 side-by-side bands bleeding into the `--sp-4` column-gap
+     toward each other would risk visually touching/merging, so this avoids that entirely rather
+     than tuning a bleed amount against that risk). No new border added on either (explicit
+     instruction: "ห้ามเพิ่ม border ต่อแถว") -- background + weight only, same "ลดเส้น" posture as the
+     rest of this component. */
+.payslip-view {
+    padding-top: var(--sp-4);
+}
+.payslip-columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: var(--sp-4);
+    align-items: stretch;
+}
+.payslip-col {
+    display: flex;
+    flex-direction: column;
+}
+.payslip-col-title {
+    color: var(--c-text);
+    font-weight: 700;
+    font-size: var(--fs-sm);
+    padding-bottom: var(--sp-2);
+    margin-bottom: var(--sp-3);
+    border-bottom: 1px solid var(--c-border);
+}
+.payslip-line-table td {
+    border: 0;
+}
+.payslip-row td {
+    padding: var(--sp-2) 0;
+}
+.payslip-subgroup-label {
+    padding-top: var(--sp-2);
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    color: var(--c-text-muted);
+}
+.payslip-col-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: auto;
+    padding: var(--sp-3) 0 var(--sp-2);
+    background-color: var(--c-bg-subtle);
+    font-weight: 600;
+}
+.payslip-summary {
+    margin-top: var(--sp-4);
+    padding-top: var(--sp-3);
+    border-top: 1px solid var(--c-border-strong);
+}
+.payslip-summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--sp-1) 0;
+}
+.payslip-summary-label {
+    color: var(--c-text-muted);
+}
+.payslip-summary-row-net {
+    background-color: var(--c-bg-subtle);
+    border-radius: var(--radius);
+    padding: var(--sp-3);
+}
+.payslip-summary-row-net .payslip-summary-label {
+    color: var(--c-text);
+    font-weight: 600;
+}
+/* Phone-width guard (§ responsive baseline) -- 2 fixed 1fr columns get cramped under ~400px, same
+   pattern rules.md already uses elsewhere for a 2-col grid meeting a narrow viewport. */
+@media (max-width: 480px) {
+    .payslip-columns {
+        grid-template-columns: 1fr;
+        row-gap: var(--sp-4);
+    }
 }
 
 /* ==========================================================================

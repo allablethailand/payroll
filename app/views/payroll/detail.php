@@ -1626,27 +1626,21 @@
         </div>
     </div>
 
-    <!-- Breakdown Modal: per-employee itemized view for one payroll_run_details row, split into
-         clearly-labeled Earnings / Deductions / Statutory sections so it's unambiguous which line
-         is income and which is a deduction (the main table only shows totals). -->
+    <!-- Breakdown Modal: per-employee itemized view for one payroll_run_details row, rendered via
+         the shared payslip-view component (app/views/partials/payslip-view.php +
+         payslipViewHtml(), app.js) -- 2-column Earnings | Deductions + an optional Statutory block
+         + a bottom Gross/Total Deductions/Net Pay summary, so it's unambiguous which line is income
+         and which is a deduction (the main table only shows totals).
+         2026-09-14, Round 3 item 3c-2: header reduced to title + × only (§9 "Header = ชื่อ + ×
+         เท่านั้น") -- #breakdownEmployeeName was already removed (2026-09-11, employee name lives in
+         the header card below instead); the icon and the pinned Net-Pay footer are now also gone --
+         Net Pay moved into the payslip summary itself, and the footer reverts to the plain [Close]
+         `data-footer="view"` auto-injects (app.js's own show.bs.modal handler). -->
     <div class="modal fade" id="runDetailBreakdownModal" data-footer="view" tabindex="-1" aria-labelledby="runDetailBreakdownModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
-                    <div>
-                        <h5 class="modal-title text-secondary mb-0" id="runDetailBreakdownModalLabel">
-                            <i class="fa-solid fa-list-check me-1"></i><span data-i18n="breakdown_title">Calculation Breakdown</span>
-                        </h5>
-                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
-                             ชื่อ modal ไม่มีชื่อพนักงานซ้ำ" -- #breakdownEmployeeName removed, the
-                             employee's name now shows once, inside the new header card in the body. -->
-                        <!-- 2026-09-06, explicit request: display Origami's opt-in TOTAL_DAYS
-                             item_values entry (calendar-based day count) when present -- hidden
-                             entirely for a run/employee with no data (cycle-based/off-cycle run, or
-                             a sync run whose admin never ticked this Report Item on), see
-                             PayrollRunModel::getDetails()'s own docblock. -->
-                        <div class="text-muted small d-none" id="breakdownTotalDays"></div>
-                    </div>
+                    <h5 class="modal-title text-secondary mb-0" id="runDetailBreakdownModalLabel" data-i18n="breakdown_title">Calculation Breakdown</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
@@ -1656,19 +1650,14 @@
                          renderBreakdownModal() in detail.js) so this card doesn't get wiped along
                          with it. -->
                     <div id="breakdownHeaderCard"></div>
+                    <!-- 2026-09-06, explicit request: display Origami's opt-in TOTAL_DAYS
+                         item_values entry (calendar-based day count) when present -- hidden
+                         entirely for a run/employee with no data (cycle-based/off-cycle run, or a
+                         sync run whose admin never ticked this Report Item on), see
+                         PayrollRunModel::getDetails()'s own docblock. Moved out of the modal-header
+                         2026-09-14 (§9) -- still ≤1 line, right under the header card. -->
+                    <div class="text-muted small mb-2 d-none" id="breakdownTotalDays"></div>
                     <div id="breakdownModalBody"></div>
-                </div>
-                <!-- Net Pay pinned in the footer (2026-08-20, explicit request) -- with
-                     modal-dialog-scrollable above, the body scrolls internally while this stays
-                     visible, so a long Earnings/Deductions/Statutory list never pushes it out of
-                     view.
-                     2026-09-09, explicit request: "ย้ายยอดจ่ายสุทธิ มาต่อกัน Net Pay...ไปอยู่ขวาสุด" --
-                     was `justify-content-between` (label pinned at the footer's LEFT edge, value at
-                     the RIGHT edge, spread across the whole footer width); now `justify-content-end`
-                     + `gap-2` groups label+value together as one unit at the far right instead. -->
-                <div class="modal-footer d-flex justify-content-end align-items-center gap-2">
-                    <span class="fw-bold text-secondary" data-i18n="table_net_pay">Net Pay</span>
-                    <span class="fw-bold fs-5" id="breakdownModalNetPay"></span>
                 </div>
             </div>
         </div>

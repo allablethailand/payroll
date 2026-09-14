@@ -2092,7 +2092,13 @@ function formulaStepRd(text) {
     return `<li class="mb-1">${text}</li>`;
 }
 function formulaResultLineRd(amount) {
-    return `<div class="mt-2 pt-2 border-top fw-bold text-brand">${langData['formula_result'] || 'Result'}: ${fmtNum(amount)}</div>`;
+    // 2026-09-14, real bug found and fixed while centralizing popover styling (explicit instruction
+    // covered "เนื้อ...ตัวเลข .num") -- `text-brand` colored the entire line orange, a §3 violation
+    // (orange reserved for the 1 primary action/selected-state per screen, never a plain
+    // informational number) and never used `.num`/a §8 money class at all. Now plain `--c-text` +
+    // bold (`.money-net`'s own look -- this IS a bottom-line computed result, same semantic as a Net
+    // Pay line) with the amount itself properly tagged `.num`.
+    return `<div class="mt-2 pt-2 border-top fw-bold">${langData['formula_result'] || 'Result'}: <span class="num money-net">${fmtNum(amount)}</span></div>`;
 }
 /** @return string|null HTML step list (without the outer wrapper/title) or null if this formula type isn't recognized. */
 function buildFormulaStepsRd(formula) {
@@ -2212,12 +2218,26 @@ function formulaButtonRd(line) {
     }
     if (!content) return '';
     const contentAttr = content.replace(/"/g, '&quot;');
-    return `<button type="button" class="btn btn-sm btn-link p-0 ms-1 text-brand formula-info-btn" data-bs-toggle="popover" data-bs-trigger="hover click" data-bs-html="true" data-bs-placement="top" data-bs-title="${langData['formula_popover_title'] || 'How this was calculated'}" data-bs-content="${contentAttr}"><i class="fa-solid fa-circle-question"></i></button>`;
+    // 2026-09-14, Round 3 item 3c-2 follow-up, explicit instruction: "? ใช้ .btn-icon-ghost 14px
+    // --c-text-faint" -- restyled from the old `btn btn-sm btn-link text-brand` (a colored, orange
+    // "?" that competed with §0's "1 primary action" rule and §3's "ไอคอน...ห้ามใช้[สี]" for a plain
+    // info affordance) to the app's own ghost-icon-button language, sized down for sitting inline in
+    // table-row text rather than as a standalone 32px row-action circle (`.btn-icon`/
+    // `.btn-icon-ghost`'s own base size) -- `.formula-info-btn` (style.css) supplies the 14px
+    // icon/--c-text-faint/small hit-area, `.btn-icon-ghost` supplies the shared transparent-until-
+    // hover background behavior so it still reads as the same family of icon control app-wide.
+    // 2026-09-14, same follow-up, explicit instruction: shared popover behavior (close on Esc/click-
+    // outside/only-1-open-at-a-time, ✕ in the header) -- see initPopovers() (app.js) for all of that,
+    // wired centrally, not here. `data-bs-trigger` dropped from "hover click" to plain "click" --
+    // hover-to-open doesn't compose with "closes on click outside": a hover-opened popover has no
+    // stable notion of "outside" the moment the mouse leaves, so it would just reopen on the next
+    // mouse pass, fighting the click-outside/Esc/✕ close affordances this same instruction asked for.
+    return `<button type="button" class="btn-icon-ghost formula-info-btn" data-bs-toggle="popover" data-bs-trigger="click" data-bs-html="true" data-bs-placement="top" data-bs-title="${langData['formula_popover_title'] || 'How this was calculated'}" data-bs-content="${contentAttr}"><i class="fa-solid fa-circle-question"></i></button>`;
 }
 /* ---------- Breakdown modal (section 2/3's table doesn't itemize -- it only shows totals): per-
    employee itemized view split into clearly-labeled Earnings / Deductions (Items) / Deductions
    (Statutory) sections, so which line is income vs. a deduction is never ambiguous. ---------- */
-function breakdownLineRowsRd(lines) {
+function breakdownLineRowsRd(lines, moneyColorCls) {
     return (lines || []).map(line => {
         const name = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || '';
         const commentHtml = line.note ? `<div class="small text-muted fst-italic"><i class="fa-regular fa-comment me-1"></i>${escapeHtml(line.note)}</div>` : '';
@@ -2234,7 +2254,14 @@ function breakdownLineRowsRd(lines) {
         // generic "Custom" one, even though it's technically is_custom too) so it reads distinctly
         // as money credited from another employee, not an ad-hoc typed-in item. A deduction line
         // that FEEDS a transfer instead shows a "-> employee_no" tag alongside its normal code.
-        let codeHtml;
+        // 2026-09-14, Round 3 item 3c-2 follow-up, explicit instruction: "ซ่อนรหัสรายการ...ย้ายไป title
+        // tooltip" -- a PLAIN code (BASE/TH_SSO/...) is no longer printed inline at all; it only ever
+        // shows as the name's native `title` attribute (hover tooltip), never visible text. The 3
+        // BADGE variants (Transfer/Custom/Other) are NOT "a code" in the same sense -- they're a
+        // meaningful visual classification of the line itself, not an internal identifier -- so those
+        // stay exactly as visible as before, unaffected by this change.
+        let codeHtml = '';
+        let nameTitleAttr = '';
         if (line.source === 'transfer_in') {
             codeHtml = `<span class="badge bg-info-subtle text-info"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['transfer_in_badge'] || 'Transfer'}</span>`;
         } else if (line.is_custom && line.is_other) {
@@ -2243,7 +2270,7 @@ function breakdownLineRowsRd(lines) {
         } else if (line.is_custom) {
             codeHtml = `<span class="badge bg-secondary-subtle text-secondary"><i class="fa-solid fa-pen me-1"></i>${langData['manual_line_custom_badge'] || 'Custom'}</span>`;
         } else {
-            codeHtml = `<code class="fw-bold text-dark">${escapeHtml(line.code || '-')}</code>`;
+            nameTitleAttr = ` title="${escapeAttr(line.code || '-')}"`;
         }
         // 2026-08-31, same-day follow-up: payee_type widened to 'company'/'not_disbursed' too --
         // same branching as manualLineListItemHtml()'s own payeeHtml.
@@ -2272,63 +2299,62 @@ function breakdownLineRowsRd(lines) {
             payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-ban me-1"></i>${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
         }
         const exemptBadge = line.is_exempted ? `<span class="badge bg-warning-subtle text-warning-emphasis ms-1">${langData['attendance_deduction_exempted_badge'] || 'Exempted'}</span>` : '';
-        return `<tr class="${line.is_exempted ? 'text-muted' : ''}">
-            <td>${codeHtml}</td>
-            <td>${escapeHtml(name)}${exemptBadge}${formulaButtonRd(line)}${commentHtml}${exemptedHtml}${payeeHtml}</td>
-            <td class="text-end">${fmtNum(line.amount)}</td>
+        return `<tr class="payslip-row${line.is_exempted ? ' text-muted' : ''}">
+            <td>${codeHtml}${codeHtml ? ' ' : ''}<span${nameTitleAttr}>${escapeHtml(name)}</span>${exemptBadge}${formulaButtonRd(line)}${commentHtml}${exemptedHtml}${payeeHtml}</td>
+            <td class="text-end num ${moneyColorCls || ''}">${fmtNum(line.amount)}</td>
         </tr>`;
     }).join('');
 }
+// 2026-09-14, Round 3 item 3c-2 follow-up, explicit instruction: "รายการที่พนักงานไม่ได้ลงทะเบียน/
+// บริษัทปิดใช้...ไม่แสดงแถวเลย" -- StatutoryCalculationEngine::calculateLine() (app/services/
+// StatutoryCalculationEngine.php) writes these 2 EXACT note codes ('disabled'/'employee_not_enrolled',
+// confirmed by reading the engine source directly) when the item doesn't apply to this employee AT
+// ALL -- a genuinely different case from an item that DOES apply and simply computed to ฿0 (e.g. a
+// 0%-bracket PIT line), which the engine leaves with note=null/some OTHER note and must keep
+// showing per the same instruction ("มีสิทธิ์แต่ยอด 0.00 → แสดงปกติ"). 'employee_tax_exempt' added
+// here too (not explicitly named in the instruction) -- same early-return branch in the engine as
+// employee_not_enrolled (an employee this tax plainly doesn't apply to), so excluded on the same
+// "not entitled" basis, not a guess. Every OTHER note the engine can emit
+// (no_rate_configured/no_brackets_configured/unknown_calc_method/unrecognized_calc_base) means a
+// MISCONFIGURED item, not a not-entitled one -- deliberately still shown (hiding a config problem
+// would be worse than a raw note). No separate `is_enrolled`-style boolean exists on this line shape
+// to filter on instead -- these 3 string codes are the only signal the engine gives, so filtering by
+// them (not by amount == 0, which would wrongly also hide the legitimate zero-but-entitled case) is
+// the correct rule here, not a shortcut.
+const STATUTORY_NOT_ENTITLED_NOTES_RD = ['disabled', 'employee_not_enrolled', 'employee_tax_exempt'];
 function statutoryRowsRd(items) {
     // 2026-08-21, real bug fix (explicit report: "แสดงแค่ Code อยากให้มีชื่อด้วย") -- name_th/
     // name_en now come through from StatutoryCalculationEngine::calculateLine(), same pattern as
     // breakdownLineRowsRd() already uses for earning/deduction lines just above.
-    return (items || []).map(item => {
-        const name = (currentLang === 'th' ? item.name_th : item.name_en) || item.name_th || item.name_en || '';
-        const note = item.note ? ` <span class="text-muted small">(${escapeHtml(item.note)})</span>` : '';
-        return `<tr>
-            <td><code class="fw-bold text-dark">${escapeHtml(item.code || '-')}</code>${note}</td>
-            <td>${escapeHtml(name)}${formulaButtonRd(item)}</td>
-            <td class="text-end">${fmtNum(item.employee_amount)}</td>
-        </tr>`;
-    }).join('');
+    return (items || [])
+        .filter(item => !STATUTORY_NOT_ENTITLED_NOTES_RD.includes(item.note))
+        .map(item => {
+            const name = (currentLang === 'th' ? item.name_th : item.name_en) || item.name_th || item.name_en || '';
+            // 2026-09-14, real bug found and fixed (explicit report, screenshot showed raw
+            // "(employee_not_enrolled)"/"(th_pit_average_annual_tax_2050)" next to the item name) --
+            // `item.note` is an internal code, never end-user prose (StatutoryCalculationEngine's own
+            // source confirms this -- see the const above). It was rendered here as a raw parenthetical
+            // with no i18n lookup at all, completely bypassing explainLineNoteRd() (which ALREADY
+            // translates the known codes, e.g. 'employee_not_enrolled' -> langData['formula_note_not_
+            // enrolled'], and the th_pit_* pattern into real prose) purely because formulaButtonRd()
+            // just below happens to call that translator for its OWN popover content. Dropped entirely
+            // -- the "?" button is now the only place a note ever surfaces, translated when a mapping
+            // exists, silently absent (no button, no raw text) when it doesn't, never a raw code shown
+            // to the employee either way. Logged to BACKLOG.md: the unmapped-code case still means an
+            // employee sees no explanation at all for that line (out of scope to fully fix here, §0.7).
+            // 2026-09-14, same-day follow-up, explicit instruction: "ซ่อนรหัสรายการ...ย้ายไป title
+            // tooltip" -- code moved from a visible <code> chip to the name's own `title` attribute.
+            return `<tr class="payslip-row">
+                <td><span title="${escapeAttr(item.code || '-')}">${escapeHtml(name)}</span>${formulaButtonRd(item)}</td>
+                <td class="text-end num money-deduction">${fmtNum(item.employee_amount)}</td>
+            </tr>`;
+        }).join('');
 }
-function breakdownSectionHtml(iconCls, colorCls, titleKey, titleFallback, rawRowsHtml, totalLabel, totalAmount, options) {
-    // 2026-09-10, Batch 3B item 1, explicit request: a section with ZERO line items (e.g.
-    // "Deductions (Items)" when nobody has any ad-hoc deduction this period) hides its WHOLE block
-    // -- header, table, AND total row -- instead of showing an empty table with a "-" placeholder
-    // row. Earnings/Net Pay are the one deliberate exception (renderBreakdownModal()'s own call
-    // passes { alwaysShow: true }) -- the employee must always be able to see "this period
-    // genuinely has zero income," never have that section silently vanish and look like a bug.
-    const alwaysShow = !!(options && options.alwaysShow);
-    if (!rawRowsHtml && !alwaysShow) {
-        return '';
-    }
-    const rowsHtml = rawRowsHtml || `<tr><td colspan="3" class="text-center text-muted small py-2">-</td></tr>`;
-    // 2026-08-21, explicit request ("แต่ละ Column ของแต่ละตารางอยากให้อยู่ในตำแหน่งที่ตรงกัน") -- the 3
-    // breakdown tables (Earnings/Deductions/Statutory) are stacked in the same modal and share this
-    // exact column structure, but each <table> was sizing its own columns independently based on
-    // ITS OWN content (default table-layout: auto), so e.g. a table with long item names pushed its
-    // "Amount" column further right than the others. table-layout: fixed + identical percentage
-    // widths on every call forces all 3 tables' columns to line up vertically regardless of content.
-    return `
-        <div class="mb-4">
-            <h6 class="fw-bold ${colorCls} mb-2"><i class="fa-solid ${iconCls} me-1"></i>${langData[titleKey] || titleFallback}</h6>
-            <table class="table table-sm table-border align-middle mb-0" style="table-layout: fixed;">
-                <colgroup><col style="width:20%"><col style="width:55%"><col style="width:25%"></colgroup>
-                <thead class="table-light text-secondary">
-                    <tr><th data-i18n="table_code">${langData['table_code'] || 'Code'}</th><th data-i18n="table_name">${langData['table_name'] || 'Name'}</th><th class="text-end" data-i18n="modal_amount">${langData['modal_amount'] || 'Amount'}</th></tr>
-                </thead>
-                <tbody>${rowsHtml}</tbody>
-                <tfoot>
-                    <tr class="fw-bold border-top ${colorCls}">
-                        <td colspan="2">${escapeHtml(totalLabel)}</td>
-                        <td class="text-end">${fmtNum(totalAmount)}</td>
-                    </tr>
-                </tfoot>
-            </table>
-        </div>
-    `;
+// Shared "-" placeholder row for an EMPTY-but-always-shown payslip column (Earnings/Deductions --
+// §9 payslip layout keeps both columns visible for a fixed, symmetric 2-column grid; only the
+// wholly-optional Statutory block below them is hidden outright when empty, see renderBreakdownModal()).
+function payslipEmptyRowRd() {
+    return `<tr class="payslip-row"><td colspan="2" class="text-center text-muted small">-</td></tr>`;
 }
 function renderBreakdownModal(row) {
     // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
@@ -2339,6 +2365,8 @@ function renderBreakdownModal(row) {
     // day count) -- row.total_days is null (see PayrollRunModel::getDetails()'s own docblock) for
     // every run/employee with no data, never 0, so a plain truthiness-adjacent null check is
     // correct here (0 would be a real, displayable value if it ever happened).
+    // 2026-09-14, Round 3 item 3c-2: moved out of the modal-header into the body (§9 "Header = ชื่อ
+    // + × เท่านั้น") -- still ≤1 line, right under the employee header card.
     const $totalDays = $('#breakdownTotalDays');
     if (row.total_days !== null && row.total_days !== undefined) {
         $totalDays.text(`${langData['total_days'] || 'Total Days'}: ${fmtNum(row.total_days)}`).removeClass('d-none');
@@ -2348,32 +2376,40 @@ function renderBreakdownModal(row) {
 
     let earningRowsHtml = '';
     if (Number(row.base_salary_amount) > 0) {
-        earningRowsHtml += `<tr>
-            <td><code class="fw-bold text-dark">BASE</code></td>
-            <td>${escapeHtml(langData['table_base_salary'] || 'Base Salary')}</td>
-            <td class="text-end">${fmtNum(row.base_salary_amount)}</td>
+        earningRowsHtml += `<tr class="payslip-row">
+            <td><span title="BASE">${escapeHtml(langData['table_base_salary'] || 'Base Salary')}</span></td>
+            <td class="text-end num money-gross">${fmtNum(row.base_salary_amount)}</td>
         </tr>`;
     }
-    earningRowsHtml += breakdownLineRowsRd(row.earning_breakdown);
+    earningRowsHtml += breakdownLineRowsRd(row.earning_breakdown, 'money-gross');
+    // 2026-09-14, same-day follow-up: Deductions is now ONE merged column (statutory + item/manual
+    // rows, separated by a subheader only when both groups are present) -- payslipViewHtml() (app.js)
+    // owns that grouping decision now, so these 2 stay separate strings here instead of being
+    // concatenated/emptiness-padded in this file the way the single old "Deductions (Items)" column
+    // used to be.
+    const deductionItemRowsHtml = breakdownLineRowsRd(row.deduction_breakdown, 'money-deduction');
+    const deductionStatutoryRowsHtml = statutoryRowsRd(row.statutory_breakdown);
 
-    const statutoryTotal = (row.statutory_breakdown || []).reduce((sum, item) => sum + (Number(item.employee_amount) || 0), 0);
-
-    const html = breakdownSectionHtml('fa-arrow-trend-up', 'text-success', 'breakdown_earnings', 'Earnings', earningRowsHtml, langData['table_gross_amount'] || 'Gross', row.gross_amount, { alwaysShow: true })
-        + breakdownSectionHtml('fa-arrow-trend-down', 'text-danger', 'breakdown_deductions', 'Deductions (Items)', breakdownLineRowsRd(row.deduction_breakdown), langData['breakdown_deductions_total'] || 'Deductions (Items) Total', (row.deduction_breakdown || []).reduce((sum, l) => sum + (Number(l.amount) || 0), 0))
-        + breakdownSectionHtml('fa-landmark', 'text-danger', 'breakdown_statutory', 'Deductions (Statutory)', statutoryRowsRd(row.statutory_breakdown), langData['breakdown_statutory_total'] || 'Deductions (Statutory) Total', statutoryTotal);
-    $('#breakdownModalBody').html(html);
-    // Net Pay lives in the modal-footer now (2026-08-20, explicit request), not the scrollable
-    // body -- always visible without scrolling past the itemized sections.
-    $('#breakdownModalNetPay').text(fmtNum(row.net_amount));
-    // Bootstrap popovers need explicit per-element initialization (no data-attribute auto-init in
-    // this app, see formulaButtonRd()'s own docblock) -- dispose any from a previous employee's
-    // render first (the DOM nodes they were attached to are already gone via .html() above, but the
-    // Popover instances themselves would otherwise leak) before initializing the fresh set.
-    $('#breakdownModalBody .formula-info-btn').each(function () {
-        const existing = bootstrap.Popover.getInstance(this);
-        if (existing) existing.dispose();
-        new bootstrap.Popover(this);
+    // 2026-09-14, Round 3 item 3c-2: renders via the shared payslip-view component (payslipViewHtml(),
+    // app.js -- PHP twin app/views/partials/payslip-view.php) instead of this file's own
+    // breakdownSectionHtml() (removed, no longer used anywhere), so this modal and a future
+    // print/PDF payslip page share one layout. row.total_deduction_amount already combines item +
+    // statutory deductions (PayrollRunModel::recalculate(), confirmed) -- no extra sum needed here.
+    const html = payslipViewHtml({
+        earningRowsHtml: earningRowsHtml || payslipEmptyRowRd(),
+        deductionStatutoryRowsHtml: deductionStatutoryRowsHtml,
+        deductionItemRowsHtml: deductionItemRowsHtml,
+        grossAmount: row.gross_amount,
+        totalDeductionAmount: row.total_deduction_amount,
+        netAmount: row.net_amount
     });
+    $('#breakdownModalBody').html(html);
+    // 2026-09-14, centralized -- initPopovers() (app.js) now owns per-element init (dispose-then-
+    // create, same idempotent pattern this file used to do inline here) AND the shared close-on-Esc/
+    // click-outside/single-open-at-a-time/✕ behavior, wired once globally the first time it's called
+    // anywhere in the app. Scoped to this modal's own body so re-rendering for a different employee
+    // doesn't touch popovers elsewhere on the page.
+    if (typeof initPopovers === 'function') initPopovers('#breakdownModalBody');
 }
 $(document).on('click', '.btn-view-breakdown', function () {
     const employeeId = $(this).data('employee-id');

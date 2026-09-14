@@ -615,3 +615,47 @@ undo what existed before the test started.
 
 **Source:** Phase Design Round 3 item 3c-1, page-loader work — full test-suite run turned these up,
 explicit instruction to log rather than fix now (2026-09-14).
+
+## Statutory line `note`: raw internal code fixed for the "not entitled" + known cases; a genuine misconfiguration (no_brackets_configured/unknown_calc_method/unrecognized_calc_base) now shows NO signal at all
+
+**UPDATE 2026-09-14 (same day, follow-up round):** the original bug reported just below (raw
+`(employee_not_enrolled)`/`(th_pit_average_annual_tax_2050)` text shown verbatim next to a
+statutory line) is fixed at the view layer: `statutoryRowsRd()` (`public/js/payroll/detail.js`) no
+longer renders `item.note` as raw parenthetical text at all — dropped entirely, relying solely on
+the existing `formulaButtonRd()`/`explainLineNoteRd()` "?" popover, which already translates the
+codes it knows about (`employee_not_enrolled`, `no_rate_configured`, `no_rate_ever_configured`, the
+`th_pit_(average|cumulative)_annual_tax_*` pattern, `sync_*` patterns) and shows no button at all
+(silent, never raw text) for one it doesn't. Separately, lines whose note is exactly `'disabled'`,
+`'employee_not_enrolled'`, or `'employee_tax_exempt'` (StatutoryCalculationEngine's own "this item
+does not apply to this employee at all" codes) are now filtered out of the section entirely, per
+explicit instruction — an item the employee IS entitled to that simply computed to ฿0 still shows
+normally.
+
+**Residual gap, not addressed (view-layer fix can't reach this without guessing at new logic):**
+3 of the engine's note codes mean a genuine MISCONFIGURATION, not "not entitled" —
+`no_brackets_configured`, `unknown_calc_method`, `unrecognized_calc_base` (plus `no_rate_configured`/
+`no_rate_ever_configured` are already handled via `explainLineNoteRd()`, no gap there). Those 3 are NOT in
+`explainLineNoteRd()`'s `knownNotes` map, so a line hitting one of them now shows the row (correct,
+not filtered — it's a real config problem, not a not-entitled decision) but with **zero visible
+signal** that anything is wrong: no "?" button (returns `null` for an unrecognized code), no text
+either (removed this round). Before this round's fix, at least the raw code string was visible as a
+hint something was off; now it's silently indistinguishable from a legitimately-zero line. **Fix,
+when picked up:** add these 3 codes to `explainLineNoteRd()`'s `knownNotes` map with real
+translated copy (e.g. "This item's rate table isn't configured — contact your administrator"), so
+the "?" button reappears for them. Small, contained addition — but it's still a business-logic
+decision (what should the *fallback* signal be for an unmapped code the map might STILL miss later)
+that shouldn't be made silently inside a design pass.
+
+**Original report (2026-09-14, earlier same session):**
+`StatutoryCalculationEngine::calculateLine()` (`app/services/StatutoryCalculationEngine.php`)
+writes machine-readable strings straight into `$line['note']` when a statutory item computes to
+zero/skipped — confirmed by reading the source directly: `'employee_not_enrolled'`,
+`'employee_tax_exempt'`, `'disabled'`, `'no_brackets_configured'`, `'unknown_calc_method'`,
+`'unrecognized_calc_base'`, plus whatever `computeFormula()`'s own `$noRateNote`/`$note` produce
+(seen live: `th_pit_average_annual_tax_2050`, clearly a rate-row identifier, not prose). Reproduced
+live via Playwright screenshot, Payroll Run 752 / employee 159 (TH_PVD showed
+`(employee_not_enrolled)`, TH_PIT showed `(th_pit_average_annual_tax_2050)`).
+
+**Source:** Phase Design Round 3 item 3c-2 (payslip-view.php / Calculation Breakdown modal),
+found while screenshotting the new layout for verification, follow-up fix applied same day
+(2026-09-14).

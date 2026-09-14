@@ -2319,7 +2319,21 @@ async function changeLanguage(lang) {
     // handler, or the Settings modal's own language buttons both call this same function), so
     // there's exactly one place this needs to be wired in. Best-effort/fire-and-forget: localStorage
     // above already has it as the fast-path fallback if this request fails.
-    persistUserPreferences(lang, localStorage.getItem('preferred_font_size') || 'm', localStorage.getItem('preferred_theme') || 'light');
+    // 2026-09-14, real bug found and fixed (explicit report: "theme light/dark หลุดเอง") -- the theme
+    // fallback here used to be the literal `|| 'light'`. `UserPreferenceModel::save()` does a full
+    // 3-column replace on every call (this comment's own next line already explains why ALL 3 values
+    // are always sent together) -- so on a BRAND-NEW browser/device, `localStorage.getItem
+    // ('preferred_theme')` is null (nothing written there yet) at the exact moment this fires from
+    // loadUserPreferences()'s own language-reconciliation branch (`changeLanguage()` called from
+    // there, BEFORE that same function reaches ITS OWN line that would have populated this cache --
+    // see its own comment) -- so this fell back to the LITERAL STRING 'light' and POSTED it,
+    // silently overwriting the employee's real saved theme (dark/system/whatever it actually was)
+    // with 'light', permanently, the very first time a language sync ever needed to fire on a device
+    // that hadn't cached a theme locally yet -- reproduced live via Playwright (dark -> loaded a
+    // fresh browser context -> server ui_theme silently became 'light'). Now falls back to the live
+    // DOM attribute (currentDomTheme(), just above -- always correct, no race) instead of a hardcoded
+    // guess.
+    persistUserPreferences(lang, localStorage.getItem('preferred_font_size') || 'm', localStorage.getItem('preferred_theme') || currentDomTheme());
     await loadLang(lang);
     reloadAllTablesForLanguageChange();
     // Dashboard's greeting title/description are JS-templated (employee name + today's date
@@ -2386,6 +2400,19 @@ function applyTheme(theme) {
         document.documentElement.removeAttribute('data-bs-theme');
     }
 }
+// 2026-09-14, real bug found and fixed (explicit report: "theme light/dark หลุดเอง", 3rd real
+// instance of the same root cause found this round -- see the 2 other fixes' own comments just
+// below and on #userSettingsModal's show.bs.modal handler) -- the ONE reliable way to know "what
+// theme is ACTUALLY active right now" is the live `data-bs-theme` attribute (always correct, stamped
+// server-side by header.php before any JS runs), never localStorage (can legitimately be empty/stale
+// -- a brand-new browser/device has none at all). Extracted as its own function because this exact
+// 3-line normalization (attribute -> 'dark'/'light'/'system') was about to be written a 3rd time
+// inline (changeLanguage()'s own theme fallback, just below) -- CLAUDE.md's own "generalize, don't
+// mirror-copy" rule.
+function currentDomTheme() {
+    const attr = document.documentElement.getAttribute('data-bs-theme');
+    return attr === 'dark' ? 'dark' : (attr === 'light' ? 'light' : 'system');
+}
 // Always sends ALL THREE values together, never just the one that changed -- UserPreferenceModel::save()
 // is a full replace of all 3 columns per call, so persisting only `language` (leaving `ui_font_size`/
 // `ui_theme` undefined -> the controller's own defaults) would silently reset a user's saved font
@@ -2404,6 +2431,33 @@ async function persistUserPreferences(language, fontSize, theme) {
             body: JSON.stringify({ ui_language: language, ui_font_size: fontSize, ui_theme: theme }),
         });
     } catch (e) { /* best-effort -- localStorage already has both values as a fallback */ }
+}
+// 2026-09-14, real bug found and fixed (explicit report: "components.php กดสลับ Light/Dark/System
+// ไม่ได้ ค้าง dark") -- that page used to run its OWN small, separate DOM+localStorage-only toggle
+// (its own comment explained why: "this page DOES load the real app.js now...but that function
+// reads a real user session's saved theme preference, which this standalone dev page has none of"),
+// deliberately isolated from the real `preferred_theme` localStorage key via its own `cp_theme_
+// preview` key. That isolation assumption breaks the moment whoever is previewing the page is ALSO
+// logged into a real session in the same browser (routine for anyone doing this design work) --
+// loadUserPreferences() (this file's own ready-handler) still runs on every page including this one
+// and would fetch/reconcile against that REAL session's real saved theme, competing with the demo
+// page's own separate toggle. Rather than trying to out-guess every such interaction with a 2nd
+// isolated mechanism, this is now THE one function anything that lets a person "choose a theme"
+// calls -- the Settings modal's Save button (below) and components.php's own demo buttons both call
+// this, neither keeps its own logic. Updates all 3 places theme lives, in this fixed order, every
+// time: DOM attribute (immediate visual effect) -> localStorage (this device's own fast-path cache
+// for next load) -> server, best-effort, via the SAME persistUserPreferences() this file already
+// had (not a 2nd reimplementation of that POST -- CLAUDE.md's own "generalize, don't mirror-copy"
+// rule) -- which already silently no-ops on a page with no real session (components.php with nobody
+// logged in), and genuinely persists when one exists (components.php with a real session IS now a
+// real, live control over that employee's actual saved theme, same as Settings -- an intentional
+// consequence of there being exactly one mechanism, not a separate accepted risk).
+async function setTheme(theme) {
+    applyTheme(theme);
+    localStorage.setItem('preferred_theme', theme);
+    const lang = (typeof currentLang !== 'undefined' && currentLang) ? currentLang : (localStorage.getItem('preferred_language') || 'en');
+    const fontSize = localStorage.getItem('preferred_font_size') || 'm';
+    await persistUserPreferences(lang, fontSize, theme);
 }
 // Reconciles this device's local defaults against whatever was last saved server-side -- the
 // server wins when it differs (e.g. a brand-new browser/device with empty localStorage, or the
@@ -2428,9 +2482,32 @@ async function loadUserPreferences() {
         // not just for someone who explicitly picked System -- see UserPreferenceModel's own
         // docblock). 'system' from the server is now a real explicit choice, passed through as-is.
         const savedTheme = (pref.ui_theme === 'dark' || pref.ui_theme === 'light' || pref.ui_theme === 'system') ? pref.ui_theme : 'light';
-        if (savedTheme !== (localStorage.getItem('preferred_theme') || 'light')) {
-            localStorage.setItem('preferred_theme', savedTheme);
-            applyTheme(savedTheme);
+        // 2026-09-14, real bug found and fixed (explicit report: "theme light/dark หลุดเอง") -- theme
+        // (unlike font size just above) is ALREADY correctly stamped server-side on <html> by
+        // header.php before this script ever runs (see this file's own ready-handler comment on why
+        // it deliberately never re-applies theme from localStorage at boot either, same reasoning).
+        // This block used to compare `savedTheme` against STALE localStorage and, on any mismatch
+        // (trivially true on a fresh browser/session with empty localStorage), call applyTheme() --
+        // touching the DOM again was mostly harmless by itself, but it also meant localStorage's own
+        // cache didn't always get refreshed promptly, and worse, `#userSettingsModal`'s own
+        // `show.bs.modal` handler was reading localStorage AS IF it were live DOM state to capture
+        // "the theme before I possibly change it" -- opening Settings and closing it WITHOUT saving
+        // would then `applyTheme()` that stale captured value, visibly flipping an already-correct
+        // page to a wrong theme with no save action at all. Root-caused by reading the actual code
+        // path end-to-end, not guessed. Fixed at 2 points: this function now ONLY refreshes
+        // localStorage's cache (never touches the DOM -- the DOM is always already correct for THIS
+        // session, kept in sync with the server by UserPreferenceController::save() on every save
+        // FROM this session), and the Settings modal (below) now reads the live DOM attribute instead
+        // of localStorage. A genuine mismatch between the DOM (this session's own ui_theme) and the
+        // server's current value CAN still happen (e.g. the preference was changed from a DIFFERENT
+        // device/session since this one last logged in -- session ui_theme only refreshes via THIS
+        // device's own save, never on a plain page load) -- flagged via console.warn so it's
+        // discoverable, not silently "fixed" by flashing the live page to a different theme, which is
+        // exactly the bug being removed here.
+        localStorage.setItem('preferred_theme', savedTheme);
+        const domTheme = currentDomTheme();
+        if (domTheme !== savedTheme) {
+            console.warn(`[theme] DOM theme (${domTheme}) and server-saved preference (${savedTheme}) disagree -- this session's ui_theme is stale (likely changed from another device/browser). Open Settings and Save here to refresh it.`);
         }
     } catch (e) { /* not logged in yet (public page) or a transient network error -- local defaults stand */ }
 }
@@ -2496,7 +2573,23 @@ $(document).on('show.bs.modal', '#userSettingsModal', function () {
     userSettingsOriginalFontSize = current;
     const idx = FONT_SIZE_STEPS.indexOf(current);
     $('#userSettingsFontSizeSlider').val(idx >= 0 ? idx : 1);
-    const currentTheme = localStorage.getItem('preferred_theme') || 'light';
+    // 2026-09-14, real bug found and fixed (explicit report: "theme light/dark หลุดเอง") -- was
+    // `localStorage.getItem('preferred_theme') || 'light'`, which trusts localStorage as if it were
+    // live DOM state. localStorage can legitimately be stale/absent at this exact moment (a fresh
+    // browser/session, or simply because loadUserPreferences()'s own async fetch -- called with no
+    // `await` from the ready handler -- hasn't resolved yet if Settings is opened quickly after page
+    // load) even though the DOM's `data-bs-theme` is ALREADY correct (header.php stamps it
+    // server-side before any JS runs). Reading the wrong "original" theme here didn't just mis-select
+    // the modal's own button -- `hidden.bs.modal` below restores THIS captured value on close-without-
+    // save, so simply opening Settings and closing it again (no click at all) could silently flip an
+    // already-correct page to a stale wrong theme. Now reads the live attribute directly -- the one
+    // value that's actually guaranteed current at this point in the page lifecycle. Absent attribute
+    // = 'system' (same 3-way mapping header.php's own stamp/no-stamp logic uses). Uses the shared
+    // currentDomTheme() (same function just above applyTheme() in this file) -- this exact
+    // normalization was written inline here first, then needed again verbatim in 2 more places
+    // (loadUserPreferences(), changeLanguage()'s own theme-persist fallback) while chasing the same
+    // bug family, so it was extracted rather than copied a 3rd time.
+    const currentTheme = currentDomTheme();
     userSettingsOriginalTheme = currentTheme;
     setActiveThemeOption(currentTheme);
     loadUserSettingsNotifPrefs();
@@ -2513,6 +2606,10 @@ $(document).on('input', '#userSettingsFontSizeSlider', function () {
 $(document).on('click', '.user-settings-theme-option', function () {
     const theme = $(this).data('theme-option');
     setActiveThemeOption(theme);
+    // Live-preview only while the modal is open -- DOM only, no localStorage/server write yet (same
+    // "preview, commit on Save" pattern the font-size slider's own `input` handler above uses).
+    // hidden.bs.modal (above) reverts this via applyTheme(userSettingsOriginalTheme) if closed
+    // without saving; #btnSaveUserSettings (below) is what actually commits via setTheme().
     applyTheme(theme);
 });
 // 2026-08-29, same-day follow-up: "ตัวเปลี่ยนภาษาตัดออกจากใน modal setting ครับ เพราะมีใน header อยู่
@@ -2528,10 +2625,12 @@ $(document).on('click', '#btnSaveUserSettings', function () {
     applyFontSize(size);
     // 2026-09-04, T069 Step 1 -- reads the .active button rather than a separate tracked variable,
     // same source-of-truth-is-the-DOM approach the font-size slider's own $(this).val() uses.
+    // 2026-09-14 -- commits via the shared setTheme() (DOM + localStorage + server, see its own
+    // docblock) instead of doing the same 3 steps inline here a 2nd time; `preferred_font_size` was
+    // already refreshed in localStorage just above, so setTheme()'s own combined server save picks
+    // up this SAME fresh `size` alongside the theme, in one POST, not a separate 2nd one.
     const theme = $('.user-settings-theme-option.active').data('theme-option') || 'light';
-    localStorage.setItem('preferred_theme', theme);
-    applyTheme(theme);
-    persistUserPreferences(currentLang, size, theme);
+    setTheme(theme);
     saveUserSettingsNotifPrefs();
     userSettingsJustSaved = true;
     if (typeof bootstrap !== 'undefined') {
@@ -2847,6 +2946,139 @@ function resetModalTabs($modal) {
     $modal.find('[data-bs-toggle="tab"]').removeClass('active').attr('aria-selected', 'false');
     $modal.find('.tab-pane').removeClass('show active');
 }
+// 2026-09-14, Round 3 item 3c-2 follow-up, explicit instruction: a central popover component (§9/
+// §11) -- "ทำเป็นกฎ popover กลาง...ใช้ทุกที่ที่มี ? ไม่เฉพาะ payslip". payroll/detail.js's
+// formulaButtonRd() (breakdown modal's "?" info button) is the one real call site today, but this is
+// written as a genuinely shared mechanism, the same way emp-header-card/apvAvatarHtml are, not
+// scoped to that one caller -- any future "?" info button anywhere calls THIS, not its own
+// `new bootstrap.Popover(...)`.
+//
+// initPopovers(root = document): (re)initializes every `[data-bs-toggle="popover"]` under `root` --
+// dispose-then-create, same idempotent pattern a caller re-rendering its own container (e.g. a
+// modal body replaced via .html() on every open) already needs. The 3 shared BEHAVIORS below (only
+// 1 open at a time / Esc closes / click outside closes) are wired ONCE globally the first time this
+// runs anywhere (guarded by `popoverGlobalHandlersWired`), not per-call -- calling initPopovers()
+// many times (once per render) never double-binds them.
+//
+// STYLING (bg --c-bg / border --c-border / shadow --shadow-soft / radius --radius-lg / header
+// --c-bg-subtle --fs-sm 600 / body --fs-sm, dark-mode-safe since every value is a --c-* token) lives
+// in style.css's own `.popover` rule, via Bootstrap's OWN `--bs-popover-*` CSS custom properties
+// (confirmed the exact names by reading the compiled bootstrap.min.css directly) -- overriding those
+// instead of fighting Bootstrap's popover.js with a hand-rolled positioned box means the arrow stays
+// correctly colored/positioned for free (it reads those same variables internally).
+//
+// The ✕ CLOSE BUTTON is injected via a custom `template` -- deliberately a SIBLING of
+// `.popover-header`, never a child placed INSIDE it: Bootstrap's own `setContent()` replaces
+// `.popover-header`'s entire innerHTML/textContent on every show (confirmed by reading popover.js),
+// which would silently delete a close button living inside that element. Positioned via CSS instead
+// (`.popover-close-btn`, style.css) so it visually sits in the header's top-right corner regardless.
+// 2026-09-14, same-day follow-up, explicit instruction: the ✕ was sitting crooked/heavy against the
+// header text -- `.popover-head-row` wraps `.popover-header` + the ✕ in one flex row (`align-items:
+// center`) so they share a real vertical center line, instead of the ✕ being absolutely positioned
+// by a guessed pixel offset against the WHOLE popover box. Bootstrap's TemplateFactory finds
+// `.popover-header`/`.popover-body` via `querySelector()` (searches all descendants, not just direct
+// children), so nesting `.popover-header` one level deeper here doesn't break its own content-fill
+// logic. The header's own background/border-bottom/border-radius (previously on `.popover-header`
+// itself via the `--bs-popover-header-*` vars) move to this wrapper instead (style.css) -- otherwise
+// only the text side of the row would carry that background/line, leaving a visible gap under the ✕.
+const POPOVER_TEMPLATE_RD = '<div class="popover" role="tooltip"><div class="popover-arrow"></div><div class="popover-head-row"><h3 class="popover-header"></h3><button type="button" class="btn-icon-ghost popover-close-btn" aria-label="Close"><i class="fa-solid fa-xmark"></i></button></div><div class="popover-body"></div></div>';
+let popoverGlobalHandlersWired = false;
+function initPopovers(root = document) {
+    if (typeof bootstrap === 'undefined' || !bootstrap.Popover) return;
+    // 2026-09-14, real bug found and fixed (explicit report: the ✕ never actually rendered -- popover
+    // showed with no close button at all) -- Bootstrap's Tooltip/Popover `template` option is run
+    // through its own XSS sanitizer by default, which strips any tag not in its `Default.allowList`
+    // (confirmed by inspecting the rendered tip's actual HTML directly: the `<button>` was silently
+    // gone even though `inst._config.template` still showed it correctly configured) -- `button` is
+    // not one of the allowlisted tags out of the box. Extending the list (not disabling sanitize
+    // entirely, which would also stop sanitizing the CONTENT every real caller passes in via
+    // `data-bs-content`/`data-bs-html="true"`) with exactly the 2 tags/attributes this one static
+    // template needs.
+    const popoverAllowList = Object.assign({}, bootstrap.Popover.Default.allowList, {
+        button: ['type', 'class', 'aria-label'],
+        i: (bootstrap.Popover.Default.allowList.i || []).concat(['class']),
+    });
+    $(root).find('[data-bs-toggle="popover"]').each(function () {
+        const existing = bootstrap.Popover.getInstance(this);
+        if (existing) existing.dispose();
+        new bootstrap.Popover(this, { template: POPOVER_TEMPLATE_RD, trigger: 'click', allowList: popoverAllowList });
+    });
+    if (popoverGlobalHandlersWired) return;
+    popoverGlobalHandlersWired = true;
+    // Only 1 open at a time -- right as any popover is ABOUT to show, hide every other currently-open
+    // one first (checked by its own trigger still carrying `aria-describedby`, the same attribute
+    // Bootstrap itself sets on a trigger while its popover tip is in the DOM).
+    document.addEventListener('show.bs.popover', function (e) {
+        document.querySelectorAll('[data-bs-toggle="popover"]').forEach(function (el) {
+            if (el === e.target || !el.getAttribute('aria-describedby')) return;
+            const inst = bootstrap.Popover.getInstance(el);
+            if (inst) inst.hide();
+        });
+    });
+    // Esc closes whichever popover(s) are currently open.
+    // 2026-09-14, real bug found and fixed while testing this (not explicitly reported, found during
+    // verification of the focus-return fix just below): a popover living inside a modal, closed via
+    // Esc, was closing the WHOLE MODAL too, not just the popover. Root cause -- Bootstrap's own Modal
+    // has its own Escape-dismiss listener attached directly on the modal element (bubble phase); this
+    // handler was ALSO on bubble phase, but on `document` -- the modal element sits BETWEEN the
+    // keydown's real target (whatever has focus, a descendant of the modal) and `document`, so in the
+    // bubble phase Bootstrap's own modal listener always ran FIRST, before this one ever got a chance
+    // to stop it. Moved to the CAPTURE phase (3rd arg `true`) so it runs on the way DOWN, before the
+    // event ever reaches the modal element, and calls `stopPropagation()` there -- halting delivery
+    // to every listener still ahead of it (the modal's own bubble-phase one included) -- but only
+    // when a popover is ACTUALLY open (an Esc press with none open must still reach the modal
+    // normally, e.g. to close the modal itself).
+    document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape') return;
+        const openPopovers = document.querySelectorAll('[data-bs-toggle="popover"][aria-describedby]');
+        if (!openPopovers.length) return;
+        e.stopPropagation();
+        openPopovers.forEach(function (el) {
+            const inst = bootstrap.Popover.getInstance(el);
+            if (inst) inst.hide();
+        });
+    }, true);
+    // The injected ✕ button: it lives INSIDE the tip, so the "click outside" handler just below
+    // deliberately does nothing for a click on it (it's not outside) -- this is the one place that
+    // actually closes it.
+    document.addEventListener('click', function (e) {
+        const closeBtn = e.target.closest('.popover-close-btn');
+        if (!closeBtn) return;
+        const tip = closeBtn.closest('.popover');
+        if (!tip || !tip.id) return;
+        const trigger = document.querySelector(`[aria-describedby="${tip.id}"]`);
+        const inst = trigger && bootstrap.Popover.getInstance(trigger);
+        if (inst) inst.hide();
+    });
+    // Click outside both the tip AND its own trigger closes it (Bootstrap's own `trigger:'click'`
+    // only toggles on the TRIGGER's own click -- it does not, by itself, dismiss on an outside click
+    // the way `trigger:'focus'` would via blur -- confirmed by reading Bootstrap's own tooltip.js/
+    // popover.js source, not assumed).
+    document.addEventListener('click', function (e) {
+        document.querySelectorAll('[data-bs-toggle="popover"][aria-describedby]').forEach(function (el) {
+            const inst = bootstrap.Popover.getInstance(el);
+            if (!inst) return;
+            const tip = document.getElementById(el.getAttribute('aria-describedby'));
+            if (el.contains(e.target) || (tip && tip.contains(e.target))) return;
+            inst.hide();
+        });
+    });
+    // 2026-09-14, real bug found and fixed (explicit report: "ปิดแล้ว focus ต้องไม่กระโดดไปปุ่ม × ของ
+    // modal") -- closing a popover (any of the 3 ways above, or the trigger's own toggle click)
+    // removes the tip -- including the ✕ button living inside it -- from the DOM. When the element
+    // that currently holds focus is removed, the browser moves focus to `document.body`; inside an
+    // open Bootstrap Modal (which runs its own focus trap while shown), that in turn gets redirected
+    // to the modal's own first focusable element -- its `.btn-close` -- which is what "jumped to the
+    // modal's ×" actually was. `hidden.bs.popover` fires on the TRIGGER element itself (confirmed by
+    // reading popover.js -- Bootstrap dispatches its own events on the element the instance is
+    // attached to, not the tip), so returning focus to it here, as the LAST step of every close path,
+    // reliably wins that race regardless of which of the 4 ways the popover was closed.
+    document.addEventListener('hidden.bs.popover', function (e) {
+        if (e.target && typeof e.target.focus === 'function') {
+            e.target.focus({ preventScroll: true });
+        }
+    });
+}
 // 2026-09-13, §1 follow-up, explicit instruction -- consolidates 3 near-identical per-page functions
 // that all did exactly this (payroll/detail.js's own activateTabFromHash(), employee/list.js's own
 // activateEmployeeTopTabFromHash(), employee/detail.js's own activateEmployeeTabFromHash() -- this
@@ -2895,10 +3127,31 @@ $(document).on('show.bs.modal', '.modal', function () {
         // langData reflects whichever language is currently active at the moment this modal opens
         // (not hardcoded English) -- same `langData['close']` key every other Close button in this
         // app already uses, falling back to the English literal only if the key itself is missing.
+        // 2026-09-14, real bug found and fixed (explicit report: "ปุ่ม 'ปิด/Close' ใน footer modal
+        // ไม่เปลี่ยนภาษาตอนสลับ ต้อง refresh") -- this button's text was a plain string baked in ONCE
+        // at injection time with no `data-i18n` marker at all, so updateText()'s app-wide language
+        // sweep (which matches on `[data-i18n]`, see its own docblock) could never find it again to
+        // update it. Once injected, this `<div class="modal-footer">` stays in the DOM permanently
+        // (Bootstrap only hides a modal on close, never removes it) -- so `!$existingFooter.length`
+        // above is only ever true on a modal's FIRST open, meaning every later language switch left
+        // this exact button frozen in whichever language was active that first time, for the rest of
+        // the page's life, on every `data-footer="view"` modal app-wide (empAdjustmentsModal,
+        // rawSyncDataModal, runDetailBreakdownModal, ...). `data-i18n="close"` here is the actual
+        // fix; a full page reload "fixed" it before only because that re-runs this same injection
+        // from scratch with fresh langData, not because anything was truly in sync.
         $('<div class="modal-footer"></div>')
-            .append(`<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">${(langData && langData['close']) || 'Close'}</button>`)
+            .append(`<button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">${(langData && langData['close']) || 'Close'}</button>`)
             .appendTo($content);
     }
+});
+// 2026-09-14, same bug fix, defensive companion: re-sweep THIS modal's own [data-i18n] elements on
+// every real open (not just the very first), scoped to the modal itself (cheap -- one small subtree,
+// not the whole document) rather than relying solely on whatever the LAST page-wide changeLanguage()
+// call happened to cover. Guards the same failure shape for any future case where a modal's markup
+// (static OR JS-rendered once into a container, e.g. a future "build once, re-show" pattern) carries
+// `data-i18n` but the element didn't exist in the DOM yet the last time updateText() ran page-wide.
+$(document).on('shown.bs.modal', '.modal', function () {
+    if (typeof updateText === 'function') updateText(this);
 });
 // Bootstrap 5's own _hideModal() unconditionally strips `modal-open`/overflow/scrollbar padding from
 // <body> on every modal close, with no check for another still-open modal underneath (verified in
@@ -3255,6 +3508,81 @@ function employeeHeaderCardHtml(employee) {
             <div class="emp-header-card-line2">${escapeHtml(department)} &middot; ${escapeHtml(position)}</div>
         </div>
         ${badgeHtml ? `<div class="emp-header-card-badge">${badgeHtml}</div>` : ''}
+    </div>`;
+}
+// 2026-09-14, Round 3 item 3c-2 -- payslip-view.php's JS twin. PURE LAYOUT ONLY, same contract as
+// the PHP partial's own docblock: every row comes in already rendered (this function has no idea
+// what a formula popover or a transfer badge is -- that per-line rendering is payroll/detail.js's
+// own breakdownLineRowsRd()/statutoryRowsRd(), deliberately NOT moved here), so this one function
+// is reusable as-is for both the run-detail modal and a future print/PDF payslip page.
+//
+// 2026-09-14, same-day follow-up (explicit instruction): Deductions is now ONE merged column/list
+// (statutory + item/manual rows together), with a small subheader separating the 2 groups ONLY when
+// BOTH are actually present -- a group with no rows contributes no subheader and no placeholder of
+// its own. The column as a whole still always renders (never hidden, same as Income) -- falls back
+// to one shared "-" placeholder only when NEITHER group has any rows.
+//
+// `data`: { earningRowsHtml, deductionStatutoryRowsHtml (optional), deductionItemRowsHtml
+// (optional), grossAmount, totalDeductionAmount, netAmount }.
+//
+// 2026-09-14, 2nd same-day follow-up, explicit instruction: "ตรึง tfoot ยอดรวมของทั้ง 2 คอลัมน์ไว้
+// บรรทัดเดียวกันด้านล่างสุด" -- the per-column total is a plain sibling `.payslip-col-total` div now
+// (was a `<tfoot>` row inside the same `<table>` as the line rows), pinned to the bottom of its own
+// `.payslip-col` via `margin-top: auto` on a flex column (style.css) -- `.payslip-columns` reverted
+// to CSS Grid's own default `align-items: stretch` (was `start`, the PREVIOUS follow-up's own "2
+// คอลัมน์สูงตามเนื้อหา" -- superseded by this explicit instruction, kept as history not as the current
+// rule) so both columns share the taller one's height, and each total then lands on the exact same
+// bottom line regardless of which column has more rows.
+function payslipViewHtml(data) {
+    const d = data || {};
+    const statutoryRows = (d.deductionStatutoryRowsHtml || '').trim();
+    const itemRows = (d.deductionItemRowsHtml || '').trim();
+    const showGroupLabels = statutoryRows !== '' && itemRows !== '';
+    let deductionBody = '';
+    if (statutoryRows !== '') {
+        if (showGroupLabels) {
+            deductionBody += `<tr class="payslip-subgroup-row"><td colspan="2" class="payslip-subgroup-label">${langData['payslip_group_statutory'] || 'Statutory'}</td></tr>`;
+        }
+        deductionBody += statutoryRows;
+    }
+    if (itemRows !== '') {
+        if (showGroupLabels) {
+            deductionBody += `<tr class="payslip-subgroup-row"><td colspan="2" class="payslip-subgroup-label">${langData['payslip_group_items'] || 'Items'}</td></tr>`;
+        }
+        deductionBody += itemRows;
+    }
+    if (deductionBody === '') {
+        deductionBody = `<tr class="payslip-row"><td colspan="2" class="text-center text-muted small">-</td></tr>`;
+    }
+    return `<div class="payslip-view">
+        <div class="payslip-columns">
+            <div class="payslip-col">
+                <div class="payslip-col-title">${langData['breakdown_earnings'] || 'Income'}</div>
+                <table class="table table-sm payslip-line-table mb-0">
+                    <tbody>${d.earningRowsHtml || ''}</tbody>
+                </table>
+                <div class="payslip-col-total">
+                    <span>${langData['payslip_total_earnings'] || 'Total Income'}</span>
+                    <span class="num money-gross">${fmtNum(d.grossAmount)}</span>
+                </div>
+            </div>
+            <div class="payslip-col">
+                <div class="payslip-col-title">${langData['payslip_deductions_title'] || 'Deductions'}</div>
+                <table class="table table-sm payslip-line-table mb-0">
+                    <tbody>${deductionBody}</tbody>
+                </table>
+                <div class="payslip-col-total">
+                    <span>${langData['payslip_total_deductions'] || 'Total Deductions'}</span>
+                    <span class="num money-deduction">${fmtNum(d.totalDeductionAmount)}</span>
+                </div>
+            </div>
+        </div>
+        <div class="payslip-summary">
+            <div class="payslip-summary-row payslip-summary-row-net">
+                <span class="payslip-summary-label">${langData['table_net_pay'] || 'Net Pay'}</span>
+                <span class="num money-net fs-5">${fmtNum(d.netAmount)}</span>
+            </div>
+        </div>
     </div>`;
 }
 // 2026-09-11, Batch 3C item 3, explicit instruction: "ห้าม trigger row click ไปหน้า Detail

@@ -152,12 +152,21 @@ function cpLangText(string $key, string $fallback = ''): string {
         <h1 style="font-size: var(--fs-xl);">Design Components</h1>
         <p class="cp-section-note mb-0">Phase Design Round 2 -- ตัวอย่างทุก shared component ในหน้าเดียว (dev only). อ้าง § ตาม docs/design/rules.md เสมอ -- ดู comment ในโค้ดของแต่ละ section.</p>
     </div>
-    <!-- ปุ่มสลับ Light/Dark/System (ตามที่ระบุ) -- ใช้ data-bs-theme attribute เดียวกับที่ app.js's
-         applyTheme() ใช้จริง (ไม่ใช่กลไกแยก): 'light'/'dark' ตั้ง attribute ตรงๆ, 'system' ลบ attribute
-         ทิ้งเพื่อให้ tokens.css's @media (prefers-color-scheme:dark) เป็นคนตัดสินเอง -- 3 สถานะเดียวกับที่
-         layout/header.php สร้างไว้ฝั่ง server จริง (ดู rules.md §1's "3-state model" comment
-         ใน style.css). เก็บค่าไว้ใน localStorage เฉพาะของหน้านี้เอง (ไม่ผ่าน UserPreferenceController --
-         หน้านี้ไม่ใช่ผู้ใช้จริง ไม่ต้อง persist ข้ามอุปกรณ์). -->
+    <!-- 2026-09-14, real bug found and fixed (explicit report: "components.php กดสลับ Light/Dark/
+         System ไม่ได้ ค้าง dark") -- this used to run its OWN separate DOM+localStorage-only toggle,
+         under its own isolated `cp_theme_preview` localStorage key, deliberately NOT going through
+         app.js's real preference machinery ("this page ... has none of [a real session]"). That
+         isolation assumption breaks whenever whoever is previewing this page is ALSO logged into a
+         real session in the SAME browser (routine during this exact kind of design work) --
+         app.js's own ready-handler still runs loadUserPreferences() on every page including this
+         one, which would reconcile against that OTHER real session's real saved theme, competing
+         with (and, before app.js's own 2026-09-14 fix, overriding) this page's separate toggle.
+         Fixed by removing the separate mechanism entirely -- these 3 buttons now call the SAME
+         `setTheme()` helper (app.js) the real Settings modal's own Save button calls, so there is
+         exactly one path that can ever change the live theme, not two. Real, accepted consequence:
+         if a real session IS present in this browser, clicking these buttons now also persists to
+         that employee's actual saved preference (same as if they'd used Settings) -- intentional,
+         not a workaround, per the same explicit instruction that asked for this fix. -->
     <div class="btn-group cp-theme-toggle" role="group" aria-label="Theme toggle">
         <button type="button" class="btn btn-outline-secondary btn-sm" data-cp-theme="light"><i class="fa-solid fa-sun me-1"></i>Light</button>
         <button type="button" class="btn btn-outline-secondary btn-sm" data-cp-theme="dark"><i class="fa-solid fa-moon me-1"></i>Dark</button>
@@ -1161,12 +1170,27 @@ $cpCallouts = [
 </div>
 
 <!-- 2026-09-14, Phase Design Round 3 item 3c-1 follow-up -- real markup, not a mockup, but NOT the
-     literal app/views/layout/page-loader.php include (that partial's `<?=BASE_URL?>` is a PHP
-     CONSTANT this standalone dev page deliberately never defines, see this file's own docblock
-     near the top on why -- same reason emp-header-card.php's demo further up passes plain arrays
-     instead of real DB rows). Byte-identical class structure/ids otherwise, so the real CSS
-     applies unmodified; the logo path is this file's own relative "../../public/..." convention,
-     used everywhere else already (node_modules links above), not a real BASE_URL substitute. -->
+     literal app/views/layout/page-loader.php include (that partial's own image src uses a short-echo
+     PHP tag interpolating the BASE_URL CONSTANT, which this standalone dev page deliberately never
+     defines, see this file's own docblock near the top on why -- same reason emp-header-card.php's
+     demo further up passes plain arrays instead of real DB rows). Byte-identical class structure/ids
+     otherwise, so the real CSS applies unmodified; the logo path is this file's own relative
+     "../../public/..." convention, used everywhere else already (node_modules links above), not a
+     real BASE_URL substitute.
+     2026-09-14, real bug found and fixed (explicit report while testing the theme toggle further
+     down in the body: clicking it did nothing at all) -- this comment used to spell out that PHP
+     short-echo opening delimiter literally (backtick-wrapped, as if just prose). Per CLAUDE.md's own
+     documented rule, PHP's lexer does not know it is "inside an HTML comment" -- it parses that exact
+     2-character opening sequence anywhere in the raw file as the start of real code, regardless of
+     context. Since this exact file never defines the BASE_URL constant, that literal opening fatally
+     errored the moment the page was requested, truncating the ENTIRE rest of the page's output
+     silently (curl showed a comment cut off mid-sentence, no visible error banner anywhere) -- which
+     is exactly why nothing after this point in the file, including the real app.js include and the
+     theme-toggle script further down, ever loaded at all. Rephrased below with no literal delimiter
+     anywhere in this comment either (careful not to reintroduce the very bug being described -- the
+     same trap CLAUDE.md notes hitting twice before while writing that rule's own explanation). Same
+     class of fix CLAUDE.md's Code Convention section already documents once before in this same file
+     (a cache-busting query-string example). -->
 <div id="omPageLoader" class="om-page-loader d-none" aria-hidden="true">
     <div class="om-page-loader-stage">
         <div class="om-page-loader-ring"></div>
@@ -1767,33 +1791,53 @@ $(function () {
 });
 </script>
 <script>
-// Self-contained theme toggle for this preview page only -- same 3-state semantics/attribute
-// layout/header.php stamps server-side ('light'/'dark' set data-bs-theme; 'system' removes it so
-// tokens.css's own @media (prefers-color-scheme:dark) decides), NOT a call into app.js's own
-// applyTheme() -- this page DOES load the real app.js now (since Round 2 item 4), but that function
-// reads a real user session's saved theme preference, which this standalone dev page has none of;
-// kept as its own tiny self-contained toggle instead of trying to fake a session for it.
+// 2026-09-14, real bug found and fixed -- see the toggle buttons' own HTML comment (above, near
+// `.cp-theme-toggle`) for the full story. No theme logic of its own anymore: reads the LIVE
+// data-bs-theme attribute for initial button state (the one true source, same attribute layout/
+// header.php stamps server-side and app.js's applyTheme()/setTheme() manage from then on), and
+// every click calls the SAME setTheme(theme) helper app.js's real Settings modal Save button calls
+// -- exactly one mechanism can ever change the live theme now, not a 2nd separate one duplicating
+// its logic under its own localStorage key.
 (function () {
-    var KEY = 'cp_theme_preview';
-    function apply(theme) {
-        if (theme === 'dark') {
-            document.documentElement.setAttribute('data-bs-theme', 'dark');
-        } else if (theme === 'light') {
-            document.documentElement.setAttribute('data-bs-theme', 'light');
-        } else {
-            document.documentElement.removeAttribute('data-bs-theme');
-        }
+    function currentThemeFromDom() {
+        var attr = document.documentElement.getAttribute('data-bs-theme');
+        return attr === 'dark' ? 'dark' : (attr === 'light' ? 'light' : 'system');
+    }
+    function reflectActive(theme) {
         document.querySelectorAll('[data-cp-theme]').forEach(function (btn) {
             btn.classList.toggle('active', btn.getAttribute('data-cp-theme') === theme);
         });
-        try { localStorage.setItem(KEY, theme); } catch (e) {}
     }
     document.querySelectorAll('[data-cp-theme]').forEach(function (btn) {
-        btn.addEventListener('click', function () { apply(btn.getAttribute('data-cp-theme')); });
+        btn.addEventListener('click', function () {
+            var theme = btn.getAttribute('data-cp-theme');
+            reflectActive(theme);
+            if (typeof setTheme === 'function') {
+                setTheme(theme);
+            } else {
+                // app.js failed to load entirely (see #cpDepBanner further down) -- DOM-only
+                // fallback so these buttons still do something instead of silently no-op'ing.
+                if (theme === 'dark' || theme === 'light') {
+                    document.documentElement.setAttribute('data-bs-theme', theme);
+                } else {
+                    document.documentElement.removeAttribute('data-bs-theme');
+                }
+            }
+        });
     });
-    var saved = 'system';
-    try { saved = localStorage.getItem(KEY) || 'system'; } catch (e) {}
-    apply(saved);
+    // 2026-09-14, same bug fix, explicit instruction: "ทดสอบสลับ 3 โหมด...แล้ว reload ค่าคง" -- this
+    // page has no server-side stamp at all (it's a standalone file, not routed through layout/
+    // header.php, unlike every real page), so the attribute always starts absent on a fresh load
+    // regardless of what was picked last time. `preferred_theme` in localStorage (kept correctly in
+    // sync by setTheme()/loadUserPreferences(), both app.js) is the fast local cache real pages
+    // already read at boot for font size -- applying it here too (theme specifically is the ONE
+    // thing app.js's OWN ready-handler deliberately does NOT do this for on a REAL page, precisely
+    // BECAUSE that page already has a correct server stamp to begin with; this page has no such
+    // stamp, so the same reasoning doesn't forbid it here -- it's what makes it here).
+    if (typeof applyTheme === 'function') {
+        applyTheme(localStorage.getItem('preferred_theme') || 'system');
+    }
+    reflectActive(currentThemeFromDom());
 })();
 </script>
 <script>
