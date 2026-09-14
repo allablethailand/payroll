@@ -2384,62 +2384,80 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    CSS already sets `font-family: inherit` (confirmed by reading the library's source directly), and
    `html, body { font-family: 'Sarabun', sans-serif; }` above already covers every page a Swal2 popup
    could ever be appended to -- it was already inheriting Sarabun correctly before this round. */
-:root {
-    --swal2-background: var(--c-bg);
-    --swal2-color: var(--c-text);
-    --swal2-footer-border-color: var(--app-border);
-    --swal2-footer-color: var(--app-text);
-    --swal2-input-border: 1px solid var(--app-border);
-    --swal2-input-background: var(--app-bg);
-    --swal2-validation-message-background: var(--app-hover-bg);
-    --swal2-validation-message-color: var(--app-text);
-    --swal2-close-button-color: var(--app-text-muted);
-    /* 2026-09-13, notification card redesign: the POPUP/TOAST container itself (a "floating surface")
-       now reads --radius-lg to match the dropdown/notification card family -- the 3 BUTTON radii
-       below stay --radius (buttons keep the normal, smaller radius everywhere, per --radius-lg's own
-       tokens.css comment: "--radius 6px เดิมยังใช้กับปุ่ม/input/การ์ดในหน้า"). Confirmed this ALSO
-       covers showSuccess()'s own toast mode (Swal.fire({toast:true,...})) automatically -- Swal2's
-       own bundled CSS renders a toast via the SAME `.swal2-popup` base rule/variable, not a separate
-       toast-specific radius rule (verified by reading sweetalert2.css directly), so one token change
-       here reaches both. */
-    --swal2-border-radius: var(--radius-lg);
-    --swal2-confirm-button-border-radius: var(--radius);
-    --swal2-deny-button-border-radius: var(--radius);
-    --swal2-cancel-button-border-radius: var(--radius);
+/* 2026-09-14, Round 3 Phase A -- every property below moved OFF `:root { --swal2-*: ... }` onto a
+   direct declaration on the real rendered class (`.swal2-popup`/`.swal2-confirm`/`.swal2-cancel`/
+   etc.) -- a `:root`-based override here is silently dead (`sweetalert2.all.min.js` injects its own
+   `<style>` re-declaring the same `:root` block after this file loads, winning the cascade tie every
+   time), confirmed as a real, live dark-mode bug (a bright white popup on every dialog) while
+   verifying the tone->icon change below. Full root-cause/debug history, including 2 fix attempts
+   that were each wrong in their own way before landing on this one: docs/decisions/swal2-css-override.md
+   (rules.md §10 has the short version of the resulting rule). */
+.swal2-popup {
+    background-color: var(--c-bg);
+    color: var(--c-text);
+    /* Floating-surface radius (§1's own `--radius-lg` rule: dropdown/popover/toast/Swal popup) --
+       covers showSuccess()'s toast mode too, same single `.swal2-popup` base class either way
+       (verified by reading the library's source directly -- no separate toast-only rule exists). */
+    border-radius: var(--radius-lg);
+}
+.swal2-confirm,
+.swal2-cancel,
+.swal2-deny {
+    /* Buttons keep the normal, smaller `--radius` (6px) everywhere, per `--radius-lg`'s own
+       tokens.css comment -- `.swal2-deny` has no real caller in this app today (grep confirms no
+       `showDenyButton`/`denyButtonText` anywhere) but costs nothing to keep consistent if one is
+       ever added later. */
+    border-radius: var(--radius);
+}
+.swal2-confirm {
+    /* Declares the SAME custom property Swal2's own per-call `confirmButtonColor` option sets
+       inline (`tone`/`danger` in showConfirm()) as its default here, then reads it back -- an inline
+       declaration on the element always wins over this rule for a toned call, while this rule wins
+       over the injected stylesheet's own `:root` default for an untoned one (explicit-on-element
+       beats inherited-from-ancestor). 2 other approaches were tried and were each wrong in their own
+       way -- see docs/decisions/swal2-css-override.md for why, before changing this rule again. */
     --swal2-confirm-button-background-color: var(--c-primary);
-    --swal2-cancel-button-background-color: transparent;
-    --swal2-cancel-button-color: var(--c-text);
+    background-color: var(--swal2-confirm-button-background-color);
 }
 /* Cancel button as a genuine `.btn-outline-secondary` look (§9/§10's own "ปุ่มยกเลิก secondary") --
-   the --swal2-cancel-button-* vars above only reach background-color/color/border-radius (confirmed
-   by reading the library's own CSS -- it has no exposed border-color variable at all), so the border
-   itself needs a direct rule. Both selectors below are plain single/double-class selectors, which
-   beat the library's own `:where(...)`-wrapped rules (zero specificity by design) on specificity
-   alone -- no `!important` needed anywhere in this block. */
+   this app's ONE dialog type with a cancel button at all (showConfirm()) never sets Swal2's own
+   `cancelButtonColor` option (no per-call inline override exists for it, unlike confirm above), so
+   getting this right depends entirely on this rule actually winning -- confirmed it now does (both
+   background/color below and the pre-existing border are all direct-class declarations, none of them
+   the broken custom-property kind). */
 .swal2-cancel {
+    background-color: transparent;
+    color: var(--c-text);
     border: 1px solid var(--c-border-strong);
 }
 .swal2-cancel:hover {
     background-color: var(--c-bg-hover);
 }
+.swal2-close {
+    color: var(--c-text-muted);
+}
 /* info/question icon recolor -- see this block's own top comment for why (real §3 blue-icon
-   violation, `--c-info` is this app's own documented "gray, not blue" token for exactly this case). */
+   violation, `--c-info` is this app's own documented "gray, not blue" token for exactly this case).
+   UNCHANGED/still correct -- always was a direct class selector, never affected by the bug above. */
 .swal2-icon.swal2-info,
 .swal2-icon.swal2-question {
     border-color: var(--c-info);
     color: var(--c-info);
 }
-[data-bs-theme="dark"] {
-    /* The timer progress bar (SweetAlert2's own `timer:` option) defaults to a translucent BLACK
-       overlay, tuned for a light popup -- needs to flip to a translucent WHITE overlay to stay
-       visible against a dark one. This is the one --swal2-* value that must be theme-gated rather
-       than a single token-driven rule, since it is a raw rgba() overlay tint, not a surface/text
-       role this file already has a token for. */
-    --swal2-timer-progress-bar-background: rgba(255, 255, 255, .25);
+.swal2-timer-progress-bar {
+    /* The timer progress bar (SweetAlert2's own `timer:` option, used by showSuccess()'s toast)
+       defaults to a translucent BLACK overlay, tuned for a light popup -- needs to flip to a
+       translucent WHITE overlay to stay visible against a dark one. Explicit light-mode value here
+       too (matches the library's own untouched default, `rgba(0,0,0,.3)`) since the dead `:root`
+       custom-property this used to read from is gone -- nothing else sets it now. */
+    background: rgba(0, 0, 0, .3);
+}
+[data-bs-theme="dark"] .swal2-timer-progress-bar {
+    background: rgba(255, 255, 255, .25);
 }
 @media (prefers-color-scheme: dark) {
-    :root:not([data-bs-theme="light"]) {
-        --swal2-timer-progress-bar-background: rgba(255, 255, 255, .25);
+    :root:not([data-bs-theme="light"]) .swal2-timer-progress-bar {
+        background: rgba(255, 255, 255, .25);
     }
 }
 

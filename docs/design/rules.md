@@ -1524,6 +1524,27 @@ page-local block มา 2 รอบก่อนหน้า (callout ก่อ�
     "primary"/"danger" ของ object form เองพอดี) — **พบเพิ่มระหว่างแก้จุดเดียวกัน**: ไอคอน
     `info`/`question` ของ Swal2 default เป็นสีฟ้า (`#3fc3ee`/`#87adbd`, ตรงข้าม §3) แก้เป็น `--c-info`
     (โทเคนของแอปเองที่ comment ใน tokens.css บอกไว้แล้วว่า "info = เทา ไม่ใช่ฟ้า")
+  - **`tone` → ไอคอน อัตโนมัติ (ใหม่, 2026-09-14, Round 3 Phase A)** — caller **ไม่ส่ง `icon` เอง**
+    อีกต่อไป เลยแม้แต่ตัวเดียว: `tone` (หรือ `danger:true` ที่ยัง alias เป็น `'danger'` เหมือนเดิม) เลือก
+    ทั้งไอคอนและสีให้พร้อมกันตามตารางนี้ — `warning`/`danger` ใช้**ไอคอนเดียวกัน** (`fa-triangle-
+    exclamation`) ต่างแค่สี ตรงกับที่ `.btn-decision-warning`/`.btn-decision-danger` (§4) เองก็ต่างกัน
+    แค่สีเหมือนกัน ไม่ใช่รูปทรง — ไม่มี `tone` เลย (default) = ถือเป็น `'info'`:
+
+    | `tone` | ไอคอน (Font Awesome) | สี |
+    |---|---|---|
+    | `'danger'` (หรือ `danger:true`) | `fa-triangle-exclamation` | `--c-danger` |
+    | `'warning'` | `fa-triangle-exclamation` | `--c-warning` |
+    | `'success'` | `fa-circle-check` | `--c-success` |
+    | ไม่ระบุ (default) | `fa-circle-info` | `--c-info` |
+
+    วงกลม border ที่ล้อมไอคอนอยู่ (`.swal2-icon`) **ยังคงไว้เหมือนเดิม ไม่ได้ redesign ออก** — สโคปคือ
+    "ไอคอนข้างในผิด" ไม่ใช่ "กล่องที่ล้อมมันควรเป็นแบบไหน"
+  - **Override CSS ของ Swal2 (พื้น/สี/border-radius/ปุ่ม) ต้องประกาศตรงบน class selector จริงเสมอ
+    (`.swal2-popup`/`.swal2-confirm`/ฯลฯ) ห้ามตั้งผ่าน `:root { --swal2-*: ... }` เด็ดขาด** —
+    `sweetalert2.all.min.js` inject stylesheet เริ่มต้นของตัวเองทับ `:root` เสมอ (มาทีหลัง
+    `style.css` ใน DOM) ทำให้ override แบบ `:root` ตายเงียบทุกครั้งไม่ว่าจะเขียนถูกแค่ไหน — ดูเหตุผล/
+    ประวัติการดีบักเต็ม (รวมบั๊กจริงที่เจอ+2 ครั้งที่ลองแก้แล้วพัง) ที่
+    `docs/decisions/swal2-css-override.md`
 - **สำเร็จ — เปลี่ยน default ทั้งระบบ, ยืนยันแล้ว**: toast มุมขวาบน (helper `showSuccess`, ไม่ใช่ modal
   บล็อกกลางจอที่ต้องกด OK เหมือนก่อนรอบนี้อีกต่อไป) — กติกา auto-timer: ข้อความ ≤ 60 ตัวอักษร = 3
   วินาที ไม่มีปุ่ม; ยาวกว่านั้น = 6 วินาที + ปุ่ม × ปิดเอง (ไม่ใช่ OK); hover ค้าง = timer หยุดนับ

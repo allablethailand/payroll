@@ -88,19 +88,61 @@ function showWarning(msg, confirm = true) {
 // documented decision-set exception, rules.md §4). `danger: true` is kept as a backward-compatible
 // SHORTHAND for `tone: 'danger'` (the only tone this ever supported before today) -- existing callers
 // that pass `danger` keep working unchanged; `tone` takes precedence when both happen to be set.
+//
+// 2026-09-14, Round 3 Phase A (rules.md §10's own "showConfirm" sub-section) -- `tone` now ALSO
+// drives the dialog's own ICON, not just the confirm button's color: every call site (~100+ across
+// the app) used to get the exact same hardcoded `icon:'info'` regardless of `tone`, so a
+// data-dirty-guard-tone="warning" dialog (app.js) showed a plain gray "i" circle, not a warning
+// triangle -- caller never sets `icon` itself, this map is the only place tone->icon exists.
+// Danger and warning intentionally SHARE the same glyph (both mean "pay attention/something is
+// wrong"), differing only by color -- matches rules.md §4's own decision-set button pair (warning/
+// danger differ by color only there too, never by shape).
+//
+// Rendered via Swal2's own `iconHtml`+`iconColor` options rather than its 5 built-in icon TYPES
+// (`success`/`error`/`warning`/`info`/`question`, each hand-drawn via CSS/JS as a checkmark-swoosh/
+// x-mark/"!"/"i"/"?" -- none of them Font Awesome) -- confirmed by reading sweetalert2.all.min.js's
+// own icon-render function directly: passing `iconHtml` makes the library skip that hand-drawn
+// content ENTIRELY (the success-ring/line-tip/x-mark-line elements are only ever injected in the
+// `else if` branches `iconHtml` short-circuits past), not a partial/cosmetic override on top of it --
+// this app's own icon rule (rules.md §1: "Font Awesome ชุดเดียว") otherwise has zero exceptions for
+// Swal2. `icon` (the TYPE, e.g. `'warning'`) is still passed alongside `iconHtml` purely so the
+// popup still gets a `.swal2-<type>` class for the library's own show/hide animation timing --
+// completely decorative for THIS purpose since `iconColor` (below) sets color/border-color as an
+// INLINE style that always wins over any CSS class regardless of type. The surrounding circular ring
+// (Swal2's own `.swal2-icon`, a plain 5em `border-radius:50%` box, style.css untouched) is KEPT, not
+// redesigned away -- only the glyph drawn inside it and its color change; this is the shape every
+// confirm dialog in the app already has today, scope here is "fix which icon", not "redesign the
+// icon container".
+const TONE_ICON = {
+    danger: { type: 'warning', html: '<i class="fa-solid fa-triangle-exclamation"></i>', color: 'var(--c-danger)' },
+    warning: { type: 'warning', html: '<i class="fa-solid fa-triangle-exclamation"></i>', color: 'var(--c-warning)' },
+    success: { type: 'success', html: '<i class="fa-solid fa-circle-check"></i>', color: 'var(--c-success)' },
+    // 'info' doubles as the FALLBACK for no tone at all -- matches the exact default appearance this
+    // function always had before this change (`icon:'info'`, colored via style.css's pre-existing
+    // `.swal2-icon.swal2-info{border-color:var(--c-info);color:var(--c-info)}` rule -- that CSS rule
+    // is UNCHANGED/still live for the other direct `Swal.fire({icon:'info'|'question', ...})` callers
+    // elsewhere in the app that bypass this function entirely (a pre-existing §10 "ห้ามเรียก Swal.fire
+    // ตรงๆ" violation, out of THIS task's scope to fix -- see payroll/detail.js, payroll/index.js,
+    // setup/setup-rules.js, setup/tax-statutory.js), just no longer the thing that colors a
+    // showConfirm() icon specifically, since `iconColor` below always wins over it there now).
+    info: { type: 'info', html: '<i class="fa-solid fa-circle-info"></i>', color: 'var(--c-info)' },
+};
 function showConfirm(arg1, arg2, arg3, arg4) {
     const opts = (arg1 !== null && typeof arg1 === 'object')
         ? arg1
         : { title: arg1, message: arg2, onYes: arg3, onNo: arg4 };
+    const tone = opts.tone || (opts.danger ? 'danger' : null);
+    const iconSpec = TONE_ICON[tone] || TONE_ICON.info;
     const swalOpts = {
-        icon: 'info',
+        icon: iconSpec.type,
+        iconHtml: iconSpec.html,
+        iconColor: iconSpec.color,
         title: opts.title,
         text: opts.message,
         showCancelButton: true,
         confirmButtonText: opts.confirmText || langData.yes || 'Yes',
         cancelButtonText: opts.cancelText || langData.no || 'No',
     };
-    const tone = opts.tone || (opts.danger ? 'danger' : null);
     if (tone === 'danger') swalOpts.confirmButtonColor = 'var(--c-danger)';
     else if (tone === 'warning') swalOpts.confirmButtonColor = 'var(--c-warning)';
     else if (tone === 'success') swalOpts.confirmButtonColor = 'var(--c-success)';
