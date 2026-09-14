@@ -99,26 +99,53 @@ function originamiLoaderHtml(size) {
 }
 // Tier 2 -- full-screen centered overlay, reserved for a page's genuine MAIN content load (NOT
 // wired into setButtonLoading()/DataTables at all -- explicit request: "ไม่ต้องโหลดทุกการโหลด...เฉพาะ
-// ตอนโหลดข้อมูลหน้าหลัก"). The mark itself is static (only the 2 rings around it spin, in opposite
-// directions -- see the CSS), so this uses the real brand PNG directly rather than a CSS
-// approximation. Idempotent -- calling showPageLoader() while one is already showing just reuses it
-// (covers a caller that fires 2 fetches in parallel and calls this from both).
-function showPageLoader(text) {
-    if ($('#omPageLoader').length) { return; }
-    const label = text || (typeof langData !== 'undefined' && langData['processing']) || 'Loading...';
-    $('body').append(
-        `<div id="omPageLoader" class="om-page-loader">
-            <div class="om-page-loader__stage">
-                <div class="om-page-loader__ring om-page-loader__ring--outer"></div>
-                <div class="om-page-loader__ring om-page-loader__ring--inner"></div>
-                <img class="om-page-loader__logo" src="${BASE_URL}/public/images/origami_logo.png" alt="">
-            </div>
-            <div class="om-page-loader__text">${label}</div>
-        </div>`
-    );
+// ตอนโหลดข้อมูลหน้าหลัก"). 2026-09-14, Phase Design Round 3 item 3c-1 follow-up (§10/§11) --
+// REDESIGNED: markup moved to a partial (app/views/layout/page-loader.php, rendered once per page
+// via footer.php, hidden by default with `d-none`) instead of this function building/tearing down
+// the whole `<div>` tree on every call -- these two functions now just toggle that pre-rendered
+// element, same "PHP partial + JS twin that only manipulates it" shape every other §11 shared
+// component in this round already uses. Two explicit timing requirements neither can be pure CSS
+// (`display` -- what `d-none` toggles -- can't transition):
+//  - Appear only after a 200ms delay, so a load that finishes faster than that never flashes the
+//    overlay at all. `pageLoaderShowTimer` is the pending setTimeout id; hidePageLoader() cancels
+//    it if the load finishes before the delay elapses (nothing ever became visible, nothing to
+//    fade back out either).
+//  - Fade out over 150ms before actually re-hiding (`d-none` re-added only after that timer, not
+//    immediately) -- `.om-page-loader-visible` (style.css) is what the CSS `transition: opacity`
+//    is actually keyed off; removing/re-adding `d-none` alone would just snap instantly.
+// Both remain idempotent (call while already showing/scheduled/hiding is a safe no-op) --
+// preserves the original comment's own note that a caller firing 2 parallel fetches and calling
+// this from both must not double-schedule or double-remove.
+let pageLoaderShowTimer = null;
+let pageLoaderHideTimer = null;
+function showPageLoader() {
+    const $loader = $('#omPageLoader');
+    if (!$loader.length) return;
+    clearTimeout(pageLoaderHideTimer);
+    pageLoaderHideTimer = null;
+    if (pageLoaderShowTimer || $loader.hasClass('om-page-loader-visible')) return;
+    pageLoaderShowTimer = setTimeout(function () {
+        pageLoaderShowTimer = null;
+        $loader.removeClass('d-none');
+        void $loader[0].offsetWidth; // force reflow so the opacity transition below actually runs
+        $loader.addClass('om-page-loader-visible');
+    }, 200);
 }
 function hidePageLoader() {
-    $('#omPageLoader').remove();
+    const $loader = $('#omPageLoader');
+    if (!$loader.length) return;
+    if (pageLoaderShowTimer) {
+        // never actually appeared yet (still inside the 200ms delay) -- cancel, nothing to fade
+        clearTimeout(pageLoaderShowTimer);
+        pageLoaderShowTimer = null;
+        return;
+    }
+    if (!$loader.hasClass('om-page-loader-visible')) return;
+    $loader.removeClass('om-page-loader-visible');
+    pageLoaderHideTimer = setTimeout(function () {
+        pageLoaderHideTimer = null;
+        $loader.addClass('d-none');
+    }, 150);
 }
 function setButtonLoading($btn, isLoading, loadingLabel) {
     if (!$btn || !$btn.length) return;

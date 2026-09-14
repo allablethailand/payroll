@@ -23,6 +23,14 @@
   --c-border: #E5E7EB;
   --c-border-strong: #D1D5DB;
   --c-bg: #FFFFFF;
+  --c-bg-rgb: 255, 255, 255;        /* 2026-09-14, page-loader backdrop -- mechanical RGB-triplet
+                                        decomposition of --c-bg itself (§12 lint rule 1's own
+                                        --bs-*-rgb exemption, same technique, just for this app's
+                                        own token instead of a Bootstrap one) -- needed because
+                                        `rgba()` can't take a hex custom property directly, and the
+                                        backdrop needs partial alpha (.85) while the ring/logo/text
+                                        drawn on top of it stay fully opaque -- a plain opacity on
+                                        the whole overlay would fade those out too. */
   --c-bg-subtle: #F7F8FA;           /* แถบหัวตาราง, filter bar, พื้น modal footer */
   --c-bg-hover: #F1F3F5;
 
@@ -142,9 +150,32 @@
 }
 
 /* ==========================================================================
+   2026-09-14, Phase Design Round 3 item 3c-1 follow-up -- REAL BUG FOUND AND FIXED, found purely
+   by accident while verifying the new --c-bg-rgb token's dark-mode value for the page-loader: this
+   comment's own prose used to list several token-name wildcards separated by slashes, one of which
+   ended in an asterisk immediately before the next slash -- an asterisk directly followed by a
+   slash, with nothing between them, is how a CSS comment ENDS. That combination showing up INSIDE
+   this comment's own prose closed it early, right there mid-sentence -- everything from that point
+   through the NEXT such combination further down (this whole paragraph, the selector-convention
+   explanation, all of it) was then parsed as actual CSS, not a comment. Confirmed directly (not
+   guessed) by loading tokens.css standalone in a real browser and inspecting
+   `document.styleSheets[0].cssRules`: only 2 top-level rules ever existed -- `:root` and the
+   `@media (prefers-color-scheme: dark)` block -- the ENTIRE `[data-bs-theme="dark"] { ... }` rule
+   below was silently discarded by the parser's error recovery as unparseable garbage, on EVERY
+   page, since this file was first written (Round 2, this whole Phase Design initiative). Net
+   effect: an employee who explicitly chose "Dark" in Settings (`ui_theme='dark'`, stamped
+   server-side on `<html>` by header.php) got EVERY `--c-*` token's LIGHT value anyway -- every
+   component this entire initiative has built (buttons, badges, stat cards, modals, filter bars,
+   the page-loader this same round just added, all of it) -- only "System" dark mode (the
+   OS-preference media query, which sits safely after the corrupted rule) ever actually worked.
+   Fixed by rephrasing the list with commas so no token-name wildcard's trailing asterisk sits
+   directly before the next item's leading slash anywhere in this comment -- verified the fix
+   directly the same way the bug was confirmed (re-checked `cssRules.length` is now 3, the
+   `[data-bs-theme="dark"]` rule's text is present and correct). Grepped the rest of this file for
+   every other place that combination could occur -- confirmed this was the only one.
    Dark mode (Round 2 item 1b, docs/design/rules.md §1's own decision this round: "token มี 2
    ชุด light/dark ใน tokens.css เท่านั้น component ห้ามมี dark override ของตัวเอง"). Overrides ONLY the
-   --c-* color tokens above -- --sp-*/--fs-*/--radius*/--font-*/--lh/--shadow-modal (shadow value
+   --c-* color tokens above -- --sp-*, --fs-*, --radius*, --font-*, --lh, --shadow-modal (shadow value
    unchanged in spirit, just re-tuned for a dark surface below) are NOT theme-dependent, untouched
    here.
    Selector convention is the EXACT one Backlog Phase 11 T069 already established for this app's own
@@ -168,6 +199,7 @@
     --c-border: #2A2F36;
     --c-border-strong: #3A414A;
     --c-bg: #15181C;
+    --c-bg-rgb: 21, 24, 28;       /* mechanical decomposition of this block's own --c-bg -- see :root's comment */
     --c-bg-subtle: #1C2026;
     --c-bg-hover: #232830;
     --c-primary-hover: #FFAD33;
@@ -207,6 +239,7 @@
         --c-border: #2A2F36;
         --c-border-strong: #3A414A;
         --c-bg: #15181C;
+        --c-bg-rgb: 21, 24, 28;
         --c-bg-subtle: #1C2026;
         --c-bg-hover: #232830;
         --c-primary-hover: #FFAD33;

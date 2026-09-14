@@ -1546,7 +1546,10 @@ page-local block มา 2 รอบก่อนหน้า (callout ก่อ�
   toast แค่ฝั่งสำเร็จเท่านั้น — ข้อผิดพลาดต้องไม่ถูกมองข้ามได้ง่ายจากมุมจอ/หายไปเองใน 3-6 วินาที) ข้อความ =
   บอกสาเหตุ + สิ่งที่ทำได้ ไม่ขอโทษ ไม่คลุมเครือ (การไล่ตรวจคำของ caller ทั้ง 9 จุดที่มีอยู่ ไม่ได้ทำรอบนี้ —
   เป็นการแก้ข้อความหน้าจริงทีละจุด ไม่ใช่ shared helper)
-- Loading: ปุ่ม spinner (ปุ่ม) หรือ `.table-loading` overlay (ตาราง) — ไม่มี spinner เต็มหน้า
+- Loading: ปุ่ม spinner (ปุ่ม) หรือ `.table-loading` overlay (ตาราง) สำหรับ action ในหน้า — **page-loader เต็มจอ
+  (ใหม่, 2026-09-14 Round 3 item 3c-1 follow-up) มีได้ แต่จำกัดเฉพาะ** โหลดหน้าครั้งแรก/เปลี่ยน route/
+  ข้อมูลหลักของหน้ายังไม่พร้อมเท่านั้น (ไม่ใช่ "ไม่มี spinner เต็มหน้า" อีกต่อไปตามที่เขียนไว้เดิม — แก้ไขแล้ว
+  ทับข้อความเดิม) — ดู §11 (`page-loader.php` + `showPageLoader()`/`hidePageLoader()`) สำหรับสเปกเต็ม
 
 ---
 
@@ -1578,6 +1581,7 @@ page-local block มา 2 รอบก่อนหน้า (callout ก่อ�
 | `chartColor()` / `chartColors()` / `chartDefaults(overrides)` (ใหม่, item 9 — เสร็จแล้ว; อ่าน token `--chart-*`/`--chart-grid`/`--c-*` สดจาก `getComputedStyle` ทุกครั้งที่เรียก ไม่ cache ค่า) | `app.js` | สี/font/grid ที่แต่ละกราฟ (8 กราฟทั้งแอป) ตั้งเองแยกกันตอนนี้ — ยังไม่ migrate หน้าจริง รอรอบ 4 |
 | `initTimepicker($scope, options)` (ใหม่, item 9 — เสร็จแล้ว; flatpickr time-only, **auto-init** ต่างจาก `initDatepicker()` — ดู §14) | `input.js` | native `<input type="time">` ที่ปรับสไตล์ popup ไม่ได้เลย — ของเดิมใน `layout/modals.php`/`setup-rules` ยังไม่แตะ รอรอบ 4 |
 | `setting-row.php` + `settingRowHtml({id,label,desc_on,desc_off,checked,variant})` (ใหม่, 2026-09-14 "เก็บตกรอบ 6", 2 variant เพิ่มวันเดียวกัน "เก็บตกรอบ 7" — เสร็จแล้ว; `variant:'plain'` default ไม่มีกล่อง แถวเดียว `[switch] label · คำอธิบาย`, `variant:'card'` กล่องพื้นเดิม label+คำอธิบาย 2 บรรทัด/switch ขวา — กฎเลือก: 1-2 setting = plain, 3+ = card — auto-wired description-swap ผ่าน delegated `change` handler กลาง (ใช้ร่วมกันทั้ง 2 variant), `syncSettingRowDesc()` สำหรับ caller ที่ set checked แบบ programmatic — ดู §9) | `app/views/partials/` + `app.js` | `#recalcReminderBanner`/page-local switch+banner block ของ Payroll Detail (2 รอบก่อนหน้า ลบ CSS แล้ว) |
+| `page-loader.php` + `showPageLoader()`/`hidePageLoader()` (ใหม่ในระบบ token/component ปัจจุบัน, 2026-09-14 Round 3 item 3c-1 follow-up — §10/§11; ตัวฟังก์ชันมีอยู่แล้วตั้งแต่ Platform UX review Phase 2 แต่ยังไม่เคยผ่าน migration รอบไหนเลย มี hardcoded hex/rem, 2 วงแหวนสวนกัน, ไม่มี delay/fade — REDESIGN ทั้งหมดรอบนี้): overlay เต็มจอ **ใช้เฉพาะ** โหลดหน้าครั้งแรก/เปลี่ยน route/ข้อมูลหลักยังไม่พร้อม — ห้ามใช้กับ action ในหน้า (save/reload ตาราง/เปิด modal ใช้ปุ่ม spinner หรือ `.table-loading`) — backdrop `rgba(var(--c-bg-rgb), .85)` (token ใหม่ `--c-bg-rgb`, mechanical decomposition ของ `--c-bg` เอง แบบเดียวกับ `--bs-*-rgb` ที่ §12 ยกเว้นไว้แล้ว) + blur 4px, กลาง = โลโก้นิ่ง 40px + วงแหวนเดียว `--c-primary` หนา 3px หมุน 1.2s linear, ข้อความ (`processing` key เดิม) `--fs-sm` `--c-text-muted` ใต้ `--sp-3`, ไม่มีเงา/กล่อง — ปรากฏหลัง delay 200ms (กันกะพริบ), fade-out 150ms ตอนปิด (ทั้งคู่ timed ใน JS ไม่ใช่ CSS transition บน `display` ที่ transition ไม่ได้), `prefers-reduced-motion`: วงแหวนนิ่ง — markup render ครั้งเดียวต่อหน้า (`app/views/layout/page-loader.php`, include ใน `footer.php` ต่อจาก `modals.php`, ซ่อนด้วย `d-none` default), 2 ฟังก์ชันแค่ toggle class (ไม่ inject/remove DOM ทั้งก้อนต่อครั้งแบบเดิมอีกต่อไป) | `app/views/layout/` + `app.js` | ของเดิม (`.om-page-loader__*`, hex/rem ตรงๆ, 2 วงแหวนสวนกัน — ลบ CSS เดิมแล้ว ไม่เหลือ dead code) |
 
 เพิ่ม component ใหม่ต้องเสนอชื่อ + API + ที่ใช้ ≥ 2 จุด ก่อนเขียน
 

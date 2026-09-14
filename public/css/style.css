@@ -10205,9 +10205,9 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    hidePageLoader() in app.js and their call sites (currently: Dashboard's initial summary fetch,
    Payroll Run Detail's initial run fetch -- the 2 clearest "this whole page IS one big fetch" cases;
    available for any other page to adopt the same way). The origami mark here is STATIC (not
-   itself animating -- only the 2 rings around it spin, in opposite directions), so it uses the REAL
-   brand PNG (origami_logo.png) directly instead of a CSS approximation -- no animation to keep
-   lightweight for, so no reason not to use the actual artwork. */
+   itself animating), so it uses the REAL brand PNG (origami_logo.png) directly instead of a CSS
+   approximation -- no animation to keep lightweight for, so no reason not to use the actual
+   artwork. */
 .om-loader {
     display: inline-block; vertical-align: middle; border-radius: 50%;
     border: 2px solid rgba(var(--bs-primary-rgb), .22); border-top-color: var(--c-primary);
@@ -10216,7 +10216,6 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .om-loader--sm { width: 16px; height: 16px; }
 .om-loader--md { width: 30px; height: 30px; border-width: 3px; }
 @keyframes om-spin { to { transform: rotate(360deg); } }
-@keyframes om-spin-reverse { to { transform: rotate(-360deg); } }
 @media (prefers-reduced-motion: reduce) {
     .om-loader { animation: none; }
 }
@@ -10237,28 +10236,51 @@ div.dt-processing {
     --dt-row-selected: 255, 153, 0;
 }
 
+/* 2026-09-14, Phase Design Round 3 item 3c-1 follow-up (§10/§11) -- full REDESIGN of the block
+   above (class names changed BEM-double-underscore -> single-hyphen, `.om-page-loader__stage` ->
+   `.om-page-loader-stage` etc, since every rule here is new): single ring instead of 2 counter-
+   spinning ones (simpler, per explicit spec), token-driven colors throughout instead of the old
+   block's hardcoded `rgba(255, 252, 247, .78)`/`#E8412C`/`#5A4A3A` literals (none of those were
+   theme-aware -- dark mode got the exact same near-white backdrop and dark-brown text as light
+   mode, both nearly unreadable there; confirmed by inspection, not by report). Backdrop is now
+   `rgba(var(--c-bg-rgb), .85)` + `blur(4px)` -- `--c-bg-rgb` (tokens.css, new) is a mechanical
+   RGB-triplet decomposition of `--c-bg` itself, same exemption/technique §12's own `--bs-*-rgb`
+   note already covers, needed because `rgba()` can't take a hex custom property directly and only
+   the BACKDROP fill should carry the .85 alpha -- the ring/logo/text drawn on top of it must stay
+   fully opaque (a plain `opacity` on the whole overlay would fade those out too, which is why the
+   show/hide FADE further below animates a *different* property, not this alpha).
+   Delay-before-appearing (200ms, avoid a flash on a fast load) and fade-out (150ms) are NOT CSS
+   transitions on `d-none` (`display` can't transition) -- both are timed in app.js's own
+   showPageLoader()/hidePageLoader(), which add/remove `d-none` and this `--visible` class at the
+   right moments; `--visible` here only toggles `opacity`/`pointer-events`, with the actual
+   `transition: opacity .15s ease` declared on the base class so it applies whichever direction
+   the class changes. */
 .om-page-loader {
     position: fixed; inset: 0; z-index: 2000;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
-    background: rgba(255, 252, 247, .78);
-    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-3);
+    background: rgba(var(--c-bg-rgb), .85);
+    -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+    opacity: 0; pointer-events: none;
+    transition: opacity .15s ease;
 }
-.om-page-loader__stage { position: relative; width: 88px; height: 88px; }
-.om-page-loader__ring {
-    position: absolute; inset: 0; border-radius: 50%; border: 3px solid transparent;
-    animation: om-spin 1.5s linear infinite;
+.om-page-loader.om-page-loader-visible {
+    opacity: 1; pointer-events: auto;
 }
-.om-page-loader__ring--outer { border-top-color: var(--c-primary); border-right-color: var(--c-primary); }
-.om-page-loader__ring--inner {
-    inset: 15px; border-bottom-color: #E8412C; border-left-color: #E8412C;
-    animation: om-spin-reverse 1.15s linear infinite;
+.om-page-loader-stage {
+    position: relative; width: 64px; height: 64px;
+    display: flex; align-items: center; justify-content: center;
 }
-.om-page-loader__logo {
-    position: absolute; inset: 0; margin: auto; width: 36px; height: 36px; object-fit: contain;
+.om-page-loader-ring {
+    position: absolute; inset: 0; border-radius: 50%;
+    border: 3px solid rgba(var(--bs-primary-rgb), .22); border-top-color: var(--c-primary);
+    animation: om-spin 1.2s linear infinite;
 }
-.om-page-loader__text { font-size: .95rem; font-weight: 500; color: #5A4A3A; }
+.om-page-loader-logo {
+    position: relative; z-index: 1; width: 40px; height: 40px; object-fit: contain;
+}
+.om-page-loader-text { font-size: var(--fs-sm); color: var(--c-text-muted); }
 @media (prefers-reduced-motion: reduce) {
-    .om-page-loader__ring { animation: none; }
+    .om-page-loader-ring { animation: none; }
 }
 
 /* 2026-09-03, Manual Entry / Platform UX review Phase 6 -- redesign of the "choose from list /

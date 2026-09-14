@@ -579,3 +579,39 @@ specifically `initFilterBar()`, not a general select2-remote-clear audit).
 
 **Source:** Found incidentally while fixing the filter-bar select2-remote clear bug (2026-09-13),
 not itself reported or investigated further.
+
+---
+
+## `tests/import_test.php` / `tests/transaction_data_sync_test.php` fail when run against a dev DB that already has other sync data in it
+
+Found running the full test suite after Phase Design Round 3 item 3c-1's page-loader work — unrelated
+to that work (neither file references anything this round touched — tokens.css/style.css/app.js's
+page-loader functions/modals.php/page-loader.php — confirmed via grep, and both failures are pure
+dev-DB-state assertions, nothing about a CSS/JS/PHP-view code path). Both tests assert on **global**
+sync-status state (`SyncBatchModel::
+lastSyncTimes()`, `hasCompletedMasterDataSync()`) that reflects **every** sync batch/import ever run
+against the dev DB, company-wide — not scoped to rows either test's own fixture created. A dev DB
+that has real department/position/holiday/attendance sync history sitting in it from other sessions'
+own testing (this DB does — see the earlier "Dev DB has real user data" feedback memory) makes these
+assertions fail even though nothing about the code under test is actually broken:
+
+- `tests/import_test.php`: `FAIL  lastSyncTimes() default (sync) has NO department entry (only
+  import ran) => got false, expected true` — asserts the *default* (non-import) sync source has
+  no department entry, which only holds if no OTHER session's `sync`-source department batch has
+  ever run on this DB.
+- `tests/transaction_data_sync_test.php`: `FAIL  hasCompletedMasterDataSync() still false
+  (department/position/holiday never run) => got false, expected true` — same shape: asserts a
+  company-wide flag is still false, which only holds if department/position/holiday sync has
+  genuinely never run for that company anywhere, ever.
+
+**Fix, when picked up (Batch 5):** give both tests a self-contained fixture instead of relying on
+"nothing else has touched sync tables yet" — either (a) run each assertion inside a fresh company id
+created just for the test (so no other session's rows can be in scope), or (b) snapshot the relevant
+`sync_batches`/related rows before the test's own actions and assert on the DELTA (what THIS test
+run added) rather than absolute presence/absence. Both tests already wrap in a transaction +
+rollback (per this project's own `tests/*.php` convention), so the isolation gap is specifically
+"another already-committed session's data, not this test's own" — a rollback at the end doesn't
+undo what existed before the test started.
+
+**Source:** Phase Design Round 3 item 3c-1, page-loader work — full test-suite run turned these up,
+explicit instruction to log rather than fix now (2026-09-14).

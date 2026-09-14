@@ -64,6 +64,11 @@
 // docblock for the full investigation/rationale.
 include __DIR__ . '/modals.php';
 ?>
+<?php
+// 2026-09-14, Phase Design Round 3 item 3c-1 follow-up -- full-page loading overlay, see that
+// partial's own docblock. Same "included once, unconditionally, right after modals.php" pattern.
+include __DIR__ . '/page-loader.php';
+?>
 <!-- 2026-09-05, Backlog Phase 13 -- Help Drawer: a persistent trigger button (bottom-right, every
      page) + a slide-in right-side panel, NOT a Bootstrap modal (deliberately -- a drawer stays
      alongside the page content rather than blocking it, so an admin can keep the settings page

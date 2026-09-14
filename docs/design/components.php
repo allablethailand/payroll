@@ -1135,8 +1135,10 @@ $cpCallouts = [
         <button type="button" class="btn btn-outline-secondary" id="cpToastShortBtn">Toast สั้น (&le;60 ตัวอักษร, 3 วิ)</button>
         <button type="button" class="btn btn-outline-secondary" id="cpToastLongBtn">Toast ยาว (&gt;60 ตัวอักษร, 6 วิ + &times;)</button>
         <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#cpDirtyModal">เปิด modal dirty-guard</button>
+        <button type="button" class="btn btn-outline-secondary" id="cpPageLoaderBtn">แสดง page-loader 2 วินาที</button>
     </div>
-    <p class="cp-section-note mb-0"><code>data-dirty-guard</code> + <code>isFormDirty()</code>/<code>confirmIfDirtyThen()</code>/<code>refreshDirtyGuard()</code> (<code>app.js</code>, §9) -- opt-in ต่อ modal (ไม่ใช่ทุก <code>.modal</code> เหมือนกลไกที่เคยถูกสั่งปิดทั้งระบบไปเมื่อ 2026-09-09 เพราะสับสน -- ยืนยันกับผู้ใช้ตรงๆ ก่อนสร้างกลไกนี้กลับมาว่าออกแบบต่างจากเดิมจริง). ลอง 3 แบบ: <b>(1)</b> เปิดแล้ว<b>ปิดทันที</b>ไม่แตะอะไร -- ปิดได้เลยไม่ถาม. <b>(2)</b> เปิดแล้ว<b>พิมพ์อะไรสักอย่าง</b>ในช่องแล้วกด &times; หรือปุ่ม "ยกเลิก" (ปุ่ม "ยกเลิก" เป็นแค่ <code>data-bs-dismiss="modal"</code> ธรรมดา ไม่ได้เรียก <code>confirmIfDirtyThen()</code> เองเลยสักบรรทัด -- ผ่านกลไกเดียวกับ &times;/Esc/backdrop โดยอัตโนมัติ) -- ต้องเจอ dialog "มีข้อมูลที่ยังไม่ได้บันทึก" ก่อนปิดจริง. <b>(3)</b> พิมพ์อะไรสักอย่างแล้วกด "บันทึก (demo)" แล้วกด &times; อีกที -- ปิดได้เลยไม่ถาม (baseline ถูก refresh หลัง save).</p>
+    <p class="cp-section-note mb-0"><code>showPageLoader()</code>/<code>hidePageLoader()</code> (<code>app.js</code>) + <code>page-loader.php</code> (<code>app/views/layout/</code>, ใหม่, §10/§11) -- overlay เต็มจอ ใช้เฉพาะโหลดหน้าครั้งแรก/เปลี่ยน route/ข้อมูลหลักยังไม่พร้อม เท่านั้น (ห้ามใช้กับ save/reload ตาราง/เปิด modal -- ใช้ปุ่ม spinner หรือ <code>.table-loading</code> แทน) -- ปรากฏหลัง delay 200ms กันกะพริบตอนโหลดเร็ว, fade-out 150ms ตอนปิด, backdrop <code>--c-bg</code> opacity .85 + blur 4px (ปรับตาม theme อัตโนมัติผ่าน <code>--c-bg-rgb</code> token ใหม่), วงแหวนเดียว <code>--c-primary</code> หมุน 1.2s -- ลองสลับ theme มุมขวาบนแล้วกดปุ่มซ้ำดู backdrop ปรับสีจริง</p>
+    <p class="cp-section-note mb-0 mt-2"><code>data-dirty-guard</code> + <code>isFormDirty()</code>/<code>confirmIfDirtyThen()</code>/<code>refreshDirtyGuard()</code> (<code>app.js</code>, §9) -- opt-in ต่อ modal (ไม่ใช่ทุก <code>.modal</code> เหมือนกลไกที่เคยถูกสั่งปิดทั้งระบบไปเมื่อ 2026-09-09 เพราะสับสน -- ยืนยันกับผู้ใช้ตรงๆ ก่อนสร้างกลไกนี้กลับมาว่าออกแบบต่างจากเดิมจริง). ลอง 3 แบบ: <b>(1)</b> เปิดแล้ว<b>ปิดทันที</b>ไม่แตะอะไร -- ปิดได้เลยไม่ถาม. <b>(2)</b> เปิดแล้ว<b>พิมพ์อะไรสักอย่าง</b>ในช่องแล้วกด &times; หรือปุ่ม "ยกเลิก" (ปุ่ม "ยกเลิก" เป็นแค่ <code>data-bs-dismiss="modal"</code> ธรรมดา ไม่ได้เรียก <code>confirmIfDirtyThen()</code> เองเลยสักบรรทัด -- ผ่านกลไกเดียวกับ &times;/Esc/backdrop โดยอัตโนมัติ) -- ต้องเจอ dialog "มีข้อมูลที่ยังไม่ได้บันทึก" ก่อนปิดจริง. <b>(3)</b> พิมพ์อะไรสักอย่างแล้วกด "บันทึก (demo)" แล้วกด &times; อีกที -- ปิดได้เลยไม่ถาม (baseline ถูก refresh หลัง save).</p>
 </div>
 
 <div class="modal fade" id="cpDirtyModal" data-dirty-guard tabindex="-1" aria-hidden="true">
@@ -1156,6 +1158,21 @@ $cpCallouts = [
             </div>
         </div>
     </div>
+</div>
+
+<!-- 2026-09-14, Phase Design Round 3 item 3c-1 follow-up -- real markup, not a mockup, but NOT the
+     literal app/views/layout/page-loader.php include (that partial's `<?=BASE_URL?>` is a PHP
+     CONSTANT this standalone dev page deliberately never defines, see this file's own docblock
+     near the top on why -- same reason emp-header-card.php's demo further up passes plain arrays
+     instead of real DB rows). Byte-identical class structure/ids otherwise, so the real CSS
+     applies unmodified; the logo path is this file's own relative "../../public/..." convention,
+     used everywhere else already (node_modules links above), not a real BASE_URL substitute. -->
+<div id="omPageLoader" class="om-page-loader d-none" aria-hidden="true">
+    <div class="om-page-loader-stage">
+        <div class="om-page-loader-ring"></div>
+        <img class="om-page-loader-logo" src="../../public/images/origami_logo.png" alt="">
+    </div>
+    <div class="om-page-loader-text"><?=htmlspecialchars(cpLangText('processing', 'กำลังโหลด...'))?></div>
 </div>
 
 <div class="cp-section">
@@ -1685,6 +1702,12 @@ $(function () {
         refreshDirtyGuard('#cpDirtyModal');
         showSuccess('บันทึกแล้ว (demo)');
     });
+    // Page-loader (§10/§11) -- real showPageLoader()/hidePageLoader(), 2 real seconds so the
+    // 200ms appear-delay and 150ms fade-out are both actually visible, not instant.
+    $('#cpPageLoaderBtn').on('click', function () {
+        showPageLoader();
+        setTimeout(hidePageLoader, 2000);
+    });
 
     // Datepicker (§14, ข้อ 9) -- real bootstrap-datepicker via the real initDatepicker(), proving the
     // token override above actually applies (not a mockup screenshot of one).
@@ -1818,6 +1841,7 @@ document.addEventListener('DOMContentLoaded', function () {
         'renderTimeline', 'employeeHeaderCardHtml', 'statusBadgeHtml', 'initMoneyInputs',
         'initRowToggles', 'showConfirm', 'renderNotifications', 'setNotificationCount',
         'emptyStateHtml', 'dtRenderEmptyState', 'renderCalendarWidget', 'chartDefaults', 'chartColors',
+        'showPageLoader', 'hidePageLoader',
     ];
     cpRound2Helpers.forEach(function (name) {
         if (typeof window[name] !== 'function') {
