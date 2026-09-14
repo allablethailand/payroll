@@ -1044,7 +1044,7 @@ $cpCallouts = [
             </div>
         </div>
         <div class="col-md-6">
-            <p class="cp-section-note mb-1"><b>Quick-view (§9):</b> modal ตัวอย่าง -- ตัดสินใจแล้ว: <code>modal-md</code> ไม่ทำ popover, หัวเป็น <code>.emp-header-card</code>, เนื้อหา 2 คอลัมน์เท่ากัน label/value, footer แค่ [ปิด] [ดูข้อมูลเต็ม]</p>
+            <p class="cp-section-note mb-1"><b>Quick-view (§9):</b> modal ตัวอย่าง -- ตัดสินใจแล้ว: <code>modal-md</code> ไม่ทำ popover, หัวเป็น <code>.emp-header-card</code>, เนื้อหา 2 คอลัมน์เท่ากัน label/value, footer แค่ [ดูข้อมูลเต็ม] [ปิด] (primary ซ้าย, secondary ขวาสุด -- แก้ลำดับ 2026-09-14 Round 3 item 3c-1, ดู §4)</p>
             <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#cpQuickViewModal">เปิด Quick-view ตัวอย่าง</button>
         </div>
     </div>

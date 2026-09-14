@@ -2533,7 +2533,6 @@ async function loadLang(lang) {
             $('.text-current-lang').text(info.label);
             $('.current-flag').attr('src', `${BASE_URL}/public/flags/${info.flag}.png`);
         }
-        updateModalLangTextSwitchState(); // every open modal's own TH|EN text switch, not id-based
         console.log(`[i18n] โหลดภาษาสำเร็จ: ${lang.toUpperCase()}`);
     } catch (e) {
         console.error("Error loading language file:", e);
@@ -2766,57 +2765,16 @@ function buildLanguageMenu($scope) {
         });
     });
 }
-// 2026-08-30, explicit bug report: "ทุก modal ที่เปิด จะต้องมี header และ footer เสมอ footer มีปุ่มปิด
-// เป็น Default และมุมซ้ายสุดของ header ให้เป็นปุ่มเปลี่ยนภาษา เพราะตอนนี้ปัญหาคือพอมีการเปิด modal จะกลับไป
-// เปลี่ยนภาษาไม่ได้" -- root cause confirmed by reading the markup: the top nav's own language
-// switcher (.nav-lang-dropdown) sits in the page header, and Bootstrap's modal backdrop (higher
-// z-index, by design) sits above it, so it becomes genuinely unclickable the moment ANY modal is
-// open -- not a CSS mistake to fix, backdrops are supposed to block the page behind them. The fix
-// has to put a language control INSIDE the modal itself.
-//
-// Applied GENERICALLY on every modal's own 'show.bs.modal' event, rather than hand-editing every
-// modal's markup across the whole app (there are far too many, and any modal added later would
-// need the same treatment) -- this is the one place that guarantees the invariant everywhere,
-// including modals written after this comment. Idempotent (checks for its own marker classes
-// before injecting) so it's safe to fire on every single modal open, repeatedly.
-//
-// 2026-08-30, same-day follow-up (explicit request: "Design การเปลี่ยนภาษาใน modal ให้เป็น design เดียวกับ
-// header และถ้าเลือกเปลี่ยนแล้วให้ผูกไปถึง header และการแปลในหน้าหลักด้วย") -- was a simplified single-click
-// toggle button (swap directly to the other language, no menu); then (same day) became the EXACT same
-// .nav-lang-dropdown/.nav-lang-btn/.nav-lang-menu markup + flag icon the header's own switcher uses.
-//
-// 2026-09-13, Round 2 items 6c/7b follow-up (explicit report: docs/design/rules.md §1/§9 already say
-// modal headers carry no flag/icon at all -- this flag was found sitting in every modal's own header
-// via this exact mechanism during the item 6c demo review) -- REDESIGNED, not removed: the underlying
-// need this whole mechanism exists for (2026-08-30's own bug -- a modal's backdrop makes the page
-// header's own language switcher physically unclickable, so a language control has to live INSIDE
-// the modal) is still real, confirmed directly with the user before touching this. What changed is
-// the VISUAL only: a plain text "TH | EN" switch (current language --c-text bold, the other
-// --c-text-muted, click the muted one to switch) instead of a flag-icon dropdown -- no image asset,
-// no menu, `--fs-xs` per §1's icon-free/text-based convention. Positioned AFTER `.modal-title`
-// (previously prepended before it, at the header's far left) so it now reads as "title, then the
-// language switch, then ×" per the explicit new instruction -- `.btn-close`'s own `margin-left:auto`
-// (Bootstrap's default) still pins × to the far right regardless of what sits between title and it,
-// so no extra positioning CSS is needed for that part.
-// Clicking either letter calls the SAME global changeLanguage() every other language control in this
-// app already calls -- reaching the header and the page behind the modal for free, via the exact
-// same `$('.text-current-lang')`/`$('.current-flag')`-style class-based update loadLang() already
-// does (widened below to also refresh `.modal-lang-text-btn`'s active state).
-function modalLangDropdownHtml() {
-    return `<span class="modal-lang-text-switch">
-        <button type="button" class="modal-lang-text-btn" data-lang="th">TH</button><span class="modal-lang-text-sep">|</span><button type="button" class="modal-lang-text-btn" data-lang="en">EN</button>
-    </span>`;
-}
-function updateModalLangTextSwitchState($scope) {
-    const $root = $scope ? $($scope) : $(document);
-    $root.find('.modal-lang-text-btn').each(function () {
-        $(this).toggleClass('modal-lang-text-active', $(this).data('lang') === currentLang);
-    });
-}
-$(document).on('click', '.modal-lang-text-btn', function () {
-    const lang = $(this).data('lang');
-    if (lang && lang !== currentLang) changeLanguage(lang);
-});
+// 2026-08-30 through 2026-09-13: this app used to auto-inject a language switch (flag dropdown,
+// then a plain "TH | EN" text switch) into every modal's own header -- see git history on this
+// file for the full "modal backdrop blocks the page header's own switcher" bug story if that ever
+// needs revisiting. REMOVED entirely 2026-09-14 (Phase Design Round 3 item 3c-1, explicit
+// instruction, twice: "header = ชื่อ + ×" -- no exception for the language switch) -- header is now
+// ONLY the title + × across the whole app, no per-modal markup changes needed (this was global
+// injection, so removing it here removes it everywhere at once). The 2026-08-30 bug this used to
+// paper over (page header's own language switcher unreachable while any modal is open, since the
+// backdrop sits above it) is REOPENED by this removal -- not fixed some other way, just accepted as
+// the tradeoff for this instruction. Flagged to the user in this round's own report.
 // 2026-09-10, real bug fix (explicit report: modal แบบฟอร์มทุกตัว (เช่น เงินได้/#eedModal,
 // สร้างรอบ/#payrollRunModal) render footer 2 ชั้นซ้อนกัน) -- root cause was THIS handler's own
 // footer-detection selector, `.find('> .modal-footer')` (direct-child of .modal-content only).
@@ -2905,21 +2863,6 @@ $(document).on('show.bs.modal', '.modal', function () {
     if (!$header.length) {
         $header = $('<div class="modal-header"></div>').prependTo($content);
     }
-    if (!$header.find('.modal-lang-text-switch').length) {
-        const $langSwitch = $(modalLangDropdownHtml());
-        // "วางขวาของชื่อ modal ก่อนปุ่ม ×" -- right after .modal-title, not prepended to the whole
-        // header anymore (that used to put it at the far LEFT, before the title). Falls back to
-        // prepending only if a modal genuinely has no .modal-title element at all (rare/malformed),
-        // so this never silently fails to inject.
-        const $title = $header.find('.modal-title').first();
-        if ($title.length) {
-            $langSwitch.insertAfter($title);
-        } else {
-            $langSwitch.prependTo($header);
-        }
-        updateModalLangTextSwitchState($langSwitch);
-    }
-
     const $existingFooter = $content.find('.modal-footer').first();
     if (!$existingFooter.length && modalFooterTypeOf($modal) === 'view') {
         // langData reflects whichever language is currently active at the moment this modal opens
@@ -3207,17 +3150,34 @@ function apvPersonLineHtml(name, size, photoPath, options) {
 // employee table, the Approval Timeline modal's Created/Paid/Locked stages -- once those pass an
 // employeeId too). One shared modal/handler here instead of a per-page copy, same consolidation
 // precedent as everything else in this file.
+// 2026-09-14, Phase Design Round 3 item 3c-1 (docs/design/rules.md §9 "Quick-view พนักงาน") --
+// header block delegated to employeeHeaderCardHtml() (same twin used by all 6 payroll/detail.js
+// modals, §11) instead of this function's own hand-rolled avatar/name markup, so name/code/
+// department/position/status-badge render identically everywhere. Body fills the 6 fields NOT
+// already covered by the header card -- a missing value renders "-" (never hides its row, per the
+// modal's own layout comment in layout/modals.php) so the 2x3 grid never reflows.
 function renderEmployeeQuickViewModal(emp) {
-    const name = (currentLang === 'th' ? `${emp.name_th || ''} ${emp.surname_th || ''}` : `${emp.name_en || emp.name_th || ''} ${emp.surname_en || emp.surname_th || ''}`).trim() || '-';
-    $('#empQuickViewAvatar').html(apvAvatarHtml(name, 72, emp.profile_photo_path));
-    $('#empQuickViewNameTh').text(`${emp.name_th || ''} ${emp.surname_th || ''}`.trim() || '-');
-    $('#empQuickViewNameEn').text(`${emp.name_en || ''} ${emp.surname_en || ''}`.trim() || '-');
-    $('#empQuickViewCode').text(emp.employee_no || '-');
-    $('#empQuickViewDepartment').text((currentLang === 'th' ? emp.department_name_th : emp.department_name_en) || emp.department_name_th || '-');
-    $('#empQuickViewPosition').text((currentLang === 'th' ? emp.position_name_th : emp.position_name_en) || emp.position_name_th || '-');
-    $('#empQuickViewBranch').text((currentLang === 'th' ? emp.branch_name_th : emp.branch_name_en) || emp.branch_name_th || '-');
-    $('#empQuickViewStatus').text((langData['status_' + emp.employee_status]) || emp.employee_status || '-');
+    $('#empQuickViewHeaderCard').html(employeeHeaderCardHtml(emp));
+    $('#empQuickViewBranch').text((currentLang === 'th' ? emp.branch_name_th : emp.branch_name_en) || emp.branch_name_th || emp.branch_name_en || '-');
+    $('#empQuickViewEmploymentType').text((currentLang === 'th' ? emp.employment_type_name_th : emp.employment_type_name_en) || emp.employment_type_name_th || emp.employment_type_name_en || '-');
+    $('#empQuickViewHireDate').text(emp.employment_date ? formatDisplayDate(emp.employment_date) : '-');
+    $('#empQuickViewPaymentMethod').html(empQuickViewPaymentMethodHtml(emp));
+    $('#empQuickViewPhone').text(emp.mobile_no || '-');
+    $('#empQuickViewEmail').text(emp.personal_email || '-');
     $('#empQuickViewGoToProfile').attr('href', `${BASE_URL}/employees/${emp.employee_no}`);
+}
+// Payment method name + (transfer only) bank name & masked account number, e.g. "โอนเข้าบัญชี ·
+// กรุงไทย ••••1234" -- the server (EmployeeModel::quickView()) only ever returns the MASKED account
+// number, never the decrypted full value, so there's nothing further to redact client-side.
+function empQuickViewPaymentMethodHtml(emp) {
+    const methodName = (currentLang === 'th' ? emp.payment_method_name_th : emp.payment_method_name_en) || emp.payment_method_name_th || emp.payment_method_name_en;
+    if (!methodName) return '-';
+    if (emp.payment_method_code === 'transfer' && emp.bank_account_no_masked) {
+        const bankName = (currentLang === 'th' ? emp.bank_name_th : emp.bank_name_en) || emp.bank_name_th || emp.bank_name_en || '';
+        const bankPart = bankName ? `${escapeHtml(bankName)} ${escapeHtml(emp.bank_account_no_masked)}` : escapeHtml(emp.bank_account_no_masked);
+        return `${escapeHtml(methodName)} &middot; ${bankPart}`;
+    }
+    return escapeHtml(methodName);
 }
 // 2026-09-11, Batch 3C item 8, explicit instruction: shared header card for the FIRST block of
 // every modal-body opened from an employee row (Detail's Calculation Breakdown/Raw Sync Data/

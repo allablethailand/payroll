@@ -562,19 +562,53 @@ class EmployeeModel {
     /** Batch 3A item 4 -- lightweight lookup for the app.js quick-view modal opened by clicking an
      *  employee avatar (Process List's Created/Updated By, Process Detail's employee table, the
      *  Approval Timeline modal). Deliberately NOT the full get() (that method decrypts/returns many
-     *  fields no quick-view popup needs, keyed by employee_no not id besides). */
+     *  fields no quick-view popup needs, keyed by employee_no not id besides).
+     *
+     * 2026-09-14, Phase Design Round 3 item 3c-1 -- quick-view's body grid grew from the 3 fields
+     * already covered by emp-header-card (name/code/department/position/status) to 6 NEW fields:
+     * employment_type_name_th/en (structure_employment_types join), employment_date, mobile_no,
+     * personal_email (all plain columns, no new logic), and payment_method_name_th/en +
+     * bank_name_th/en + a MASKED bank_account_no (only ever the last-4-digits form leaves this
+     * method -- the decrypted full number is never returned to the controller/JSON response, same
+     * "mask before it leaves the server" precedent as PayrollController::maskRunMonetaryFields()/
+     * PayslipTemplateRenderer's own bank-account masking). Bank account resolves through the
+     * employee's own `default_bank_account_id` (the same field the Employee Detail Salary tab
+     * edits, per EmployeePaymentMethodModel's own docblock) -- NOT the full run-time precedence
+     * chain PayrollRunEmployeeBankAccountModel::resolveForRun() uses (cycle/run overrides), since
+     * this modal opens with no run context on several of its call sites (Process List, Approval
+     * Timeline) and must render identically everywhere. */
     public function quickView(int $compId, int $employeeId): ?array {
         $sql = "SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en,
                     e.profile_photo_path, e.employee_status,
+                    e.employment_date, e.mobile_no, e.personal_email,
                     d.department_name_th, d.department_name_en,
                     p.position_name_th, p.position_name_en,
-                    b.branch_name_th, b.branch_name_en
+                    b.branch_name_th, b.branch_name_en,
+                    et.employment_type_name_th, et.employment_type_name_en,
+                    mpm.code AS payment_method_code, mpm.name_th AS payment_method_name_th, mpm.name_en AS payment_method_name_en,
+                    dmb.bank_name_th, dmb.bank_name_en,
+                    dba.account_no AS bank_account_no_enc, dba.key_version AS bank_account_key_version
                 " . self::LIST_JOINS . "
+                LEFT JOIN `structure_employment_types` et ON e.employment_type_id = et.id
+                LEFT JOIN `master_payment_methods` mpm ON e.payment_method_id = mpm.id
+                LEFT JOIN `bank_accounts` dba ON e.default_bank_account_id = dba.id
+                LEFT JOIN `master_banks` dmb ON dba.bank_id = dmb.id
                 WHERE e.id = :id AND e.comp_id = :comp_id AND e.deleted_at IS NULL";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row ?: null;
+        if (!$row) {
+            return null;
+        }
+        $row['bank_account_no_masked'] = null;
+        if (!empty($row['bank_account_no_enc'])) {
+            $decrypted = EncryptionService::decrypt($row['bank_account_no_enc'], isset($row['bank_account_key_version']) ? (int)$row['bank_account_key_version'] : null);
+            if ($decrypted !== null && $decrypted !== '') {
+                $row['bank_account_no_masked'] = strlen($decrypted) > 4 ? str_repeat('•', strlen($decrypted) - 4) . substr($decrypted, -4) : $decrypted;
+            }
+        }
+        unset($row['bank_account_no_enc'], $row['bank_account_key_version']);
+        return $row;
     }
 
     /** Maps this list's DataTables column keys to their real SQL expression -- shared by list()'s

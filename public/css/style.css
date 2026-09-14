@@ -4648,6 +4648,43 @@ button.badge {
     flex: none;
 }
 
+/* 2026-09-14, Phase Design Round 3 item 3c-1 (rules.md §9's own "quick-view: 2 คอลัมน์เท่ากัน
+   label/value" spec). A plain CSS grid, not Bootstrap's `.row`/`.g-3`/`.col-6` -- Bootstrap's own
+   spacer scale (`g-3` = 1rem/16px) doesn't line up with this app's --sp-* 4px-grid tokens at all,
+   so it can't express "row-gap != column-gap" in this app's own units without fighting the
+   utility class's fixed value. `.emp-quick-view-field` groups one label+value pair so `gap` alone
+   handles the label<->value spacing, no margin-collapse edge cases.
+   Same-day follow-up (explicit instruction, "label กับ value ขนาดเท่ากันจนแยกไม่ออก"): label/value
+   sizes were originally identical (`.small`/inherited body text, no visual hierarchy at all) --
+   label is now deliberately SMALLER+lighter (`--fs-xs`/`--c-text-muted`) and value LARGER+bolder
+   (`--fs-base`/`--c-text`), both weight 500 (500 on the label specifically instead of default 400
+   so it doesn't disappear next to the now-bolder value; original casing kept, no text-transform). */
+#employeeQuickViewModal .modal-body {
+    padding: var(--sp-4);
+}
+.emp-quick-view-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: var(--sp-4);
+    row-gap: var(--sp-3);
+    margin-top: var(--sp-4);
+}
+.emp-quick-view-field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+}
+.emp-quick-view-label {
+    color: var(--c-text-muted);
+    font-size: var(--fs-xs);
+    font-weight: 500;
+}
+.emp-quick-view-value {
+    color: var(--c-text);
+    font-size: var(--fs-base);
+    font-weight: 500;
+}
+
 /* ==========================================================================
    2026-09-04, Backlog Phase 11, T069 (dark mode), Step 1 of 3 -- foundation only. Scope
    deliberately Tier B minus the 2 canvas designers (Payslip Template/Employment Certificate
@@ -4769,7 +4806,15 @@ html, body {
    this app already uses) gets the correct visual order automatically too. A footer with extra
    content (a status label, wrapped buttons inside their own <div>, 3+ buttons) isn't a direct-child
    match for this selector and needs its own manual placement -- those are reviewed individually,
-   not covered by this rule, see the Phase 1.2 audit notes in memory for the specific exceptions. */
+   not covered by this rule, see the Phase 1.2 audit notes in memory for the specific exceptions.
+
+   2026-09-14, Phase Design Round 3 item 3c-1 -- briefly flipped these VALUES the other direction
+   (dismiss order:1/primary-ish order:2, i.e. "Cancel left, Save right") to chase what
+   docs/design/rules.md §4 had documented at the time. REVERTED same day, same round, after the
+   user caught that §4's own text was the actual mistake ("ผมเขียน §4 ผิดเอง") -- Phase 1.2's
+   original values below are the correct, still-approved behavior; rules.md §4/§9 were corrected
+   to match instead (not this rule). Left as history so a future reader doesn't re-discover the
+   same "conflict" and flip this again -- the conflict was in the DOCS, already fixed there. */
 .modal-footer > [data-bs-dismiss="modal"] {
     order: 2;
 }
@@ -4779,7 +4824,9 @@ html, body {
    children with no `order` applied, so they rendered in DOM order (dismiss button first, action
    second) instead of action-first. Verified via a full-app grep that no OTHER .btn-danger/.btn-
    success inside any .modal-footer would be wrongly reordered by this widening (only the 7 modals
-   this was meant to fix use those classes inside a footer at all). */
+   this was meant to fix use those classes inside a footer at all).
+   2026-09-14, Round 3 item 3c-1 -- briefly flipped to order:1 then reverted same day, see the
+   dismiss rule's own comment right above this block for why. */
 .modal-footer > .btn-primary:not([data-bs-dismiss]),
 .modal-footer > .btn-warning:not([data-bs-dismiss]),
 .modal-footer > .btn-danger:not([data-bs-dismiss]),
@@ -4792,31 +4839,20 @@ html, body {
    modal) and #runRegisterPdfPreviewModal (Process List's own Payroll Register PDF preview), both
    with a bare 3-button `.modal-footer` (Close + Thai download + English download, all direct
    children, no wrapping div) where Close ALSO carries `me-auto` to pin it on the far left while the
-   2 download buttons sit on the far right. The blanket `order: 2` rule above forces Close to render
-   LAST (after both download buttons), which strands its own `me-auto` with nothing left to push --
-   all 3 buttons collapse together on the right instead of the intended far-left/far-right split
-   (read by the user as buttons "stacked/overlapping"). Fixed by resetting Close's `order` back to 0
-   (matches the Thai button's own default, untouched, order) for just these 2 modals -- restores the
-   original DOM order (Close, Thai, English) so `me-auto` works as designed, without touching the
-   app-wide rule itself (every OTHER plain 2-button Cancel+Save footer this rule was built for is
-   unaffected). */
+   2 download buttons sit on the far right. The blanket dismiss-order rule above forces Close to
+   render AFTER both download buttons (their own order stays the untouched flex default, 0, lower
+   than the dismiss rule's value whichever direction it points), which strands its own `me-auto`
+   with nothing left to push -- all 3 buttons collapse together on the right instead of the intended
+   far-left/far-right split (read by the user as buttons "stacked/overlapping"). Fixed by resetting
+   Close's `order` back to 0 (matches the Thai button's own default, untouched, order) for just
+   these 2 modals -- restores the original DOM order (Close, Thai, English) so `me-auto` works as
+   designed, without touching the app-wide rule itself (every OTHER plain 2-button Cancel+Save
+   footer this rule was built for is unaffected).
+   2026-09-14, Round 3 item 3c-1: untouched by that same day's brief flip-then-revert of the
+   dismiss rule above -- this override was, is, and remains order:0, regardless of which way the
+   blanket rule points, since the reasoning only ever needed it lower than whatever that is. */
 #reportPreviewModal .modal-footer > [data-bs-dismiss="modal"],
 #runRegisterPdfPreviewModal .modal-footer > [data-bs-dismiss="modal"] {
-    order: 0;
-}
-/* 2026-09-13, Round 2 items 7b/6c demo modals -- real, PRE-EXISTING conflict found (not introduced
-   by these 2 demos): the app-wide rule right above this comment block puts the dismiss button on
-   the RIGHT (Save/primary left, per its own 2026-09-02 explicit request, audited across 102 real
-   modals) -- but docs/design/rules.md's own §4 text (and CLAUDE.md's own copy of the same rule) says
-   the OPPOSITE: "[ยกเลิก] [บันทึก]" (secondary LEFT, primary rightmost). That's a genuine, pre-
-   existing discrepancy between this app's documented convention and its own already-shipped,
-   deliberately-audited global CSS -- NOT something decided or resolved here; flagged to the user
-   rather than silently picking a side for the other ~100 real modals this rule already covers.
-   These 2 demo modals specifically follow the user's own explicit instruction for THEM (dismiss
-   left, primary right) via the SAME scoped-override technique already established just above for
-   #reportPreviewModal/#runRegisterPdfPreviewModal -- not a change to the app-wide rule itself. */
-#cpQuickViewModal .modal-footer > [data-bs-dismiss="modal"],
-#cpDirtyModal .modal-footer > [data-bs-dismiss="modal"] {
     order: 0;
 }
 /* ==========================================================================
@@ -9972,45 +10008,12 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 }
 
 /* ==========================================================================
-   Every modal: header + footer always present, language switch reachable
-   from inside a modal (2026-08-30, explicit bug report: "พอมีการเปิด modal จะกลับไป
-   เปลี่ยนภาษาไม่ได้" -- the modal backdrop sits above the top nav's own language
-   switcher (.nav-lang-dropdown), so it becomes unclickable while ANY modal is open).
-   Injected generically, per-modal, by app.js's own show.bs.modal handler -- see that
-   file's own docblock for the injection logic; this is JUST the visual styling for
-   whatever gets injected (or already exists) in a modal's header/footer. -->
-/* 2026-09-13, Round 2 items 6c/7b follow-up -- REDESIGNED, not removed (confirmed with the user):
-   the flag-icon dropdown this used to reuse verbatim from the page header's own switcher
-   (.nav-lang-dropdown/.nav-lang-btn/.nav-lang-menu, plus the .modal-header .modal-title
-   compensation below for it sitting at the header's far LEFT) is gone -- docs/design/rules.md §1/§9
-   say modal headers carry no flag/icon at all, and app.js's own modalLangDropdownHtml() now injects
-   a plain "TH | EN" text switch positioned AFTER .modal-title instead (see that function's own
-   docblock for the full history/reasoning) -- no more left-edge/title-compensation CSS needed at
-   all, .modal-title stays Bootstrap's own plain default layout. */
-.modal-lang-text-switch {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--sp-1);
-    margin-left: var(--sp-3);
-    font-size: var(--fs-xs);
-}
-.modal-lang-text-btn {
-    background: none;
-    border: none;
-    padding: 0;
-    color: var(--c-text-muted);
-    font-size: var(--fs-xs);
-    cursor: pointer;
-}
-.modal-lang-text-btn.modal-lang-text-active {
-    color: var(--c-text);
-    font-weight: 700;
-    cursor: default;
-}
-.modal-lang-text-sep {
-    color: var(--c-text-faint);
-    font-size: var(--fs-xs);
-}
+   2026-08-30 through 2026-09-13: this block used to style a language switch app.js's own
+   show.bs.modal handler injected into every modal's header (flag dropdown, then a "TH | EN" text
+   switch -- see git history if that story matters again). REMOVED 2026-09-14 (Phase Design Round 3
+   item 3c-1) along with the JS that injected it -- see app.js's own comment at the removal site for
+   the full reasoning and the tradeoff this reopens (page header's language switcher unreachable
+   while a modal is open). Modal headers are title + × only now, nothing left here to style. */
 /* 2026-08-31, Recheck modal's Mobile No. field (app/views/layout/modals.php) -- same intl-tel-input
    country flag/dial-code picker as Employee Detail's own #mobile_no, same fix needed: the library's
    own .iti wrapper defaults to display:inline-block sized to its content, so it doesn't stretch to
