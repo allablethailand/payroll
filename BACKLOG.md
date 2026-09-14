@@ -659,3 +659,57 @@ live via Playwright screenshot, Payroll Run 752 / employee 159 (TH_PVD showed
 **Source:** Phase Design Round 3 item 3c-2 (payslip-view.php / Calculation Breakdown modal),
 found while screenshotting the new layout for verification, follow-up fix applied same day
 (2026-09-14).
+
+---
+
+## `#manageLinesModal`'s 4 hidden in-tab Save buttons should become direct function calls, not `.trigger('click')` on a hidden element
+
+Batch 1/4 of the Adjustments modal shell (§9/§6/§4) built `saveActiveAdjustmentTab()`
+(`public/js/payroll/detail.js`) as a dispatcher that maps the active tab to that tab's own EXISTING
+save button and fires `.trigger('click')` on it — per explicit instruction ("ไม่เขียน logic บันทึกใหม่
+แค่ย้ายจุดเรียก"), each of `#btnSaveAttendanceData`/`#btnSaveEmpItemExclusion`/
+`#btnSaveRecurringDestOverride`/`#btnSaveEmpCalcOverride` was left in the DOM, hidden via `d-none`
+in its own tab-pane, rather than deleted — a workaround that reuses the click handler's own body
+completely untouched, but a hidden button that still exists purely to be `.trigger()`-ed is not the
+real end state.
+
+**Fix, in batches 2–4** (each of which touches one or more tabs' own content, unlike batch 1's shell-
+only scope): extract each of the 4 handlers' own bodies into a plain named function (e.g.
+`saveAttendanceDataRd()`), have the existing `$(document).on('click', '#btnSaveXxx', ...)` binding
+call that same function (if the button itself is kept for any other reason) or be removed entirely,
+and have `saveActiveAdjustmentTab()`'s dispatch table call the function directly instead of
+`.trigger('click')` on a hidden element. Mirrors this project's own "generalize instead of mirror-copy"
+convention (CLAUDE.md) — the hidden-button indirection was accepted for batch 1 only because batch 1
+was explicitly forbidden from touching tab content/logic.
+
+**Source:** Phase Design Round 3 item 4 batch 1/4, explicit instruction (2026-09-14).
+
+---
+
+## Generic `.modal[data-dirty-guard]` mechanism (app.js) has no built-in support for a modal whose own data loads asynchronously after `shown.bs.modal`
+
+`#manageLinesModal` (Batch 1/4 of the Adjustments modal shell) could not use the existing generic
+delegated `.modal[data-dirty-guard]` handler (`app.js`, §9) as-is, for two reasons specific to this
+modal: (1) that handler snapshots the WHOLE `.modal` once at `shown.bs.modal`, which fires before this
+modal's 4 parallel async tab-data loads land — a whole-modal baseline taken that early would make
+freshly-arrived server data look "dirty" the instant it renders; (2) each of the 5 tabs has its own
+distinct save target (or none, for Tab 1) — a single whole-modal dirty flag can't express "only tab X
+has unsaved input." Worked around by building a bespoke per-tab mechanism in `detail.js` that reuses
+the SAME underlying primitives (`snapshotFormState()`/`isFormDirty()`/`showConfirm()`/
+`refreshDirtyGuard()`) instead of the generic delegated handler itself — see that modal's own
+`ADJUSTMENT_TAB_CONFIG_RD` block for the full shape. rules.md §9 dirty-guard now has a 1-line rule
+(item 4 under "ยืนยันแล้วให้รื้อกลับ") documenting that any modal loading data async must scope and
+refresh its own baseline, but the GENERIC mechanism itself still has no opt-in support for this —
+every future async-loading modal would need to re-derive the same bespoke pattern from scratch.
+
+**Fix, when picked up:** generalize the generic mechanism to accept either (a) an opt-in "defer the
+baseline" mode — e.g. `data-dirty-guard-defer` — where `shown.bs.modal` does NOT auto-snapshot, and the
+page's own code becomes responsible for calling `refreshDirtyGuard()` once its data lands (this modal's
+own pattern, promoted into the shared helper), or (b) a scope-aware variant that accepts a
+tab-id → container-selector map directly (closer to what `#manageLinesModal` actually needed) so a
+future multi-tab async modal doesn't have to hand-roll its own `show.bs.tab`/`hide.bs.modal` listeners
+the way this one did. Decide which shape generalizes better once a 2nd real multi-tab or async-loading
+modal shows up — this backlog item and #manageLinesModal's own implementation are the only data point
+so far.
+
+**Source:** Phase Design Round 3 item 4 batch 1/4, explicit instruction (2026-09-14).

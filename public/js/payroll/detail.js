@@ -4210,10 +4210,16 @@ function attendanceDataRowHtml(field, synced, override) {
     const label = langData[field.labelKey] || field.fallback;
     const syncedDisplay = (synced !== null && synced !== undefined) ? fmtNum(synced) : '-';
     const badge = hasOverride ? ` <span class="badge bg-warning-subtle text-warning">${langData['sync_line_override_overridden_badge'] || 'Overridden'}</span>` : '';
+    // 2026-09-14, Round 3 item 4 batch 1/4, real gap found via Playwright while verifying the new
+    // per-tab dirty-guard: this input had no `id`/`name` at all (only relied on its own
+    // .attendance-data-input class, read by data-field on the <tr> instead) -- snapshotFormState()
+    // (app.js) silently skips any input with neither, so Tab 2 could never register as dirty. Adding
+    // a stable id (does not affect #btnSaveAttendanceData's own read logic, which still reads by
+    // class/data-field, unchanged) is what makes the dirty-guard able to see this tab at all.
     return `<tr data-field="${field.key}">
         <td>${label}${badge}</td>
         <td class="text-end text-muted">${syncedDisplay}</td>
-        <td><input type="number" step="${field.step}" min="0" class="form-control form-control-sm attendance-data-input" value="${effective}"></td>
+        <td><input type="number" id="attendanceDataInput_${field.key}" step="${field.step}" min="0" class="form-control form-control-sm attendance-data-input" value="${effective}"></td>
     </tr>`;
 }
 function loadAttendanceDataRd() {
@@ -4227,6 +4233,10 @@ function loadAttendanceDataRd() {
             const synced = res.data.synced || {};
             const override = res.data.override || {};
             $('#attendanceDataRows').html(ATTENDANCE_DATA_FIELDS_RD.map(f => attendanceDataRowHtml(f, synced[f.key], override[f.key])).join(''));
+            // 2026-09-14, Round 3 item 4 batch 1/4: this tab's own data just landed (or was just
+            // re-saved) -- re-baseline its dirty-guard against what's actually on the server now.
+            refreshAdjustmentTabDirtyGuard('manageLinesAttendancePane');
+            refreshAdjustmentSaveButtonState();
         }
     });
 }
@@ -4412,6 +4422,11 @@ function loadSyncLineOverridesRd() {
             const ex = res.exemption || { tax_calculate_override: 'inherit', sso_calculate_override: 'inherit' };
             $(`#empCalcTaxGroup input[value="${ex.tax_calculate_override || 'inherit'}"]`).prop('checked', true);
             $(`#empCalcSsoGroup input[value="${ex.sso_calculate_override || 'inherit'}"]`).prop('checked', true);
+            // 2026-09-14, Round 3 item 4 batch 1/4: this one fetch populates BOTH Tab 3's checklist and
+            // Tab 5's radios (see this function's own docblock above) -- re-baseline both.
+            refreshAdjustmentTabDirtyGuard('manageLinesSyncOverridePane');
+            refreshAdjustmentTabDirtyGuard('manageLinesCalcPane');
+            refreshAdjustmentSaveButtonState();
         }
     });
 }
@@ -4478,6 +4493,11 @@ $(document).on('click', '#btnSaveEmpCalcOverride', function () {
             if (res.status) {
                 showSuccess(langData['save_success'] || 'Saved successfully.');
                 loadRunDetail();
+                // 2026-09-14, Round 3 item 4 batch 1/4: unlike the other 3 batch-save tabs, nothing
+                // else here reloads this pane's own radios afterward -- re-baseline explicitly so the
+                // footer Save button goes back to disabled.
+                refreshAdjustmentTabDirtyGuard('manageLinesCalcPane');
+                refreshAdjustmentSaveButtonState();
             } else {
                 showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
             }
@@ -4587,12 +4607,16 @@ function recurringDestRowHtml(row) {
 }
 function loadRecurringDeductionDestinationsRd() {
     $('#recurringDestEditorCard').addClass('d-none');
+    refreshAdjustmentSaveButtonState();
     $.getJSON(`${BASE_URL}/api/payroll-run.recurring-deduction-destinations-for-employee`, { run_id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId }, function (res) {
         if (!res.status) return;
         recurringDestRows = res.data || [];
         $('#recurringDestOverrideList').html(recurringDestRows.length
             ? recurringDestRows.map(recurringDestRowHtml).join('')
             : `<div class="text-center text-muted small py-2">${langData['recurring_dest_empty'] || 'No recurring deductions active for this employee in this pay period.'}</div>`);
+        // 2026-09-14, Round 3 item 4 batch 1/4: the editor card is hidden right above -- baseline it
+        // empty so a stale open-card snapshot from a previous employee never lingers.
+        refreshAdjustmentTabDirtyGuard('manageLinesRecurringDestPane');
     });
 }
 function setRecurringDestPayeeType(type) {
@@ -4655,9 +4679,14 @@ $(document).on('click', '.btn-recurring-dest-edit', function () {
         $('#recurringDestDestinationNewFields').addClass('d-none');
     }
     $('#recurringDestEditorCard').removeClass('d-none');
+    // 2026-09-14, Round 3 item 4 batch 1/4: baseline the editor against what it was just populated
+    // with (this row's current override/template values), not an empty pre-open state.
+    refreshAdjustmentTabDirtyGuard('manageLinesRecurringDestPane');
+    refreshAdjustmentSaveButtonState();
 });
 $(document).on('click', '#btnCancelRecurringDestEdit', function () {
     $('#recurringDestEditorCard').addClass('d-none');
+    refreshAdjustmentSaveButtonState();
 });
 $(document).on('click', '#btnSaveRecurringDestOverride', function () {
     const recurringId = $('#recurringDestEditorRecurringId').val();
@@ -4840,7 +4869,152 @@ function resetManualLineFormRd() {
 $(document).on('click', '#manualLineModeToggle button', function () {
     setManualLineModeRd($(this).data('mode'));
 });
+
+/* ---------- #manageLinesModal shell: footer dispatcher + per-tab dirty-guard (2026-09-14, Round 3
+   item 4 batch 1/4, explicit instruction, §9/§6) ----------
+   Reuses the SAME primitives the generic `.modal[data-dirty-guard]` mechanism (app.js, §9) is built
+   on -- snapshotFormState()/isFormDirty()/showConfirm()/refreshDirtyGuard(), and the identical
+   bypass-flag pattern that stops a confirmed "discard" from re-entering its own handler -- but NOT
+   that generic delegated handler itself, deliberately: it snapshots/compares the WHOLE `.modal` once
+   at `shown.bs.modal`, which is wrong for this modal on two counts -- (a) `shown.bs.modal` fires
+   before this modal's 4 parallel async tab loads land (openManageLinesModal's own click handler
+   below), so a whole-modal baseline would be the pre-load (mostly empty) DOM, making freshly-arrived
+   server data look "dirty" the instant it renders; (b) each tab has its own distinct save target (or
+   none at all, for Tab 1) -- one whole-modal flag can't express "only Tab 2 has unsaved input". Each
+   tab's own baseline is instead captured once THAT tab's own data has actually landed (each
+   loadXRd()'s own success callback below calls refreshAdjustmentTabDirtyGuard()), scoped to that
+   tab's own save-relevant container, not the whole modal.
+   `scope` is deliberately narrower than the whole pane for Tab 3 (#empItemExclusionChecklist only --
+   the per-row list below it, #syncLineOverrideList, already saves itself instantly per row via
+   .btn-sync-line-save, it isn't what #btnSaveEmpItemExclusion itself submits) and Tab 4
+   (#recurringDestEditorCard only, and only actionable while it's open -- `activeOnly` -- matching
+   exactly what #btnSaveRecurringDestOverride itself submits). */
+const ADJUSTMENT_TAB_CONFIG_RD = {
+    manageLinesItemsPane: { scope: '#manageLinesItemsPane', saveSelector: null },
+    manageLinesAttendancePane: { scope: '#manageLinesAttendancePane', saveSelector: '#btnSaveAttendanceData' },
+    manageLinesSyncOverridePane: { scope: '#empItemExclusionChecklist', saveSelector: '#btnSaveEmpItemExclusion' },
+    manageLinesRecurringDestPane: { scope: '#recurringDestEditorCard', saveSelector: '#btnSaveRecurringDestOverride', activeOnly: true },
+    manageLinesCalcPane: { scope: '#manageLinesCalcPane', saveSelector: '#btnSaveEmpCalcOverride' },
+};
+function adjustmentActiveTabConfig() {
+    const paneId = $('#manageLinesModal .tab-pane.active').attr('id');
+    return ADJUSTMENT_TAB_CONFIG_RD[paneId] || null;
+}
+// Call once a tab's own data has actually finished loading (or right after its own save succeeds/its
+// form is reset) -- re-captures that tab's baseline so it's compared against what's really on the
+// server now, not stale pre-load/pre-save state.
+function refreshAdjustmentTabDirtyGuard(paneId) {
+    const cfg = ADJUSTMENT_TAB_CONFIG_RD[paneId];
+    if (cfg) refreshDirtyGuard(cfg.scope);
+}
+function adjustmentTabIsDirty(cfg) {
+    if (!cfg) return false;
+    const $scope = $(cfg.scope);
+    return isFormDirty($scope, $scope.data('dirtyGuardBaseline'));
+}
+// Footer's single Save button: disabled unless the active tab both HAS a save target and is actually
+// dirty (Tab 1 never has a target at all; Tab 4 only while its inline editor card is open).
+function refreshAdjustmentSaveButtonState() {
+    const cfg = adjustmentActiveTabConfig();
+    const $btn = $('#btnSaveActiveAdjustmentTab');
+    if (!$btn.length) return;
+    if (!cfg || !cfg.saveSelector || (cfg.activeOnly && $(cfg.scope).hasClass('d-none'))) {
+        $btn.prop('disabled', true);
+        return;
+    }
+    $btn.prop('disabled', !adjustmentTabIsDirty(cfg));
+}
+// Dispatcher (explicit instruction: map tab -> its EXISTING handler by triggering that handler's own
+// button, never re-implement the save call itself) -- the footer's #btnSaveActiveAdjustmentTab is the
+// one real caller. Each target button still exists in the DOM (hidden via `d-none`, not removed --
+// see detail.php's own comment on each one) specifically so this keeps working unchanged.
+function saveActiveAdjustmentTab() {
+    const cfg = adjustmentActiveTabConfig();
+    if (!cfg || !cfg.saveSelector) return;
+    if (cfg.activeOnly && $(cfg.scope).hasClass('d-none')) return;
+    $(cfg.saveSelector).trigger('click');
+}
+$(document).on('click', '#btnSaveActiveAdjustmentTab', saveActiveAdjustmentTab);
+$(document).on('input change', '#manageLinesModal input, #manageLinesModal select, #manageLinesModal textarea', function () {
+    refreshAdjustmentSaveButtonState();
+});
+$(document).on('shown.bs.tab', '#manageLinesModal [data-bs-toggle="tab"]', function () {
+    refreshAdjustmentSaveButtonState();
+});
+
+// Tab-switch-while-dirty guard -- explicit instruction: hook `show.bs.tab` in the CAPTURE phase (a
+// plain native addEventListener, not jQuery delegation) so this intercepts before any other
+// bubble-phase handler can assume the switch already happened. Bootstrap 5's Tab.show() dispatches
+// `show.bs.tab` on the INCOMING trigger (e.target) with `relatedTarget` = the OUTGOING (currently
+// active) trigger, synchronously, before actually swapping panes -- e.preventDefault() here reliably
+// cancels the switch (confirmed from Bootstrap's own source: it checks
+// `showEvent.defaultPrevented` right after dispatching, same contract already relied on for
+// `hide.bs.modal` above in app.js).
+let adjustmentTabSwitchBypassPaneId = null;
+document.addEventListener('show.bs.tab', function (e) {
+    if (!e.target || !e.target.closest || !e.target.closest('#manageLinesModal')) return;
+    const outgoingBtn = e.relatedTarget;
+    if (!outgoingBtn) return; // first tab shown on modal open -- nothing to leave dirty yet
+    const outgoingPaneId = (outgoingBtn.getAttribute('data-bs-target') || '').replace('#', '');
+    // Set right before this SAME switch is re-invoked programmatically after a confirmed "switch
+    // without saving" below -- without this guard, that 2nd show.bs.tab would just re-enter this
+    // handler and prompt a second time, forever (identical shape to app.js's own dirtyGuardBypass).
+    if (adjustmentTabSwitchBypassPaneId === outgoingPaneId) {
+        adjustmentTabSwitchBypassPaneId = null;
+        return;
+    }
+    const cfg = ADJUSTMENT_TAB_CONFIG_RD[outgoingPaneId];
+    if (!adjustmentTabIsDirty(cfg)) return;
+    e.preventDefault();
+    const targetBtn = e.target;
+    showConfirm({
+        title: langData['confirm_modal_dirty_title'] || 'You have unsaved changes',
+        message: langData['confirm_discard_changes_message'] || "You have changes that haven't been saved yet. If you continue, they will be lost.",
+        confirmText: langData['action_switch_tab_without_saving'] || 'Switch tab without saving',
+        cancelText: langData['action_back_to_editing'] || 'Back to editing',
+        tone: 'warning',
+        onYes: function () {
+            adjustmentTabSwitchBypassPaneId = outgoingPaneId;
+            bootstrap.Tab.getOrCreateInstance(targetBtn).show();
+        },
+    });
+}, true);
+
+// Modal-close-while-dirty guard -- same shape as app.js's own generic `.modal[data-dirty-guard]`
+// handler (bypass flag included), bound directly to #manageLinesModal instead of that generic
+// delegated one because the dirty check here must be scoped to whichever tab is ACTIVE at the moment
+// of close, not the whole modal (see this block's own docblock above for why).
+let adjustmentModalCloseBypass = false;
+$(document).on('hide.bs.modal', '#manageLinesModal', function (e) {
+    if (adjustmentModalCloseBypass) {
+        adjustmentModalCloseBypass = false;
+        return;
+    }
+    const cfg = adjustmentActiveTabConfig();
+    if (!adjustmentTabIsDirty(cfg)) return;
+    e.preventDefault();
+    showConfirm({
+        title: langData['confirm_modal_dirty_title'] || 'You have unsaved changes',
+        message: langData['confirm_discard_changes_message'] || "You have changes that haven't been saved yet. If you continue, they will be lost.",
+        confirmText: langData['action_close_without_saving'] || 'Close without saving',
+        cancelText: langData['action_back_to_editing'] || 'Back to editing',
+        tone: 'warning',
+        onYes: function () {
+            adjustmentModalCloseBypass = true;
+            const inst = bootstrap.Modal.getInstance(document.getElementById('manageLinesModal'));
+            if (inst) inst.hide();
+        },
+    });
+});
+
 $(document).on('click', '.btn-manage-manual-lines', function () {
+    // Clear every tab's leftover dirty-guard baseline from whatever employee/tab this modal was last
+    // open on -- without this, the forced "always reopen on Tab 1" switch a few lines below would
+    // compare a NEW employee's not-yet-loaded DOM against a STALE baseline from the previous one,
+    // which could spuriously show the tab-switch-dirty confirm the instant this modal is reopened.
+    Object.keys(ADJUSTMENT_TAB_CONFIG_RD).forEach(function (paneId) {
+        $(ADJUSTMENT_TAB_CONFIG_RD[paneId].scope).removeData('dirtyGuardBaseline');
+    });
     manageLinesEmployeeId = $(this).data('employee-id');
     const rowData = runDetailRowByEmployeeId(manageLinesEmployeeId);
     // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
@@ -4865,10 +5039,19 @@ $(document).on('click', '.btn-manage-manual-lines', function () {
         hint = langData['manage_items_hint_incentive'] || 'These are the only items counted for this employee -- no base salary, no standing income/deduction assignments.';
     }
     $('#manageLinesHint').text(hint);
+    // 2026-09-14, Round 3 item 4 batch 1/4: footer = modalFooterButtonsHtml() -> [Save][Close outline]
+    // (§9/§4), same pattern #employeeCommentModal's own footer already established -- rebuilt fresh on
+    // every open (constant shape, no readOnly branching needed here unlike Comments' own footer).
+    $('#manageLinesModalFooter').html(modalFooterButtonsHtml({
+        primary: { id: 'btnSaveActiveAdjustmentTab', key: 'save', fallback: 'Save' },
+        secondary: { key: 'close', fallback: 'Close', dismiss: true },
+    }));
     resetManualLineFormRd();
+    refreshAdjustmentTabDirtyGuard('manageLinesItemsPane');
     // Always reopen on Tab 1 -- a stale "Attendance Data" tab left active from a previous employee
     // would otherwise show up front-and-center unexpectedly.
     bootstrap.Tab.getOrCreateInstance(document.getElementById('manageLinesItemsTab')).show();
+    refreshAdjustmentSaveButtonState();
     // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย" -- item 9b): "Attendance Data" used to be
     // sync-only here (PayrollRunModel::attendanceOverrideSave() itself refused any non-sync run) --
     // that backend restriction is gone now (see that method's own updated docblock: the underlying
@@ -4962,6 +5145,10 @@ $(document).on('click', '#btnAddManualLine', function () {
             setButtonLoading($btn, false);
             if (res.status) {
                 resetManualLineFormRd();
+                // 2026-09-14, Round 3 item 4 batch 1/4: the Add form was just cleared back to its
+                // defaults -- re-baseline Tab 1 against that, not the values that were just added.
+                refreshAdjustmentTabDirtyGuard('manageLinesItemsPane');
+                refreshAdjustmentSaveButtonState();
                 loadManualLinesRd();
                 loadRunDetail();
             } else {

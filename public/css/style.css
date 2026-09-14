@@ -6787,6 +6787,24 @@ html, body {
         padding: 2rem 2rem;
     }
 }
+/* 2026-09-14, Round 3 item 4 batch 1/4 -- #manageLinesModal's own 5-tab "Manage Payment Items"
+   (Adjustments) modal adopts the same §6 rule ("tab-content ไม่มี card ครอบ") #runDetailTabsContent
+   established above: the border/rounded-bottom/p-3 "card" that used to wrap all 5 panes together is
+   retired (detail.php's own tab-content div dropped those utility classes at the same time). Only the
+   --sp-4 gap from the tab bar remains here. Each pane below gets the old card's own padding back
+   directly (temporary, per-pane, same stopgap technique as #run-details-pane etc. above) since none of
+   their own internal content has been re-laid-out for a card-less width in this batch (shell only --
+   §13, tab CONTENT itself is explicitly out of scope this round). */
+#manageLinesTabContent {
+    margin-top: var(--sp-4);
+}
+#manageLinesItemsPane,
+#manageLinesAttendancePane,
+#manageLinesSyncOverridePane,
+#manageLinesRecurringDestPane,
+#manageLinesCalcPane {
+    padding: var(--sp-4);
+}
 /* Run Information / Employee Breakdown as two visually distinct sub-sections within the Details
    tab (per explicit request) -- deliberately lighter than .card-surface (no shadow, thinner
    border). 2026-09-13 update: the "since they already sit inside #runDetailTabsContent's own

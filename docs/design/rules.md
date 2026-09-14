@@ -1453,6 +1453,10 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
        ไม่ถาม ทั้งคู่
     3. หลัง save สำเร็จ (หรือ `resetForm`) ต้อง snapshot ใหม่เอง ผ่าน `refreshDirtyGuard($modal)`
        (ใหม่, `app.js`) ก่อนจะปิด modal — ปิดหลัง save จึงไม่ถาม เพราะ baseline อัปเดตตามแล้ว
+    4. **Modal ที่โหลดข้อมูลแบบ async หลัง `shown.bs.modal` ต้อง scope baseline เอง (ต่อ container/tab)
+       แล้วเรียก `refreshDirtyGuard()` ทันทีที่ข้อมูลนั้นโหลดเสร็จ ห้ามพึ่ง baseline ที่ถ่ายตอน
+       `shown.bs.modal` เฉยๆ** — จะเทียบกับ DOM ก่อนโหลด ทำให้ข้อมูลจริงที่เพิ่ง render ดูเหมือน dirty ทันที
+       (พบจริงตอนทำ `#manageLinesModal`, Round 3 item 4 batch 1/4 — ดู BACKLOG.md 2 รายการที่เกี่ยวข้อง)
   - **ถามเฉพาะ ×/Esc/backdrop** (delegated `hide.bs.modal` บน `.modal[data-dirty-guard]` เท่านั้น,
     `e.preventDefault()` ยืนยันแล้วว่า Bootstrap 5's `Modal.hide()` เช็ค `hideEvent.defaultPrevented`
     จริงจากอ่าน source ตรงๆ ไม่ใช่เดา) — **ปุ่ม "ยกเลิก" ในฟอร์มที่เป็น `data-bs-dismiss="modal"` ธรรมดา

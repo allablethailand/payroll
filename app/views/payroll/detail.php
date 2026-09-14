@@ -1274,15 +1274,15 @@
         <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
-                    <div>
-                        <h5 class="modal-title text-secondary mb-0" id="manageLinesModalLabel">
-                            <i class="fa-solid fa-list-check me-1"></i><span data-i18n="manage_items_title">Manage Payment Items</span>
-                        </h5>
-                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
-                             ชื่อ modal ไม่มีชื่อพนักงานซ้ำ" -- #manageLinesEmployeeName removed, the
-                             employee's name now shows once, inside the new header card in the body. -->
-                        <div class="text-muted small" id="manageLinesHint"></div>
-                    </div>
+                    <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
+                         ชื่อ modal ไม่มีชื่อพนักงานซ้ำ" -- #manageLinesEmployeeName removed, the
+                         employee's name now shows once, inside the new header card in the body.
+                         2026-09-14, Round 3 item 4 batch 1/4, §9: "Header = ชื่อ + × เท่านั้น" -- icon
+                         and #manageLinesHint (the run-purpose description) both removed from here.
+                         #manageLinesHint moved down into #manageLinesItemsPane's own top (Tab 1, the
+                         one tab that had no description of its own already) -- JS keeps setting its
+                         text via the same #manageLinesHint id, unchanged. -->
+                    <h5 class="modal-title text-secondary mb-0" id="manageLinesModalLabel" data-i18n="manage_items_title">Manage Payment Items</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
@@ -1299,12 +1299,12 @@
                     <ul class="nav nav-tabs" role="tablist">
                         <li class="nav-item" role="presentation">
                             <button class="nav-link active" id="manageLinesItemsTab" data-bs-toggle="tab" data-bs-target="#manageLinesItemsPane" type="button" role="tab">
-                                <i class="fa-solid fa-list-check me-1"></i><span data-i18n="manage_items_tab_items">Payment Items</span>
+                                <span data-i18n="manage_items_tab_items">Payment Items</span>
                             </button>
                         </li>
                         <li class="nav-item d-none" id="manageLinesAttendanceTabWrap" role="presentation">
                             <button class="nav-link" id="manageLinesAttendanceTab" data-bs-toggle="tab" data-bs-target="#manageLinesAttendancePane" type="button" role="tab">
-                                <i class="fa-solid fa-calendar-check me-1"></i><span data-i18n="manage_items_tab_attendance">Attendance Data</span>
+                                <span data-i18n="manage_items_tab_attendance">Attendance Data</span>
                             </button>
                         </li>
                         <!-- 2026-08-29, generalized from sync-only (explicit request: "ในหน้าทำจ่าย
@@ -1313,7 +1313,7 @@
                              comment on why. -->
                         <li class="nav-item" id="manageLinesSyncOverrideTabWrap" role="presentation">
                             <button class="nav-link" id="manageLinesSyncOverrideTab" data-bs-toggle="tab" data-bs-target="#manageLinesSyncOverridePane" type="button" role="tab">
-                                <i class="fa-solid fa-sliders me-1"></i><span data-i18n="manage_items_tab_adjustments">Deduction Adjustments</span>
+                                <span data-i18n="manage_items_tab_adjustments">Deduction Adjustments</span>
                             </button>
                         </li>
                         <!-- 2026-08-29, explicit request: "กำหนดได้สำหรับพนักงานรายบุคคล ติ๊กเอาหรือไม่เอา...
@@ -1329,17 +1329,29 @@
                              convention as "Deduction Adjustments" above). -->
                         <li class="nav-item" id="manageLinesRecurringDestTabWrap" role="presentation">
                             <button class="nav-link" id="manageLinesRecurringDestTab" data-bs-toggle="tab" data-bs-target="#manageLinesRecurringDestPane" type="button" role="tab">
-                                <i class="fa-solid fa-money-bill-transfer me-1"></i><span data-i18n="manage_items_tab_recurring_dest">Recurring Deduction Destination</span>
+                                <span data-i18n="manage_items_tab_recurring_dest">Recurring Deduction Destination</span>
                             </button>
                         </li>
                         <li class="nav-item" id="manageLinesCalcTabWrap" role="presentation">
                             <button class="nav-link" id="manageLinesCalcTab" data-bs-toggle="tab" data-bs-target="#manageLinesCalcPane" type="button" role="tab">
-                                <i class="fa-solid fa-file-invoice-dollar me-1"></i><span data-i18n="manage_items_tab_calc">Tax &amp; SSO</span>
+                                <span data-i18n="manage_items_tab_calc">Tax &amp; SSO</span>
                             </button>
                         </li>
                     </ul>
-                    <div class="tab-content border border-top-0 rounded-bottom p-3">
+                    <!-- 2026-09-14, Round 3 item 4 batch 1/4, §6: "tab-content ไม่มี card ครอบ" -- the
+                         shared border/rounded-bottom/p-3 "card" that used to wrap all 5 panes together
+                         is retired, same technique #runDetailTabsContent already established (see that
+                         id's own CSS comment) -- #manageLinesTabContent below only carries the --sp-4
+                         gap from the tab bar; each pane that still needs the old card's own padding
+                         gets it back directly, scoped to that pane's own id (temporary, not a card). -->
+                    <div class="tab-content" id="manageLinesTabContent">
                         <div class="tab-pane fade show active" id="manageLinesItemsPane" role="tabpanel">
+                            <!-- 2026-09-14, Round 3 item 4 batch 1/4: the modal-header's own description
+                                 line (#manageLinesHint) moved down here -- this is the one tab that had
+                                 no description of its own already (2/4/5 each have one at their own
+                                 top, 3 has one per sub-section). JS (openManageLinesModal's own click
+                                 handler) still sets its text via this same #manageLinesHint id. -->
+                            <p class="text-muted small mb-2" id="manageLinesHint"></p>
                             <div class="add-manual-line-card border rounded-3 p-3 bg-light bg-opacity-50 mb-4">
                                 <div class="mb-2">
                                     <!-- 2026-09-03, Manual Entry / Platform UX review Phase 6: same
@@ -1536,8 +1548,14 @@
                                 </table>
                             </div>
                             <div class="text-end">
-                                <button type="button" class="btn btn-sm btn-outline-secondary me-1" id="btnResetAttendanceData"><i class="fa-solid fa-rotate-left me-1"></i><span data-i18n="attendance_data_reset_all">Reset All to Synced</span></button>
-                                <button type="button" class="btn btn-sm btn-primary" id="btnSaveAttendanceData"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary me-1" id="btnResetAttendanceData"><span data-i18n="attendance_data_reset_all">Reset All to Synced</span></button>
+                                <!-- 2026-09-14, Round 3 item 4 batch 1/4, explicit instruction: "ลบปุ่ม
+                                     บันทึกในเนื้อหาทุก tab ออก" -- hidden (`d-none`), NOT removed from
+                                     the DOM: saveActiveAdjustmentTab() (detail.js) dispatches to this
+                                     exact button via a plain `.trigger('click')`, so its own existing
+                                     click handler/save logic stays completely untouched -- only its
+                                     own visible copy in the tab content is gone. -->
+                                <button type="button" class="btn btn-sm btn-primary d-none" id="btnSaveAttendanceData"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
                             </div>
                         </div>
                         <!-- Sync Deduction Adjustments (2026-08-21, explicit request: "ต้องการปรับค่า สาย
@@ -1564,7 +1582,9 @@
                                 <h6 class="text-secondary fw-bold mb-1"><i class="fa-solid fa-list-check me-1"></i><span data-i18n="employee_item_exclusion_title">Exclude from This Employee's Calculation</span></h6>
                                 <div class="text-muted small mb-2" data-i18n="employee_item_exclusion_hint">Ticked items are left out of this employee's calculation for this run. Greyed-out items are already excluded by this run's own Run Settings default.</div>
                                 <div id="empItemExclusionChecklist"></div>
-                                <div class="text-end mt-2">
+                                <!-- 2026-09-14, Round 3 item 4 batch 1/4: hidden, not removed -- see
+                                     #btnSaveAttendanceData's own comment above for why. -->
+                                <div class="text-end mt-2 d-none">
                                     <button type="button" class="btn btn-sm btn-primary" id="btnSaveEmpItemExclusion"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
                                 </div>
                             </div>
@@ -1615,7 +1635,9 @@
                                 </div>
                                 <div class="text-end mt-2">
                                     <button type="button" class="btn btn-sm btn-outline-secondary" id="btnCancelRecurringDestEdit" data-i18n="cancel">Cancel</button>
-                                    <button type="button" class="btn btn-sm btn-primary" id="btnSaveRecurringDestOverride" data-i18n="save">Save</button>
+                                    <!-- 2026-09-14, Round 3 item 4 batch 1/4: hidden, not removed -- see
+                                         #btnSaveAttendanceData's own comment above for why. -->
+                                    <button type="button" class="btn btn-sm btn-primary d-none" id="btnSaveRecurringDestOverride" data-i18n="save">Save</button>
                                 </div>
                             </div>
                         </div>
@@ -1659,15 +1681,20 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="text-end">
+                            <!-- 2026-09-14, Round 3 item 4 batch 1/4: hidden, not removed -- see
+                                 #btnSaveAttendanceData's own comment above for why. -->
+                            <div class="text-end d-none">
                                 <button type="button" class="btn btn-sm btn-primary" id="btnSaveEmpCalcOverride"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
-                </div>
+                <!-- 2026-09-14, Round 3 item 4 batch 1/4, §9/§4: modalFooterButtonsHtml() (app.js) ->
+                     [Save][Close outline], built once per open in openManageLinesModal's own click
+                     handler (detail.js) -- Save's id (#btnSaveActiveAdjustmentTab) is the ONE call site
+                     saveActiveAdjustmentTab() wires up; it dispatches to whichever of the 5 tabs' own
+                     EXISTING (now-hidden) save buttons applies to the currently active tab, unchanged. -->
+                <div class="modal-footer" id="manageLinesModalFooter"></div>
             </div>
         </div>
     </div>

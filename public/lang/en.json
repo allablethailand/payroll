@@ -1781,6 +1781,7 @@
     "action_reopen": "Reopen for Editing",
     "action_close_without_saving": "Close without saving",
     "action_back_to_editing": "Back to editing",
+    "action_switch_tab_without_saving": "Switch tab without saving",
     "confirm_reopen_title": "Reopen this payroll run?",
     "confirm_reopen_message": "This will move the run back to Draft so its numbers can be corrected. Any linked loan/installment deductions this run already consumed will be un-consumed. You will need to submit it for approval again.",
     "action_revise": "Revise",
