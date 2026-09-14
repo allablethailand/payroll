@@ -1753,17 +1753,30 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     border-color: var(--c-primary);
     box-shadow: 0 0 0 .25rem rgba(var(--bs-primary-rgb), .25);
 }
-.select2-container--bootstrap-5 .select2-results__options .select2-results__option.select2-results__option--highlighted {
-    background-color: rgba(var(--bs-primary-rgb), .12);
-    /* was a hardcoded #212529 -- on a translucent-orange tint sitting over --app-surface-bg this
-       needs to flip to a light color in dark mode too, same fix as the datepicker "today" cell
-       below. --app-heading (not --app-text) since a highlighted option is the more prominent state. */
-    color: var(--app-heading);
+/* 2026-09-14, Phase Design Round 3 item 3c-1 follow-up -- REAL BUG FOUND AND FIXED (explicit report:
+   "option ที่ highlight เป็นฟ้า (Bootstrap/select2 default)"): both rules below were silently losing
+   to select2-bootstrap-5-theme's own bundled defaults the whole time -- the theme's own selectors
+   for these exact 2 states are `.select2-container--bootstrap-5 .select2-dropdown
+   .select2-results__options .select2-results__option...` (5 class segments, specificity (0,5,0));
+   this file's own rules were missing the `.select2-dropdown` segment (only 4 segments, (0,4,0)) --
+   LOWER specificity always loses regardless of load order, so every highlighted/selected option was
+   actually rendering the theme's own un-touched defaults (`#e9ecef` gray / `#0d6efd` Bootstrap blue)
+   this whole time, confirmed by reading the theme's bundled CSS directly, not guessed. Fixed by
+   matching that exact selector shape (not just adding !important, which would only mask the same
+   underlying mismatch for the next person to hit it) AND switching to the tokens this round's own
+   report asked for: highlighted = `--c-bg-hover`/`--c-text` (was an orange-tinted `--bs-primary-rgb`
+   wash + `--app-heading`, a different, older design), selected = `--c-primary-soft`/`--c-primary`
+   (this app's own established "soft bg + matching-hue text" pairing, §5's badge convention -- was a
+   solid `--c-primary` fill + white text, which reads as a full decision-style action button per §4,
+   not an appropriate weight for "which option is currently picked" inside a dropdown). */
+.select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option.select2-results__option--highlighted {
+    background-color: var(--c-bg-hover);
+    color: var(--c-text);
 }
-.select2-container--bootstrap-5 .select2-results__options .select2-results__option.select2-results__option--selected,
+.select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option.select2-results__option--selected,
 .select2-container--bootstrap-5 .select2-dropdown .select2-results__options .select2-results__option[aria-selected="true"]:not(.select2-results__option--highlighted) {
-    background-color: var(--c-primary);
-    color: #fff;
+    background-color: var(--c-primary-soft);
+    color: var(--c-primary);
 }
 /* 2026-09-05, T069 Step 3 -- select2-bootstrap-5-theme has ZERO Bootstrap-variable usage and ZERO
    dark-mode awareness of its own (confirmed by reading its source directly, unlike datatables.net-
@@ -1789,9 +1802,17 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__clear {
     color: var(--app-text-muted);
 }
+/* 2026-09-14, Round 3 item 3c-1 follow-up, explicit instruction -- the dropdown PANEL specifically
+   (not the closed selection box/search field/chips below it, which stay on --app-* per T069 Step
+   3's own reasoning above, unchanged, not reported as broken) moves to this round's --c-* token
+   pair instead: --c-bg/--c-border, matching every other "floating surface" in the app (modal,
+   dropdown menu, etc, §1). Unlike the highlighted/selected options fix above, this rule's own
+   specificity already correctly beat the theme's own equivalent rule (both are the same 2-class
+   shape, (0,2,0) -- style.css simply loads after the vendor theme CSS, so source order already
+   settled this tie) -- this is a token-FAMILY correction, not a losing-the-cascade bug. */
 .select2-container--bootstrap-5 .select2-dropdown {
-    background-color: var(--app-surface-bg);
-    border-color: var(--app-border);
+    background-color: var(--c-bg);
+    border-color: var(--c-border);
     color: var(--app-text);
 }
 .select2-container--bootstrap-5 .select2-dropdown .select2-search .select2-search__field {
@@ -5389,13 +5410,47 @@ html, body {
 }
 .apv-people { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 6px; }
 .apv-person { display: flex; align-items: center; gap: 6px; max-width: 160px; }
+/* 2026-09-14, Phase Design Round 3 item 3c-1 follow-up, explicit instruction -- same hardcoded-hex/
+   zero-dark-awareness gap as .apv-person-name right below (same shared helper's own output,
+   apvPersonLineHtml()/apvAvatarHtml(), used by every table in the app) -- background/color moved to
+   --c-bg-subtle/--c-text-muted so both resolve correctly, and identically, in either theme.
+   border-color moved to --c-border same-round follow-up -- no hex left in this helper's own CSS at
+   all now. */
 .apv-person-avatar {
     width: 26px; height: 26px; min-width: 26px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    background: #eef0f2; color: #6c757d; font-size: 0.9167rem; font-weight: 700;
-    border: 1px solid #e5e7eb; flex: none;
+    background: var(--c-bg-subtle); color: var(--c-text-muted); font-size: 0.9167rem; font-weight: 700;
+    border: 1px solid var(--c-border); flex: none;
 }
-.apv-person-name { font-size: 1rem; color: #4b5563; line-height: 1.2; }
+/* 2026-09-14, Round 3 item 3c-1 follow-up, explicit instruction -- replaces apvAvatarHtml()'s own
+   former INLINE `border:2px solid #fff` + `box-shadow:0 0 0 1px rgba(0,0,0,.12)` (a hardcoded white
+   ring, applied whenever an avatar is clickable through to the quick-view modal -- see that
+   function's own comment). Applies to BOTH the initial-letter `<span class="apv-person-avatar">`
+   AND a photo `<img>` (neither carries the OTHER's base class, this one works standalone on
+   either) -- resting ring = --c-bg (matches whatever surface the avatar sits on, so it reads as
+   "the row's own surface showing through around the circle," not a fixed halo); hover ring =
+   --c-primary-soft (same brand-accent-at-low-opacity "this is interactive" language used
+   elsewhere, §3). No hex/inline left in this helper's own output at all now. */
+.apv-person-avatar--clickable {
+    cursor: pointer;
+    box-shadow: 0 0 0 2px var(--c-bg);
+}
+.apv-person-avatar--clickable:hover {
+    box-shadow: 0 0 0 2px var(--c-primary-soft);
+}
+/* 2026-09-14, Phase Design Round 3 item 3c-1 follow-up -- REAL BUG FOUND AND FIXED (explicit report:
+   "ชื่อพนักงานในคอลัมน์...ใน dark จางกว่าข้อความอื่นในแถว"): `.apv-person-name` -- the CSS backing
+   apvPersonLineHtml()/apvAvatarHtml()'s own name span, used by EVERY table in the app that renders
+   a person avatar+name pair -- hardcoded `color: #4b5563` (a fixed medium gray, roughly this app's
+   own --c-text-muted in spirit but never actually using that token) with zero dark-mode awareness
+   at all, confirmed via grep (no `[data-bs-theme="dark"]`/`@media` override anywhere for this
+   class). In light mode that reads as an intentional-looking muted caption color; in dark mode the
+   SAME fixed hex stays exactly as dim, next to genuinely bright `--c-text` (dark: #E6E8EB) sibling
+   text in the same row -- reads as faint/disabled rather than a normal name. Switched to `--c-text`
+   (a name is the PRIMARY value in this pairing, not a muted caption -- matches every other
+   full-weight cell value in the same row) so it resolves correctly, and identically, in both
+   themes. */
+.apv-person-name { font-size: 1rem; color: var(--c-text); line-height: 1.2; }
 .apv-muted-text { color: #6b7280; }
 .apv-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
 .apv-timeline-log { margin-top: 4px; }

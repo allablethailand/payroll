@@ -117,6 +117,19 @@ function calcErrorsRemarkRd(calcErrors) {
     });
     return `<span class="text-danger small">${escapeHtml(labels.join(' '))}</span>`;
 }
+// 2026-09-14, Round 3 item 3c-1 follow-up, real bug fix (explicit report: "column filter popup
+// แสดงค่าดิบ 'calculated' แทน 'คำนวณแล้ว'") -- a status_map-backed badge column's own `render.filter`
+// must return the SAME translated label text the badge itself shows, not the raw enum value --
+// table-column-filter.js's own popup lists whatever `.render('filter')` returns per row as that
+// column's distinct filterable values, so a raw code leaks straight into the popup otherwise (the
+// same class of bug "เก็บตกรอบ5" already fixed once for the Verify column's own badge -- this closes
+// the other 2 badge columns on this same table that still had it). Shared here since 2 columns
+// below need the identical (enum, context) -> translated label lookup.
+function statusMapFilterLabelRd(enumValue, context) {
+    const entry = (typeof getStatusMapEntry === 'function') ? getStatusMapEntry(enumValue, context) : null;
+    if (!entry) return enumValue;
+    return getLangValue(entry.label_key) || entry.label_key;
+}
 function employeeDisplayNameRd(row) {
     const name = currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`;
     return name.trim();
@@ -2941,7 +2954,18 @@ function initRunDetailTable(details) {
             // className:'text-center', a leftover from before this column routed through
             // statusBadgeHtml(); dropped so it falls back to the default left alignment every other
             // badge column already uses.
-            { data: 'payment_method_code', render: d => statusBadgeHtml(d || 'transfer', 'payment_method') },
+            // 2026-09-14, Round 3 item 3c-1 follow-up, real bug fix -- was a plain function render
+            // (CLAUDE.md's own Table convention already required object-form here: the badge HTML
+            // display differs from the raw payment_method_code value) -- `.render('filter')` for a
+            // plain function just re-invokes the SAME function and strips its HTML tags, which
+            // happened to still read as the translated label text for THIS column specifically (no
+            // real user-facing bug here, unlike calc_status below), but left the column non-
+            // compliant with the documented convention and one accidental step away from the same
+            // class of bug -- split explicitly via the shared statusMapFilterLabelRd() helper.
+            { data: 'payment_method_code', render: {
+                display: d => statusBadgeHtml(d || 'transfer', 'payment_method'),
+                filter: d => statusMapFilterLabelRd(d || 'transfer', 'payment_method'),
+            } },
             // 2026-08-29, explicit follow-up request: "ตรงเงินได้เงินหักสุทธิ์ ปรับการแสดงผลให้ชัดขึ้น หรือแยก
             // Column ไปเลย" -- the combined "Amounts" cell from the previous round packed Base
             // Salary/Gross/Deduction/Net into one cell and wasn't clear enough; split back into their
@@ -2984,10 +3008,19 @@ function initRunDetailTable(details) {
             // error map) retired -- status_map.php already had an identical 'payroll_calc_status'
             // context (same 3 values, same tones) from an earlier round with no consumer yet; this is
             // its first real one.
+            // 2026-09-14, Round 3 item 3c-1 follow-up, real bug fix (explicit report: column filter
+            // popup showed the raw enum "calculated" instead of the translated "คำนวณแล้ว") -- filter
+            // used to be `${d} ${row.calc_errors || ''}` (the raw status code plus raw machine error
+            // codes, neither translated) -- switched to statusMapFilterLabelRd() (same translated
+            // label the badge itself shows). The raw calc_errors codes are dropped from filter
+            // entirely, not translated-and-kept: they're free-text, per-employee remarks (see
+            // calcErrorsRemarkRd()), not a small set of distinct values an Excel-style column filter
+            // checklist makes sense for -- concatenating them back in would just reproduce the same
+            // "raw data leaking into the popup" problem one level down.
             { data: 'calc_status', render: {
                 display: (d, t, row) => `${statusBadgeHtml(d, 'payroll_calc_status')}<div class="small mt-1">${calcErrorsRemarkRd(row.calc_errors)}</div>`,
                 sort: d => d,
-                filter: (d, t, row) => `${d} ${row.calc_errors || ''}`,
+                filter: d => statusMapFilterLabelRd(d, 'payroll_calc_status'),
             } },
             // 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "badge = ซ้าย" (§7) -- was
             // className:'text-center'.

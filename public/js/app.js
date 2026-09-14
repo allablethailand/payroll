@@ -3156,18 +3156,29 @@ function apvAvatarImgError(img) {
 // + `data-employee-id` (the delegated click handler further down opens the quick-view modal). Every
 // pre-existing call site (Timeline stages/approver rows, none of which pass a 4th argument) renders
 // byte-identical to before -- `options` defaults to `{}` so nothing about their look changed.
+// 2026-09-14, Round 3 item 3c-1 follow-up, explicit instruction -- the clickable-avatar "ring" used
+// to be an INLINE `border:2px solid #fff` + `box-shadow:0 0 0 1px rgba(0,0,0,.12)`, a hardcoded
+// white ring that made no sense once this app started rendering on dark surfaces too (a white ring
+// sitting inside/against a dark row reads as an odd, disconnected halo, not "the same surface
+// bleeding through around the circle" the effect is meant to convey). Replaced with a plain CSS
+// class (`.apv-person-avatar--clickable`, style.css) instead of just swapping the inline hex for a
+// var() -- `cursor:pointer` moved there too, so this function's own `style=""` attribute carries
+// NOTHING employeeId-conditional anymore, only the always-present sizing that was already there
+// for every avatar regardless of clickability. Resting ring = --c-bg (matches whatever surface the
+// avatar sits on, light or dark, "blends into the row" rather than a fixed white halo); hover ring
+// = --c-primary-soft (same brand-accent-at-low-opacity language this app already uses for "this is
+// interactive" elsewhere, §3).
 function apvAvatarHtml(name, size, photoPath, options) {
     options = options || {};
     size = size || 26;
     const initial = escapeAttr((name || '?').trim().charAt(0).toUpperCase() || '?');
     const employeeId = options.employeeId;
     const clickAttr = employeeId ? ` data-employee-id="${escapeAttr(employeeId)}"` : '';
-    const clickClass = employeeId ? ' emp-avatar-link' : '';
-    const clickStyle = employeeId ? 'cursor:pointer;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.12);' : '';
+    const clickClass = employeeId ? ' emp-avatar-link apv-person-avatar--clickable' : '';
     if (photoPath) {
-        return `<img src="${BASE_URL}/${escapeAttr(photoPath)}" alt="" data-size="${size}" data-initial="${initial}"${clickAttr} class="${clickClass.trim()}" style="width:${size}px;height:${size}px;min-width:${size}px;border-radius:50%;object-fit:cover;object-position:center top;${clickStyle}" onerror="apvAvatarImgError(this)">`;
+        return `<img src="${BASE_URL}/${escapeAttr(photoPath)}" alt="" data-size="${size}" data-initial="${initial}"${clickAttr} class="${clickClass.trim()}" style="width:${size}px;height:${size}px;min-width:${size}px;border-radius:50%;object-fit:cover;object-position:center top;" onerror="apvAvatarImgError(this)">`;
     }
-    return `<span class="apv-person-avatar${clickClass}"${clickAttr} style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;${clickStyle}">${initial}</span>`;
+    return `<span class="apv-person-avatar${clickClass}"${clickAttr} style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
 }
 function apvPersonLineHtml(name, size, photoPath, options) {
     return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtml(name, size, photoPath, options)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
