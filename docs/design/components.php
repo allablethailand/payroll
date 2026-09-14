@@ -30,6 +30,31 @@ if (!in_array($__remote, ['127.0.0.1', '::1'], true)) {
     echo "Design component preview -- dev only (localhost access required).\n";
     exit;
 }
+// 2026-09-14, real bug found and fixed (explicit report: "theme light/dark หลุดเอง", re-audit --
+// "components.php ห้าม seed theme เอง ให้อ่านจาก header.php เหมือนหน้าอื่น") -- this page used to seed its
+// OWN initial theme from `localStorage.getItem('preferred_theme')` client-side (JS, further down the
+// file), which makes localStorage act as a SOURCE for this one page instead of the pure mirror it is
+// everywhere else -- the exact anti-pattern this whole bug family kept turning out to be. Fixed by
+// giving this page the SAME server-side stamp layout/header.php gives every real page: read
+// `$_SESSION['user']['ui_theme']` directly (byte-identical 3-way branch to header.php's own -- 'dark'
+// stamps dark, 'system' stamps nothing so the `@media (prefers-color-scheme)` rule decides, anything
+// else including null/never-configured stamps light) and write `data-bs-theme` on THIS page's own
+// `<html>` tag before any CSS loads, exactly like header.php does. This file's own docblock above
+// still holds -- no config.php/vendor/autoload.php/app bootstrap dependency added, a plain native
+// `session_start()` is enough to resume whatever session cookie the browser already sent (or read
+// nothing at all if there isn't one, same as a logged-out visit to any real page) -- no login
+// requirement is introduced by this, the IP gate above is still the only access control this page has.
+if (session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
+$__cpThemePref = $_SESSION['user']['ui_theme'] ?? null;
+if ($__cpThemePref === 'dark') {
+    $__cpThemeAttr = ' data-bs-theme="dark"';
+} elseif ($__cpThemePref === 'system') {
+    $__cpThemeAttr = '';
+} else {
+    $__cpThemeAttr = ' data-bs-theme="light"';
+}
 // 2026-09-13, item 5 -- stat-card.php's own 'badge' field now calls the shared statusBadge()
 // helper internally (app/helpers/helpers.php), which this standalone page needs explicitly since it
 // deliberately skips the app's normal bootstrap (see docblock above) -- helpers.php itself has no
@@ -62,7 +87,7 @@ function cpLangText(string $key, string $fallback = ''): string {
 }
 ?>
 <!doctype html>
-<html lang="th">
+<html lang="th"<?=$__cpThemeAttr?>>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -1825,18 +1850,11 @@ $(function () {
             }
         });
     });
-    // 2026-09-14, same bug fix, explicit instruction: "ทดสอบสลับ 3 โหมด...แล้ว reload ค่าคง" -- this
-    // page has no server-side stamp at all (it's a standalone file, not routed through layout/
-    // header.php, unlike every real page), so the attribute always starts absent on a fresh load
-    // regardless of what was picked last time. `preferred_theme` in localStorage (kept correctly in
-    // sync by setTheme()/loadUserPreferences(), both app.js) is the fast local cache real pages
-    // already read at boot for font size -- applying it here too (theme specifically is the ONE
-    // thing app.js's OWN ready-handler deliberately does NOT do this for on a REAL page, precisely
-    // BECAUSE that page already has a correct server stamp to begin with; this page has no such
-    // stamp, so the same reasoning doesn't forbid it here -- it's what makes it here).
-    if (typeof applyTheme === 'function') {
-        applyTheme(localStorage.getItem('preferred_theme') || 'system');
-    }
+    // 2026-09-14, re-audit follow-up: no client-side theme seed here anymore -- the attribute this
+    // reads is now stamped SERVER-SIDE (top of this file, same 3-way branch as layout/header.php's
+    // own), before any CSS loads, so it's already correct at this point exactly like a real page.
+    // "ทดสอบสลับ 3 โหมด...แล้ว reload ค่าคง" now holds for the real reason (server ui_theme persisted +
+    // read back on the next request), not a client-side localStorage read standing in for it.
     reflectActive(currentThemeFromDom());
 })();
 </script>
