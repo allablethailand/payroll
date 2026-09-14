@@ -33,6 +33,12 @@
                                         the whole overlay would fade those out too. */
   --c-bg-subtle: #F7F8FA;           /* แถบหัวตาราง, filter bar, พื้น modal footer */
   --c-bg-hover: #F1F3F5;
+  --c-bg-hover-rgb: 241, 243, 245;  /* 2026-09-14, table row hover -- mechanical RGB-triplet
+                                        decomposition of --c-bg-hover itself, same exemption/
+                                        technique as --c-bg-rgb above -- needed because DataTables'
+                                        own bs5 CSS reads its row-hover box-shadow color from an
+                                        RGB-triplet variable (--dt-row-hover, rgba(var(...), .075)),
+                                        not a hex custom property. */
 
   /* status -- ใช้เฉพาะ "สถานะที่ผู้ใช้ต้องตัดสินใจ/ระวัง" ไม่ใช้ตกแต่ง */
   --c-danger: #D92D20;  --c-danger-soft: #FEE4E2;
@@ -202,6 +208,7 @@
     --c-bg-rgb: 21, 24, 28;       /* mechanical decomposition of this block's own --c-bg -- see :root's comment */
     --c-bg-subtle: #1C2026;
     --c-bg-hover: #232830;
+    --c-bg-hover-rgb: 35, 40, 48;   /* mechanical decomposition of this block's own --c-bg-hover -- see :root's comment */
     --c-primary-hover: #FFAD33;
     --c-primary-soft: #3A2A10;
     --c-danger: #F97066;      --c-danger-soft: #3B1A18;
@@ -242,6 +249,7 @@
         --c-bg-rgb: 21, 24, 28;
         --c-bg-subtle: #1C2026;
         --c-bg-hover: #232830;
+        --c-bg-hover-rgb: 35, 40, 48;
         --c-primary-hover: #FFAD33;
         --c-primary-soft: #3A2A10;
         --c-danger: #F97066;      --c-danger-soft: #3B1A18;

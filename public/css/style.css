@@ -9912,23 +9912,78 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 /* Shared sticky-column styling (public/js/sticky-table-columns.js's own initStickyColumns()) -- an
    opaque background is required so a scrolled-under column doesn't visibly show through the frozen
    one. Sets `--bs-table-bg` (the CSS custom property Bootstrap 5's own `.table` rule reads via
-   `background-color: var(--bs-table-bg)`, normally inherited as `transparent` down from `.table`
-   itself) DIRECTLY on the cell rather than setting `background-color` here outright -- an explicit
-   declaration on the element always wins over an inherited one regardless of selector specificity,
-   so this can't lose to Bootstrap's own (higher-specificity) `.table > :not(caption) > * > *` rule
-   the way a plain `background-color` override here would. Bootstrap's own striping/hover tint layers
-   via `box-shadow` (a separate `--bs-table-accent-bg`, untouched here), so both still render
-   correctly on top of this.
+   `background-color: var(--bs-table-bg)`) DIRECTLY on the cell rather than setting
+   `background-color` here outright -- an explicit declaration on the element always wins over an
+   inherited one regardless of selector specificity, so this can't lose to Bootstrap's own (higher-
+   specificity) `.table > :not(caption) > * > *` rule the way a plain `background-color` override
+   here would. Bootstrap's own striping/hover tint layers via `box-shadow` (a separate
+   `--bs-table-accent-bg`, untouched here), so both still render correctly on top of this.
+   ((`.table`'s own default is `--bs-table-bg: var(--bs-body-bg)`, NOT literally `transparent` as an
+   earlier version of this comment said -- corrected 2026-09-14 after actually reading the installed
+   Bootstrap source directly rather than continuing to assume -- `--bs-body-bg` is itself mapped to
+   `var(--c-bg)` app-wide (Round 1 Bootstrap-override work), which is exactly why a PLAIN, non-sticky
+   cell already rendered the correct token color with no rule of its own to be found here at all.))
    2026-09-08, follow-up request: "อยากให้ column ที่ fixed และเลื่อนได้มีสีต่างกัน", then same-day
-   correction ("สีดูฉูดฉาดและแตกต่างเกินไป") -- first tried `var(--app-accent-soft-bg)` (this app's warm
-   orange/brown "highlighted" tint, used for e.g. `.page-header-card-icon`) but that read as too loud
-   for something that spans an entire column's height on every row, not a small icon badge. Settled on
-   `var(--app-hover-bg)` instead -- the same quiet, neutral off-white/off-dark tint this app already
-   uses for a plain row-hover state -- just enough contrast against the ordinary white/dark surface to
-   read as "a different column" at a glance, without competing for attention with actual status colors
-   (badges/icons) inside the cells. */
+   correction ("สีดูฉูดฉาดและแตกต่างเกินไป") -- settled on `var(--app-hover-bg)`, the same quiet,
+   neutral off-white/off-dark tint used for a plain row-hover state, so a frozen column would read as
+   "a different column" without competing with real status colors.
+   2026-09-14, Phase Design Round 3 item 3c-1 follow-up -- REAL BUG FOUND AND FIXED (explicit report,
+   testing the real Detail page in dark mode): `--app-hover-bg` is a DIFFERENT, unrelated token
+   system (T069) from `--c-*` (Phase Design) -- its dark value (`#262C37`) never matched `--c-bg`
+   dark (`#15181C`, what every OTHER, non-sticky cell in the same row actually renders), so a sticky
+   column visibly seamed against the rest of its own row -- confirmed directly via
+   `getComputedStyle()` against the real page, not guessed. That "different column" visual distinction
+   is REVERSED as of this fix: the whole row must read as ONE surface, sticky or not -- sticky cells
+   now match their row's own real background token instead of a separate, disconnected one.
+   Two backgrounds needed, not one, because a sticky cell can sit in `<thead>`/`<tfoot>` (which
+   render `--c-bg-subtle` via `.table-light` below) or `<tbody>` (`--c-bg`, `.table`'s own default)
+   -- `.tbl-sticky-col` alone can't know which parent it's in, so the base rule covers the tbody
+   case (the more common one) and a `thead`/`tfoot`-scoped override (higher specificity, wins
+   correctly) matches the other two. */
 .tbl-sticky-col {
-    --bs-table-bg: var(--app-hover-bg);
+    --bs-table-bg: var(--c-bg);
+}
+thead .tbl-sticky-col,
+tfoot .tbl-sticky-col {
+    --bs-table-bg: var(--c-bg-subtle);
+}
+/* 2026-09-14, Phase Design Round 3 item 3c-1 follow-up -- 2 MORE real bugs found and fixed in the
+   same dark-mode table pass, both real §7-scoped bugs, not part of the sticky-column fix above:
+
+   (1) `.table-light` (Bootstrap's own utility, applied to every `<thead>`/`<tfoot class="table-
+   light">` in this app -- confirmed 20 real view files use it, all for this exact header/footer
+   purpose) hardcodes `--bs-table-bg: #f8f9fa` / `--bs-table-color: #000` -- a LIGHT-mode-only pair
+   with zero theme awareness at all, confirmed directly via `getComputedStyle()` against the real
+   Detail page in dark mode: every thead/tfoot cell rendered a literal light-gray background
+   (`rgb(248,249,250)`) sitting inside an otherwise fully dark page -- the text color half of this
+   was already masked for `<thead>` specifically by `table.dataTable thead th`'s own `color`
+   override elsewhere in this file (see that rule's own "เก็บตกรอบ 6" comment), but `<tfoot>` never
+   had an equivalent override, AND the background itself was wrong in both places regardless.
+   Overriding the class directly (not just `.dataTable thead th`) fixes header AND footer, DataTable
+   or plain `<table>`, in one place, app-wide.
+
+   (2) This wrong, always-light footer background is ALSO the real explanation for the OTHER report
+   in the same round ("tfoot: พื้นดำ ตัวเลขสุทธิจาง" -- net number looks faint): `.num.money-net`'s own
+   `color: var(--c-text)` was already resolving correctly (confirmed `rgb(230,232,235)`, exactly
+   `--c-text` dark) -- the number was never actually the wrong COLOR, it just had terrible contrast
+   sitting on the wrong (light) background right underneath it, which reads as "faint" even though
+   the text itself was rendering exactly as designed. Fixing (1) fixes this report too, with no
+   separate `.money-net` change needed -- confirmed by re-testing after the fix, not assumed. */
+.table-light {
+    --bs-table-bg: var(--c-bg-subtle);
+    --bs-table-color: var(--c-text-muted);
+}
+/* Row hover (§7's own "hover ทั้งแถว --c-bg-hover") -- Bootstrap's own `.table` default,
+   `--bs-table-hover-bg: rgba(var(--bs-emphasis-color-rgb), .075)`, is a translucent-black overlay
+   tuned for a light surface -- on a dark `--c-bg`, that same low-opacity black only makes an
+   already-dark row marginally darker still (barely perceptible, not the deliberate `--c-bg-hover`
+   lift this app's own tables/panels use everywhere else for a hover state). Overridden directly to
+   the real token so a DataTable row's hover reads the same "lifted" way every other hover surface
+   in this app already does, light or dark -- `#tb_run_detail tbody tr.rd-row-verified`'s own scoped
+   `--bs-table-hover-bg` (verified-row green tint, further down this file) is MORE specific than this
+   and correctly keeps winning for that one row state. */
+.table {
+    --bs-table-hover-bg: var(--c-bg-hover);
 }
 /* Visual divider between the frozen block(s) and the scrollable middle -- mirrors the seam
    DataTables' own FixedColumns extension draws (see that file's own docblock for why this app uses
@@ -10234,6 +10289,43 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    read `--dt-row-selected` elsewhere (e.g. a future DataTables row-selection feature) is affected. */
 div.dt-processing {
     --dt-row-selected: 255, 153, 0;
+}
+
+/* 2026-09-14, Phase Design Round 3 item 3c-1 follow-up (§7, real dark-mode table bug report) --
+   REAL BUG FOUND AND FIXED: DataTables' own bs5 package has its OWN, separate row-hover mechanism
+   (`table.table.dataTable.table-hover > tbody > tr:hover > * { box-shadow: inset 0 0 0 9999px
+   rgba(var(--dt-row-hover), .075); }`, confirmed by reading its bundled CSS directly) -- a
+   DIFFERENT, higher-specificity rule than plain Bootstrap's own `.table-hover` hover bridge
+   (`--bs-table-hover-bg` -> `--bs-table-bg-state`), so overriding THAT alone (as this file already
+   does, see `.table { --bs-table-hover-bg: var(--c-bg-hover); }` above) never actually reached a
+   real DataTable's hover -- confirmed directly: `--bs-table-bg-state` resolved correctly to the
+   token on the hovered cell, but the rendered `box-shadow` still used DataTables' own value
+   regardless, since it never reads that variable at all. DataTables' package DOES already ship its
+   own dark-mode value for this (`--dt-row-hover: 255,255,255` under `:root.dark`/
+   `[data-bs-theme=dark]`, vs. `0,0,0` in light) -- a reasonable default, but not this app's actual
+   `--c-bg-hover` token, so overridden here instead: `--c-bg-hover-rgb` (tokens.css, new, same
+   mechanical-decomposition technique as `--c-bg-rgb`) resolves per-theme automatically -- the SAME
+   expression is repeated on all 3 selectors below rather than needing its own light/dark PAIR, the
+   token itself already carries that. The
+   `.table { --bs-table-hover-bg: ... }` rule above is NOT redundant -- it's what a plain
+   `.table.table-hover` WITHOUT the `.dataTable` class (this app has a few) still needs, since
+   DataTables' own more-specific selector requires that class to match at all.
+   3 selectors, not 1, because a plain `:root` alone LOST to DataTables' own `:root[data-bs-theme=
+   dark]` override (specificity (0,2,0), beats a bare `:root`'s (0,1,0) regardless of source order)
+   -- confirmed directly on the real page (first attempt used just `:root`, still showed
+   DataTables' own white tint in dark mode, not this token). Matching the SAME 3-selector shape
+   tokens.css's own `--c-*` blocks already use (§1) so this wins in every one of the app's 3 real
+   theme states, not just the explicit-Dark one DataTables happens to special-case. */
+:root {
+    --dt-row-hover: var(--c-bg-hover-rgb);
+}
+:root[data-bs-theme="dark"] {
+    --dt-row-hover: var(--c-bg-hover-rgb);
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-bs-theme="light"]) {
+        --dt-row-hover: var(--c-bg-hover-rgb);
+    }
 }
 
 /* 2026-09-14, Phase Design Round 3 item 3c-1 follow-up (§10/§11) -- full REDESIGN of the block
