@@ -619,6 +619,50 @@ approved → ...) ไม่ใช่สลับหน้า)
   **ไม่แตะโค้ดจริงของ `payroll/detail.js`'s `renderApprovalTimelineBody()` เลยรอบนี้** (ห้ามแตะหน้าจริง §13)
 - Demo จริง: audit log 6 รายการ 2 วัน (สร้าง/แก้/ส่งอนุมัติ/ไม่อนุมัติ `danger`/อนุมัติ `success`/จ่าย
   `success`) — light/dark ผ่านปุ่มสลับ theme มุมขวาบนของหน้าเดียวกัน
+- **`item.actions`/`options.relativeTime`/`item.bodyHtml`/`.timeline-body-content` ไม่มีอีกแล้ว** —
+  component นี้กลับมาตรงสเปกเดิมของ item (3)/6b ด้านบนนี้ทุกจุด ไม่มีส่วนขยายใดๆ ทั้งสิ้น **เนื้อหาที่เป็น
+  "ความเห็น/ข้อความจากคนหลายคน" ให้ใช้ "Comment list" หัวข้อถัดไปทันทีด้านล่างนี้เสมอ ไม่ใช่ Timeline** —
+  ดูเส้นแบ่งเต็มในหัวข้อนั้น
+
+**Comment list** (ใหม่ 2026-09-14 — "ใครพูดอะไร เมื่อไหร่", ไม่ใช่ลำดับเหตุการณ์) — **เสร็จแล้ว**
+- **เส้นแบ่งกับ Timeline ด้านบน (สำคัญ อ่านก่อนเลือกใช้)**: **Timeline = log เหตุการณ์** (สิ่งที่เกิดขึ้นแล้ว
+  เรียงตามเวลา เช่น audit log/ประวัติอนุมัติ — จุด+เส้นเชื่อมสื่อว่า "นี่คือขั้นหนึ่งในลำดับต่อเนื่องเดียวกัน")
+  **Comment list = ความเห็นแต่ละอันเป็นหน่วยแยกจากกัน** (ไม่ใช่ขั้นในลำดับเดียวกัน แต่ละอันมี "เจ้าของ" ของ
+  ตัวเองชัดเจน และแก้ไข/ลบเป็นรายการเดี่ยวได้) — **ห้ามใช้ Timeline กับกรณีที่เนื้อหาจริงๆคือ "ความเห็น/ข้อความ
+  จากคนหลายคน" อีกต่อไป** ใช้ Comment list แทนเสมอสำหรับกรณีนั้น — ตรงข้ามกัน ห้ามใช้ Comment list กับ
+  audit log/ประวัติเหตุการณ์ (ไม่มีจุด/เส้นเชื่อมให้สื่อ "ลำดับ")
+- JS: `renderCommentList(items)` (`app.js`) — **ไม่มี PHP partial คู่กัน** (ยังไม่มี real caller ฝั่ง
+  server-render ที่ต้องการ, ต่างจาก Timeline ที่มี `timeline.php` มาตั้งแต่ต้นเพราะ demo ฝั่ง PHP ต้องใช้ —
+  เพิ่ม partial ทีหลังได้ถ้ามี caller จริงที่ render ฝั่ง server)
+- item = `{id?, time, timeSuffix? (ข้อความเทาจางๆ ต่อท้ายเวลา เช่น "(แก้ไขแล้ว)"), actor?: {name,
+  avatar}, text (string, escape แล้ว, ขึ้นบรรทัดใหม่จริงรักษาไว้ผ่าน `white-space:pre-line` ไม่ใช่แทรก
+  `<br>` เอง), badge?: {enum, context} (ไม่ใส่/null = ไม่มี badge เลย ไม่ใช่ badge เทา "ไม่มีแท็ก" — อันนั้น
+  มีแค่ใน tag picker ตอนพิมพ์/แก้), actions? (raw HTML, caller เป็นคนสร้าง/escape เอง, ไม่ใส่ = ซ่อนไอคอน
+  เช่นตอน view-only หรือ item ที่กำลังแก้อยู่), bodyHtml? (raw HTML, แทนที่บรรทัด 2 ทั้งก้อนถ้าใส่มา —
+  ใช้กับ inline-edit)}`
+- layout: avatar 32px ซ้าย, คอลัมน์ขวา 2 บรรทัด — **ไม่มีจุด/เส้นเชื่อม ไม่มีกรอบ/เส้นคั่นต่อรายการ**
+  (ตรงข้าม Timeline โดยเจตนา — ดู "เส้นแบ่ง" ด้านบน) — **บรรทัด 1**: ชื่อตัวหนา `--fs-base` · badge แท็ก
+  (ผ่าน `statusBadge()`/`statusBadgeHtml()` จริง ข้อ 5, ซ่อนถ้าไม่มีแท็ก) ชิดซ้าย — เวลาแบบ relative
+  (`formatRelativeTime()`, `format-helpers.js`) `--fs-sm` เทา + tooltip เวลาเต็ม (`formatDisplayDateTime()`)
+  **เสมอ ไม่ใช่ opt-in แบบ Timeline's เอง `relativeTime`** (caller ทุกตัวของ component นี้ต้องการแบบนี้)
+  ตามด้วยปุ่มแก้ไข/ลบ (`.btn-icon-ghost.comment-item-icon-btn`, ลบแดงเฉพาะ hover เหมือนกฎเดิม) ชิดขวา —
+  **ปุ่มแก้ไข/ลบแสดงเฉพาะตอน `:hover`/`:focus-within` ของทั้งรายการ ยกเว้นอุปกรณ์สัมผัส (`@media
+  (pointer:coarse)`) ที่แสดงตลอด** (hover ไม่มีความหมายจริงบนมือถือ) — **บรรทัด 2**: ข้อความคอมเมนต์
+  `--fs-base` น้ำหนักปกติ
+- ระยะ: **`--sp-5` ระหว่างรายการ** (ความเห็นแต่ละอันเป็นหน่วยแยก ต้องการที่ว่างจริงรอบตัว มากกว่า Timeline's
+  เอง `--sp-4` ของ log ต่อเนื่อง) **`--sp-1` ระหว่างองค์ประกอบภายใน 1 รายการ** (avatar↔คอลัมน์, บรรทัด
+  1↔บรรทัด 2 — แน่นเจตนา ให้ 2 บรรทัดอ่านเป็นหน่วยเดียวกัน) — **ระยะจาก list ไปฟอร์มเพิ่ม (compose form)
+  ด้านล่าง ต้อง `--sp-6` เสมอ มากกว่าระยะระหว่างรายการ (`--sp-5`) จริง ไม่ใช่แค่เท่ากัน** — ฟอร์มเพิ่มเป็น
+  section ที่ทำหน้าที่ต่างจากรายการที่โพสต์แล้ว (ช่องกรอกข้อมูล ไม่ใช่คอมเมนต์อีกอันในรายการ) ต้องอ่านออกว่า
+  เป็นขอบเขต (boundary) จริง ไม่ใช่รายการถัดไปในลิสต์เดียวกัน
+- **Inline-edit ใช้โครงเดียวกันผ่าน `bodyHtml`**: บรรทัด 1 (avatar/ชื่อ/เวลา) คงที่ปกติ (ไอคอนแก้ไข/ลบ
+  ซ่อนไปเพราะ `actions:null` — ไม่มีอะไรให้กดต่อบนรายการที่กำลังแก้อยู่แล้ว, badge แท็กก็ซ่อนไปด้วยเหตุผล
+  เดียวกัน คือ tag picker ในฟอร์มแก้ไขเองก็โชว์/แก้ค่านี้อยู่แล้ว ไม่ต้องซ้ำ) — บรรทัด 2 กลายเป็น textarea
+  + tag row + `[บันทึก][ยกเลิก]` (โครงเดียวกับฟอร์มเพิ่มด้านล่าง modal, §9/Phase B) — ตัวอย่างจริง:
+  `payroll/detail.js`'s `employeeCommentInlineEditFormHtml()`
+- Demo จริง: `docs/design/components.php` — 2 รายการปกติ (1 มี badge, 1 มี `timeSuffix` + ข้อความ 2
+  บรรทัดจริงโชว์ `white-space:pre-line`) + 1 รายการจำลองสถานะกำลังแก้ไข (`bodyHtml`) — light/dark ผ่าน
+  ปุ่มสลับ theme มุมขวาบนของหน้าเดียวกัน, ลอง hover รายการปกติดูไอคอนโผล่
 
 **Filter bar** (ตัดสินใจแล้วรอบ 2 item 4, แก้ไข 2 รอบหลัง feedback — โครงสร้างล่าสุดคือ **แผง 3 ส่วน**
 หัว/ตัว/ท้าย ด้านล่าง, ยกเลิก `toolbarTarget` ที่เคยมี)
@@ -1590,6 +1634,7 @@ page-local block มา 2 รอบก่อนหน้า (callout ก่อ�
 | `renderNotifications()` / `setNotificationCount()` (ใหม่, item 6d — เสร็จแล้ว, UI เท่านั้นยังไม่ต่อ backend; ของจริงมีอยู่แล้ว `notifications.js`/`NotificationModel` — 3 จุดต่างจริง (ไอคอนมีพื้นสี, จุด unread ขวา, badge "99+") ไม่ใช่แค่ token เดิม บันทึกไว้ให้รอบ 4 ตัดสินใจ — ดู §6) | app.js (ใหม่) | `.row-type-icon`/dot-ขวา ของจริง (คงไว้ ไม่แตะ — แค่ flag ความต่างสำหรับ migrate) |
 | `status-stepper.php` + `renderStatusStepper()` (item 6 — เสร็จแล้ว; render อย่างเดียว ตำแหน่งเทียบ `current` เท่านั้น ไม่มี action button แบบของจริง — logic ขั้นยังอยู่ที่ `runLifecycleSteps()` เดิม — 2026-09-13 รอบ 3 item 3a: **ย้าย Payroll Detail มาใช้จริงแล้ว** + ขยายรับ `{label, date, tone, final, live, icon}` ต่อขั้น, แยก 3 สถานะสีชัดเจน (done/current/next), pulse ring, ไอคอนขาว 12px ของขั้นปัจจุบัน (mapping อยู่ที่ `RUN_LIFECYCLE_STEPS`/`RUN_LIFECYCLE_BRANCH_INFO` เท่านั้น ไม่ hardcode ใน partial) — ดู §6) | `app/views/partials/` + `app.js` | กล่อง 5 สี, `.process-timeline`/`.tl-*` (Payroll Detail เท่านั้น — ที่อื่นยังใช้อยู่) |
 | `timeline.php` + `renderTimeline()` (ใหม่, item (3)/6b — เสร็จแล้ว; feed กิจกรรมยาวไม่จำกัด, caller เรียงมาเอง, ยังไม่ย้ายหน้าจริง (`renderApprovalTimelineBody()`) มาใช้ รอรอบ 4 — ดู §6) | `app/views/partials/` + `app.js` | `.apv-timeline-log`/`.apv-log-entry` เดิม (dead code, ไม่มี call site — ไม่ reuse ตั้งชื่อใหม่แทน) |
+| `renderCommentList()` (ใหม่ 2026-09-14 — เสร็จแล้ว; ใครพูดอะไรเมื่อไหร่ คนละหน้าที่กับ Timeline ข้างบน — ดู §6's "Comment list") — real caller แล้ว: `#employeeCommentModal` (`payroll/detail.js`); ยังไม่มี PHP partial คู่กัน | `app.js` | `.apv-comment-*` เดิมของ modal เดียวกันนี้ (dead code, ลบไปตั้งแต่ item 3c-3 แล้ว) |
 | `status-tabs.php` + `initStatusTabs()` (ใหม่, item 4b — chevron pipeline เดิม**ยังคงรูปแบบไว้**, retokenize เท่านั้น; **ตัดสินใจแล้ว**: เคยมี variant `path` ให้เทียบคู่กัน ลบออกทั้งหมดแล้ว) | partials + app.js | markup ที่เคยซ้ำ 2 ไฟล์ของ `.station-row`/`.station-card` |
 | `statusBadge()` / `statusBadgeHtml()` + `status_map.php` (ใหม่, item 5 — เสร็จแล้ว; map มีที่เดียวคือ `status_map.php`, JS ไม่มี copy ของตัวเอง อ่านจาก `window.STATUS_MAP` ที่ `layout/header.php` inject ให้ — ยกเว้นกฎ "ห้ามแตะหน้าจริง" เฉพาะจุดนี้จุดเดียว; rename `payroll-configuration.js`'s local `statusBadge(row)` → `pcRowStatusBadge(row)` ทำก่อนเขียนแล้วตามแผน — ดู §5) | `app/helpers/helpers.php` + `app.js` + `app/config/status_map.php` + `layout/header.php` (inject จุดเดียว) | map สถานะกระจาย |
 | `initSharedDataTable()` (ขยาย: layout, export, fixed column, columnDefs alignment, `emptyState` option ใหม่ item 6e — auto-pick ว่างจริง/กรองไม่พบ — ดู §6) | app.js | init ตรงทุกหน้า |

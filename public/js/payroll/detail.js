@@ -3404,16 +3404,18 @@ let employeeCommentEmployeeId = null;
 // on modal close/cancel/successful add so reopening the modal for a different employee, or for the
 // same one later, always starts fresh in "add" mode.
 let employeeCommentEditingId = null;
-// 2026-09-14, Round 3 item 3c-3, explicit instruction: "รายการความคิดเห็นใช้ shared timeline
-// component" -- migrated off this modal's own bespoke .apv-comment-* markup/tag-meta-map (the
-// hardcoded gradient pills/per-item icon-circle marker are GONE, this was the only real call site)
-// onto timeline.php's JS twin, renderTimeline() (app.js) -- comments is the FIRST real page this
-// shared component renders for (its own docblock previously said "not used by any real page yet").
-// A comment's tag now renders through the CENTRAL status_map system instead of its own bespoke
-// color map -- app/config/status_map.php's new 'employee_comment_tag' context (same 3 existing
-// employee_comment_tag_in_progress/_completed/_error label keys, not reinvented) supplies both the
-// badge AND the timeline dot's own tone. The compose-time TAG PICKER (3 gradient pill radio
-// buttons) is UNCHANGED -- only how an already-posted comment's tag is DISPLAYED in the list moved.
+// 2026-09-14, Round 3 -- migrated off this modal's own bespoke .apv-comment-* markup/tag-meta-map
+// (the hardcoded gradient pills/per-item icon-circle marker are GONE, this was the only real call
+// site), first onto the shared Timeline component (renderTimeline()), then LATER THE SAME DAY onto
+// its own dedicated renderCommentList() (app.js) instead -- a comment's own avatar+2-line shape
+// (with inline-edit) fits that purpose-built component far better than continuing to stretch
+// Timeline's dot-and-connecting-line event-log shape to cover it too. See rules.md §6's own "Comment
+// list" section for exactly where the line between the 2 components sits now, and app.js's own
+// comment on renderTimeline()'s revert for what got removed from THAT component as a result.
+// A comment's tag renders through the CENTRAL status_map system instead of its own bespoke color
+// map -- app/config/status_map.php's 'employee_comment_tag' context supplies the badge. The
+// compose-time TAG PICKER (Round 3 Phase B: statusBadgeHtml()-based outline/filled chips, not the
+// old gradient pills) is a separate, already-documented change (that file's own comment).
 //
 // employeeCommentsCache holds the CURRENTLY loaded list (server order = newest-first, see
 // PayrollRunModel::employeeComments()'s own docblock) -- kept in memory (not just re-fetched every
@@ -3421,8 +3423,8 @@ let employeeCommentEditingId = null;
 // network round trip (explicit instruction, item 4: "ส่งแล้ว append เข้า timeline ทันทีโดยไม่ reload").
 // Also lets .btn-edit-employee-comment below read back the RAW (un-escaped) comment text from this
 // cache directly instead of scraping a `data-raw-comment` DOM attribute the old bespoke markup used
-// to carry (the shared timeline component's own markup has no such attribute, and shouldn't need one
-// just for this).
+// to carry (the shared comment-list component's own markup has no such attribute, and shouldn't
+// need one just for this).
 let employeeCommentsCache = [];
 // 2026-09-14, Round 3 item 3c-4 (review follow-up), explicit instruction, item 1: "กดดินสอแล้วรายการ
 // นั้นเปลี่ยนเป็น textarea (ข้อความเดิม) + tag picker + ปุ่ม [บันทึก][ยกเลิก] ใต้ textarea ภายในรายการ" --
@@ -3463,49 +3465,52 @@ function employeeCommentInlineEditFormHtml(c) {
             <button type="button" class="btn btn-outline-secondary btn-sm btn-cancel-inline-comment-edit" data-id="${c.id}" data-i18n="cancel">${escapeHtml(langData['cancel'] || 'Cancel')}</button>
         </div>`;
 }
-function employeeCommentToTimelineItem(c) {
+function employeeCommentToListItem(c) {
     const name = currentLang === 'th' ? (c.created_by_name_th || c.created_by_name_en) : (c.created_by_name_en || c.created_by_name_th);
     const isEditing = employeeCommentEditingId !== null && Number(employeeCommentEditingId) === Number(c.id);
-    const tone = (typeof getStatusMapEntry === 'function' && getStatusMapEntry(c.tag, 'employee_comment_tag')) ? getStatusMapEntry(c.tag, 'employee_comment_tag').tone : 'neutral';
     if (isEditing) {
         // Actions (edit/delete) are suppressed while this exact item is the one being edited --
         // matches "แก้ได้ทีละรายการ" (only 1 item editable at a time), and there's nothing useful
-        // Edit/Delete would do on a row that's already mid-edit.
+        // Edit/Delete would do on a row that's already mid-edit. The read-only tag badge is also
+        // suppressed for the same reason: the inline-edit form's own tag picker (line 2, via
+        // `bodyHtml`) already shows/lets you change the tag, so line 1 keeping its own possibly-stale
+        // copy at the same time would just be a redundant, confusing duplicate.
         return {
             time: c.created_at,
             actor: { name: name || '-', avatar: c.created_by_photo || null },
             bodyHtml: employeeCommentInlineEditFormHtml(c),
-            tone: tone,
             actions: null,
         };
     }
     // 2026-08-29, explicit request: "สามารถแก้ไข Comment และลบ Comment ได้ด้วย" -- a small "(edited)"
     // marker only when updated_at is actually set (a never-edited comment keeps both updated_by/
-    // updated_at null, see PayrollRunModel::employeeCommentUpdate()'s own docblock) -- folded into
-    // `detail` (the shared component's own "1 line, muted" slot) since there's no bespoke inline-tag
-    // slot to put it in anymore.
-    const editedSuffix = c.updated_at ? ` (${langData['employee_comment_edited'] || 'edited'})` : '';
+    // updated_at null, see PayrollRunModel::employeeCommentUpdate()'s own docblock).
+    // 2026-09-14, Round 3, explicit instruction: renderCommentList() has no separate "detail" slot
+    // the old Timeline-based item shape had to fold this into (line 2 is now either the comment's
+    // own text OR the inline-edit form, nothing else) -- `item.timeSuffix` (a small, deliberate
+    // addition to renderCommentList()'s own item shape, see app.js's own comment on that field) is
+    // where it lives instead: rendered muted right after the relative time, not mixed into the
+    // comment's own text content.
+    const editedSuffix = c.updated_at ? `(${langData['employee_comment_edited'] || 'edited'})` : null;
     // 2026-08-29, explicit follow-up: "ดูได้เท่านั้น ไม่สามารถเพิ่ม แก้ไข ลบได้" -- edit/delete icons per
     // comment are dropped entirely once the run has finished (commentsReadOnlyRd()), not just
     // disabled, matching the same "view-only means the control isn't there at all" pattern Verify/
     // Lock's own View Mode already uses elsewhere on this page.
-    // 2026-09-14, Round 3 item 3c-4, explicit instruction, item 5: both icons are the same resting
-    // gray (.btn-icon-ghost/.timeline-action-btn) -- delete opts into .timeline-action-btn-danger
-    // (style.css) instead of the old always-red .text-danger, so it only turns --c-danger on hover.
+    // Both icons are the same resting gray (.btn-icon-ghost/.comment-item-icon-btn) -- delete opts
+    // into .comment-item-icon-btn-danger (style.css) instead of an always-red class, so it only
+    // turns --c-danger on hover.
     const actions = commentsReadOnlyRd() ? '' : `
-        <button type="button" class="btn-icon-ghost timeline-action-btn btn-edit-employee-comment" data-id="${c.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
-        <button type="button" class="btn-icon-ghost timeline-action-btn timeline-action-btn-danger btn-delete-employee-comment" data-id="${c.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
+        <button type="button" class="btn-icon-ghost comment-item-icon-btn btn-edit-employee-comment" data-id="${c.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
+        <button type="button" class="btn-icon-ghost comment-item-icon-btn comment-item-icon-btn-danger btn-delete-employee-comment" data-id="${c.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
     return {
         time: c.created_at,
+        timeSuffix: editedSuffix,
         actor: { name: name || '-', avatar: c.created_by_photo || null },
-        title: c.comment,
-        detail: editedSuffix ? editedSuffix.trim() : null,
-        // 2026-09-14, Round 3 item 3c-4, explicit instruction, item 5: the dot's own tone (and this
-        // badge) comes from the tag's status_map entry -- a comment with NO tag (or a tag that maps
-        // to no entry) falls back to 'neutral', which is the shared timeline component's own default
-        // gray dot (.timeline-dot with no tone suffix, style.css), not a bespoke color of its own.
+        text: c.comment,
+        // A comment with no tag renders no badge at all (renderCommentList() skips it entirely when
+        // `item.badge` is falsy) -- not a bespoke gray "no tag" badge of its own; that visual only
+        // exists in the compose/inline-edit TAG PICKER (Phase B), never on an already-posted comment.
         badge: c.tag ? { enum: c.tag, context: 'employee_comment_tag' } : null,
-        tone: tone,
         actions: actions,
     };
 }
@@ -3518,19 +3523,21 @@ function employeeCommentToTimelineItem(c) {
 // either way, but omitting it here is the source of truth, not a blank string happening to look
 // empty) -- the now-orphaned `employee_comment_timeline_empty_hint` key (confirmed via grep: this
 // was its only call site anywhere in the app) is removed from both lang files.
-function renderEmployeeCommentTimelineFromCache() {
-    if (!employeeCommentsCache.length) {
-        $('#employeeCommentTimeline').html(emptyStateHtml({
+// 2026-09-14, real bug found and fixed: this function used to check `employeeCommentsCache.length`
+// itself and call emptyStateHtml() directly, BEFORE renderCommentList() knew how to handle an empty
+// array at all -- renderCommentList() now owns that case itself (app.js's own comment on it), so
+// this is just a plain map+render again, no branch needed here. Still supplies its own `emptyState`
+// config (icon + the real i18n-driven title) via the new `options` param -- renderCommentList()'s
+// own built-in default is a bare, non-localized fallback, never meant to be what a real caller
+// actually shows.
+function renderEmployeeCommentListFromCache() {
+    const items = employeeCommentsCache.map(employeeCommentToListItem);
+    $('#employeeCommentList').html(renderCommentList(items, {
+        emptyState: {
             icon: 'fa-solid fa-comments',
             title: langData['employee_comment_timeline_empty'] || 'No comments yet.',
-        }));
-        return;
-    }
-    const items = employeeCommentsCache.map(employeeCommentToTimelineItem);
-    // relativeTime:true -- explicit instruction, item 1 ("เวลาแบบ relative + tooltip เวลาเต็ม"), see
-    // renderTimeline()'s own docblock (app.js) for why this is opt-in per call, not this shared
-    // component's new default.
-    $('#employeeCommentTimeline').html(renderTimeline(items, { relativeTime: true }));
+        },
+    }));
 }
 function loadEmployeeComments() {
     $.ajax({
@@ -3539,7 +3546,7 @@ function loadEmployeeComments() {
         success: function (res) {
             if (res.status) {
                 employeeCommentsCache = res.data || [];
-                renderEmployeeCommentTimelineFromCache();
+                renderEmployeeCommentListFromCache();
             }
         }
     });
@@ -3572,13 +3579,13 @@ function resetEmployeeCommentForm() {
 // ...แก้ได้ทีละรายการ" -- enter/exit are the only 2 places employeeCommentEditingId ever changes once
 // the modal is open (resetEmployeeCommentForm(), called on modal open/close, is the 3rd). Re-rendering
 // the WHOLE list from cache on every enter/exit (rather than patching just the 1 affected <li>) keeps
-// employeeCommentToTimelineItem() the single place that decides "is THIS item the one being edited" --
+// employeeCommentToListItem() the single place that decides "is THIS item the one being edited" --
 // simpler than 2 divergent render paths, and this list is never long enough for a full re-render to
 // be a real perf concern.
 function enterEmployeeCommentInlineEdit(id) {
     employeeCommentEditingId = Number(id);
     refreshEmployeeCommentAddFormDisabledState();
-    renderEmployeeCommentTimelineFromCache();
+    renderEmployeeCommentListFromCache();
     const $textarea = $(`#employeeCommentEditText_${id}`);
     $textarea.trigger('focus');
     // The inline textarea is injected already pre-filled with the existing comment text -- input.js's
@@ -3590,7 +3597,7 @@ function enterEmployeeCommentInlineEdit(id) {
 function exitEmployeeCommentInlineEdit() {
     employeeCommentEditingId = null;
     refreshEmployeeCommentAddFormDisabledState();
-    renderEmployeeCommentTimelineFromCache();
+    renderEmployeeCommentListFromCache();
 }
 // Mirrors refreshEmployeeCommentSubmitState() above, for whichever item's own inline Save button
 // this is -- `id` scopes both the textarea read and the button written to, since several comments
@@ -3621,7 +3628,7 @@ $(document).on('click', '.btn-comment-employee', function () {
     // 2026-09-14, Round 3 item 3c-4, footer = [primary][ปิด] via the shared modalFooterButtonsHtml()
     // (app.js) -- rebuilt fresh on every open since `readOnly` can differ per employee/run state, but
     // otherwise constant for the lifetime of this modal being open (never swapped/relabeled while
-    // editing -- see employeeCommentToTimelineItem()'s own per-item inline Save/Cancel buttons for
+    // editing -- see employeeCommentToListItem()'s own per-item inline Save/Cancel buttons for
     // the actual edit affordance instead).
     // 2026-09-14, Round 3 Phase B, explicit instruction: label changed from "เพิ่มคอมเมนต์"
     // (employee_comment_add) to "บันทึก" -- reuses the app-wide `save` key already shared by every
@@ -3727,7 +3734,7 @@ $(document).on('click', '#btnAddEmployeeComment', function () {
                 // push, since the list is newest-first now.
                 if (res.comment) {
                     employeeCommentsCache.unshift(res.comment);
-                    renderEmployeeCommentTimelineFromCache();
+                    renderEmployeeCommentListFromCache();
                 } else {
                     loadEmployeeComments();
                 }

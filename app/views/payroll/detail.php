@@ -701,10 +701,15 @@
 
         <!-- 2026-08-29, explicit request: "ใส่ Comment ได้ของแต่ละคน กดแล้วเปิดเป็น Modal ให้ใส่ Comment
              เรื่อยๆ เป็น Timeline...ให้มีใส่ tag ได้ว่า กำลังดำเนินการ ดำเนินการเสร็จแล้ว มีข้อผิดพลาด"
-             2026-09-14, Round 3 item 3c-3, explicit instruction: the list itself renders through the
-             shared timeline component (renderTimeline(), app.js -- see
-             renderEmployeeCommentTimelineFromCache()'s own docblock in detail.js) instead of its own
-             bespoke .apv-comment-* markup.
+             2026-09-14, Round 3 item 3c-3, explicit instruction: the list itself was first migrated
+             onto the shared Timeline component (renderTimeline(), app.js) instead of its own bespoke
+             .apv-comment-* markup.
+             2026-09-14, Round 3 (later same day): moved OFF Timeline onto a dedicated
+             renderCommentList() (app.js -- see renderEmployeeCommentListFromCache()'s own docblock in
+             detail.js) instead -- a comment's own avatar+2-line shape (with inline-edit) fits that
+             new, purpose-built component far better than continuing to stretch Timeline's
+             dot-and-connecting-line event-log shape to cover it too. See rules.md §6's own "Comment
+             list" section for exactly where the line between the 2 components sits now.
              `data-dirty-guard data-dirty-guard-tone="warning"` (§9, app.js's own generic mechanism --
              this modal is its first real caller): typing in the compose textarea/picking a tag, OR
              having an inline edit open, then closing this modal any way (×/Esc/backdrop) prompts via
@@ -735,15 +740,18 @@
                         <!-- 2026-09-11, Batch 3C item 8, explicit instruction: employeeHeaderCardHtml()
                              (app.js) as the first block in modal-body. -->
                         <div id="employeeCommentHeaderCard"></div>
-                        <!-- 2026-09-14, Round 3 item 3c-3/3c-4: one container -- detail.js's own
-                             renderEmployeeCommentTimelineFromCache() renders EITHER the shared
-                             timeline (renderTimeline(), app.js) OR the shared empty-state
+                        <!-- 2026-09-14, Round 3: one container -- detail.js's own
+                             renderEmployeeCommentListFromCache() renders EITHER the shared comment
+                             list (renderCommentList(), app.js) OR the shared empty-state
                              (emptyStateHtml()) into this same div. No card wrapper around it
                              (explicit instruction -- "ไม่มี card ครอบ tab-content"). `--sp-4` gap from
                              the header card above + horizontal padding matching emp-header-card's
-                             own `--sp-3` inset (style.css) so the dot/line/content column lines up
-                             with the header card's own avatar/name, not the modal's raw edge. -->
-                        <div id="employeeCommentTimeline"></div>
+                             own `--sp-3` inset (style.css) so each comment's own avatar column lines
+                             up with the header card's own avatar/name, not the modal's raw edge.
+                             id renamed from #employeeCommentTimeline (was accurate when this
+                             rendered through the shared Timeline component, no longer once it moved
+                             onto its own dedicated one). -->
+                        <div id="employeeCommentList"></div>
                         <!-- 2026-08-29, explicit follow-up request: "ถ้าการดำเนินเสร็จแล้ว Comment ดูได้เท่านั้น
                              ไม่สามารถเพิ่ม แก้ไข ลบได้" -- shown instead of the compose form below once
                              commentsReadOnlyRd() (detail.js) is true, i.e. the run has reached a

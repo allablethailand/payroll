@@ -4600,66 +4600,9 @@ button.badge {
     color: var(--c-text-muted);
     white-space: nowrap;
 }
-/* 2026-09-14, Round 3 item 3c-3 -- renderTimeline()'s own new `item.actions`/`options.relativeTime`
-   (app.js). `.timeline-head-right` groups time+actions as ONE flex child so `.timeline-head`'s
-   existing `justify-content: space-between` (actor | this group) still holds with a 3rd element
-   involved -- without it, 3 direct children would spread across the row instead of actions sitting
-   right next to the time it belongs with. */
-.timeline-head-right {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-2);
-    flex: none;
-}
-.timeline-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--sp-1);
-}
-/* Small ghost icon button for a timeline item's own inline actions (edit/delete on a comment) --
-   markup pairs this with `.btn-icon-ghost` (the shared transparent-until-hover background every
-   other small icon control in this app already uses -- .formula-info-btn/.popover-close-btn are
-   the 2 existing pairings), this class only supplies the sizing/icon-size/resting color, same
-   "small ghost icon sitting inline in content" shape as `.formula-info-btn` at a slightly larger
-   20px (comfortable click target for edit/delete specifically) -- not reused directly since that
-   class name is specific to the formula popover trigger, a different component. */
-.timeline-action-btn {
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    color: var(--c-text-faint);
-}
-.timeline-action-btn:hover {
-    color: var(--c-text-muted);
-}
-.timeline-action-btn i {
-    font-size: 12px;
-}
-/* 2026-09-14, Round 3 item 3c-4 (review follow-up), explicit instruction: "ไอคอนแก้ไข/ลบสีเทาเดียว,
-   แดงเฉพาะ hover ของลบ" -- both icons are the same resting .timeline-action-btn gray; delete opts
-   into this class INSTEAD of the old always-red .text-danger pairing so it only turns --c-danger on
-   hover, matching edit's own until-you-mean-it treatment rather than permanently flagging delete as
-   dangerous just for existing. */
-.timeline-action-btn-danger:hover {
-    color: var(--c-danger);
-}
 .timeline-title {
     color: var(--c-text);
     margin-top: var(--sp-1);
-    /* 2026-09-14, Round 3 item 3c-3, explicit instruction: "เนื้อหา --fs-base" -- this shared
-       component had no explicit font-size of its own before (inherited whatever the page's ambient
-       body size was); comments is the first real caller and needs this set explicitly. Safe as the
-       component's own new DEFAULT (not scoped to a comments-only class) -- no existing caller
-       depended on an unstated smaller size, since there were none before this round. */
-    font-size: var(--fs-base);
-    /* A multi-line comment needs its own line breaks preserved -- renderTimeline() passes `title`
-       through plain escapeHtml() (no manual <br> injection, keeps this field a safe plain string for
-       every caller), so newlines in the text only survive visually via CSS whitespace handling. */
-    white-space: pre-wrap;
 }
 .timeline-detail {
     color: var(--c-text-muted);
@@ -4677,14 +4620,164 @@ button.badge {
 .timeline-day-header:not(:first-child) {
     padding-top: var(--sp-3);
 }
-/* 2026-09-14, Round 3 item 3c-4 (review follow-up), explicit instruction: "ข้อความและ chip แท็กชิด
-   คอลัมน์ชื่อ" -- renderTimeline()'s new item.bodyHtml/actor-aware wrapper (app.js). Body content
-   (title/detail/badge, or a caller's own bodyHtml override such as an inline-edit form) sits flush
-   under the dot by default; when an actor row is rendered above it (24px avatar + var(--sp-2) gap
-   before the name text starts), this pushes body content over by the same amount so it lines up
-   under the NAME column instead of the avatar/dot edge. */
-.timeline-body-content--with-actor {
-    margin-left: calc(24px + var(--sp-2));
+/* 2026-09-14, Round 3 -- REVERTED back to Round 2 item (3)/6b's original shape (no
+   `.timeline-head-right`/`.timeline-actions`/`.timeline-action-btn*`/`.timeline-body-content*`,
+   `.timeline-title`/`.timeline-time` back to their original rules) -- those all existed only to
+   support the Comments modal's own `item.actions`/`relativeTime`/`bodyHtml` (renderTimeline()'s own
+   extensions, added 2026-09-14, also reverted). Comments has since moved to its own dedicated
+   `.comment-item` component below, which fits an avatar+2-line comment shape (with inline-edit) far
+   better than a dot-and-line event log stretched to cover it too -- see that component's own comment
+   for the full reasoning, and rules.md §6's "Comment list" section for where the line between the 2
+   components sits now. Confirmed via grep this revert breaks nothing real: no other caller (in
+   public/js/ or docs/design/components.php) ever used any of the reverted pieces. */
+
+/* Comment list (docs/design/rules.md §6's own "Comment list" section) -- JS: renderCommentList()
+   (app.js). A comment feed's own shape: avatar 32px left, a 2-line right column (name + tag badge +
+   relative time + hover-reveal edit/delete icons on line 1, the comment text -- or an inline-edit
+   form override -- on line 2). Deliberately NOT Timeline (above) stretched to fit: no dot, no
+   connecting line, no card/border/divider between items -- "who said what, when" isn't an event on a
+   log. `--sp-5` between items (a comment is a distinct, separate thought, wants real air around it,
+   unlike Timeline's tighter `--sp-4` for a continuous log), `--sp-1` for every gap WITHIN one item
+   (avatar-to-column, line1-to-line2) -- the item's own 2 lines read as one unit, tight on purpose. */
+.comment-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+}
+.comment-item {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-1);
+}
+.comment-item-avatar {
+    flex: none;
+}
+.comment-item-body {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+}
+.comment-item-line1 {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+}
+.comment-item-name {
+    font-weight: 700;
+    font-size: var(--fs-base);
+    color: var(--c-text);
+}
+/* `margin-left: auto` (not a 2nd `justify-content: space-between` flex level like Timeline's own
+   `.timeline-head-right` needed) -- simpler here since this row only ever has 2 logical groups
+   (name+badge on the left, time+actions on the right), never a 3rd.
+   2026-09-14, real bug found and fixed: this container used to hold BOTH time and actions as normal
+   flex children, so `.comment-item-actions` at `opacity:0` (hidden) still reserved its own layout
+   width -- the visible content (time) was never actually flush against the true right edge of the
+   modal's content column except when actions happened to be visible. `.comment-item-actions` is now
+   `position:absolute` (below), removed from this container's normal flow entirely, so `margin-left:
+   auto` here is what now GENUINELY guarantees the time sits flush right in every state, not just
+   when icons happen to be hidden by coincidence of width. `position:relative` makes this the
+   positioning anchor those absolutely-positioned actions measure `right:100%` against. */
+.comment-item-meta {
+    position: relative;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+    flex: none;
+}
+.comment-item-time {
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+    white-space: nowrap;
+}
+/* `item.timeSuffix` (app.js, e.g. "(edited)") -- one step more muted than the time itself, since
+   it's secondary metadata about metadata. */
+.comment-item-time-suffix {
+    font-size: var(--fs-sm);
+    color: var(--c-text-faint);
+    white-space: nowrap;
+}
+/* Edit/delete icons: hidden until the item is actually being looked at (hover) or has keyboard focus
+   inside it (`:focus-within` -- so Tab-ing to the edit button doesn't require a mouse hover to even
+   see it first) -- a comment feed with N items showing 2N icon buttons permanently would be visual
+   noise §0's own "หน้าจอต้องเงียบ" principle explicitly warns against. `pointer:coarse` (touch
+   devices, where hover has no real meaning -- nothing ever un-hovers) shows them always instead,
+   same reasoning `.btn-circle-action`/other row-action patterns in this app already follow.
+   2026-09-14, real bug found and fixed: sat in normal flex flow, AFTER (to the right of) time --
+   wrong side (icons must read LEFT of time, closest to the content, with time itself owning the true
+   right edge) and, being just `opacity:0` with no other change, still occupied its own layout width
+   even while invisible (a hidden-but-space-reserving element, not a truly absent one). Now
+   `position:absolute`, anchored via `right:100%` on `.comment-item-meta` (its own positioned
+   ancestor, directly above) -- `right:100%` places this element's own right edge exactly at the
+   anchor's LEFT edge, i.e. entirely outside/before it, with `margin-right` opening a small gap from
+   time. Taken out of the document flow entirely, so it reserves ZERO space in either state --
+   `.comment-item-meta`'s own `margin-left:auto` (above) is what actually pins time to the true right
+   edge now, unconditionally. `pointer-events:none` while hidden stops an invisible-but-still-present
+   hit area from swallowing clicks meant for whatever it happens to overlap. */
+.comment-item-actions {
+    position: absolute;
+    top: 50%;
+    right: 100%;
+    transform: translateY(-50%);
+    margin-right: var(--sp-1);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .15s ease;
+}
+.comment-item:hover .comment-item-actions,
+.comment-item:focus-within .comment-item-actions {
+    opacity: 1;
+    pointer-events: auto;
+}
+@media (pointer: coarse) {
+    .comment-item-actions {
+        opacity: 1;
+        pointer-events: auto;
+    }
+}
+/* Same shape as the old `.timeline-action-btn` this replaces (20px ghost icon button, pairs with the
+   shared `.btn-icon-ghost` transparent-until-hover background) -- renamed since it now lives in this
+   component's own markup, not Timeline's. */
+.comment-item-icon-btn {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--c-text-faint);
+}
+.comment-item-icon-btn:hover {
+    color: var(--c-text-muted);
+}
+.comment-item-icon-btn i {
+    font-size: 12px;
+}
+/* Delete is the same resting gray as edit -- only turns --c-danger on hover (matching edit's own
+   "until you mean it" treatment, not a permanent red flag just for existing). */
+.comment-item-icon-btn-danger:hover {
+    color: var(--c-danger);
+}
+.comment-item-text {
+    color: var(--c-text);
+    font-size: var(--fs-base);
+    font-weight: 400;
+    /* A multi-line comment needs its own line breaks preserved; `pre-line` (not `pre-wrap`) also
+       collapses runs of plain spaces the way normal text does -- a comment is prose, not code, so
+       only real newlines should be visually meaningful. escapeHtml() (app.js) already makes this
+       safe against every caller's raw string, no manual <br> injection needed. */
+    white-space: pre-line;
 }
 
 /* Calendar widget (docs/design/rules.md §14, Round 2 item 9) -- new `.calendar-widget-*` namespace,
@@ -5888,33 +5981,55 @@ html, body {
    component" -- every rule this block used to define for the LIST itself
    (.apv-comment-list/-item/-item-last/-marker/-icon/-line/-card/-head/-author/-tag-pill/
    -edited-tag/-spacer/-action-btn/-body/-date) is REMOVED here, genuinely dead now (confirmed via
-   grep -- 0 remaining call sites anywhere in the app): renderEmployeeCommentTimelineFromCache()
-   (payroll/detail.js) renders through the shared `.timeline-*`/`.timeline-action-btn` classes
-   (shared with every other renderTimeline() consumer) instead. */
+   grep -- 0 remaining call sites anywhere in the app).
+   2026-09-14, Round 3 (later same day) -- moved OFF the shared Timeline component this comment used
+   to describe, onto its own dedicated `renderCommentList()`/`.comment-item` component instead (see
+   that component's own comment further up this file, and rules.md §6's "Comment list" section, for
+   why a comment feed got its own component rather than continuing to stretch Timeline to fit it).
+   `#employeeCommentTimeline` renamed to `#employeeCommentList` throughout (view/JS/CSS) to match --
+   it was never actually a timeline in the "dot-and-connecting-line event log" sense once this
+   component landed, and the stale name would have kept confusing whoever touched this next. */
 
 /* 2026-09-14, Round 3 item 3c-4 (review follow-up), explicit instruction: the 2026-08-29 "form lives
    in a sticky modal-footer" layout is reverted -- #employeeCommentFormArea (tag picker + textarea)
-   moved back into the scrollable modal-body, right after the timeline/empty-state and the read-only
-   notice; the footer is now the standard [primary][secondary] button pair every other modal uses
-   (modalFooterButtonsHtml(), app.js), constant regardless of view/edit state.
+   moved back into the scrollable modal-body, right after the comment list/empty-state and the
+   read-only notice; the footer is now the standard [primary][secondary] button pair every other
+   modal uses (modalFooterButtonsHtml(), app.js), constant regardless of view/edit state.
    2026-09-14, Round 3 Phase B, explicit instruction: card box (background/border/border-radius/
    padding) removed entirely -- the textarea + tag row now sit directly in modal-body's own flow, no
-   boxed surface of their own. `margin-top` alone is kept (spacing from the timeline/empty-state
-   above); #employeeCommentFormArea itself stays as a plain wrapper div purely as the hook
-   detail.js's own refreshEmployeeCommentAddFormDisabledState() disables/enables against. */
+   boxed surface of their own. #employeeCommentFormArea itself stays as a plain wrapper div purely as
+   the hook detail.js's own refreshEmployeeCommentAddFormDisabledState() disables/enables against.
+   2026-09-14, real bugs found and fixed (both this same review):
+   (1) LEFT ALIGNMENT -- this rule had no horizontal `padding` of its own, so the textarea/tag row
+   sat flush against modal-body's raw `1rem` padding, while `.emp-header-card` (its own `--sp-3`
+   padding) and `#employeeCommentList` (its own `padding: 0 var(--sp-3)`, below) both sit `--sp-3`
+   FURTHER in -- 3 elements that are supposed to share one left edge, only 2 of them actually did.
+   `padding: 0 var(--sp-3)` here closes that gap so avatar/header-card-content/textarea all start at
+   the exact same x-position -- confirmed via Playwright `getBoundingClientRect().left` on all 3
+   (equal, not just visually close).
+   (2) VERTICAL GAP -- `margin-top` was `--sp-3` (12px), not even matching the `--sp-5` (24px)
+   comment-to-comment gap in the list above it (`.comment-list`'s own `gap`, style.css) -- looked
+   visibly cramped next to that wider rhythm once the list itself actually had `--sp-5` between real
+   items to compare against. First fix landed on `--sp-5` (equal to the between-comment gap) -- caught
+   as still wrong on the SAME review: equal spacing reads as "one more comment in the list", but the
+   compose form is structurally a DIFFERENT thing (an input section, not another posted comment) and
+   needs to look like a boundary, not just another list row. `--sp-6` (32px, one step up the same 4px
+   scale -- no new token needed) is what actually makes that boundary read visually, confirmed by
+   measuring it's genuinely wider than the between-item gap, not just nominally a different token. */
 #employeeCommentFormArea {
-    margin-top: var(--sp-3);
+    padding: 0 var(--sp-3);
+    margin-top: var(--sp-6);
 }
 #employeeCommentFormArea textarea#employeeCommentText,
 .employee-comment-inline-edit-text {
     resize: vertical;
 }
-/* Comment list itself (§6's shared timeline component) -- --sp-4 gap under emp-header-card (explicit
-   instruction, item 4) and horizontal padding matching emp-header-card's own --sp-3 inset (modal-body
-   keeps Bootstrap's default padding; emp-header-card's own --sp-3 padding is additional inset on top
-   of that) so the dot/line column lines up under the header card's own avatar instead of sitting
-   flush against modal-body's raw edge. */
-#employeeCommentTimeline {
+/* Comment list container itself -- --sp-4 gap under emp-header-card (explicit instruction, item 4,
+   unchanged by the component swap) and horizontal padding matching emp-header-card's own --sp-3
+   inset (modal-body keeps Bootstrap's default padding; emp-header-card's own --sp-3 padding is
+   additional inset on top of that) so each comment's own avatar column lines up under the header
+   card's own avatar instead of sitting flush against modal-body's raw edge. */
+#employeeCommentList {
     margin-top: var(--sp-4);
     padding: 0 var(--sp-3);
 }

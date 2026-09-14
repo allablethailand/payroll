@@ -1087,6 +1087,14 @@ $cpCallouts = [
 </div>
 
 <div class="cp-section">
+    <h2>Comment list (§6) — ใหม่ 2026-09-14</h2>
+    <p class="cp-section-note">JS <code>renderCommentList(items)</code> (<code>app.js</code>) -- component ใหม่ของ <code>#employeeCommentModal</code> (Payroll Detail) แทน Timeline ด้านบนที่เคยยืมมาใช้ชั่วคราว (ย้ายกลับ/reverted แล้ววันเดียวกัน) -- <b>คนละหน้าที่กับ Timeline โดยเจตนา: Timeline ใช้กับ "ลำดับเหตุการณ์" เท่านั้น</b> (log ยาวไม่จำกัดของสิ่งที่เกิดขึ้นแล้ว เช่น audit log/ประวัติอนุมัติ — จุด+เส้นสื่อว่า "นี่คือขั้นหนึ่งในลำดับต่อเนื่อง") <b>ส่วน Comment list ใช้กับ "ใครพูดอะไร เมื่อไหร่"</b> (ความเห็นแต่ละอันเป็นหน่วยแยกจากกัน ไม่ใช่ขั้นในลำดับเดียวกัน) — จึงไม่มีจุด/เส้นเชื่อม ไม่มีกรอบ/เส้นคั่นต่อรายการ ระยะห่างระหว่างรายการกว้างกว่า (<code>--sp-5</code>) ให้แต่ละความเห็นรู้สึกเป็นหน่วยแยกจริง. โครง: avatar 32px ซ้าย, คอลัมน์ขวา 2 บรรทัด — <b>บรรทัด 1</b>: ชื่อตัวหนา <code>--fs-base</code> · badge แท็ก (<code>statusBadgeHtml()</code> เดิม, บริบท <code>employee_comment_tag</code> — ไม่มี badge เลยถ้าไม่มีแท็ก ไม่ใช่ badge เทา "ไม่มีแท็ก" ซึ่งมีแค่ใน tag picker ตอนพิมพ์/แก้เท่านั้น) ชิดซ้าย, เวลาแบบ relative <code>--fs-sm</code> เทา (+tooltip เวลาเต็มเสมอ) และไอคอนแก้ไข/ลบ (<code>.btn-icon-ghost.comment-item-icon-btn</code>) ชิดขวา — <b>ไอคอนแสดงเฉพาะตอน hover/focus รายการนั้น</b> (ลองเอาเมาส์ไปวางบนรายการด้านล่างดู) <b>ยกเว้นอุปกรณ์สัมผัส (<code>pointer:coarse</code>) ที่แสดงตลอด</b> เพราะ hover ไม่มีความหมายจริงบนมือถือ; <b>บรรทัด 2</b>: ข้อความคอมเมนต์ <code>--fs-base</code> น้ำหนักปกติ <code>white-space:pre-line</code> (รักษาขึ้นบรรทัดใหม่จริงของผู้ใช้ แต่ยุบช่องว่างซ้ำเหมือนข้อความทั่วไป). ระยะภายใน 1 รายการ (avatar↔คอลัมน์, บรรทัด1↔บรรทัด2) = <code>--sp-1</code> แน่นเจตนา ให้ 2 บรรทัดอ่านเป็นหน่วยเดียวกัน.</p>
+    <p class="cp-section-note"><code>item.bodyHtml</code> (optional) แทนที่บรรทัด 2 ทั้งก้อนได้ -- ของจริงใช้กับ inline-edit (คลิกดินสอในรายการจริงแล้วบรรทัด 2 กลายเป็น textarea + tag picker + [บันทึก][ยกเลิก] ในโครงเดิมเป๊ะ ไม่ใช่ modal/popover แยก) เดโมด้านล่างจำลองสถานะนี้ไว้ให้ดูรูปร่างโดยไม่ต้องเปิด modal จริง.</p>
+    <p class="cp-section-note mb-1"><b>2 รายการปกติ + 1 รายการกำลังแก้ไข (bodyHtml override) -- ลอง hover รายการปกติดูไอคอนโผล่, สลับ theme มุมขวาบนดู light/dark:</b></p>
+    <div id="cpCommentListShowcase" style="max-width:480px;"></div>
+</div>
+
+<div class="cp-section">
     <h2>emp-header-card + Quick-view (ข้อ 6c)</h2>
     <p class="cp-section-note"><code>app/views/partials/emp-header-card.php</code> (ใหม่) + JS <code>employeeHeaderCardHtml(emp)</code> (<code>app.js</code>, <b>generalize ของเดิมจาก Batch 3C item 8 ไม่สร้างซ้ำ</b>) -- พื้น <code>--c-bg-subtle</code> ขอบล่าง <code>--c-border</code> ไม่มีขอบสี/เงา, avatar 40px, บรรทัด 1 ชื่อ+รหัส, บรรทัด 2 แผนก·ตำแหน่ง, ขวาสุด badge สถานะพนักงานจริงผ่าน <code>statusBadge()</code> (context <code>employee_status</code>, ข้อ 5) -- <b>ข้อควรระวัง: ต่างจาก component อื่นในรอบนี้ ฟังก์ชัน JS ตัวนี้มี 6 real call site ผูกอยู่แล้วจริงใน <code>payroll/detail.js</code> (Calculation Breakdown/Raw Sync Data/Manage Items/Comments/Adjustments/Bank Account Assignment) ตั้งแต่ก่อนรอบนี้จะเริ่ม (โค้ดเดิมเขียน comment ตรงๆ ว่า "ยังไม่จัดสไตล์การ์ด -- design phase มาทีหลัง") -- งานรอบนี้คือ design phase ที่รอไว้นั้นเอง ไม่ใช่ scope ใหม่ ทั้ง 6 modal จริงจะได้สไตล์ใหม่ (avatar 48px→40px, บรรทัด 2 ใหม่, badge slot ใหม่) ทันทีที่ commit รอบนี้ โดยไม่ต้องแตะ payroll/detail.js เลยแม้แต่บรรทัดเดียว</b> (ปรับ shared helper เดิม เหมือน <code>showConfirm()</code>/<code>fmtNum()</code> ที่ทำมาก่อนหน้านี้).</p>
     <div class="row">
@@ -1733,6 +1741,66 @@ $(function () {
     $cpCombo.append(renderStatusStepper(CP_STEPPER_LABELS, 4));
     $cpCombo.append('<hr class="my-3">');
     $cpCombo.append(renderTimeline(CP_TIMELINE_ITEMS, { groupByDay: true }));
+
+    // Comment list (§6, ใหม่) -- byte-shape reuse of the real modal's own item construction
+    // (payroll/detail.js's employeeCommentToListItem()), not a divergent demo shape. 2 normal items
+    // (1 with a badge, 1 with a `timeSuffix` "(edited)" marker and a real multi-line comment to show
+    // white-space:pre-line) + 1 item pre-rendered mid-inline-edit (`bodyHtml` override) -- the SAME
+    // textarea + tag-row + [Save][Cancel] structure employeeCommentInlineEditFormHtml() builds in the
+    // real modal, hand-copied here (not imported -- that function lives in payroll/detail.js, not
+    // loaded on this dev-only page) so this demo can show the shape without needing a live modal/AJAX
+    // backend at all.
+    const cpCommentInlineEditBodyHtml = `
+        <div class="mb-2">
+            <textarea class="form-control form-control-sm" rows="3">ขอเลื่อนตรวจสอบไปสัปดาห์หน้า เอกสารยังมาไม่ครบ</textarea>
+        </div>
+        <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
+            <span class="small text-muted flex-shrink-0">แท็ก</span>
+            <div class="comment-tag-picker">
+                <input type="radio" class="d-none" name="cpCommentInlineEditTag" id="cpCommentInlineEditTagNone">
+                <label for="cpCommentInlineEditTagNone">${statusBadgeHtml('none', 'employee_comment_tag')}</label>
+                <input type="radio" class="d-none" name="cpCommentInlineEditTag" id="cpCommentInlineEditTagInProgress" checked>
+                <label for="cpCommentInlineEditTagInProgress">${statusBadgeHtml('in_progress', 'employee_comment_tag')}</label>
+                <input type="radio" class="d-none" name="cpCommentInlineEditTag" id="cpCommentInlineEditTagCompleted">
+                <label for="cpCommentInlineEditTagCompleted">${statusBadgeHtml('completed', 'employee_comment_tag')}</label>
+                <input type="radio" class="d-none" name="cpCommentInlineEditTag" id="cpCommentInlineEditTagError">
+                <label for="cpCommentInlineEditTagError">${statusBadgeHtml('error', 'employee_comment_tag')}</label>
+            </div>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-primary btn-sm">บันทึก</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm">ยกเลิก</button>
+        </div>`;
+    const CP_COMMENT_ITEMS = [
+        {
+            time: '2026-09-14 15:40:00',
+            actor: { name: 'สมชาย ทำเงินเดือน' },
+            text: 'ตรวจสอบยอดโบนัสแล้ว ถูกต้องตามที่แจ้งไว้ ปิดรายการนี้ได้เลย',
+            badge: { enum: 'completed', context: 'employee_comment_tag' },
+            actions: '<button type="button" class="btn-icon-ghost comment-item-icon-btn" title="แก้ไข"><i class="fa-solid fa-pen"></i></button>'
+                + '<button type="button" class="btn-icon-ghost comment-item-icon-btn comment-item-icon-btn-danger" title="ลบ"><i class="fa-solid fa-trash-can"></i></button>',
+        },
+        {
+            // Real edited-comment shape (timeSuffix, §6's own note on why this field exists at all) +
+            // a genuine 2-line comment to show `white-space: pre-line` preserving the real newline.
+            time: '2026-09-13 09:15:00',
+            timeSuffix: '(แก้ไขแล้ว)',
+            actor: { name: 'สมหญิง ฝ่ายบุคคล' },
+            text: 'รอตรวจสอบเอกสารเพิ่มเติมจากพนักงาน\nจะอัปเดตอีกครั้งพรุ่งนี้',
+            badge: { enum: 'in_progress', context: 'employee_comment_tag' },
+            actions: '<button type="button" class="btn-icon-ghost comment-item-icon-btn" title="แก้ไข"><i class="fa-solid fa-pen"></i></button>'
+                + '<button type="button" class="btn-icon-ghost comment-item-icon-btn comment-item-icon-btn-danger" title="ลบ"><i class="fa-solid fa-trash-can"></i></button>',
+        },
+        {
+            // Mid-inline-edit -- `actions: null` (icons hidden, matches the real modal's own rule:
+            // nothing useful for Edit/Delete to do on a row that's already open for editing).
+            time: '2026-09-12 11:00:00',
+            actor: { name: 'สมชาย ทำเงินเดือน' },
+            bodyHtml: cpCommentInlineEditBodyHtml,
+            actions: null,
+        },
+    ];
+    $('#cpCommentListShowcase').html(renderCommentList(CP_COMMENT_ITEMS));
 
     // ตัวเลข/เงิน (ข้อ 7a) -- SAME 5 values the PHP side already rendered via fmtMoney() (kept in sync
     // by hand, this dev-only page has no shared JSON to source both sides from) run through the REAL

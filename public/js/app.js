@@ -1664,22 +1664,9 @@ function timelineDayLabel(value) {
     if (isNaN(d.getTime())) return String(value);
     return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
 }
-// 2026-09-14, Round 3 item 3c-3 (Comments timeline), explicit instruction, extends this shared
-// function with 2 new OPTIONAL pieces -- comments is the FIRST real caller of this component (see
-// this function's own original docblock: "not used by any real page yet"), and needed both:
-// - `options.relativeTime` (default false, §6's own documented default of plain HH:MM is
-//   unaffected for every other/future caller that doesn't pass this): renders the time as
-//   formatRelativeTime()'s output instead, with the full absolute date+time as a native `title`
-//   hover tooltip (formatDisplayDateTime()) -- JS-only, see formatRelativeTime()'s own docblock for
-//   why timeline.php (the PHP twin) is deliberately NOT given this same option.
-// - `item.actions` (optional raw HTML string, e.g. edit/delete icon buttons) -- rendered in the head
-//   row, grouped with the time inside a new `.timeline-head-right` wrapper so the row's own
-//   `justify-content: space-between` (actor | everything-else) still holds with a 3rd element
-//   involved, instead of 3 flex children spreading unevenly across the row.
 function renderTimeline(items, options) {
     options = options || {};
     const groupByDay = !!options.groupByDay;
-    const relativeTime = !!options.relativeTime;
     let html = '<ul class="timeline">';
     let lastDayLabel = null;
     (items || []).forEach(function (item) {
@@ -1696,28 +1683,116 @@ function renderTimeline(items, options) {
             : '';
         const badgeHtml = item.badge ? `<div class="mt-1">${statusBadgeHtml(item.badge.enum, item.badge.context)}</div>` : '';
         const detailHtml = item.detail ? `<div class="timeline-detail">${escapeHtml(item.detail)}</div>` : '';
-        const actionsHtml = item.actions ? `<span class="timeline-actions">${item.actions}</span>` : '';
-        const timeLabel = relativeTime ? formatRelativeTime(item.time) : timelineTimeOfDay(item.time);
-        const timeTitleAttr = relativeTime ? ` title="${escapeAttr(formatDisplayDateTime(item.time))}"` : '';
-        // item.bodyHtml replaces the default title/detail/badge block wholesale (e.g. an inline-edit
-        // form in place of a comment's own text) -- caller owns escaping for that HTML.
-        // .timeline-body-content--with-actor indents body content under the actor name column
-        // (avatar 24px + gap var(--sp-2)) only when an actor is actually rendered above it, so
-        // text/chips line up with the name instead of sitting flush left under the dot.
-        const bodyClass = item.actor ? 'timeline-body-content timeline-body-content--with-actor' : 'timeline-body-content';
-        const bodyHtml = (item.bodyHtml !== undefined)
-            ? item.bodyHtml
-            : `<div class="timeline-title">${escapeHtml(item.title)}</div>${detailHtml}${badgeHtml}`;
         html += `<li class="timeline-item">
             <span class="timeline-dot timeline-dot-${tone}"></span>
             <div class="timeline-head">
                 <span class="timeline-actor">${actorHtml}</span>
-                <span class="timeline-head-right">
-                    <span class="timeline-time"${timeTitleAttr}>${escapeHtml(timeLabel)}</span>
-                    ${actionsHtml}
-                </span>
+                <span class="timeline-time">${timelineTimeOfDay(item.time)}</span>
             </div>
-            <div class="${bodyClass}">${bodyHtml}</div>
+            <div class="timeline-title">${escapeHtml(item.title)}</div>
+            ${detailHtml}
+            ${badgeHtml}
+        </li>`;
+    });
+    html += '</ul>';
+    return html;
+}
+// 2026-09-14, Round 3 -- REVERTED back to its original Round 2 item (3)/6b shape (no `relativeTime`
+// option, no `item.actions`, no `item.bodyHtml`/`.timeline-body-content` wrapper). Those 3 pieces
+// were added 2026-09-14 for the Comments modal specifically (its own first real caller at the time)
+// -- the Comments modal has since moved to its own dedicated shared component
+// (renderCommentList(), directly below) that fits its actual shape (avatar+2-line comment, not a
+// dot-and-line event log) far better than stretching Timeline to cover both. Confirmed via grep
+// (both `public/js/` and `docs/design/components.php`) that NO other caller ever used
+// relativeTime/actions/bodyHtml -- this revert is not a breaking change for anything real. See
+// rules.md §6's own "Comment list" section (added alongside this component) for exactly where the
+// line between the 2 components sits: Timeline = an arbitrary-length EVENT/audit log the caller
+// already sorted, Comment list = a specific 2-line "who said what, when" shape with its own
+// inline-edit affordance -- never force one component to do both jobs again.
+//
+// 2026-09-14, Round 3 -- new shared component, docs/design/rules.md §6's own "Comment list" section.
+// A different shape than Timeline on purpose (see that revert note just above for why this exists as
+// its own component instead of another Timeline extension): avatar 32px left, a 2-line right column
+// (name + tag badge + relative time + hover-reveal edit/delete icons on line 1, the comment's own
+// text -- or an inline-edit form override -- on line 2). No dot/connecting line, no card/border/
+// divider between items -- a comment isn't a milestone on a log, just "who said what, when".
+//
+// item = { id?, time (parseable date/datetime string), timeSuffix? (plain string rendered muted
+//   right after the time, e.g. "(edited)" -- no slot for this in the original spec's line 1, added
+//   for the one real caller that needs it, see payroll/detail.js), actor?: {name, avatar}, text
+//   (plain string, escaped -- multi-line via `white-space:pre-line` in CSS, NOT manual <br>
+//   injection), badge?: {enum, context} (omit/null to hide entirely -- e.g. a comment with no tag),
+//   actions? (raw HTML string, e.g. edit/delete icon buttons -- caller owns markup+escaping, omit to
+//   hide, e.g. read-only mode or the exact item currently being inline-edited), bodyHtml? (raw HTML,
+//   REPLACES line 2 wholesale when set -- e.g. an inline-edit form in place of the comment's own
+//   text; caller owns escaping) }.
+//
+// Time is ALWAYS relative (formatRelativeTime(), format-helpers.js) with the full absolute
+// date+time as a native `title` hover tooltip (formatDisplayDateTime()) -- not an opt-in like
+// Timeline's own `options.relativeTime` was, since every real/planned caller of THIS component wants
+// exactly this (a comment feed, not an audit log where an absolute HH:MM matters more at a glance).
+//
+// `options.emptyState` (optional `{icon, title, text?, action?}`, passed straight through to
+// emptyStateHtml()) -- see the real-bug note right below for why this exists.
+//
+// 2026-09-14, real bug found and fixed while reviewing #employeeCommentModal: an EMPTY `items` array
+// used to render a valid-but-blank `<ul class="comment-list"></ul>` -- no message, just nothing --
+// because the "0 comments" case was handled entirely by the ONE real caller
+// (renderEmployeeCommentListFromCache(), payroll/detail.js) checking length BEFORE ever calling this
+// function, never inside it. That caller's own guard happened to make the real app behave correctly
+// today, but it meant the shared COMPONENT itself had a silent gap any future caller could trip on by
+// simply forgetting the same guard. Fixed at the source: this function now owns the empty case
+// itself via `options.emptyState` (same `{icon, title, text?, action?}` shape `emptyStateHtml()`
+// itself takes, and the same "caller supplies its own copy, no assumed i18n" pattern
+// `initSharedDataTable()`'s own `emptyState` option already established -- see dtRenderEmptyState()
+// above) -- the caller-side length check in payroll/detail.js is removed now that it's redundant.
+function renderCommentList(items, options) {
+    options = options || {};
+    if (!items || !items.length) {
+        return emptyStateHtml(options.emptyState || { icon: 'fa-solid fa-comments', title: 'No comments yet.' });
+    }
+    let html = '<ul class="comment-list">';
+    items.forEach(function (item) {
+        const actor = item.actor || null;
+        const avatarHtml = apvAvatarHtml(actor ? actor.name : '', 32, actor ? actor.avatar : null);
+        const nameHtml = actor ? `<span class="comment-item-name">${escapeHtml(actor.name || '')}</span>` : '';
+        const badgeHtml = item.badge ? statusBadgeHtml(item.badge.enum, item.badge.context) : '';
+        // 2026-09-14, real bug found and fixed -- actions used to render AFTER time (to its right),
+        // which put the icons FARTHER from the content edge than the time itself, and (opacity:0
+        // alone, no position change) still reserved their own layout width even while invisible, so
+        // the time was never actually flush against the container's true right edge except by
+        // coincidence. `.comment-item-actions` is now `position:absolute` (style.css) -- out of
+        // normal flow entirely, so it reserves zero space when hidden -- anchored to sit immediately
+        // LEFT of `.comment-item-meta` (which now holds only time+timeSuffix, so `margin-left:auto`
+        // on meta alone is what actually guarantees time sits flush against the right edge, in every
+        // hover state, not just by chance). DOM order (actions before time) matches the visual order
+        // the CSS produces, even though the CSS positioning itself doesn't depend on DOM order.
+        const actionsHtml = item.actions ? `<span class="comment-item-actions">${item.actions}</span>` : '';
+        const timeLabel = formatRelativeTime(item.time);
+        const timeTitleAttr = ` title="${escapeAttr(formatDisplayDateTime(item.time))}"`;
+        // `item.timeSuffix` (optional plain string, e.g. "(edited)") -- rendered muted right after
+        // the time, own span so it can be styled/omitted independently of the time itself. Not part
+        // of the original spec's item shape, added because an edited-comment marker (pre-existing
+        // functionality, 2026-08-29) needed SOMEWHERE to live once this component's own line 1 was
+        // defined as exactly name+badge+time+actions, nothing else -- see
+        // payroll/detail.js's employeeCommentToListItem() for the one real caller that uses it.
+        const timeSuffixHtml = item.timeSuffix ? ` <span class="comment-item-time-suffix">${escapeHtml(item.timeSuffix)}</span>` : '';
+        const bodyHtml = (item.bodyHtml !== undefined)
+            ? item.bodyHtml
+            : `<div class="comment-item-text">${escapeHtml(item.text || '')}</div>`;
+        html += `<li class="comment-item">
+            <div class="comment-item-avatar">${avatarHtml}</div>
+            <div class="comment-item-body">
+                <div class="comment-item-line1">
+                    ${nameHtml}
+                    ${badgeHtml}
+                    <span class="comment-item-meta">
+                        ${actionsHtml}
+                        <span class="comment-item-time"${timeTitleAttr}>${escapeHtml(timeLabel)}</span>${timeSuffixHtml}
+                    </span>
+                </div>
+                ${bodyHtml}
+            </div>
         </li>`;
     });
     html += '</ul>';
@@ -1825,7 +1900,14 @@ function modalFooterButtonsHtml(config) {
     config = config || {};
     function buttonHtml(spec, extraClass, isPrimary) {
         if (!spec) return '';
-        const cls = isPrimary ? 'btn btn-primary btn-sm' : 'btn btn-outline-secondary btn-sm';
+        // 2026-09-14, real bug found and fixed while reviewing #employeeCommentModal (this
+        // function's own first and, so far, only real caller): both buttons were hardcoded
+        // `btn-sm`. rules.md §4 is explicit -- "ปุ่มในหน้า/modal = ขนาดปกติ" (normal size), `.btn-sm`
+        // is reserved for table-row/filter-bar/DataTable-toolbar buttons only, never a modal's own
+        // footer. Fixed here (the shared helper), not at the call site, so every future modal that
+        // adopts this helper gets the correct size automatically -- confirmed via grep this is still
+        // the only real caller today, so no other modal's footer changes as a side effect.
+        const cls = isPrimary ? 'btn btn-primary' : 'btn btn-outline-secondary';
         const dismissAttr = (!isPrimary && spec.dismiss) ? ' data-bs-dismiss="modal"' : '';
         const idAttr = spec.id ? ` id="${escapeAttr(spec.id)}"` : '';
         const i18nAttr = spec.key ? ` data-i18n="${escapeAttr(spec.key)}"` : '';
