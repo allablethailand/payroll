@@ -374,6 +374,36 @@ tone ปรากฏบนตัว container ได้ ไม่ใช่แค
     ของตัวเอง (`border:0`) กัน browser default ของปุ่มหลุดออกมาทับหน้าตา badge — **เงื่อนไขว่าจะส่ง `menu`
     เมื่อไหร่เป็นหน้าที่ของ caller ตัดสินเอง** (เช่น "ตรวจสอบแล้ว" ส่ง menu เฉพาะตอน draft เท่านั้น,
     non-draft ไม่ส่ง = ไม่มี ▾ เลย) ไม่ใช่ logic ในฟังก์ชันกลางนี้
+**Badge dropdown** (`badgeDropdownHtml(config)` + `initBadgeDropdown(scope, {onSelect})`, `app.js` —
+ใหม่ 2026-09-15; แยกออกมาจาก `statusBadgeHtml()`'s เอง `{menu}` branch ที่ทำไว้ 2026-09-13 ตอนทำ badge
+"ตรวจสอบแล้ว ▾" ของ Payroll Detail — พอมี caller ที่ 2 (tag picker ของ comment composer) จึงยกขึ้นเป็น
+component กลางแทนการคัดลอก — §0.4)
+- **คืออะไร**: status badge ที่เป็น dropdown toggle ในตัวเอง — badge บอกค่าปัจจุบัน, ▾ เล็ก (จาก
+  `.dropdown-toggle::after` ของ Bootstrap เอง ไม่เขียนไอคอนเอง) บอกว่าเปลี่ยน/สั่งงานกับมันได้
+- **2 โหมด ตาม field ที่ caller ส่ง**:
+  - `menuHtml` (raw `<li>`) = **action menu** — caller เป็นเจ้าของทั้งรายการและ handler เอง component ไม่รู้จัก
+    ความหมายของ action เลย — จุดใช้จริง: verify badge ของ Payroll Detail (ผ่าน `statusBadgeHtml(enum, context,
+    {menu})` เหมือนเดิม — backward compatible 100%)
+  - `options: [{value, enum, outline?}]` = **value picker** — 1 แถว/1 ตัวเลือก, แต่ละแถวคือ statusBadge ของ
+    ตัวเลือกนั้นแบบ **outline เสมอ** (แถวในเมนูคือ "ตัวเลือก" ไม่ใช่การประกาศสถานะ) + **✓ เทา
+    (`--c-text-faint`) ท้ายบรรทัดของตัวที่เลือกอยู่** — `name` ทำให้ render `<input type="hidden">` คู่มาด้วย
+    ฟอร์ม/`snapshotFormState()` (§9's dirty guard — key ตาม name/id) จึงเห็นค่านี้เหมือน field ธรรมดา
+  - `outline: true` ต่อตัวเลือก = "ถ้าตัวนี้คือค่าปัจจุบัน ปุ่ม toggle เองก็เป็น outline ด้วย" — ใช้กับตัวเลือก
+    "ไม่มีแท็ก" เพื่อให้ control ที่ยังไม่ได้เลือกอ่านเป็นช่องว่าง ไม่ใช่ badge เทาที่ประกาศสถานะว่า "ไม่มีแท็ก"
+- **`statusBadgeHtml(enum, context, {outline: true})`** — badge อันเดียวกัน แต่พื้นโปร่ง + ขอบ `currentColor`
+  (`.badge-outline`, style.css) — **ไม่มีรายการสีต่อ tone แยก** เพราะกฎ `.badge.badge-{tone}` เดิมตั้ง `color`
+  ไว้แล้ว — ใช้เฉพาะกับ badge ที่เป็น "ตัวเลือกหนึ่งในรายการ" ห้ามใช้แทน badge สถานะปกติ
+- **คีย์บอร์ดมาจาก Bootstrap ตรงๆ ไม่เขียนเอง**: Esc ปิดเมนู+คืน focus ให้ toggle, ↑/↓ เลื่อนระหว่าง
+  แถว, Enter/Space เลือก — **เงื่อนไขคือทุกแถวต้องเป็น `<button class="dropdown-item">` จริง** (ห้าม `<div>`/`<a>`
+  ที่จัดสไตล์เอาเอง) — หน้าที่มี Esc handler ของตัวเอง (เช่น inline edit ของ comment) ต้องเช็คก่อนว่ามี
+  `.dropdown-menu.show` อยู่ไหม ถ้ามีให้เมนูกินก่อน
+- **`initBadgeDropdown()` ผูกแบบ delegated ต่อ scope พร้อม once-guard** (ไม่ผูกทีละ element) — คอมเมนต์โมดอล
+  re-render composer/list หลายรอบต่อการเปิด 1 ครั้ง direct binding จะหายตั้งแต่ re-render แรก (บั๊กคลาสเดียวกับ
+  ที่ `initFilterBar()` เคยเจอมาแล้วจริง) — การอัปเดตหน้าตาปุ่ม toggle คัดลอกจาก badge ของแถวที่เลือก
+  (tone class + label + `data-i18n`) ไม่ lookup STATUS_MAP ซ้ำ — สลับภาษาสดๆ ก็ยังแปลตามได้ฟรี
+- Demo จริง: `docs/design/components.php`'s Badge (ข้อ 5) section — ทั้ง 2 โหมดคู่กัน (value picker ของ tag +
+  action menu ของ verify badge) — แทนที่เดโม chip outline/ถม ของ `.comment-tag-picker` เดิมที่ถูกลบไปพร้อมกัน
+
 - **`countBadgeHtml(n, options)` (`public/js/app.js`, Round 3 item 3b — ตัวเลขล้วนบน pill, คนละอย่างกับ
   `statusBadgeHtml()`)** — สำหรับ "จำนวน" ที่ไม่ได้มาจาก enum/`status_map.php` (เช่น จำนวนรายการที่ปรับ,
   จำนวนคอมเมนต์) รับตัวเลขตรงๆ ไม่ใช่ (enum, context) คู่ — ใช้ `.badge.badge-{tone}` CSS เดียวกับ
@@ -624,45 +654,93 @@ approved → ...) ไม่ใช่สลับหน้า)
   "ความเห็น/ข้อความจากคนหลายคน" ให้ใช้ "Comment list" หัวข้อถัดไปทันทีด้านล่างนี้เสมอ ไม่ใช่ Timeline** —
   ดูเส้นแบ่งเต็มในหัวข้อนั้น
 
-**Comment list** (ใหม่ 2026-09-14 — "ใครพูดอะไร เมื่อไหร่", ไม่ใช่ลำดับเหตุการณ์) — **เสร็จแล้ว**
+**Comment list + Composer** (ใหม่ 2026-09-14, **restyle ตาม reference 2026-09-15 — สเปกต่อไปนี้คือ
+ของจริง ทับของเดิมทั้งหมด ไม่ใช่สองเวอร์ชันซ้อนกัน**) — "ใครพูดอะไร เมื่อไหร่", ไม่ใช่ลำดับเหตุการณ์
 - **เส้นแบ่งกับ Timeline ด้านบน (สำคัญ อ่านก่อนเลือกใช้)**: **Timeline = log เหตุการณ์** (สิ่งที่เกิดขึ้นแล้ว
   เรียงตามเวลา เช่น audit log/ประวัติอนุมัติ — จุด+เส้นเชื่อมสื่อว่า "นี่คือขั้นหนึ่งในลำดับต่อเนื่องเดียวกัน")
   **Comment list = ความเห็นแต่ละอันเป็นหน่วยแยกจากกัน** (ไม่ใช่ขั้นในลำดับเดียวกัน แต่ละอันมี "เจ้าของ" ของ
   ตัวเองชัดเจน และแก้ไข/ลบเป็นรายการเดี่ยวได้) — **ห้ามใช้ Timeline กับกรณีที่เนื้อหาจริงๆคือ "ความเห็น/ข้อความ
   จากคนหลายคน" อีกต่อไป** ใช้ Comment list แทนเสมอสำหรับกรณีนั้น — ตรงข้ามกัน ห้ามใช้ Comment list กับ
   audit log/ประวัติเหตุการณ์ (ไม่มีจุด/เส้นเชื่อมให้สื่อ "ลำดับ")
-- JS: `renderCommentList(items)` (`app.js`) — **ไม่มี PHP partial คู่กัน** (ยังไม่มี real caller ฝั่ง
-  server-render ที่ต้องการ, ต่างจาก Timeline ที่มี `timeline.php` มาตั้งแต่ต้นเพราะ demo ฝั่ง PHP ต้องใช้ —
-  เพิ่ม partial ทีหลังได้ถ้ามี caller จริงที่ render ฝั่ง server)
-- item = `{id?, time, timeSuffix? (ข้อความเทาจางๆ ต่อท้ายเวลา เช่น "(แก้ไขแล้ว)"), actor?: {name,
-  avatar}, text (string, escape แล้ว, ขึ้นบรรทัดใหม่จริงรักษาไว้ผ่าน `white-space:pre-line` ไม่ใช่แทรก
-  `<br>` เอง), badge?: {enum, context} (ไม่ใส่/null = ไม่มี badge เลย ไม่ใช่ badge เทา "ไม่มีแท็ก" — อันนั้น
-  มีแค่ใน tag picker ตอนพิมพ์/แก้), actions? (raw HTML, caller เป็นคนสร้าง/escape เอง, ไม่ใส่ = ซ่อนไอคอน
-  เช่นตอน view-only หรือ item ที่กำลังแก้อยู่), bodyHtml? (raw HTML, แทนที่บรรทัด 2 ทั้งก้อนถ้าใส่มา —
-  ใช้กับ inline-edit)}`
-- layout: avatar 32px ซ้าย, คอลัมน์ขวา 2 บรรทัด — **ไม่มีจุด/เส้นเชื่อม ไม่มีกรอบ/เส้นคั่นต่อรายการ**
-  (ตรงข้าม Timeline โดยเจตนา — ดู "เส้นแบ่ง" ด้านบน) — **บรรทัด 1**: ชื่อตัวหนา `--fs-base` · badge แท็ก
-  (ผ่าน `statusBadge()`/`statusBadgeHtml()` จริง ข้อ 5, ซ่อนถ้าไม่มีแท็ก) ชิดซ้าย — เวลาแบบ relative
-  (`formatRelativeTime()`, `format-helpers.js`) `--fs-sm` เทา + tooltip เวลาเต็ม (`formatDisplayDateTime()`)
-  **เสมอ ไม่ใช่ opt-in แบบ Timeline's เอง `relativeTime`** (caller ทุกตัวของ component นี้ต้องการแบบนี้)
-  ตามด้วยปุ่มแก้ไข/ลบ (`.btn-icon-ghost.comment-item-icon-btn`, ลบแดงเฉพาะ hover เหมือนกฎเดิม) ชิดขวา —
-  **ปุ่มแก้ไข/ลบแสดงเฉพาะตอน `:hover`/`:focus-within` ของทั้งรายการ ยกเว้นอุปกรณ์สัมผัส (`@media
-  (pointer:coarse)`) ที่แสดงตลอด** (hover ไม่มีความหมายจริงบนมือถือ) — **บรรทัด 2**: ข้อความคอมเมนต์
-  `--fs-base` น้ำหนักปกติ
-- ระยะ: **`--sp-5` ระหว่างรายการ** (ความเห็นแต่ละอันเป็นหน่วยแยก ต้องการที่ว่างจริงรอบตัว มากกว่า Timeline's
-  เอง `--sp-4` ของ log ต่อเนื่อง) **`--sp-1` ระหว่างองค์ประกอบภายใน 1 รายการ** (avatar↔คอลัมน์, บรรทัด
-  1↔บรรทัด 2 — แน่นเจตนา ให้ 2 บรรทัดอ่านเป็นหน่วยเดียวกัน) — **ระยะจาก list ไปฟอร์มเพิ่ม (compose form)
-  ด้านล่าง ต้อง `--sp-6` เสมอ มากกว่าระยะระหว่างรายการ (`--sp-5`) จริง ไม่ใช่แค่เท่ากัน** — ฟอร์มเพิ่มเป็น
-  section ที่ทำหน้าที่ต่างจากรายการที่โพสต์แล้ว (ช่องกรอกข้อมูล ไม่ใช่คอมเมนต์อีกอันในรายการ) ต้องอ่านออกว่า
-  เป็นขอบเขต (boundary) จริง ไม่ใช่รายการถัดไปในลิสต์เดียวกัน
-- **Inline-edit ใช้โครงเดียวกันผ่าน `bodyHtml`**: บรรทัด 1 (avatar/ชื่อ/เวลา) คงที่ปกติ (ไอคอนแก้ไข/ลบ
-  ซ่อนไปเพราะ `actions:null` — ไม่มีอะไรให้กดต่อบนรายการที่กำลังแก้อยู่แล้ว, badge แท็กก็ซ่อนไปด้วยเหตุผล
-  เดียวกัน คือ tag picker ในฟอร์มแก้ไขเองก็โชว์/แก้ค่านี้อยู่แล้ว ไม่ต้องซ้ำ) — บรรทัด 2 กลายเป็น textarea
-  + tag row + `[บันทึก][ยกเลิก]` (โครงเดียวกับฟอร์มเพิ่มด้านล่าง modal, §9/Phase B) — ตัวอย่างจริง:
-  `payroll/detail.js`'s `employeeCommentInlineEditFormHtml()`
-- Demo จริง: `docs/design/components.php` — 2 รายการปกติ (1 มี badge, 1 มี `timeSuffix` + ข้อความ 2
-  บรรทัดจริงโชว์ `white-space:pre-line`) + 1 รายการจำลองสถานะกำลังแก้ไข (`bodyHtml`) — light/dark ผ่าน
-  ปุ่มสลับ theme มุมขวาบนของหน้าเดียวกัน, ลอง hover รายการปกติดูไอคอนโผล่
+- JS: `renderCommentList(items, options)` + **`commentComposerHtml(config)` (ใหม่ 2026-09-15)** — ทั้งคู่อยู่ใน
+  `app.js` **ไม่มี PHP partial คู่กัน** (ยังไม่มี real caller ฝั่ง server-render ที่ต้องการ, ต่างจาก Timeline ที่มี
+  `timeline.php` มาตั้งแต่ต้นเพราะ demo ฝั่ง PHP ต้องใช้ — เพิ่ม partial ทีหลังได้ถ้ามี caller จริง)
+- **ลำดับบนลงล่าง: composer อยู่บนสุดเสมอ → รายการคอมเมนต์ (ล่าสุดบนสุด)** — คอมเมนต์ใหม่ที่เพิ่ง
+  บันทึก prepend เข้าต้นรายการทันที (ไม่ reload) — empty state (`emptyStateHtml()`, หัวข้อเดียว ไม่มีบรรทัดรอง)
+  อยู่ใต้ composer ตำแหน่งเดียวกับที่รายการแรกจะอยู่
+- **Composer (`commentComposerHtml(config)`)** — กล่องเดียวที่ใช้พิมพ์คอมเมนต์ **ทั้งตอนเขียนใหม่และตอนแก้ของเดิม
+  (inline edit)** — ห้ามมี markup ชุดที่สอง (§0.4):
+  - กล่องมีกรอบ 1px `--c-border` มุม `--radius-lg` พื้น `--c-bg` padding `--sp-3` — **`:focus-within` กรอบเป็น
+    `--c-primary` (ส้ม) ห้ามฟ้า** (§3) — กล่องคือกรอบของ input เอง ไม่มีกรอบซ้อน 2 ชั้น
+  - แถวบน: avatar **28px** (`apvAvatarHtml()`) + ชื่อผู้เขียนตัวหนา **`--fs-sm`** — คอมเมนต์ใหม่ = **ผู้ใช้ปัจจุบัน
+    (session)**, กำลังแก้ = **เจ้าของคอมเมนต์นั้น** (แก้ไม่ได้เปลี่ยนว่าใครพูด) — `window.SESSION_USER`
+    (`layout/header.php` inject จุดเดียวกับ `window.STATUS_MAP`, **ข้อยกเว้นเดิมที่อนุมัติไว้แล้วขยายอีก 1
+    บรรทัด**) เป็นแหล่งเดียวของชื่อ/รูปผู้ใช้ปัจจุบัน ไม่ให้แต่ละหน้า query เอง
+  - textarea **ไม่มีกรอบ/พื้นของตัวเอง** (`border:0`, `background:transparent`, `resize:none`, ห้ามใช้
+    `.form-control`) ขยายอัตโนมัติตามเนื้อหา (auto-grow ของ `input.js` T002 ที่มีอยู่แล้วทั้งแอป) ขนาด
+    **`--fs-sm`** placeholder `--c-text-faint` — caller ส่งข้อความ placeholder มาเอง (component ไม่อ่าน
+    `langData` เอง ตามแบบ `emptyStateHtml()`)
+  - เส้นคั่น 1px `--c-border` ก่อนแถวล่าง — แถวล่าง: ซ้าย = **badge dropdown ตัวเดียวสำหรับแท็ก**
+    (`badgeDropdownHtml()` โหมด value picker, ดู §5's "Badge dropdown" — **ไม่มี chip 4 ตัวเรียงแล้ว
+    ไม่มี label "แท็ก" นำหน้า**; ค่าเริ่มต้น = "ไม่มีแท็ก" tone neutral **outline**; ค่าอยู่ใน hidden input
+    ชื่อ `${idPrefix}Tag` ให้ dirty guard §9 อ่านได้), ขวา = ปุ่ม action ที่ caller ส่งมาเอง (`config.actions`, raw HTML) —
+    คอมเมนต์ใหม่ = `[บันทึก]` ตัวเดียว (`.btn-primary`, **ไม่มีไอคอน**, disabled จนกว่ามีข้อความจริง),
+    inline edit = `[บันทึก][ยกเลิก]` (primary ซ้าย/secondary ขวา ตาม §4) — **ขนาดปกติทั้งคู่ ห้าม `btn-sm`** (§4:
+    ปุ่มใน modal = ขนาดปกติ)
+  - Ctrl/Cmd+Enter = ส่ง (กลไกของ caller ไม่ใช่ component)
+  - `config` = `{idPrefix (บังคับ — id/name ทุกตัวในกล่อง derive จากค่านี้: textarea `${idPrefix}Text`, hidden tag input
+    `${idPrefix}Tag`), actor:{name,avatar}, text?, tag?, placeholder?, tags?:[{value,enum,outline?}],
+    tagContext?, textareaClass?, textareaAttrs? (raw), actions? (raw HTML)}` — **2 กล่องที่อยู่พร้อมกันได้
+    (กล่องเขียนใหม่ + 1 รายการที่กำลังแก้) ต้องใช้ `idPrefix` คนละค่าเสมอ** — นอกจากกัน id ชนแล้ว ยังเป็น
+    สิ่งที่ทำให้ `snapshotFormState()` (§9's dirty guard — key ตาม name/id) แยก 2 กล่องออกจากกันได้จริง
+- **1 รายการ = avatar เป็น gutter ซ้าย + คอลัมน์เนื้อหา 3 แถวเรียงลง** (แก้ 2026-09-15 — รอบก่อนหน้าวันเดียวกัน
+  เคยให้ข้อความ/แถวเวลาเริ่มที่ขอบซ้ายของ avatar — แก้แล้ว) — **ทุกแถวในคอลัมน์เนื้อหาเริ่มที่ขอบซ้ายเดียวกัน (ขวาของ
+  avatar) — avatar ไม่มีอะไรอยู่ใต้มัน** — **ไม่มีจุด/เส้นเชื่อม ไม่มีกรอบต่อรายการ**:
+  - **gutter**: avatar **28px** (`apvAvatarHtml()`) — กว้าง gutter = 28px + `--sp-2` (`--comment-gutter`, style.css)
+  - **แถว 1**: ชื่อ **`--fs-sm` น้ำหนัก 600** + badge แท็ก (**badge/chip คงขนาดเดิม ไม่ลดตาม**) (`statusBadgeHtml()`, §5 — **ซ่อนทั้ง badge
+    ถ้าไม่มีแท็ก** ไม่ใช่ badge เทา "ไม่มีแท็ก" — อันนั้นมีแค่ใน tag picker ของ composer)
+  - **แถว 2**: ข้อความ **`--fs-sm`** น้ำหนักปกติ `--c-text` `white-space:pre-line`
+  - **แถว 3**: ซ้าย = เวลาแบบ relative (`formatRelativeTime()`) **`--fs-xs`** `--c-text-muted` + tooltip เวลาเต็ม
+    (`formatDisplayDateTime()`) **เสมอ ไม่ใช่ opt-in แบบ Timeline**, ขวา = ปุ่มแก้ไข/ลบ
+    (`.btn-icon-ghost.comment-item-icon-btn`) — **แสดงตลอด ไม่ต้อง hover** (เดิมโผล่เฉพาะตอน hover/
+    `:focus-within` + ข้อยกเว้น `pointer:coarse` — **ถูกถอดออกทั้งหมด**: affordance ที่ต้อง hover ก่อนถึงจะรู้ว่ามี
+    ไม่นับเป็น affordance และพอย้ายมาอยู่แถวของตัวเองก็ไม่แย่งที่กับชื่อ/badge อีกต่อไป) — ไอคอนเทาเดียวกัน
+    ทั้งคู่ ลบเป็น `--c-danger` เฉพาะตอน hover — **ปุ่มชิดขวาสุดของ container (เสมอขอบเดียวกับเส้นคั่น/การ์ด)**
+- **ความกว้าง/ขอบซ้าย-ขวา (แก้ 2026-09-15)**: container ที่ครอบ composer กับ list **ห้ามมี padding แนวนอนของตัวเอง** —
+  ขอบซ้าย/ขวาของ **composer, ทุกรายการ, empty state และ `.emp-header-card` ต้องตรงกันเป๊ะ** (วัดด้วย
+  `getBoundingClientRect().left/right` ยืนยัน ไม่ใช่แค่ดูด้วยตา) — ของเดิมใส่ `padding: 0 var(--sp-3)` ไว้เพื่อให้
+  *เนื้อหา* ตรงกับเนื้อหาของการ์ด แต่ทำให้กล่องทุกกล่องแคบกว่าการ์ด 24px และเส้นคั่นระหว่างรายการจะสั้นกว่าเส้นขอบล่าง
+  ของการ์ดทั้ง 2 ข้าง
+- ระยะ (แก้ 2026-09-15): **แต่ละรายการ padding บน-ล่าง `--sp-4` + เส้นคั่น `border-bottom: 1px --c-border`
+  ยกเว้นรายการสุดท้าย** (แทนการเว้นช่องว่าง `--sp-5` เดิม — พอตัวหนังสือเล็กลง ช่องว่างเปล่าอย่างเดียว
+  ตอบไม่ได้ชัดว่าคอมเมนต์หนึ่งจบตรงไหน) เส้นยาวเต็มความกว้าง container (= ขอบ emp-header-card พอดี ตามข้อบน),
+  **ภายในรายการ: ชื่อ → ข้อความ `--sp-1`, ข้อความ → แถวเวลา/ปุ่ม `--sp-2`** (2 ระยะต่างกัน
+  จึงเป็น margin ไม่ใช่ flex `gap` เดียว), **`--sp-6` จาก composer ลงมารายการแรก
+  (ไม่เปลี่ยน)** — **ระยะนี้เป็น margin ของ `.comment-composer` เอง ไม่ใช่ CSS ของหน้าที่เรียก**
+  (ยกเว้น composer ที่เป็น inline edit อยู่ในรายการ — `.comment-item .comment-composer { margin-bottom: 0 }`,
+  และรายการที่กำลังแก้ก็ตัดเส้นคั่นของตัวเองทิ้ง — กรอบของ composer แยกแรงกว่าเส้นอยู่แล้ว)
+- **Inline-edit = รายการนั้นกลายเป็น composer ทั้งใบ** ผ่าน `item.bodyHtml` — **`bodyHtml` แทนที่ `<li>` ทั้งอัน
+  (เปลี่ยนจากเดิมที่แทนแค่บรรทัด 2)** — **กล่องเยื้องเข้ามาอยู่คอลัมน์เนื้อหาเดียวกับชื่อ/ข้อความ
+  (`padding-left: var(--comment-gutter)`) และกว้างเต็มคอลัมน์เสมอ** — เหตุผล: composer มีแถวชื่อ/ปุ่มของตัวเองอยู่แล้ว ถ้าเหลือแถว 1/แถว 3
+  ของรายการไว้จะซ้ำกันเอง — **composer บนสุด disabled ระหว่างแก้** (แก้ได้ทีละรายการ), **Esc = ยกเลิกการแก้
+  (capture-phase ไม่ปิด modal)**, **dirty-guard (§9) ครอบทั้ง composer และกล่องที่กำลังแก้** — caller ต้อง
+  `refreshDirtyGuard()` ทุกครั้งที่**เข้า/ออก**โหมดแก้ (ไม่งั้นแค่เปิดโหมดแก้เฉยๆ ก็นับเป็น dirty เพราะชุด
+  field เปลี่ยนไปทั้งชุด) — ตัวอย่างจริง: `payroll/detail.js`'s `employeeCommentInlineEditFormHtml()` +
+  `syncEmployeeCommentDirtyBaseline()`
+- **จำนวนคอมเมนต์ (หน้าที่ของ caller ไม่ใช่ component, ใหม่ 2026-09-15)**: ชื่อ modal = **"คอมเมนต์ (N)"**
+  (i18n key ที่มี `{count}` — `employee_comment_timeline_title_count`, ตาม convention `.replace('{count}', n)` เดิมของแอป)
+  อัปเดตทันทีเมื่อเพิ่ม/ลบ — **ห้ามใส่ `data-i18n` บน element ที่มีตัวเลขปนอยู่** (sweep กลางจะเขียนทับด้วย label
+  ที่ไม่มีจำนวนทันทีที่สลับภาษา) — ให้เรียก render ซ้ำจาก language-switch hook ของหน้านั้นแทน (`refreshPayrollDetailLanguage()`) —
+  ปุ่มวงกลมที่เปิด modal ใช้ `countBadgeHtml()` (§5) ซ้อนมุมขวาบน (`.btn-circle-action-badge`) **ซ่อนเมื่อ 0**
+  ค่ามาจาก field ที่ตาราง render อยู่แล้ว (`row.comment_count`) — ไม่ต้องแก้ query เพิ่ม
+- **ยังไม่มี "โหลดเพิ่ม"/pagination (ตัดสินใจ 2026-09-15)** — endpoint จริง
+  (`api/payroll-run.employee-comment.list` → `PayrollRunModel::employeeComments()`) คืนทั้งหมดในครั้งเดียว
+  (ไม่มี LIMIT/OFFSET) ตามกติกา "ถ้า endpoint ยังไม่รองรับ pagination ให้รายงานแล้วข้าม" — ปุ่มโหลดเพิ่มที่
+  ไม่ได้โหลดอะไรเพิ่มจริง (แค่เปิดที่ client) ไม่ใช่ pagination จริง — ถ้าต้องการจริงต้องทำ backend ก่อน
+  (LIMIT/OFFSET + total) แล้วค่อยเพิ่มปุ่ม outline เต็มความกว้างท้ายรายการ
+- Demo จริง: `docs/design/components.php` — (1) composer + empty state, (2) composer + 2 รายการปกติ
+  (1 มี badge, 1 มี `timeSuffix` + ข้อความ 2 บรรทัดจริงโชว์ `white-space:pre-line`) + 1 รายการกำลังแก้ (`bodyHtml`
+  = composer ทั้งใบ) — light/dark ผ่านปุ่มสลับ theme มุมขวาบนของหน้าเดียวกัน, คลิกในช่องพิมพ์ดูกรอบส้ม
 
 **Filter bar** (ตัดสินใจแล้วรอบ 2 item 4, แก้ไข 2 รอบหลัง feedback — โครงสร้างล่าสุดคือ **แผง 3 ส่วน**
 หัว/ตัว/ท้าย ด้านล่าง, ยกเลิก `toolbarTarget` ที่เคยมี)
@@ -1638,9 +1716,10 @@ page-local block มา 2 รอบก่อนหน้า (callout ก่อ�
 | `renderNotifications()` / `setNotificationCount()` (ใหม่, item 6d — เสร็จแล้ว, UI เท่านั้นยังไม่ต่อ backend; ของจริงมีอยู่แล้ว `notifications.js`/`NotificationModel` — 3 จุดต่างจริง (ไอคอนมีพื้นสี, จุด unread ขวา, badge "99+") ไม่ใช่แค่ token เดิม บันทึกไว้ให้รอบ 4 ตัดสินใจ — ดู §6) | app.js (ใหม่) | `.row-type-icon`/dot-ขวา ของจริง (คงไว้ ไม่แตะ — แค่ flag ความต่างสำหรับ migrate) |
 | `status-stepper.php` + `renderStatusStepper()` (item 6 — เสร็จแล้ว; render อย่างเดียว ตำแหน่งเทียบ `current` เท่านั้น ไม่มี action button แบบของจริง — logic ขั้นยังอยู่ที่ `runLifecycleSteps()` เดิม — 2026-09-13 รอบ 3 item 3a: **ย้าย Payroll Detail มาใช้จริงแล้ว** + ขยายรับ `{label, date, tone, final, live, icon}` ต่อขั้น, แยก 3 สถานะสีชัดเจน (done/current/next), pulse ring, ไอคอนขาว 12px ของขั้นปัจจุบัน (mapping อยู่ที่ `RUN_LIFECYCLE_STEPS`/`RUN_LIFECYCLE_BRANCH_INFO` เท่านั้น ไม่ hardcode ใน partial) — ดู §6) | `app/views/partials/` + `app.js` | กล่อง 5 สี, `.process-timeline`/`.tl-*` (Payroll Detail เท่านั้น — ที่อื่นยังใช้อยู่) |
 | `timeline.php` + `renderTimeline()` (ใหม่, item (3)/6b — เสร็จแล้ว; feed กิจกรรมยาวไม่จำกัด, caller เรียงมาเอง, ยังไม่ย้ายหน้าจริง (`renderApprovalTimelineBody()`) มาใช้ รอรอบ 4 — ดู §6) | `app/views/partials/` + `app.js` | `.apv-timeline-log`/`.apv-log-entry` เดิม (dead code, ไม่มี call site — ไม่ reuse ตั้งชื่อใหม่แทน) |
-| `renderCommentList()` (ใหม่ 2026-09-14 — เสร็จแล้ว; ใครพูดอะไรเมื่อไหร่ คนละหน้าที่กับ Timeline ข้างบน — ดู §6's "Comment list") — real caller แล้ว: `#employeeCommentModal` (`payroll/detail.js`); ยังไม่มี PHP partial คู่กัน | `app.js` | `.apv-comment-*` เดิมของ modal เดียวกันนี้ (dead code, ลบไปตั้งแต่ item 3c-3 แล้ว) |
+| `renderCommentList()` + **`commentComposerHtml()`** (ใหม่ 2026-09-14, restyle 2026-09-15 — เสร็จแล้ว; รายการ = 3 แถวเรียงลง ไอคอนแก้ไข/ลบแสดงตลอด, composer อยู่บนสุดและเป็นกล่องเดียวกันกับ inline edit — ดู §6's "Comment list + Composer") — real caller แล้ว: `#employeeCommentModal` (`payroll/detail.js`); ยังไม่มี PHP partial คู่กัน | `app.js` | `.apv-comment-*` เดิมของ modal เดียวกันนี้ (dead code, ลบไปตั้งแต่ item 3c-3 แล้ว) + มาร์กอัพ compose form เดิมใน `payroll/detail.php` |
 | `status-tabs.php` + `initStatusTabs()` (ใหม่, item 4b — chevron pipeline เดิม**ยังคงรูปแบบไว้**, retokenize เท่านั้น; **ตัดสินใจแล้ว**: เคยมี variant `path` ให้เทียบคู่กัน ลบออกทั้งหมดแล้ว) | partials + app.js | markup ที่เคยซ้ำ 2 ไฟล์ของ `.station-row`/`.station-card` |
 | `statusBadge()` / `statusBadgeHtml()` + `status_map.php` (ใหม่, item 5 — เสร็จแล้ว; map มีที่เดียวคือ `status_map.php`, JS ไม่มี copy ของตัวเอง อ่านจาก `window.STATUS_MAP` ที่ `layout/header.php` inject ให้ — ยกเว้นกฎ "ห้ามแตะหน้าจริง" เฉพาะจุดนี้จุดเดียว; rename `payroll-configuration.js`'s local `statusBadge(row)` → `pcRowStatusBadge(row)` ทำก่อนเขียนแล้วตามแผน — ดู §5) | `app/helpers/helpers.php` + `app.js` + `app/config/status_map.php` + `layout/header.php` (inject จุดเดียว) | map สถานะกระจาย |
+| `badgeDropdownHtml()` / `initBadgeDropdown()` (ใหม่ 2026-09-15, §5's "Badge dropdown" — badge ที่เป็น dropdown toggle, 2 โหมด: action menu (verify badge ของ Payroll Detail, ผ่าน `statusBadgeHtml({menu})` เหมือนเดิม) กับ value picker (tag ของ comment composer, มี hidden input + ✓ ที่ตัวที่เลือก); `statusBadgeHtml()` รับ `{outline}` เพิ่ม) | `app.js` | dropdown markup ที่ `statusBadgeHtml({menu})` เคยสร้างเอง + `.comment-tag-picker` chip row (ลบแล้ว) |
 | `initSharedDataTable()` (ขยาย: layout, export, fixed column, columnDefs alignment, `emptyState` option ใหม่ item 6e — auto-pick ว่างจริง/กรองไม่พบ — ดู §6) | app.js | init ตรงทุกหน้า |
 | `empty-state.php` + `emptyStateHtml()` (ใหม่, item 6e — เสร็จแล้ว; ใช้ผ่าน `initSharedDataTable()`'s `emptyState` option แล้ว, ยังไม่มีหน้าจริงอื่นเรียกตรง รอรอบ 4 — ดู §6) | `app/views/partials/` + `app.js` | ข้อความบรรทัดเดียวของ `language.emptyTable`/`zeroRecords` เดิม |
 | `initRowToggles($table, {onChange})` (ใหม่, item (2) — เสร็จแล้ว) | app.js | switch ต่อแถวที่แต่ละหน้าเขียน wiring เองคนละแบบ (tax-statutory/company-profile ฯลฯ — ยังไม่ migrate รอบนี้ ห้ามแตะหน้าจริง §13) |

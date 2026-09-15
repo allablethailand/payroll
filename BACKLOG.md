@@ -616,6 +616,14 @@ undo what existed before the test started.
 **Source:** Phase Design Round 3 item 3c-1, page-loader work — full test-suite run turned these up,
 explicit instruction to log rather than fix now (2026-09-14).
 
+**RE-CONFIRMED 2026-09-15** (comment-modal restyle round, explicit instruction to verify with
+`git stash`): both still fail on a CLEAN HEAD with this round's work stashed away, so neither is a
+regression from it. Root cause verified directly against the dev DB this time rather than inferred:
+`sync_batches` holds 5 rows each of `source='sync'` department / position / holiday batches for
+`comp_id = 1` -- the very company id both tests hardcode (`$compId = 1` in each) -- which is exactly
+what makes "no department sync has ever run" and "hasCompletedMasterDataSync() is still false"
+untrue for that company. Fix shape (fresh company id per test, or delta assertions) unchanged.
+
 ## Statutory line `note`: raw internal code fixed for the "not entitled" + known cases; a genuine misconfiguration (no_brackets_configured/unknown_calc_method/unrecognized_calc_base) now shows NO signal at all
 
 **UPDATE 2026-09-14 (same day, follow-up round):** the original bug reported just below (raw
@@ -713,3 +721,24 @@ modal shows up — this backlog item and #manageLinesModal's own implementation 
 so far.
 
 **Source:** Phase Design Round 3 item 4 batch 1/4, explicit instruction (2026-09-14).
+
+---
+
+## Employee comment list has no pagination -- "โหลดเพิ่ม" button deferred until the endpoint supports it
+
+The comment-list restyle (rules.md §6 "Comment list + Composer") asked for a full-width outline
+"โหลดเพิ่ม" button at the end of the list once a comment thread passes 20 items, with the explicit
+escape hatch "ถ้า endpoint ยังไม่รองรับ pagination ให้รายงานแล้วข้าม". It doesn't:
+`PayrollRunModel::employeeComments()` (behind `api/payroll-run.employee-comment.list`) runs a single
+`SELECT ... ORDER BY c.id DESC` with no LIMIT/OFFSET and no total count, and `loadEmployeeComments()`
+(payroll/detail.js) drops the whole result into `employeeCommentsCache` in one shot. A "โหลดเพิ่ม"
+button on top of that would only re-reveal rows the browser already downloaded -- a cosmetic truncation,
+not pagination -- so it was skipped this round rather than faked.
+
+**Fix, when picked up:** add `limit`/`offset` (or a cursor on `c.id`) + a total count to
+`employeeComments()` and its controller, have `loadEmployeeComments()` request the first page only,
+then render the button through `renderCommentList()`'s caller (the component itself stays
+pagination-agnostic -- it renders whatever array it is handed). Worth doing only once a real thread
+gets long enough to matter; the longest one in the dev DB today is 2 comments.
+
+**Source:** Phase Design Round 3, comment-list restyle, item 7 (2026-09-15).

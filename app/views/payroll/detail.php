@@ -716,16 +716,15 @@
              showConfirm() with the 'warning' tone (not the mechanism's own 'danger' default) before
              discarding it -- see detail.js's own refreshDirtyGuard() call sites for exactly when the
              baseline re-captures (entering/leaving inline edit, successful save/add).
-             2026-09-14, Round 3 item 3c-4 (review follow-up), explicit instruction: reverted the
-             2026-08-29 "form lives in the footer, pinned while the list scrolls" layout -- the
-             compose form (#employeeCommentFormArea) moved back into the (scrollable) modal-body,
-             right after the list, and the footer is now the standard [primary][secondary] button
-             pair every other modal in this app already uses (rendered via the new shared
-             modalFooterButtonsHtml(), app.js), constant regardless of view/edit state -- the
-             footer's own [เพิ่มคอมเมนต์] button just triggers whatever is currently typed in the
-             body's own compose textarea, same "submit button separate from its own form" pattern a
-             sticky footer submit already is, just without the extra footer-specific CSS the old
-             design needed (no dedicated .apv-comment-footer styling left at all). -->
+             2026-09-14, Round 3 item 3c-4 (review follow-up): the 2026-08-29 "form lives in the
+             footer, pinned while the list scrolls" layout was reverted -- the compose form moved back
+             into the (scrollable) modal-body.
+             2026-09-15, Round 3 (comment-list restyle), explicit instruction: the compose form moved
+             again, this time ABOVE the list (composer first, newest comment right below it) and onto
+             the shared composer component (commentComposerHtml(), app.js -- see #employeeCommentComposer
+             below), and the footer lost its own submit button entirely: the composer owns its own
+             [บันทึก] button now, so the footer is just [ปิด] (rules.md §6/§9, still rendered through
+             modalFooterButtonsHtml()). -->
         <div class="modal fade" id="employeeCommentModal" data-footer="none" data-dirty-guard data-dirty-guard-tone="warning" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-dialog-scrollable">
                 <div class="modal-content">
@@ -733,90 +732,59 @@
                         <!-- 2026-09-14, Round 3 item 3c-4, explicit instruction: header = title + ×
                              only, icon removed (matches every other modal already migrated to this
                              rule this round). -->
-                        <h5 class="modal-title text-secondary" data-i18n="employee_comment_timeline_title">Comments</h5>
+                        <!-- 2026-09-15, explicit instruction, item 3: the title carries the live comment
+                             count ("คอมเมนต์ (N)") -- built in JS from the `{count}` template key
+                             `employee_comment_timeline_title_count` (detail.js's own
+                             updateEmployeeCommentTitle(), re-run on every add/delete AND on a live
+                             language switch), so NO `data-i18n` here: the generic sweep would
+                             overwrite it with the countless label the moment the language changed. -->
+                        <h5 class="modal-title text-secondary" id="employeeCommentModalTitle">Comments</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <!-- 2026-09-11, Batch 3C item 8, explicit instruction: employeeHeaderCardHtml()
                              (app.js) as the first block in modal-body. -->
                         <div id="employeeCommentHeaderCard"></div>
-                        <!-- 2026-09-14, Round 3: one container -- detail.js's own
-                             renderEmployeeCommentListFromCache() renders EITHER the shared comment
-                             list (renderCommentList(), app.js) OR the shared empty-state
-                             (emptyStateHtml()) into this same div. No card wrapper around it
-                             (explicit instruction -- "ไม่มี card ครอบ tab-content"). `--sp-4` gap from
-                             the header card above + horizontal padding matching emp-header-card's
-                             own `--sp-3` inset (style.css) so each comment's own avatar column lines
-                             up with the header card's own avatar/name, not the modal's raw edge.
-                             id renamed from #employeeCommentTimeline (was accurate when this
-                             rendered through the shared Timeline component, no longer once it moved
-                             onto its own dedicated one). -->
-                        <div id="employeeCommentList"></div>
+                        <!-- 2026-09-15, Round 3 (comment-list restyle), explicit instruction: the
+                             COMPOSER moves to the TOP (right under the employee header card, above
+                             the list) and is no longer static markup here at all -- detail.js
+                             renders the shared commentComposerHtml() (app.js, rules.md §6) into this
+                             empty div on every modal open. One composer component now serves both
+                             this box and an inline edit of an existing comment (§0.4's "ซ้ำ = shared":
+                             the static markup that used to live here and detail.js's own inline-edit
+                             form were 2 hand-kept copies of the same shape, and had already drifted).
+                             Why JS-rendered and not a PHP partial: the composer's own author row
+                             shows WHO is writing (avatar + name of the logged-in user), which the
+                             list's own items also need, and both come from the same window.SESSION_USER
+                             + apvAvatarHtml() pair on the client -- a PHP twin would duplicate that
+                             for no second caller (same reasoning renderCommentList() itself has no
+                             PHP partner). -->
+                        <div id="employeeCommentComposer"></div>
                         <!-- 2026-08-29, explicit follow-up request: "ถ้าการดำเนินเสร็จแล้ว Comment ดูได้เท่านั้น
-                             ไม่สามารถเพิ่ม แก้ไข ลบได้" -- shown instead of the compose form below once
+                             ไม่สามารถเพิ่ม แก้ไข ลบได้" -- shown INSTEAD of the composer above once
                              commentsReadOnlyRd() (detail.js) is true, i.e. the run has reached a
                              genuinely finished state (paid/locked/cancelled -- see
                              PayrollRunModel::COMMENT_LOCKED_STATES's own docblock for why that's a
-                             different, narrower cutoff than this page's general View Mode). -->
-                        <div id="employeeCommentReadOnlyNotice" class="text-center text-muted small py-2 d-none"><i class="fa-solid fa-lock me-1"></i><span data-i18n="employee_comment_read_only">This payroll run has finished processing. Comments are view-only.</span></div>
-                        <!-- 2026-09-14, Round 3 item 3c-4, explicit instruction: disabled (all 3
-                             fields, via detail.js's refreshEmployeeCommentAddFormDisabledState())
-                             while an existing comment is open for inline edit further up in the
-                             list -- only 1 thing editable at a time. -->
-                        <!-- 2026-09-14, Round 3 Phase B, explicit instruction: card box + standalone
-                             "แท็ก" heading both removed -- textarea sits directly in the modal-body's
-                             own flow (no boxed surface of its own anymore), tag row follows right
-                             under it. #employeeCommentFormArea itself is kept as a plain (unstyled)
-                             wrapper -- still the one hook detail.js's own
-                             refreshEmployeeCommentAddFormDisabledState() disables/enables against,
-                             just no longer a `.apv-comment-footer`-era card. -->
-                        <div id="employeeCommentFormArea">
-                        <div class="mb-2">
-                            <!-- 2026-09-14, Round 3 item 3c-3, explicit instruction: "textarea ขยายอัตโนมัติ
-                                 (min 3 แถว)" -- auto-grow itself needs zero markup/JS here at all
-                                 (input.js's own T002 already auto-expands EVERY <textarea> app-wide,
-                                 zero-config); `rows="3"` is only the STARTING size floor. -->
-                            <textarea class="form-control form-control-sm" id="employeeCommentText" rows="3" data-i18n="employee_comment_placeholder" placeholder="Write a comment..."></textarea>
-                        </div>
-                        <!-- 2026-09-14, Round 3 Phase B, explicit instruction: the picker moves onto
-                             statusBadge()/statusBadgeHtml() too -- the SAME visual language (tone/
-                             label) an already-posted comment's own badge in the list above uses
-                             (rules.md §5's status_map system, 'employee_comment_tag' context, now 4
-                             entries incl. the picker-only 'none' -- see status_map.php's own comment
-                             on why 'none' is never used to render a POSTED comment's badge). No icon
-                             (statusBadgeHtml() never renders one), same size as the list's badge (no
-                             size override here at all -- inherits the shared `.badge` rule directly).
-                             Unselected = outline (tone-colored border+text, transparent fill),
-                             selected = filled (tone's own `-fill`/`-on-fill` pair, §4's decision-set
-                             tokens reused here since they already solve "solid bg + readable text,
-                             both themes" correctly -- see style.css's own `.comment-tag-picker` rule
-                             for the CSS side of this toggle). Label + chips share ONE row (was 2
-                             stacked lines before this round).
-                             The SAME markup shape is reused (byte-for-byte structure, not literal
-                             bytes -- ids/name are per-comment-id there) by detail.js's own
-                             employeeCommentInlineEditFormHtml() for an inline edit. -->
-                        <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
-                            <span class="small text-muted flex-shrink-0" data-i18n="employee_comment_tag">Tag</span>
-                            <div class="comment-tag-picker" id="employeeCommentTagGroup">
-                                <input type="radio" class="d-none" name="employeeCommentTag" id="employeeCommentTagNone" value="" checked>
-                                <label for="employeeCommentTagNone"><?=statusBadge('none', 'employee_comment_tag')?></label>
-                                <input type="radio" class="d-none" name="employeeCommentTag" id="employeeCommentTagInProgress" value="in_progress">
-                                <label for="employeeCommentTagInProgress"><?=statusBadge('in_progress', 'employee_comment_tag')?></label>
-                                <input type="radio" class="d-none" name="employeeCommentTag" id="employeeCommentTagCompleted" value="completed">
-                                <label for="employeeCommentTagCompleted"><?=statusBadge('completed', 'employee_comment_tag')?></label>
-                                <input type="radio" class="d-none" name="employeeCommentTag" id="employeeCommentTagError" value="error">
-                                <label for="employeeCommentTagError"><?=statusBadge('error', 'employee_comment_tag')?></label>
-                            </div>
-                        </div>
-                        </div>
+                             different, narrower cutoff than this page's general View Mode). Exactly
+                             one of the two is ever visible, which is why both carry the same `--sp-6`
+                             gap down to the list (style.css). -->
+                        <div id="employeeCommentReadOnlyNotice" class="text-center text-muted small d-none"><i class="fa-solid fa-lock me-1"></i><span data-i18n="employee_comment_read_only">This payroll run has finished processing. Comments are view-only.</span></div>
+                        <!-- 2026-09-14, Round 3: one container -- renderEmployeeCommentListFromCache()
+                             (detail.js) renders EITHER the shared comment list (renderCommentList(),
+                             app.js) OR the shared empty-state (emptyStateHtml()) into this same div,
+                             which is why the empty state appears right under the composer, where the
+                             first comment would otherwise be. No card wrapper around it (explicit
+                             instruction -- "ไม่มี card ครอบ tab-content"). -->
+                        <div id="employeeCommentList"></div>
                     </div>
-                    <!-- 2026-09-14, Round 3 item 3c-4, explicit instruction: "footer คงที่ตลอด" -- a
-                         plain empty shell here, populated ONCE via modalFooterButtonsHtml() (app.js,
-                         detail.js's own .btn-comment-employee click handler) with exactly 2 buttons
-                         that never change shape/count/label regardless of view-only/editing state
-                         (view-only hides the primary one; editing just disables it, matching
-                         #employeeCommentFormArea's own disabled state) -- no more per-state label
-                         swapping or a 3rd Cancel button appearing/disappearing here. -->
+                    <!-- 2026-09-14, Round 3 item 3c-4: "footer คงที่ตลอด" -- a plain empty shell here,
+                         populated once via modalFooterButtonsHtml() (app.js, from detail.js's own
+                         .btn-comment-employee click handler).
+                         2026-09-15, Round 3 (comment-list restyle), explicit instruction: it holds
+                         exactly ONE button now, [ปิด] -- the submit button moved into the composer box
+                         itself (#employeeCommentComposer above), right next to the text it submits, so
+                         there is no longer any footer button whose label/enabled state has to track
+                         the view-only/editing state at all. -->
                     <div class="modal-footer" id="employeeCommentModalFooter"></div>
                 </div>
             </div>

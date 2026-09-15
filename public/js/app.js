@@ -1551,22 +1551,130 @@ function getStatusMapEntry(enumValue, context) {
 // `dropdown-toggle` for the small ▾ caret Bootstrap's own CSS already draws via `::after` on that
 // class, element-agnostic. No menu = the exact same plain `<span>` badge as before, byte-identical to
 // every existing call site.
+// 2026-09-15, Round 3 (comment-list restyle item 4) -- 2 additions, both generalizations rather than
+// new behavior: `options.outline` renders the SAME badge in outline form (transparent fill +
+// `currentColor` border, `.badge-outline` in style.css) for the places a badge is an ENTRY IN A LIST
+// OF CHOICES rather than a statement of current state (badgeDropdownHtml()'s own menu items below);
+// and `options.menu` now delegates to badgeDropdownHtml() instead of building the dropdown markup
+// itself, so the "badge that opens a menu" shape exists in exactly one place (this call's own output
+// is byte-identical to what it built inline before -- the verify-status badge in Payroll Detail's
+// table, its only caller, is unchanged).
 function statusBadgeHtml(enumValue, context, options) {
     options = options || {};
     const entry = getStatusMapEntry(enumValue, context);
+    const outlineCls = options.outline ? ' badge-outline' : '';
     if (!entry) {
         console.warn(`status_map: missing enum '${enumValue}' for context '${context}'`);
-        return `<span class="badge badge-neutral" data-badge="status">${escapeHtml(enumValue)}</span>`;
+        return `<span class="badge badge-neutral${outlineCls}" data-badge="status">${escapeHtml(enumValue)}</span>`;
     }
     const tone = entry.tone || 'neutral';
     const label = getLangValue(entry.label_key) || entry.label_key;
     if (options.menu) {
-        return `<div class="dropdown d-inline-block">
-            <button type="button" class="badge badge-${tone} dropdown-toggle" data-badge="status" data-bs-toggle="dropdown" data-i18n="${escapeHtml(entry.label_key)}">${escapeHtml(label)}</button>
-            <ul class="dropdown-menu">${options.menu}</ul>
-        </div>`;
+        return badgeDropdownHtml({ enum: enumValue, context: context, outline: options.outline, menuHtml: options.menu });
     }
-    return `<span class="badge badge-${tone}" data-badge="status" data-i18n="${escapeHtml(entry.label_key)}">${escapeHtml(label)}</span>`;
+    return `<span class="badge badge-${tone}${outlineCls}" data-badge="status" data-i18n="${escapeHtml(entry.label_key)}">${escapeHtml(label)}</span>`;
+}
+// Badge dropdown (rules.md §5's own "Badge dropdown" block) -- a status badge that IS a dropdown
+// toggle: the badge shows the current value, a small ▾ (Bootstrap's own `.dropdown-toggle::after`)
+// says it can be changed/acted on, and the menu below it holds either ACTIONS or the other VALUES to
+// choose from. Extracted 2026-09-15 from statusBadgeHtml()'s own `{menu}` branch (2026-09-13, built
+// for Payroll Detail's verify-status badge) so the same shape can serve a second, genuinely
+// different caller -- the comment composer's own tag picker -- instead of being copied (§0.4).
+//
+// Two modes, by which field the caller passes:
+//   `menuHtml` (raw `<li>` string)  = ACTION menu. The caller owns the items AND their click
+//        handlers entirely; this function has no idea what they do. Payroll Detail's verify badge
+//        ("ยกเลิกการตรวจสอบ") is this mode, via statusBadgeHtml({menu}) above.
+//   `options: [{value, enum, outline?}]` = VALUE PICKER. Renders one menu row per choice, each row
+//        being that choice's own status badge (always OUTLINE -- a menu row is a choice, not a
+//        statement of current state) plus a gray ✓ at the end of the row that is the current value.
+//        A hidden `<input name>` carries the value so a normal form read (and §9's own
+//        snapshotFormState() dirty guard, which keys off name/id) sees it like any other field.
+//        `outline: true` on a choice means "when THIS one is current, the toggle itself renders
+//        outline too" -- the comment tag picker uses it for its "no tag" entry, so an untagged
+//        comment's picker reads as an empty/neutral control rather than a filled gray badge.
+//   Behavior for the picker mode lives in initBadgeDropdown() below (this function only renders).
+//
+// config = { enum (required), context (required), outline?, menuHtml?, options?, value?, name?,
+//   id?, toggleClass? }
+function badgeDropdownHtml(config) {
+    config = config || {};
+    const entry = getStatusMapEntry(config.enum, config.context);
+    const tone = (entry && entry.tone) || 'neutral';
+    const labelKey = entry ? entry.label_key : '';
+    const label = entry ? (getLangValue(entry.label_key) || entry.label_key) : config.enum;
+    const outlineCls = config.outline ? ' badge-outline' : '';
+    const i18nAttr = labelKey ? ` data-i18n="${escapeAttr(labelKey)}"` : '';
+    const idAttr = config.id ? ` id="${escapeAttr(config.id)}"` : '';
+    const toggleClass = config.toggleClass ? ' ' + config.toggleClass : '';
+    let menuHtml = config.menuHtml || '';
+    let hiddenInputHtml = '';
+    if (config.options) {
+        const currentValue = config.value === undefined || config.value === null ? '' : String(config.value);
+        menuHtml = config.options.map(function (opt) {
+            const value = opt.value === undefined || opt.value === null ? '' : String(opt.value);
+            const selected = value === currentValue;
+            return `<li><button type="button" class="dropdown-item badge-dropdown-item${selected ? ' is-selected' : ''}"`
+                + ` data-value="${escapeAttr(value)}" data-outline="${opt.outline ? '1' : '0'}" aria-selected="${selected ? 'true' : 'false'}">`
+                + statusBadgeHtml(opt.enum, config.context, { outline: true })
+                + '<i class="fa-solid fa-check badge-dropdown-check"></i></button></li>';
+        }).join('');
+        if (config.name) {
+            hiddenInputHtml = `<input type="hidden" name="${escapeAttr(config.name)}" id="${escapeAttr(config.name)}" value="${escapeAttr(currentValue)}">`;
+        }
+    }
+    return `<div class="dropdown d-inline-block badge-dropdown" data-badge-dropdown>
+        ${hiddenInputHtml}
+        <button type="button"${idAttr} class="badge badge-${tone}${outlineCls} dropdown-toggle badge-dropdown-toggle${toggleClass}" data-badge="status" data-bs-toggle="dropdown" aria-expanded="false"${i18nAttr}>${escapeHtml(label)}</button>
+        <ul class="dropdown-menu">${menuHtml}</ul>
+    </div>`;
+}
+// Wires badgeDropdownHtml()'s VALUE-PICKER mode inside `scope` (a selector/element/jQuery object):
+// picking a row updates the hidden input, restyles the toggle to that choice's own badge, moves the
+// ✓, and (optionally) calls `options.onSelect(value, $dropdown)`.
+//
+// DELEGATED from `scope`, not bound per dropdown, and guarded so calling it twice on the same scope
+// can't stack handlers -- the real caller (#employeeCommentModal) re-renders its composer and its
+// whole comment list many times per open, so any per-element binding would be lost on the first
+// re-render (the same reasoning initFilterBar()'s own delegated binding documents, which was itself
+// the fix for a real "button stops working after a refresh" bug).
+//
+// The toggle's new look is copied off the chosen row's OWN badge (tone class + label + `data-i18n`)
+// rather than re-derived from STATUS_MAP here -- the row was already rendered through
+// statusBadgeHtml(), so copying it keeps the two visually identical by construction, and carrying
+// `data-i18n` across means a live language switch relabels the toggle too, for free.
+//
+// Keyboard comes from Bootstrap's own dropdown component (Esc closes and returns focus to the
+// toggle, ↑/↓ move between `.dropdown-item`s, Enter/Space activates the focused one) -- which is
+// exactly why every row is a real `<button class="dropdown-item">` and not a styled `<div>`/`<a>`.
+function initBadgeDropdown(scope, options) {
+    options = options || {};
+    const $scope = $(scope);
+    if (!$scope.length || $scope.data('badgeDropdownInitialized')) return;
+    $scope.data('badgeDropdownInitialized', true);
+    $scope.on('click', '.badge-dropdown-item', function () {
+        const $item = $(this);
+        const $dropdown = $item.closest('[data-badge-dropdown]');
+        const $toggle = $dropdown.find('.badge-dropdown-toggle').first();
+        const $badge = $item.find('.badge').first();
+        const value = $item.attr('data-value') || '';
+        const toneClass = ($badge.attr('class') || '').split(/\s+/).find(c => c.indexOf('badge-') === 0 && c !== 'badge-outline') || 'badge-neutral';
+        $dropdown.find('input[type="hidden"]').val(value);
+        $dropdown.find('.badge-dropdown-item').removeClass('is-selected').attr('aria-selected', 'false');
+        $item.addClass('is-selected').attr('aria-selected', 'true');
+        // Swap ONLY the tone/outline classes -- never `.attr('class', ...)` the whole attribute.
+        // 2026-09-15, real bug found in Playwright and fixed here: rewriting the attribute wholesale
+        // also wiped the `show` class Bootstrap puts on an OPEN dropdown's toggle, and Bootstrap's own
+        // clearMenus() finds open dropdowns by exactly that selector ('[data-bs-toggle="dropdown"].show')
+        // -- so after picking a value the menu could never be closed again by any click, anywhere.
+        $toggle
+            .removeClass('badge-neutral badge-warning badge-danger badge-success badge-outline')
+            .addClass(toneClass + ($item.attr('data-outline') === '1' ? ' badge-outline' : ''));
+        $toggle.text($badge.text());
+        const labelKey = $badge.attr('data-i18n');
+        if (labelKey) $toggle.attr('data-i18n', labelKey); else $toggle.removeAttr('data-i18n');
+        if (typeof options.onSelect === 'function') options.onSelect(value, $dropdown);
+    });
 }
 // Count badge (§5, Round 3 item 3b) -- a plain NUMBER shown as a small pill, e.g. "how many items were
 // adjusted" or "how many comments exist" -- a genuinely different thing from statusBadgeHtml() above
@@ -1710,22 +1818,118 @@ function renderTimeline(items, options) {
 // already sorted, Comment list = a specific 2-line "who said what, when" shape with its own
 // inline-edit affordance -- never force one component to do both jobs again.
 //
+// 2026-09-15, Round 3 (comment-list restyle) -- shared COMPOSER box, used by BOTH places a comment
+// is ever typed: the always-present "write a new comment" box at the top of the list, and an
+// EXISTING comment opened for inline edit (which becomes this exact same box in place, rules.md §6's
+// own "Comment list" section, item 4). One helper, not two near-identical markup blobs -- §0.4
+// ("ซ้ำ = shared"): before this round the compose form lived as static markup in a page view
+// (payroll/detail.php) while the inline-edit form was a second, hand-kept copy of the same shape in
+// payroll/detail.js, and the two had already drifted (different wrappers, different label row).
+//
+// Shape (rules.md §6): a bordered box (`--c-border`, `--radius-lg`) that turns its border
+// `--c-primary` on `:focus-within` (never blue -- §3); top row = avatar 28px + the author's own name
+// in bold; a borderless, auto-growing textarea (no box of its own -- the composer IS the box); a
+// 1px `--c-border` divider; bottom row = tag chips on the left, action button(s) on the right.
+//
+// config = {
+//   idPrefix (required): every id/name this box renders is derived from it -- textarea
+//     `${idPrefix}Text`, radio group name `${idPrefix}Tag`, each radio id `${idPrefix}Tag_${enum}`.
+//     Callers that can have 2 boxes alive at once (the compose box + one inline edit) MUST pass
+//     distinct prefixes, which is also what keeps snapshotFormState()'s own name/id-keyed dirty
+//     tracking (§9) able to tell them apart.
+//   actor: {name, avatar} -- whoever is writing (the LOGGED-IN user for a new comment; the
+//     comment's OWN author when editing one, since editing doesn't change who said it).
+//   text: prefilled body (inline edit); omit/'' for an empty compose box.
+//   placeholder: caller-supplied, already-localized string (this component never reads langData
+//     itself -- same "caller owns its own copy" convention emptyStateHtml()/renderCommentList()'s
+//     own emptyState option already follow).
+//   tags: [{value, enum, outline?}] -- the choices in the tag BADGE DROPDOWN (badgeDropdownHtml(),
+//     §5) that sits at the left of the foot row: `value` is what the caller's own form reads back
+//     (through the hidden `${idPrefix}Tag` input that dropdown renders), `enum` is the status_map key
+//     supplying each choice's label+tone, `outline: true` marks the choice whose toggle should read
+//     as an empty/neutral control (the "no tag" entry). Omit (or pass []) for no tag control at all.
+//   tagContext: the status_map context those `enum`s belong to (e.g. 'employee_comment_tag').
+//   tag: the currently-selected chip's `value` ('' selects the chip whose own value is '').
+//   textareaClass / textareaAttrs: extra class / extra raw attributes on the textarea -- the hook a
+//     caller uses for its own delegated handlers (e.g. a per-comment `data-id`). Caller owns the
+//     attribute string's own escaping, same contract as `actions` below.
+//   actions: raw HTML for the bottom-right button(s) -- caller owns markup/escaping/ids/disabled
+//     state entirely (this component has no opinion on how many buttons or what they do).
+// }
+function commentComposerHtml(config) {
+    config = config || {};
+    const idPrefix = config.idPrefix || 'commentComposer';
+    const actor = config.actor || null;
+    // 28px (was 32px, 2026-09-15 restyle item 2) -- one step down alongside the type scale, so the
+    // author row stays balanced against its now-smaller name/text.
+    const avatarHtml = apvAvatarHtml(actor ? actor.name : '', 28, actor ? actor.avatar : null);
+    const nameHtml = actor ? `<span class="comment-composer-name">${escapeHtml(actor.name || '')}</span>` : '';
+    const tags = config.tags || [];
+    const selectedTag = config.tag === undefined || config.tag === null ? '' : String(config.tag);
+    // 2026-09-15, Round 3 (restyle item 4): the 4 always-visible chips are gone -- the tag is now ONE
+    // badge dropdown (badgeDropdownHtml(), §5), the same shape Payroll Detail's verify-status badge
+    // already uses in its table: the button IS the current tag's badge, the menu holds the choices.
+    // `<span>` placeholder when a caller passes no tags at all, purely so the foot row keeps its
+    // left/right split (buttons stay right-aligned) instead of collapsing them to the left.
+    const currentTag = tags.find(function (t) {
+        const v = t.value === undefined || t.value === null ? '' : String(t.value);
+        return v === selectedTag;
+    }) || tags[0] || null;
+    const tagPickerHtml = currentTag ? badgeDropdownHtml({
+        enum: currentTag.enum,
+        context: config.tagContext,
+        outline: !!currentTag.outline,
+        options: tags,
+        value: selectedTag,
+        name: idPrefix + 'Tag',
+    }) : '<span></span>';
+    const textareaClass = config.textareaClass ? ' ' + config.textareaClass : '';
+    const textareaAttrs = config.textareaAttrs ? ' ' + config.textareaAttrs : '';
+    // rows="1" -- input.js's own app-wide T002 auto-grow (zero-config, every textarea) sizes this to
+    // its real content on render and on every keystroke, so a fixed starting row count would only
+    // ever be a too-tall floor for an empty box.
+    return `<div class="comment-composer">
+        <div class="comment-composer-head">
+            <span class="comment-composer-avatar">${avatarHtml}</span>
+            ${nameHtml}
+        </div>
+        <textarea class="comment-composer-text${textareaClass}" id="${escapeAttr(idPrefix + 'Text')}" name="${escapeAttr(idPrefix + 'Text')}" rows="1" placeholder="${escapeAttr(config.placeholder || '')}"${textareaAttrs}>${escapeHtml(config.text || '')}</textarea>
+        <div class="comment-composer-foot">
+            ${tagPickerHtml}
+            <div class="comment-composer-actions">${config.actions || ''}</div>
+        </div>
+    </div>`;
+}
 // 2026-09-14, Round 3 -- new shared component, docs/design/rules.md §6's own "Comment list" section.
 // A different shape than Timeline on purpose (see that revert note just above for why this exists as
-// its own component instead of another Timeline extension): avatar 32px left, a 2-line right column
-// (name + tag badge + relative time + hover-reveal edit/delete icons on line 1, the comment's own
-// text -- or an inline-edit form override -- on line 2). No dot/connecting line, no card/border/
-// divider between items -- a comment isn't a milestone on a log, just "who said what, when".
+// its own component instead of another Timeline extension): no dot, no connecting line, no card/
+// border/divider per item -- a comment isn't a milestone on a log, just "who said what, when".
+//
+// 2026-09-15, Round 3 (restyle, reference-driven) -- an item is an avatar GUTTER on the left plus a
+// content column holding 3 stacked rows:
+//   row 1: author name (600) + tag badge
+//   row 2: the comment text itself
+//   row 3: relative time (+ full date/time tooltip) on the left, edit/delete icons on the right
+// Every row of the content column starts at ONE left edge (right of the avatar) -- the avatar is
+// purely a gutter and never has text under it. (An earlier pass the same day had the text/foot rows
+// start at the AVATAR's own left edge instead; corrected here to the reference's own column.)
+// Edit/delete are ALWAYS visible now (they used to appear on hover/:focus-within only, with a
+// `pointer:coarse` exception for touch) -- an affordance you have to discover by hovering isn't one,
+// and the icons now sit on their own row where they no longer compete with the name/badge for space.
 //
 // item = { id?, time (parseable date/datetime string), timeSuffix? (plain string rendered muted
-//   right after the time, e.g. "(edited)" -- no slot for this in the original spec's line 1, added
-//   for the one real caller that needs it, see payroll/detail.js), actor?: {name, avatar}, text
-//   (plain string, escaped -- multi-line via `white-space:pre-line` in CSS, NOT manual <br>
-//   injection), badge?: {enum, context} (omit/null to hide entirely -- e.g. a comment with no tag),
-//   actions? (raw HTML string, e.g. edit/delete icon buttons -- caller owns markup+escaping, omit to
-//   hide, e.g. read-only mode or the exact item currently being inline-edited), bodyHtml? (raw HTML,
-//   REPLACES line 2 wholesale when set -- e.g. an inline-edit form in place of the comment's own
-//   text; caller owns escaping) }.
+//   right after the time, e.g. "(edited)"), actor?: {name, avatar}, text (plain string, escaped --
+//   multi-line via `white-space:pre-line` in CSS, NOT manual <br> injection), badge?: {enum,
+//   context} (omit/null to hide entirely -- e.g. a comment with no tag), actions? (raw HTML string,
+//   e.g. edit/delete icon buttons -- caller owns markup+escaping, omit to hide, e.g. read-only
+//   mode), bodyHtml? (raw HTML, REPLACES THE WHOLE ITEM when set -- rows 1/2/3 included) }.
+//
+// `bodyHtml` replacing the ENTIRE item (not just row 2, as it did before this restyle) is what makes
+// inline edit work the way rules.md §6 item 4 specifies: the edited comment becomes a composer box
+// in place -- and a composer already renders its own author row and its own buttons, so keeping the
+// item's own name row above it (and its time/actions row below it) would just duplicate them. The
+// caller passes commentComposerHtml(...) straight through as `bodyHtml`; see payroll/detail.js's own
+// employeeCommentInlineEditFormHtml().
 //
 // Time is ALWAYS relative (formatRelativeTime(), format-helpers.js) with the full absolute
 // date+time as a native `title` hover tooltip (formatDisplayDateTime()) -- not an opt-in like
@@ -1753,45 +1957,35 @@ function renderCommentList(items, options) {
     }
     let html = '<ul class="comment-list">';
     items.forEach(function (item) {
+        if (item.bodyHtml !== undefined) {
+            html += `<li class="comment-item comment-item-editing">${item.bodyHtml}</li>`;
+            return;
+        }
         const actor = item.actor || null;
-        const avatarHtml = apvAvatarHtml(actor ? actor.name : '', 32, actor ? actor.avatar : null);
+        const avatarHtml = apvAvatarHtml(actor ? actor.name : '', 28, actor ? actor.avatar : null);
         const nameHtml = actor ? `<span class="comment-item-name">${escapeHtml(actor.name || '')}</span>` : '';
         const badgeHtml = item.badge ? statusBadgeHtml(item.badge.enum, item.badge.context) : '';
-        // 2026-09-14, real bug found and fixed -- actions used to render AFTER time (to its right),
-        // which put the icons FARTHER from the content edge than the time itself, and (opacity:0
-        // alone, no position change) still reserved their own layout width even while invisible, so
-        // the time was never actually flush against the container's true right edge except by
-        // coincidence. `.comment-item-actions` is now `position:absolute` (style.css) -- out of
-        // normal flow entirely, so it reserves zero space when hidden -- anchored to sit immediately
-        // LEFT of `.comment-item-meta` (which now holds only time+timeSuffix, so `margin-left:auto`
-        // on meta alone is what actually guarantees time sits flush against the right edge, in every
-        // hover state, not just by chance). DOM order (actions before time) matches the visual order
-        // the CSS produces, even though the CSS positioning itself doesn't depend on DOM order.
         const actionsHtml = item.actions ? `<span class="comment-item-actions">${item.actions}</span>` : '';
         const timeLabel = formatRelativeTime(item.time);
         const timeTitleAttr = ` title="${escapeAttr(formatDisplayDateTime(item.time))}"`;
         // `item.timeSuffix` (optional plain string, e.g. "(edited)") -- rendered muted right after
         // the time, own span so it can be styled/omitted independently of the time itself. Not part
         // of the original spec's item shape, added because an edited-comment marker (pre-existing
-        // functionality, 2026-08-29) needed SOMEWHERE to live once this component's own line 1 was
-        // defined as exactly name+badge+time+actions, nothing else -- see
-        // payroll/detail.js's employeeCommentToListItem() for the one real caller that uses it.
+        // functionality, 2026-08-29) needed SOMEWHERE to live -- see payroll/detail.js's
+        // employeeCommentToListItem() for the one real caller that uses it.
         const timeSuffixHtml = item.timeSuffix ? ` <span class="comment-item-time-suffix">${escapeHtml(item.timeSuffix)}</span>` : '';
-        const bodyHtml = (item.bodyHtml !== undefined)
-            ? item.bodyHtml
-            : `<div class="comment-item-text">${escapeHtml(item.text || '')}</div>`;
         html += `<li class="comment-item">
             <div class="comment-item-avatar">${avatarHtml}</div>
             <div class="comment-item-body">
-                <div class="comment-item-line1">
+                <div class="comment-item-head">
                     ${nameHtml}
                     ${badgeHtml}
-                    <span class="comment-item-meta">
-                        ${actionsHtml}
-                        <span class="comment-item-time"${timeTitleAttr}>${escapeHtml(timeLabel)}</span>${timeSuffixHtml}
-                    </span>
                 </div>
-                ${bodyHtml}
+                <div class="comment-item-text">${escapeHtml(item.text || '')}</div>
+                <div class="comment-item-foot">
+                    <span class="comment-item-time"${timeTitleAttr}>${escapeHtml(timeLabel)}</span>${timeSuffixHtml}
+                    ${actionsHtml}
+                </div>
             </div>
         </li>`;
     });

@@ -961,33 +961,14 @@ $cpStats = [
     <h2>Badge / สถานะ (ข้อ 5)</h2>
     <p class="cp-section-note"><code>app/config/status_map.php</code> (data เดียวที่มา, ที่เดียวจริงๆ) + PHP <code>statusBadge($enum, $context)</code> (<code>app/helpers/helpers.php</code>) + JS <code>statusBadgeHtml(enum, context)</code> (<code>app.js</code>). <code>layout/header.php</code> (จุดเดียวกับที่ inject <code>BASE_URL</code>/<code>LANG_VERSION</code> อยู่แล้ว, ยกเว้นจากกฎ "ห้ามแตะหน้าจริง" เฉพาะบรรทัดนี้) ใส่ <code>window.STATUS_MAP = &lt;?=json_encode(loadStatusMap())?&gt;;</code> จาก PHP ตรงๆ ทุกหน้า -- <code>app.js</code> อ่านจาก <code>window.STATUS_MAP</code> เท่านั้น (ไม่มี copy ของตัวเองแล้ว ไม่มีความเสี่ยงเรื่อง drift อีกต่อไป) หน้านี้เองก็ใส่บรรทัดเดียวกันจาก <code>loadStatusMap()</code> จริงที่ require ไว้ตอนต้นไฟล์. ทุก context/enum ด้านล่าง render จริงผ่าน <code>statusBadgeHtml()</code> (ไม่ใช่ hardcode) -- enum ที่ไม่มีใน map จะเห็น badge เทา + label ดิบ + <code>console.warn()</code> (ลองเปิด console ดู "unmapped_demo" ท้ายสุด). <code>tone</code> ของ <code>run_state.approved</code> เป็น <code>warning</code> (ไม่ใช่ success) เพราะ "อนุมัติแล้ว" สำหรับคนทำเงินเดือนคือ "ต้องไปจ่ายต่อ" -- คนละความหมายกับ <code>approval_status.approved</code> ที่เป็น success (คำขอจบแล้ว) ตั้งใจให้ต่างกัน ไม่ใช่ bug. <code>data_source</code> ไม่ใช่สถานะจริง (§5) ใส่ไว้ชั่วคราวเป็น neutral ทั้งหมดเพื่อไม่พังตอน migrate รอบ 4.</p>
     <div id="cpBadgeShowcase"></div>
-    <!-- 2026-09-14, Round 3 Phase B -- outline/ถม toggle (.comment-tag-picker, style.css), tone neutral
-         specifically since that's this round's own new token pair (--c-neutral-fill/-on-fill, see the
-         §1 token table above). Real markup, not a mockup: byte-identical structure to what
-         app/views/payroll/detail.php's own compose-form tag picker renders (hidden radio + <label>
-         wrapping one statusBadge() span each) -- 2 independent radio groups here purely so this demo
-         can show BOTH states side by side at once (a real picker only ever has 1 active group). The
-         SAME statusBadge('none', 'employee_comment_tag') call the real picker uses -- 'none' exists in
-         status_map.php only for this picker use (never renders an already-posted comment's own badge,
-         see that file's own comment on why). -->
+    <!-- 2026-09-15, Round 3 (comment-list restyle item 4) -- REPLACES this spot's own former
+         outline-vs-ถม chip demo (.comment-tag-picker, deleted along with the chip row it documented).
+         Rendered from JS because badgeDropdownHtml() is a JS-only helper (no PHP twin -- neither of
+         its 2 real callers is server-rendered), see the demo script at the bottom of this file. -->
     <div class="mb-3">
-        <div class="fw-semibold small text-uppercase text-muted mb-1">tone: neutral — outline vs ถม (Round 3 Phase B, .comment-tag-picker toggle)</div>
-        <div class="d-flex flex-wrap gap-4 align-items-center">
-            <div>
-                <div class="small text-muted mb-1">ไม่เลือก (outline)</div>
-                <div class="comment-tag-picker">
-                    <input type="radio" class="d-none" name="cpNeutralToggleOutlineDemo" id="cpNeutralToggleOutline">
-                    <label for="cpNeutralToggleOutline"><?=statusBadge('none', 'employee_comment_tag')?></label>
-                </div>
-            </div>
-            <div>
-                <div class="small text-muted mb-1">เลือกแล้ว (ถม)</div>
-                <div class="comment-tag-picker">
-                    <input type="radio" class="d-none" name="cpNeutralToggleFilledDemo" id="cpNeutralToggleFilled" checked>
-                    <label for="cpNeutralToggleFilled"><?=statusBadge('none', 'employee_comment_tag')?></label>
-                </div>
-            </div>
-        </div>
+        <div class="fw-semibold small text-uppercase text-muted mb-1">Badge dropdown (§5) — badge ที่เป็น dropdown toggle</div>
+        <p class="cp-section-note"><code>badgeDropdownHtml(config)</code> + <code>initBadgeDropdown(scope, {onSelect})</code> (<code>app.js</code>) -- badge ที่กดได้ (มี ▾ จาก <code>.dropdown-toggle</code> ของ Bootstrap เอง) มี <b>2 โหมด</b>: <b>action menu</b> (<code>menuHtml</code> — caller ส่ง <code>&lt;li&gt;</code> มาเอง พร้อม handler ของตัวเอง — ของจริงคือ badge "ตรวจสอบแล้ว" ในตาราง Payroll Detail ที่เรียกผ่าน <code>statusBadgeHtml({menu})</code>) กับ <b>value picker</b> (<code>options</code> — แต่ละตัวเลือกเป็น statusBadge <b>outline</b> เสมอ, ตัวที่เลือกอยู่มี ✓ เทาท้ายบรรทัด, ค่าอยู่ใน <code>&lt;input type="hidden"&gt;</code> ให้ฟอร์ม/dirty-guard §9 อ่านได้ปกติ — ของจริงคือ tag picker ของ comment composer). คีย์บอร์ดมาจาก Bootstrap ตรงๆ (Esc ปิด, ↑/↓ เลื่อน, Enter เลือก) เพราะทุกแถวเป็น <code>&lt;button class="dropdown-item"&gt;</code> จริง — <b>ลองกดที่ badge ด้านล่างแล้วเลือกแท็กดู</b> (สลับ theme มุมขวาบนดู dark ด้วย).</p>
+        <div id="cpBadgeDropdownShowcase" class="d-flex flex-wrap gap-4 align-items-center"></div>
     </div>
 </div>
 
@@ -1087,10 +1068,13 @@ $cpCallouts = [
 </div>
 
 <div class="cp-section">
-    <h2>Comment list (§6) — ใหม่ 2026-09-14</h2>
-    <p class="cp-section-note">JS <code>renderCommentList(items)</code> (<code>app.js</code>) -- component ใหม่ของ <code>#employeeCommentModal</code> (Payroll Detail) แทน Timeline ด้านบนที่เคยยืมมาใช้ชั่วคราว (ย้ายกลับ/reverted แล้ววันเดียวกัน) -- <b>คนละหน้าที่กับ Timeline โดยเจตนา: Timeline ใช้กับ "ลำดับเหตุการณ์" เท่านั้น</b> (log ยาวไม่จำกัดของสิ่งที่เกิดขึ้นแล้ว เช่น audit log/ประวัติอนุมัติ — จุด+เส้นสื่อว่า "นี่คือขั้นหนึ่งในลำดับต่อเนื่อง") <b>ส่วน Comment list ใช้กับ "ใครพูดอะไร เมื่อไหร่"</b> (ความเห็นแต่ละอันเป็นหน่วยแยกจากกัน ไม่ใช่ขั้นในลำดับเดียวกัน) — จึงไม่มีจุด/เส้นเชื่อม ไม่มีกรอบ/เส้นคั่นต่อรายการ ระยะห่างระหว่างรายการกว้างกว่า (<code>--sp-5</code>) ให้แต่ละความเห็นรู้สึกเป็นหน่วยแยกจริง. โครง: avatar 32px ซ้าย, คอลัมน์ขวา 2 บรรทัด — <b>บรรทัด 1</b>: ชื่อตัวหนา <code>--fs-base</code> · badge แท็ก (<code>statusBadgeHtml()</code> เดิม, บริบท <code>employee_comment_tag</code> — ไม่มี badge เลยถ้าไม่มีแท็ก ไม่ใช่ badge เทา "ไม่มีแท็ก" ซึ่งมีแค่ใน tag picker ตอนพิมพ์/แก้เท่านั้น) ชิดซ้าย, เวลาแบบ relative <code>--fs-sm</code> เทา (+tooltip เวลาเต็มเสมอ) และไอคอนแก้ไข/ลบ (<code>.btn-icon-ghost.comment-item-icon-btn</code>) ชิดขวา — <b>ไอคอนแสดงเฉพาะตอน hover/focus รายการนั้น</b> (ลองเอาเมาส์ไปวางบนรายการด้านล่างดู) <b>ยกเว้นอุปกรณ์สัมผัส (<code>pointer:coarse</code>) ที่แสดงตลอด</b> เพราะ hover ไม่มีความหมายจริงบนมือถือ; <b>บรรทัด 2</b>: ข้อความคอมเมนต์ <code>--fs-base</code> น้ำหนักปกติ <code>white-space:pre-line</code> (รักษาขึ้นบรรทัดใหม่จริงของผู้ใช้ แต่ยุบช่องว่างซ้ำเหมือนข้อความทั่วไป). ระยะภายใน 1 รายการ (avatar↔คอลัมน์, บรรทัด1↔บรรทัด2) = <code>--sp-1</code> แน่นเจตนา ให้ 2 บรรทัดอ่านเป็นหน่วยเดียวกัน.</p>
-    <p class="cp-section-note"><code>item.bodyHtml</code> (optional) แทนที่บรรทัด 2 ทั้งก้อนได้ -- ของจริงใช้กับ inline-edit (คลิกดินสอในรายการจริงแล้วบรรทัด 2 กลายเป็น textarea + tag picker + [บันทึก][ยกเลิก] ในโครงเดิมเป๊ะ ไม่ใช่ modal/popover แยก) เดโมด้านล่างจำลองสถานะนี้ไว้ให้ดูรูปร่างโดยไม่ต้องเปิด modal จริง.</p>
-    <p class="cp-section-note mb-1"><b>2 รายการปกติ + 1 รายการกำลังแก้ไข (bodyHtml override) -- ลอง hover รายการปกติดูไอคอนโผล่, สลับ theme มุมขวาบนดู light/dark:</b></p>
+    <h2>Comment list + Composer (§6) — restyle 2026-09-15</h2>
+    <p class="cp-section-note">JS <code>renderCommentList(items)</code> + <code>commentComposerHtml(config)</code> (<code>app.js</code>) -- component ของ <code>#employeeCommentModal</code> (Payroll Detail) <b>คนละหน้าที่กับ Timeline ด้านบนโดยเจตนา: Timeline ใช้กับ "ลำดับเหตุการณ์" เท่านั้น</b> (log ยาวไม่จำกัดของสิ่งที่เกิดขึ้นแล้ว เช่น audit log/ประวัติอนุมัติ — จุด+เส้นสื่อว่า "นี่คือขั้นหนึ่งในลำดับต่อเนื่อง") <b>ส่วน Comment list ใช้กับ "ใครพูดอะไร เมื่อไหร่"</b> (ความเห็นแต่ละอันเป็นหน่วยแยกจากกัน) — จึงไม่มีจุด/เส้นเชื่อม ไม่มีกรอบ/เส้นคั่นต่อรายการ ระยะห่างระหว่างรายการ <code>--sp-5</code>.</p>
+    <p class="cp-section-note"><b>Composer (บนสุดเสมอ):</b> กล่องมีกรอบ <code>--c-border</code> <code>--radius-lg</code> — <b>โฟกัสในกล่อง (<code>:focus-within</code>) กรอบเปลี่ยนเป็นส้ม <code>--c-primary</code></b> (ไม่ใช่ฟ้า §3) ลองคลิกในช่องพิมพ์ด้านล่างดู; ภายใน: แถวบน avatar <b>28px</b> + ชื่อผู้เขียนตัวหนา <code>--fs-sm</code>, textarea <b>ไม่มีกรอบของตัวเอง</b> (กล่องคือกรอบ) ขยายอัตโนมัติตามเนื้อหา (auto-grow ของ <code>input.js</code> T002), เส้น <code>--c-border</code> 1 เส้นคั่น แล้วแถวล่าง: ซ้าย = <b>badge dropdown ตัวเดียวสำหรับแท็ก</b> (<code>badgeDropdownHtml()</code>, §5 — ดู section Badge ด้านบน; <b>ไม่มี label "แท็ก" นำหน้า</b>, ค่าเริ่มต้น "ไม่มีแท็ก" neutral outline), ขวา = ปุ่ม action ที่ caller ส่งมาเอง. ระยะจาก composer ลงไปรายการแรก <code>--sp-6</code> (กว้างกว่าระยะระหว่างรายการจริง ให้อ่านเป็นขอบเขต ไม่ใช่รายการถัดไป) — เป็น margin ของ component เอง ไม่ใช่ CSS ของหน้าที่เรียก.</p>
+    <p class="cp-section-note"><b>1 รายการ = avatar เป็น gutter ซ้าย + คอลัมน์เนื้อหา 3 แถว:</b> avatar <b>28px</b> เป็นช่องซ้ายอย่างเดียว <b>ไม่มีอะไรอยู่ใต้มัน</b> — แถว 1 ชื่อ <code>--fs-sm</code> น้ำหนัก 600 + badge แท็ก (คงขนาดเดิม, ไม่มี badge เลยถ้าไม่มีแท็ก); แถว 2 ข้อความ <code>--fs-sm</code> <code>white-space:pre-line</code>; แถว 3 ซ้าย = เวลา relative <code>--fs-xs</code> เทา + tooltip เวลาเต็ม, ขวา = ปุ่มแก้ไข/ลบ <b>แสดงตลอด ไม่ต้อง hover</b> (ชิดขวาสุดของ container) — <b>ทั้ง 3 แถวเริ่มที่ขอบซ้ายเดียวกัน (ขวาของ avatar)</b>, ระยะชื่อ→ข้อความ <code>--sp-1</code> ข้อความ→เวลา <code>--sp-2</code>. <b>คั่นแต่ละรายการด้วยเส้น 1px <code>--c-border</code></b> (ยกเว้นรายการสุดท้าย) padding บน-ล่าง <code>--sp-4</code>. <b>รายการที่กำลังแก้</b> (composer ทั้งใบ) <b>เยื้องเข้ามาอยู่คอลัมน์เนื้อหาเดียวกัน และกว้างเต็มคอลัมน์</b>.</p>
+    <p class="cp-section-note mb-1"><b>ว่าง (0 รายการ) — composer + empty state:</b></p>
+    <div id="cpCommentEmptyShowcase" style="max-width:480px;"></div>
+    <p class="cp-section-note mt-3 mb-1"><b>2 รายการปกติ + 1 รายการกำลังแก้ไข (inline edit = รายการนั้นกลายเป็น composer ทั้งใบ ผ่าน <code>item.bodyHtml</code>) -- สลับ theme มุมขวาบนดู light/dark:</b></p>
     <div id="cpCommentListShowcase" style="max-width:480px;"></div>
 </div>
 
@@ -1652,6 +1636,42 @@ $(function () {
     $cpUnmappedRow.find('.d-flex').append($cpUnmappedChip);
     $cpBadgeShowcase.append($cpUnmappedRow);
 
+    // Badge dropdown (§5, 2026-09-15) -- BOTH modes of the same helper, side by side:
+    //  (1) value picker: the exact config payroll/detail.js's own comment composer passes (4
+    //      'employee_comment_tag' choices, 'none' marked `outline` so an untagged comment's toggle
+    //      reads as an empty control) -- initBadgeDropdown() below makes it actually pick.
+    //  (2) action menu: the shape Payroll Detail's verify badge uses, reached through
+    //      statusBadgeHtml('verified','verify_status',{menu}) exactly as that page calls it, with a
+    //      plain dropdown-item as the "action" (this demo has nothing to unverify, so the item is
+    //      inert on purpose -- the point is the SHAPE, and that both callers go through one helper).
+    const CP_TAG_OPTIONS = [
+        { value: '', enum: 'none', outline: true },
+        { value: 'in_progress', enum: 'in_progress' },
+        { value: 'completed', enum: 'completed' },
+        { value: 'error', enum: 'error' },
+    ];
+    $('#cpBadgeDropdownShowcase').html(
+        '<div><div class="small text-muted mb-1">value picker (tag ของ comment composer)</div>'
+        + badgeDropdownHtml({
+            enum: 'none', context: 'employee_comment_tag', outline: true,
+            options: CP_TAG_OPTIONS, value: '', name: 'cpDemoCommentTag',
+        })
+        + ' <span class="small text-muted ms-2" id="cpDemoTagValueOut"></span></div>'
+        + '<div><div class="small text-muted mb-1">action menu (verify badge ของ Payroll Detail)</div>'
+        + statusBadgeHtml('verified', 'verify_status', {
+            menu: '<li><button type="button" class="dropdown-item"><i class="fa-solid fa-rotate-left text-secondary me-2"></i>'
+                + escapeHtml(getLangValue('action_unverify') || 'Unverify') + '</button></li>',
+        })
+        + '</div>'
+    );
+    // Scope-level (delegated) init, the same way the real modal wires it -- one call covers every
+    // badge dropdown inside, now and after any re-render.
+    initBadgeDropdown('#cpBadgeDropdownShowcase', {
+        onSelect: function (value) {
+            $('#cpDemoTagValueOut').text('value = ' + JSON.stringify(value));
+        },
+    });
+
     // Stepper (ข้อ 6, ย้าย Payroll Detail มาใช้จริงแล้ว 2026-09-13) -- 5 ขั้นจริงของรอบเงินเดือน (ชื่อขั้น
     // ตรงกับ app.js's own RUN_LIFECYCLE_STEPS' doneKey labels: step_draft_done/step_submit_done/
     // state_approved/state_paid/state_locked) -- พิมพ์ตรงๆ ที่นี่แทนอ่านจาก langData เพื่อความง่าย
@@ -1742,65 +1762,86 @@ $(function () {
     $cpCombo.append('<hr class="my-3">');
     $cpCombo.append(renderTimeline(CP_TIMELINE_ITEMS, { groupByDay: true }));
 
-    // Comment list (§6, ใหม่) -- byte-shape reuse of the real modal's own item construction
-    // (payroll/detail.js's employeeCommentToListItem()), not a divergent demo shape. 2 normal items
-    // (1 with a badge, 1 with a `timeSuffix` "(edited)" marker and a real multi-line comment to show
-    // white-space:pre-line) + 1 item pre-rendered mid-inline-edit (`bodyHtml` override) -- the SAME
-    // textarea + tag-row + [Save][Cancel] structure employeeCommentInlineEditFormHtml() builds in the
-    // real modal, hand-copied here (not imported -- that function lives in payroll/detail.js, not
-    // loaded on this dev-only page) so this demo can show the shape without needing a live modal/AJAX
-    // backend at all.
-    const cpCommentInlineEditBodyHtml = `
-        <div class="mb-2">
-            <textarea class="form-control form-control-sm" rows="3">ขอเลื่อนตรวจสอบไปสัปดาห์หน้า เอกสารยังมาไม่ครบ</textarea>
-        </div>
-        <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
-            <span class="small text-muted flex-shrink-0">แท็ก</span>
-            <div class="comment-tag-picker">
-                <input type="radio" class="d-none" name="cpCommentInlineEditTag" id="cpCommentInlineEditTagNone">
-                <label for="cpCommentInlineEditTagNone">${statusBadgeHtml('none', 'employee_comment_tag')}</label>
-                <input type="radio" class="d-none" name="cpCommentInlineEditTag" id="cpCommentInlineEditTagInProgress" checked>
-                <label for="cpCommentInlineEditTagInProgress">${statusBadgeHtml('in_progress', 'employee_comment_tag')}</label>
-                <input type="radio" class="d-none" name="cpCommentInlineEditTag" id="cpCommentInlineEditTagCompleted">
-                <label for="cpCommentInlineEditTagCompleted">${statusBadgeHtml('completed', 'employee_comment_tag')}</label>
-                <input type="radio" class="d-none" name="cpCommentInlineEditTag" id="cpCommentInlineEditTagError">
-                <label for="cpCommentInlineEditTagError">${statusBadgeHtml('error', 'employee_comment_tag')}</label>
-            </div>
-        </div>
-        <div class="d-flex gap-2">
-            <button type="button" class="btn btn-primary btn-sm">บันทึก</button>
-            <button type="button" class="btn btn-outline-secondary btn-sm">ยกเลิก</button>
-        </div>`;
+    // Comment list + composer (§6) -- shape-for-shape the same calls the real modal makes
+    // (payroll/detail.js's renderEmployeeCommentComposer()/employeeCommentInlineEditFormHtml()/
+    // employeeCommentToListItem()), just with literal demo data instead of an AJAX payload and a
+    // session user. Both demos render the SAME composer component -- the top-of-list compose box and
+    // an item opened for inline edit are one component with different arguments, which is exactly
+    // what this section is here to show.
+    // Same 4 choices the real modal passes -- 'none' carries `outline` so an untagged composer's own
+    // toggle reads as an empty control rather than a filled gray badge (badgeDropdownHtml(), §5).
+    const CP_COMMENT_TAGS = [
+        { value: '', enum: 'none', outline: true },
+        { value: 'in_progress', enum: 'in_progress' },
+        { value: 'completed', enum: 'completed' },
+        { value: 'error', enum: 'error' },
+    ];
+    const CP_COMMENT_PLACEHOLDER = getLangValue('employee_comment_placeholder') || 'Write a comment...';
+    function cpCommentItemActions() {
+        return '<button type="button" class="btn-icon-ghost comment-item-icon-btn" title="' + (getLangValue('edit') || 'Edit') + '"><i class="fa-solid fa-pen"></i></button>'
+            + '<button type="button" class="btn-icon-ghost comment-item-icon-btn comment-item-icon-btn-danger" title="' + (getLangValue('delete') || 'Delete') + '"><i class="fa-solid fa-trash-can"></i></button>';
+    }
+    // The compose box: 1 action button, nothing prefilled. `disabled` mirrors the real modal's own
+    // starting state (nothing typed yet = nothing to save).
+    const cpComposeBoxHtml = commentComposerHtml({
+        idPrefix: 'cpCommentCompose',
+        actor: { name: 'สมชาย ทำเงินเดือน' },
+        placeholder: CP_COMMENT_PLACEHOLDER,
+        tags: CP_COMMENT_TAGS,
+        tagContext: 'employee_comment_tag',
+        actions: `<button type="button" class="btn btn-primary" disabled>${getLangValue('save') || 'Save'}</button>`,
+    });
+    // Empty demo: composer + the SAME empty state renderCommentList() itself returns for 0 items
+    // (caller-supplied copy, exactly like the real modal's own).
+    $('#cpCommentEmptyShowcase').html(cpComposeBoxHtml + renderCommentList([], {
+        emptyState: {
+            icon: 'fa-solid fa-comments',
+            title: getLangValue('employee_comment_timeline_empty') || 'No comments yet.',
+        },
+    }));
+    // Inline edit: the whole item becomes a composer (prefilled text + tag, 2 buttons, the COMMENT'S
+    // OWN author in the head row) -- passed through as `item.bodyHtml`, which replaces the entire
+    // <li> rather than just its text row.
+    const cpCommentInlineEditHtml = commentComposerHtml({
+        idPrefix: 'cpCommentInlineEdit',
+        actor: { name: 'สมชาย ทำเงินเดือน' },
+        text: 'ขอเลื่อนตรวจสอบไปสัปดาห์หน้า เอกสารยังมาไม่ครบ',
+        tag: 'in_progress',
+        placeholder: CP_COMMENT_PLACEHOLDER,
+        tags: CP_COMMENT_TAGS,
+        tagContext: 'employee_comment_tag',
+        actions: `<button type="button" class="btn btn-primary">${getLangValue('save') || 'Save'}</button>`
+            + `<button type="button" class="btn btn-outline-secondary">${getLangValue('cancel') || 'Cancel'}</button>`,
+    });
     const CP_COMMENT_ITEMS = [
         {
             time: '2026-09-14 15:40:00',
             actor: { name: 'สมชาย ทำเงินเดือน' },
             text: 'ตรวจสอบยอดโบนัสแล้ว ถูกต้องตามที่แจ้งไว้ ปิดรายการนี้ได้เลย',
             badge: { enum: 'completed', context: 'employee_comment_tag' },
-            actions: '<button type="button" class="btn-icon-ghost comment-item-icon-btn" title="แก้ไข"><i class="fa-solid fa-pen"></i></button>'
-                + '<button type="button" class="btn-icon-ghost comment-item-icon-btn comment-item-icon-btn-danger" title="ลบ"><i class="fa-solid fa-trash-can"></i></button>',
+            actions: cpCommentItemActions(),
         },
         {
             // Real edited-comment shape (timeSuffix, §6's own note on why this field exists at all) +
             // a genuine 2-line comment to show `white-space: pre-line` preserving the real newline.
             time: '2026-09-13 09:15:00',
-            timeSuffix: '(แก้ไขแล้ว)',
+            timeSuffix: `(${getLangValue('employee_comment_edited') || 'edited'})`,
             actor: { name: 'สมหญิง ฝ่ายบุคคล' },
             text: 'รอตรวจสอบเอกสารเพิ่มเติมจากพนักงาน\nจะอัปเดตอีกครั้งพรุ่งนี้',
             badge: { enum: 'in_progress', context: 'employee_comment_tag' },
-            actions: '<button type="button" class="btn-icon-ghost comment-item-icon-btn" title="แก้ไข"><i class="fa-solid fa-pen"></i></button>'
-                + '<button type="button" class="btn-icon-ghost comment-item-icon-btn comment-item-icon-btn-danger" title="ลบ"><i class="fa-solid fa-trash-can"></i></button>',
+            actions: cpCommentItemActions(),
         },
         {
-            // Mid-inline-edit -- `actions: null` (icons hidden, matches the real modal's own rule:
-            // nothing useful for Edit/Delete to do on a row that's already open for editing).
-            time: '2026-09-12 11:00:00',
-            actor: { name: 'สมชาย ทำเงินเดือน' },
-            bodyHtml: cpCommentInlineEditBodyHtml,
-            actions: null,
+            // Mid-inline-edit -- no time/actions/badge of its own: the composer that replaces this
+            // whole item renders its own author row, its own tag chips and its own buttons.
+            bodyHtml: cpCommentInlineEditHtml,
         },
     ];
-    $('#cpCommentListShowcase').html(renderCommentList(CP_COMMENT_ITEMS));
+    $('#cpCommentListShowcase').html(cpComposeBoxHtml + renderCommentList(CP_COMMENT_ITEMS));
+    // Both comment showcases contain composers, and a composer's tag control is a badge dropdown --
+    // same delegated init the real modal uses (one call per scope, survives re-renders).
+    initBadgeDropdown('#cpCommentEmptyShowcase');
+    initBadgeDropdown('#cpCommentListShowcase');
 
     // ตัวเลข/เงิน (ข้อ 7a) -- SAME 5 values the PHP side already rendered via fmtMoney() (kept in sync
     // by hand, this dev-only page has no shared JSON to source both sides from) run through the REAL

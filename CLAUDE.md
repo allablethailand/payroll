@@ -44,6 +44,8 @@
 - Fix logic only unless explicitly told to change UI/style.
 - One task at a time; stop and report after each.
 - Code comments explain why in one line max. Longer rationale goes in the commit message.
+- ทุกไฟล์ข้อความใน repo ต้องเป็น **LF** เท่านั้น (`.gitattributes`: `* text=auto eol=lf`) — ห้ามเขียนไฟล์กลับ
+  เป็น CRLF ด้วยเหตุผลว่า "คง convention เดิมของไฟล์นั้น" — ไฟล์ที่เป็น CRLF ใน working tree คือของตกค้าง ไม่ใช่มาตรฐาน
 - Never type a literal `?>` inside a comment or string in a `.php` file — PHP's lexer closes PHP mode
   the instant it sees that sequence anywhere in the file, comment or not, silently turning everything
   after it into raw output; `php -l` does not catch this. Hit twice for real in one session

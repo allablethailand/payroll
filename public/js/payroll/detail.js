@@ -3426,71 +3426,86 @@ let employeeCommentEditingId = null;
 // to carry (the shared comment-list component's own markup has no such attribute, and shouldn't
 // need one just for this).
 let employeeCommentsCache = [];
-// 2026-09-14, Round 3 item 3c-4 (review follow-up), explicit instruction, item 1: "กดดินสอแล้วรายการ
-// นั้นเปลี่ยนเป็น textarea (ข้อความเดิม) + tag picker + ปุ่ม [บันทึก][ยกเลิก] ใต้ textarea ภายในรายการ" --
-// per-comment-id ids/name so this picker and the always-present compose one never collide in the DOM
-// at the same time.
-// 2026-09-14, Round 3 Phase B, explicit instruction: same structure as the compose form's own markup
-// now uses (detail.php) -- textarea first, then ONE ROW with a small gray "แท็ก" label + 4 chips
-// rendered through statusBadgeHtml() ('employee_comment_tag' context, the SAME call the compose
-// picker/an already-posted comment's own badge both use) instead of the old bespoke
-// .apv-comment-tag-option gradient pills. Outline (unselected) vs filled (selected) is a pure CSS
-// toggle on `.comment-tag-picker` (style.css) keyed off the hidden radio's :checked state -- no class
-// juggling needed here, just render `checked` on whichever `<input>` matches this comment's current
-// tag. statusBadgeHtml() bakes its own `data-i18n` onto each chip's label (a small improvement over
-// the old hand-written version, which had none -- language-switch relabeling now works here too, for
-// free, not something this round specifically set out to fix).
+// The 4 tag chips every comment composer in this modal offers, in display order. `value` is what the
+// API stores/reads back (empty string = no tag at all), `enum` is the app/config/status_map.php key
+// ('employee_comment_tag' context) that supplies each chip's own label + tone -- 'none' exists in
+// that map ONLY for this picker (an already-posted comment with no tag renders no badge at all, see
+// employeeCommentToListItem() below). One array, used by BOTH the compose box and every inline-edit
+// box, so the two can never offer different chips.
+const EMPLOYEE_COMMENT_TAGS = [
+    // `outline` = "when THIS choice is the current one, the dropdown's own toggle renders as an
+    // outline badge" (badgeDropdownHtml(), §5) -- an untagged comment's picker should read as an
+    // empty control, not as a filled gray badge asserting "no tag" as if it were a real status.
+    { value: '', enum: 'none', outline: true },
+    { value: 'in_progress', enum: 'in_progress' },
+    { value: 'completed', enum: 'completed' },
+    { value: 'error', enum: 'error' },
+];
+// A comment's own author name in whichever language is active, falling back to the other one rather
+// than rendering an empty name (some employee records only ever have one of the two filled in).
+function employeeCommentActorName(c) {
+    return (currentLang === 'th'
+        ? (c.created_by_name_th || c.created_by_name_en)
+        : (c.created_by_name_en || c.created_by_name_th)) || '-';
+}
+// Every id/name inside an inline-edit composer derives from this prefix -- per-comment-id so an open
+// inline edit and the always-present compose box (prefix 'employeeComment') can never collide in the
+// DOM while both exist, which is also what lets snapshotFormState() (§9's dirty guard) treat them as
+// 2 separate fields instead of silently merging them.
+function employeeCommentEditIdPrefix(commentId) {
+    return `employeeCommentEdit${commentId}`;
+}
+// 2026-09-14, Round 3 item 3c-4, explicit instruction, item 1: "กดดินสอแล้วรายการนั้นเปลี่ยนเป็น textarea
+// (ข้อความเดิม) + tag picker + ปุ่ม [บันทึก][ยกเลิก] ... ภายในรายการ".
+// 2026-09-15, Round 3 (comment-list restyle), explicit instruction: that form is now literally the
+// SAME composer component the compose box at the top of the list is (commentComposerHtml(), app.js --
+// rules.md §6's own "Comment list" section, item 4: "รายการนั้นเปลี่ยนเป็น composer โครงเดียวกับข้อ 1"),
+// not a second hand-kept copy of a similar shape. Only 3 things differ from the compose box, all of
+// them arguments: the author shown is the COMMENT'S OWN author (editing doesn't change who said it),
+// the textarea/tag chips start prefilled with what's already saved, and the buttons are
+// [บันทึก][ยกเลิก] rather than a single [บันทึก]. Button sizes are normal (not `btn-sm`) per §4 --
+// these are modal buttons, and `btn-sm` is reserved for table-row/toolbar/filter-bar buttons.
+// The whole <li> becomes this box (renderCommentList()'s own `bodyHtml` now replaces the entire item,
+// not just its text row) -- the composer already renders its own author row and its own buttons, so
+// keeping the item's name row above it and its time/actions row below it would only duplicate them.
 function employeeCommentInlineEditFormHtml(c) {
-    const tag = c.tag || '';
-    function tagOption(value, enumKey) {
-        const id = `employeeCommentEditTag_${c.id}_${enumKey}`;
-        const checkedAttr = (tag === value) ? ' checked' : '';
-        return `<input type="radio" class="d-none" name="employeeCommentEditTag_${c.id}" id="${id}" value="${escapeAttr(value)}"${checkedAttr}>
-            <label for="${id}">${statusBadgeHtml(enumKey, 'employee_comment_tag')}</label>`;
-    }
-    return `<div class="mb-2">
-            <textarea class="form-control form-control-sm employee-comment-inline-edit-text" id="employeeCommentEditText_${c.id}" data-id="${c.id}" rows="3">${escapeHtml(c.comment || '')}</textarea>
-        </div>
-        <div class="d-flex align-items-center flex-wrap gap-2 mb-2">
-            <span class="small text-muted flex-shrink-0" data-i18n="employee_comment_tag">${escapeHtml(langData['employee_comment_tag'] || 'Tag')}</span>
-            <div class="comment-tag-picker">
-                ${tagOption('', 'none')}
-                ${tagOption('in_progress', 'in_progress')}
-                ${tagOption('completed', 'completed')}
-                ${tagOption('error', 'error')}
-            </div>
-        </div>
-        <div class="d-flex gap-2">
-            <button type="button" class="btn btn-primary btn-sm btn-save-inline-comment-edit" data-id="${c.id}" data-i18n="save">${escapeHtml(langData['save'] || 'Save')}</button>
-            <button type="button" class="btn btn-outline-secondary btn-sm btn-cancel-inline-comment-edit" data-id="${c.id}" data-i18n="cancel">${escapeHtml(langData['cancel'] || 'Cancel')}</button>
-        </div>`;
+    const idPrefix = employeeCommentEditIdPrefix(c.id);
+    return commentComposerHtml({
+        idPrefix: idPrefix,
+        actor: { name: employeeCommentActorName(c), avatar: c.created_by_photo || null },
+        text: c.comment || '',
+        tag: c.tag || '',
+        placeholder: langData['employee_comment_placeholder'] || 'Write a comment...',
+        tags: EMPLOYEE_COMMENT_TAGS,
+        tagContext: 'employee_comment_tag',
+        // The class is this modal's own delegated-handler hook (input/Ctrl+Enter, further below);
+        // `data-id` is how those handlers know WHICH comment's box fired, since several could in
+        // principle exist in the DOM at once even though only 1 is ever actually open.
+        textareaClass: 'employee-comment-inline-edit-text',
+        textareaAttrs: `data-id="${escapeAttr(c.id)}"`,
+        actions: `<button type="button" class="btn btn-primary btn-save-inline-comment-edit" data-id="${escapeAttr(c.id)}" data-i18n="save">${escapeHtml(langData['save'] || 'Save')}</button>`
+            + `<button type="button" class="btn btn-outline-secondary btn-cancel-inline-comment-edit" data-id="${escapeAttr(c.id)}" data-i18n="cancel">${escapeHtml(langData['cancel'] || 'Cancel')}</button>`,
+    });
 }
 function employeeCommentToListItem(c) {
-    const name = currentLang === 'th' ? (c.created_by_name_th || c.created_by_name_en) : (c.created_by_name_en || c.created_by_name_th);
     const isEditing = employeeCommentEditingId !== null && Number(employeeCommentEditingId) === Number(c.id);
     if (isEditing) {
-        // Actions (edit/delete) are suppressed while this exact item is the one being edited --
-        // matches "แก้ได้ทีละรายการ" (only 1 item editable at a time), and there's nothing useful
-        // Edit/Delete would do on a row that's already mid-edit. The read-only tag badge is also
-        // suppressed for the same reason: the inline-edit form's own tag picker (line 2, via
-        // `bodyHtml`) already shows/lets you change the tag, so line 1 keeping its own possibly-stale
-        // copy at the same time would just be a redundant, confusing duplicate.
-        return {
-            time: c.created_at,
-            actor: { name: name || '-', avatar: c.created_by_photo || null },
-            bodyHtml: employeeCommentInlineEditFormHtml(c),
-            actions: null,
-        };
+        // 2026-09-15, Round 3 (comment-list restyle): the whole item becomes the composer box
+        // (renderCommentList()'s `bodyHtml` now replaces the entire <li>, not just its text row) --
+        // so nothing else on the item needs suppressing one field at a time any more. The composer
+        // already shows this comment's own author, its current text and its current tag (editable),
+        // and owns its own [บันทึก][ยกเลิก] buttons; a name row/time row/edit-delete icons around
+        // it would only duplicate what it already renders, on a row you're actively editing.
+        return { bodyHtml: employeeCommentInlineEditFormHtml(c) };
     }
     // 2026-08-29, explicit request: "สามารถแก้ไข Comment และลบ Comment ได้ด้วย" -- a small "(edited)"
     // marker only when updated_at is actually set (a never-edited comment keeps both updated_by/
     // updated_at null, see PayrollRunModel::employeeCommentUpdate()'s own docblock).
     // 2026-09-14, Round 3, explicit instruction: renderCommentList() has no separate "detail" slot
-    // the old Timeline-based item shape had to fold this into (line 2 is now either the comment's
-    // own text OR the inline-edit form, nothing else) -- `item.timeSuffix` (a small, deliberate
-    // addition to renderCommentList()'s own item shape, see app.js's own comment on that field) is
-    // where it lives instead: rendered muted right after the relative time, not mixed into the
-    // comment's own text content.
+    // the old Timeline-based item shape had to fold this into -- `item.timeSuffix` (a small,
+    // deliberate addition to renderCommentList()'s own item shape, see app.js's own comment on that
+    // field) is where it lives instead: rendered muted right after the relative time (the item's own
+    // bottom row), not mixed into the comment's own text.
     const editedSuffix = c.updated_at ? `(${langData['employee_comment_edited'] || 'edited'})` : null;
     // 2026-08-29, explicit follow-up: "ดูได้เท่านั้น ไม่สามารถเพิ่ม แก้ไข ลบได้" -- edit/delete icons per
     // comment are dropped entirely once the run has finished (commentsReadOnlyRd()), not just
@@ -3505,7 +3520,7 @@ function employeeCommentToListItem(c) {
     return {
         time: c.created_at,
         timeSuffix: editedSuffix,
-        actor: { name: name || '-', avatar: c.created_by_photo || null },
+        actor: { name: employeeCommentActorName(c), avatar: c.created_by_photo || null },
         text: c.comment,
         // A comment with no tag renders no badge at all (renderCommentList() skips it entirely when
         // `item.badge` is falsy) -- not a bespoke gray "no tag" badge of its own; that visual only
@@ -3530,7 +3545,20 @@ function employeeCommentToListItem(c) {
 // config (icon + the real i18n-driven title) via the new `options` param -- renderCommentList()'s
 // own built-in default is a bare, non-localized fallback, never meant to be what a real caller
 // actually shows.
+// 2026-09-15, explicit instruction, item 3: the modal's own title carries the live count --
+// "คอมเมนต์ (N)" -- so it is no longer a plain `data-i18n` label a DOM sweep can translate on its
+// own (the count is data, not copy). The `{count}` placeholder convention is this app's existing one
+// (`.replace('{count}', n)`, same as confirm_bulk_verify_title and ~8 others), and
+// refreshPayrollDetailLanguage() (this file, registered in changeLanguage()) calls this again on a
+// live language switch so the title still relabels without a reload -- the exact pattern that hook
+// already exists for.
+function updateEmployeeCommentTitle() {
+    const n = employeeCommentsCache.length;
+    const tpl = langData['employee_comment_timeline_title_count'] || 'Comments ({count})';
+    $('#employeeCommentModalTitle').text(tpl.replace('{count}', n));
+}
 function renderEmployeeCommentListFromCache() {
+    updateEmployeeCommentTitle();
     const items = employeeCommentsCache.map(employeeCommentToListItem);
     $('#employeeCommentList').html(renderCommentList(items, {
         emptyState: {
@@ -3551,28 +3579,57 @@ function loadEmployeeComments() {
         }
     });
 }
+// 2026-09-15, Round 3 (comment-list restyle), rules.md §6 item 1: the compose box is the shared
+// composer component rendered at the TOP of the modal body, above the list -- the logged-in user's
+// own avatar+name, an auto-growing borderless textarea, the 4 tag chips and a single [บันทึก]
+// button. Re-rendered from scratch on every open/reset rather than field-by-field cleared: the box's
+// whole state is 2 values (text + selected tag) and re-rendering is the only way that can't drift
+// out of sync with what commentComposerHtml() itself considers a fresh box.
+// `window.SESSION_USER` (layout/header.php, injected app-wide alongside window.STATUS_MAP) is the
+// only source for "who is writing" -- guarded, so a page that somehow renders this without the
+// layout still gets a working composer (just an initial-less avatar), never a crash.
+function sessionUserCommentActor() {
+    const u = window.SESSION_USER || {};
+    const name = (currentLang === 'th' ? (u.name_th || u.name_en) : (u.name_en || u.name_th)) || '';
+    return { name: name, avatar: u.photo || null };
+}
+function renderEmployeeCommentComposer() {
+    $('#employeeCommentComposer').html(commentComposerHtml({
+        idPrefix: 'employeeComment',
+        actor: sessionUserCommentActor(),
+        placeholder: langData['employee_comment_placeholder'] || 'Write a comment...',
+        tags: EMPLOYEE_COMMENT_TAGS,
+        tagContext: 'employee_comment_tag',
+        // Normal size, not `btn-sm` (§4: `btn-sm` is for table-row/toolbar/filter-bar buttons only).
+        // Starts `disabled` -- there is nothing to save in a box that was just rendered empty;
+        // refreshEmployeeCommentSubmitState() below is what ever enables it.
+        actions: `<button type="button" class="btn btn-primary" id="btnAddEmployeeComment" data-i18n="save" disabled>${escapeHtml(langData['save'] || 'Save')}</button>`,
+    }));
+}
 // 2026-09-14, Round 3 item 3c-4, explicit instruction, item 2: submit button disabled until there's
-// real text, OR while an inline edit is open elsewhere in the list (item 1: "ฟอร์มเพิ่มด้านล่าง disabled
+// real text, OR while an inline edit is open elsewhere in the list (item 1: "ฟอร์มเพิ่ม...disabled
 // ระหว่างแก้") -- reused on every place the compose textarea's value (or the editing state) can
 // change, so the button's state never lags behind either.
 function refreshEmployeeCommentSubmitState() {
     const hasText = (($('#employeeCommentText').val() || '') + '').trim() !== '';
     $('#btnAddEmployeeComment').prop('disabled', !hasText || employeeCommentEditingId !== null);
 }
-// 2026-09-14, Round 3 item 3c-4, explicit instruction, item 1: "ฟอร์มเพิ่มด้านล่าง disabled ระหว่างแก้" --
-// disables the compose form's own 3 fields (4 tag radios + textarea) while ANY item further up the
-// list is open for inline edit, re-enabling them the moment that edit exits (save or cancel). Reused
-// by resetEmployeeCommentForm() (modal open/close) and enter/exitEmployeeCommentInlineEdit() below --
+// 2026-09-14, Round 3 item 3c-4, explicit instruction, item 1: "composer บนสุด disabled ระหว่างแก้"
+// -- disables the compose box's own fields (4 tag radios + textarea) while ANY item in the list is
+// open for inline edit, re-enabling them the moment that edit exits (save or cancel). Reused by
+// resetEmployeeCommentForm() (modal open/close) and enter/exitEmployeeCommentInlineEdit() below --
 // the single source of truth for this disabled state, so it can never drift between call sites.
 function refreshEmployeeCommentAddFormDisabledState() {
     const editing = employeeCommentEditingId !== null;
-    $('#employeeCommentFormArea').find('input, textarea').prop('disabled', editing);
+    // `.badge-dropdown-toggle` is a <button>, not an input -- the tag control stopped being a set of
+    // radios when it became a badge dropdown (2026-09-15), so disabling `input, textarea` alone would
+    // have left the tag still changeable while an inline edit is open.
+    $('#employeeCommentComposer').find('input, textarea, .badge-dropdown-toggle').prop('disabled', editing);
     refreshEmployeeCommentSubmitState();
 }
 function resetEmployeeCommentForm() {
     employeeCommentEditingId = null;
-    $('#employeeCommentTagNone').prop('checked', true);
-    $('#employeeCommentText').val('');
+    renderEmployeeCommentComposer();
     refreshEmployeeCommentAddFormDisabledState();
 }
 // 2026-09-14, Round 3 item 3c-4, explicit instruction, item 1: "กดดินสอแล้วรายการนั้นเปลี่ยนเป็น textarea
@@ -3586,25 +3643,38 @@ function enterEmployeeCommentInlineEdit(id) {
     employeeCommentEditingId = Number(id);
     refreshEmployeeCommentAddFormDisabledState();
     renderEmployeeCommentListFromCache();
-    const $textarea = $(`#employeeCommentEditText_${id}`);
+    const $textarea = $(`#${employeeCommentEditIdPrefix(id)}Text`);
     $textarea.trigger('focus');
     // The inline textarea is injected already pre-filled with the existing comment text -- input.js's
     // own T002 auto-grow only fires on a real `input` event, so a freshly-injected multi-line value
     // needs this one explicit call to size correctly from the start instead of showing a clipped
-    // 3-row box until the user's first keystroke.
+    // 1-row box until the user's first keystroke.
     if ($textarea.length) autoExpandTextarea($textarea[0]);
+    syncEmployeeCommentDirtyBaseline();
 }
 function exitEmployeeCommentInlineEdit() {
     employeeCommentEditingId = null;
     refreshEmployeeCommentAddFormDisabledState();
     renderEmployeeCommentListFromCache();
+    syncEmployeeCommentDirtyBaseline();
+}
+// 2026-09-15, Round 3 (comment-list restyle), rules.md §6 item 4 ("dirty-guard ครอบทั้ง composer
+// และรายการที่กำลังแก้"): entering/leaving an inline edit changes which fields exist in the modal at
+// all (the edit box appears/disappears; the compose box's own fields switch disabled on/off, and
+// snapshotFormState() ignores disabled fields entirely) -- so without re-capturing the baseline at
+// those 2 moments, merely OPENING an edit would count as "unsaved changes" and prompt on close even
+// if nothing was typed. Re-capturing means the guard asks about REAL content the user typed, in
+// either box, which is what the rule actually wants covered. Cancelling an edit is an explicit
+// discard, so re-capturing on the way out is correct too.
+function syncEmployeeCommentDirtyBaseline() {
+    if (typeof refreshDirtyGuard === 'function') refreshDirtyGuard('#employeeCommentModal');
 }
 // Mirrors refreshEmployeeCommentSubmitState() above, for whichever item's own inline Save button
 // this is -- `id` scopes both the textarea read and the button written to, since several comments
 // could in principle each carry their own (currently-disabled, per item 1's "ทีละรายการ") Save button
 // in the DOM at once, even though only 1 is ever actually enabled/visible-as-a-form at a time.
 function refreshInlineEditSaveState(id) {
-    const hasText = (($(`#employeeCommentEditText_${id}`).val() || '') + '').trim() !== '';
+    const hasText = (($(`#${employeeCommentEditIdPrefix(id)}Text`).val() || '') + '').trim() !== '';
     $(`.btn-save-inline-comment-edit[data-id="${id}"]`).prop('disabled', !hasText);
 }
 // 2026-08-29, explicit follow-up request: "ถ้าการดำเนินเสร็จแล้ว Comment ดูได้เท่านั้น ไม่สามารถเพิ่ม แก้ไข
@@ -3625,23 +3695,27 @@ $(document).on('click', '.btn-comment-employee', function () {
     const rowData = runDetailRowByEmployeeId(employeeCommentEmployeeId);
     $('#employeeCommentHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
     const readOnly = commentsReadOnlyRd();
-    // 2026-09-14, Round 3 item 3c-4, footer = [primary][ปิด] via the shared modalFooterButtonsHtml()
-    // (app.js) -- rebuilt fresh on every open since `readOnly` can differ per employee/run state, but
-    // otherwise constant for the lifetime of this modal being open (never swapped/relabeled while
-    // editing -- see employeeCommentToListItem()'s own per-item inline Save/Cancel buttons for
-    // the actual edit affordance instead).
-    // 2026-09-14, Round 3 Phase B, explicit instruction: label changed from "เพิ่มคอมเมนต์"
-    // (employee_comment_add) to "บันทึก" -- reuses the app-wide `save` key already shared by every
-    // other modal's own primary button, rather than this modal keeping its own one-off wording for
-    // the same action. `employee_comment_add` itself is left in both lang files (still a real i18n
-    // key, just no longer referenced from here -- not this task's own "ลบ key" instruction, which was
-    // specifically about the empty-state hint key).
+    // 2026-09-14, Round 3 item 3c-4: footer rendered through the shared modalFooterButtonsHtml()
+    // (app.js).
+    // 2026-09-15, Round 3 (comment-list restyle), explicit instruction: it is now [ปิด] ALONE. The
+    // submit button moved into the composer box itself (renderEmployeeCommentComposer() above, where
+    // what it submits is actually visible right next to it), so the footer no longer has a primary
+    // button to keep in sync with the view-only/editing state at all -- which also means this html()
+    // call is now genuinely constant and could be hoisted, but it stays here so the whole modal is
+    // still populated from one place on open.
     $('#employeeCommentModalFooter').html(modalFooterButtonsHtml({
-        primary: readOnly ? null : { id: 'btnAddEmployeeComment', key: 'save', fallback: 'Save' },
         secondary: { key: 'close', fallback: 'Close', dismiss: true },
     }));
+    // One delegated init for EVERY badge dropdown inside this modal -- the composer's own tag picker,
+    // and whichever inline-edit box happens to be open -- guarded inside initBadgeDropdown() so
+    // reopening the modal can't stack handlers (app.js's own once-per-scope flag).
+    initBadgeDropdown('#employeeCommentModal');
+    // Zero it out up front -- loadEmployeeComments() fills the real number in a moment, and this way
+    // the title never shows the PREVIOUS employee's count while that request is in flight.
+    employeeCommentsCache = [];
+    updateEmployeeCommentTitle();
     resetEmployeeCommentForm();
-    $('#employeeCommentFormArea').toggleClass('d-none', readOnly);
+    $('#employeeCommentComposer').toggleClass('d-none', readOnly);
     $('#employeeCommentReadOnlyNotice').toggleClass('d-none', !readOnly);
     loadEmployeeComments();
     new bootstrap.Modal(document.getElementById('employeeCommentModal')).show();
@@ -3657,12 +3731,12 @@ $(document).on('click', '.btn-cancel-inline-comment-edit', function () {
 });
 $(document).on('click', '.btn-save-inline-comment-edit', function () {
     const id = $(this).data('id');
-    const comment = ($(`#employeeCommentEditText_${id}`).val() || '').trim();
+    const comment = ($(`#${employeeCommentEditIdPrefix(id)}Text`).val() || '').trim();
     if (!comment) {
         showWarning(langData['employee_comment_required'] || 'Please write a comment first.');
         return;
     }
-    const tag = $(`input[name="employeeCommentEditTag_${id}"]:checked`).val() || null;
+    const tag = $(`input[name="${employeeCommentEditIdPrefix(id)}Tag"]`).val() || null;
     const $btn = $(this);
     setButtonLoading($btn, true);
     $.ajax({
@@ -3718,7 +3792,7 @@ $(document).on('click', '#btnAddEmployeeComment', function () {
         showWarning(langData['employee_comment_required'] || 'Please write a comment first.');
         return;
     }
-    const tag = $('#employeeCommentTagGroup input:checked').val() || null;
+    const tag = $('input[name="employeeCommentTag"]').val() || null;
     const $btn = $(this);
     setButtonLoading($btn, true);
     $.ajax({
@@ -3794,6 +3868,10 @@ $(document).on('keydown', '.employee-comment-inline-edit-text', function (e) {
 document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
     if (employeeCommentEditingId === null) return;
+    // 2026-09-15: an OPEN badge dropdown (the tag picker, §5) owns Escape first -- Bootstrap's own
+    // dropdown handler closes it and returns focus to the toggle. Swallowing the key here instead
+    // would close the whole inline edit out from under a user who only meant to dismiss the menu.
+    if (document.querySelector('#employeeCommentModal .dropdown-menu.show')) return;
     e.stopPropagation();
     exitEmployeeCommentInlineEdit();
 }, true);
@@ -5661,6 +5739,12 @@ $(document).on('shown.bs.tab', '#run-remittance-tab', function () {
 function refreshPayrollDetailLanguage() {
     if (currentRun) {
         renderRunHeaderText(currentRun);
+    }
+    // The Comments modal's own title is built from a `{count}` template in JS (see
+    // updateEmployeeCommentTitle()), so the generic `data-i18n` sweep can't relabel it -- re-render it
+    // here, the same way every other JS-templated string on this page is handled.
+    if ($('#employeeCommentModal').hasClass('show')) {
+        updateEmployeeCommentTitle();
     }
     // 2026-09-14, Round 3 "เก็บตกรอบ 7" -- the "defensive re-sync" this block used to contain (added
     // 2026-09-14 "เก็บตกรอบ 6", while the real bug below was still unsolved) is REMOVED: it only ever

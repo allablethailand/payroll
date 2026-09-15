@@ -4631,123 +4631,123 @@ button.badge {
    components sits now. Confirmed via grep this revert breaks nothing real: no other caller (in
    public/js/ or docs/design/components.php) ever used any of the reverted pieces. */
 
-/* Comment list (docs/design/rules.md §6's own "Comment list" section) -- JS: renderCommentList()
-   (app.js). A comment feed's own shape: avatar 32px left, a 2-line right column (name + tag badge +
-   relative time + hover-reveal edit/delete icons on line 1, the comment text -- or an inline-edit
-   form override -- on line 2). Deliberately NOT Timeline (above) stretched to fit: no dot, no
-   connecting line, no card/border/divider between items -- "who said what, when" isn't an event on a
-   log. `--sp-5` between items (a comment is a distinct, separate thought, wants real air around it,
-   unlike Timeline's tighter `--sp-4` for a continuous log), `--sp-1` for every gap WITHIN one item
-   (avatar-to-column, line1-to-line2) -- the item's own 2 lines read as one unit, tight on purpose. */
+/* Comment list + composer (docs/design/rules.md §6's own "Comment list + Composer" section) -- JS:
+   renderCommentList() / commentComposerHtml() (app.js). A comment feed's own shape, deliberately NOT
+   Timeline (above) stretched to fit: no dot, no connecting line -- "who said what, when" isn't an
+   event on a log.
+   2026-09-15, Round 3 restyle (reference-driven): an item is 3 STACKED rows -- head (avatar + name +
+   tag badge), text, foot (time left / edit+delete right). The text row therefore starts at the SAME
+   left edge as the avatar (no indent under the name), and the edit/delete icons are ALWAYS visible
+   instead of appearing on hover/:focus-within only (an affordance you have to discover by hovering
+   isn't one; on their own row they no longer compete with the name/badge for width either).
+   2026-09-15, same-day follow-up (items 2/3): the whole block drops ONE step down the type scale
+   (name/text `--fs-sm`, time `--fs-xs`, avatar 28px -- badges keep their own size, they're already
+   the smallest thing here), and items are now separated by a real 1px `--c-border` RULE with
+   `--sp-4` of padding above and below each one, instead of `--sp-5` of blank gap: the rule is what
+   makes "where does one comment end" answerable at a glance once the text itself got smaller, and
+   it spans the full container width (the container's own horizontal padding is gone -- see
+   #employeeCommentList further down -- so a rule lines up exactly with emp-header-card's own
+   bottom border above it). Last item drops its rule: nothing follows it to separate from. */
 .comment-list {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--sp-5);
+    /* The avatar column's own width, in ONE place: the avatar itself (28px, rendered by
+       renderCommentList()/commentComposerHtml() via apvAvatarHtml()) plus the row gap. Used both for
+       the flex gap here and for indenting an inline-edit composer to the same content column, so the
+       two can never drift apart. Keep in sync with the 28 those 2 JS functions pass. */
+    --comment-avatar-size: 28px;
+    --comment-gutter: calc(var(--comment-avatar-size) + var(--sp-2));
 }
 .comment-item {
     display: flex;
     align-items: flex-start;
-    gap: var(--sp-1);
+    gap: var(--sp-2);
+    padding: var(--sp-4) 0;
+    border-bottom: 1px solid var(--c-border);
 }
+.comment-item:last-child {
+    border-bottom: 0;
+}
+/* 2026-09-15, real bug found by measuring: the composer's own `--sp-6` bottom margin and the first
+   item's own `--sp-4` padding-top STACKED (margins and paddings don't collapse across a border box
+   like this), so the gap the spec puts at 32px measured ~48-56px on screen. The first item drops its
+   top padding -- it has no preceding row to be separated from, the composer's margin is the whole
+   distance there. Every other item keeps both paddings, so text-to-text between comments stays the
+   intended `--sp-4` + `--sp-4`. */
+.comment-item:first-child {
+    padding-top: 0;
+}
+/* Avatar = LEFT GUTTER ONLY (2026-09-15, same-day correction): nothing in the content column ever
+   sits under it -- name, comment text and the time/actions row all share one left edge to the right
+   of it. */
 .comment-item-avatar {
     flex: none;
+    display: inline-flex;
 }
 .comment-item-body {
     flex: 1 1 auto;
     min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--sp-1);
 }
-.comment-item-line1 {
+.comment-item-head {
     display: flex;
     align-items: center;
     gap: var(--sp-2);
 }
 .comment-item-name {
-    font-weight: 700;
-    font-size: var(--fs-base);
+    font-weight: 600;
+    font-size: var(--fs-sm);
     color: var(--c-text);
 }
-/* `margin-left: auto` (not a 2nd `justify-content: space-between` flex level like Timeline's own
-   `.timeline-head-right` needed) -- simpler here since this row only ever has 2 logical groups
-   (name+badge on the left, time+actions on the right), never a 3rd.
-   2026-09-14, real bug found and fixed: this container used to hold BOTH time and actions as normal
-   flex children, so `.comment-item-actions` at `opacity:0` (hidden) still reserved its own layout
-   width -- the visible content (time) was never actually flush against the true right edge of the
-   modal's content column except when actions happened to be visible. `.comment-item-actions` is now
-   `position:absolute` (below), removed from this container's normal flow entirely, so `margin-left:
-   auto` here is what now GENUINELY guarantees the time sits flush right in every state, not just
-   when icons happen to be hidden by coincidence of width. `position:relative` makes this the
-   positioning anchor those absolutely-positioned actions measure `right:100%` against. */
-.comment-item-meta {
-    position: relative;
-    margin-left: auto;
+.comment-item-text {
+    /* name -> text `--sp-1` (they read as one unit), text -> time `--sp-2` (the meta row is a
+       different kind of thing and needs a touch more air) -- margins rather than a flex `gap`,
+       because the 2 distances differ. */
+    margin-top: var(--sp-1);
+    color: var(--c-text);
+    font-size: var(--fs-sm);
+    font-weight: 400;
+    /* A multi-line comment needs its own line breaks preserved; `pre-line` (not `pre-wrap`) also
+       collapses runs of plain spaces the way normal text does -- a comment is prose, not code, so
+       only real newlines should be visually meaningful. escapeHtml() (app.js) already makes this
+       safe against every caller's raw string, no manual <br> injection needed. */
+    white-space: pre-line;
+}
+.comment-item-foot {
+    margin-top: var(--sp-2);
     display: flex;
     align-items: center;
     gap: var(--sp-1);
-    flex: none;
 }
 .comment-item-time {
-    font-size: var(--fs-sm);
+    font-size: var(--fs-xs);
     color: var(--c-text-muted);
     white-space: nowrap;
 }
 /* `item.timeSuffix` (app.js, e.g. "(edited)") -- one step more muted than the time itself, since
    it's secondary metadata about metadata. */
 .comment-item-time-suffix {
-    font-size: var(--fs-sm);
+    font-size: var(--fs-xs);
     color: var(--c-text-faint);
     white-space: nowrap;
 }
-/* Edit/delete icons: hidden until the item is actually being looked at (hover) or has keyboard focus
-   inside it (`:focus-within` -- so Tab-ing to the edit button doesn't require a mouse hover to even
-   see it first) -- a comment feed with N items showing 2N icon buttons permanently would be visual
-   noise §0's own "หน้าจอต้องเงียบ" principle explicitly warns against. `pointer:coarse` (touch
-   devices, where hover has no real meaning -- nothing ever un-hovers) shows them always instead,
-   same reasoning `.btn-circle-action`/other row-action patterns in this app already follow.
-   2026-09-14, real bug found and fixed: sat in normal flex flow, AFTER (to the right of) time --
-   wrong side (icons must read LEFT of time, closest to the content, with time itself owning the true
-   right edge) and, being just `opacity:0` with no other change, still occupied its own layout width
-   even while invisible (a hidden-but-space-reserving element, not a truly absent one). Now
-   `position:absolute`, anchored via `right:100%` on `.comment-item-meta` (its own positioned
-   ancestor, directly above) -- `right:100%` places this element's own right edge exactly at the
-   anchor's LEFT edge, i.e. entirely outside/before it, with `margin-right` opening a small gap from
-   time. Taken out of the document flow entirely, so it reserves ZERO space in either state --
-   `.comment-item-meta`'s own `margin-left:auto` (above) is what actually pins time to the true right
-   edge now, unconditionally. `pointer-events:none` while hidden stops an invisible-but-still-present
-   hit area from swallowing clicks meant for whatever it happens to overlap. */
+/* `margin-left:auto` is the whole right-alignment mechanism now -- the icons are real, always-in-flow
+   flex children of the foot row (they used to be `position:absolute` purely so a hidden-but-present
+   hover-reveal element wouldn't reserve layout width next to the time; with the reveal gone, so is
+   the reason for taking them out of flow). Still the container's own right edge, not the content
+   column's -- the foot row spans the whole content column, so "flush right" is the same edge the
+   card/composer/rules all share. */
 .comment-item-actions {
-    position: absolute;
-    top: 50%;
-    right: 100%;
-    transform: translateY(-50%);
-    margin-right: var(--sp-1);
+    margin-left: auto;
     display: inline-flex;
     align-items: center;
     gap: var(--sp-1);
     white-space: nowrap;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity .15s ease;
 }
-.comment-item:hover .comment-item-actions,
-.comment-item:focus-within .comment-item-actions {
-    opacity: 1;
-    pointer-events: auto;
-}
-@media (pointer: coarse) {
-    .comment-item-actions {
-        opacity: 1;
-        pointer-events: auto;
-    }
-}
-/* Same shape as the old `.timeline-action-btn` this replaces (20px ghost icon button, pairs with the
-   shared `.btn-icon-ghost` transparent-until-hover background) -- renamed since it now lives in this
-   component's own markup, not Timeline's. */
+/* 20px ghost icon button, pairs with the shared `.btn-icon-ghost` transparent-until-hover
+   background (§7's own variant). */
 .comment-item-icon-btn {
     width: 20px;
     height: 20px;
@@ -4769,15 +4769,110 @@ button.badge {
 .comment-item-icon-btn-danger:hover {
     color: var(--c-danger);
 }
-.comment-item-text {
+/* An item open for inline edit renders ONE child (the composer, via `item.bodyHtml`), which owns all
+   of its own internal spacing -- the item's own row gap has nothing left to space, and the composer's
+   own border already separates it from its neighbours far more strongly than a rule would. */
+.comment-item-editing {
+    /* `display:block`, NOT the row-flex every other item uses. 2026-09-15, real bug found in
+       Playwright: as a flex ITEM the composer sized itself to its own content (measured right edge
+       642px inside an 877px-wide list), so an item opened for edit was visibly narrower than every
+       other row. A plain block child fills the column's width by definition. */
+    display: block;
+    border-bottom: 0;
+    /* Indented to the SAME content column the name/text/time rows use, so an item opened for edit
+       doesn't jump left out of the list's own rhythm (the composer renders its own avatar inside the
+       box, which is why the gutter is left empty here rather than repeated). */
+    padding-left: var(--comment-gutter);
+}
+
+/* Composer (`commentComposerHtml()`, app.js) -- the ONE box a comment is ever typed in, both for a
+   new comment (top of the list) and for an existing one opened for inline edit (where it replaces
+   that item in place). The box itself is the input's visual frame: the textarea inside has no border
+   of its own at all, so the whole box lighting up `--c-primary` on `:focus-within` is the single
+   focus signal (never a blue browser outline -- §3 bans blue outright).
+   `--radius-lg` here (not `--radius`): this is a surface that visually sits above the modal body's
+   own flat flow, the same reading `--radius-lg` already marks elsewhere (§1). */
+.comment-composer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    padding: var(--sp-3);
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-lg);
+    /* rules.md §6: the gap from the composer to the first posted comment must be genuinely WIDER
+       than the between-comment gap (`--sp-5`), so the composer reads as a boundary (an input
+       section) rather than as one more comment in the same list. Owned by the component itself, not
+       by each caller's own page CSS, so both the real modal and the components.php demo get the same
+       rhythm without either one restating the number. */
+    margin-bottom: var(--sp-6);
+}
+/* ...except when the composer IS an item (inline edit) -- there the list's own `--sp-5` between
+   items already provides the spacing, and a 2nd gap on top of it would push the edited item away
+   from its own neighbours. */
+.comment-item .comment-composer {
+    margin-bottom: 0;
+}
+.comment-composer:focus-within {
+    border-color: var(--c-primary);
+}
+.comment-composer-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+}
+.comment-composer-avatar {
+    flex: none;
+    display: inline-flex;
+}
+.comment-composer-name {
+    font-weight: 600;
+    font-size: var(--fs-sm);
     color: var(--c-text);
-    font-size: var(--fs-base);
-    font-weight: 400;
-    /* A multi-line comment needs its own line breaks preserved; `pre-line` (not `pre-wrap`) also
-       collapses runs of plain spaces the way normal text does -- a comment is prose, not code, so
-       only real newlines should be visually meaningful. escapeHtml() (app.js) already makes this
-       safe against every caller's raw string, no manual <br> injection needed. */
-    white-space: pre-line;
+}
+/* Deliberately NOT `.form-control` -- that carries Bootstrap's own border/background/padding/focus
+   ring, which is exactly what this box replaces. `overflow:hidden` + `resize:none` because input.js's
+   own app-wide auto-grow (T002) already sizes it to its content, so neither a scrollbar nor a manual
+   resize handle has anything left to do. */
+.comment-composer-text {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    resize: none;
+    overflow: hidden;
+    font-family: inherit;
+    font-size: var(--fs-sm);
+    line-height: var(--lh);
+    color: var(--c-text);
+}
+.comment-composer-text:focus {
+    outline: none;
+    box-shadow: none;
+}
+.comment-composer-text::placeholder {
+    color: var(--c-text-faint);
+}
+/* Disabled = the whole composer is standing by while an existing comment is being edited further
+   down (only 1 thing editable at a time) -- keep the box's own background, just mute the text, so it
+   reads as "not now" rather than as a different kind of control. */
+.comment-composer-text:disabled {
+    background: transparent;
+    color: var(--c-text-faint);
+}
+.comment-composer-foot {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--sp-2);
+    border-top: 1px solid var(--c-border);
+    padding-top: var(--sp-2);
+}
+.comment-composer-actions {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
 }
 
 /* Calendar widget (docs/design/rules.md §14, Round 2 item 9) -- new `.calendar-widget-*` namespace,
@@ -5990,48 +6085,26 @@ html, body {
    it was never actually a timeline in the "dot-and-connecting-line event log" sense once this
    component landed, and the stale name would have kept confusing whoever touched this next. */
 
-/* 2026-09-14, Round 3 item 3c-4 (review follow-up), explicit instruction: the 2026-08-29 "form lives
-   in a sticky modal-footer" layout is reverted -- #employeeCommentFormArea (tag picker + textarea)
-   moved back into the scrollable modal-body, right after the comment list/empty-state and the
-   read-only notice; the footer is now the standard [primary][secondary] button pair every other
-   modal uses (modalFooterButtonsHtml(), app.js), constant regardless of view/edit state.
-   2026-09-14, Round 3 Phase B, explicit instruction: card box (background/border/border-radius/
-   padding) removed entirely -- the textarea + tag row now sit directly in modal-body's own flow, no
-   boxed surface of their own. #employeeCommentFormArea itself stays as a plain wrapper div purely as
-   the hook detail.js's own refreshEmployeeCommentAddFormDisabledState() disables/enables against.
-   2026-09-14, real bugs found and fixed (both this same review):
-   (1) LEFT ALIGNMENT -- this rule had no horizontal `padding` of its own, so the textarea/tag row
-   sat flush against modal-body's raw `1rem` padding, while `.emp-header-card` (its own `--sp-3`
-   padding) and `#employeeCommentList` (its own `padding: 0 var(--sp-3)`, below) both sit `--sp-3`
-   FURTHER in -- 3 elements that are supposed to share one left edge, only 2 of them actually did.
-   `padding: 0 var(--sp-3)` here closes that gap so avatar/header-card-content/textarea all start at
-   the exact same x-position -- confirmed via Playwright `getBoundingClientRect().left` on all 3
-   (equal, not just visually close).
-   (2) VERTICAL GAP -- `margin-top` was `--sp-3` (12px), not even matching the `--sp-5` (24px)
-   comment-to-comment gap in the list above it (`.comment-list`'s own `gap`, style.css) -- looked
-   visibly cramped next to that wider rhythm once the list itself actually had `--sp-5` between real
-   items to compare against. First fix landed on `--sp-5` (equal to the between-comment gap) -- caught
-   as still wrong on the SAME review: equal spacing reads as "one more comment in the list", but the
-   compose form is structurally a DIFFERENT thing (an input section, not another posted comment) and
-   needs to look like a boundary, not just another list row. `--sp-6` (32px, one step up the same 4px
-   scale -- no new token needed) is what actually makes that boundary read visually, confirmed by
-   measuring it's genuinely wider than the between-item gap, not just nominally a different token. */
-#employeeCommentFormArea {
-    padding: 0 var(--sp-3);
-    margin-top: var(--sp-6);
-}
-#employeeCommentFormArea textarea#employeeCommentText,
-.employee-comment-inline-edit-text {
-    resize: vertical;
-}
-/* Comment list container itself -- --sp-4 gap under emp-header-card (explicit instruction, item 4,
-   unchanged by the component swap) and horizontal padding matching emp-header-card's own --sp-3
-   inset (modal-body keeps Bootstrap's default padding; emp-header-card's own --sp-3 padding is
-   additional inset on top of that) so each comment's own avatar column lines up under the header
-   card's own avatar instead of sitting flush against modal-body's raw edge. */
-#employeeCommentList {
+/* 2026-09-15, Round 3 (comment-list restyle) -- the compose form is the shared COMPOSER component
+   (`commentComposerHtml()`, app.js) rendered by detail.js into #employeeCommentComposer, sitting
+   ABOVE the list (rules.md §6: composer first, newest comment right below it).
+   2026-09-15, same-day follow-up (item 1) -- WIDTH: these 2 containers used to carry
+   `padding: 0 var(--sp-3)` so their CONTENT lined up with `.emp-header-card`'s own padded content.
+   That made every box inside them (the composer, each comment, the empty state) 24px narrower than
+   the header card itself, and the per-item rules (item 3) would have stopped short of the card's own
+   bottom border on both sides. Padding removed: composer/items/empty-state now share the header
+   card's own left and right EDGES exactly (verified with getBoundingClientRect() on all 3, equal to
+   the pixel), which is what makes the rules read as one continuous vertical rhythm with the card.
+   Exactly one of #employeeCommentComposer / #employeeCommentReadOnlyNotice is ever visible (the
+   notice replaces the composer once the run has finished, see commentsReadOnlyRd() in detail.js) --
+   so the notice carries the same `--sp-6` gap down to the list that `.comment-composer` itself
+   carries, and the list never needs a top margin of its own for either case. */
+#employeeCommentComposer {
     margin-top: var(--sp-4);
-    padding: 0 var(--sp-3);
+}
+#employeeCommentReadOnlyNotice {
+    margin-top: var(--sp-4);
+    margin-bottom: var(--sp-6);
 }
 
 /* 2026-08-29, same-day follow-up: "ปรับ radio group...ให้ดูสวยขึ้น หรือเป็นแค่ checkbox เรียงกัน 3 แถวหรือ
@@ -6067,68 +6140,46 @@ html, body {
     .item-checklist-cols { column-count: 3; }
 }
 
-/* Tag picker (2026-09-14, Round 3 Phase B, explicit instruction) -- REPLACES the old bespoke
-   gradient-pill design (.apv-comment-tag-*, removed, 0 remaining call sites confirmed via grep) with
-   a toggle built directly on top of statusBadgeHtml()'s own `.badge.badge-{tone}` output (the exact
-   same markup an already-posted comment's tag badge in the list renders, and the exact same size --
-   no size override anywhere in this block). Structure: a hidden radio + a `<label>` wrapping one
-   `.badge` each (detail.php/detail.js both build it this way) -- `.comment-tag-picker label` is the
-   click target, `input:checked + label .badge` is the selected one.
-   Unselected = OUTLINE: the shared `.badge.badge-{tone}` rule already sets `color` to that tone's
-   token (elsewhere in this file) -- overriding its normally-soft `background` to transparent and
-   adding a `currentColor` border turns that same coloring into an outline instead, no per-tone
-   color list needed here.
-   Selected = FILLED: reuses the `--c-{tone}-fill`/`-on-fill` token pairs `.btn-decision-*` (§4's
-   decision-set exception) already established for "solid background, guaranteed-readable text, both
-   themes" -- a 4th consumer of an already-solved problem, not a new one (see tokens.css's own
-   comment on `--c-neutral-fill`, added this round for the 'no tag' chip specifically, for the
-   contrast numbers). `font-weight: 600` matches `.btn-decision-*`'s own requirement for the same
-   reason (warning's fill only clears WCAG's bold-text 3:1 threshold, not the regular 4.5:1) --
-   applied to all 4 tones uniformly here too, same "consistent, not just where strictly needed"
-   choice tokens.css's own comment documents for the buttons. */
-.comment-tag-picker {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: var(--sp-1);
-    overflow-x: auto;
-}
-.comment-tag-picker input {
-    display: none;
-}
-.comment-tag-picker label {
-    margin: 0;
-    cursor: pointer;
-    flex-shrink: 0;
-}
-.comment-tag-picker .badge {
+/* Badge dropdown (rules.md §5's own "Badge dropdown" block) -- `badgeDropdownHtml()` /
+   `initBadgeDropdown()` (app.js). A status badge that is also a dropdown toggle, used in 2 real
+   places: Payroll Detail's verify-status badge in the table (ACTION menu) and the comment composer's
+   own tag picker (VALUE picker). Almost all of it is already-shared CSS -- `.badge.badge-{tone}`
+   (§5), `button.badge`'s own chrome reset, Bootstrap's `.dropdown-toggle::after` caret and the
+   app-wide `.dropdown-menu`/`.dropdown-item` rules (§6's "Dropdown ของปุ่ม": 1px `--c-border`,
+   `--radius`, `--shadow-soft`) -- so this block only adds what those don't cover.
+   2026-09-15: REPLACES the 2026-09-14 `.comment-tag-picker` chip row (4 always-visible radio chips,
+   outline when unselected / solid `--c-{tone}-fill` when selected). Its solid-fill half is gone with
+   it: a menu row is a CHOICE, never a statement of state, so every row renders outline and the
+   current one is marked by a ✓ instead of by being filled in. `--c-neutral-fill`/`--c-neutral-on-fill`
+   (tokens.css, added that day for the filled "no tag" chip specifically) therefore have no consumer
+   left -- kept in tokens.css as the documented 4th `-fill`/`-on-fill` pair rather than deleted, since
+   the pair itself is still the right answer for any future "solid neutral chip". */
+.badge-outline {
+    /* The shared `.badge.badge-{tone}` rules already set `color` to that tone's own token, so a
+       transparent fill + a `currentColor` border turns the exact same badge into its outline form
+       without needing a per-tone list here. */
     background: transparent;
     border: 1px solid currentColor;
+}
+.badge-dropdown-toggle {
     cursor: pointer;
 }
-.comment-tag-picker input:checked + label .badge-warning {
-    background: var(--c-warning-fill);
-    border-color: var(--c-warning-fill);
-    color: var(--c-warning-on-fill);
-    font-weight: 600;
+.badge-dropdown .dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
 }
-.comment-tag-picker input:checked + label .badge-danger {
-    background: var(--c-danger-fill);
-    border-color: var(--c-danger-fill);
-    color: var(--c-danger-on-fill);
-    font-weight: 600;
+/* Gray ✓ at the end of the row that is the current value. Rendered on EVERY row and hidden with
+   `visibility` (not added/removed from the DOM, and not `display:none`) so switching the selection
+   never changes any row's width/height -- the menu can't twitch as the ✓ moves. */
+.badge-dropdown-check {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--c-text-faint);
+    visibility: hidden;
 }
-.comment-tag-picker input:checked + label .badge-success {
-    background: var(--c-success-fill);
-    border-color: var(--c-success-fill);
-    color: var(--c-success-on-fill);
-    font-weight: 600;
-}
-.comment-tag-picker input:checked + label .badge-neutral {
-    background: var(--c-neutral-fill);
-    border-color: var(--c-neutral-fill);
-    color: var(--c-neutral-on-fill);
-    font-weight: 600;
+.badge-dropdown-item.is-selected .badge-dropdown-check {
+    visibility: visible;
 }
 
 /* ==========================================================================

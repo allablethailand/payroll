@@ -1633,6 +1633,7 @@
     "confirm_verify_all_title": "ตรวจสอบพนักงานทั้งหมด {count} คนในรอบนี้?",
     "confirm_verify_all_message": "พนักงานทุกคนในรอบนี้จะไม่ถูกคำนวณใหม่และไม่สามารถแก้ไขได้จนกว่าจะยกเลิกการตรวจสอบ",
     "employee_comment_timeline_title": "คอมเมนต์",
+    "employee_comment_timeline_title_count": "คอมเมนต์ ({count})",
     "employee_comment_timeline_empty": "ยังไม่มีคอมเมนต์",
     "employee_comment_tag": "แท็ก",
     "employee_comment_tag_none": "ไม่มีแท็ก",
