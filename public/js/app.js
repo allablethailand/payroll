@@ -1021,6 +1021,48 @@ function initRowToggles($table, options) {
 // added -- if a future page genuinely needs client-side table-to-file export with no backend
 // endpoint to call, that would need a real library decision, reported before adding it, not silently
 // bundled in here.
+// 2026-09-15, rules.md 7 "DataTable toolbar" -- the toolbar is the COMPONENT's, not each page's.
+// `options.toolbar = { create: html|null, actions: [html...], export: bool }`:
+//   create  = the one button that makes a new row (orange, right-most)
+//   actions = every other toolbar button (bulk actions, sync, log, ...) in caller order
+//   export  = whether the shared export dropdown renders (same as `options.export` being set)
+// Rendered order at `sm` and up, one row:  [length][actions] .... [export][search][create]
+// Below `sm`, two rows:  row 1 [length][search ~60%] | row 2 [actions] ..... [export][create]
+// (the row break is a CSS `::after` line-break inside `.dt-layout-row`, see style.css).
+// Pages that pass no `toolbar` are untouched: nothing is inserted and the markup is byte-identical
+// to before, which is what keeps every not-yet-migrated page rendering exactly as it did.
+function dtRenderToolbarSlot($table, toolbar) {
+    if (!toolbar) return;
+    const $wrapper = $table.closest('.dataTables_wrapper, .dt-container');
+    const $search = $wrapper.find('.dt-search').first();
+    if (!$search.length) return;
+    const $end = $search.parent();
+    $end.find('.dt-toolbar-actions, .dt-toolbar-create').remove();
+    const actions = (toolbar.actions || []).filter(Boolean);
+    if (actions.length) {
+        // Actions live on the LEFT, straight after the length select: they act on the rows already
+        // on screen, which is the same half of the toolbar that says how many rows that is.
+        const $actions = $('<div class="dt-toolbar-actions"></div>');
+        actions.forEach(html => $actions.append(html));
+        const $start = $wrapper.find('.dt-layout-start').first();
+        if ($start.length) $start.append($actions); else $search.before($actions);
+    }
+    // The export dropdown is appended INTO `.dt-search` by dtInjectExportDropdown() (which every
+    // page uses, toolbar slot or not) -- a toolbar page wants it to the LEFT of the search box, so
+    // it is moved here rather than in that shared function, leaving non-toolbar pages untouched.
+    const $exportDropdown = $wrapper.find('.dt-export-dropdown');
+    if ($exportDropdown.length) $search.before($exportDropdown);
+    if (toolbar.create) {
+        $search.after($('<div class="dt-toolbar-create"></div>').append(toolbar.create));
+    }
+    $wrapper.addClass('dt-has-toolbar').toggleClass('dt-toolbar-noactions', actions.length === 0);
+    // DataTables' own toolbar row is a plain Bootstrap `.row` with no stable class of its own, so
+    // the row that actually holds these cells gets marked here rather than guessed at in CSS.
+    $end.parent().addClass('dt-toolbar-row');
+    if (typeof applyLanguage === 'function' && typeof currentLang !== 'undefined') {
+        updateText($end[0]);
+    }
+}
 function dtInjectExportDropdown($table, exportOptions) {
     const $wrapper = $table.closest('.dataTables_wrapper, .dt-container');
     const $searchDiv = $wrapper.find('.dt-search');
@@ -1123,7 +1165,12 @@ function initSharedDataTable(selector, options) {
     // options, so this composition path is never even entered for them; their own manually-written
     // drawCallback/initComplete (annual-summary.js's 4 tables) or complete absence of one
     // (payroll/detail.js's 4 tables) passes through exactly as before, unaffected.
-    if (options.stickyColumns || options.columnFilters || options.export || options.emptyState) {
+    if (options.toolbar && options.toolbar.export && !options.export) {
+        // `toolbar.export: true` is just a friendlier spelling of the existing `options.export`
+        // option for a caller that has nothing to configure about it.
+        options.export = options.export || {};
+    }
+    if (options.stickyColumns || options.columnFilters || options.export || options.emptyState || options.toolbar) {
         const userDrawCallback = dtOptions.drawCallback;
         const userInitComplete = dtOptions.initComplete;
         // 2026-09-13, Round 2 item 6e -- `options.emptyState` needs the SAME every-draw hook
@@ -1168,6 +1215,7 @@ function initSharedDataTable(selector, options) {
                 }
             }
             if (options.export) dtInjectExportDropdown($table, options.export);
+            if (options.toolbar) dtRenderToolbarSlot($table, options.toolbar);
         };
     }
     return $table.DataTable(dtOptions);

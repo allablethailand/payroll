@@ -475,6 +475,23 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
 
 <!-- ==================== Checkbox / Radio / Switch (§9) ==================== -->
 <div class="cp-section">
+    <h2>DataTable toolbar (§7) — <code>options.toolbar</code></h2>
+    <p class="cp-section-note">ปุ่มใน toolbar ส่งผ่าน <code>initSharedDataTable(sel, { toolbar: { create, actions: [], export } })</code> — <b>ห้าม append เข้า <code>.dt-search</code> เอง</b>. ≥ <code>sm</code> แถวเดียว [length][actions] ··· [export][search][create]; &lt; <code>sm</code> 2 แถว (1 [length select] ··· [search ~60% placeholder, ขอบขวาตรงกับ create] · 2 [actions ชิดซ้าย] ··· [export][create] ขวา), ระยะระหว่างแถว <code>--sp-2</code>, ปุ่มไม่ย่อขนาด. ตัวอย่างจริง: ตารางพนักงานใน Payroll Detail.</p>
+    <div class="cp-row">
+        <pre class="cp-code">initSharedDataTable('#tb_run_detail', {
+    toolbar: {
+        create: `&lt;button id="btnJoinEmployees" class="btn btn-sm btn-primary"&gt;...&lt;/button&gt;`,
+        actions: [
+            `&lt;button id="btnBulkVerify" class="btn btn-sm btn-outline-secondary"&gt;...&lt;/button&gt;`,
+            `&lt;button id="btnVerifyAllEmployees" class="btn btn-sm btn-outline-secondary"&gt;...&lt;/button&gt;`,
+        ],
+    },
+});</pre>
+    </div>
+</div>
+
+<!-- ==================== Form ใน panel (§9) ==================== -->
+<div class="cp-section">
     <h2>Form ใน panel (§9) — <code>.form-compact</code></h2>
     <p class="cp-section-note">ใส่ <code>.form-compact</code> ที่ tab pane/panel ที่ครอบฟอร์ม — <b>ทุกข้อความในนั้นขนาดเดียวคือ <code>--fs-sm</code></b> (ไม่มี <code>--fs-xs</code> ในฟอร์ม) ลำดับชั้นทำด้วยสี/น้ำหนัก: label 500 <code>--c-text</code> · control 400 <code>--c-text</code> · helper/สรุป 400 <code>--c-text-muted</code> · segment ไม่เลือก 500 / เลือก 600 ขาว. ระยะ 4 ค่า: label→control <code>--sp-1</code> · control→helper <code>--sp-2</code> · แถว→แถว <code>--sp-3</code> · ก่อน section <code>--sp-4</code>. รายชื่ขนาดต้องเขียนชัดๆ เพราะ <code>.small</code>/<code>.btn</code>/ธีม select2 ตั้งขนาดของตัวเอง.</p>
     <div class="cp-row">

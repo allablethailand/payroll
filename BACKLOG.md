@@ -830,3 +830,36 @@ that half was deliberately left alone. Worth pairing with the same check in Empl
 
 **Source:** Phase Design Round 3 item 4 batch 2/4 follow-up, found while answering the pre-work
 questions about the payee sub-form (2026-09-15).
+
+---
+
+## รอบ 4: ย้ายทุกหน้าที่ยังใช้ `$().DataTable()` ตรงๆ → `initSharedDataTable` + ส่งปุ่มผ่าน `options.toolbar`
+
+`initSharedDataTable()` มี toolbar slot แล้ว (2026-09-15, rules.md §7 "DataTable toolbar") — ปุ่ม toolbar
+ส่งผ่าน `{ create, actions: [], export }` และ component จัดตำแหน่ง/การขึ้นแถวใหม่บนจอแคบให้เอง
+— แต่**ใช้ได้เฉพาะตารางที่สร้างผ่าน `initSharedDataTable`** ซึ่งตอนนี้มีหน้าเดียว (Payroll Detail)
+อีก 14 ไฟล์ยังสร้าง DataTable เองด้วย `$('#x').DataTable({...})` และ append ปุ่มเข้า `.dt-search`/`.dt-length` ตรงๆ
+(25 ปุ่ม) จึงยังรับ slot ไม่ได้:
+
+| ไฟล์ | ปุ่มที่ inject อยู่ |
+|---|---|
+| `employee/list.js` | `#btnBulkSyncSelected` (เข้า `.dt-length`) · `.manage-employee` (create) · `#btnOpenEmployeeSync` · `#btnOpenEmployeeSyncLog` |
+| `employee/detail.js` | ปุ่มเพิ่มรายการ (create) · `add_recurring_earning` · `add_recurring_deduction` |
+| `manual-entry/index.js` | ปุ่มเพิ่ม (create) · Add Multiple · Import File |
+| `setup/setup-rules.js` | Add (create) · `#btnOpenHolidaySync` · `#btnOpenHolidaySyncLog` · `#btnApplyLeaveTypeDefaults` |
+| `setup/company-profile.js` | bank_account (create) · org-sync · org-sync-log |
+| `setup/payroll-configuration.js` | Add ×2 · cycle (create) |
+| `payroll/index.js` | payroll_run (create) · `#bulkPullBar` (ย้าย DOM node เดิมเข้า `.dt-length`) |
+| `payroll/approval.js` | `#approvalBulkBar` (ย้าย DOM node เดิมเข้า `.dt-length`) |
+| `setup/announcements.js` | ปุ่มประกาศใหม่ (create) |
+| `setup/employment-certificate-request.js` | ขอหนังสือรับรอง (create) |
+| `setup/employment-certificate-template.js` | add_template (create) |
+| `setup/payslip-request.js` | ขอสลิป (create) |
+| `setup/payslip-template.js` | add_template (create) |
+| `setup/tax-statutory.js` | sr_add_custom_item (create) |
+
+**ทำเมื่อไหร่**: ทำพร้อมตอนไล่หน้านั้นตาม `audit.md` รอบ 4 — **ไม่ทำแยกเป็นงานของตัวเอง** เพราะการย้าย
+ตารางมา `initSharedDataTable` แตะ layout/language/columnDefs ของตารางนั้นด้วย ต้องตรวจหน้านั้นทั้งหน้าอยู่ดี
+— การไล่แก้ 14 ไฟล์รวดเดียวคือการเสี่ยง regression 14 หน้าพร้อมกันโดยไม่มีใครดูหน้าจริง
+
+**Source:** Phase Design Round 3, DataTable toolbar slot (2026-09-15).

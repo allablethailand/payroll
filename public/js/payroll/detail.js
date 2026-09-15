@@ -2896,6 +2896,17 @@ function initRunDetailTable(details) {
         // footer cells, but this table's own <tfoot> (detail.php) uses `<th>` (matching its header/
         // §7 convention) -- so the footer totals row does NOT get frozen along with the header/body.
         stickyColumns: { left: 3 },
+        // 2026-09-15, rules.md 7 "DataTable toolbar": these 3 buttons used to be appended straight into
+        // `.dt-search`/`.dt-length` from this table's own initComplete. They are handed to the shared
+        // toolbar slot instead -- same ids, same classes, same delegated handlers, the component just
+        // decides WHERE they sit (and how the row reflows below `sm`).
+        toolbar: {
+            create: `<button type="button" id="btnJoinEmployees" class="btn btn-sm btn-primary"><i class="fa-solid fa-plus me-1"></i><span data-i18n="employee">${langData['employee'] || 'Employee'}</span></button>`,
+            actions: [
+                `<button type="button" id="btnBulkVerify" class="btn btn-sm btn-outline-secondary" disabled><span data-i18n="action_verify_selected">${langData['action_verify_selected'] || 'Verify Selected'}</span> <span id="runDetailBulkCount">${countBadgeHtml(0)}</span></button>`,
+                `<button type="button" id="btnVerifyAllEmployees" class="btn btn-sm btn-outline-secondary"><span data-i18n="action_verify_all">${langData['action_verify_all'] || 'Verify All'}</span></button>`,
+            ],
+        },
         // §7: per-column Excel-style filter -- moved here from a manual initExcelColumnFilters() call
         // inside this table's own initComplete below (initSharedDataTable() now owns wiring it in
         // automatically per §7's own "ครอบหน้าที่ของ initExcelColumnFilters() ให้เอง" decision). Same 4
@@ -3190,24 +3201,11 @@ function initRunDetailTable(details) {
             // Approve -- moves the RUN forward), while "+ Employee" is a genuinely different kind of
             // action (CREATES a row in a table), so both being orange doesn't create 2 competing "the
             // one thing to do here" signals -- see §2/§4's own newly-documented exception text.
+            // 2026-09-15: the 3 toolbar buttons are rendered by the shared slot now (see this
+            // table's own `toolbar` option above) -- all that is left here is the draft-only
+            // visibility they always had, applied to whatever the slot rendered.
             const isDraft = !!currentRun && currentRun.state === 'draft';
-            const $container = $(this.api().table().container());
-            const $lengthDiv = $container.find('.dt-length');
-            const $searchDiv = $container.find('.dt-search');
-            if ($searchDiv.find('#btnJoinEmployees').length === 0) {
-                // 2026-09-09: no more ms-1/ms-2 margin utilities on these -- .dt-search/.dt-length
-                // themselves are now real flex containers with their own `gap` (style.css), so a
-                // margin utility here would just add EXTRA space on top of that gap redundantly.
-                $searchDiv.append(`<button type="button" id="btnJoinEmployees" class="btn btn-sm btn-primary${isDraft ? '' : ' d-none'}"><i class="fa-solid fa-plus me-1"></i><span data-i18n="employee">${langData['employee'] || 'Employee'}</span></button>`);
-            }
-            // The count is countBadgeHtml() (app.js, §5's own "count badge = neutral" rule) instead of
-            // plain "(N)" text, same shape as the Adjusted-N/Comments-count badges elsewhere on this
-            // page -- updateRunDetailBulkBar() below sets its .html(), not .text(), to match. Both stay
-            // btn-outline-secondary, no icon (the button's own text already says what it does).
-            if ($lengthDiv.find('#btnBulkVerify').length === 0) {
-                $lengthDiv.append(`<button type="button" id="btnBulkVerify" class="btn btn-sm btn-outline-secondary${isDraft ? '' : ' d-none'}" disabled><span data-i18n="action_verify_selected">${langData['action_verify_selected'] || 'Verify Selected'}</span> <span id="runDetailBulkCount">${countBadgeHtml(0)}</span></button>`);
-                $lengthDiv.append(`<button type="button" id="btnVerifyAllEmployees" class="btn btn-sm btn-outline-secondary${isDraft ? '' : ' d-none'}"><span data-i18n="action_verify_all">${langData['action_verify_all'] || 'Verify All'}</span></button>`);
-            }
+            $('#btnJoinEmployees, #btnBulkVerify, #btnVerifyAllEmployees').toggleClass('d-none', !isDraft);
             // 2026-09-13, Round 3 item 3b: initExcelColumnFilters() itself no longer called here --
             // initSharedDataTable()'s own `columnFilters` option (passed at the top of this call)
             // wires it in automatically now (§7's own "ครอบหน้าที่ของ initExcelColumnFilters() ให้เอง").

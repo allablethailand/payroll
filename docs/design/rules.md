@@ -1174,6 +1174,19 @@ component ทุกตัวของรอบ 2 จากนี้**: markup �
 
 ## 7. ตาราง — DataTable standard (ใช้กับทุกตารางทั้งเก่าและใหม่)
 
+**DataTable toolbar (แทนกฎเดิมที่ให้แต่ละหน้า inject ปุ่มเข้า `.dt-search` เอง)**
+- **ส่งปุ่มผ่าน `initSharedDataTable(sel, { toolbar: { create, actions: [], export } })` เท่านั้น** — `create` = ปุ่มสร้าง
+  แถวใหม่ (ส้ม ขวาสุด) · `actions` = ปุ่มอื่นๆ ตามลำดับที่ส่ง · `export` = dropdown ส่งออกของกลาง
+  — **ห้าม `$('.dt-search').append(...)` เอง** (id/handler เดิมใช้ต่อได้ปกติ ย้ายแค่ที่ประกอบ markup)
+- **≥ `sm` แถวเดียว**: `[length][actions]` ซ้าย ····· `[export][search][create]` ขวา (actions อยู่กลุ่มเดียวกับ
+  length — มันกระทำกับแถวที่อยู่บนหน้าจอ ไม่ใช่กลุ่มค้นหา/สร้าง)
+- **< `sm` 2 แถว ระยะระหว่างแถว `--sp-2`**: (1) `[length ซ้าย เหลือเฉพาะ select]` ·····
+  `[search ขวา ~60% ใช้ placeholder แทน label ขอบขวาของ input ตรงกับปุ่ม create แถวล่าง]` · (2) `[actions ชิดซ้าย wrap ได้]` ····· `[export][create]` ขวา
+  — ตัดแถวด้วย `::after` ของแถวเอง (flex line-break) ไม่เพิ่ม container ใหม่ — **ปุ่มไม่ย่อขนาด**:
+  ถ้าแถว 2 ไม่พอ ปุ่มใน actions wrap กันเองก่อน แล้วค่อยขึ้นแถวใหม่ — ตัดแถวด้วย flex line-break
+  (`::after`) ไม่ใช่ container ใหม่ DOM ที่ DataTables สร้างจึงไม่เปลี่ยน
+- **หน้าที่ไม่ส่ง `toolbar` ต้องหน้าตาเหมือนเดิมทุกประการ** — slot เป็น opt-in ไม่แทรก markup ของหน้าที่ยังไม่ย้าย
+
 - **แถว empty state ของตาราง (`td.dt-empty-cell`) เป็น `position: sticky; left: 0`** — เซลล์นั้นกว้างเท่าตารางทั้งใบ
   ถ้าไม่ตรึง ข้อความจะเลื่อนหายทันที่ที่ผู้ใช้เลื่อนตารางไปขวา
 
