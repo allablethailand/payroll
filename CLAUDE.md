@@ -10,6 +10,8 @@
   latest round. If a file already has uncommitted work from an earlier round sitting in it, write
   ONE combined message covering all of it, titled after the main/most recent task — never a message
   that only covers what changed in this round while leaving out what's already there uncommitted.
+- COMMIT_MSG_NEXT: บรรทัดแรก = title, เนื้อความเป็นหัวข้อสั้น ไม่เกิน 30 บรรทัด — สิ่งที่เปลี่ยน + ไฟล์กลุ่มหลัก + ผล test;
+  ไม่ต้องเล่าเหตุผล/การวัด/สิ่งที่ลองแล้วพัง (ของพวกนั้นอยู่ใน rules.md / docs/decisions แล้ว)
 
 ## Database
 - Schema changes always go in `database/migrations/<date>_<desc>.sql` with UP and DOWN sections
