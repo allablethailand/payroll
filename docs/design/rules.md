@@ -1199,6 +1199,13 @@ component ทุกตัวของรอบ 2 จากนี้**: markup �
   ปัจจุบัน = `fa-filter` ตัวเดียวกับ `filter-bar-label-icon`, ขนาด 11px (`0.9167rem`, ของเดิมอยู่แล้ว ไม่ได้
   แก้ตาม) สี `--c-text-faint`/`--c-primary` ตามด้านบน
 
+**ช่องค้นหาใน popup (`.tcf-search-wrap`, style.css)**: ไอคอนแว่น `left: var(--sp-2)` ขนาด `--fs-xs`
+สี `--c-text-muted` **`pointer-events: none`** (ไอคอนเป็นของตกแต่ง ห้ามกินคลิกของช่อง) — `input` ใช้
+`padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-6)` `font-size: var(--fs-sm)` `border-radius: var(--radius)`
+— **ตำแหน่งไอคอนกับจุดเริ่มข้อความต้องมาจาก spacing scale เดียวกันเสมอ** ห้ามตั้งค่าแยกกัน — panel มีตัวเดียวทั้งแอป
+(`ensurePanel()`) จึง**แก้ที่ CSS กลางเท่านั้น ห้ามเขียน override รายหน้า/รายตาราง** — ที่มา/ตัวเลขที่วัดได้:
+`docs/decisions/2026-09-15-payslip-inset-and-filter-search.md`
+
 Demo: `docs/design/components.php`'s DataTable (§7) section's own `#cpDemoTable` (ผ่าน
 `initSharedDataTable()`'s `columnFilters` option อยู่แล้วตั้งแต่รอบ 2 — ไม่ต้องสร้าง demo แยกใหม่) — กด
 ตัวกรองที่หัวคอลัมน์ "สถานะ" เห็นทุกจุดข้างบนพร้อมกัน
@@ -1604,6 +1611,12 @@ page-local block มา 2 รอบก่อนหน้า (callout ก่อ�
 
 **สลิป / รายละเอียดการคำนวณ** (modal รายละเอียดการคำนวณ)
 - partial `payslip-view.php` แบบสลิป 2 คอลัมน์ (รายได้ | รายหัก) + สรุปล่าง (รวมรายได้/รวมหัก/สุทธิ) ตัวเลข `.num` — ใช้ทั้ง modal และหน้าพิมพ์/PDF ตัวเดียวกัน
+- **ระยะขอบซ้าย-ขวาภายในสลิปมีค่าเดียว: `--payslip-inset` (= `--sp-3`) ประกาศบน `.payslip-view`** — ใช้กับ
+  `.payslip-col-title`, `.payslip-row td:first-child`/`:last-child`, `.payslip-subgroup-label`,
+  `.payslip-col-total`, `.payslip-summary-row-net` **ทุกจุดต้องอ้างตัวแปรนี้ ห้ามใส่ค่าตรงๆ**
+- **แถบรวม (`.payslip-col-total`) ต้องเต็มความกว้างคอลัมน์เสมอ — inset อยู่ที่เนื้อหา ห้ามหดตัวแถบเข้า** (ไม่งั้น 2 แถบ
+  ซ้าย-ขวาจะไหลเข้าหากันในช่อง `--sp-4` ระหว่างคอลัมน์) — ที่มา/ตัวเลขที่วัดได้:
+  `docs/decisions/2026-09-15-payslip-inset-and-filter-search.md`
 
 **emp-header-card — เสร็จแล้ว รอบ 2 item 6c** (หัวการ์ดพนักงาน ใช้เป็นบล็อกแรกของทุก modal ที่เปิดจากแถว
 พนักงาน — quick-view, รายละเอียดคำนวณ, comment, verify, ผูกบัญชีธนาคาร ฯลฯ)

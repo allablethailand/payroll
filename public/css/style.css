@@ -5012,7 +5012,7 @@ button.badge {
     background: var(--c-bg-subtle);
     border: 1px solid var(--c-border);
     border-radius: var(--radius);
-    padding: var(--sp-3);
+    padding: var(--sp-3) var(--payslip-inset);
 }
 .calendar-widget-detail-date {
     font-weight: 600;
@@ -5147,15 +5147,25 @@ button.badge {
      `--c-bg-subtle`, the established "raised surface distinct from base bg" token already used for
      modal footer/table header/filter bar (already dark-mode-aware, already proven distinct from
      `--c-bg` -- the modal's own background -- in both themes, so it does not blend into the modal in
-     dark mode either). Flush to each box's own existing left/right edges (no horizontal
-     padding/bleed) on purpose: `.payslip-col-total`'s label/amount then stay perfectly right-aligned
-     with the `.num` column above it (2 side-by-side bands bleeding into the `--sp-4` column-gap
-     toward each other would risk visually touching/merging, so this avoids that entirely rather
-     than tuning a bleed amount against that risk). No new border added on either (explicit
+     dark mode either). 2026-09-15, corrected: these 2 bands used to have NO horizontal
+     padding at all, so their text sat flush against the gray band's own edge (measured 0px) while
+     the "ยอดจ่ายสุทธิ" band right below them had 12px -- 2 bands of the same kind, 2 different insets.
+     There was never a rule making them match (checked before changing anything: nothing was
+     overriding one, the 0 was written here deliberately and is what this paragraph used to defend).
+     Fixed with ONE inset variable, `--payslip-inset` on `.payslip-view`, applied to all 4 things
+     that must share a left edge -- column title, every line row's own first/last cell, the column
+     total band, and the net band -- so they move together instead of drifting apart again. The bands
+     still span their column's FULL width (only their content is inset), so 2 side-by-side bands
+     still never bleed toward each other across the `--sp-4` column gap, which is what the original
+     0 was protecting. No new border added on either (explicit
      instruction: "ห้ามเพิ่ม border ต่อแถว") -- background + weight only, same "ลดเส้น" posture as the
      rest of this component. */
 .payslip-view {
     padding-top: var(--sp-4);
+    /* The ONE horizontal inset every part of this component shares (title, line rows, column-total
+       band, net band) -- a variable, not 4 repeated literals, because the whole point is that these
+       can never disagree again. */
+    --payslip-inset: var(--sp-3);
 }
 .payslip-columns {
     display: grid;
@@ -5171,7 +5181,7 @@ button.badge {
     color: var(--c-text);
     font-weight: 700;
     font-size: var(--fs-sm);
-    padding-bottom: var(--sp-2);
+    padding: 0 var(--payslip-inset) var(--sp-2);
     margin-bottom: var(--sp-3);
     border-bottom: 1px solid var(--c-border);
 }
@@ -5180,6 +5190,16 @@ button.badge {
 }
 .payslip-row td {
     padding: var(--sp-2) 0;
+}
+/* First/last cell carry the shared inset so a line's name and its amount line up with the title
+   above and the total band below. A "-" placeholder row is a single `colspan="2"` cell, i.e. both
+   first AND last child, so it picks up both sides from these same 2 rules. */
+.payslip-row td:first-child,
+.payslip-subgroup-label {
+    padding-left: var(--payslip-inset);
+}
+.payslip-row td:last-child {
+    padding-right: var(--payslip-inset);
 }
 .payslip-subgroup-label {
     padding-top: var(--sp-2);
@@ -5192,7 +5212,7 @@ button.badge {
     justify-content: space-between;
     align-items: center;
     margin-top: auto;
-    padding: var(--sp-3) 0 var(--sp-2);
+    padding: var(--sp-3) var(--payslip-inset) var(--sp-2);
     background-color: var(--c-bg-subtle);
     font-weight: 600;
 }
@@ -9511,24 +9531,37 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 }
 .tcf-search-wrap {
     position: relative;
-    margin-bottom: .5rem;
+    margin-bottom: var(--sp-2);
 }
+/* 2026-09-15, real bug found by measuring: the magnifier sat at left:9px and was ~14px wide (ending
+   at x=23), while the input's own `padding-left: 1.75rem` put the first character at x=22 -- i.e. the
+   placeholder started BEFORE the icon ended and the two overlapped. Icon and text position are now
+   derived from the same spacing scale instead of 2 unrelated literals: icon at `--sp-2` (8px), 12px
+   wide, so it ends at 20px; text starts at `--sp-6` (32px), leaving a real 12px gap. `pointer-events:
+   none` because the icon is decoration -- clicking it used to swallow the click instead of focusing
+   the field under it. Fixed here, in the ONE shared stylesheet rule, so every column's filter popup
+   on every page using initSharedDataTable() gets it (the panel itself is a single element reused for
+   every column/table -- see ensurePanel() in table-column-filter.js). */
 .tcf-search-wrap i {
     position: absolute;
-    left: 9px;
+    left: var(--sp-2);
     top: 50%;
     transform: translateY(-50%);
     color: var(--c-text-muted);
-    font-size: 0.9167rem;
+    font-size: var(--fs-xs);
+    pointer-events: none;
 }
 .tcf-search-wrap input {
     width: 100%;
-    padding: .3rem .5rem .3rem 1.75rem;
+    padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-6);
     border: 1px solid var(--c-border);
-    border-radius: 6px;
-    font-size: 1.0417rem;
+    border-radius: var(--radius);
+    font-size: var(--fs-sm);
     background-color: var(--c-bg);
     color: var(--c-text);
+}
+.tcf-search-wrap input::placeholder {
+    color: var(--c-text-faint);
 }
 .tcf-search-wrap input:focus {
     outline: none;
