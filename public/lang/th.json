@@ -1623,6 +1623,7 @@
     "action_verify_selected": "ตรวจสอบที่เลือก",
     "action_verify_all": "ตรวจสอบทั้งหมด",
     "action_comments": "คอมเมนต์",
+    "verify_status_unverified": "ยังไม่ตรวจสอบ",
     "verify_status_verified": "ตรวจสอบแล้ว",
     "confirm_bulk_verify_title": "ตรวจสอบพนักงานที่เลือก {count} คน?",
     "confirm_bulk_verify_message": "พนักงานที่ตรวจสอบแล้วจะไม่ถูกคำนวณใหม่และไม่สามารถแก้ไขได้จนกว่าจะยกเลิกการตรวจสอบ",

@@ -200,6 +200,9 @@ return [
     // report" cell elsewhere in this app; "not verified yet" isn't a status worth a colored pill.
     'verify_status' => [
         'verified' => ['label_key' => 'verify_status_verified', 'tone' => 'success'],
+        // 2026-09-15: the column's other state is a badge now too (it used to be a button), so it
+        // needs its own entry here rather than being "whatever the button said".
+        'unverified' => ['label_key' => 'verify_status_unverified', 'tone' => 'neutral'],
     ],
 
     // data_source (manual/sync/import) -- confirmed: this is NOT a status at all (§5: "Badge =

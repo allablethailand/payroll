@@ -2747,8 +2747,24 @@ table.dataTable thead th .dt-column-order {
    `.structure-tabs`'s own existing CSS (those already look like this and are NOT overridden a
    second time here -- confirmed no conflicting selector specificity issue since they're separate,
    additive classes). */
+/* 2026-09-15: a tab row never wraps -- it scrolls sideways instead (wrapped tabs split the underline
+   into two rows and bury the active tab). Applies to every `.nav-tabs` in the app, page-level and
+   inside a modal; `.scrollable-tabs` (the older opt-in class some pages carry) is now a duplicate of
+   this. The scrollbar is hidden -- the row is short and the gesture is swipe/drag, so a visible bar
+   would only eat height; `initTabScrollIntoView()` (app.js) brings the active tab into view. */
 .nav-tabs {
     border-bottom: 1px solid var(--c-border);
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+}
+.nav-tabs::-webkit-scrollbar {
+    display: none;
+}
+.nav-tabs > .nav-item,
+.nav-tabs > .nav-link {
+    flex: 0 0 auto;
 }
 .nav-tabs .nav-link {
     border: none;
@@ -3484,6 +3500,36 @@ th.col-money div.dt-column-header .dt-column-title {
     color: var(--c-text-muted);
     margin: var(--sp-1) 0 0;
 }
+/* 2026-09-15, below `md`: the header reads top-to-bottom -- breadcrumb, title + state badge,
+   description, then the action row. `.ph-title-row` becomes `display: contents` so its 2 children
+   join the header's own column flow and the actions can be ordered BELOW the description, which is
+   its sibling, not its child. Buttons keep their normal size and simply wrap onto another row when
+   they run out of width. */
+@media (max-width: 767.98px) {
+    .ph-header {
+        display: flex;
+        flex-direction: column;
+    }
+    .ph-title-row {
+        display: contents;
+    }
+    .ph-breadcrumb {
+        order: 1;
+    }
+    .ph-title-wrap {
+        order: 2;
+    }
+    .ph-description {
+        order: 3;
+    }
+    .ph-actions {
+        order: 4;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: var(--sp-2);
+        margin-top: var(--sp-3);
+    }
+}
 
 /* stat-card.php (§2), class `.stat` (deliberately NOT `.stat-card` -- see rules.md §2's own decision
    to kill the old colored+iconed class rather than extend it) -- plain white/bordered/no shadow, no
@@ -3628,6 +3674,51 @@ th.col-money div.dt-column-header .dt-column-title {
     gap: var(--sp-2);
     padding: var(--sp-3) var(--sp-4) var(--sp-2);
 }
+/* The chips block sits between the label and the Clear/caret pair and packs to the right. */
+.filter-bar-chips {
+    margin-left: auto;
+}
+.filter-bar-header-right {
+    flex-wrap: nowrap;
+}
+.filter-bar-label {
+    white-space: nowrap;
+}
+/* 2026-09-15, below `sm`: 2 rows while collapsed -- row 1 is the label (left) and Clear + caret
+   (right), both nowrap; row 2 is the chips, free to wrap among themselves, each one clipping its own
+   text rather than widening the row. */
+@media (max-width: 575.98px) {
+    .filter-bar-header {
+        flex-wrap: wrap;
+    }
+    .filter-bar.collapsed .filter-bar-chips {
+        order: 3;
+        flex: 1 0 100%;
+        margin-left: 0;
+        margin-top: var(--sp-2);
+    }
+    .filter-bar-label {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .filter-bar-header-right {
+        flex: 0 0 auto;
+    }
+    .filter-bar-chip {
+        max-width: 100%;
+        min-width: 0;
+        overflow: hidden;
+    }
+    /* the value is the part that can be arbitrarily long, so it is the part that clips */
+    .filter-bar-chip .filter-bar-chip-value {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+    }
+}
 .filter-bar-toggle {
     flex-shrink: 0;
 }
@@ -3698,6 +3789,29 @@ th.col-money div.dt-column-header .dt-column-title {
    (bold-ish, --bs-body-color, margin-bottom .5rem) reads as too heavy/dark for a field caption in
    this quiet panel; §14 "ซอฟต์ลง" direction applied here too. Scoped to `.filter-bar-body label` so
    it only affects labels inside THIS panel, not `.form-label` app-wide. */
+/* 2026-09-15: the field GRID belongs to this component, not to each caller. Whatever column class a
+   caller's own markup happens to carry, a filter field is 1 per row on a phone, 2 from `sm`, 3 from
+   `md` and 6 from `lg` -- the same ladder for every filter bar in the app. A caller that genuinely
+   needs an odd-width field has to say so here, not by writing its own column classes. */
+.filter-bar-body > .row > [class*="col-"] {
+    flex: 0 0 auto;
+    width: 100%;
+}
+@media (min-width: 576px) {
+    .filter-bar-body > .row > [class*="col-"] {
+        width: 50%;
+    }
+}
+@media (min-width: 768px) {
+    .filter-bar-body > .row > [class*="col-"] {
+        width: 33.333333%;
+    }
+}
+@media (min-width: 992px) {
+    .filter-bar-body > .row > [class*="col-"] {
+        width: 16.666667%;
+    }
+}
 .filter-bar-body label {
     font-size: var(--fs-xs);
     color: var(--c-text-muted);
@@ -4094,7 +4208,13 @@ th.col-money div.dt-column-header .dt-column-title {
    text-align, but the <td> itself still needs to not be left/vertically cramped by the table's
    normal cell padding -- initSharedDataTable()'s emptyState option injects this class on that <td>
    specifically so it never depends on a caller's own table CSS happening to look right by accident. */
+/* 2026-09-15: the empty-state cell spans every column, so on a table wide enough to scroll sideways
+   its message would slide out of view the moment the user scrolls. Sticking it to the scroller's own
+   left edge keeps the message where it can be read at any scroll position (`left: 0` on a cell whose
+   own width is the whole table is exactly the "pin to the viewport edge" behaviour wanted here). */
 td.dt-empty-cell {
+    position: sticky;
+    left: 0;
     padding: 0 !important;
 }
 
@@ -5948,6 +6068,46 @@ html, body {
     color: var(--c-text-muted);
     font-size: var(--fs-xs);
 }
+/* 2026-09-15, below `md`: the description stops competing for the same line -- it drops to its own
+   second line, wraps freely (no ellipsis, no separator dot) and the switch sits at the top-left of
+   the block instead of centred against a now 2-line row. */
+@media (max-width: 767.98px) {
+    /* 2 columns -- [switch | text] -- so the description starts at the SAME x as the name above it
+       rather than at the block's left edge under the switch. */
+    .setting-row-plain {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: start;
+        column-gap: var(--sp-2);
+        row-gap: var(--sp-1);
+    }
+    .setting-row-plain > .form-check.form-switch {
+        grid-column: 1;
+        grid-row: 1;
+    }
+    .setting-row-plain .setting-row-plain-label {
+        grid-column: 2;
+        grid-row: 1;
+        min-width: 0;
+        overflow-wrap: break-word;
+    }
+    .setting-row-plain .setting-row-sep {
+        display: none;
+    }
+    .setting-row-plain .setting-row-desc {
+        grid-column: 2;
+        grid-row: 2;
+    }
+    .setting-row .setting-row-desc {
+        font-size: var(--fs-sm);
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
+    }
+    .setting-row-card {
+        align-items: flex-start;
+    }
+}
 /* min-width:0 + flex:1 1 auto -- lets THIS specific flex item (the last one in the row) actually
    shrink below its own content width so `.setting-row-desc`'s shared ellipsis rule above can engage
    on a narrow container, instead of just overflowing the row (a plain flex item defaults to
@@ -7152,15 +7312,24 @@ html, body {
     color: var(--c-text-faint);
     cursor: not-allowed;
 }
-@media (max-width: 991.98px) {
+/* 2026-09-15, below `sm`: the group takes the full width and its segments SHARE it equally, still on
+   one row -- never a vertical stack (a 2-3 choice control reads as one control, and stacking it makes
+   it look like 3 separate buttons). The label still refuses to wrap; it clips if it somehow cannot
+   fit, which the "3 choices at most" rule should already prevent. */
+@media (max-width: 575.98px) {
     .segmented {
         display: flex;
-        flex-direction: column;
         width: 100%;
     }
-    .segmented > input[type="radio"] + label:not(:first-of-type) {
-        border-left: 0;
-        border-top: 1px solid var(--c-border);
+    .segmented > label {
+        flex: 1 1 0;
+        min-width: 0;
+        justify-content: center;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: block;
+        text-align: center;
+        line-height: calc(var(--fs-base) * 1.5);
     }
 }
 
@@ -11007,7 +11176,26 @@ tfoot .tbl-sticky-col {
    plain position:sticky instead). initStickyColumns() itself marks exactly which cell sits on each
    boundary (the LAST left-frozen column / the FIRST right-frozen column) via these 2 classes, rather
    than trying to derive "which sticky cell is on the edge" from a CSS sibling selector alone. */
+/* The frozen cells must be genuinely OPAQUE in all 3 sections, or the scrolling columns show through
+   them. `--bs-table-bg` alone is not enough: `.table-striped`'s own
+   `.table-striped > tbody > tr:nth-of-type(odd) > *` paints a real background-color at a higher
+   specificity than a lone class, so these set background-color directly, per section, at a
+   specificity that wins (body = the page surface, thead/tfoot = the header/footer band). */
+.table > tbody > tr > .tbl-sticky-col {
+    background-color: var(--c-bg);
+}
+.table > thead > tr > .tbl-sticky-col,
+.table > tfoot > tr > .tbl-sticky-col,
+.table > tfoot > tr > th.tbl-sticky-col {
+    background-color: var(--c-bg-subtle);
+}
+/* Shadow = "the table continues behind these columns", so it appears only once the table has
+   actually been scrolled sideways (initTableDragScroll() toggles `.tbl-scrolled-x` on the scroller)
+   -- and because the class sits on the scroller, head, body and footer all gain and lose it together. */
 .tbl-sticky-col-edge-left {
+    box-shadow: none;
+}
+.tbl-scrolled-x .tbl-sticky-col-edge-left {
     box-shadow: inset -6px 0 6px -6px rgba(0, 0, 0, .15);
 }
 .tbl-sticky-col-edge-right {

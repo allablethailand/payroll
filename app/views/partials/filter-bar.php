@@ -109,6 +109,9 @@
  *
  * Example call site (round 4, not written yet -- this file has no consumer this round):
  *   ob_start(); ?>
+ *     <!-- Column WIDTHS are the component's, not the caller's: 1 field per row below `sm`, 2 from
+ *          `sm`, 3 from `md`, 6 from `lg`, whatever col-* class each field happens to carry
+ *          (style.css, `.filter-bar-body > .row > [class*="col-"]`). -->
  *     <div class="row g-3">
  *       <div class="col-sm-2"><label class="form-label small mb-1" for="fDept">แผนก</label><select id="fDept" ...></div>
  *       <div class="col-sm-2"><label class="form-label small mb-1" for="fStatus">สถานะ</label><select id="fStatus" ...></div>
@@ -131,8 +134,12 @@ $pageKeyAttr = !empty($pageKey) ? ' data-page-key="' . htmlspecialchars($pageKey
             <i class="fa-solid fa-filter filter-bar-label-icon" aria-hidden="true"></i>
             <span data-i18n="filter_title">ตัวกรอง</span><span class="filter-bar-count-wrap d-none"> (<span class="filter-bar-count">0</span>)</span>
         </span>
+        <!-- 2026-09-15: chips are a direct child of the header (not of .filter-bar-header-right) so
+             that below `sm` they can wrap onto their own second row while the label and the
+             Clear/caret pair stay together on the first one. At `sm` and up `margin-left: auto`
+             keeps them packed to the right exactly where they have always been. -->
+        <div class="filter-bar-chips"></div>
         <div class="filter-bar-header-right">
-            <div class="filter-bar-chips"></div>
             <?php if (!empty($header_extra_html)): ?><div class="filter-bar-header-extra"><?=$header_extra_html?></div><?php endif; ?>
             <button type="button" class="btn btn-link btn-sm filter-bar-clear d-none"><span data-i18n="filter_clear">ล้างตัวกรอง</span></button>
             <button type="button" class="btn-icon btn-icon-ghost filter-bar-toggle" aria-label="Toggle filter">

@@ -1623,6 +1623,7 @@
     "action_verify_selected": "Verify Selected",
     "action_verify_all": "Verify All",
     "action_comments": "Comments",
+    "verify_status_unverified": "Not verified",
     "verify_status_verified": "Verified",
     "confirm_bulk_verify_title": "Verify {count} selected employee(s)?",
     "confirm_bulk_verify_message": "Verified employees will no longer be recalculated and cannot be edited until unverified.",

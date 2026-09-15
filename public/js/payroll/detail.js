@@ -1944,9 +1944,11 @@ function removeEmployeeButtonRd(row) {
 // data-employee-id/-name/-verified attrs the column's own button used to carry when showing the
 // verified state, so the existing delegated click handler needs no change at all to serve this new
 // location -- it already reads data-verified off whichever element was clicked.
-function unverifyItemRd(row) {
-    if (!currentRun || currentRun.state !== 'draft' || !row.is_verified) return '';
-    return `<li><button type="button" class="dropdown-item btn-verify-employee" data-employee-id="${row.employee_id}" data-employee-name="${escapeAttr(employeeDisplayNameRd(row))}" data-verified="true"><i class="fa-solid fa-rotate-left text-secondary me-2"></i>${langData['action_unverify'] || 'Unverify'}</button></li>`;
+function verifyMenuItemRd(row, currentlyVerified) {
+    const label = currentlyVerified
+        ? (langData['action_unverify'] || 'Unverify')
+        : (langData['action_verify'] || 'Verify');
+    return `<li><button type="button" class="dropdown-item btn-verify-employee" data-employee-id="${row.employee_id}" data-employee-name="${escapeAttr(employeeDisplayNameRd(row))}" data-verified="${currentlyVerified ? 'true' : 'false'}">${escapeHtml(label)}</button></li>`;
 }
 // Available on any draft run only (same gating as manageItemsButtonRd()/removeEmployeeButtonRd()); the
 // button's own current-state is read back off `data-*` by the click handler (.btn-verify-employee) so
@@ -1954,24 +1956,24 @@ function unverifyItemRd(row) {
 // render time. Read-only when the run isn't draft -- shows a plain badge instead.
 // 2026-09-13, Round 3 item 3b, real fix (explicit instruction: "'ตรวจสอบแล้ว': badge success + ไอคอน ▾
 // เล็กต่อท้าย...กดแล้วเปิด dropdown รายการ 'ยกเลิกการตรวจสอบ' (draft เท่านั้น; non-draft ไม่มี ▾)") -- the
-// verified badge now passes unverifyItemRd(row)'s own HTML as statusBadgeHtml()'s {menu} option ONLY
-// while draft (unverifyItemRd() itself already gates draft+verified, but the ternary below is what
+// verified badge now passes verifyMenuItemRd(row, true)'s own HTML as statusBadgeHtml()'s {menu} option ONLY
+// while draft (the ternary below is what
 // decides whether the ▾/dropdown-toggle machinery renders AT ALL -- a non-draft verified row gets the
 // exact same plain, non-interactive badge as before, no menu option passed).
 function verifyLockButtonsRd(row) {
+    // 2026-09-15, rules.md 7: a status column whose value can be CHANGED from the table is a badge
+    // with a caret (badgeDropdownHtml(), via statusBadgeHtml()'s own {menu} option) in BOTH states --
+    // never a badge for one state and a button for the other. Read-only (non-draft run) renders the
+    // same 2 badges without the caret.
     if (!currentRun || currentRun.state !== 'draft') {
-        return row.is_verified ? statusBadgeHtml('verified', 'verify_status') : '<span class="text-muted">-</span>';
+        return row.is_verified
+            ? statusBadgeHtml('verified', 'verify_status')
+            : statusBadgeHtml('unverified', 'verify_status', { outline: true });
     }
     if (row.is_verified) {
-        return statusBadgeHtml('verified', 'verify_status', { menu: unverifyItemRd(row) });
+        return statusBadgeHtml('verified', 'verify_status', { menu: verifyMenuItemRd(row, true) });
     }
-    // 2026-09-10, real gap found and fixed (explicit report: "ก่อน/หลัง verify ต่างกันแค่สีไอคอน มองไม่
-    // ออก") -- text label + shape survive grayscale, not just icon color.
-    // 2026-09-13, Round 3 item 3b follow-up: dropped the fa-check-double icon ("คำบอกแล้ว" -- the
-    // button's own text already says what it does) and the filled-success/rounded-pill styling (now
-    // unreachable anyway since this branch only ever renders for the unverified case) -- plain
-    // .btn-outline-secondary.btn-sm, same family as the toolbar's own 3 buttons above.
-    return `<button type="button" class="btn btn-outline-secondary btn-sm btn-verify-employee" data-employee-id="${row.employee_id}" data-employee-name="${escapeAttr(employeeDisplayNameRd(row))}" data-verified="false" title="${langData['action_verify'] || 'Verify'}">${escapeHtml(langData['action_verify'] || 'Verify')}</button>`;
+    return statusBadgeHtml('unverified', 'verify_status', { outline: true, menu: verifyMenuItemRd(row, false) });
 }
 // 2026-09-14, Round 3 "เก็บตกรอบ 5" item 2, real bug found and fixed (explicit report: this column's
 // own Excel-style filter list showed "ยกเลิกการตรวจสอบ" -- the hidden ⋮-menu item's OWN text, not a
@@ -1983,7 +1985,7 @@ function verifyLockButtonsRd(row) {
 // single function for EVERY render type when no object-form is given, so 'filter' returned the exact
 // same HTML `verifyLockButtonsRd()` builds for a verified+draft row: statusBadgeHtml({menu:...})'s own
 // output, which embeds BOTH the visible badge label AND the hidden <ul class="dropdown-menu"> markup
-// (unverifyItemRd()'s own "ยกเลิกการตรวจสอบ" <li>) as ONE HTML string (see that function's own
+// (verifyMenuItemRd()'s own "ยกเลิกการตรวจสอบ" <li>) as ONE HTML string (see that function's own
 // docblock) -- stripping HTML off THAT string pulls the menu item's text in right along with the
 // real label. Fixed by giving this column its own dedicated `filter` renderer (below) that returns
 // ONLY the plain label text for each of the 4 states verifyLockButtonsRd() itself branches on --
@@ -1994,12 +1996,9 @@ function verifyLockButtonsRd(row) {
 // its many other callers across the app) stays exactly as documented; the fix lives entirely in this
 // column's own render split, not in the shared badge helper.
 function verifyLockFilterTextRd(row) {
-    if (!currentRun || currentRun.state !== 'draft') {
-        return row.is_verified ? (langData['verify_status_verified'] || 'Verified') : '-';
-    }
     return row.is_verified
         ? (langData['verify_status_verified'] || 'Verified')
-        : (langData['action_verify'] || 'Verify');
+        : (langData['verify_status_unverified'] || 'Not verified');
 }
 // Comment always available (any state) -- same reasoning as the Breakdown button (read-only/non-
 // destructive, "ไว้เตือนตัวเอง" -- a reminder note is useful regardless of where the run currently is).

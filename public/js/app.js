@@ -361,6 +361,27 @@ function syncLangCookie(lang) {
 // `errMode` stayed at its real default, `'alert'` -- the native alert never actually stopped firing,
 // the 2026-08-31 fix never took effect at all. Corrected the property name; behavior/reasoning above
 // is otherwise unchanged.
+// 2026-09-15: a tab row scrolls sideways instead of wrapping (style.css's own `.nav-tabs` rule), so
+// on a narrow screen the ACTIVE tab can start out past the right edge -- this brings it into view,
+// at load and whenever a tab becomes active later (including a modal's own tabs, which only exist
+// once it opens). `inline: 'nearest'` never scrolls the page itself, only the tab strip.
+function scrollActiveTabIntoView(root) {
+    $(root || document).find('.nav-tabs').each(function () {
+        const strip = this;
+        if (strip.scrollWidth <= strip.clientWidth + 1) return;
+        const active = strip.querySelector('.nav-link.active');
+        if (active && active.scrollIntoView) active.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+    });
+}
+$(document).on('shown.bs.tab', function (e) {
+    scrollActiveTabIntoView($(e.target).closest('.nav-tabs').parent());
+});
+$(document).on('shown.bs.modal', function (e) {
+    scrollActiveTabIntoView(e.target);
+});
+$(document).ready(function () {
+    scrollActiveTabIntoView(document);
+});
 $(document).ready(function () {
     if (window.jQuery && $.fn.dataTable) {
         $.fn.dataTable.ext.errMode = 'none';
@@ -1227,12 +1248,20 @@ function initFilterBar(bar, options) {
     // markup already renders with the `.collapsed` class by default).
     const pageKey = $bar.data('page-key');
     const storageKey = pageKey ? ('filterbar:' + pageKey) : null;
+    let saved = null;
     if (storageKey) {
-        let saved = null;
         try { saved = localStorage.getItem(storageKey); } catch (e) {}
-        if (saved === 'expanded') $bar.removeClass('collapsed');
-        else if (saved === 'collapsed') $bar.addClass('collapsed');
-        // saved === null (never toggled before) -- leave the partial's own static default alone.
+    }
+    if (saved === 'expanded') $bar.removeClass('collapsed');
+    else if (saved === 'collapsed') $bar.addClass('collapsed');
+    else {
+        // 2026-09-15: nothing remembered for this pageKey yet (or the bar has no pageKey at all, so
+        // nothing ever is) -- the FIRST state follows the viewport instead of always starting
+        // collapsed: open on a screen wide enough to show the grid without pushing the table off
+        // the fold (>= lg, 992px, the same breakpoint the filter grid's own columns use), closed
+        // below it. Read once, here: a user resizing mid-session keeps whatever state they are
+        // looking at, and the moment they toggle it themselves that choice is what persists.
+        $bar.toggleClass('collapsed', !window.matchMedia('(min-width: 992px)').matches);
     }
     // 2026-09-13: the toggle is now a single `.btn-icon` circle (§7's row-action spec, reused here
     // per explicit instruction -- "ปุ่ม .btn-icon วงกลมเดียวกับ row action") whose chevron rotates via

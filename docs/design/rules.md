@@ -744,7 +744,16 @@ approved → ...) ไม่ใช่สลับหน้า)
 
 **Filter bar** (ตัดสินใจแล้วรอบ 2 item 4, แก้ไข 2 รอบหลัง feedback — โครงสร้างล่าสุดคือ **แผง 3 ส่วน**
 หัว/ตัว/ท้าย ด้านล่าง, ยกเลิก `toolbarTarget` ที่เคยมี)
-- partial `filter-bar.php` ตอนนี้เป็น**แผงเดียว 3 ส่วน**, ปิด (ยุบ) โดย default:
+- **สถานะครั้งแรก (ยังไม่มีค่าใน `pageKey`) ขึ้นกับ viewport: ≥ `lg` (992px) = กาง, < `lg` = ยุบ**
+  — อ่านค่าครั้งเดียวตอน init ไม่มี resize listener (ย่อหน้าจอระหว่างใช้งานไม่สลับสถานะที่ผู้ใช้เห็นอยู่)
+  — **ถ้าผู้ใช้เคยกดกาง/ยุบเอง ค่าที่จำต่อ `pageKey` ชนะเสมอ** กฎ viewport ไม่ทับ — แก้ที่ shared เท่านั้น มีผลทุกหน้า
+- **จอ < `sm` (576px) ตอนยุบ: หัวแบ่ง 2 แถว** — แถว 1 = ป้าย "ตัวกรอง (N)" ซ้าย + [ล้าง][▾] ขวา
+  (ทั้งคู่ nowrap), แถว 2 = chips wrap อิสระ แต่ละ chip กว้างได้ไม่เกิน 100% ตัดด้วย ellipsis — ≥ `sm` คงแถวเดียว
+  (`.filter-bar-chips` เป็นลูกของ `.filter-bar-header` ตรงๆ — flex child จะขึ้นแถวใหม่ได้ก็ต่อเมื่ออยู่ใน container นั้นจริง)
+- **ความกว้างช่อง filter เป็นของ component ไม่ใช่ของหน้า**: 1 ช่อง/แถว (< `sm`) → 2 (≥ `sm`) → 3 (≥ `md`)
+  → 6 (≥ `lg`) — บังคับที่ `.filter-bar-body > .row > [class*="col-"]` ไม่ว่า markup ของ caller จะเขียน col อะไรไว้
+  — หน้าที่ต้องการช่องกว้างผิดจากนี้ต้องมาเพิ่มกฎที่ component ไม่ใช่เขียน class เองที่หน้านั้น
+- partial `filter-bar.php` ตอนนี้เป็น**แผงเดียว 3 ส่วน** (markup ตั้งต้นเป็น `.collapsed` — JS เป็นคนกางตามกฎข้างบน):
   1. **หัว** (`.filter-bar-header`, แสดงตลอด ไม่ว่ากางหรือยุบ) — ซ้าย = ป้าย "ตัวกรอง" (`--c-text-muted`
      `--fs-sm`) ตามด้วย " (N)" ต่อท้าย **เฉพาะตอน N > 0** (ไม่โชว์ "(0)" ค้างไว้เหมือนเดิม); ขวา = ปุ่ม
      **`.btn-icon` วงกลมเดียวกับ row action (§7)** ไอคอน chevron หมุน 180° ตามสถานะกาง/ยุบ (CSS ล้วน
@@ -1165,6 +1174,19 @@ component ทุกตัวของรอบ 2 จากนี้**: markup �
 
 ## 7. ตาราง — DataTable standard (ใช้กับทุกตารางทั้งเก่าและใหม่)
 
+- **แถว empty state ของตาราง (`td.dt-empty-cell`) เป็น `position: sticky; left: 0`** — เซลล์นั้นกว้างเท่าตารางทั้งใบ
+  ถ้าไม่ตรึง ข้อความจะเลื่อนหายทันที่ที่ผู้ใช้เลื่อนตารางไปขวา
+
+- **คอลัมน์ตรึง (sticky) ต้องตรึงทั้ง `thead`/`tbody`/`tfoot` ด้วยค่า `left` เดียวกัน และพื้นหลังทึบ**
+  (body = `--c-bg`, thead/tfoot = `--c-bg-subtle`, ต้องเขียน `background-color` ตรงๆ ให้ชนะ `.table-striped`)
+  — **เงาขอบขวาของกลุ่มที่ตรึงแสดงเฉพาะตอนเลื่อนแล้ว** (`scrollLeft > 0` → `.tbl-scrolled-x` ที่ scroller ครอบทั้ง 3 ส่วนพร้อมกัน)
+
+- **คอลัมน์สถานะที่เปลี่ยนได้จากตาราง = badge ▾ (`badgeDropdownHtml()` ผ่าน `statusBadgeHtml(..., {menu})`) ทุกสถานะ
+  — ห้ามใช้ปุ่ม และห้ามใช้ badge กับปุ่มปนกันคนละสถานะ** — ทุกค่าต้องมีใน `status_map.php` (รวมค่า "ยังไม่ทำ"),
+  เมนูไม่มีไอคอน, แถวที่แก้ไม่ได้ (read-only) ใช้ badge ชุดเดียวกันแต่ไม่มี ▾ — คอลัมน์แบบนี้ต้องแยก
+  `render: {display, filter}` เสมอ (ไม่งั้นข้อความในเมนูจะหลุดเข้า Excel-filter) — ตัวอย่างจริง: คอลัมน์ "ตรวจสอบ"
+  ในตารางพนักงานของ Payroll Detail
+
 **การ init**: `initSharedDataTable(selector, options)` เท่านั้น (helper ที่มีอยู่แล้วใน app.js) — ห้าม `$(...).DataTable({...})` ตรงๆ ในหน้า; option ต่อตารางส่งเป็น override
 
 **Per-column sort/filter (ช่องว่างที่พบรอบ 0, ตัดสินแล้ว)**: CLAUDE.md's Table convention เดิมบังคับว่าทุก `<th>` ที่มีข้อมูลจริงต้องเรียก **`initExcelColumnFilters(dt, options)`** (`public/js/table-column-filter.js`) เอง ต่อตาราง ใน `initComplete` — กฎนั้นยังใช้อยู่ ไม่ถูกยกเลิก แต่ **`initSharedDataTable()` ต้องครอบหน้าที่นี้ให้เองจากรอบ 2 เป็นต้นไป** (อ่าน `columnDefs`/`columns` ที่ caller ส่งมา แล้วเรียก `initExcelColumnFilters()` ให้อัตโนมัติตาม mode ที่เหมาะกับตาราง client/server — หน้าเรียกทีเดียวผ่าน `initSharedDataTable()` ไม่ต้องเรียก `initExcelColumnFilters()` แยกเองอีก) รายละเอียด mode/exemption ตาม CLAUDE.md's Table convention เดิม (`mode:'client'`/`mode:'server'`, exempt คอลัมน์ปุ่ม/widget ภาพ/ตารางที่มี top-level filter อยู่แล้ว) — รายละเอียดการ implement (จะ auto-detect คอลัมน์ที่ควร filter ยังไง) ตัดสินตอนรอบ 2
@@ -1507,7 +1529,15 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
     — CSS ที่เกี่ยวข้อง (`.modal-lang-text-switch`/`-btn`/`-sep`/`-active`) ลบออกจาก `style.css` ด้วยเช่นกัน
     (ไม่มี call site เหลือ)
   - บริบท (รหัส, ชื่อพนักงาน) เป็นบรรทัดรอง `--c-text-muted` ใต้ชื่อ หรือใช้ `.emp-header-card` (สไตล์จริงตอนนี้
-    — ดูรายละเอียดเต็มในหัวข้อ **emp-header-card** ด้านล่าง — เพิ่มบรรทัด 2 + badge สถานะ จากที่เคยร่างไว้
+    — ดูรายละเอียดเต็มในหัวข้อ **setting-row / page-header — จอแคบ (2026-09-15)**
+- **setting-row จอ < `md`: คำอธิบายลงมาเป็นบรรทัดที่ 2 ใต้ชื่อ** (grid 2 คอลัมน์ [switch | ชื่อ+คำอธิบาย]
+  — คำอธิบายชิดคอลัมน์เดียวกับชื่อ) `--fs-sm`/`--c-text-muted` wrap อิสระ ไม่ตัด ellipsis ไม่มีตัวคั่น ·
+  switch ชิดบนซ้าย — ≥ `md` คงแถวเดียว
+- **page-header จอ < `md`: breadcrumb → H1 + badge → คำอธิบาย → แถว actions** (`.ph-title-row` เป็น `display: contents`
+  เพื่อให้ actions สั่งลำดับไปอยู่ใต้คำอธิบายซึ่งเป็น sibling ได้) — แถว actions **ชิดขวา** ปุ่มขนาดปกติ (ห้ามย่อเป็น `.btn-sm`)
+  เรียงลำดับเดิม primary ขวาสุด wrap แถวใหม่ก็ยังชิดขวา — ≥ `md` คง 2 คอลัมน์เดิม
+
+**emp-header-card** ด้านล่าง — เพิ่มบรรทัด 2 + badge สถานะ จากที่เคยร่างไว้
     แค่ "1 บรรทัด")
   - ~~**Header = ชื่อ + สวิตช์ภาษาแบบข้อความ + × (ตัดสินใจแล้ว รอบ 2 items 6c/7b follow-up)**: ชื่อ (H5) ซ้าย,
     ปุ่ม × ขวาสุด, ระหว่างกลางคือสวิตช์ภาษา — เป็นตัวหนังสือ "TH | EN" (ภาษาที่ใช้อยู่ `--c-text` หนา,
@@ -1580,6 +1610,8 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
   ที่ขอบของมัน เพราะมันต้องเหมือนกันกับที่อื่นที่ component เดียวกันถูก render
   — **ภายใน `.form-compact` ปิด gutter แนวตั้งของ `.row` (`--bs-gutter-y: 0`) แล้วใช้ `row-gap`** — gutter ดึงกล่องแถวขึ้น
   แล้วดันคอลัมน์ลง มาร์จิ้นที่ตั้งจึงไม่เท่าระยะที่เห็นจริง (บั๊กจริง 2026-09-15: margin 12px → เห็น 18px) — demo ใน `docs/design/components.php`
+- **จอ < `sm`: `.segmented` กว้างเต็มความกว้าง แต่ละ segment `flex: 1` กว้างเท่ากันในแถวเดียว — ห้าม stack แนวตั้ง**
+  (ตัวเลือก ≤ 3 ตัวอ่านเป็น control เดียว การซ้อนแนวตั้งทำให้ดูเหมือนปุ่มแยกกัน) ข้อความยัง nowrap ตัดด้วย ellipsis ถ้าไม่พอ
 - **`.segmented` = component กลางตัวเดียว ห้ามใช้ `.btn-group` + `.btn-check` ของ Bootstrap สร้างเอง** — `<input type="radio">`
   ซ่อน + `<label>` เป็นตัว segment (ลูกศรซ้าย-ขวาสลับได้เอง): ขอบ 1px `--c-border` + `--radius` ที่มุมนอก,
   padding `--sp-2 --sp-3`, `--fs-sm`, กว้างตามเนื้อหา (nowrap ไม่ยืดเต็มแถว), ไม่เลือก = โปร่ง/hover `--c-bg-subtle`,
