@@ -875,3 +875,8 @@ questions about the payee sub-form (2026-09-15).
   shared rule แต่คงสีเดิมไว้ เพื่อไม่ให้หน้านั้นเปลี่ยนหน้าตาพร้อมกับการแก้บั๊ก clip)
   — **ทางแก้: ลบ rule นี้ทิ้งทั้งก้อน ปล่อยให้ใช้ `var(--c-border)` ของ shared `.nav-tabs`**
   — ทำตอนรอบ 3d ที่ไล่ `payroll/detail.php` ให้เป็น `design:clean` ไม่ทำแยก
+
+- **`#statutoryRateModal` ยังกระโดดตอนสลับ tab (25.6px)** — มี tab ใน `.modal-body` เหมือน `#manageLinesModal`
+  แต่ไม่ได้ใส่ `.modal-tabbed` ในรอบ 2026-09-15 เพราะเนื้อในเป็นฟอร์มสั้น ไม่มี footer วัดได้
+  473.5 → 499.1 — ถ้าบังคับสูง `calc(100vh - 200px)` จะกลายเป็น modal โล่งเกือบครึ่งใบ แย่กว่าเดิม
+  — ตัดสินตอนไล่หน้า Tax & Statutory (ทางเลือก: ใส่ `.modal-tabbed` พร้อม height ที่เล็กกว่า หรือปล่อยไว้)

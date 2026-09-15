@@ -9613,6 +9613,40 @@ html, body {
     max-height: 100%;
 }
 
+/* ============================================================================
+   .modal-tabbed -- a modal whose body holds a tab row (rules.md 10). The body is a FIXED height,
+   not a max-height, so the dialog keeps one size no matter which tab is active; the tab row stays
+   pinned while only the pane under it scrolls. The height is the same value the shared
+   `.modal-body` max-height already used, so the modal is exactly as tall as its tallest tab used
+   to make it -- nothing is measured from the panes themselves.
+   ============================================================================ */
+.modal-tabbed .modal-body {
+    /* `dvh` second: browsers that have it use it (mobile URL bar), the rest keep `vh` */
+    height: calc(100vh - 200px);
+    height: calc(100dvh - 200px);
+}
+.modal-tabbed .modal-body > .nav-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--c-bg);
+    /* 1st shadow = the row's own bottom rule, restated because this declaration replaces the shared
+       `.nav-tabs` one; 2nd = the same surface carried up over the body's own padding, which sticky
+       `top: 0` leaves uncovered and scrolled content would otherwise show through. */
+    box-shadow: inset 0 -1px 0 var(--c-border), 0 calc(-1 * var(--bs-modal-padding, 1rem)) 0 var(--c-bg);
+}
+@media (max-width: 575.98px) {
+    /* `.modal-fullscreen-sm-down` already makes the dialog fill the screen: the body is then simply
+       what is left of it after the header and footer, which the flex column works out on its own. */
+    .modal-tabbed .modal-body {
+        height: auto;
+        /* the shared `.modal-body` max-height would otherwise cap the body short of the screen */
+        max-height: none;
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+}
+
 /* Payslip Template editor -- "Template Info" card (language_mode + header/footer text + status/
    default toggles). 2026-08-25, explicit follow-up: "ปรับให้สวยขึ้นได้ไหมครับ และปรับจาก textbox
    เป็น textarea" -- this section has no Employment Certificate Template equivalent to port styling

@@ -1238,8 +1238,8 @@
          adjustment on top of the normal calculation (2026-08-19, explicit request) -- see
          PayrollRunModel::recalculate()'s $isIncentive branch vs. the manual-lines block appended
          to the normal branch. #manageLinesHint's wording switches between the two accordingly. -->
-    <div class="modal fade" id="manageLinesModal" data-footer="view" data-bs-backdrop="static" tabindex="-1" aria-labelledby="manageLinesModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal fade modal-tabbed" id="manageLinesModal" data-footer="view" data-bs-backdrop="static" tabindex="-1" aria-labelledby="manageLinesModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-fullscreen-sm-down">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
                     <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่

@@ -1531,6 +1531,11 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 
 **Modal**
 - ขนาด: `modal-lg` เป็นค่าเริ่มต้นสำหรับฟอร์ม, `modal-xl` เฉพาะที่มีตาราง, ไม่ใช้ fullscreen ยกเว้น editor
+- **modal ที่มี tab อยู่ใน body ต้องใส่ class `.modal-tabbed`** — ความสูงของ modal ห้ามเปลี่ยนตาม tab ที่เลือก:
+  `.modal-body` เป็น **height คงที่** (เท่า max-height เดิมของ `.modal-body` กลาง) ไม่ใช่ความสูงของ tab ใด tab หนึ่ง
+  มาคำนวณ, แถว `.nav-tabs` ใน body เป็น `sticky top: 0` พื้นหลัง `--c-bg` (pane เลื่อใต้ tab ไม่ใช่ทั้ง modal),
+  จอ < `sm` ใช้ `modal-fullscreen-sm-down` แล้วปล่อยให้ body สูง = เต็มจอ − header − footer — modal ที่ tab เป็นฟอร์มสั้นๆ
+  ทุก tab ไม่ต้องใช้ (จะกลายเป็นกล่องสูงที่ว่างเปล่า) — ตัวเลขที่วัดไว้: `docs/decisions/2026-09-15-modal-tabbed-height.md`
 - **Header = ชื่อ + × เท่านั้น (แก้ 2026-09-14, Round 3 item 3c-1 — ทับมติเดิมด้านล่างทั้งหมด)**: ชื่อ (H5)
   ซ้าย, ปุ่ม × ขวาสุด (Bootstrap default `margin-left:auto` อยู่แล้ว) — **ไม่มีอะไรคั่นกลางอีกต่อไป**
   รวมถึงสวิตช์ภาษาที่เคยตัดสินใจให้เก็บไว้เป็นตัวหนังสือ "TH | EN" (มติรอบ 2 items 6c/7b follow-up ด้านล่าง
