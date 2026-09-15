@@ -77,7 +77,7 @@ if ($pvDeductionBody === '') {
         </div>
         <div class="payslip-col">
             <div class="payslip-col-title" data-i18n="payslip_deductions_title">Deductions</div>
-            <table class="table table-sm payslip-line-table mb-0">
+            <table class="table table-sm payslip-line-table mb-0<?=$pvShowGroupLabels ? ' payslip-line-table-grouped' : ''?>">
                 <tbody><?=$pvDeductionBody?></tbody>
             </table>
             <div class="payslip-col-total">

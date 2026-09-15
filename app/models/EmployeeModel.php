@@ -600,13 +600,9 @@ class EmployeeModel {
         if (!$row) {
             return null;
         }
-        $row['bank_account_no_masked'] = null;
-        if (!empty($row['bank_account_no_enc'])) {
-            $decrypted = EncryptionService::decrypt($row['bank_account_no_enc'], isset($row['bank_account_key_version']) ? (int)$row['bank_account_key_version'] : null);
-            if ($decrypted !== null && $decrypted !== '') {
-                $row['bank_account_no_masked'] = strlen($decrypted) > 4 ? str_repeat('•', strlen($decrypted) - 4) . substr($decrypted, -4) : $decrypted;
-            }
-        }
+        $row['bank_account_no_masked'] = EncryptionService::maskAccountNo(
+            EncryptionService::decrypt($row['bank_account_no_enc'] ?? null, isset($row['bank_account_key_version']) ? (int)$row['bank_account_key_version'] : null)
+        );
         unset($row['bank_account_no_enc'], $row['bank_account_key_version']);
         return $row;
     }
@@ -2036,8 +2032,48 @@ class EmployeeModel {
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
         $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $this->attachPayoutAccountToOptions($items);
 
         return ['items' => $items, 'total_count' => $totalCount];
+    }
+
+    /** 2026-09-15: adds each option's OWN receiving account (the one a transfer routed to this
+     *  employee is actually paid into) to the picker's option data -- masked number only, plus a
+     *  plain has_bank_account so a caller can tell "no account on file" apart from "not loaded".
+     *  Done as a second lookup keyed by the ids just returned rather than as a JOIN on the query
+     *  above, whose WHERE clause is written against unqualified columns (`id`, `name_th`, ...) that
+     *  a join to master_banks would make ambiguous. */
+    private function attachPayoutAccountToOptions(array &$items): void {
+        if (!$items) {
+            return;
+        }
+        $ids = array_map(static fn($r) => (int)$r['id'], $items);
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare("SELECT e.id, e.bank_account_name, e.bank_branch, e.bank_account_no, e.key_version,
+                mb.bank_name_th, mb.bank_name_en
+            FROM `employees` e
+            LEFT JOIN `master_banks` mb ON mb.id = e.bank_id
+            WHERE e.id IN ({$in})");
+        $stmt->execute($ids);
+        $byId = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $masked = EncryptionService::maskAccountNo(
+                EncryptionService::decrypt($r['bank_account_no'] ?? null, isset($r['key_version']) ? (int)$r['key_version'] : null)
+            );
+            $byId[(int)$r['id']] = [
+                'account_name' => $r['bank_account_name'],
+                'bank_branch' => $r['bank_branch'],
+                'bank_name_th' => $r['bank_name_th'],
+                'bank_name_en' => $r['bank_name_en'],
+                'account_no_masked' => $masked,
+                'has_bank_account' => ($masked !== null && $masked !== ''),
+            ];
+        }
+        foreach ($items as &$item) {
+            $extra = $byId[(int)$item['id']] ?? ['account_name' => null, 'bank_branch' => null, 'bank_name_th' => null, 'bank_name_en' => null, 'account_no_masked' => null, 'has_bank_account' => false];
+            $item = array_merge($item, $extra);
+        }
+        unset($item);
     }
 
     private function isEmployeeNoDuplicate(int $compId, string $employeeNo, ?int $excludeId): bool {

@@ -39,12 +39,22 @@ class PaymentDestinationModel {
             $where .= " AND account_name LIKE :search";
             $params[':search'] = '%' . $search . '%';
         }
-        $stmt = $this->db->prepare("SELECT pd.id, pd.account_name, mb.bank_name_th, mb.bank_name_en, pd.bank_branch
+        // 2026-09-15: account_no/key_version come along so the caller can show the MASKED number --
+        // the plaintext is decrypted here and immediately replaced by its masked form, exactly like
+        // the employee and company-account pickers do.
+        $stmt = $this->db->prepare("SELECT pd.id, pd.account_name, mb.bank_name_th, mb.bank_name_en, pd.bank_branch,
+                pd.account_no, pd.key_version
             FROM `payment_destinations` pd
             LEFT JOIN `master_banks` mb ON mb.id = pd.bank_id
             {$where} ORDER BY pd.account_name ASC LIMIT " . (int)$limit);
         $stmt->execute($params);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return array_map(static function (array $r): array {
+            $r['account_no_masked'] = EncryptionService::maskAccountNo(
+                EncryptionService::decrypt($r['account_no'] ?? null, isset($r['key_version']) ? (int)$r['key_version'] : null)
+            );
+            unset($r['account_no'], $r['key_version']);
+            return $r;
+        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
     }
 
     /** Full detail, account_no decrypted -- only ever called for display within this company's own

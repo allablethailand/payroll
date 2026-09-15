@@ -2,6 +2,8 @@
 
 ## Git
 - Never run git commit, git add, git stash, git checkout, or git reset.
+- ถ้าต้องเทียบ test บน HEAD ให้ใช้ `git worktree add ../payroll-head HEAD` รันในนั้นแล้ว `git worktree remove`
+  — ห้าม stash แม้จะสำรองไฟล์ไว้ก็ตาม
 - Edit files, then stop and report: files changed + `git status` + `git diff --stat`.
 - The developer reviews and commits manually.
 - `.git/COMMIT_MSG_NEXT` must describe the ENTIRE uncommitted diff (`git diff HEAD`), not just the

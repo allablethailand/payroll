@@ -475,6 +475,63 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
 
 <!-- ==================== Checkbox / Radio / Switch (§9) ==================== -->
 <div class="cp-section">
+    <h2>Form ใน panel (§9) — <code>.form-compact</code></h2>
+    <p class="cp-section-note">ใส่ <code>.form-compact</code> ที่ tab pane/panel ที่ครอบฟอร์ม — <b>ทุกข้อความในนั้นขนาดเดียวคือ <code>--fs-sm</code></b> (ไม่มี <code>--fs-xs</code> ในฟอร์ม) ลำดับชั้นทำด้วยสี/น้ำหนัก: label 500 <code>--c-text</code> · control 400 <code>--c-text</code> · helper/สรุป 400 <code>--c-text-muted</code> · segment ไม่เลือก 500 / เลือก 600 ขาว. ระยะ 4 ค่า: label→control <code>--sp-1</code> · control→helper <code>--sp-2</code> · แถว→แถว <code>--sp-3</code> · ก่อน section <code>--sp-4</code>. รายชื่ขนาดต้องเขียนชัดๆ เพราะ <code>.small</code>/<code>.btn</code>/ธีม select2 ตั้งขนาดของตัวเอง.</p>
+    <div class="cp-row">
+        <div class="form-compact" style="background: var(--c-bg-subtle); border-radius: var(--radius); padding: var(--sp-3); max-width: 520px; width: 100%;">
+            <div class="segmented">
+                <input type="radio" name="cp-fc-mode" id="cp-fc-m1" checked>
+                <label for="cp-fc-m1">โหมดหนึ่ง</label>
+                <input type="radio" name="cp-fc-mode" id="cp-fc-m2">
+                <label for="cp-fc-m2">โหมดสอง</label>
+            </div>
+            <p class="form-text">คำอธิบายของโหมดที่เลือก — ขนาดเท่า control ต่างกันที่สีเท่านั้น</p>
+            <div class="row g-2">
+                <div class="col-6">
+                    <label class="form-label" for="cp-fc-a">ชื่อรายการ</label>
+                    <input type="text" class="form-control" id="cp-fc-a" placeholder="เช่น ค่าเดินทาง">
+                </div>
+                <div class="col-6">
+                    <label class="form-label" for="cp-fc-b">จำนวนเงิน</label>
+                    <input type="text" class="form-control" id="cp-fc-b" placeholder="0.00">
+                </div>
+            </div>
+            <div class="row g-2">
+                <div class="col-12">
+                    <label class="form-label" for="cp-fc-c">หมายเหตุ</label>
+                    <textarea class="form-control" id="cp-fc-c" rows="2" placeholder="ไม่บังคับ"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== Segmented (§9) ==================== -->
+<div class="cp-section">
+    <h2>Segmented (§9) — <code>.segmented</code></h2>
+    <p class="cp-section-note"><b>≤ 3 ตัวเลือกใช้ <code>.segmented</code>, มากกว่านั้นใช้ <code>&lt;select&gt;</code></b> — แถว segmented ที่ยาวเกิน 3 อ่านไม่จบในสายตาเดียว. สร้างจาก <code>&lt;input type="radio"&gt;</code> ที่ซ่อนไว้ + <code>&lt;label&gt;</code> เป็นตัว segment — ลูกศรซ้าย-ขวา/Tab/screen reader ทำงานได้เอง ไม่ต้องเขียน JS. <b>ไม่ใช้</b> <code>.btn-group</code>+<code>.btn-check</code> ของ Bootstrap (บังคับให้ทุก segment เป็น <code>.btn</code> จึงติด padding/น้ำหนัก/เงาของปุ่มมาด้วย และ wrap ครึ่งปุ่มเวลาแคบ). ลอง Tab แล้วกดลูกศรซ้าย-ขวา และสลับ theme มุมขวาบน.</p>
+    <div class="cp-row">
+        <div class="segmented">
+            <input type="radio" name="cp-seg-mode" id="cp-seg-1" checked>
+            <label for="cp-seg-1">เลือกจากรายการ</label>
+            <input type="radio" name="cp-seg-mode" id="cp-seg-2">
+            <label for="cp-seg-2">ระบุรายการเอง</label>
+            <input type="radio" name="cp-seg-mode" id="cp-seg-3">
+            <label for="cp-seg-3">อื่นๆ</label>
+        </div>
+    </div>
+    <div class="cp-row mt-3">
+        <div class="segmented">
+            <input type="radio" name="cp-seg-dest" id="cp-seg-d1" checked>
+            <label for="cp-seg-d1">เลือกจากที่บันทึกไว้</label>
+            <input type="radio" name="cp-seg-dest" id="cp-seg-d2">
+            <label for="cp-seg-d2">ระบุใหม่</label>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== Checkbox / Radio / Switch (§9) ==================== -->
+<div class="cp-section">
     <h2>Checkbox / Radio / Switch (§9)</h2>
     <p class="cp-section-note">Bootstrap <code>.form-check</code>/<code>.form-switch</code> ตรงๆ (ไม่สร้าง component ใหม่) แต่ override สีใน <code>style.css</code> เพราะ Bootstrap hardcode <code>#0d6efd</code> ตรงๆ (ไม่ใช่ CSS variable) ทั้งใน <code>.form-check-input:checked</code>/<code>:indeterminate</code> และ SVG ของ switch -- ยืนยันจากอ่าน compiled CSS ตรงๆ ก่อนเขียน override เหมือนที่ <code>.btn-primary</code>/<code>.form-control:focus</code> ทำไว้แล้วในรอบ 1. <b>เลือก/เปิด = ส้ม เป็นข้อยกเว้นที่ระบุไว้ใน §3 ตรงๆ</b> (เหมือน tab ที่เลือก) ไม่ใช่กฎใหม่ที่เพิ่งคิด -- disabled ใช้ <code>--c-text-faint</code> แทน opacity เฉยๆ ให้สอดคล้องกับ element disabled อื่นในแอป. ลอง tab ผ่านฟิลด์ด้านล่างดู focus ring ส้ม, สลับ theme มุมขวาบนดู dark mode.</p>
     <div class="row g-4">

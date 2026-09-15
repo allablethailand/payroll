@@ -1563,6 +1563,28 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 - required = `*` แดงหลัง label (ที่เดียวที่แดงใช้ได้นอกสถานะ)
 - **Helper text ≤ 1 บรรทัด** (`.form-text`, `--c-text-muted`) ถ้าเกิน → ตัดเหลือประโยคหลัก และย้ายรายละเอียดไป tooltip ไอคอน ⓘ หลัง label หรือเอกสาร; ห้ามมี helper ทุกช่อง ใส่เฉพาะที่ผู้ใช้จะกรอกผิดถ้าไม่มี
 - Validation: inline ใต้ช่อง (`.invalid-feedback`) + focus ช่องแรกที่ผิด; ไม่ใช้ alert สำหรับ validation
+- **เลือก control ตามจำนวนตัวเลือก: ≤ 3 ตัวเลือก = `.segmented`, มากกว่านั้น = `<select>`** — แถว segmented ที่ยาวเกิน 3
+  อ่านไม่จบในสายตาเดียว และชื่อตัวเลือกจะต้องขึ้นบรรทัดใหม่ในกล่อง (ตัวอย่างจริง: payee 5 แบบใน Adjustments > Payment Items เป็น select,
+  โหมดรายการ 3 แบบกับ บันทึกไว้/ระบุใหม่ 2 แบบเป็น segmented) — คำอธิบายของค่าที่เลือกอยู่เป็นบรรทัดเทา `--fs-sm` ใต้ control เสมอ
+- **ฟอร์มทั้งบริเวณ (tab pane / panel) ใส่ `.form-compact` ที่ตัวครอบ — ขนาดตัวอักษรเดียวทั้งฟอร์ม: `--fs-sm`**
+  — คำอธิบายบนสุดของ tab, label, control/placeholder/Select2, segmented, helper ทุกบรรทัด, ข้อความสรุปบัญชี,
+  label ของ checkbox และปุ่มในฟอร์ม — **ไม่มี `--fs-xs` ในฟอร์มอีกแล้ว**
+- **ลำดับชั้นทำด้วยสี/น้ำหนักเท่านั้น**: label = 500 `--c-text` · control = 400 `--c-text` ·
+  helper/คำอธิบาย/สรุปบัญชี = 400 `--c-text-muted` · segment ไม่เลือก = 500 `--c-text`, เลือก = 600 ตัวขาวบน `--c-primary`
+- **ระยะมี 4 ค่าเท่านั้น**: label→control `--sp-1` · control→helper ของมันเอง `--sp-2` · แถว→แถว `--sp-3` ·
+  ก่อน section ใหม่ `--sp-4`
+- **รายชื่อขนาดใน `.form-compact` ต้องเขียนชัดๆ ไม่พึ่งการสืบทอด** — หลายอย่างในฟอร์มตั้งขนาดเอง
+  (`.small`/`<small>`, `.form-control`, `.btn` และ**ธีม select2-bootstrap-5 ที่ตั้ง `.select2-selection` ไว้ `1rem`** — สาเหตุที่ select
+  เคยดูขนาดไม่เท่า input ข้างๆ ทั้งที่ `__rendered` ถูกแล้ว) — style.css โหลดหลังธีม rule specificity เท่ากันจึงชนะ
+- **component ที่มี scale ของตัวเอง (เช่นสลิป `payslipViewHtml()`) อยู่นอก scale นี้** — reset กลับเป็นขนาด body
+  ที่ขอบของมัน เพราะมันต้องเหมือนกันกับที่อื่นที่ component เดียวกันถูก render
+  — **ภายใน `.form-compact` ปิด gutter แนวตั้งของ `.row` (`--bs-gutter-y: 0`) แล้วใช้ `row-gap`** — gutter ดึงกล่องแถวขึ้น
+  แล้วดันคอลัมน์ลง มาร์จิ้นที่ตั้งจึงไม่เท่าระยะที่เห็นจริง (บั๊กจริง 2026-09-15: margin 12px → เห็น 18px) — demo ใน `docs/design/components.php`
+- **`.segmented` = component กลางตัวเดียว ห้ามใช้ `.btn-group` + `.btn-check` ของ Bootstrap สร้างเอง** — `<input type="radio">`
+  ซ่อน + `<label>` เป็นตัว segment (ลูกศรซ้าย-ขวาสลับได้เอง): ขอบ 1px `--c-border` + `--radius` ที่มุมนอก,
+  padding `--sp-2 --sp-3`, `--fs-sm`, กว้างตามเนื้อหา (nowrap ไม่ยืดเต็มแถว), ไม่เลือก = โปร่ง/hover `--c-bg-subtle`,
+  **เลือก = `--c-primary` ตัวขาว 600** (ข้อยกเว้นที่ยืนยันแล้วสำหรับ segmented ที่เป็นตัวเลือกหลักของฟอร์ม),
+  focus-visible = ring ส้ม, จอแคบ (< `lg`) กลายเป็น stack แนวตั้งเต็มความกว้าง — demo ใน `docs/design/components.php`
 - Segmented/toggle (ใช่-ไม่ใช่): `.btn-group` ของ `.btn-outline-secondary.btn-sm` ตัวที่เลือกเป็น `active` (พื้น `--c-bg-subtle` ขอบ `--c-border-strong`) — ไม่ใช้ส้มกับ toggle **(คนละ component กับ checkbox/switch ด้านล่าง — segmented toggle เป็นปุ่มคู่แข่งกันเลือกได้ 1 ทาง (เทาเสมอ), checkbox/switch เป็น input จริงที่มีสถานะ checked/unchecked (ส้มตอน checked/on) — อย่าสลับกฎกัน)**
 - ฟอร์ม "รายการจ่าย/หัก", "จัดการรอบ", "ตั้งค่ารอบ": จัดกลุ่มช่องด้วยหัวข้อย่อย (`--fs-sm` หนา) + เส้น `--c-border` ระหว่างกลุ่ม ไม่ใช้ card ซ้อน card
 
@@ -1614,6 +1636,19 @@ page-local block มา 2 รอบก่อนหน้า (callout ก่อ�
 - **ระยะขอบซ้าย-ขวาภายในสลิปมีค่าเดียว: `--payslip-inset` (= `--sp-3`) ประกาศบน `.payslip-view`** — ใช้กับ
   `.payslip-col-title`, `.payslip-row td:first-child`/`:last-child`, `.payslip-subgroup-label`,
   `.payslip-col-total`, `.payslip-summary-row-net` **ทุกจุดต้องอ้างตัวแปรนี้ ห้ามใส่ค่าตรงๆ**
+- **`payslipViewHtml()` รับ label override 5 ตัว (optional): `earningTitle`/`deductionTitle`/`earningTotalLabel`/
+  `deductionTotalLabel`/`netLabel`** — ให้หน้าอื่นที่เนื้อหาเป็น "รายการสองคอลัมน์ + ยอดรวมท้าย" แบบเดียวกับสลิป ใช้ component
+  เดียวกันได้โดยไม่ต้อง copy มาร์กอัพ (§0.4) — caller ส่งข้อความที่ resolve แล้ว (ไม่ใช่ key) — ไม่ส่งก็ได้คำเดิมของสลิปทุกคำ
+  — ตัวอย่างจริง: Adjustments modal > Payment Items ("ยอดปรับสุทธิ" แทน "ยอดจ่ายสุทธิ")
+- **`.payslip-line-table` เป็น `table-layout: fixed` (คอลัมน์ตัวเลข 38%) ที่ตัว component เอง** — บรรทัด
+  ellipsis (`white-space: nowrap`) ในสลิปต้องมีความกว้างที่ไม่ได้มาจากเนื้อหาไว้ให้ clip ไม่งั้นดันคอลัมน์ล้นทับคอลัมน์
+  ข้างๆ (บั๊กจริง 2026-09-15) — `.payslip-col` เองมี `min-width: 0` แล้วเป็นเงื่อนไขจำเป็นของ grid
+- **1 แถว = ชื่อก่อน แล้วค่อย badge แหล่งที่มา** (`.payslip-line-head` > `.payslip-line-name` + `statusBadgeHtml()`
+  tone neutral + outline ไม่มีไอคอน) ชื่อทุกแถวจึงเริ่มคอลัมน์เดียวกัน — หมายเหตุเป็นบรรทัดที่ 2
+  (`.payslip-line-note`, `--fs-xs`/`--c-text-muted`, บรรทัดเดียว + `title` เต็ม) — `.payslip-row td` เป็น
+  `vertical-align: top` ตัวเลขจึงอยู่บรรทัดเดียวกับชื่อเสมอ
+- **เยื้องแถว (`--sp-3`) ใช้เฉพาะคอลัมน์ที่มีหัวกลุ่มย่อยจริง** — `payslipViewHtml()`/`payslip-view.php` ใส่คลาส
+  `.payslip-line-table-grouped` ให้ตารางเฉพาะตอนที่ render หัวกลุ่ม คอลัมน์ที่ไม่มีหัวกลุ่มห้ามเยื้อง
 - **แถบรวม (`.payslip-col-total`) ต้องเต็มความกว้างคอลัมน์เสมอ — inset อยู่ที่เนื้อหา ห้ามหดตัวแถบเข้า** (ไม่งั้น 2 แถบ
   ซ้าย-ขวาจะไหลเข้าหากันในช่อง `--sp-4` ระหว่างคอลัมน์) — ที่มา/ตัวเลขที่วัดได้:
   `docs/decisions/2026-09-15-payslip-inset-and-filter-search.md`

@@ -241,4 +241,23 @@ return [
         'completed' => ['label_key' => 'employee_comment_tag_completed', 'tone' => 'success'],
         'error' => ['label_key' => 'employee_comment_tag_error', 'tone' => 'danger'],
     ],
+
+    // How a manually-added payment-item line was created (Adjustments modal > Payment Items tab):
+    // 'custom' = a one-off line typed by hand, 'other' = the same but grouped into "Other Income/
+    // Deduction" on reports. A line picked from the saved catalog has NEITHER -- it shows its item
+    // code as plain text instead, no badge at all, so there is deliberately no 'catalog' entry here.
+    // Like `data_source` above, this is NOT a status in the strict §5 sense (it says how a row was
+    // entered, not what state it is in) -- it lives here anyway so those 2 badges get their label +
+    // tone from the same single source every other badge in the app does, rather than a bespoke
+    // renderer with its own hardcoded colors (which is exactly what this replaces: payroll/detail.js's
+    // own manualLineTagHtml(), whose `badge bg-info-subtle`/`bg-secondary-subtle` markup also
+    // failed §12's lint rule 8). Both tones are neutral: neither one is something to act on.
+    // label_key values reuse the 2 EXISTING keys that renderer already used verbatim.
+    'manual_line_mode' => [
+        'custom' => ['label_key' => 'manual_line_custom_badge', 'tone' => 'neutral'],
+        'other' => ['label_key' => 'manual_line_other_badge', 'tone' => 'neutral'],
+        // 2026-09-15: the payslip's own "where this line came from" badge shares this context -- a
+        // transfer-in earning line is the third source a line can have, alongside custom/other.
+        'transfer' => ['label_key' => 'transfer_in_badge', 'tone' => 'neutral'],
+    ],
 ];

@@ -3107,6 +3107,26 @@ function applyFirstSavedDestinationDefault(selectId, newFieldsWrapperId) {
         }
     }, 'json');
 }
+// Account summary block shown under whichever picker just resolved to a real bank account --
+// the payee employee's own account, one of the company's accounts, or a saved third-party
+// destination (3 call sites, payroll/detail.js). Two quiet lines on the subtle surface: the account
+// name, then bank + masked number + branch. The masked number is whatever the endpoint hands over
+// (same 'all but the last 4 digits' shape the employee quick-view already renders) -- this function
+// never sees, decrypts or masks a real account number itself.
+// Renders NOTHING (empty string) when there is no account to describe, so a caller can drop its
+// return value straight into a container without checking first.
+function payeeDetailHtml(detail) {
+    const d = detail || {};
+    const name = (d.account_name || '').trim();
+    const meta = [d.bank_name, d.account_no_masked, d.branch]
+        .map(x => (x === null || x === undefined) ? '' : String(x).trim())
+        .filter(Boolean);
+    if (!name && !meta.length) return '';
+    return `<div class="payee-detail">
+        ${name ? `<div class="payee-detail-name">${escapeHtml(name)}</div>` : ''}
+        ${meta.length ? `<div class="payee-detail-meta">${meta.map(escapeHtml).join(' &middot; ')}</div>` : ''}
+    </div>`;
+}
 function applyCurrencyLabel(root = document) {
     const code = (typeof COMPANY_CURRENCY_CODE !== 'undefined' && COMPANY_CURRENCY_CODE) ? COMPANY_CURRENCY_CODE : 'THB';
     $(root).find('.currency-code-label').text(code);
@@ -3898,32 +3918,44 @@ function payslipViewHtml(data) {
     if (deductionBody === '') {
         deductionBody = `<tr class="payslip-row"><td colspan="2" class="text-center text-muted small">-</td></tr>`;
     }
+    // 2026-09-15, Round 3 item 4 batch 2/4 -- 4 OPTIONAL label overrides (`earningTitle`,
+    // `deductionTitle`, `earningTotalLabel`, `deductionTotalLabel`, `netLabel`). Every existing caller
+    // omits them and gets the exact same payslip wording as before; the Adjustments modal's own
+    // Payment Items tab passes its own ("ยอดปรับสุทธิ" instead of "ยอดจ่ายสุทธิ"), because it is a
+    // list of ADJUSTMENTS, not a payslip -- the only difference between the 2 uses is the words, so
+    // this stays one component instead of a near-copy (§0.4). Labels are resolved by the CALLER (a
+    // real i18n string, not a key) -- this function keeps its own defaults for everyone else.
+    const earningTitle = d.earningTitle || langData['breakdown_earnings'] || 'Income';
+    const deductionTitle = d.deductionTitle || langData['payslip_deductions_title'] || 'Deductions';
+    const earningTotalLabel = d.earningTotalLabel || langData['payslip_total_earnings'] || 'Total Income';
+    const deductionTotalLabel = d.deductionTotalLabel || langData['payslip_total_deductions'] || 'Total Deductions';
+    const netLabel = d.netLabel || langData['table_net_pay'] || 'Net Pay';
     return `<div class="payslip-view">
         <div class="payslip-columns">
             <div class="payslip-col">
-                <div class="payslip-col-title">${langData['breakdown_earnings'] || 'Income'}</div>
+                <div class="payslip-col-title">${escapeHtml(earningTitle)}</div>
                 <table class="table table-sm payslip-line-table mb-0">
                     <tbody>${d.earningRowsHtml || ''}</tbody>
                 </table>
                 <div class="payslip-col-total">
-                    <span>${langData['payslip_total_earnings'] || 'Total Income'}</span>
+                    <span>${escapeHtml(earningTotalLabel)}</span>
                     <span class="num money-gross">${fmtNum(d.grossAmount)}</span>
                 </div>
             </div>
             <div class="payslip-col">
-                <div class="payslip-col-title">${langData['payslip_deductions_title'] || 'Deductions'}</div>
-                <table class="table table-sm payslip-line-table mb-0">
+                <div class="payslip-col-title">${escapeHtml(deductionTitle)}</div>
+                <table class="table table-sm payslip-line-table mb-0${showGroupLabels ? ' payslip-line-table-grouped' : ''}">
                     <tbody>${deductionBody}</tbody>
                 </table>
                 <div class="payslip-col-total">
-                    <span>${langData['payslip_total_deductions'] || 'Total Deductions'}</span>
+                    <span>${escapeHtml(deductionTotalLabel)}</span>
                     <span class="num money-deduction">${fmtNum(d.totalDeductionAmount)}</span>
                 </div>
             </div>
         </div>
         <div class="payslip-summary">
             <div class="payslip-summary-row payslip-summary-row-net">
-                <span class="payslip-summary-label">${langData['table_net_pay'] || 'Net Pay'}</span>
+                <span class="payslip-summary-label">${escapeHtml(netLabel)}</span>
                 <span class="num money-net fs-5">${fmtNum(d.netAmount)}</span>
             </div>
         </div>

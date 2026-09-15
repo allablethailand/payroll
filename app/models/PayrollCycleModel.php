@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/AuditLogModel.php';
+require_once __DIR__ . '/../services/EncryptionService.php';
 class PayrollCycleModel {
     private $db;
     private AuditLogModel $auditLog;
@@ -246,9 +247,13 @@ class PayrollCycleModel {
         $totalStmt->execute($params);
         $totalCount = (int)$totalStmt->fetchColumn();
 
-        $sql = "SELECT ba.id,
-                    CONCAT(mb.bank_name_th, ' - ', ba.account_name, IF(ba.company_code IS NOT NULL AND ba.company_code != '', CONCAT(' (', ba.company_code, ')'), '')) AS text_th,
-                    CONCAT(mb.bank_name_en, ' - ', ba.account_name, IF(ba.company_code IS NOT NULL AND ba.company_code != '', CONCAT(' (', ba.company_code, ')'), '')) AS text_en
+        // 2026-09-15: the label is built in PHP, not SQL, because it now carries the MASKED account
+        // number -- masking needs the decrypted value, which only PHP has. Shape:
+        // "bank " . chr(183) . " masked (account name)". The row also carries the same 4 account fields every
+        // other payee picker returns, plus is_default so a caller can preselect the primary account.
+        $sql = "SELECT ba.id, ba.account_name, ba.branch_name, ba.company_code, ba.is_default,
+                    ba.account_no, ba.key_version,
+                    mb.bank_name_th, mb.bank_name_en
                 FROM `bank_accounts` ba
                 LEFT JOIN `master_banks` mb ON mb.id = ba.bank_id
                 {$where} ORDER BY ba.is_default DESC, ba.id ASC LIMIT :offset, :limit";
@@ -260,7 +265,30 @@ class PayrollCycleModel {
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
 
-        return ['items' => $stmt->fetchAll(PDO::FETCH_ASSOC), 'total_count' => $totalCount];
+        $items = array_map(static function (array $r): array {
+            $masked = EncryptionService::maskAccountNo(
+                EncryptionService::decrypt($r['account_no'] ?? null, isset($r['key_version']) ? (int)$r['key_version'] : null)
+            );
+            $label = static function (?string $bankName) use ($r, $masked): string {
+                $parts = array_filter([$bankName, $masked], static fn($x) => $x !== null && $x !== '');
+                $head = implode(' • ', $parts);
+                $name = trim((string)($r['account_name'] ?? ''));
+                return $name !== '' ? ($head !== '' ? "{$head} ({$name})" : $name) : $head;
+            };
+            return [
+                'id' => (int)$r['id'],
+                'text_th' => $label($r['bank_name_th']),
+                'text_en' => $label($r['bank_name_en']),
+                'account_name' => $r['account_name'],
+                'bank_name_th' => $r['bank_name_th'],
+                'bank_name_en' => $r['bank_name_en'],
+                'bank_branch' => $r['branch_name'],
+                'account_no_masked' => $masked,
+                'is_default' => (int)$r['is_default'] === 1,
+            ];
+        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+
+        return ['items' => $items, 'total_count' => $totalCount];
     }
 
     /**

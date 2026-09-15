@@ -5176,6 +5176,14 @@ button.badge {
 .payslip-col {
     display: flex;
     flex-direction: column;
+    /* 2026-09-15, real bug found in Playwright (Adjustments modal > Payment Items, which renders its
+       own rows through this same component): a grid item's default `min-width: auto` refuses to
+       shrink below its CONTENT's min-content width, so ONE long non-wrapping line inside a row (that
+       tab's own one-line note, `white-space: nowrap` + ellipsis) stretched column 1 until column 2
+       had no width left at all -- the Deductions column vanished. `min-width: 0` lets both columns
+       hold their 1fr share and lets the ellipsis inside actually engage. Latent until now only
+       because a real payslip's own rows wrap normally. */
+    min-width: 0;
 }
 .payslip-col-title {
     color: var(--c-text);
@@ -5188,8 +5196,21 @@ button.badge {
 .payslip-line-table td {
     border: 0;
 }
+/* A one-line ellipsis inside a cell needs the cell to have a width that is NOT content-driven: an
+   auto-layout table refuses to shrink below its own min-content, so a long `white-space: nowrap`
+   note pushes the column out and over its neighbour instead of clipping (real bug, 2026-09-15).
+   Fixed layout + an explicit amount-column share gives every row something to clip against. */
+.payslip-line-table {
+    table-layout: fixed;
+}
+.payslip-line-table td:last-child {
+    width: 38%;
+}
 .payslip-row td {
     padding: var(--sp-2) 0;
+    /* The amount belongs to the line's FIRST row (its name), not to the middle of a cell that also
+       carries a note/payee row underneath -- the table equivalent of `align-items: flex-start`. */
+    vertical-align: top;
 }
 /* First/last cell carry the shared inset so a line's name and its amount line up with the title
    above and the total band below. A "-" placeholder row is a single `colspan="2"` cell, i.e. both
@@ -5201,11 +5222,49 @@ button.badge {
 .payslip-row td:last-child {
     padding-right: var(--payslip-inset);
 }
-.payslip-subgroup-label {
-    padding-top: var(--sp-2);
+/* Scoped through the table (like `.manual-line-empty`): Bootstrap's own
+   `.table > :not(caption) > * > *` sets a colour on every cell and outranks a bare single class, so
+   an unscoped rule here loses the muted colour and the header renders as normal body text. */
+.payslip-line-table .payslip-subgroup-label {
+    padding-top: 0;
     font-size: var(--fs-xs);
     font-weight: 600;
     color: var(--c-text-muted);
+}
+/* --sp-3 BETWEEN groups -- the first group's own header sits directly under the column title and
+   needs no extra gap of its own. */
+.payslip-line-table .payslip-subgroup-row:not(:first-child) .payslip-subgroup-label {
+    padding-top: var(--sp-3);
+}
+/* Indent belongs to grouping, not to the slip: rows are only stepped in when there is a subgroup
+   header above them to be stepped in FROM (payslipViewHtml()/payslip-view.php add this class to the
+   table only when they actually render the headers). A column with no headers -- Income always, and
+   Deductions whenever only one group has rows -- keeps the plain `--payslip-inset`. */
+.payslip-line-table-grouped .payslip-row td:first-child {
+    padding-left: calc(var(--payslip-inset) + var(--sp-3));
+}
+/* Name + source badge + inline buttons on one line; the name is always first, so every row's name
+   starts at the same x whether or not the row has a badge. */
+.payslip-line-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    flex-wrap: wrap;
+}
+.payslip-line-name {
+    color: var(--c-text);
+    min-width: 0;
+}
+/* The line's own second row: quiet, one line, full text in a native tooltip. `table-layout: fixed`
+   on the table above is what gives this something to clip against. */
+.payslip-line-note {
+    max-width: 100%;
+    margin-top: var(--sp-1);
+    font-size: var(--fs-xs);
+    color: var(--c-text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 .payslip-col-total {
     display: flex;
@@ -6869,13 +6928,372 @@ html, body {
 #manageLinesTabContent {
     margin-top: var(--sp-4);
 }
+/* 2026-09-15, Round 3 item 4 batch 2/4 -- the batch-1 stopgap gave every pane the retired card's own
+   padding on ALL 4 sides, which left each pane's content inset 16px from the tab bar and the employee
+   header card above it (measured: card/tabs at x=312, content at x=328). Horizontal padding removed:
+   the content column now shares ONE left/right edge with the header card and the tab row, which is
+   what makes the whole modal read as a single column. Vertical padding stays -- it is the gap from
+   the tab bar, not an inset.
+   Scoped to this modal's own 5 panes, exactly as before -- no other modal/page is affected (this
+   selector list is the only place the stopgap ever existed; #runDetailTabsContent's own panes have
+   their own separate rule further up, deliberately untouched here). */
 #manageLinesItemsPane,
 #manageLinesAttendancePane,
 #manageLinesSyncOverridePane,
 #manageLinesRecurringDestPane,
 #manageLinesCalcPane {
-    padding: var(--sp-4);
+    padding: var(--sp-4) 0;
 }
+/* Employee header card -> tab row: `--sp-5`, the same "distinct block below a distinct block" step
+   this app uses between a page header and what follows it. The card itself carries no bottom margin
+   (it is a full-bleed surface with its own bottom border), so the distance lives here. */
+#manageLinesModal .nav-tabs {
+    margin-top: var(--sp-5);
+}
+/* Adjustments modal > Payment Items tab (2026-09-15, Round 3 item 4 batch 2/4) -- every action on
+   this tab writes to the server immediately (add/remove each fire their own request), which is why
+   its footer Save button is HIDDEN rather than disabled (refreshAdjustmentSaveButtonState(),
+   payroll/detail.js) and why the only thing its dirty-guard watches is a half-filled add form. */
+
+/* Mode picker: a plain segmented `.btn-group`, one line, no icons. The selected one is `.btn-primary`
+   (§4's own solid brand button) rather than §9's neutral segmented `active` state -- a deliberate,
+   confirmed exception for this control because it is the primary CHOICE of the tab, not a yes/no
+   toggle. The per-mode explanation sits under the group as one quiet line instead of inside each
+   button. */
+
+/* Add form: a surface, not a box -- `--c-bg-subtle` + `--radius`, no border (§9's "ไม่ใช้ card ซ้อน
+   card" posture; the panel already sits inside a modal). */
+.add-manual-line-card {
+    background: var(--c-bg-subtle);
+    border-radius: var(--radius);
+    padding: var(--sp-3);
+    margin-bottom: var(--sp-5);
+}
+/* ============================================================================
+   .form-compact -- ONE scale for a whole form area (rules.md 9). Put it on the tab pane / panel that
+   holds the form and everything inside it follows:
+
+     ONE font size for every piece of text: `--fs-sm`. There is no second size in a form -- the
+     hierarchy is carried by COLOUR and WEIGHT only:
+       label ................ 500 / `--c-text`
+       control + placeholder  400 / `--c-text`
+       helper, description,
+       account summary ...... 400 / `--c-text-muted`
+       segment (unselected) . 500 / `--c-text`      (selected: 600 / white on `--c-primary`)
+
+     Four gaps, nothing else: label -> control `--sp-1` | control -> its helper `--sp-2` |
+     row -> row `--sp-3` | before a new section `--sp-4`.
+
+   The size list below is explicit rather than inherited because several things inside a form set
+   their own size: Bootstrap's `.small`/`<small>`, `.form-control`, and the select2 bootstrap-5 theme
+   (which sizes `.select2-selection` at `1rem` -- the reason a select used to read a size apart from
+   the inputs beside it even though its own `__rendered` span was already correct). style.css loads
+   after that theme, so an equal-specificity rule here wins.
+   ============================================================================ */
+.form-compact {
+    font-size: var(--fs-sm);
+}
+.form-compact .form-label,
+.form-compact .form-check-label,
+.form-compact .form-text,
+.form-compact .small,
+.form-compact small,
+.form-compact .form-control,
+.form-compact .form-select,
+.form-compact select,
+.form-compact textarea,
+.form-compact .select2-selection,
+.form-compact .select2-selection__rendered,
+.form-compact .select2-selection__placeholder,
+.form-compact .select2-selection__choice,
+.form-compact .select2-search__field,
+.form-compact .segmented > label,
+.form-compact .add-manual-line-card .btn,
+.form-compact .manual-line-mode-desc,
+.form-compact .manual-line-field-hint,
+.form-compact .payee-detail,
+.form-compact .payee-detail-name,
+.form-compact .payee-detail-meta,
+.form-compact .payee-detail-empty {
+    font-size: var(--fs-sm);
+}
+.form-compact .form-control::placeholder {
+    font-size: var(--fs-sm);
+}
+/* The slip below the form is the SHARED payslip component (payslipViewHtml()) -- it carries its own
+   scale, the same one the real payslip renders with, so the form's scale stops at its edge. */
+.form-compact #manualLinesSlip {
+    font-size: 1rem;
+}
+.form-compact .form-label,
+.form-compact .form-check-label {
+    font-weight: 500;
+    color: var(--c-text);
+    margin-bottom: var(--sp-1);
+}
+.form-compact .form-check-label {
+    margin-bottom: 0;
+}
+.form-compact .form-control,
+.form-compact .form-select,
+.form-compact .select2-selection__rendered {
+    font-weight: 400;
+    color: var(--c-text);
+}
+/* Every explanatory line in the form is the same size as the control above it and differs only by
+   colour -- under the segmented control, under a select, under a checkbox, and the account summary. */
+.form-compact .form-text,
+.form-compact .manual-line-mode-desc,
+.form-compact .manual-line-field-hint,
+.form-compact .payee-detail-empty,
+.form-compact .payee-detail-name,
+.form-compact .payee-detail-meta {
+    font-weight: 400;
+    color: var(--c-text-muted);
+}
+.form-compact .form-text,
+.form-compact .manual-line-mode-desc,
+.form-compact .manual-line-field-hint,
+.form-compact .payee-detail-empty {
+    margin: var(--sp-2) 0 0;
+}
+.form-compact .payee-detail {
+    margin-top: var(--sp-2);
+}
+.form-compact .segmented > label {
+    font-weight: 500;
+    color: var(--c-text);
+}
+.form-compact .segmented input[type="radio"]:checked + label {
+    font-weight: 600;
+    color: #fff;
+}
+/* Bootstrap's `g-*` gutter fakes vertical spacing by pulling the row box up and padding its columns
+   back down, which means a margin set on the row lands `--bs-gutter-y` off from the gap you actually
+   see (measured: a 12px margin rendered as an 18px gap). Inside `.form-compact` the gutter is
+   switched off and `row-gap` carries the same job for columns that stack on a narrow screen. */
+.form-compact .row {
+    --bs-gutter-y: 0;
+    row-gap: var(--sp-3);
+}
+.form-compact .add-manual-line-card > .row {
+    margin-top: var(--sp-3);
+}
+.form-compact .add-manual-line-card > .manual-line-payee-block,
+.form-compact .add-manual-line-card > .manual-line-add-row {
+    margin-top: var(--sp-4);
+}
+.form-compact .add-manual-line-card > :first-child {
+    margin-top: 0;
+}
+/* The sub-form of the chosen payee opens `--sp-3` below the choice it belongs to. */
+.form-compact .manual-line-payee-subform {
+    margin-top: var(--sp-3);
+}
+.form-compact .manual-line-payee-subform > div:not(.d-none) + div:not(.d-none) {
+    margin-top: var(--sp-3);
+}
+
+/* ============================================================================
+   .segmented -- shared segmented control (rules.md 9). ONE row of mutually exclusive choices, used
+   wherever a form has 3 or fewer of them (4+ becomes a plain <select>; the rule lives in rules.md).
+   Built on real radio inputs so keyboard arrows, form state and screen readers work for free -- the
+   radio itself is visually hidden and its <label> is the segment. Deliberately NOT Bootstrap's
+   `.btn-group` + `.btn-check`: that pairing forces every segment to be a `.btn` (so it inherits
+   button padding/weight/shadow and the wrap-in-half problem), which is what this replaces.
+   ============================================================================ */
+.segmented {
+    display: inline-flex;
+    flex-wrap: nowrap;
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+.segmented input[type="radio"] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+.segmented > label {
+    /* Block padding is `--sp-1`, not `--sp-2`: measured against the `.btn` beside it, `--sp-2` made
+       the segment 7px taller, and matching the button's height is what the spec was after. Inline
+       padding stays `--sp-3`. */
+    display: inline-flex;
+    align-items: center;
+    margin: 0;
+    padding: var(--sp-1) var(--sp-3);
+    font-size: var(--fs-sm);
+    line-height: 1.5;
+    white-space: nowrap;
+    color: var(--c-text);
+    background: transparent;
+    cursor: pointer;
+    user-select: none;
+}
+.segmented > label + input[type="radio"] + label,
+.segmented > input[type="radio"] + label:not(:first-of-type) {
+    border-left: 1px solid var(--c-border);
+}
+.segmented > label:hover {
+    background: var(--c-bg-subtle);
+}
+.segmented input[type="radio"]:checked + label {
+    background: var(--c-primary);
+    color: #fff;
+    font-weight: 600;
+}
+.segmented input[type="radio"]:focus-visible + label {
+    outline: 2px solid var(--c-primary);
+    outline-offset: -2px;
+}
+.segmented input[type="radio"]:disabled + label {
+    color: var(--c-text-faint);
+    cursor: not-allowed;
+}
+@media (max-width: 991.98px) {
+    .segmented {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+    }
+    .segmented > input[type="radio"] + label:not(:first-of-type) {
+        border-left: 0;
+        border-top: 1px solid var(--c-border);
+    }
+}
+
+/* 2026-09-15 follow-up: the Add button is its own last row, right-aligned, so it stays below every
+   field it commits (the payee block can open between the fields and this button). Its own top gap
+   comes from `.form-compact` like every other section's. */
+.manual-line-add-row {
+    text-align: end;
+}
+
+/* The destination sub-choice sits to its own width, not stretched across the callout. */
+#manualLineDestModeToggle {
+    margin-bottom: var(--sp-3);
+}
+/* Shared "account summary" block under a picker (payeeDetailHtml(), app.js) -- 2 quiet lines on the
+   subtle surface, no border of its own (it is a readout, not another card). */
+.payee-detail {
+    margin-top: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    background: var(--c-bg-subtle);
+    border-radius: var(--radius);
+    font-size: var(--fs-sm);
+}
+.payee-detail-name {
+    color: var(--c-text);
+}
+.payee-detail-meta {
+    color: var(--c-text-muted);
+}
+
+/* Sub-form of whichever payee choice is selected: indented behind a light rule so it reads as
+   belonging to the choice above it rather than as the next field of the form. */
+.manual-line-payee-subform {
+    padding-left: var(--sp-4);
+    border-left: 2px solid var(--c-border);
+}
+
+/* Added lines render through the SHARED slip component (payslipViewHtml(), §9) -- these rules only
+   add what a payslip line itself never has: the mode badge/code, the note line, and a Remove button
+   that must not move the number when it appears. */
+/* 2026-09-15, real bug found in Playwright (2nd one in this area): the note line is
+   `white-space: nowrap` (its whole point -- one line + ellipsis), which pushes a TABLE's min-content
+   width out, and a table refuses to shrink below that -- so the Income column's own table overflowed
+   its grid column and painted across the Deductions column (the row's own amount ended up on top of
+   the neighbouring column's numbers). `table-layout: fixed` sizes columns from the table's OWN width
+   instead of its content, which both stops the overflow and finally gives the ellipsis a boundary to
+   clip against. Scoped to THIS tab's slip only -- a real payslip's rows wrap normally and keep their
+   content-driven column widths (verified unchanged in the Calculation Breakdown modal). */
+
+/* A catalog line shows its item code instead of a badge -- quiet, monospace-free, never competing
+   with the name next to it. */
+.manual-line-code {
+    font-size: var(--fs-xs);
+    color: var(--c-text-faint);
+}
+/* Note + payee lines: one line each, clipped with an ellipsis (the full text is on the element's own
+   `title`, set by the caller) so a long note can never push the row's own height around. */
+.manual-line-payee {
+    font-size: var(--fs-xs);
+    color: var(--c-text-muted);
+    margin-top: var(--sp-1);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.manual-line-payee-warn {
+    color: var(--c-warning);
+}
+/* Scoped through the slip's own id on purpose: Bootstrap's `.table > :not(caption) > * > *` sets a
+   colour on every cell and outranks a bare single class, so an unscoped `.manual-line-empty` loses
+   the colour (and only the colour -- Bootstrap sets no font-size) and falls back to body text. */
+#manualLinesSlip .manual-line-empty {
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+}
+/* Remove button: OUT of normal flow, anchored to the left edge of the amount cell, so showing and
+   hiding it never shifts the amount by a single pixel -- the same technique the comment list's own
+   row actions use (see `.comment-item-actions`). Hidden until the row is hovered or something inside
+   it has keyboard focus. */
+.manual-line-amount-cell {
+    position: relative;
+}
+.manual-line-actions {
+    position: absolute;
+    top: 50%;
+    /* Anchored INSIDE the amount cell's own left edge, not outside it (`right: 100%`, which is what
+       the comment list uses for its own row actions). 2026-09-15, real bug found in Playwright: a
+       `<td>` is not a plain box -- an absolutely-positioned child that sticks out into the NEIGHBOURING
+       cell loses hit-testing to that cell (Playwright reported the amount `<td>` itself intercepting
+       every click on the button). Inside the cell there is no cross-cell overlap at all, and since the
+       amount itself is right-aligned, the left edge of that cell is empty space anyway -- so the
+       button still never moves the number. */
+    left: 0;
+    transform: translateY(-50%);
+    /* Sits at the far-left edge of its own cell, which is also right where the NEXT column's first
+       cell begins -- and a later table cell paints above an earlier one, so without a z-index the
+       neighbouring column swallowed every click on this button (real bug, found by hit-testing with
+       document.elementFromPoint(), not by eye). */
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .15s ease;
+}
+.manual-line-item:hover .manual-line-actions,
+.manual-line-item:focus-within .manual-line-actions {
+    opacity: 1;
+    pointer-events: auto;
+}
+@media (pointer: coarse) {
+    .manual-line-actions {
+        opacity: 1;
+        pointer-events: auto;
+    }
+}
+.manual-line-remove-btn {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    color: var(--c-text-faint);
+}
+.manual-line-remove-btn:hover {
+    color: var(--c-danger);
+}
+.manual-line-remove-btn i {
+    font-size: 12px;
+}
+
 /* Run Information / Employee Breakdown as two visually distinct sub-sections within the Details
    tab (per explicit request) -- deliberately lighter than .card-surface (no shadow, thinner
    border). 2026-09-13 update: the "since they already sit inside #runDetailTabsContent's own

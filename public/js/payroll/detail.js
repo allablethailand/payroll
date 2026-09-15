@@ -2240,7 +2240,10 @@ function formulaButtonRd(line) {
 function breakdownLineRowsRd(lines, moneyColorCls) {
     return (lines || []).map(line => {
         const name = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || '';
-        const commentHtml = line.note ? `<div class="small text-muted fst-italic"><i class="fa-regular fa-comment me-1"></i>${escapeHtml(line.note)}</div>` : '';
+        // 2026-09-15: the note is the line's own quiet second row -- no icon, not italic, one line
+        // with the full text as a native tooltip (`.payslip-line-note`, shared with the adjustments
+        // slip's own rows, style.css).
+        const commentHtml = line.note ? `<div class="payslip-line-note" title="${escapeAttr(line.note)}">${escapeHtml(line.note)}</div>` : '';
         // 2026-08-30, explicit request: "มีหมายเหตุในกรณีที่ไม่หัก ในการกดดูของพนักงานด้วยในหน้า Process
         // Detail" -- SyncPayResolver still emits a LINE (amount forced to 0) for an attendance
         // deduction this employee is exempt from, rather than dropping it silently, so there's
@@ -2260,15 +2263,20 @@ function breakdownLineRowsRd(lines, moneyColorCls) {
         // BADGE variants (Transfer/Custom/Other) are NOT "a code" in the same sense -- they're a
         // meaningful visual classification of the line itself, not an internal identifier -- so those
         // stay exactly as visible as before, unaffected by this change.
+        // 2026-09-15, rules.md 9: the source badge is a real `statusBadgeHtml()` against the
+        // `manual_line_mode` context (neutral + outline, no icon -- the 3 hand-rolled
+        // `badge bg-info-subtle`/`bg-secondary-subtle` variants with their own icons are gone, and
+        // with them 3 more hits of 12's lint rule 8). It now sits AFTER the name, so every row's
+        // name starts at the same x no matter which badge (or none) the row carries.
         let codeHtml = '';
         let nameTitleAttr = '';
         if (line.source === 'transfer_in') {
-            codeHtml = `<span class="badge bg-info-subtle text-info"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['transfer_in_badge'] || 'Transfer'}</span>`;
+            codeHtml = statusBadgeHtml('transfer', 'manual_line_mode', { outline: true });
         } else if (line.is_custom && line.is_other) {
             // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
-            codeHtml = `<span class="badge bg-info-subtle text-info"><i class="fa-solid fa-circle-question me-1"></i>${langData['manual_line_other_badge'] || 'Other'}</span>`;
+            codeHtml = statusBadgeHtml('other', 'manual_line_mode', { outline: true });
         } else if (line.is_custom) {
-            codeHtml = `<span class="badge bg-secondary-subtle text-secondary"><i class="fa-solid fa-pen me-1"></i>${langData['manual_line_custom_badge'] || 'Custom'}</span>`;
+            codeHtml = statusBadgeHtml('custom', 'manual_line_mode', { outline: true });
         } else {
             nameTitleAttr = ` title="${escapeAttr(line.code || '-')}"`;
         }
@@ -2300,7 +2308,9 @@ function breakdownLineRowsRd(lines, moneyColorCls) {
         }
         const exemptBadge = line.is_exempted ? `<span class="badge bg-warning-subtle text-warning-emphasis ms-1">${langData['attendance_deduction_exempted_badge'] || 'Exempted'}</span>` : '';
         return `<tr class="payslip-row${line.is_exempted ? ' text-muted' : ''}">
-            <td>${codeHtml}${codeHtml ? ' ' : ''}<span${nameTitleAttr}>${escapeHtml(name)}</span>${exemptBadge}${formulaButtonRd(line)}${commentHtml}${exemptedHtml}${payeeHtml}</td>
+            <td>
+                <div class="payslip-line-head"><span class="payslip-line-name"${nameTitleAttr}>${escapeHtml(name)}</span>${codeHtml}${exemptBadge}${formulaButtonRd(line)}</div>
+                ${commentHtml}${exemptedHtml}${payeeHtml}</td>
             <td class="text-end num ${moneyColorCls || ''}">${fmtNum(line.amount)}</td>
         </tr>`;
     }).join('');
@@ -4193,53 +4203,62 @@ $(document).on('change', '#chkAutoRecalculate', function () {
 let manageLinesEmployeeId = null;
 // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- distinct "Other" badge,
 // same reasoning as eedItemNameCell()'s own update in employee/detail.js.
+// 2026-09-15, batch 2/4: the badge is a real `statusBadgeHtml()` call (§5) against the new
+// `manual_line_mode` context in status_map.php -- replaces this function's own hardcoded
+// `badge bg-info-subtle`/`bg-secondary-subtle` markup (which also failed §12's lint rule 8). A
+// catalog-picked line gets NO badge at all, just its item code as quiet text, exactly as the
+// instruction describes ("badge โหมด ... เฉพาะที่ไม่ใช่ เลือกจากรายการ").
 function manualLineTagHtml(line) {
     if (!line.is_custom) {
-        return `<code class="fw-bold text-dark">${escapeHtml(line.item_code)}</code>`;
+        return `<span class="manual-line-code">${escapeHtml(line.item_code || '')}</span>`;
     }
-    return line.is_other
-        ? `<span class="badge bg-info-subtle text-info"><i class="fa-solid fa-circle-question me-1"></i>${langData['manual_line_other_badge'] || 'Other'}</span>`
-        : `<span class="badge bg-secondary-subtle text-secondary"><i class="fa-solid fa-pen me-1"></i>${langData['manual_line_custom_badge'] || 'Custom'}</span>`;
+    return statusBadgeHtml(line.is_other ? 'other' : 'custom', 'manual_line_mode', { outline: true });
 }
+// One line of the adjustments slip -- a `.payslip-row` `<tr>` in the SAME shape the real payslip
+// component renders (name cell + right-aligned `.num.money-*` amount), so both live under
+// payslipViewHtml() (§9) with no second layout. 2 things are specific to this tab and live in the
+// name/amount cells rather than in the component: the mode badge above, and the per-row Remove
+// button, which is absolutely positioned just LEFT of the amount (`.manual-line-actions`, style.css)
+// so revealing it on hover can never shift the number -- the identical technique the comment list's
+// own row actions already use.
 function manualLineListItemHtml(line) {
     const name = (currentLang === 'th' ? line.item_name_th : line.item_name_en) || line.item_name_th || line.item_name_en;
-    const amtCls = line.item_type === 'earning' ? 'text-success' : 'text-danger';
-    const commentHtml = line.note ? `<div class="small text-muted fst-italic mt-1"><i class="fa-regular fa-comment me-1"></i>${escapeHtml(line.note)}</div>` : '';
+    const moneyCls = line.item_type === 'earning' ? 'money-gross' : 'money-deduction';
+    // Long notes clip to one line with the full text as a native tooltip (explicit instruction) --
+    // `.payslip-line-note` owns the ellipsis (style.css), shared with the real payslip's own rows.
+    const noteHtml = line.note
+        ? `<div class="payslip-line-note" title="${escapeAttr(line.note)}">${escapeHtml(line.note)}</div>`
+        : '';
     // 2026-08-31, same-day follow-up: payee_type widened to 'company'/'not_disbursed' too (was
     // 'employee' transfer only) -- same branching as Employee Detail's own eedItemNameCell().
     let payeeHtml = '';
     if (line.payee_type === 'employee' && line.payee_employee_id) {
-        payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
+        payeeHtml = `<div class="manual-line-payee">${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
     } else if (line.payee_type === 'company') {
         // 2026-09-10, Batch 3B item 3: manualLinesForEmployee() joins bank_account_name for this
-        // exact display, unlike the persisted-breakdown-JSON render path elsewhere in this file --
-        // shows the real account, or a "needs review" warning when genuinely unspecified.
+        // exact display -- the real account, or a "needs review" warning when unspecified.
         payeeHtml = line.bank_account_id
-            ? `<div class="small text-muted mt-1"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'} - ${escapeHtml(line.bank_account_name || '')}</div>`
-            : `<div class="small text-warning mt-1"><i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['payee_bank_account_needs_review'] || 'Company Account -- bank account not specified, needs review'}</div>`;
+            ? `<div class="manual-line-payee">${langData['payee_type_company'] || 'Company Account'} - ${escapeHtml(line.bank_account_name || '')}</div>`
+            : `<div class="manual-line-payee manual-line-payee-warn">${langData['payee_bank_account_needs_review'] || 'Company Account -- bank account not specified, needs review'}</div>`;
     } else if (line.payee_type === 'other_person') {
-        // 2026-09-02, Deduction Destination & Third-Party Remittance -- real gap found while
-        // touching this function for Phase 7 (same missing branch already found/fixed in
-        // employee/detail.js's own eedItemNameCell()): 'other_person' had no tag here either.
-        payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-building-columns me-1"></i>${escapeHtml(line.destination_account_name || (langData['payee_type_other_person'] || 'Other Person / Third Party'))}</div>`;
+        payeeHtml = `<div class="manual-line-payee">${escapeHtml(line.destination_account_name || (langData['payee_type_other_person'] || 'Other Person / Third Party'))}</div>`;
     } else if (line.payee_type === 'not_disbursed') {
-        payeeHtml = `<div class="small text-muted mt-1"><i class="fa-solid fa-ban me-1"></i>${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
+        payeeHtml = `<div class="manual-line-payee">${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
     }
-    return `<li class="list-group-item d-flex justify-content-between align-items-start px-0 py-2">
-        <div>
-            ${manualLineTagHtml(line)}
-            <div class="small text-muted">${escapeHtml(name)}</div>
-            ${commentHtml}
+    const removeBtn = `<span class="manual-line-actions"><button type="button" class="btn-icon-ghost manual-line-remove-btn btn-remove-manual-line" data-line-id="${line.id}" title="${escapeAttr(langData['action_remove'] || 'Remove')}"><i class="fa-solid fa-trash-can"></i></button></span>`;
+    return `<tr class="payslip-row manual-line-item">
+        <td>
+            <div class="payslip-line-head"><span class="payslip-line-name">${escapeHtml(name)}</span>${manualLineTagHtml(line)}</div>
+            ${noteHtml}
             ${payeeHtml}
-        </div>
-        <div class="d-flex align-items-center gap-2">
-            <span class="fw-semibold ${amtCls}">${fmtNum(line.amount)}</span>
-            <button type="button" class="btn btn-sm btn-outline-danger btn-remove-manual-line" data-line-id="${line.id}" title="${langData['action_remove'] || 'Remove'}"><i class="fa-solid fa-trash-alt"></i></button>
-        </div>
-    </li>`;
+        </td>
+        <td class="text-end num ${moneyCls} manual-line-amount-cell">${removeBtn}${fmtNum(line.amount)}</td>
+    </tr>`;
 }
-function manualLineEmptyItemHtml(key, fallback) {
-    return `<li class="list-group-item px-0 py-2 text-center text-muted small border-0">${langData[key] || fallback}</li>`;
+// Empty column = ONE quiet gray line inside the slip's own table (explicit instruction: not the big
+// empty-state component -- a column with nothing in it yet is not a page-level dead end).
+function manualLineEmptyRowHtml(key, fallback) {
+    return `<tr class="payslip-row"><td colspan="2" class="manual-line-empty">${escapeHtml(langData[key] || fallback)}</td></tr>`;
 }
 function loadManualLinesRd() {
     $.ajax({
@@ -4252,17 +4271,25 @@ function loadManualLinesRd() {
             const lines = res.data || [];
             const earningLines = lines.filter(l => l.item_type === 'earning');
             const deductionLines = lines.filter(l => l.item_type === 'deduction');
-            $('#manualLinesEarningList').html(earningLines.length
-                ? earningLines.map(manualLineListItemHtml).join('')
-                : manualLineEmptyItemHtml('no_manual_earning_lines', 'No earning items added yet.'));
-            $('#manualLinesDeductionList').html(deductionLines.length
-                ? deductionLines.map(manualLineListItemHtml).join('')
-                : manualLineEmptyItemHtml('no_manual_deduction_lines', 'No deduction items added yet.'));
             const earningTotal = earningLines.reduce((sum, l) => sum + Number(l.amount || 0), 0);
             const deductionTotal = deductionLines.reduce((sum, l) => sum + Number(l.amount || 0), 0);
-            $('#manualLinesEarningTotal').text(fmtNum(earningTotal));
-            $('#manualLinesDeductionTotal').text(fmtNum(deductionTotal));
-            $('#manualLinesNetTotal').text(fmtNum(earningTotal - deductionTotal));
+            // Shared slip component (§9). The label override is the only thing this tab needs that a
+            // real payslip doesn't: these are ADJUSTMENTS, so the bottom band reads "ยอดปรับสุทธิ",
+            // not "ยอดจ่ายสุทธิ". Deduction rows go in as `deductionItemRowsHtml` -- there is no statutory
+            // half here at all, so the component's own 2-group sub-labels never render (see its own
+            // showGroupLabels condition).
+            $('#manualLinesSlip').html(payslipViewHtml({
+                earningRowsHtml: earningLines.length
+                    ? earningLines.map(manualLineListItemHtml).join('')
+                    : manualLineEmptyRowHtml('no_manual_earning_lines', 'No income items added yet.'),
+                deductionItemRowsHtml: deductionLines.length
+                    ? deductionLines.map(manualLineListItemHtml).join('')
+                    : manualLineEmptyRowHtml('no_manual_deduction_lines', 'No deduction items added yet.'),
+                grossAmount: earningTotal,
+                totalDeductionAmount: deductionTotal,
+                netAmount: earningTotal - deductionTotal,
+                netLabel: langData['manual_line_net_total'] || 'Net Adjustment',
+            }));
         }
     });
 }
@@ -4847,74 +4874,210 @@ $(document).on('click', '.btn-recurring-dest-reset', function () {
 // 2026-08-31, same-day follow-up: same 4-way payee_type toggle Employee Detail's own
 // setEedPayeeType() manages, ported here since this modal never had the concept before. Single
 // source of truth for this toggle's own dependent field visibility.
+// One gray line per choice saying what the routing actually does to the money, read off the two
+// places that act on payee_type: PayrollRunModel::recalculate()'s transfer-credit pass and
+// PayrollRemittanceModel::generateForRun(). Deliberately NOT a paraphrase of the button label.
+const MANUAL_LINE_PAYEE_DESC_RD = {
+    none: { key: 'payee_desc_none', fallback: "Deducted from the employee's own net pay. The money stays with the company and nothing is transferred out." },
+    employee: { key: 'payee_desc_employee', fallback: 'Credited to another employee in this same run as taxable income. If that employee is not in this run, it is paid out to their own bank account at approval instead.' },
+    company: { key: 'payee_desc_company', fallback: 'Retained by the company in the bank account you choose. Recorded as received straight away -- no transfer to confirm.' },
+    other_person: { key: 'payee_desc_other_person', fallback: 'Paid out to a third party at the destination given. The transfer waits for confirmation before it is made.' },
+    not_disbursed: { key: 'payee_desc_not_disbursed', fallback: 'Deducted from the employee with no money moving anywhere (a write-off or a correction). No transfer is created.' },
+};
+// Which choices need extra fields at all -- "own net pay" and "write-off" need none, so the whole
+// callout stays closed for them rather than showing an empty box.
+const MANUAL_LINE_PAYEE_SUBFORM_RD = ['employee', 'company', 'other_person'];
+let manualLineDestHasSavedRd = null; // null = not looked up yet this modal session
 function setManualLinePayeeTypeRd(type) {
-    $('#manualLinePayeeTypeToggle button').removeClass('active').filter(`[data-payee-type="${type}"]`).addClass('active');
+    if ($('#manualLinePayeeType').val() !== type) {
+        $('#manualLinePayeeType').val(type).trigger('change.select2');
+    }
+    const desc = MANUAL_LINE_PAYEE_DESC_RD[type] || MANUAL_LINE_PAYEE_DESC_RD.none;
+    $('#manualLinePayeeDesc').text(langData[desc.key] || desc.fallback).attr('data-i18n', desc.key);
+    $('#manualLinePayeeSubform').toggleClass('d-none', MANUAL_LINE_PAYEE_SUBFORM_RD.indexOf(type) === -1);
     $('#manualLinePayeeWrapper').toggleClass('d-none', type !== 'employee');
     if (type !== 'employee') {
         $('#manualLinePayeeEmployee').val(null).trigger('change');
+        renderManualLinePayeeEmployeeDetailRd(null);
     }
     // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- mandatory, same as Employee
     // Detail's own setEedPayeeType()/setErdPayeeType().
     $('#manualLineCompanyAccountWrapper').toggleClass('d-none', type !== 'company');
     if (type !== 'company') {
         $('#manualLineBankAccount').val(null).trigger('change');
+        $('#manualLineBankAccountDetail').empty();
+    } else {
+        applyDefaultCompanyBankAccountRd();
     }
     // 2026-09-02, Deduction Destination & Third-Party Remittance.
     $('#manualLineDestinationWrapper').toggleClass('d-none', type !== 'other_person');
     if (type !== 'other_person') {
-        $('#manualLineDestinationSelect').val(null).trigger('change');
+        clearManualLineDestinationFieldsRd();
+    } else {
+        refreshManualLineSavedDestinationsRd();
+    }
+}
+// The 3 pickers all hand back the same 4 optional fields on their option data; anything the
+// endpoint does not send simply does not show up in the summary (payeeDetailHtml() drops blanks).
+function manualLinePayeeDetailFromOptionRd(data) {
+    const d = data || {};
+    return {
+        account_name: d.account_name,
+        bank_name: (currentLang === 'th' ? d.bank_name_th : d.bank_name_en) || d.bank_name_th || d.bank_name_en || d.bank_name,
+        account_no_masked: d.account_no_masked,
+        branch: d.bank_branch || d.branch,
+    };
+}
+// A transfer to another employee is paid into THAT employee's own bank account, so an employee with
+// none on file has nowhere for this money to land. The server accepts such a line today (it only
+// checks the employee exists -- see BACKLOG), so this is a client-side stop: the summary line says
+// what is missing and Add stays disabled while that employee is selected.
+let manualLinePayeeEmployeeBlockedRd = false;
+function renderManualLinePayeeEmployeeDetailRd(data) {
+    const $box = $('#manualLinePayeeEmployeeDetail');
+    if (!data) {
+        manualLinePayeeEmployeeBlockedRd = false;
+        $box.empty();
+        refreshManualLineAddStateRd();
+        return;
+    }
+    const detail = manualLinePayeeDetailFromOptionRd(data);
+    // 3 states, not 2: the endpoint can say there IS an account (render it), say there is NONE
+    // (block the add), or -- until api/employee.report_to.get carries the field at all -- say
+    // nothing, which must behave exactly as before rather than accusing every employee of having no
+    // account. `has_bank_account` is the explicit signal; account data alone is enough on its own.
+    const hasAccount = !!(detail.account_no_masked || detail.account_name) || data.has_bank_account === true;
+    const knownMissing = data.has_bank_account === false;
+    manualLinePayeeEmployeeBlockedRd = knownMissing;
+    if (hasAccount) {
+        $box.html(payeeDetailHtml(detail));
+    } else if (knownMissing) {
+        $box.html(`<p class="payee-detail-empty" data-i18n="payee_employee_no_bank_account">${langData['payee_employee_no_bank_account'] || 'This employee has no bank account on file yet'}</p>`);
+    } else {
+        $box.empty();
+    }
+    refreshManualLineAddStateRd();
+}
+// The company's PRIMARY account (bank_accounts.is_default) is preselected when this choice opens
+// with nothing picked yet -- a company that has no primary flagged simply starts empty and the field
+// stays mandatory (PayrollRunModel::addManualLine() rejects a missing bank_account_id either way).
+// Same "re-check it is still empty when the response lands" guard applyFirstSavedDestinationDefault()
+// uses, so a user who picks something while the request is in flight is never overwritten.
+function applyDefaultCompanyBankAccountRd() {
+    const $select = $('#manualLineBankAccount');
+    if (!$select.length || $select.val()) return;
+    $.post(`${BASE_URL}/api/payroll-cycle.bank-account.options`, { searchTerm: '', page: 1, limit: 20 }, function (res) {
+        if ($select.val()) return;
+        const items = (res && res.status && res.data && res.data.items) || [];
+        const primary = items.find(x => x.is_default);
+        if (!primary) return;
+        const text = (currentLang === 'th') ? primary.text_th : primary.text_en;
+        $select.empty().append(new Option(text, primary.id, true, true)).trigger('change');
+        $('#manualLineBankAccountDetail').html(payeeDetailHtml(manualLinePayeeDetailFromOptionRd(primary)));
+    }, 'json');
+}
+function clearManualLineDestinationFieldsRd() {
+    $('#manualLineDestinationSelect').val(null).trigger('change');
+    $('#manualLineDestinationDetail').empty();
+    $('#manualLineDestAccountName, #manualLineDestAccountNo, #manualLineDestBankBranch').val('');
+    $('#manualLineDestBank').val(null).trigger('change');
+    $('#manualLineDestSaveForReuse').prop('checked', false);
+}
+// Saved vs. new is an explicit either/or now -- only the chosen half is on screen, so the two can
+// never be half-filled at the same time (which used to be possible, and left the server to guess).
+function setManualLineDestModeRd(mode) {
+    const useSaved = mode === 'saved';
+    $(`#manualLineDestModeToggle input[value="${useSaved ? 'saved' : 'new'}"]`).prop('checked', true);
+    $('#manualLineDestSavedFields').toggleClass('d-none', !useSaved);
+    $('#manualLineDestinationNewFields').toggleClass('d-none', useSaved);
+    if (useSaved) {
         $('#manualLineDestAccountName, #manualLineDestAccountNo, #manualLineDestBankBranch').val('');
         $('#manualLineDestBank').val(null).trigger('change');
         $('#manualLineDestSaveForReuse').prop('checked', false);
-        $('#manualLineDestinationNewFields').removeClass('d-none');
     } else {
-        // Manual Entry / Platform UX review Phase 7 -- see applyFirstSavedDestinationDefault()'s
-        // own docblock in app.js.
-        applyFirstSavedDestinationDefault('#manualLineDestinationSelect', '#manualLineDestinationNewFields');
+        $('#manualLineDestinationSelect').val(null).trigger('change');
     }
-    // Same "never offered for not_disbursed, forced at the model layer" rule as Employee Detail's
-    // own #eedIncludeCashSummaryWrapper.
-    $('#manualLineIncludeCashSummaryWrapper').toggleClass('d-none', type === 'none' || type === 'not_disbursed');
 }
-// 2026-09-02, Deduction Destination & Third-Party Remittance -- picking an existing saved
-// destination hides the new-account fields entirely (nothing to fill in); clearing it (allow-clear)
-// brings them back so a fresh one can be entered.
-$(document).on('select2:select', '#manualLineDestinationSelect', function () {
-    $('#manualLineDestinationNewFields').addClass('d-none');
-});
-$(document).on('select2:clear', '#manualLineDestinationSelect', function () {
-    $('#manualLineDestinationNewFields').removeClass('d-none');
-});
-function updateManualLineTypePreviewRd(itemType) {
-    const $preview = $('#manualLineTypePreview');
-    // Transfer-to-payee (2026-08-21) only makes sense on a deduction -- toggled alongside this same
-    // type preview rather than a parallel visibility mechanism.
+// A company with no saved destination yet has nothing to offer in the "saved" half, so that half is
+// removed (not disabled) and the choice collapses to "enter a new one" with one gray line saying
+// why. Answer cached per modal session and invalidated whenever a line is added with the "save this
+// destination" box ticked (that add is exactly what creates the first one).
+function refreshManualLineSavedDestinationsRd() {
+    if (manualLineDestHasSavedRd !== null) {
+        applyManualLineDestAvailabilityRd(manualLineDestHasSavedRd);
+        return;
+    }
+    $.post(`${BASE_URL}/api/payment-destination.options`, { searchTerm: '', limit: 1 }, function (res) {
+        const items = (res && res.status && res.data && res.data.items) || [];
+        manualLineDestHasSavedRd = items.length > 0;
+        applyManualLineDestAvailabilityRd(manualLineDestHasSavedRd);
+    }, 'json');
+}
+function applyManualLineDestAvailabilityRd(hasSaved) {
+    $('#manualLineDestModeToggle').toggleClass('d-none', !hasSaved);
+    setManualLineDestModeRd(hasSaved ? 'saved' : 'new');
+}
+// 2026-09-15, batch 2/4 follow-up: the "Will be added as: Income/Deduction" hint this used to render
+// under the form is gone -- it restated the Type field sitting right above it and broke two rules at
+// once (an icon on a form label, and money green/red on a label instead of on a number). What is left
+// is the one thing the hint was never about: transfer-to-payee (2026-08-21) only applies to a
+// deduction, so the type still drives that block's visibility.
+function syncManualLineTypeDependentsRd(itemType) {
     const isDeduction = itemType === 'deduction';
     $('#manualLinePayeeTypeWrapper').toggleClass('d-none', !isDeduction);
     if (!isDeduction) {
         setManualLinePayeeTypeRd('none');
     }
-    if (!itemType) {
-        $preview.addClass('d-none').removeClass('text-success text-danger').text('');
-        return;
-    }
-    const isEarning = itemType === 'earning';
-    const label = langData[isEarning ? 'breakdown_earnings' : 'table_deduction_amount'] || (isEarning ? 'Earnings' : 'Deductions');
-    const icon = isEarning ? 'fa-arrow-trend-up' : 'fa-arrow-trend-down';
-    $preview.removeClass('d-none text-success text-danger').addClass(isEarning ? 'text-success' : 'text-danger')
-        .html(`<i class="fa-solid ${icon} me-1"></i>${langData['manual_line_type_preview'] || 'Will be added as'}: <strong>${label}</strong>`);
 }
-$(document).on('click', '#manualLinePayeeTypeToggle button', function () {
-    setManualLinePayeeTypeRd($(this).data('payee-type'));
+// The single Type field now drives all 3 modes (it used to live inside the custom-only block, so
+// catalog mode had no type control at all). For catalog mode it also narrows the catalog picker:
+// `data-type` is a param api/employee.earning-deduction.options already accepts and input.js re-reads
+// on every search -- NOT client-side filtering of a fetched page, which would be wrong here because
+// that endpoint pages 10 rows at a time (a page could legitimately contain no row of the chosen type
+// while more exist further down). Any already-picked item is cleared, since it belonged to the type
+// that was just switched away from.
+function applyManualLineItemTypeRd(itemType) {
+    const type = itemType === 'deduction' ? 'deduction' : 'earning';
+    const labelKey = type === 'deduction' ? 'manual_line_select_deduction_item' : 'manual_line_select_earning_item';
+    const labelFallback = type === 'deduction' ? 'Select a deduction item' : 'Select an income item';
+    $('#manualLineItemSelectLabel').attr('data-i18n', labelKey).text(langData[labelKey] || labelFallback);
+    const $item = $('#manualLineItemSelect');
+    if ($item.attr('data-type') !== type) {
+        $item.attr('data-type', type);
+        if ($item.val()) $item.val(null).trigger('change');
+    }
+    syncManualLineTypeDependentsRd(type);
+    refreshManualLineAddStateRd();
+}
+$(document).on('change', '#manualLinePayeeType', function () {
+    setManualLinePayeeTypeRd($(this).val() || 'none');
 });
-$(document).on('select2:select', '#manualLineItemSelect', function (e) {
-    updateManualLineTypePreviewRd(e.params.data.item_type);
+// Every picker inside the payee callout paints its own account summary the moment it resolves to a
+// real account, and clears it when the field is cleared (payeeDetailHtml(), app.js). The fields come
+// from the option data the endpoint already returns -- see manualLinePayeeDetailFromOptionRd().
+$(document).on('select2:select', '#manualLinePayeeEmployee', function (e) {
+    renderManualLinePayeeEmployeeDetailRd(e.params.data || {});
 });
-$(document).on('select2:clear', '#manualLineItemSelect', function () {
-    updateManualLineTypePreviewRd(null);
+$(document).on('select2:clear', '#manualLinePayeeEmployee', function () {
+    renderManualLinePayeeEmployeeDetailRd(null);
+});
+$(document).on('select2:select', '#manualLineBankAccount', function (e) {
+    $('#manualLineBankAccountDetail').html(payeeDetailHtml(manualLinePayeeDetailFromOptionRd(e.params.data)));
+});
+$(document).on('select2:clear', '#manualLineBankAccount', function () {
+    $('#manualLineBankAccountDetail').empty();
+});
+$(document).on('select2:select', '#manualLineDestinationSelect', function (e) {
+    $('#manualLineDestinationDetail').html(payeeDetailHtml(manualLinePayeeDetailFromOptionRd(e.params.data)));
+});
+$(document).on('select2:clear', '#manualLineDestinationSelect', function () {
+    $('#manualLineDestinationDetail').empty();
+});
+$(document).on('change', '#manualLineDestModeToggle input[type="radio"]', function () {
+    setManualLineDestModeRd($(this).val());
 });
 $(document).on('change', '#manualLineCustomType', function () {
-    updateManualLineTypePreviewRd($(this).val() || null);
+    applyManualLineItemTypeRd($(this).val());
 });
 // Toggle between picking a catalog item and typing a custom, not-in-the-catalog one (2026-08-19,
 // explicit request) -- catalog mode is the default since it's still the common case.
@@ -4923,29 +5086,74 @@ let manualLineMode = 'catalog';
 // #manualLineCustomFields verbatim, same as #eedModal's own "Other" mode (see that modal's
 // setEedMode() docblock in employee/detail.js) -- only #btnAddManualLine's own click handler below
 // differs (sends is_other=true).
+const MANUAL_LINE_MODE_DESC_RD = {
+    catalog: { key: 'mode_desc_catalog', fallback: 'Pick from your saved item types' },
+    custom: { key: 'mode_desc_custom', fallback: 'One-time item with its own name' },
+    other: { key: 'mode_desc_other', fallback: 'Grouped into "Other Income/Deduction" on reports' },
+};
+// 2026-09-15, batch 2/4: the segmented group carries the selection as a real button VARIANT swap
+// (`.btn-primary` for the chosen one, `.btn-outline-secondary` for the rest) rather than an `active`
+// class -- confirmed explicitly for this control (it is the tab's own primary choice, not a neutral
+// toggle). The per-mode description is one gray line under the group, swapped here, so the buttons
+// themselves stay single-line labels.
 function setManualLineModeRd(mode) {
     manualLineMode = mode;
-    $('#manualLineModeToggle button').removeClass('active').filter(`[data-mode="${mode}"]`).addClass('active');
+    $(`#manualLineModeToggle input[value="${mode}"]`).prop('checked', true);
+    const desc = MANUAL_LINE_MODE_DESC_RD[mode] || MANUAL_LINE_MODE_DESC_RD.catalog;
+    $('#manualLineModeDesc').text(langData[desc.key] || desc.fallback).attr('data-i18n', desc.key);
     $('#manualLineCatalogFields').toggleClass('d-none', mode !== 'catalog');
     $('#manualLineCustomFields').toggleClass('d-none', mode === 'catalog');
-    updateManualLineTypePreviewRd(mode !== 'catalog' ? ($('#manualLineCustomType').val() || null) : null);
+    applyManualLineItemTypeRd($('#manualLineCustomType').val());
+}
+// The Add button stays disabled until the row genuinely has both halves of an item: a chosen/typed
+// item AND a positive amount (explicit instruction). Amount is read through parseMoneyInput()
+// (format-helpers.js) because the field is a `.money-input` now (§8) -- its visible value carries
+// thousands separators once blurred.
+function manualLineAmountValueRd() {
+    return parseMoneyInput($('#manualLineAmount').val());
+}
+function manualLineHasItemRd() {
+    return manualLineMode === 'catalog'
+        ? !!$('#manualLineItemSelect').val()
+        : ($('#manualLineCustomName').val() || '').trim() !== '';
+}
+function refreshManualLineAddStateRd() {
+    const amount = manualLineAmountValueRd();
+    const blocked = manualLinePayeeEmployeeBlockedRd && $('#manualLinePayeeType').val() === 'employee';
+    $('#btnAddManualLine')
+        .prop('disabled', blocked || !(manualLineHasItemRd() && amount > 0))
+        .attr('title', blocked ? (langData['payee_employee_no_bank_account'] || 'This employee has no bank account on file yet') : null);
 }
 function resetManualLineFormRd() {
     setManualLineModeRd('catalog');
     $('#manualLineItemSelect').val(null).trigger('change');
     $('#manualLineCustomName').val('');
     $('#manualLineCustomType').val('earning').trigger('change.select2');
+    applyManualLineItemTypeRd('earning');
     $('#manualLineAmount').val('');
-    $('#manualLineComment').val('');
+    // `trigger('input')` so T002's auto-grow (input.js) shrinks the note box back to 2 rows -- a
+    // programmatic .val('') alone leaves it at whatever height the previous note had grown it to.
+    $('#manualLineComment').val('').trigger('input');
     // An employee can't be their own transfer payee -- excluded the same way #eed_payee_employee_id
     // excludes self on the Employee Detail page (data-exclude-id, read fresh on every ajax search).
     $('#manualLinePayeeEmployee').attr('data-exclude-id', manageLinesEmployeeId || '').val(null).trigger('change');
     setManualLinePayeeTypeRd('none');
-    $('#manualLineIncludeCashSummary').prop('checked', true);
-    updateManualLineTypePreviewRd(null);
+    refreshManualLineAddStateRd();
 }
-$(document).on('click', '#manualLineModeToggle button', function () {
-    setManualLineModeRd($(this).data('mode'));
+$(document).on('change', '#manualLineModeToggle input[type="radio"]', function () {
+    setManualLineModeRd($(this).val());
+});
+// Keep the Add button's enabled state in sync with whatever the 2 required fields currently hold --
+// `change` covers select2 (which fires it on the underlying <select>), `input` covers typing.
+$(document).on('input change', '#manualLineAmount, #manualLineCustomName, #manualLineItemSelect', function () {
+    refreshManualLineAddStateRd();
+});
+// Enter in the amount field = press Add (explicit instruction) -- guarded by the button's own
+// disabled state, exactly like a real click would be.
+$(document).on('keydown', '#manualLineAmount', function (e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (!$('#btnAddManualLine').prop('disabled')) $('#btnAddManualLine').trigger('click');
 });
 
 /* ---------- #manageLinesModal shell: footer dispatcher + per-tab dirty-guard (2026-09-14, Round 3
@@ -4996,7 +5204,14 @@ function refreshAdjustmentSaveButtonState() {
     const cfg = adjustmentActiveTabConfig();
     const $btn = $('#btnSaveActiveAdjustmentTab');
     if (!$btn.length) return;
-    if (!cfg || !cfg.saveSelector || (cfg.activeOnly && $(cfg.scope).hasClass('d-none'))) {
+    // 2026-09-15, batch 2/4, explicit instruction: a tab with NO save target at all (Tab 1 -- every
+    // action there writes to the server the moment it is taken, there is nothing to "save") HIDES
+    // this button instead of showing a permanently-disabled one. A disabled button still says "there
+    // is a save step here, you just can't reach it yet", which is untrue for that tab. Tabs that do
+    // have a target keep the disabled-until-dirty behavior unchanged.
+    const hasTarget = !!(cfg && cfg.saveSelector);
+    $btn.toggleClass('d-none', !hasTarget);
+    if (!hasTarget || (cfg.activeOnly && $(cfg.scope).hasClass('d-none'))) {
         $btn.prop('disabled', true);
         return;
     }
@@ -5148,7 +5363,7 @@ $(document).on('click', '.btn-manage-manual-lines', function () {
     loadManualLinesRd();
 });
 $(document).on('click', '#btnAddManualLine', function () {
-    const amount = parseFloat($('#manualLineAmount').val());
+    const amount = manualLineAmountValueRd();
     const comment = $('#manualLineComment').val().trim();
     const payload = { id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, amount: amount, note: comment };
     if (manualLineMode === 'custom' || manualLineMode === 'other') {
@@ -5176,10 +5391,12 @@ $(document).on('click', '#btnAddManualLine', function () {
     // modal -- only read when the wrapper is actually visible (a deduction), same shape either
     // catalog or custom mode uses now (unified, was split per-branch above before this follow-up).
     if (!$('#manualLinePayeeTypeWrapper').hasClass('d-none')) {
-        const payeeType = $('#manualLinePayeeTypeToggle button.active').data('payee-type') || 'none';
+        const payeeType = $('#manualLinePayeeType').val() || 'none';
         if (payeeType !== 'none') {
             payload.payee_type = payeeType;
-            payload.include_in_cash_summary = $('#manualLineIncludeCashSummary').is(':checked');
+            // include_in_cash_summary is deliberately NOT sent: the checkbox is gone from this form
+            // (nothing reads the column yet -- see BACKLOG), and an absent key is exactly what makes
+            // the model keep the column's own default rather than storing an opted-out 0.
         }
         if (payeeType === 'employee') {
             payload.payee_employee_id = $('#manualLinePayeeEmployee').val() || undefined;
@@ -5192,8 +5409,13 @@ $(document).on('click', '#btnAddManualLine', function () {
         // destination_id, or the new-account fields (validated/created server-side by
         // PaymentDestinationModel::resolveOrCreate(), see addManualLine()'s own docblock).
         if (payeeType === 'other_person') {
-            const savedDestinationId = $('#manualLineDestinationSelect').val();
-            if (savedDestinationId) {
+            const useSavedDestination = !$('#manualLineDestSavedFields').hasClass('d-none');
+            const savedDestinationId = useSavedDestination ? $('#manualLineDestinationSelect').val() : '';
+            if (useSavedDestination) {
+                if (!savedDestinationId) {
+                    showWarning(langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.');
+                    return;
+                }
                 payload.destination = { destination_id: savedDestinationId };
             } else {
                 const accountName = $('#manualLineDestAccountName').val().trim();
@@ -5222,6 +5444,9 @@ $(document).on('click', '#btnAddManualLine', function () {
         success: function (res) {
             setButtonLoading($btn, false);
             if (res.status) {
+                if (payload.destination && payload.destination.is_saved) {
+                    manualLineDestHasSavedRd = null; // this add just created the first/next saved one
+                }
                 resetManualLineFormRd();
                 // 2026-09-14, Round 3 item 4 batch 1/4: the Add form was just cleared back to its
                 // defaults -- re-baseline Tab 1 against that, not the values that were just added.
@@ -5241,27 +5466,33 @@ $(document).on('click', '#btnAddManualLine', function () {
 });
 $(document).on('click', '.btn-remove-manual-line', function () {
     const lineId = $(this).data('line-id');
-    const title = langData['action_remove'] || 'Remove';
-    const msg = langData['confirm_remove_line_message'] || 'Remove this item?';
-    showConfirm(title, msg, function () {
-        $.ajax({
-            url: `${BASE_URL}/api/payroll-run.remove-manual-line`,
-            method: 'POST',
-            contentType: 'application/json',
-            dataType: 'json',
-            data: JSON.stringify({ id: PAYROLL_RUN_ID, line_id: lineId }),
-            success: function (res) {
-                if (res.status) {
-                    loadManualLinesRd();
-                    loadRunDetail();
-                } else {
-                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+    // §10: object form with `tone: 'danger'` -- removing a line is destructive and writes immediately
+    // (there is no Save step on this tab to undo it before), so the confirm reads as the red one.
+    showConfirm({
+        title: langData['action_remove'] || 'Remove',
+        message: langData['confirm_remove_line_message'] || 'Remove this item?',
+        confirmText: langData['action_remove'] || 'Remove',
+        tone: 'danger',
+        onYes: function () {
+            $.ajax({
+                url: `${BASE_URL}/api/payroll-run.remove-manual-line`,
+                method: 'POST',
+                contentType: 'application/json',
+                dataType: 'json',
+                data: JSON.stringify({ id: PAYROLL_RUN_ID, line_id: lineId }),
+                success: function (res) {
+                    if (res.status) {
+                        loadManualLinesRd();
+                        loadRunDetail();
+                    } else {
+                        showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                    }
+                },
+                error: function () {
+                    showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
                 }
-            },
-            error: function () {
-                showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
-            }
-        });
+            });
+        },
     });
 });
 

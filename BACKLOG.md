@@ -692,6 +692,14 @@ was explicitly forbidden from touching tab content/logic.
 
 **Source:** Phase Design Round 3 item 4 batch 1/4, explicit instruction (2026-09-14).
 
+**UPDATE 2026-09-15 (batch 2/4, Payment Items tab)**: this tab turned out to have **no hidden save
+button at all** -- its `ADJUSTMENT_TAB_CONFIG_RD` entry is `saveSelector: null`, because every action
+on it (add line / remove line) writes to the server the moment it is taken. So there was nothing to
+extract here; instead the footer's own Save button is now HIDDEN while this tab is active (it used to
+render permanently disabled, which implied a save step that does not exist). The hidden-button
+indirection this entry is about therefore applies to **4 tabs, not 5**: Attendance Data, Adjust
+Amounts, Recurring Deduction Destination, and Tax & SSO -- still to be done in batches 3/4.
+
 ---
 
 ## Generic `.modal[data-dirty-guard]` mechanism (app.js) has no built-in support for a modal whose own data loads asynchronously after `shown.bs.modal`
@@ -742,3 +750,83 @@ pagination-agnostic -- it renders whatever array it is handed). Worth doing only
 gets long enough to matter; the longest one in the dev DB today is 2 comments.
 
 **Source:** Phase Design Round 3, comment-list restyle, item 7 (2026-09-15).
+
+---
+
+## `include_in_cash_summary` is stored but no report reads it -- checkbox removed from the UI until one does
+
+Both `payroll_run_manual_lines` and `employee_earning_deductions` carry an `include_in_cash_summary`
+column, written from a "Include in Cash Payment Summary Report" checkbox and echoed back by the list
+APIs. Nothing else touches it: there is no query in `app/services/reports/`, `app/services/export/`,
+`PayrollRemittanceModel` or `PayrollReportDataModel` that reads the column, and no report named
+"Cash Payment Summary" exists (payment reports are `PAY_SLIP`, `BANK_TRANSFER_FILE`,
+`PAYMENT_VOUCHER`). It came from a 2026-08-31 request ("ให้ติ๊กเพิ่มได้ว่า รวมไปใน cashlink หรือแยก cash
+link") where the column was prepared ahead of the report.
+
+Asking someone to make a choice that changes nothing is worse than not asking, so the checkbox was
+removed from the Adjustments modal's Payment Items tab (2026-09-15). **Nothing about the backend
+changed**: the column, its default, and the model rules around it (forced 0 for
+`payee_type='not_disbursed'`, forced 1 when there is no payee) are untouched, and the form simply
+stops sending the key -- which is exactly what makes the model keep the default.
+
+**Fix, when picked up:** build the cash-summary report (or fold the flag into an existing payment
+report), then put the checkbox back on the 3 payee types where it is a genuine choice
+(`employee`/`company`/`other_person`) -- markup to restore is in this commit's own diff. Employee
+Detail's `#eedModal` still shows its own copy of the checkbox and was deliberately left alone.
+
+**Source:** Phase Design Round 3 item 4 batch 2/4 follow-up, explicit instruction (2026-09-15).
+
+---
+
+## Saved payment destinations: no de-duplication, and no screen to manage them
+
+`payment_destinations` rows are created implicitly -- ticking "บันทึกปลายทางนี้ไว้ใช้ครั้งถัดไป" while
+adding a deduction routed to `payee_type='other_person'` sets `is_saved = 1`, which is the only thing
+that makes a row come back in the picker (`PaymentDestinationModel::listSaved()`). Two gaps found
+while redesigning that form (2026-09-15):
+
+1. **No de-duplication.** `PaymentDestinationModel::create()` inserts unconditionally. Saving the
+   same third-party account twice produces two rows with the same name, and the picker shows both
+   with nothing to tell them apart. The table already stores `account_no_hash` (an exact-match
+   companion to the encrypted `account_no`) -- the natural fix is to look up
+   `comp_id + account_no_hash + bank_id` first and reuse/flip `is_saved` on a hit instead of
+   inserting. Must stay scoped to `is_saved` saves; a genuine one-off row (`is_saved = 0`) should
+   still be free to repeat.
+2. **No management screen.** The only route is `api/payment-destination.options` (read). There is no
+   list, no edit, no delete, and no `deleted_at` ever set from the UI, so a destination saved by
+   mistake -- or one belonging to a payee the company no longer uses -- stays in every employee's
+   picker forever. Destinations are company-scoped by design (any employee's deduction can route to
+   the same third party), which makes the lack of a caretaker screen more visible, not less.
+
+**Fix, when picked up:** 1 is a small model change plus a test; 2 is a real screen (most natural home
+is a tab under Payroll Configuration, next to the other company-scoped catalogs) with soft delete and
+a guard against deleting a destination still referenced by an unpaid run.
+
+**Source:** Phase Design Round 3 item 4 batch 2/4 follow-up, found while answering the pre-work
+questions about the destination picker (2026-09-15).
+
+---
+
+## A deduction can be routed to an employee who has no bank account, and nothing rejects it
+
+`payee_type='employee'` means the deducted money is paid into THAT employee's own bank account --
+either as a `TRANSFER_IN` earning line if they are in the same run, or, if they are not, as a real
+external transfer (`destination_type='employee_fallback'`, `PayrollRemittanceModel::generateForRun()`)
+paid to their bank details. Nothing on the way in checks that those details exist:
+`PayrollRunModel::addManualLine()` (and `EmployeeEarningDeductionModel::save()`, same shape) validates
+only that the payee employee exists in this company, and the remittance row is created with just
+`fallback_employee_id` -- the missing account surfaces at the approval confirmation step at the
+earliest, and in practice when someone tries to pay it.
+
+The Payment Items tab now stops this in the UI (2026-09-15): picking such an employee shows a gray
+"no bank account on file yet" line under the picker and keeps Add disabled with that as its tooltip.
+That is a client-side guard only, and it depends on `api/employee.report_to.get` reporting a
+`has_bank_account` flag -- until it does, the UI stays silent rather than accusing every employee.
+
+**Fix, when picked up:** (1) add the flag to that endpoint so the guard actually engages, and (2)
+decide whether the MODEL should reject it too -- a design pass must not change validation rules, so
+that half was deliberately left alone. Worth pairing with the same check in Employee Detail's own
+`#eedModal`, which has the identical routing control and the identical gap.
+
+**Source:** Phase Design Round 3 item 4 batch 2/4 follow-up, found while answering the pre-work
+questions about the payee sub-form (2026-09-15).

@@ -1313,184 +1313,182 @@
                          gap from the tab bar; each pane that still needs the old card's own padding
                          gets it back directly, scoped to that pane's own id (temporary, not a card). -->
                     <div class="tab-content" id="manageLinesTabContent">
-                        <div class="tab-pane fade show active" id="manageLinesItemsPane" role="tabpanel">
+                        <div class="tab-pane fade show active form-compact" id="manageLinesItemsPane" role="tabpanel">
                             <!-- 2026-09-14, Round 3 item 4 batch 1/4: the modal-header's own description
                                  line (#manageLinesHint) moved down here -- this is the one tab that had
                                  no description of its own already (2/4/5 each have one at their own
                                  top, 3 has one per sub-section). JS (openManageLinesModal's own click
                                  handler) still sets its text via this same #manageLinesHint id. -->
                             <p class="text-muted small mb-2" id="manageLinesHint"></p>
-                            <div class="add-manual-line-card border rounded-3 p-3 bg-light bg-opacity-50 mb-4">
-                                <div class="mb-2">
-                                    <!-- 2026-09-03, Manual Entry / Platform UX review Phase 6: same
-                                         redesign as #eedModal's own mode toggle (see that markup's own
-                                         comment + style.css's .mode-select-group docblock) -- these are
-                                         the only 2 places this exact "choose from list / specify
-                                         manually / other" pattern exists in the app. -->
-                                    <div class="mode-select-group" role="group" id="manualLineModeToggle">
-                                        <button type="button" class="mode-select-btn active" data-mode="catalog">
-                                            <i class="fa-solid fa-list"></i>
-                                            <span class="mode-select-btn-title" data-i18n="manual_line_mode_catalog">From List</span>
-                                            <span class="mode-select-btn-desc" data-i18n="mode_desc_catalog">Pick from your saved item types</span>
-                                        </button>
-                                        <button type="button" class="mode-select-btn" data-mode="custom">
-                                            <i class="fa-solid fa-pen"></i>
-                                            <span class="mode-select-btn-title" data-i18n="manual_line_mode_custom">Custom Item</span>
-                                            <span class="mode-select-btn-desc" data-i18n="mode_desc_custom">One-time item with its own name</span>
-                                        </button>
-                                        <!-- 2026-09-02, Deduction Destination & Third-Party Remittance,
-                                             Phase 7 -- reuses #manualLineCustomFields' own free-text
-                                             input verbatim, same as #eedModal's own "Other" mode (see
-                                             that modal's markup comment); is_other=true is the only
-                                             difference sent on submit. -->
-                                        <button type="button" class="mode-select-btn" data-mode="other">
-                                            <i class="fa-solid fa-circle-question"></i>
-                                            <span class="mode-select-btn-title" data-i18n="manual_line_mode_other">Other</span>
-                                            <span class="mode-select-btn-desc" data-i18n="mode_desc_other">Grouped into "Other Income/Deduction" on reports</span>
-                                        </button>
-                                    </div>
+                            <div class="add-manual-line-card">
+                                <!-- 2026-09-15, Round 3 item 4 batch 2/4, explicit instruction: the
+                                     3-mode picker is a plain segmented btn-group on ONE line -- no
+                                     icons, no gradient, no per-button description inside the button.
+                                     The selected one is `.btn-primary` (ส้มถม) rather than §9's usual
+                                     neutral `active` state: confirmed explicitly for THIS control
+                                     because it is the tab's own primary choice, not a yes/no toggle.
+                                     The chosen mode's description moves to one gray line below the
+                                     group (#manualLineModeDesc, set by setManualLineMode() in
+                                     detail.js).
+                                     NOTE: `.mode-select-group` (the old markup here) still exists and
+                                     is still used by Employee Detail's own #eedModal -- untouched by
+                                     this batch, so that modal keeps its current look. -->
+                                <div class="segmented" id="manualLineModeToggle">
+                                    <input type="radio" name="manualLineMode" id="manualLineModeCatalog" value="catalog" checked>
+                                    <label for="manualLineModeCatalog" data-i18n="manual_line_mode_catalog">From List</label>
+                                    <input type="radio" name="manualLineMode" id="manualLineModeCustom" value="custom">
+                                    <label for="manualLineModeCustom" data-i18n="manual_line_mode_custom">Custom Item</label>
+                                    <input type="radio" name="manualLineMode" id="manualLineModeOther" value="other">
+                                    <label for="manualLineModeOther" data-i18n="manual_line_mode_other">Other</label>
                                 </div>
-                                <div class="row g-2 align-items-end" id="manualLineCatalogFields">
-                                    <div class="col-12">
-                                        <label class="form-label small text-muted mb-1" data-i18n="select_item_placeholder">Select an income/deduction item</label>
-                                        <select class="form-select select2-remote" id="manualLineItemSelect" data-api="/api/employee.earning-deduction.options"></select>
-                                    </div>
-                                </div>
-                                <div class="row g-2 align-items-end d-none" id="manualLineCustomFields">
-                                    <div class="col-sm-8">
-                                        <label class="form-label small text-muted mb-1" data-i18n="modal_custom_item_name">Item Name</label>
-                                        <input type="text" class="form-control" id="manualLineCustomName" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
-                                    </div>
-                                    <div class="col-sm-4">
-                                        <label class="form-label small text-muted mb-1" data-i18n="modal_item_type">Type</label>
+                                <p class="manual-line-mode-desc" id="manualLineModeDesc"></p>
+                                <!-- 2026-09-15, batch 2/4 follow-up: the add form is 2 rows + an
+                                     always-last Add row. Row 1 = type / item / amount, row 2 = the note
+                                     as a real textarea (T002 auto-grows it, see input.js). The Add
+                                     button moved out of the field row entirely so it can stay the LAST
+                                     thing in the panel even when the payee block below is open -- a
+                                     button that commits the whole form should never sit above half of
+                                     the fields it commits. -->
+                                <div class="row g-2 align-items-end manual-line-form-row">
+                                    <div class="col-lg-3">
+                                        <label class="form-label" for="manualLineCustomType" data-i18n="modal_item_type">Type</label>
                                         <select class="form-select select2-static" id="manualLineCustomType" data-option-keys="breakdown_earnings,table_deduction_amount" data-option-values="earning,deduction"></select>
                                     </div>
-                                </div>
-                                <div class="row g-2 align-items-end mt-1">
-                                    <div class="col-sm-6">
-                                        <label class="form-label small text-muted mb-1" data-i18n="modal_amount">Amount</label>
-                                        <input type="number" class="form-control" id="manualLineAmount" min="0.01" step="0.01" placeholder="0.00">
+                                    <!-- The catalog picker filters itself to the chosen type through the
+                                         `data-type` attribute this endpoint already honours (input.js
+                                         re-reads it on every search, see its own docblock) -- the same
+                                         wiring #eedModal's own catalog picker uses. Its label text swaps
+                                         between two lang keys, set by applyManualLineItemTypeRd(). -->
+                                    <div class="col-lg-6" id="manualLineCatalogFields">
+                                        <label class="form-label" for="manualLineItemSelect" id="manualLineItemSelectLabel" data-i18n="manual_line_select_earning_item">Select an income item</label>
+                                        <select class="form-select select2-remote" id="manualLineItemSelect" data-api="/api/employee.earning-deduction.options" data-type="earning"></select>
                                     </div>
-                                    <div class="col-sm-6">
-                                        <label class="form-label small text-muted mb-1" data-i18n="modal_comment">Comment</label>
-                                        <input type="text" class="form-control" id="manualLineComment" maxlength="255" data-i18n="modal_comment_placeholder" placeholder="e.g. August OT shortfall top-up">
+                                    <div class="col-lg-6 d-none" id="manualLineCustomFields">
+                                        <label class="form-label" for="manualLineCustomName" data-i18n="modal_custom_item_name">Item Name</label>
+                                        <input type="text" class="form-control" id="manualLineCustomName" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
+                                    </div>
+                                    <div class="col-lg-3">
+                                        <label class="form-label" for="manualLineAmount" data-i18n="modal_amount">Amount</label>
+                                        <!-- 8: money-input + initMoneyInputs() (comma/2-decimal on blur, raw
+                                             value mirrored to data-raw-value) instead of a bare number
+                                             field -- read back through parseMoneyInput() in detail.js. -->
+                                        <input type="text" class="form-control money-input" id="manualLineAmount" inputmode="decimal" placeholder="0.00">
                                     </div>
                                 </div>
-                                <!-- Transfer-to-payee (2026-08-21, explicit request: "หักเพื่อไปจ่ายให้ใคร
-                                     โดยเลือกพนักงานได้ว่าจะหักของคนนี้ไปให้คนนี้") -- only meaningful when
-                                     the item being added is a deduction, toggled alongside the existing
-                                     earning/deduction type preview (updateManualLineTypePreviewRd() in
-                                     detail.js).
-                                     2026-08-31, same-day follow-up: widened to the SAME 4-way
-                                     None/Employee/Company/Not-Disbursed payee_type toggle Employee
-                                     Detail's own #eedPayeeTypeToggle already has (this modal never had
-                                     any payee-routing concept beyond the bare employee picker until
-                                     now). Employee picker reuses /api/employee.report_to.get
-                                     (data-exclude-id set to the employee this modal is currently
-                                     managing) rather than a new endpoint. -->
-                                <div class="row g-2 align-items-end mt-1 d-none" id="manualLinePayeeTypeWrapper">
+                                <div class="row g-2 manual-line-note-row">
                                     <div class="col-12">
-                                        <label class="form-label small text-muted mb-1" data-i18n="payee_type_label">Deducted Money Goes To</label>
-                                        <div class="btn-group btn-group-sm flex-wrap" role="group" id="manualLinePayeeTypeToggle">
-                                            <button type="button" class="btn btn-outline-brand active" data-payee-type="none"><span data-i18n="payee_type_none">Employee's Own Net Pay</span></button>
-                                            <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
-                                            <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
-                                            <!-- 2026-09-02, Deduction Destination & Third-Party Remittance -->
-                                            <button type="button" class="btn btn-outline-brand" data-payee-type="other_person"><span data-i18n="payee_type_other_person">Other Person / Third Party</span></button>
-                                            <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Deducted, No Cash Movement (Write-off)</span></button>
+                                        <label class="form-label" for="manualLineComment" data-i18n="modal_comment">Comment</label>
+                                        <textarea class="form-control" id="manualLineComment" rows="2" maxlength="255" data-i18n="modal_comment_placeholder" placeholder="e.g. August OT shortfall top-up"></textarea>
+                                    </div>
+                                </div>
+                                <!-- Transfer-to-payee (2026-08-21) -- only meaningful when the item being
+                                     added is a deduction, toggled by syncManualLineTypeDependentsRd() in
+                                     detail.js.
+                                     2026-09-15, batch 2/4 follow-up: the 5 choices are now the same
+                                     segmented control the mode picker uses (the confirmed "segmented that
+                                     is a form's primary choice" exception in rules.md 4 -- selected one
+                                     is `.btn-primary`), with one gray line under the group saying what
+                                     the chosen routing actually DOES (each line is the behaviour read off
+                                     PayrollRunModel::recalculate()'s transfer-credit pass and
+                                     PayrollRemittanceModel::generateForRun(), not a restatement of the
+                                     button label), and every per-choice sub-form indented inside ONE
+                                     callout block so it reads as belonging to the chosen option. -->
+                                <div class="manual-line-payee-block d-none" id="manualLinePayeeTypeWrapper">
+                                    <!-- 2026-09-15: 5 choices is past the point where a segmented row
+                                         reads as one glance (rules.md 9: 3 or fewer = segmented, more
+                                         = a select), and 2 of the 5 labels were long enough to wrap
+                                         inside their own segment. One select on its own row, with the
+                                         same gray description line underneath. -->
+                                    <div class="row g-2">
+                                        <div class="col-lg-6">
+                                            <label class="form-label" for="manualLinePayeeType" data-i18n="payee_type_label">Deducted Money Goes To</label>
+                                            <select class="form-select select2-static" id="manualLinePayeeType"
+                                                data-option-keys="payee_type_none,payee_type_employee,payee_type_company,payee_type_other_person,payee_type_not_disbursed"
+                                                data-option-values="none,employee,company,other_person,not_disbursed"></select>
                                         </div>
                                     </div>
-                                </div>
-                                <div class="row g-2 align-items-end mt-1 d-none" id="manualLinePayeeWrapper">
-                                    <div class="col-12">
-                                        <label class="form-label small text-muted mb-1" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
-                                        <select class="form-select select2-remote" id="manualLinePayeeEmployee" data-api="/api/employee.report_to.get" data-type="employee"></select>
-                                    </div>
-                                </div>
-                                <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- same
-                                     as Employee Detail's own #eedCompanyAccountWrapper. -->
-                                <div class="row g-2 align-items-end mt-1 d-none" id="manualLineCompanyAccountWrapper">
-                                    <div class="col-12">
-                                        <label class="form-label small text-muted mb-1" data-i18n="payee_bank_account_label">Company Bank Account</label>
-                                        <select class="form-select select2-remote" id="manualLineBankAccount" data-api="/api/payroll-cycle.bank-account.options"></select>
-                                    </div>
-                                </div>
-                                <!-- 2026-09-02, Deduction Destination & Third-Party Remittance -- pick an
-                                     existing SAVED destination, or leave blank and fill the new-account
-                                     fields below (which create a one-off or, with the checkbox, a new
-                                     saved destination -- see PaymentDestinationModel::resolveOrCreate()).
-                                     This is metadata attached to the deduction line only -- it never
-                                     affects Net Pay or the calculation itself (see this feature's own
-                                     "Calculation vs Disbursement layer" design note). -->
-                                <div class="row g-2 align-items-end mt-1 d-none" id="manualLineDestinationWrapper">
-                                    <div class="col-12">
-                                        <label class="form-label small text-muted mb-1" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
-                                        <select class="form-select select2-remote" id="manualLineDestinationSelect" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
-                                    </div>
-                                    <div class="col-12 mt-2" id="manualLineDestinationNewFields">
-                                        <div class="row g-2">
-                                            <div class="col-sm-6">
-                                                <label class="form-label small text-muted mb-1" data-i18n="destination_account_name">Account Name</label>
-                                                <input type="text" class="form-control form-control-sm" id="manualLineDestAccountName" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee">
+                                    <p class="manual-line-mode-desc" id="manualLinePayeeDesc"></p>
+                                    <!-- One callout for whichever choice needs extra fields; "own net pay"
+                                         and "write-off" need none, so the callout itself stays hidden. -->
+                                    <div class="manual-line-payee-subform d-none" id="manualLinePayeeSubform">
+                                        <div class="d-none" id="manualLinePayeeWrapper">
+                                            <label class="form-label" for="manualLinePayeeEmployee" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
+                                            <select class="form-select select2-remote" id="manualLinePayeeEmployee" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                                            <div id="manualLinePayeeEmployeeDetail"></div>
+                                        </div>
+                                        <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company'. -->
+                                        <div class="d-none" id="manualLineCompanyAccountWrapper">
+                                            <label class="form-label" for="manualLineBankAccount" data-i18n="payee_bank_account_label">Company Bank Account</label>
+                                            <select class="form-select select2-remote" id="manualLineBankAccount" data-api="/api/payroll-cycle.bank-account.options"></select>
+                                            <div id="manualLineBankAccountDetail"></div>
+                                        </div>
+                                        <!-- 2026-09-02, Deduction Destination and Third-Party Remittance.
+                                             2026-09-15: the old "pick a saved one OR leave blank and fill
+                                             the fields below" pairing is now an explicit 2-way segmented
+                                             choice -- the two paths were never meant to be filled at the
+                                             same time. The saved half disappears entirely (with a gray
+                                             line in its place) for a company that has none yet. -->
+                                        <div class="d-none" id="manualLineDestinationWrapper">
+                                            <!-- 2026-09-15: with nothing saved yet there is no choice to
+                                                 offer, so the whole segmented row (and the "none saved"
+                                                 line that used to stand in for it) is absent and the
+                                                 new-destination form is simply what this block IS. -->
+                                            <div class="segmented d-none" id="manualLineDestModeToggle">
+                                                <input type="radio" name="manualLineDestMode" id="manualLineDestModeSaved" value="saved" checked>
+                                                <label for="manualLineDestModeSaved" data-i18n="destination_mode_saved">Choose a saved destination</label>
+                                                <input type="radio" name="manualLineDestMode" id="manualLineDestModeNew" value="new">
+                                                <label for="manualLineDestModeNew" data-i18n="destination_mode_new">Enter a new one</label>
                                             </div>
-                                            <div class="col-sm-6">
-                                                <label class="form-label small text-muted mb-1" data-i18n="destination_account_no">Account No.</label>
-                                                <input type="text" class="form-control form-control-sm" id="manualLineDestAccountNo" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890">
+                                            <div id="manualLineDestSavedFields">
+                                                <label class="form-label" for="manualLineDestinationSelect" data-i18n="destination_saved_pick_label">Saved destination</label>
+                                                <select class="form-select select2-remote" id="manualLineDestinationSelect" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
+                                                <div id="manualLineDestinationDetail"></div>
                                             </div>
-                                            <div class="col-sm-6">
-                                                <label class="form-label small text-muted mb-1" data-i18n="destination_bank">Bank</label>
-                                                <select class="form-select select2-remote" id="manualLineDestBank" data-api="/api/bank.get" data-type="bank"></select>
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <label class="form-label small text-muted mb-1" data-i18n="destination_bank_branch">Branch</label>
-                                                <input type="text" class="form-control form-control-sm" id="manualLineDestBankBranch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch">
-                                            </div>
-                                            <div class="col-12">
-                                                <div class="form-check">
-                                                    <input type="checkbox" class="form-check-input" id="manualLineDestSaveForReuse">
-                                                    <label class="form-check-label small" for="manualLineDestSaveForReuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label>
+                                            <div class="d-none" id="manualLineDestinationNewFields">
+                                                <div class="row g-2">
+                                                    <div class="col-sm-6">
+                                                        <label class="form-label" for="manualLineDestAccountName" data-i18n="destination_account_name">Account Name</label>
+                                                        <input type="text" class="form-control" id="manualLineDestAccountName" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee">
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <label class="form-label" for="manualLineDestAccountNo" data-i18n="destination_account_no">Account No.</label>
+                                                        <input type="text" class="form-control" id="manualLineDestAccountNo" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890">
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <label class="form-label" for="manualLineDestBank" data-i18n="destination_bank">Bank</label>
+                                                        <select class="form-select select2-remote" id="manualLineDestBank" data-api="/api/bank.get" data-type="bank"></select>
+                                                    </div>
+                                                    <div class="col-sm-6">
+                                                        <label class="form-label" for="manualLineDestBankBranch" data-i18n="destination_bank_branch">Branch</label>
+                                                        <input type="text" class="form-control" id="manualLineDestBankBranch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch">
+                                                    </div>
+                                                    <div class="col-12">
+                                                        <div class="form-check">
+                                                            <input type="checkbox" class="form-check-input" id="manualLineDestSaveForReuse">
+                                                            <label class="form-check-label" for="manualLineDestSaveForReuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label>
+                                                        </div>
+                                                        <p class="manual-line-field-hint" data-i18n="destination_save_for_reuse_hint">Saved destinations are shared across the whole company; any employee can pick them.</p>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
-                                <div class="row g-2 align-items-end mt-1 d-none" id="manualLineIncludeCashSummaryWrapper">
-                                    <div class="col-12">
-                                        <div class="form-check">
-                                            <input type="checkbox" class="form-check-input" id="manualLineIncludeCashSummary" checked>
-                                            <label class="form-check-label small" for="manualLineIncludeCashSummary" data-i18n="include_in_cash_summary_label">Include in Cash Payment Summary Report</label>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div id="manualLineTypePreview" class="small mt-2 d-none"></div>
-                                <div class="text-end mt-2">
-                                    <button type="button" class="btn btn-primary" id="btnAddManualLine"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_item">Item</span></button>
+                                <!-- .btn-primary as confirmed: this is the tab's own primary action -- no
+                                     icon (rules.md 4), disabled until both an item and an amount > 0 are
+                                     present (refreshManualLineAddStateRd()). Always the LAST row of the
+                                     panel, right-aligned. -->
+                                <div class="manual-line-add-row">
+                                    <button type="button" class="btn btn-primary" id="btnAddManualLine" data-i18n="add_line" disabled>Add Line</button>
                                 </div>
                             </div>
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <div class="ped-type-panel border rounded-3 p-3 h-100 d-flex flex-column">
-                                        <h6 class="text-success fw-bold mb-2"><i class="fa-solid fa-arrow-trend-up me-1"></i><span data-i18n="breakdown_earnings">Income</span></h6>
-                                        <ul class="list-group list-group-flush flex-grow-1" id="manualLinesEarningList"></ul>
-                                        <div class="d-flex justify-content-between fw-bold text-success border-top pt-2 mt-1">
-                                            <span data-i18n="manual_line_subtotal_label">Total</span><span id="manualLinesEarningTotal">0.00</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="ped-type-panel border rounded-3 p-3 h-100 d-flex flex-column">
-                                        <h6 class="text-danger fw-bold mb-2"><i class="fa-solid fa-arrow-trend-down me-1"></i><span data-i18n="table_deduction_amount">Deductions</span></h6>
-                                        <ul class="list-group list-group-flush flex-grow-1" id="manualLinesDeductionList"></ul>
-                                        <div class="d-flex justify-content-between fw-bold text-danger border-top pt-2 mt-1">
-                                            <span data-i18n="manual_line_subtotal_label">Total</span><span id="manualLinesDeductionTotal">0.00</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="d-flex justify-content-between align-items-center border-top pt-2 mt-3">
-                                <span class="fw-bold text-secondary" data-i18n="manual_line_net_total">Net Adjustment</span>
-                                <span class="fw-bold fs-6" id="manualLinesNetTotal">0.00</span>
-                            </div>
+                            <!-- 2026-09-15, batch 2/4, explicit instruction: the 2 bordered
+                                 .ped-type-panel cards + their own totals + the separate net row are
+                                 replaced by the SHARED slip component (payslipViewHtml(), app.js --
+                                 §9's "สลิป / รายละเอียดการคำนวณ"): 2 columns, no per-row line, both column
+                                 totals pinned to the same bottom line, and one `--c-bg-subtle` band for
+                                 the net figure. Rendered into this one div by loadManualLinesRd(). -->
+                            <div id="manualLinesSlip"></div>
                         </div>
                         <!-- Attendance Data (from Sync) (2026-08-21, explicit request: "ต้องการแก้ตัวเลขดิบ
                              ที่ Sync มา ไม่ใช่แค่ยอดเงิน") -- corrects the RAW numbers Origami sent (late

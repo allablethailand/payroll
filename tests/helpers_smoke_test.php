@@ -76,7 +76,7 @@ $expectedContexts = [
     'document_delivery_status', 'sync_batch_status', 'payroll_calc_status', 'eed_status',
     'eed_installment_status', 'remittance_status', 'attendance_status',
     'recurring_earning_status', 'payment_method', 'verify_status', 'employee_comment_tag',
-    'data_source',
+    'manual_line_mode', 'data_source',
 ];
 sort($expectedContexts);
 $actualContexts = array_keys($mapViaHelper);
