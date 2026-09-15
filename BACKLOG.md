@@ -863,3 +863,8 @@ questions about the payee sub-form (2026-09-15).
 — การไล่แก้ 14 ไฟล์รวดเดียวคือการเสี่ยง regression 14 หน้าพร้อมกันโดยไม่มีใครดูหน้าจริง
 
 **Source:** Phase Design Round 3, DataTable toolbar slot (2026-09-15).
+
+- **`.nav-link:focus-visible` ring โดน clip บนแถว tab** — ring เป็น `box-shadow` 4px รอบปุ่ม
+  แต่ `.nav-tabs` เป็น `overflow-x: auto` จึง clip ring ด้านบน/ล่างทิ้ง (การบังคับของ CSS: แกนหนึ่ง
+  ไม่ใช่ `visible` อีกแกนก็ไม่ใช่) — ทางแก้คือให้ ring เป็น inset หรือเผื่อ padding ให้แถว — ทำตอนไล่ accessibility
+  pass ไม่ใช่รอบนี้ (พบระหว่าง nav-tabs underline clipping, 2026-09-15)

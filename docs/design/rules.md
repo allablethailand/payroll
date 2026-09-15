@@ -460,6 +460,10 @@ switch ไม่เคยเป็น badge เลยที่ไหนในแ
 - ไม่มีไอคอนใน tab ทุกหน้า (เอาออกทั้งหมด รวม tab รายงาน)
 - ไม่มี chevron / ลูกศร
 - tab ที่เลือก: ตัวหนังสือ `--c-text` + เส้นใต้ 2px `--c-primary`; ไม่เลือก: `--c-text-muted`
+- **เส้นใต้ tab ที่เลือกต้องอยู่ใน content box ของ `.nav-tabs` ทั้งเส้น** — ห้ามใช้ margin ลบ
+  (`margin-bottom: -1px` ของ Bootstrap) ดันเส้นออกนอกกล่อง เพราะแถว tab เป็น scroll container (`overflow-x: auto`)
+  ที่ clip ทุกอย่างนอก padding box — เส้นเทาของแถววาดด้วย `box-shadow: inset 0 -1px 0` แทน `border-bottom`
+  แล้วให้ border ส้ม 2px ของ tab ทับทับเส้นนั้น (ประวัติ: `docs/decisions/2026-09-15-nav-tabs-underline-clipping.md`)
 - จำนวนที่ต้องแสดง (เช่น "รออนุมัติ 3") ใช้ตัวเลขเทาในวงเล็บหลังชื่อ tab ไม่ใช่ badge สี
 - **`.tab-content` ไม่มี card ครอบ** (ตัดสินใจแล้ว, Round 3 item 3b follow-up — ตัวอย่างจริง: Payroll
   Detail's `#runDetailTabsContent`) — ตัวครอบเดียวที่ห่อ `.tab-pane` ทุกอันร่วมกัน (border/พื้น/เงา/
