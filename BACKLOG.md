@@ -868,3 +868,10 @@ questions about the payee sub-form (2026-09-15).
   แต่ `.nav-tabs` เป็น `overflow-x: auto` จึง clip ring ด้านบน/ล่างทิ้ง (การบังคับของ CSS: แกนหนึ่ง
   ไม่ใช่ `visible` อีกแกนก็ไม่ใช่) — ทางแก้คือให้ ring เป็น inset หรือเผื่อ padding ให้แถว — ทำตอนไล่ accessibility
   pass ไม่ใช่รอบนี้ (พบระหว่าง nav-tabs underline clipping, 2026-09-15)
+
+- **`#runDetailTabs.nav-tabs` hardcode สีเส้น `#dee2e6` (dark mode ไม่ตาม)** — override เฉพาะหน้า
+  Payroll Detail ที่ตั้งสีเส้นล่างของแถว tab เป็นค่า hex ตรงๆ มาตั้งแต่ก่อนมี token จึงวาดเส้นสีอ่อน
+  ทับใน dark theme ด้วย (2026-09-15 ย้ายมาเป็น `box-shadow: inset 0 -1px 0 #dee2e6` กลไกเดียวกับ
+  shared rule แต่คงสีเดิมไว้ เพื่อไม่ให้หน้านั้นเปลี่ยนหน้าตาพร้อมกับการแก้บั๊ก clip)
+  — **ทางแก้: ลบ rule นี้ทิ้งทั้งก้อน ปล่อยให้ใช้ `var(--c-border)` ของ shared `.nav-tabs`**
+  — ทำตอนรอบ 3d ที่ไล่ `payroll/detail.php` ให้เป็น `design:clean` ไม่ทำแยก
