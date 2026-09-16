@@ -372,6 +372,34 @@
         $(dt.table().node()).find(`.tcf-filter-btn[data-tcf-key="${key}"]`).toggleClass('tcf-filter-active', active);
     }
 
+    /** Public: is anything narrowed by a column filter right now? (app.js's own empty-state and
+     *  "clear everything" paths ask this -- they must not claim "no filter is active" while a column
+     *  checklist is still narrowing the table.) */
+    window.hasActiveColumnFilters = function (dt) {
+        if (!dt || typeof dt.settings !== 'function') return false;
+        return Object.keys(tableState(dt).selected).length > 0;
+    };
+    /** Public: drop every column filter on this table and redraw/reload once. Returns whether
+     *  anything was actually cleared, so a caller can decide whether it still needs its own redraw.
+     *  Server-mode tables carry their selections in `ajax.data` (getColumnFilterValues()), so they
+     *  need a reload rather than a redraw -- the mode is read back off the columns' own stored
+     *  config rather than asked for again by the caller. */
+    window.clearColumnFilters = function (dt) {
+        if (!dt || typeof dt.settings !== 'function') return false;
+        const state = tableState(dt);
+        const keys = Object.keys(state.selected);
+        if (!keys.length) return false;
+        keys.forEach(function (key) {
+            delete state.selected[key];
+            updateFilterBtnState(dt, key);
+        });
+        const serverMode = Object.keys(state.columns).some(function (k) {
+            return k.slice(-8) === '__config' && (state.columns[k] || {}).mode === 'server';
+        });
+        if (serverMode) dt.ajax.reload(null, false); else dt.draw();
+        return true;
+    };
+
     window.initExcelColumnFilters = function (dt, options) {
         const state = tableState(dt);
         // 2026-08-27, rolling this out beyond Employee List surfaced a real case Employee List

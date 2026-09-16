@@ -124,7 +124,11 @@
 $pageKeyAttr = !empty($pageKey) ? ' data-page-key="' . htmlspecialchars($pageKey) . '"' : '';
 ?>
 <div class="filter-bar collapsed" id="<?=htmlspecialchars($id)?>"<?=$pageKeyAttr?>>
+    <!-- 2026-09-16: the header is 2 ROWS at every width (rules.md §6) -- row 1 is the label plus the
+         Clear button and the caret, row 2 is the chips strip and exists only while collapsed with at
+         least one active filter. No button ever sits in row 2. -->
     <div class="filter-bar-header">
+      <div class="filter-bar-header-top">
         <span class="filter-bar-label">
             <!-- 2026-09-13, explicit instruction: "ไอคอน fa-filter สีเดียว --c-text-muted หน้า 'ตัวกรอง'
                  (ข้อยกเว้น §6 เฉพาะหัว filter-bar)" -- §6's own general rule ("ตัดไอคอนหน้า label ของ filter
@@ -134,18 +138,20 @@ $pageKeyAttr = !empty($pageKey) ? ' data-page-key="' . htmlspecialchars($pageKey
             <i class="fa-solid fa-filter filter-bar-label-icon" aria-hidden="true"></i>
             <span data-i18n="filter_title">ตัวกรอง</span><span class="filter-bar-count-wrap d-none"> (<span class="filter-bar-count">0</span>)</span>
         </span>
-        <!-- 2026-09-15: chips are a direct child of the header (not of .filter-bar-header-right) so
-             that below `sm` they can wrap onto their own second row while the label and the
-             Clear/caret pair stay together on the first one. At `sm` and up `margin-left: auto`
-             keeps them packed to the right exactly where they have always been. -->
-        <div class="filter-bar-chips"></div>
         <div class="filter-bar-header-right">
             <?php if (!empty($header_extra_html)): ?><div class="filter-bar-header-extra"><?=$header_extra_html?></div><?php endif; ?>
-            <button type="button" class="btn btn-link btn-sm filter-bar-clear d-none"><span data-i18n="filter_clear">ล้างตัวกรอง</span></button>
+            <!-- Always the top-right corner of row 1, in both collapse states, hidden only while
+                 nothing is filtered. Below `sm` it is the icon alone (the row has no width to spare
+                 there) -- `title`/`aria-label` carry the same words the text would have said. -->
+            <button type="button" class="btn btn-link filter-bar-clear d-none" data-i18n-title="filter_clear" title="Clear filters" aria-label="Clear filters"><i class="fa-solid fa-filter-circle-xmark filter-bar-clear-icon" aria-hidden="true"></i><span class="filter-bar-clear-text" data-i18n="filter_clear">ล้างตัวกรอง</span></button>
             <button type="button" class="btn-icon btn-icon-ghost filter-bar-toggle" aria-label="Toggle filter">
                 <i class="fa-solid fa-chevron-down"></i>
             </button>
         </div>
+      </div>
+      <!-- Row 2: one horizontal strip, never wraps -- it scrolls sideways and fades at its right
+           edge when there are more chips than fit. -->
+      <div class="filter-bar-chips scroll-thin"></div>
     </div>
     <div class="filter-bar-body">
         <?=$filter_fields_html?>

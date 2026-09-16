@@ -1021,6 +1021,10 @@ function initRowToggles($table, options) {
 // added -- if a future page genuinely needs client-side table-to-file export with no backend
 // endpoint to call, that would need a real library decision, reported before adding it, not silently
 // bundled in here.
+// `options.filterBar` (optional, a selector): which filter panel belongs to this table. Only needed
+// on a page that has MORE THAN ONE `.filter-bar` -- with a single one it is found automatically. It
+// is what lets the table's own empty state clear the panel's fields along with its own search and
+// column filters (see clearAllTableFilters()).
 // 2026-09-15, rules.md 7 "DataTable toolbar" -- the toolbar is the COMPONENT's, not each page's.
 // `options.toolbar = { create: html|null, actions: [html...], export: bool }`:
 //   create  = the one button that makes a new row (orange, right-most)
@@ -1085,6 +1089,25 @@ function dtInjectExportDropdown($table, exportOptions) {
         }
     });
 }
+// 2026-09-16, rules.md §7 "control scale": datatables.net-bs5's own integration file builds the
+// length select and the search box with `form-select-sm`/`form-control-sm` baked in
+// (`DataTable.ext.classes` in node_modules/datatables.net-bs5/js/dataTables.bootstrap5.js), which is
+// why those 2 controls used to read a size smaller than every button beside them in the same row
+// (measured 10.5px/23.8px vs a normal button's 12px/29px). Overridden ONCE here, before any table is
+// constructed, rather than stripped per table or fought with CSS -- this reaches every DataTable in
+// the app, including the pages that still build their own with `$().DataTable()` and never call
+// initSharedDataTable(). Vendor file untouched.
+// Inside a ready handler, not at parse time: this file is loaded from `layout/header.php`, i.e.
+// BEFORE footer.php pulls DataTables in -- at parse time `$.fn.dataTable` does not exist yet and the
+// override would silently do nothing (confirmed live: the classes were still the `-sm` ones). By
+// DOM-ready every library is in, and this file's own ready handler is registered before any page
+// script's, so it lands before the first table is constructed.
+$(function () {
+    const ext = window.jQuery && $.fn.dataTable && $.fn.dataTable.ext;
+    if (!ext || !ext.classes) return;
+    if (ext.classes.search) ext.classes.search.input = 'form-control';
+    if (ext.classes.length) ext.classes.length.select = 'form-select';
+});
 function initSharedDataTable(selector, options) {
     options = options || {};
     const $table = $(selector);
@@ -1182,7 +1205,7 @@ function initSharedDataTable(selector, options) {
             dtOptions.drawCallback = function () {
                 if (typeof userDrawCallback === 'function') userDrawCallback.apply(this, arguments);
                 if (options.stickyColumns) initStickyColumns(selector, options.stickyColumns);
-                if (options.emptyState) dtRenderEmptyState(this.api(), options.emptyState);
+                if (options.emptyState) dtRenderEmptyState(this.api(), options.emptyState, options.filterBar);
             };
         }
         dtOptions.initComplete = function () {
@@ -1216,6 +1239,7 @@ function initSharedDataTable(selector, options) {
             }
             if (options.export) dtInjectExportDropdown($table, options.export);
             if (options.toolbar) dtRenderToolbarSlot($table, options.toolbar);
+            if (options.emptyState) dtWatchVisibleWidth($table);
         };
     }
     return $table.DataTable(dtOptions);
@@ -1317,21 +1341,26 @@ function initFilterBar(bar, options) {
     // to flip the icon itself, only the `.collapsed` class toggle below (which the chips' own
     // collapsed-only visibility CSS also keys off of, same class, no separate JS state to track).
     //
-    // 2026-09-13, same-day follow-up (the intermittent-click bug report above): the clickable
-    // expand/collapse ZONE is explicitly the chevron circle PLUS the "ตัวกรอง" label text only --
-    // `$bar.find('.filter-bar-toggle, .filter-bar-label')`, never the whole `.filter-bar-header` row
-    // (confirmed by re-reading this function: it never was bound to the whole row, but the header's
-    // OWN chips/Clear button sit close enough to the toggle circle that a bigger hit-zone here would
-    // risk swallowing clicks meant for them -- the label gets `cursor:pointer` in style.css as the
-    // matching visual affordance for this widened zone, a genuine UX improvement, not just a bug fix).
-    // Chips/Clear each also get `e.stopPropagation()` in their own delegated handlers below, as a
-    // defensive belt-and-suspenders isolation from this (or any future) ancestor click zone -- not
-    // reproducible as a live bug today, but cheap insurance against exactly this class of regression.
-    const $toggleZone = $bar.find('.filter-bar-toggle, .filter-bar-label');
-    $toggleZone.on('click', function () {
+    // 2026-09-16: the expand/collapse zone is the WHOLE header bar (rules.md §6), not just the
+    // chevron circle + label it was narrowed to in 2026-09-13. What made that narrowing necessary --
+    // the header's own chips/Clear button sitting inside the same row -- is handled at the source
+    // instead: each of those stops propagation in its own delegated handler below, and the guard
+    // here additionally ignores anything originating inside a control zone (including the optional
+    // `$header_extra_html` slot, whose contents this component does not own and cannot assume about).
+    const $header = $bar.find('.filter-bar-header');
+    $header.on('click', function (e) {
+        if ($(e.target).closest('.filter-bar-chips, .filter-bar-header-right').length) return;
         $bar.toggleClass('collapsed');
         if (storageKey) {
-            try { localStorage.setItem(storageKey, $bar.hasClass('collapsed') ? 'collapsed' : 'expanded'); } catch (e) {}
+            try { localStorage.setItem(storageKey, $bar.hasClass('collapsed') ? 'collapsed' : 'expanded'); } catch (e2) {}
+        }
+    });
+    // The toggle circle itself lives inside `.filter-bar-header-right` (a control zone the guard
+    // above skips), so it keeps its own binding.
+    $bar.find('.filter-bar-toggle').on('click', function () {
+        $bar.toggleClass('collapsed');
+        if (storageKey) {
+            try { localStorage.setItem(storageKey, $bar.hasClass('collapsed') ? 'collapsed' : 'expanded'); } catch (e2) {}
         }
     });
 
@@ -1416,6 +1445,10 @@ function initFilterBar(bar, options) {
         $count.text(n);
         $countWrap.toggleClass('d-none', n === 0);
         $clearBtn.toggleClass('d-none', n === 0);
+        // Below `sm` this button is the icon alone, so its accessible name comes from title/
+        // aria-label -- updateText() writes `title` from data-i18n-title, and the two are kept in
+        // step here rather than adding a second i18n attribute convention for one element.
+        $clearBtn.attr('aria-label', $clearBtn.attr('title') || getLangValue('filter_clear') || 'Clear filters');
         // 2026-09-13, explicit instruction: "ช่องที่มีค่า: ขอบ --c-border-strong ให้เห็นว่าไม่ใช่ default
         // โดยไม่ต้องพึ่ง chips" -- chips are now hidden while the panel is EXPANDED (see the CSS this
         // function's own docblock references), i.e. exactly the state where the fields themselves are
@@ -1461,8 +1494,10 @@ function initFilterBar(bar, options) {
         const targetId = $(this).closest('.filter-bar-chip').data('target');
         if (targetId) resetSelect($fields.find('#' + CSS.escape(String(targetId))));
     });
-    $bar.on('click', '.filter-bar-clear', function (e) {
-        e.stopPropagation();
+    // The same routine the Clear button runs, reachable from outside the panel (the table's own
+    // empty state calls it -- see clearAllTableFilters()). Stored on the element, not in a module
+    // registry, so it lives and dies with the bar itself.
+    function clearAllFields() {
         // 2026-09-13, explicit instruction: snapshot the field list BEFORE iterating (`.toArray()`
         // materializes it once, up front -- jQuery's own `.find()` result is already a static
         // array-like snapshot, not a live NodeList, but made explicit here rather than relying on
@@ -1482,6 +1517,11 @@ function initFilterBar(bar, options) {
                 console.error('[filter-bar] resetSelect() failed for one field during "ล้างตัวกรอง" -- continuing with the rest', el, err);
             }
         });
+    }
+    $bar.data('filterBarClear', clearAllFields);
+    $bar.on('click', '.filter-bar-clear', function (e) {
+        e.stopPropagation();
+        clearAllFields();
     });
     refresh();
 }
@@ -2198,12 +2238,84 @@ function modalFooterButtonsHtml(config) {
 // no new cross-module API into table-column-filter.js to detect correctly either way. Runs on every
 // draw (search/filter/page change), not just init, since whether the table is empty -- and WHY -- can
 // change on any of those.
-function dtRenderEmptyState(dt, emptyState) {
+// 2026-09-16, real bug found and fixed: the empty state's own "ล้างตัวกรอง" button used to run
+// `dt.search('').draw()`, which clears the GLOBAL SEARCH BOX and nothing else -- so whenever the
+// table was empty because of a filter-bar select or a column-header checklist (the two commonest
+// ways to filter a table to zero in this app), pressing it visibly did nothing at all. A table can
+// be narrowed from 3 independent places and clearing has to mean all 3:
+//   1. the filter panel above it   -- each bar's own clear routine ($bar.data('filterBarClear'))
+//   2. the column-header checklists -- clearColumnFilters() (table-column-filter.js)
+//   3. the global search box        -- dt.search('')
+// `$bar` is resolved from `options.filterBar` when the caller named one, otherwise from the single
+// `.filter-bar` on the page (the overwhelmingly common case); a page with 2 bars and no explicit
+// option gets none, which is better than clearing the wrong one.
+function tableFilterBarFor(dt, filterBarSelector) {
+    const $explicit = filterBarSelector ? $(filterBarSelector) : $();
+    if ($explicit.length) return $explicit.first();
+    const $all = $('.filter-bar');
+    return $all.length === 1 ? $all.first() : $();
+}
+function clearAllTableFilters(dt, filterBarSelector) {
+    const $bar = tableFilterBarFor(dt, filterBarSelector);
+    const barClear = $bar.data('filterBarClear');
+    if (typeof barClear === 'function') barClear();
+    const columnsCleared = (typeof clearColumnFilters === 'function') ? clearColumnFilters(dt) : false;
+    // The search box is cleared with a draw of its own only when nothing else already redrew --
+    // `search('')` alone leaves the table showing its old result set until something draws.
+    if (dt.search()) {
+        dt.search('').draw();
+    } else if (!columnsCleared && typeof barClear !== 'function') {
+        dt.draw();
+    }
+}
+function tableHasActiveFilters(dt, filterBarSelector) {
+    if (dt.search()) return true;
+    if (typeof hasActiveColumnFilters === 'function' && hasActiveColumnFilters(dt)) return true;
+    const $bar = tableFilterBarFor(dt, filterBarSelector);
+    return $bar.length ? Number($bar.find('.filter-bar-count').text() || 0) > 0 : false;
+}
+// rules.md §6's 2 variants. Nothing filtered -> the CALLER's own `emptyState` verbatim (its copy,
+// its icon, and its own create action if the page has one to offer -- §6 leaves that decision to the
+// caller, the component never guesses at it). Narrowed to nothing -> the shared "ไม่พบข้อมูลที่ตรงกัน"
+// with its own Clear action; a page's own create button is deliberately NOT offered there, because
+// the rows it would create are not what is missing.
+// The empty-state row's own cell spans every column, so on a table wide enough to scroll sideways
+// its centred content ends up centred in the WHOLE table -- measured at 430px: the message sat past
+// the right edge and the table read as empty with no message at all. The cell is already pinned to
+// the scroller's left edge (§7's `td.dt-empty-cell`), so the content only needs to be told how wide
+// the VISIBLE part is. That width is published as a custom property on the scroller itself rather
+// than as an inline style on the row: every draw rebuilds that row (an inline value set during one
+// render is gone after the next), while the scroller element survives them all.
+function dtPublishVisibleWidth($table) {
+    const scroller = $table.closest('.table-responsive, .dt-scroll-body').get(0);
+    if (!scroller || !scroller.clientWidth) return;
+    scroller.style.setProperty('--dt-visible-width', scroller.clientWidth + 'px');
+}
+// The width has to be re-published whenever the scroller RESIZES, not only on the draws that happen
+// to run while it is visible: a table living in a tab that is not the default one draws once while
+// still hidden (the scroller measures 0, there is nothing to publish) and an empty table never draws
+// again on its own, so a draw-time hook alone leaves the property unset for good.
+function dtWatchVisibleWidth($table) {
+    const scroller = $table.closest('.table-responsive, .dt-scroll-body').get(0);
+    if (!scroller) return;
+    dtPublishVisibleWidth($table);
+    if (typeof ResizeObserver === 'function') {
+        new ResizeObserver(function () { dtPublishVisibleWidth($table); }).observe(scroller);
+        return;
+    }
+    $(window).on('resize.dtVisibleWidth-' + ($table.attr('id') || ''), function () { dtPublishVisibleWidth($table); });
+}
+function dtRenderEmptyState(dt, emptyState, filterBarSelector) {
     const info = dt.page.info();
     if (info.recordsDisplay !== 0) return;
+    // Published here too, not only at init: a table inside a tab that is not the default one
+    // initialises while hidden, where the scroller measures 0 and there is nothing to publish yet.
+    dtPublishVisibleWidth($(dt.table().node()));
     const $tbody = $(dt.table().node()).find('tbody');
     const colCount = dt.columns(':visible').count() || 1;
-    const filtered = info.recordsTotal > 0;
+    // "narrowed to nothing" = the table HAS rows behind it, or one of the 3 filter sources is on
+    // (a server-mode table can legitimately report recordsTotal 0 while a filter is what emptied it).
+    const filtered = info.recordsTotal > 0 || tableHasActiveFilters(dt, filterBarSelector);
     // "ไม่พบตามที่กรอง" reuses this app's OWN existing DataTables-language string (`zeroRecords`,
     // already shown for exactly this situation everywhere else) as the title instead of forking a new
     // key with near-identical meaning -- only the supporting "text" line (empty_state_filtered_text)
@@ -2213,10 +2325,15 @@ function dtRenderEmptyState(dt, emptyState) {
         icon: 'fa-solid fa-filter-circle-xmark',
         title: getLangValue('zeroRecords') || 'ไม่พบข้อมูลที่ตรงกัน',
         text: getLangValue('empty_state_filtered_text') || 'ลองเปลี่ยนคำค้นหาหรือตัวกรอง',
-        action: { label: getLangValue('clear_filter') || 'ล้างตัวกรอง', variant: 'tertiary', onClick: function () { dt.search('').draw(); } },
+        action: {
+            label: getLangValue('clear_filter') || 'ล้างตัวกรอง',
+            variant: 'secondary',
+            onClick: function () { clearAllTableFilters(dt, filterBarSelector); },
+        },
     } : emptyState;
     if (!config) return;
     $tbody.html(`<tr class="dt-empty-row"><td class="dt-empty-cell" colspan="${colCount}">${emptyStateHtml(config)}</td></tr>`);
+
     if (config.action && typeof config.action.onClick === 'function') {
         $tbody.find('.empty-state-action').on('click', config.action.onClick);
     }

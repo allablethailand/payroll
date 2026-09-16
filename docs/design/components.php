@@ -374,7 +374,7 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
     <div class="row g-3">
         <div class="col-sm-3">
             <label class="form-label small mb-1">รอบการจ่าย</label>
-            <select class="form-select form-select-sm select2-native" id="cpFullFilterCycle">
+            <select class="form-select select2-native" id="cpFullFilterCycle">
                 <option value="all">ทั้งหมด</option>
                 <option value="1">รอบที่ 1 (1-15)</option>
                 <option value="2">รอบที่ 2 (16-31)</option>
@@ -382,7 +382,7 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
         </div>
         <div class="col-sm-3">
             <label class="form-label small mb-1">ประเภทการจ่าย</label>
-            <select class="form-select form-select-sm select2-native" id="cpFullFilterPurpose">
+            <select class="form-select select2-native" id="cpFullFilterPurpose">
                 <option value="all">ทั้งหมด</option>
                 <option value="payroll">เงินเดือนปกติ</option>
                 <option value="incentive">Incentive</option>
@@ -902,10 +902,11 @@ $cpStats = [
 <!-- ==================== Filter Bar (§6) ==================== -->
 <div class="cp-section">
     <h2>Filter Bar (§6)</h2>
-    <p class="cp-section-note"><code>app/views/partials/filter-bar.php</code> + JS <code>initFilterBar()</code> -- 6 ช่องตามหน้า Employee List จริง (ดู/สถานะ/แผนก/ทีม/ตำแหน่ง/สาขา) <code>col-sm-2</code> เท่ากันทุกช่อง เหมือน <code>.station-filter</code> เดิม, ไม่มีไอคอนหน้า label. <b>2026-09-13, restructured -- panel เหลือ 2 ส่วน (footer แยกถูกตัดออกแล้ว):</b> <b>หัว</b> (ป้าย "ตัวกรอง (N)" ซ้าย + chips/ปุ่ม "ล้างตัวกรอง"/วงกลม <code>.btn-icon</code> chevron ทางขวา ทั้งหมดแถวเดียว) และ <b>ตัว</b> (grid ฟิลด์ กางเมื่อกดวงกลม). <b>chips แสดงเฉพาะตอนยุบเท่านั้น</b> (ตอนกาง ฟิลด์เองมีขอบ <code>--c-border-strong</code> บอกว่ามีค่าแล้วแทน ไม่ต้องพึ่ง chips) ส่วนปุ่ม "ล้างตัวกรอง" อยู่ในหัวเสมอทั้ง 2 สถานะ. ตั้งค่าเริ่มต้นเป็น "สถานะ=ทำงานอยู่" + "แผนก=ไอที" (N=2, ยุบ) ไว้แล้วให้ทดสอบได้ทันที: <b>(1) ยุบ N=2</b> เห็น chips "สถานะ: ทำงานอยู่ ×"/"แผนก: ไอที ×" ในหัว (สถานะเริ่มต้นตอนนี้), <b>(2) กาง</b> (กดวงกลม chevron) -- chips หายไป เห็นขอบเข้มบน 2 ช่องที่มีค่าแทน, <b>(3) ล้างทั้งหมด</b> (กด × ที่ chip ตอนยุบ หรือปุ่ม "ล้างตัวกรอง" สถานะไหนก็ได้) -- N=0, ปุ่ม "ล้างตัวกรอง" หายไป, ขอบฟิลด์กลับปกติ. สถานะกาง/ยุบจำไว้ต่อ reload ผ่าน <code>pageKey</code> ที่ตั้งไว้ (ลอง reload หน้านี้หลังกางดู). ทุกช่องเป็น <code>select2-native</code> จริง (เหมือน Employee List จริงทุกช่องเป็น Select2) -- <code>initFilterBar()</code> อ่าน/ล้างค่าผ่าน <code>.val()</code>/<code>.val(x).trigger('change')</code> บน <code>&lt;select&gt;</code> เดิมที่ Select2 ครอบอยู่ ซึ่งคือ Select2 v4's เอง official API สำหรับตั้งค่าแบบ programmatic (v4 ไม่มี <code>.select2('val')</code> แยกต่างหากแบบ v3 แล้ว) -- ลอง "ล้างตัวกรอง"/กด × ที่ chip แล้วดู Select2 dropdown ที่ถูกครอบเปลี่ยนค่าตามจริง ไม่ใช่แค่ underlying select (ปุ่มทั้งคู่เป็น delegated binding บน panel เอง แก้บั๊กกดไม่ทำงานจากรอบก่อน). <b>2026-09-13, สืบต้นตอบั๊กใหม่ "กดติดบ้างไม่ติดบ้าง":</b> ไล่โค้ดจริงแล้วไม่พบ double-init บนหน้าจริง (payroll/detail.php มี once-guard ระดับโมดูลของตัวเองอยู่แล้ว, demo นี้เรียก <code>initFilterBar()</code> ครั้งเดียว) และปุ่ม toggle เดิมผูกกับวงกลม chevron เท่านั้น ไม่เคยครอบทั้งแถวหัว -- ไม่สามารถยืนยัน root cause เดียวที่จับได้คาหนังคาเขาได้ (ไม่มีสภาพแวดล้อม browser จริงให้ reproduce) จึงเพิ่ม defensive hardening ตามที่สั่งครบ 3 จุดแทนการปล่อยผ่าน: <b>(1)</b> เพิ่ม once-guard ระดับ element เองใน <code>initFilterBar()</code> (<code>$bar.data('filterBarInitialized')</code>) กัน double-bind ทุก handler หากมี caller ในอนาคตเรียกซ้ำโดยไม่ตั้งใจ (ไม่ใช่แค่พึ่ง once-guard ระดับหน้าเหมือนที่ payroll/detail.js ทำ) <b>(2)</b> zone สำหรับกาง/ยุบชัดเจนขึ้น (ไม่ใช่แค่วงกลม chevron อีกต่อไป แต่รวมป้าย "ตัวกรอง" ด้วย, cursor:pointer เป็นสัญญาณ) และ chips/ปุ่มล้างได้ <code>e.stopPropagation()</code> กันชนกับ zone นี้ (หรือ ancestor click zone ใดๆ ในอนาคต) แม้ปัจจุบันจะยังไม่เจอการชนจริงก็ตาม <b>(3)</b> ยืนยันแล้วว่าการยิง onChange/reload อยู่ครั้งเดียวต่อ action เสมออยู่แล้ว (debounce ผ่าน <code>setTimeout(0)</code> เดียวใน <code>scheduleNotify()</code>) -- เพิ่ม stress-test panel ข้างล่างนี้ให้ทดสอบ "กด × 10 ครั้งติดกันสลับกับกาง/ยุบ" ได้จริงด้วยตา ไม่ใช่แค่อ่านโค้ดแล้วเชื่อ. <b>2026-09-13, บั๊กที่ 3 ในวันเดียวกัน -- ยืนยัน root cause จริงจาก repro ที่ผู้ใช้ให้มา (ไม่ใช่เดา):</b> <code>#cpFilterDept</code> เปลี่ยนเป็น <code>select2-remote</code> จริง (ชี้ <code>/api/department.get</code> เหมือน <code>#rdDepartmentFilter</code> ของหน้าจริงทุกประการ) แทน <code>select2-native</code> เดิม เพราะของเดิมไม่มีทาง repro บั๊กนี้ได้เลย -- <code>resetSelect()</code> เดิมใช้ <code>.find('option').first()</code> เป็น "ค่า default" เสมอ ซึ่งถูกสำหรับช่อง static/native (มี <code>&lt;option value="all"&gt;</code> เป็นตัวแรกจริงในมาร์กอัป) แต่ **ผิดสำหรับ select2-remote**: ช่องแบบ ajax ไม่มี option ใดๆ ในมาร์กอัปเลยตอนเริ่มต้น (<code>&lt;select&gt;&lt;/select&gt;</code> เปล่าล้วน) -- option เดียวที่เคยมีคือตัวที่ select2 เอง append ตอนผู้ใช้เลือกค่าจริง ดังนั้น <code>.find('option').first()</code> จึงเจอ**ตัวเดียวกับค่าที่กำลังจะล้าง**เสมอ แล้วตั้งค่ากลับไปที่ตัวมันเอง -- true no-op ตรงกับอาการที่รายงานทุกอย่าง (ช่องเดียวไม่ทำงานเลย, หลายช่องเฉพาะ static ทำงาน, "ล้างตัวกรอง" ล้างได้แค่ครึ่งเดียว). แก้ 3 จุดตามที่สั่ง: (1) <code>resetSelect()</code> แยก branch ตาม <code>.select2-remote</code> -- ลบ option ที่ค้างอยู่ทั้งหมดแล้วค่อย <code>.val(null).trigger('change')</code> คืนช่องกลับสู่สภาพเปล่าเป๊ะเหมือนตอนเริ่มต้น (2) <code>isActive()</code>/<code>resetSelect()</code> ทั้งคู่อ่าน sentinel ผ่าน <code>defaultValueFor()</code> ใหม่ -- อ่าน <code>data-filter-default</code> ถ้ามีระบุไว้ ไม่งั้น fallback ตาม type (<code>select2-remote</code> -&gt; <code>''</code>, อื่นๆ -&gt; <code>'all'</code>) ไม่ hardcode 'all' ทุกช่องอีกต่อไป (3) ปุ่ม "ล้างตัวกรอง" วนลูปบน snapshot ที่เก็บไว้ก่อน + <code>try/catch</code> ต่อช่อง กันช่องใดช่องหนึ่งพังแล้วช่องที่เหลือไม่ถูกล้างตาม -- ลองสร้าง N=2 ผ่านปุ่ม "ตั้งค่าตัวอย่างใหม่" แล้วกด × ที่ chip ของ "แผนก" (ตัวแรก, remote) ก่อนเป็นตัวอย่าง repro เดิม ควรหายไปทันทีเหมือนช่อง static.</p>
+    <p class="cp-section-note"><code>app/views/partials/filter-bar.php</code> + JS <code>initFilterBar()</code> -- 6 ช่องตามหน้า Employee List จริง (ดู/สถานะ/แผนก/ทีม/ตำแหน่ง/สาขา) <code>col-sm-2</code> เท่ากันทุกช่อง เหมือน <code>.station-filter</code> เดิม, ไม่มีไอคอนหน้า label. <b>2026-09-13, restructured -- panel เหลือ 2 ส่วน (footer แยกถูกตัดออกแล้ว):</b> <b>หัว</b> (ป้าย "ตัวกรอง (N)" ซ้าย + chips/ปุ่ม "ล้างตัวกรอง"/วงกลม <code>.btn-icon</code> chevron ทางขวา ทั้งหมดแถวเดียว) และ <b>ตัว</b> (grid ฟิลด์ กางเมื่อกดวงกลม). <b>chips แสดงเฉพาะตอนยุบเท่านั้น</b> (ตอนกาง ฟิลด์เองมีขอบ <code>--c-border-strong</code> บอกว่ามีค่าแล้วแทน ไม่ต้องพึ่ง chips) ส่วนปุ่ม "ล้างตัวกรอง" อยู่ในหัวเสมอทั้ง 2 สถานะ. ตั้งค่าเริ่มต้นเป็น "สถานะ=ทำงานอยู่" + "แผนก=ไอที" (N=2, ยุบ) ไว้แล้วให้ทดสอบได้ทันที: <b>(1) ยุบ N=2</b> เห็น chips "สถานะ: ทำงานอยู่ ×"/"แผนก: ไอที ×" ในหัว (สถานะเริ่มต้นตอนนี้), <b>(2) กาง</b> (กดวงกลม chevron) -- chips หายไป เห็นขอบเข้มบน 2 ช่องที่มีค่าแทน, <b>(3) ล้างทั้งหมด</b> (กด × ที่ chip ตอนยุบ หรือปุ่ม "ล้างตัวกรอง" สถานะไหนก็ได้) -- N=0, ปุ่ม "ล้างตัวกรอง" หายไป, ขอบฟิลด์กลับปกติ. สถานะกาง/ยุบจำไว้ต่อ reload ผ่าน <code>pageKey</code> ที่ตั้งไว้ (ลอง reload หน้านี้หลังกางดู). ทุกช่องเป็น <code>select2-native</code> จริง (เหมือน Employee List จริงทุกช่องเป็น Select2) -- <code>initFilterBar()</code> อ่าน/ล้างค่าผ่าน <code>.val()</code>/<code>.val(x).trigger('change')</code> บน <code>&lt;select&gt;</code> เดิมที่ Select2 ครอบอยู่ ซึ่งคือ Select2 v4's เอง official API สำหรับตั้งค่าแบบ programmatic (v4 ไม่มี <code>.select2('val')</code> แยกต่างหากแบบ v3 แล้ว) -- ลอง "ล้างตัวกรอง"/กด × ที่ chip แล้วดู Select2 dropdown ที่ถูกครอบเปลี่ยนค่าตามจริง ไม่ใช่แค่ underlying select (ปุ่มทั้งคู่เป็น delegated binding บน panel เอง แก้บั๊กกดไม่ทำงานจากรอบก่อน). <b>2026-09-13, สืบต้นตอบั๊กใหม่ "กดติดบ้างไม่ติดบ้าง":</b> ไล่โค้ดจริงแล้วไม่พบ double-init บนหน้าจริง (payroll/detail.php มี once-guard ระดับโมดูลของตัวเองอยู่แล้ว, demo นี้เรียก <code>initFilterBar()</code> ครั้งเดียว) และปุ่ม toggle เดิมผูกกับวงกลม chevron เท่านั้น ไม่เคยครอบทั้งแถวหัว -- ไม่สามารถยืนยัน root cause เดียวที่จับได้คาหนังคาเขาได้ (ไม่มีสภาพแวดล้อม browser จริงให้ reproduce) จึงเพิ่ม defensive hardening ตามที่สั่งครบ 3 จุดแทนการปล่อยผ่าน: <b>(1)</b> เพิ่ม once-guard ระดับ element เองใน <code>initFilterBar()</code> (<code>$bar.data('filterBarInitialized')</code>) กัน double-bind ทุก handler หากมี caller ในอนาคตเรียกซ้ำโดยไม่ตั้งใจ (ไม่ใช่แค่พึ่ง once-guard ระดับหน้าเหมือนที่ payroll/detail.js ทำ) <b>(2)</b> zone สำหรับกาง/ยุบชัดเจนขึ้น (ไม่ใช่แค่วงกลม chevron อีกต่อไป แต่รวมป้าย "ตัวกรอง" ด้วย, cursor:pointer เป็นสัญญาณ) และ chips/ปุ่มล้างได้ <code>e.stopPropagation()</code> กันชนกับ zone นี้ (หรือ ancestor click zone ใดๆ ในอนาคต) แม้ปัจจุบันจะยังไม่เจอการชนจริงก็ตาม <b>(3)</b> ยืนยันแล้วว่าการยิง onChange/reload อยู่ครั้งเดียวต่อ action เสมออยู่แล้ว (debounce ผ่าน <code>setTimeout(0)</code> เดียวใน <code>scheduleNotify()</code>) -- เพิ่ม stress-test panel ข้างล่างนี้ให้ทดสอบ "กด × 10 ครั้งติดกันสลับกับกาง/ยุบ" ได้จริงด้วยตา ไม่ใช่แค่อ่านโค้ดแล้วเชื่อ. <b>2026-09-16, โครงหัวใหม่ (กฎเดียวทุกขนาดจอ):</b> หัวเป็น <b>2 แถวเสมอ</b> -- แถว 1 ป้าย "ตัวกรอง (N)" ซ้าย + [ล้างตัวกรอง][▾] ชิดขวา (ปุ่มล้างอยู่มุมขวาเสมอทั้งกาง/ยุบ, ซ่อนเมื่อ N=0, จอ &lt; <code>sm</code> เหลือไอคอนอย่างเดียว พร้อม title/aria-label), แถว 2 = <b>chips แถวเดียวไม่ wrap</b> เลื่อนแนวนอนได้ + fade ขอบขวา มีเฉพาะตอนยุบและ N &gt; 0 (ไม่มีปุ่มใดๆ ในแถว 2). <b>ลอง:</b> กด "ตั้งครบ 6 ตัวกรอง" แล้วยุบ -- chips ล้นขอบ เลื่อนซ้าย-ขวาได้ ขอบขวาจาง; กด "ล้างตัวกรอง" -> N=0 แถว 2 หายไปทั้งแถว; ย่อจอต่ำกว่า 576px -- ปุ่มล้างกลายเป็นไอคอน. <b>2026-09-13, บั๊กที่ 3 ในวันเดียวกัน -- ยืนยัน root cause จริงจาก repro ที่ผู้ใช้ให้มา (ไม่ใช่เดา):</b> <code>#cpFilterDept</code> เปลี่ยนเป็น <code>select2-remote</code> จริง (ชี้ <code>/api/department.get</code> เหมือน <code>#rdDepartmentFilter</code> ของหน้าจริงทุกประการ) แทน <code>select2-native</code> เดิม เพราะของเดิมไม่มีทาง repro บั๊กนี้ได้เลย -- <code>resetSelect()</code> เดิมใช้ <code>.find('option').first()</code> เป็น "ค่า default" เสมอ ซึ่งถูกสำหรับช่อง static/native (มี <code>&lt;option value="all"&gt;</code> เป็นตัวแรกจริงในมาร์กอัป) แต่ **ผิดสำหรับ select2-remote**: ช่องแบบ ajax ไม่มี option ใดๆ ในมาร์กอัปเลยตอนเริ่มต้น (<code>&lt;select&gt;&lt;/select&gt;</code> เปล่าล้วน) -- option เดียวที่เคยมีคือตัวที่ select2 เอง append ตอนผู้ใช้เลือกค่าจริง ดังนั้น <code>.find('option').first()</code> จึงเจอ**ตัวเดียวกับค่าที่กำลังจะล้าง**เสมอ แล้วตั้งค่ากลับไปที่ตัวมันเอง -- true no-op ตรงกับอาการที่รายงานทุกอย่าง (ช่องเดียวไม่ทำงานเลย, หลายช่องเฉพาะ static ทำงาน, "ล้างตัวกรอง" ล้างได้แค่ครึ่งเดียว). แก้ 3 จุดตามที่สั่ง: (1) <code>resetSelect()</code> แยก branch ตาม <code>.select2-remote</code> -- ลบ option ที่ค้างอยู่ทั้งหมดแล้วค่อย <code>.val(null).trigger('change')</code> คืนช่องกลับสู่สภาพเปล่าเป๊ะเหมือนตอนเริ่มต้น (2) <code>isActive()</code>/<code>resetSelect()</code> ทั้งคู่อ่าน sentinel ผ่าน <code>defaultValueFor()</code> ใหม่ -- อ่าน <code>data-filter-default</code> ถ้ามีระบุไว้ ไม่งั้น fallback ตาม type (<code>select2-remote</code> -&gt; <code>''</code>, อื่นๆ -&gt; <code>'all'</code>) ไม่ hardcode 'all' ทุกช่องอีกต่อไป (3) ปุ่ม "ล้างตัวกรอง" วนลูปบน snapshot ที่เก็บไว้ก่อน + <code>try/catch</code> ต่อช่อง กันช่องใดช่องหนึ่งพังแล้วช่องที่เหลือไม่ถูกล้างตาม -- ลองสร้าง N=2 ผ่านปุ่ม "ตั้งค่าตัวอย่างใหม่" แล้วกด × ที่ chip ของ "แผนก" (ตัวแรก, remote) ก่อนเป็นตัวอย่าง repro เดิม ควรหายไปทันทีเหมือนช่อง static.</p>
     <div class="cp-stress-test-panel" id="cpFilterBarStressPanel">
         <div class="cp-stress-test-row">
-            <button type="button" class="btn btn-sm btn-outline-secondary" id="cpFilterBarStressReset">ตั้งค่าตัวอย่างใหม่ (สถานะ=ทำงานอยู่, แผนก=ไอที)</button>
+            <button type="button" class="btn btn-outline-secondary" id="cpFilterBarStressReset">ตั้งค่าตัวอย่างใหม่ (สถานะ=ทำงานอยู่, แผนก=ไอที)</button>
+            <button type="button" class="btn btn-outline-secondary" id="cpFilterBarFillAll">ตั้งครบ 6 ตัวกรอง (chips ล้น)</button>
             <span class="cp-stress-test-counter">คลิก × / ล้างตัวกรอง ที่จับได้: <b id="cpFilterBarStressClickCount">0</b></span>
             <span class="cp-stress-test-counter">onChange ที่ยิงจริง: <b id="cpFilterBarStressChangeCount">0</b></span>
         </div>
@@ -932,14 +933,14 @@ $cpStats = [
         </div>
         <div class="col-sm-2">
             <label class="form-label small mb-1">มุมมอง</label>
-            <select class="form-select form-select-sm select2-native" id="cpFilterView">
+            <select class="form-select select2-native" id="cpFilterView">
                 <option value="all">ทั้งหมด</option>
                 <option value="active_only">เฉพาะที่ทำงานอยู่</option>
             </select>
         </div>
         <div class="col-sm-2">
             <label class="form-label small mb-1">สถานะ</label>
-            <select class="form-select form-select-sm select2-native" id="cpFilterStatus">
+            <select class="form-select select2-native" id="cpFilterStatus">
                 <option value="all">ทั้งหมด</option>
                 <option value="active" selected>ทำงานอยู่</option>
                 <option value="resigned">ลาออก</option>
@@ -947,7 +948,7 @@ $cpStats = [
         </div>
         <div class="col-sm-2">
             <label class="form-label small mb-1">ทีม</label>
-            <select class="form-select form-select-sm select2-native" id="cpFilterTeam">
+            <select class="form-select select2-native" id="cpFilterTeam">
                 <option value="all">ทั้งหมด</option>
                 <option value="1">ทีม A</option>
                 <option value="2">ทีม B</option>
@@ -955,7 +956,7 @@ $cpStats = [
         </div>
         <div class="col-sm-2">
             <label class="form-label small mb-1">ตำแหน่ง</label>
-            <select class="form-select form-select-sm select2-native" id="cpFilterPosition">
+            <select class="form-select select2-native" id="cpFilterPosition">
                 <option value="all">ทั้งหมด</option>
                 <option value="1">เจ้าหน้าที่</option>
                 <option value="2">หัวหน้างาน</option>
@@ -963,7 +964,7 @@ $cpStats = [
         </div>
         <div class="col-sm-2">
             <label class="form-label small mb-1">สาขา</label>
-            <select class="form-select form-select-sm select2-native" id="cpFilterBranch">
+            <select class="form-select select2-native" id="cpFilterBranch">
                 <option value="all">ทั้งหมด</option>
                 <option value="1">สำนักงานใหญ่</option>
                 <option value="2">สาขาเชียงใหม่</option>
@@ -1584,6 +1585,17 @@ $(function () {
     $('#cpFilterBarDemo').on('click', '.filter-bar-chip-remove, .filter-bar-clear', function () {
         cpStressClickCount++;
         $('#cpFilterBarStressClickCount').text(cpStressClickCount);
+    });
+    $('#cpFilterBarFillAll').on('click', function () {
+        $('#cpFilterView').val('active_only');
+        $('#cpFilterStatus').val('active');
+        $('#cpFilterTeam').val('1');
+        $('#cpFilterPosition').val('2');
+        $('#cpFilterBranch').val('1');
+        $('#cpFilterDept').val(null).trigger('change');
+        $('#cpFilterDept').append(new Option('ไอที', '3', true, true));
+        $('#cpFilterView, #cpFilterStatus, #cpFilterTeam, #cpFilterPosition, #cpFilterBranch, #cpFilterDept').trigger('change');
+        $('#cpFilterBarDemo').addClass('collapsed');
     });
     initFilterBar('#cpFilterBarDemo', {
         onChange: function () {

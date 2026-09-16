@@ -2753,6 +2753,59 @@ table.dataTable thead th .dt-column-order {
    Below `sm` it becomes 2 rows -- [length][search] then [actions] .... [export][create] -- see the
    media query below for the shape.
    ============================================================================ */
+/* 2026-09-16, rules.md §4/§7 "control scale": every control that can be clicked or typed into reads
+   at ONE size -- `--fs-sm`, the size a form already uses (`.form-compact`) -- whether it sits in a
+   page header, this toolbar, a filter panel or a modal footer. Measured before this rule: a form's
+   own input/button were 13px/30.5px while the page header, the toolbar, the filter panel AND a modal
+   footer were all 12px/29px, so a button changed size depending on which strip of the page it lived
+   in. The form is the reference, so the other 4 zones move up to it -- see
+   docs/decisions/2026-09-16-control-scale-and-filter-panel.md.
+   `--bs-btn-font-size` (not `font-size`) for buttons: that is the variable Bootstrap's own `.btn`
+   reads, so `-sm`/`-lg` variants and this rule can't fight over the same declaration. */
+/* Buttons: through Bootstrap's own per-component variables, so this and a `-sm`/`-lg` variant can
+   never fight over the same `font-size`/`padding` declaration. The `-sm` selectors are the safety net
+   for the 14 pages that still build their own DataTable and inject their own `.btn-sm` (BACKLOG
+   "รอบ 4") -- this app's own toolbar/filter markup no longer asks for `-sm` at all. */
+.ph-header .btn,
+.dt-toolbar-actions .btn,
+.dt-toolbar-create .btn,
+.dt-container .dt-layout-start > .btn,
+.dt-container .dt-layout-end > .btn,
+.dt-container .dt-length .btn,
+.dt-container .dt-search .btn,
+.filter-bar .btn,
+.modal-footer .btn {
+    --bs-btn-padding-y: .375rem;
+    --bs-btn-padding-x: .75rem;
+    --bs-btn-font-size: var(--fs-sm);
+    --bs-btn-border-radius: var(--radius);
+}
+/* Inputs/selects: the `-sm` variants are listed alongside the plain ones so that BOTH resolve to the
+   same scale (a bare `.dt-length select` selector would lose to `.form-select-sm` on specificity and
+   silently leave the length box a size apart). */
+.dt-container .dt-length select,
+.dt-container .dt-length .form-select-sm,
+.filter-bar .form-select,
+.filter-bar .form-select-sm {
+    padding: .375rem 2.25rem .375rem .75rem;
+    font-size: var(--fs-sm);
+    border-radius: var(--radius);
+}
+.dt-container .dt-search input,
+.dt-container .dt-search .form-control-sm,
+.filter-bar .form-control,
+.filter-bar .form-control-sm,
+.modal-footer .form-control,
+.modal-footer .form-select {
+    padding: .375rem .75rem;
+    font-size: var(--fs-sm);
+    border-radius: var(--radius);
+}
+/* select2 renders its own box in place of the <select> -- same scale, its own padding left alone. */
+.filter-bar .select2-selection,
+.filter-bar .select2-selection__rendered {
+    font-size: var(--fs-sm);
+}
 .dt-toolbar-actions,
 .dt-toolbar-create {
     display: flex;
@@ -3772,9 +3825,16 @@ th.col-money div.dt-column-header .dt-column-title {
    see `.filter-bar-chips` below); the Clear button moved permanently into the header too -- once
    neither of the footer's only 2 possible contents ever needed a separate row, the row itself had
    nothing left to show, in either state. */
+/* 2026-09-16: the panel is a CARD, not a tinted block -- same surface/border/radius as `.stat`
+   (§2's stat card) so every panel on a page reads as the same kind of object. The header keeps the
+   `--c-bg-subtle` band (the table-head grey) so the panel announces itself while collapsed, and
+   `overflow:hidden` is what makes that band follow the card's own rounded corners instead of
+   squaring them off. */
 .filter-bar {
-    background: var(--c-bg-subtle);
-    border-radius: var(--radius-lg);
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    overflow: hidden;
     margin-bottom: var(--sp-4);
 }
 /* 2026-09-13, explicit instruction: "padding แผงตอนกาง --sp-3 --sp-4 ระยะหัว→ช่อง --sp-2 ให้เตี้ยลงอีก"
@@ -3785,16 +3845,34 @@ th.col-money div.dt-column-header .dt-column-title {
    shrinks further, --sp-3 -> --sp-2. */
 .filter-bar-header {
     display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    background: var(--c-bg-subtle);
+    /* The WHOLE bar is the expand/collapse control (2026-09-16) -- the chips, the Clear button and
+       the optional header slot each stop propagation of their own clicks, so widening the hit zone
+       from "circle + label" to the whole row cannot swallow them (see initFilterBar()). */
+    cursor: pointer;
+}
+/* Only while open: the line that separates the header band from the fields under it. Collapsed, the
+   card is the header alone and a bottom border would read as an empty second row. */
+.filter-bar:not(.collapsed) .filter-bar-header {
+    border-bottom: 1px solid var(--c-border);
+}
+/* Anything inside the header that is its own control keeps its own pointer/cursor semantics. */
+.filter-bar-chips,
+.filter-bar-header-right {
+    cursor: default;
+}
+/* Row 1 of the header: the label on the left, the Clear button and the caret pinned right. */
+.filter-bar-header-top {
+    display: flex;
     align-items: center;
     gap: var(--sp-2);
-    padding: var(--sp-3) var(--sp-4) var(--sp-2);
-}
-/* The chips block sits between the label and the Clear/caret pair and packs to the right. */
-.filter-bar-chips {
-    margin-left: auto;
 }
 .filter-bar-header-right {
     flex-wrap: nowrap;
+    margin-left: auto;
 }
 .filter-bar-label {
     white-space: nowrap;
@@ -3898,7 +3976,7 @@ th.col-money div.dt-column-header .dt-column-title {
    own existing `.station-filter-body` convention) without needing the caller to add a class of its
    own for it, keeping the "copy verbatim" migration promise in the partial's own docblock intact. */
 .filter-bar-body > :first-child {
-    padding: 0 var(--sp-4) var(--sp-3);
+    padding: var(--sp-3);
 }
 /* Field labels inside the caller's own copied-verbatim grid -- Bootstrap's `.form-label` default
    (bold-ish, --bs-body-color, margin-bottom .5rem) reads as too heavy/dark for a field caption in
@@ -3938,11 +4016,25 @@ th.col-money div.dt-column-header .dt-column-title {
    CSS, no JS relocation needed. While EXPANDED, the fields themselves are visible in the body below
    and carry their own "has a value" signal instead (`.filter-bar-field-active`, right below) -- chips
    would just be redundant there. */
+/* 2026-09-16: ONE strip at every width -- never wraps to a taller and taller block as filters pile
+   up. It scrolls sideways instead, and the right edge fades so a cut-off chip reads as "there is
+   more", not as a broken chip. `mask-image` (not a pseudo-element) so the fade follows the chips
+   themselves rather than needing its own stacking context over them; the colour in the gradient is
+   irrelevant -- only its alpha is used. */
 .filter-bar-chips {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: var(--sp-2);
+    overflow-x: auto;
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
+    mask-image: linear-gradient(to right, black calc(100% - 24px), transparent 100%);
 }
+.filter-bar-chip {
+    flex: 0 0 auto;
+}
+/* Nothing to show: no strip at all (an empty 2nd row would just be dead space in the header), and
+   never while expanded -- the fields below say the same thing with their own active-border. */
+.filter-bar-chips:empty,
 .filter-bar:not(.collapsed) .filter-bar-chips {
     display: none;
 }
@@ -3999,9 +4091,21 @@ th.col-money div.dt-column-header .dt-column-title {
    footer tertiary buttons this round (--fs-sm/--c-text-muted, underline only on hover, not at rest --
    Bootstrap's own .btn-link defaults to an always-on underline). */
 .filter-bar-clear {
-    font-size: var(--fs-sm);
     color: var(--c-text-muted);
     text-decoration: none;
+}
+/* Below `sm` row 1 has no width to spare for the words: the button becomes the icon alone (its
+   `title`/`aria-label` carry the text). Above it, the text alone, as before. */
+.filter-bar-clear-icon {
+    display: none;
+}
+@media (max-width: 575.98px) {
+    .filter-bar-clear-icon {
+        display: inline;
+    }
+    .filter-bar-clear-text {
+        display: none;
+    }
 }
 .filter-bar-clear:hover {
     color: var(--c-text-muted);
@@ -4331,6 +4435,15 @@ td.dt-empty-cell {
     position: sticky;
     left: 0;
     padding: 0 !important;
+}
+/* ...and the block inside it is as wide as the part of the table the user can actually SEE, not as
+   wide as the table (`--dt-visible-width` is published on the scroller by initSharedDataTable(), and
+   falls back to the full cell for any table that does not set it). Without this, "centred" on a
+   sideways-scrolling table means centred somewhere off the right edge of a phone screen. */
+td.dt-empty-cell > .empty-state {
+    position: sticky;
+    left: 0;
+    width: var(--dt-visible-width, 100%);
 }
 
 /* status-tabs.php (§6, item 4b) -- REVISED after live review: reverted from a plain nav-tabs
@@ -10264,7 +10377,10 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
        เมื่อคอลัมน์นั้นมี filter active" -- was --app-text-muted (a step darker than --c-text-faint) at
        rest; active state (.tcf-filter-active below) was already --c-primary, unchanged. */
     color: var(--c-text-faint);
-    font-size: 0.9167rem;
+    /* 2026-09-16, rules.md §7: the same icon size every other control icon in the app uses (the row
+       action circle's own), not a size of its own -- `1rem` IS that size, since the app's root is
+       what `.btn-icon i`/`.dt-column-order` resolve against too. */
+    font-size: 1rem;
     line-height: 1;
     cursor: pointer;
     border-radius: 4px;

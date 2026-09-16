@@ -936,3 +936,36 @@ assertion เองตั้งสมมติฐานผิด** ว่าเ�
 จะต่างจริง แล้วค่อย assert — ห้ามแก้ `IdCodec` เพื่อให้ test ผ่าน (พฤติกรรมปัจจุบันถูกแล้ว)
 
 **Source:** รอบ typography ของ tab รายการจ่าย (2026-09-16) — เจอระหว่างรัน suite ไม่เกี่ยวกับ diff รอบนั้น
+
+---
+
+## Shared empty state ของ DataTable — จบแล้ว (2026-09-16) เหลือแค่หน้าที่ยังไม่ migrate
+
+`initSharedDataTable()`'s `emptyState` ตอนนี้เป็นของ shared ครบทั้ง 2 แบบตาม rules.md §6: มีตัวกรอง
+ทำงานอยู่ → "ไม่พบข้อมูลที่ตรงกัน" + ปุ่ม outline "ล้างตัวกรอง"; ไม่มีเลย → ข้อความ/ปุ่มสร้างของหน้านั้น
+
+**บั๊กที่แก้ไปพร้อมกัน**: ปุ่ม "ล้างตัวกรอง" ใน empty state เดิมเรียก `dt.search('').draw()` ซึ่งล้าง
+**เฉพาะช่องค้นหา** — ตารางที่ว่างเพราะ filter-bar หรือ column filter (2 กรณีที่พบบ่อยที่สุด) กดแล้วไม่มีอะไร
+เกิดขึ้นเลย ตอนนี้ทั้ง 2 ที่เรียก `clearAllTableFilters()` ตัวเดียวกัน ล้างครบ 3 แหล่ง (filter-bar ผ่าน
+`$bar.data('filterBarClear')`, column filter ผ่าน `clearColumnFilters()`, ช่องค้นหา)
+
+**ที่ยังเหลือ**: 14 หน้าที่ยังสร้าง DataTable เองด้วย `$().DataTable()` ไม่ได้ผ่าน `initSharedDataTable()`
+จึงยังได้ข้อความบรรทัดเดียวของ DataTables เหมือนเดิม (ไม่ใช่ empty state นี้) — ไปพร้อมกับ entry
+"รอบ 4: ย้ายทุกหน้าที่ยังใช้ `$().DataTable()` ตรงๆ" ด้านบน ไม่ใช่งานแยก
+
+**Source:** รอบ filter-bar/DataTable control scale (2026-09-16)
+
+---
+
+## แบนเนอร์ "พนักงาน 0 คนมีข้อผิดพลาดในการคำนวณ" ขึ้นบนรอบที่ไม่มีแถวรายละเอียดเลย
+
+เจอตอนตรวจ empty state แบบ (b) บนรอบ draft ที่ยังไม่เคยคำนวณ (2026-09-16): `#validationErrorsBanner`
+โชว์ข้อความ **"พนักงาน 0 คนมีข้อผิดพลาด..."** เพราะเงื่อนไขอ่าน `run.has_validation_errors` (flag บนแถว
+`payroll_runs`) แต่จำนวนที่เอาไปเติม `{count}` นับจาก `run.details` ซึ่งว่างเปล่า — flag ค้างจากการคำนวณ
+ครั้งก่อนที่ถูกล้าง detail ทิ้งไปแล้ว
+
+**ทางแก้เมื่อหยิบขึ้นมา** (เป็นงาน logic ไม่ใช่ design): ตัดสินใจก่อนว่า flag ควรถูกล้างตอนไหน — ตอน
+`recalculate()` ลบ detail ทิ้ง หรือให้ UI ไม่แสดงแบนเนอร์เมื่อ `errCount === 0` — แล้วแก้ที่ต้นทางจุดเดียว
+ไม่ใช่ทั้งสองที่ (`public/js/payroll/detail.js` บรรทัดที่เรียก `validation_errors_banner`)
+
+**Source:** รอบ filter-bar/empty state (2026-09-16) — ไม่ได้แก้ในรอบนั้นตาม §0.7 (phase design ห้ามแก้ logic)

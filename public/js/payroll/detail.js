@@ -2901,10 +2901,10 @@ function initRunDetailTable(details) {
         // toolbar slot instead -- same ids, same classes, same delegated handlers, the component just
         // decides WHERE they sit (and how the row reflows below `sm`).
         toolbar: {
-            create: `<button type="button" id="btnJoinEmployees" class="btn btn-sm btn-primary"><i class="fa-solid fa-plus me-1"></i><span data-i18n="employee">${langData['employee'] || 'Employee'}</span></button>`,
+            create: `<button type="button" id="btnJoinEmployees" class="btn btn-primary"><i class="fa-solid fa-plus me-1"></i><span data-i18n="employee">${langData['employee'] || 'Employee'}</span></button>`,
             actions: [
-                `<button type="button" id="btnBulkVerify" class="btn btn-sm btn-outline-secondary" disabled><span data-i18n="action_verify_selected">${langData['action_verify_selected'] || 'Verify Selected'}</span> <span id="runDetailBulkCount">${countBadgeHtml(0)}</span></button>`,
-                `<button type="button" id="btnVerifyAllEmployees" class="btn btn-sm btn-outline-secondary"><span data-i18n="action_verify_all">${langData['action_verify_all'] || 'Verify All'}</span></button>`,
+                `<button type="button" id="btnBulkVerify" class="btn btn-outline-secondary" disabled><span data-i18n="action_verify_selected">${langData['action_verify_selected'] || 'Verify Selected'}</span> <span id="runDetailBulkCount">${countBadgeHtml(0)}</span></button>`,
+                `<button type="button" id="btnVerifyAllEmployees" class="btn btn-outline-secondary"><span data-i18n="action_verify_all">${langData['action_verify_all'] || 'Verify All'}</span></button>`,
             ],
         },
         // §7: per-column Excel-style filter -- moved here from a manual initExcelColumnFilters() call
@@ -2933,6 +2933,18 @@ function initRunDetailTable(details) {
         emptyState: {
             icon: 'fa-solid fa-calculator',
             title: getLangValue('no_details_yet') || 'No employees calculated yet. Click "Recalculate" to compute this run.',
+            // rules.md §6's "no data yet" variant may offer the page's own create action -- the same
+            // button, the same words as the toolbar's own "+ พนักงาน", behind the same condition that
+            // decides whether that button is shown at all (a run that is no longer a draft cannot
+            // take new employees, so there is nothing to offer).
+            // Labelled with the SAME words as the modal action it opens (`action_join_employees`)
+            // rather than the toolbar button's own bare "พนักงาน" -- that button carries a `+` icon
+            // which this one does not, and a noun alone says nothing about what pressing it does (§0.5).
+            action: showCheckboxColumn ? {
+                label: getLangValue('action_join_employees') || 'Join Employees',
+                variant: 'secondary',
+                onClick: function () { $('#btnJoinEmployees').trigger('click'); },
+            } : undefined,
         },
         dtOptions: {
         responsive: false,

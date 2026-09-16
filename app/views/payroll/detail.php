@@ -519,15 +519,15 @@
             <div class="row g-2">
                 <div class="col-lg-2">
                     <label class="form-label small mb-1" for="rdDepartmentFilter" data-i18n="department">Department</label>
-                    <select class="form-select form-select-sm select2-remote" id="rdDepartmentFilter" data-api="/api/department.get" data-type="department"></select>
+                    <select class="form-select select2-remote" id="rdDepartmentFilter" data-api="/api/department.get" data-type="department"></select>
                 </div>
                 <div class="col-lg-2">
                     <label class="form-label small mb-1" for="rdPaymentMethodFilter" data-i18n="table_payment_method">Payment Method</label>
-                    <select class="form-select form-select-sm select2-static" id="rdPaymentMethodFilter" data-option-keys="filter_all,table_payment_bank,table_payment_cash" data-option-values="all,bank,cash"></select>
+                    <select class="form-select select2-static" id="rdPaymentMethodFilter" data-option-keys="filter_all,table_payment_bank,table_payment_cash" data-option-values="all,bank,cash"></select>
                 </div>
                 <div class="col-lg-2" id="rdDataSourceFilterWrap">
                     <label class="form-label small mb-1" for="rdSourceFilter" data-i18n="table_source">Source</label>
-                    <select class="form-select form-select-sm select2-static" id="rdSourceFilter" data-option-keys="filter_all,data_source_sync,data_source_manual" data-option-values="all,sync,manual"></select>
+                    <select class="form-select select2-static" id="rdSourceFilter" data-option-keys="filter_all,data_source_sync,data_source_manual" data-option-values="all,sync,manual"></select>
                 </div>
             </div>
             <?php
