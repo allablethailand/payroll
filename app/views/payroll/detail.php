@@ -1384,33 +1384,20 @@
                                 <!-- Transfer-to-payee (2026-08-21) -- only meaningful when the item being
                                      added is a deduction, toggled by syncManualLineTypeDependentsRd() in
                                      detail.js.
-                                     2026-09-15, batch 2/4 follow-up: the 5 choices are now the same
-                                     segmented control the mode picker uses (the confirmed "segmented that
-                                     is a form's primary choice" exception in rules.md 4 -- selected one
-                                     is `.btn-primary`), with one gray line under the group saying what
-                                     the chosen routing actually DOES (each line is the behaviour read off
-                                     PayrollRunModel::recalculate()'s transfer-credit pass and
-                                     PayrollRemittanceModel::generateForRun(), not a restatement of the
-                                     button label), and every per-choice sub-form indented inside ONE
-                                     callout block so it reads as belonging to the chosen option. -->
+                                     The choice is a segmented control (the confirmed "segmented that is a
+                                     form's primary choice" exception in rules.md 4 -- selected one is
+                                     `.btn-primary`), with one gray line under it saying what the chosen
+                                     routing actually DOES, and every per-choice sub-form indented inside
+                                     ONE callout block so it reads as belonging to the chosen option. -->
                                 <div class="manual-line-payee-block d-none" id="manualLinePayeeTypeWrapper">
-                                    <!-- 2026-09-15: 5 choices is past the point where a segmented row
-                                         reads as one glance (rules.md 9: 3 or fewer = segmented, more
-                                         = a select), and 2 of the 5 labels were long enough to wrap
-                                         inside their own segment. One select on its own row, with the
-                                         same gray description line underneath. -->
-                                    <div class="row g-2">
-                                        <div class="col-lg-6">
-                                            <label class="form-label" for="manualLinePayeeType" data-i18n="payee_type_label">Deducted Money Goes To</label>
-                                            <select class="form-select select2-static" id="manualLinePayeeType"
-                                                data-option-keys="payee_type_none,payee_type_employee,payee_type_company,payee_type_other_person,payee_type_not_disbursed"
-                                                data-option-values="none,employee,company,other_person,not_disbursed"></select>
-                                        </div>
-                                    </div>
-                                    <p class="manual-line-mode-desc" id="manualLinePayeeDesc"></p>
-                                    <!-- One callout for whichever choice needs extra fields; "own net pay"
-                                         and "write-off" need none, so the callout itself stays hidden. -->
-                                    <div class="manual-line-payee-subform d-none" id="manualLinePayeeSubform">
+                                    <!-- 2026-09-16: the choice is 3 destinations (what happens to the
+                                         money) with one sub-question under the first, not a flat list of
+                                         payee_type values -- shared markup/behaviour with the other 3
+                                         payee pickers, see partials/payee-destination.php and
+                                         docs/decisions/2026-09-16-payee-three-destinations.md.
+                                         The 3 sub-forms below are this tab's own (they keep their ids,
+                                         and the component only shows/hides them). -->
+                                    <?php ob_start(); ?>
                                         <div class="d-none" id="manualLinePayeeWrapper">
                                             <label class="form-label" for="manualLinePayeeEmployee" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
                                             <select class="form-select select2-remote" id="manualLinePayeeEmployee" data-api="/api/employee.report_to.get" data-type="employee"></select>
@@ -1472,7 +1459,11 @@
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
+                                    <?php
+                                    $payee_slot = ob_get_clean();
+                                    $payee_prefix = 'manualLine';
+                                    include __DIR__ . '/../partials/payee-destination.php';
+                                    ?>
                                 </div>
                                 <!-- .btn-primary as confirmed: this is the tab's own primary action -- no
                                      icon (rules.md 4), disabled until both an item and an amount > 0 are
@@ -1564,12 +1555,12 @@
                             <div class="border rounded-3 p-3 bg-light bg-opacity-50 mt-3 d-none" id="recurringDestEditorCard">
                                 <input type="hidden" id="recurringDestEditorRecurringId">
                                 <div class="fw-bold text-dark small mb-2" id="recurringDestEditorItemName"></div>
-                                <div class="btn-group btn-group-sm flex-wrap mb-2" role="group" id="recurringDestPayeeTypeToggle">
-                                    <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-payee-type="other_person"><span data-i18n="payee_type_other_person">Other Person / Third Party</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Deducted, No Cash Movement (Write-off)</span></button>
-                                </div>
+                                <!-- Same shared picker as the Payment Items tab, with ONE difference:
+                                     an override is always a real payee (removing it is what Reset does),
+                                     so there is no "no record" half of the sub-question here --
+                                     $payee_allow_no_record = false makes "retained by company" mean
+                                     'company' outright. -->
+                                <?php ob_start(); ?>
                                 <div class="row g-2 align-items-end d-none" id="recurringDestEmployeeWrapper">
                                     <div class="col-12">
                                         <label class="form-label small text-muted mb-1" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
@@ -1599,6 +1590,15 @@
                                         </div>
                                     </div>
                                 </div>
+                                <?php
+                                $payee_slot = ob_get_clean();
+                                $payee_prefix = 'recurringDest';
+                                $payee_allow_no_record = false;
+                                $payee_label_class = 'small text-muted mb-1';
+                                include __DIR__ . '/../partials/payee-destination.php';
+                                $payee_allow_no_record = true;
+                                $payee_label_class = '';
+                                ?>
                                 <div class="text-end mt-2">
                                     <button type="button" class="btn btn-sm btn-outline-secondary" id="btnCancelRecurringDestEdit" data-i18n="cancel">Cancel</button>
                                     <!-- 2026-09-14, Round 3 item 4 batch 1/4: hidden, not removed -- see

@@ -547,6 +547,38 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
     </div>
 </div>
 
+<!-- ==================== Payee destination (§9/§15) ==================== -->
+<div class="cp-section form-compact">
+    <h2>Payee destination (§9/§15) — <code>partials/payee-destination.php</code></h2>
+    <p class="cp-section-note">ตัวอย่างเดียวของ <b>segmented ซ้อนอยู่ใน callout</b>: เลือกปลายทาง 3 ทาง (<code>.segmented</code>, §9 "≤ 3 = segmented") แล้วคำถามย่อย/ฟอร์มของทางที่เลือกอยู่ในกล่องเยื้อง (<code>.payee-dest-subform</code>) เส้นซ้าย <code>--c-border</code> ใต้มัน. บรรทัดเทาใต้ control คือคำอธิบายของ<b>ค่าที่เลือกอยู่</b> เปลี่ยนตามค่า (<code>--fs-sm</code> <code>--c-text-muted</code>). include ไฟล์จริง + <code>initPayeeDestination()</code> จริง ไม่ใช่ mockup — ลองกดสลับ 3 ทาง และกด "บันทึก"/"ไม่บันทึก" ใต้ทางแรก, ย่อจอต่ำกว่า <code>sm</code> ดู segmented เต็มความกว้างแถวเดียว, สลับ theme มุมขวาบน. การแปลงค่า UI → <code>payee_type</code> อยู่ที่ <code>payeeDestinationType()</code> ที่เดียว (ดูบรรทัดผลลัพธ์ท้าย demo).</p>
+    <?php
+    ob_start(); ?>
+        <div class="d-none" id="cpPayeeEmployeeWrapper">
+            <label class="form-label" for="cpPayeeEmployee">พนักงานผู้รับโอน</label>
+            <select class="form-select select2-native" id="cpPayeeEmployee">
+                <option value="1">สมชาย ใจดี (EM001)</option>
+                <option value="2">สมหญิง รักงาน (EM002)</option>
+            </select>
+        </div>
+        <div class="d-none" id="cpPayeeCompanyWrapper">
+            <label class="form-label" for="cpPayeeAccount">บัญชีธนาคารบริษัท</label>
+            <select class="form-select select2-native" id="cpPayeeAccount">
+                <option value="1">กสิกรไทย • ••••1234 (บัญชีหลัก)</option>
+                <option value="2">ไทยพาณิชย์ • ••••5678</option>
+            </select>
+        </div>
+        <div class="d-none" id="cpPayeeExternalWrapper">
+            <label class="form-label" for="cpPayeeExternalName">ชื่อบัญชีปลายทาง</label>
+            <input type="text" class="form-control" id="cpPayeeExternalName" placeholder="เช่น กรมบังคับคดี">
+        </div>
+    <?php
+    $payee_slot = ob_get_clean();
+    $payee_prefix = 'cpPayee';
+    include __DIR__ . '/../../app/views/partials/payee-destination.php';
+    ?>
+    <p class="cp-section-note mt-3 mb-0">ค่าที่จะส่งให้ backend ตอนนี้: <code id="cpPayeeTypeOut">-</code></p>
+</div>
+
 <!-- ==================== Checkbox / Radio / Switch (§9) ==================== -->
 <div class="cp-section">
     <h2>Checkbox / Radio / Switch (§9)</h2>
@@ -2024,6 +2056,21 @@ $(function () {
         });
     }
     }); // end (window.langReady || Promise.resolve()).then(...)
+});
+</script>
+<script>
+// The payee-destination demo drives the REAL component (app.js) -- the only page-local part is the
+// line that echoes what payeeDestinationType() would send, which a real form does at submit time.
+$(function () {
+    if (typeof initPayeeDestination !== 'function') return;
+    initPayeeDestination('cpPayee', {
+        employeeWrap: '#cpPayeeEmployeeWrapper',
+        companyWrap: '#cpPayeeCompanyWrapper',
+        externalWrap: '#cpPayeeExternalWrapper',
+        onChange: function (payeeType) {
+            $('#cpPayeeTypeOut').text(payeeType === 'none' ? 'payee_type: (ไม่ส่งคีย์นี้เลย = NULL)' : 'payee_type: ' + payeeType);
+        },
+    });
 });
 </script>
 <script>

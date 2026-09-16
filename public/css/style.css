@@ -7357,13 +7357,6 @@ html, body {
 .form-compact .add-manual-line-card > :first-child {
     margin-top: 0;
 }
-/* The sub-form of the chosen payee opens `--sp-3` below the choice it belongs to. */
-.form-compact .manual-line-payee-subform {
-    margin-top: var(--sp-3);
-}
-.form-compact .manual-line-payee-subform > div:not(.d-none) + div:not(.d-none) {
-    margin-top: var(--sp-3);
-}
 
 /* ============================================================================
    .segmented -- shared segmented control (rules.md 9). ONE row of mutually exclusive choices, used
@@ -7471,11 +7464,40 @@ html, body {
     color: var(--c-text-muted);
 }
 
-/* Sub-form of whichever payee choice is selected: indented behind a light rule so it reads as
-   belonging to the choice above it rather than as the next field of the form. */
-.manual-line-payee-subform {
+/* ============================================================================
+   Payee destination (partials/payee-destination.php + initPayeeDestination(), rules.md §9/§15).
+   Shared by all 4 payee pickers, so every value here is a token -- no `.form-compact` ancestor is
+   assumed (2 of the 4 call sites are plain modal forms) and no dark-mode override is needed.
+   ============================================================================ */
+/* The field label sits ON ITS OWN LINE above the control like every other field in these forms --
+   stated here because Bootstrap's `.form-label` is `inline-block`, which otherwise lets the
+   `inline-flex` segmented ride up beside it on wide screens (measured: they shared one line). */
+.payee-dest-label {
+    display: block;
+    margin-bottom: var(--sp-1);
+}
+/* Sub-form of whichever destination is selected: indented behind a light rule so it reads as
+   belonging to the choice above it rather than as the next field of the form.
+   Flex column + `gap` rather than a `+ sibling` margin: the branches are toggled with `d-none`, and
+   an adjacent-sibling rule silently produces a 0px gap whenever the hidden one sits BETWEEN two
+   visible ones (measured: the account picker ended up flush against the sub-question's helper line).
+   A flex container skips `display:none` children when it distributes gaps, so every visible pair is
+   spaced correctly whichever branch is open. */
+.payee-dest-subform {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    margin-top: var(--sp-3);
     padding-left: var(--sp-4);
     border-left: 2px solid var(--c-border);
+}
+/* One gray line under a control saying what the choice does -- same size/colour as every other
+   explanatory line in a form (§9), stated here too so it holds outside `.form-compact` as well. */
+.payee-dest-desc {
+    margin: var(--sp-2) 0 0;
+    font-size: var(--fs-sm);
+    font-weight: 400;
+    color: var(--c-text-muted);
 }
 
 /* Added lines render through the SHARED slip component (payslipViewHtml(), §9) -- these rules only

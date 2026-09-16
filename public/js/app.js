@@ -3169,6 +3169,116 @@ $(function () {
 // select is STILL empty at ajax-response time before applying -- an edit-mode record that already
 // has a real destination is never overwritten. A brand new company with zero saved destinations
 // yet is a normal no-op (nothing to default to).
+/* ---------- Payee destination (partials/payee-destination.php, rules.md §9/§15) ----------
+   The behaviour half of the shared payee picker: 3 destinations that describe what happens to the
+   money, plus one sub-question under "retained by company" that decides whether the deduction also
+   leaves an audit row against a specific company account. 4 call sites in 2 page scripts, so it
+   lives here (§0.4).
+
+   UI value -> `payee_type` sent to the server (mapped on the client, right before submit -- the
+   enum, the 4 write paths and every read path are untouched):
+     company_retained + "No record"  -> (key omitted)   = payee_type NULL
+     company_retained + "Record"     -> 'company'       + bank_account_id
+     employee                        -> 'employee'      + payee_employee_id
+     external                        -> 'other_person'  + destination
+   A row stored with the retired 'not_disbursed' (or anything else this control cannot show) opens
+   on "retained + no record", which is what it always computed as anyway -- see
+   docs/decisions/2026-09-16-payee-three-destinations.md.
+
+   `options`: { allowNoRecord (default true -- false for an editor whose backend has no "no payee"
+   value at all), employeeWrap/companyWrap/externalWrap (selectors this control shows and hides),
+   onChange(payeeType, dest) (the caller's own clearing/prefilling, run after every change) }. */
+const PAYEE_DEST_DESC = {
+    company_retained: { key: 'payee_dest_desc_retained', fallback: "Deducted from the employee's pay and kept by the company, nothing is paid out — e.g. advance recovery, penalties" },
+    employee: { key: 'payee_dest_desc_employee', fallback: 'The recipient receives it as taxable income in the same run' },
+    external: { key: 'payee_dest_desc_external', fallback: 'e.g. Legal Execution Dept., co-op, court-ordered creditors — destination account required' },
+};
+const PAYEE_DEST_REGISTRY = {};
+function initPayeeDestination(prefix, options) {
+    const opts = $.extend({ allowNoRecord: true }, options || {});
+    const first = !PAYEE_DEST_REGISTRY[prefix];
+    PAYEE_DEST_REGISTRY[prefix] = opts;
+    if (first) {
+        // Delegated + bound once per prefix: these controls live inside modals that re-render their
+        // own contents, and a direct binding would be lost on the first re-render.
+        $(document).on('change', `#${prefix}PayeeDest input[type="radio"], #${prefix}PayeeRecord input[type="radio"]`, function () {
+            syncPayeeDestination(prefix);
+        });
+    }
+    syncPayeeDestination(prefix);
+}
+function payeeDestinationChoice(prefix) {
+    return $(`#${prefix}PayeeDest input[type="radio"]:checked`).val() || 'company_retained';
+}
+function payeeDestinationRecords(prefix) {
+    const opts = PAYEE_DEST_REGISTRY[prefix] || {};
+    if (opts.allowNoRecord === false) return true;
+    return ($(`#${prefix}PayeeRecord input[type="radio"]:checked`).val() || 'no') === 'yes';
+}
+// The one place the UI's own vocabulary becomes the column's.
+function payeeDestinationType(prefix) {
+    const dest = payeeDestinationChoice(prefix);
+    if (dest === 'employee') return 'employee';
+    if (dest === 'external') return 'other_person';
+    return payeeDestinationRecords(prefix) ? 'company' : 'none';
+}
+function setPayeeDestination(prefix, payeeType) {
+    const dest = payeeType === 'employee' ? 'employee' : (payeeType === 'other_person' ? 'external' : 'company_retained');
+    $(`#${prefix}PayeeDest input[type="radio"][value="${dest}"]`).prop('checked', true);
+    $(`#${prefix}PayeeRecord input[type="radio"][value="${payeeType === 'company' ? 'yes' : 'no'}"]`).prop('checked', true);
+    syncPayeeDestination(prefix);
+}
+function syncPayeeDestination(prefix) {
+    const opts = PAYEE_DEST_REGISTRY[prefix] || {};
+    const dest = payeeDestinationChoice(prefix);
+    const payeeType = payeeDestinationType(prefix);
+    const desc = PAYEE_DEST_DESC[dest] || PAYEE_DEST_DESC.company_retained;
+    // Read straight out of langData here rather than leaving a `data-i18n` for the sweep: this text
+    // is swapped on every change, long after the sweep last ran (rules.md §6's own note on
+    // JS-built markup) -- the attribute is still set so a live language switch repaints it too.
+    $(`#${prefix}PayeeDestDesc`).text(getLangValue(desc.key) || desc.fallback).attr('data-i18n', desc.key);
+    $(`#${prefix}PayeeRecordWrap`).toggleClass('d-none', dest !== 'company_retained');
+    $(`#${prefix}PayeeRecordDesc`).toggleClass('d-none', payeeType !== 'company');
+    if (opts.employeeWrap) $(opts.employeeWrap).toggleClass('d-none', dest !== 'employee');
+    if (opts.companyWrap) $(opts.companyWrap).toggleClass('d-none', payeeType !== 'company');
+    if (opts.externalWrap) $(opts.externalWrap).toggleClass('d-none', dest !== 'external');
+    // The callout always has something in it now (the sub-question itself, when nothing else), so
+    // unlike the previous 4-choice version there is no "empty indented box" case to hide.
+    if (typeof opts.onChange === 'function') opts.onChange(payeeType, dest);
+}
+// Every payee picker's endpoint hands back the same 4 optional fields on its option data (the
+// payee employee's own account, one of the company's accounts, a saved third-party destination);
+// anything an endpoint does not send simply does not show up in the summary (payeeDetailHtml()
+// drops blanks). Shared so the 4 pickers cannot drift on what they read.
+function payeeDetailFromOption(data) {
+    const d = data || {};
+    return {
+        account_name: d.account_name,
+        bank_name: (typeof currentLang !== 'undefined' && currentLang === 'th' ? d.bank_name_th : d.bank_name_en) || d.bank_name_th || d.bank_name_en || d.bank_name,
+        account_no_masked: d.account_no_masked,
+        branch: d.bank_branch || d.branch,
+    };
+}
+// "Record this deduction against a company account" makes the account mandatory, so the company's
+// own default account is offered rather than an empty required field -- same convenience (and the
+// same re-check-before-applying guard against the caller's own populate-from-record code) as
+// applyFirstSavedDestinationDefault() right below. `detailId` is optional: a picker that shows an
+// account summary passes its container, one that does not simply omits it.
+function applyDefaultCompanyBankAccount(selectId, detailId) {
+    const $select = $(selectId);
+    if (!$select.length || $select.val()) return;
+    $.post(`${BASE_URL}/api/payroll-cycle.bank-account.options`, { searchTerm: '', page: 1, limit: 20 }, function (res) {
+        if ($select.val()) return;
+        const items = (res && res.status && res.data && res.data.items) || [];
+        const primary = items.find(x => x.is_default);
+        if (!primary) return;
+        const text = (typeof currentLang !== 'undefined' && currentLang === 'th') ? primary.text_th : primary.text_en;
+        $select.empty().append(new Option(text, primary.id, true, true)).trigger('change');
+        if (detailId) {
+            $(detailId).html(payeeDetailHtml(payeeDetailFromOption(primary)));
+        }
+    }, 'json');
+}
 function applyFirstSavedDestinationDefault(selectId, newFieldsWrapperId) {
     const $select = $(selectId);
     if (!$select.length || $select.val()) return;

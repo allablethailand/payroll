@@ -1616,8 +1616,8 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 - **Helper text ≤ 1 บรรทัด** (`.form-text`, `--c-text-muted`) ถ้าเกิน → ตัดเหลือประโยคหลัก และย้ายรายละเอียดไป tooltip ไอคอน ⓘ หลัง label หรือเอกสาร; ห้ามมี helper ทุกช่อง ใส่เฉพาะที่ผู้ใช้จะกรอกผิดถ้าไม่มี
 - Validation: inline ใต้ช่อง (`.invalid-feedback`) + focus ช่องแรกที่ผิด; ไม่ใช้ alert สำหรับ validation
 - **เลือก control ตามจำนวนตัวเลือก: ≤ 3 ตัวเลือก = `.segmented`, มากกว่านั้น = `<select>`** — แถว segmented ที่ยาวเกิน 3
-  อ่านไม่จบในสายตาเดียว และชื่อตัวเลือกจะต้องขึ้นบรรทัดใหม่ในกล่อง (ตัวอย่างจริง: payee 5 แบบใน Adjustments > Payment Items เป็น select,
-  โหมดรายการ 3 แบบกับ บันทึกไว้/ระบุใหม่ 2 แบบเป็น segmented) — คำอธิบายของค่าที่เลือกอยู่เป็นบรรทัดเทา `--fs-sm` ใต้ control เสมอ
+  อ่านไม่จบในสายตาเดียว และชื่อตัวเลือกจะต้องขึ้นบรรทัดใหม่ในกล่อง (ตัวอย่างจริง: โหมดรายการ 3 แบบ, บันทึกไว้/ระบุใหม่ 2 แบบ และปลายทางของรายการหัก 3 แบบ
+  ทั้งหมดเป็น segmented — ตัวสุดท้ายเคยเป็น select ตอนที่ยังเป็นรายการค่า `payee_type` 4-5 ค่า) — คำอธิบายของค่าที่เลือกอยู่เป็นบรรทัดเทา `--fs-sm` ใต้ control เสมอ
 - **ฟอร์มทั้งบริเวณ (tab pane / panel) ใส่ `.form-compact` ที่ตัวครอบ — ขนาดตัวอักษรเดียวทั้งฟอร์ม: `--fs-sm`**
   — คำอธิบายบนสุดของ tab, label, control/placeholder/Select2, segmented, helper ทุกบรรทัด, ข้อความสรุปบัญชี,
   label ของ checkbox และปุ่มในฟอร์ม — **ไม่มี `--fs-xs` ในฟอร์มอีกแล้ว**
@@ -1832,6 +1832,7 @@ page-local block มา 2 รอบก่อนหน้า (callout ก่อ�
 | `showConfirm()` (ขยายรับ object form + `cancelText`, item 7b — เสร็จแล้ว; + `tone` 3 ทาง 2026-09-13 decision-set follow-up, `danger:true` ยังใช้ได้เป็น shorthand) / `showSuccess` (เปลี่ยนเป็น toast default, item 7b) / `showError` (ไม่เปลี่ยน) | app.js/alert.js (มีแล้ว) | Swal.fire ตรง — **ไม่สร้าง `confirmAction()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §10) |
 | `resetModalTabs()` | app.js (มีแล้ว) | strip class เอง |
 | `payslip-view.php` | partials | modal คำนวณแบบตาราง |
+| `payee-destination.php` + `initPayeeDestination()`/`payeeDestinationType()`/`setPayeeDestination()` (ใหม่ 2026-09-16 — ปลายทางของรายการหัก 3 แบบ + คำถามย่อย "บันทึกเป็นรายการโอนเข้าบัญชีบริษัทหรือไม่", `$payee_slot` = sub-form ของผู้เรียกเอง, `$payee_allow_no_record=false` สำหรับ editor ที่ไม่มีค่า "ไม่มี payee"; การแปลง UI → `payee_type` อยู่ที่ `payeeDestinationType()` ที่เดียว) | `app/views/partials/` + `app.js` | payee picker ที่เขียนเองทีละที่ (4 จุด) |
 | `.scroll-thin` (ใหม่, notification "ซอฟต์ลง" follow-up 2026-09-13 — CSS utility class ล้วนๆ ไม่มี JS, scrollbar บาง 6px โปร่ง) | `style.css` | scrollbar เริ่มต้นหนาของ browser บน dropdown/panel ที่ scroll — ใช้กับ `.notif-list` แล้ว, ตัวไหนใน dropdown/panel ที่ scroll ต่อไปในระบบให้เรียกซ้ำ ไม่เขียน scrollbar CSS เองใหม่ |
 | `calendar-widget.php` + `renderCalendarWidget(el, {month, events, onSelect})` (ใหม่, item 9 — เสร็จแล้ว; โครงคงเดิมจาก dashboard จริงแต่ class namespace ใหม่ทั้งหมด, ยังไม่มีหน้าจริงเรียกใช้ รอรอบ 4 — ดู §14) | `app/views/partials/` + `app.js` | `.dash-calendar-*` ของจริง (ไม่แตะ, ไม่ reuse ชื่อเดิม) |
 | `chartColor()` / `chartColors()` / `chartDefaults(overrides)` (ใหม่, item 9 — เสร็จแล้ว; อ่าน token `--chart-*`/`--chart-grid`/`--c-*` สดจาก `getComputedStyle` ทุกครั้งที่เรียก ไม่ cache ค่า) | `app.js` | สี/font/grid ที่แต่ละกราฟ (8 กราฟทั้งแอป) ตั้งเองแยกกันตอนนี้ — ยังไม่ migrate หน้าจริง รอรอบ 4 |

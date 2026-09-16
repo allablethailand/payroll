@@ -2294,14 +2294,14 @@ function breakdownLineRowsRd(lines, moneyColorCls) {
             // for destination_account_name) -- shows a warning instead of a silent generic label
             // whenever bank_account_id is genuinely unspecified.
             payeeHtml = line.bank_account_id
-                ? `<div class="small text-muted"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'}</div>`
+                ? `<div class="small text-muted"><i class="fa-solid fa-building me-1"></i>${langData['payee_dest_retained'] || 'Retained by company'}</div>`
                 : `<div class="small text-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['payee_bank_account_needs_review'] || 'Company Account -- bank account not specified, needs review'}</div>`;
         } else if (line.payee_type === 'other_person') {
             // 2026-09-02, Deduction Destination & Third-Party Remittance -- this line shape has no
             // resolved destination_account_name (that LEFT JOIN only exists in
             // manualLinesForEmployee()'s own dedicated query, not the persisted breakdown JSON), so
             // a generic label is shown here, same "no specific detail" treatment 'company' already gets.
-            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-building-columns me-1"></i>${langData['payee_type_other_person'] || 'Other Person / Third Party'}</div>`;
+            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-building-columns me-1"></i>${langData['payee_dest_external'] || 'Transfer to an external person or organization'}</div>`;
         } else if (line.payee_type === 'not_disbursed') {
             payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-ban me-1"></i>${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
         }
@@ -4235,10 +4235,10 @@ function manualLineListItemHtml(line) {
         // 2026-09-10, Batch 3B item 3: manualLinesForEmployee() joins bank_account_name for this
         // exact display -- the real account, or a "needs review" warning when unspecified.
         payeeHtml = line.bank_account_id
-            ? `<div class="manual-line-payee">${langData['payee_type_company'] || 'Company Account'} - ${escapeHtml(line.bank_account_name || '')}</div>`
+            ? `<div class="manual-line-payee">${langData['payee_dest_retained'] || 'Retained by company'} - ${escapeHtml(line.bank_account_name || '')}</div>`
             : `<div class="manual-line-payee manual-line-payee-warn">${langData['payee_bank_account_needs_review'] || 'Company Account -- bank account not specified, needs review'}</div>`;
     } else if (line.payee_type === 'other_person') {
-        payeeHtml = `<div class="manual-line-payee">${escapeHtml(line.destination_account_name || (langData['payee_type_other_person'] || 'Other Person / Third Party'))}</div>`;
+        payeeHtml = `<div class="manual-line-payee">${escapeHtml(line.destination_account_name || (langData['payee_dest_external'] || 'Transfer to an external person or organization'))}</div>`;
     } else if (line.payee_type === 'not_disbursed') {
         payeeHtml = `<div class="manual-line-payee">${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
     }
@@ -4677,14 +4677,14 @@ $(document).on('click', '.btn-sync-line-reset', function () {
    just a number. ---------- */
 let recurringDestRows = [];
 function recurringDestPayeeSummary(p) {
-    if (!p || !p.payee_type) return langData['payee_type_none'] || "Employee's Own Net Pay";
-    if (p.payee_type === 'employee') return p.payee_label || (langData['payee_type_employee'] || 'Another Employee');
+    if (!p || !p.payee_type) return langData['payee_dest_retained'] || 'Retained by company';
+    if (p.payee_type === 'employee') return p.payee_label || (langData['payee_dest_employee'] || 'Transfer to another employee');
     // 2026-09-10, Batch 3B item 3: shows WHICH company bank account now, instead of the generic
     // "Company Account" label every 'company' row used to get regardless of which account was
     // chosen -- falls back to an explicit "not specified" wording (never a silent blank) when
     // bank_account_id is genuinely unspecified (legacy data, or before this column existed).
-    if (p.payee_type === 'company') return p.bank_account_label ? `${langData['payee_type_company'] || 'Company Account'} - ${p.bank_account_label}` : (langData['payee_type_company_unspecified'] || 'Company Account (not specified)');
-    if (p.payee_type === 'other_person') return p.destination_label || (langData['payee_type_other_person'] || 'Other Person / Third Party');
+    if (p.payee_type === 'company') return p.bank_account_label ? `${langData['payee_dest_retained'] || 'Retained by company'} - ${p.bank_account_label}` : (langData['payee_type_company_unspecified'] || 'Company Account (not specified)');
+    if (p.payee_type === 'other_person') return p.destination_label || (langData['payee_dest_external'] || 'Transfer to an external person or organization');
     if (p.payee_type === 'not_disbursed') return langData['payee_type_not_disbursed'] || 'Not Disbursed';
     return p.payee_type;
 }
@@ -4721,34 +4721,41 @@ function loadRecurringDeductionDestinationsRd() {
         refreshAdjustmentTabDirtyGuard('manageLinesRecurringDestPane');
     });
 }
-function setRecurringDestPayeeType(type) {
-    $('#recurringDestPayeeTypeToggle button').removeClass('active').filter(`[data-payee-type="${type}"]`).addClass('active');
-    $('#recurringDestEmployeeWrapper').toggleClass('d-none', type !== 'employee');
-    if (type !== 'employee') {
-        $('#recurringDestPayeeEmployeeSelect').val(null).trigger('change');
-    }
-    // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- mandatory, same as the other
-    // 3 payee-routing editors in this app.
-    $('#recurringDestCompanyAccountWrapper').toggleClass('d-none', type !== 'company');
-    if (type !== 'company') {
-        $('#recurringDestBankAccountSelect').val(null).trigger('change');
-    }
-    $('#recurringDestDestinationWrapper').toggleClass('d-none', type !== 'other_person');
-    if (type !== 'other_person') {
-        $('#recurringDestDestinationSelect').val(null).trigger('change');
-        $('#recurringDestAccountName, #recurringDestAccountNo, #recurringDestBankBranch').val('');
-        $('#recurringDestBank').val(null).trigger('change');
-        $('#recurringDestSaveForReuse').prop('checked', false);
-        $('#recurringDestDestinationNewFields').removeClass('d-none');
-    } else {
-        // Manual Entry / Platform UX review Phase 7 -- see applyFirstSavedDestinationDefault()'s
-        // own docblock in app.js.
-        applyFirstSavedDestinationDefault('#recurringDestDestinationSelect', '#recurringDestDestinationNewFields');
-    }
-}
-$(document).on('click', '#recurringDestPayeeTypeToggle button', function () {
-    setRecurringDestPayeeType($(this).data('payee-type'));
+// Same shared picker as the Payment Items tab, minus the sub-question: an override always names a
+// real payee (removing it is what Reset does), so "retained by company" means 'company' outright --
+// see the partial's own $payee_allow_no_record.
+$(function () {
+    initPayeeDestination('recurringDest', {
+        allowNoRecord: false,
+        employeeWrap: '#recurringDestEmployeeWrapper',
+        companyWrap: '#recurringDestCompanyAccountWrapper',
+        externalWrap: '#recurringDestDestinationWrapper',
+        onChange: function (payeeType, dest) {
+            if (dest !== 'employee') {
+                $('#recurringDestPayeeEmployeeSelect').val(null).trigger('change');
+            }
+            // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- mandatory, same as the
+            // other 3 payee-routing editors in this app.
+            if (payeeType !== 'company') {
+                $('#recurringDestBankAccountSelect').val(null).trigger('change');
+            }
+            if (dest !== 'external') {
+                $('#recurringDestDestinationSelect').val(null).trigger('change');
+                $('#recurringDestAccountName, #recurringDestAccountNo, #recurringDestBankBranch').val('');
+                $('#recurringDestBank').val(null).trigger('change');
+                $('#recurringDestSaveForReuse').prop('checked', false);
+                $('#recurringDestDestinationNewFields').removeClass('d-none');
+            } else {
+                // Manual Entry / Platform UX review Phase 7 -- see applyFirstSavedDestinationDefault()'s
+                // own docblock in app.js.
+                applyFirstSavedDestinationDefault('#recurringDestDestinationSelect', '#recurringDestDestinationNewFields');
+            }
+        },
+    });
 });
+function setRecurringDestPayeeType(type) {
+    setPayeeDestination('recurringDest', type);
+}
 $(document).on('select2:select', '#recurringDestDestinationSelect', function () {
     $('#recurringDestDestinationNewFields').addClass('d-none');
 });
@@ -4766,8 +4773,10 @@ $(document).on('click', '.btn-recurring-dest-edit', function () {
     // had no payee at all, default the editor to Company as a neutral starting point, not a guess
     // at what the admin actually wants.
     const current = row.override || { payee_type: row.template_payee_type || 'company', payee_employee_id: row.template_payee_employee_id, payee_label: row.template_payee_label, destination_id: row.template_destination_id, destination_label: row.template_destination_label, bank_account_id: row.template_bank_account_id, bank_account_label: row.template_bank_account_label };
-    const initialType = current.payee_type || 'company';
-    setRecurringDestPayeeType(initialType);
+    // A value this picker cannot show (a legacy 'not_disbursed', or no payee at all) opens on
+    // "retained by company", which for this editor means 'company' -- see setPayeeDestination().
+    setRecurringDestPayeeType(current.payee_type);
+    const initialType = payeeDestinationType('recurringDest');
     if (initialType === 'employee' && current.payee_employee_id) {
         const opt = new Option(current.payee_label || '', current.payee_employee_id, true, true);
         $('#recurringDestPayeeEmployeeSelect').empty().append(opt).trigger('change');
@@ -4792,7 +4801,7 @@ $(document).on('click', '#btnCancelRecurringDestEdit', function () {
 });
 $(document).on('click', '#btnSaveRecurringDestOverride', function () {
     const recurringId = $('#recurringDestEditorRecurringId').val();
-    const payeeType = $('#recurringDestPayeeTypeToggle button.active').data('payee-type');
+    const payeeType = payeeDestinationType('recurringDest');
     const payload = { id: PAYROLL_RUN_ID, recurring_id: recurringId, payee_type: payeeType };
     if (payeeType === 'employee') {
         const payeeEmployeeId = $('#recurringDestPayeeEmployeeSelect').val();
@@ -4868,62 +4877,42 @@ $(document).on('click', '.btn-recurring-dest-reset', function () {
 // land in the Earnings or Deductions panel before they commit, since the dropdown mixes both types
 // together (unlike section 2's per-type panels/modal). item_type rides along on the select2 option
 // data already (see EmployeeEarningDeductionModel::activeOptions()'s SELECT).
-// 2026-08-31, same-day follow-up: same 4-way payee_type toggle Employee Detail's own
-// setEedPayeeType() manages, ported here since this modal never had the concept before. Single
-// source of truth for this toggle's own dependent field visibility.
-// One gray line per choice saying what the routing actually does to the money, read off the two
-// places that act on payee_type: PayrollRunModel::recalculate()'s transfer-credit pass and
-// PayrollRemittanceModel::generateForRun(). Deliberately NOT a paraphrase of the button label.
-const MANUAL_LINE_PAYEE_DESC_RD = {
-    none: { key: 'payee_desc_none', fallback: "Deducted from the employee's own net pay. The money stays with the company and nothing is transferred out." },
-    employee: { key: 'payee_desc_employee', fallback: 'Credited to another employee in this same run as taxable income. If that employee is not in this run, it is paid out to their own bank account at approval instead.' },
-    company: { key: 'payee_desc_company', fallback: 'Retained by the company in the bank account you choose. Recorded as received straight away -- no transfer to confirm.' },
-    other_person: { key: 'payee_desc_other_person', fallback: 'Paid out to a third party at the destination given. The transfer waits for confirmation before it is made.' },
-    not_disbursed: { key: 'payee_desc_not_disbursed', fallback: 'Deducted from the employee with no money moving anywhere (a write-off or a correction). No transfer is created.' },
-};
-// Which choices need extra fields at all -- "own net pay" and "write-off" need none, so the whole
-// callout stays closed for them rather than showing an empty box.
-const MANUAL_LINE_PAYEE_SUBFORM_RD = ['employee', 'company', 'other_person'];
+// 2026-09-16: the picker itself (3 destinations + the "record it?" sub-question, and the mapping
+// from those onto `payee_type`) is the shared component -- initPayeeDestination()/
+// payeeDestinationType()/setPayeeDestination() in app.js, markup from
+// partials/payee-destination.php. What stays here is only what is genuinely this tab's own: which
+// fields to clear, and which defaults to fetch, when the choice changes.
 let manualLineDestHasSavedRd = null; // null = not looked up yet this modal session
+$(function () {
+    initPayeeDestination('manualLine', {
+        employeeWrap: '#manualLinePayeeWrapper',
+        companyWrap: '#manualLineCompanyAccountWrapper',
+        externalWrap: '#manualLineDestinationWrapper',
+        onChange: function (payeeType, dest) {
+            if (dest !== 'employee') {
+                $('#manualLinePayeeEmployee').val(null).trigger('change');
+                renderManualLinePayeeEmployeeDetailRd(null);
+            }
+            // 2026-09-10, Batch 3B item 3: the account is mandatory once the line is recorded against
+            // one, so the company's own default account is pre-selected rather than left empty.
+            if (payeeType !== 'company') {
+                $('#manualLineBankAccount').val(null).trigger('change');
+                $('#manualLineBankAccountDetail').empty();
+            } else {
+                applyDefaultCompanyBankAccount('#manualLineBankAccount', '#manualLineBankAccountDetail');
+            }
+            // 2026-09-02, Deduction Destination & Third-Party Remittance.
+            if (dest !== 'external') {
+                clearManualLineDestinationFieldsRd();
+            } else {
+                refreshManualLineSavedDestinationsRd();
+            }
+            refreshManualLineAddStateRd();
+        },
+    });
+});
 function setManualLinePayeeTypeRd(type) {
-    if ($('#manualLinePayeeType').val() !== type) {
-        $('#manualLinePayeeType').val(type).trigger('change.select2');
-    }
-    const desc = MANUAL_LINE_PAYEE_DESC_RD[type] || MANUAL_LINE_PAYEE_DESC_RD.none;
-    $('#manualLinePayeeDesc').text(langData[desc.key] || desc.fallback).attr('data-i18n', desc.key);
-    $('#manualLinePayeeSubform').toggleClass('d-none', MANUAL_LINE_PAYEE_SUBFORM_RD.indexOf(type) === -1);
-    $('#manualLinePayeeWrapper').toggleClass('d-none', type !== 'employee');
-    if (type !== 'employee') {
-        $('#manualLinePayeeEmployee').val(null).trigger('change');
-        renderManualLinePayeeEmployeeDetailRd(null);
-    }
-    // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- mandatory, same as Employee
-    // Detail's own setEedPayeeType()/setErdPayeeType().
-    $('#manualLineCompanyAccountWrapper').toggleClass('d-none', type !== 'company');
-    if (type !== 'company') {
-        $('#manualLineBankAccount').val(null).trigger('change');
-        $('#manualLineBankAccountDetail').empty();
-    } else {
-        applyDefaultCompanyBankAccountRd();
-    }
-    // 2026-09-02, Deduction Destination & Third-Party Remittance.
-    $('#manualLineDestinationWrapper').toggleClass('d-none', type !== 'other_person');
-    if (type !== 'other_person') {
-        clearManualLineDestinationFieldsRd();
-    } else {
-        refreshManualLineSavedDestinationsRd();
-    }
-}
-// The 3 pickers all hand back the same 4 optional fields on their option data; anything the
-// endpoint does not send simply does not show up in the summary (payeeDetailHtml() drops blanks).
-function manualLinePayeeDetailFromOptionRd(data) {
-    const d = data || {};
-    return {
-        account_name: d.account_name,
-        bank_name: (currentLang === 'th' ? d.bank_name_th : d.bank_name_en) || d.bank_name_th || d.bank_name_en || d.bank_name,
-        account_no_masked: d.account_no_masked,
-        branch: d.bank_branch || d.branch,
-    };
+    setPayeeDestination('manualLine', type);
 }
 // A transfer to another employee is paid into THAT employee's own bank account, so an employee with
 // none on file has nowhere for this money to land. The server accepts such a line today (it only
@@ -4938,7 +4927,7 @@ function renderManualLinePayeeEmployeeDetailRd(data) {
         refreshManualLineAddStateRd();
         return;
     }
-    const detail = manualLinePayeeDetailFromOptionRd(data);
+    const detail = payeeDetailFromOption(data);
     // 3 states, not 2: the endpoint can say there IS an account (render it), say there is NONE
     // (block the add), or -- until api/employee.report_to.get carries the field at all -- say
     // nothing, which must behave exactly as before rather than accusing every employee of having no
@@ -4960,19 +4949,6 @@ function renderManualLinePayeeEmployeeDetailRd(data) {
 // stays mandatory (PayrollRunModel::addManualLine() rejects a missing bank_account_id either way).
 // Same "re-check it is still empty when the response lands" guard applyFirstSavedDestinationDefault()
 // uses, so a user who picks something while the request is in flight is never overwritten.
-function applyDefaultCompanyBankAccountRd() {
-    const $select = $('#manualLineBankAccount');
-    if (!$select.length || $select.val()) return;
-    $.post(`${BASE_URL}/api/payroll-cycle.bank-account.options`, { searchTerm: '', page: 1, limit: 20 }, function (res) {
-        if ($select.val()) return;
-        const items = (res && res.status && res.data && res.data.items) || [];
-        const primary = items.find(x => x.is_default);
-        if (!primary) return;
-        const text = (currentLang === 'th') ? primary.text_th : primary.text_en;
-        $select.empty().append(new Option(text, primary.id, true, true)).trigger('change');
-        $('#manualLineBankAccountDetail').html(payeeDetailHtml(manualLinePayeeDetailFromOptionRd(primary)));
-    }, 'json');
-}
 function clearManualLineDestinationFieldsRd() {
     $('#manualLineDestinationSelect').val(null).trigger('change');
     $('#manualLineDestinationDetail').empty();
@@ -5046,12 +5022,9 @@ function applyManualLineItemTypeRd(itemType) {
     syncManualLineTypeDependentsRd(type);
     refreshManualLineAddStateRd();
 }
-$(document).on('change', '#manualLinePayeeType', function () {
-    setManualLinePayeeTypeRd($(this).val() || 'none');
-});
 // Every picker inside the payee callout paints its own account summary the moment it resolves to a
 // real account, and clears it when the field is cleared (payeeDetailHtml(), app.js). The fields come
-// from the option data the endpoint already returns -- see manualLinePayeeDetailFromOptionRd().
+// from the option data the endpoint already returns -- see payeeDetailFromOption().
 $(document).on('select2:select', '#manualLinePayeeEmployee', function (e) {
     renderManualLinePayeeEmployeeDetailRd(e.params.data || {});
 });
@@ -5059,13 +5032,13 @@ $(document).on('select2:clear', '#manualLinePayeeEmployee', function () {
     renderManualLinePayeeEmployeeDetailRd(null);
 });
 $(document).on('select2:select', '#manualLineBankAccount', function (e) {
-    $('#manualLineBankAccountDetail').html(payeeDetailHtml(manualLinePayeeDetailFromOptionRd(e.params.data)));
+    $('#manualLineBankAccountDetail').html(payeeDetailHtml(payeeDetailFromOption(e.params.data)));
 });
 $(document).on('select2:clear', '#manualLineBankAccount', function () {
     $('#manualLineBankAccountDetail').empty();
 });
 $(document).on('select2:select', '#manualLineDestinationSelect', function (e) {
-    $('#manualLineDestinationDetail').html(payeeDetailHtml(manualLinePayeeDetailFromOptionRd(e.params.data)));
+    $('#manualLineDestinationDetail').html(payeeDetailHtml(payeeDetailFromOption(e.params.data)));
 });
 $(document).on('select2:clear', '#manualLineDestinationSelect', function () {
     $('#manualLineDestinationDetail').empty();
@@ -5116,7 +5089,7 @@ function manualLineHasItemRd() {
 }
 function refreshManualLineAddStateRd() {
     const amount = manualLineAmountValueRd();
-    const blocked = manualLinePayeeEmployeeBlockedRd && $('#manualLinePayeeType').val() === 'employee';
+    const blocked = manualLinePayeeEmployeeBlockedRd && payeeDestinationType('manualLine') === 'employee';
     $('#btnAddManualLine')
         .prop('disabled', blocked || !(manualLineHasItemRd() && amount > 0))
         .attr('title', blocked ? (langData['payee_employee_no_bank_account'] || 'This employee has no bank account on file yet') : null);
@@ -5388,7 +5361,8 @@ $(document).on('click', '#btnAddManualLine', function () {
     // modal -- only read when the wrapper is actually visible (a deduction), same shape either
     // catalog or custom mode uses now (unified, was split per-branch above before this follow-up).
     if (!$('#manualLinePayeeTypeWrapper').hasClass('d-none')) {
-        const payeeType = $('#manualLinePayeeType').val() || 'none';
+        // The UI's own 3 destinations map onto `payee_type` here, one place, right before submit.
+        const payeeType = payeeDestinationType('manualLine');
         if (payeeType !== 'none') {
             payload.payee_type = payeeType;
             // include_in_cash_summary is deliberately NOT sent: the checkbox is gone from this form

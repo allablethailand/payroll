@@ -2625,7 +2625,7 @@ function eedItemNameCell(row) {
         // silently looking identical to a fully-specified row -- new UI pattern, no existing
         // "ต้องตรวจ" row-flag convention found anywhere else in this codebase to reuse.
         payeeTag = row.bank_account_id
-            ? `<div class="text-muted small"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'} - ${escapeHtml(row.bank_account_name || '')}</div>`
+            ? `<div class="text-muted small"><i class="fa-solid fa-building me-1"></i>${langData['payee_dest_retained'] || 'Retained by company'} - ${escapeHtml(row.bank_account_name || '')}</div>`
             : `<div class="small text-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['payee_bank_account_needs_review'] || 'Company Account -- bank account not specified, needs review'}</div>`;
     } else if (row.payee_type === 'other_person') {
         // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- real gap found
@@ -2633,7 +2633,7 @@ function eedItemNameCell(row) {
         // 'not_disbursed' but had no branch at all for 'other_person', so a deduction already routed
         // to a third party (possible via the backend since Phase 1/4, just never reachable through
         // THIS modal's own UI until this round) would have shown no payee tag whatsoever here.
-        payeeTag = `<div class="text-muted small"><i class="fa-solid fa-building-columns me-1"></i>${escapeHtml(row.destination_account_name || (langData['payee_type_other_person'] || 'Other Person / Third Party'))}</div>`;
+        payeeTag = `<div class="text-muted small"><i class="fa-solid fa-building-columns me-1"></i>${escapeHtml(row.destination_account_name || (langData['payee_dest_external'] || 'Transfer to an external person or organization'))}</div>`;
     } else if (row.payee_type === 'not_disbursed') {
         // 2026-08-31, same-day follow-up.
         payeeTag = `<div class="text-muted small"><i class="fa-solid fa-ban me-1"></i>${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
@@ -3004,44 +3004,48 @@ function applyEedInterestVisibility() {
         setEedPayeeType('none');
     }
 }
-// 2026-08-31, explicit request: "หักไปจ่ายใคร หรือจ่ายเข้าบัญชีบริษัท ให้ติ๊กเพิ่มได้ว่า รวมไปใน cashlink
-// หรือแยก cash link" -- single source of truth for the payee-type toggle's own dependent field
-// visibility (employee picker only for 'employee', the cash-summary checkbox for either non-'none'
-// choice), mirroring setEedChargeType()'s own toggle-button + dependent-fields pattern.
+// 2026-09-16: the picker is the shared component (initPayeeDestination(), app.js + partials/
+// payee-destination.php) -- 3 destinations and the "record it?" sub-question, mapped onto
+// `payee_type` in one place. This callback keeps only what belongs to THIS form: the `.required`
+// flags validateEedForm() reads, clearing the fields of whichever branch was left, and the
+// cash-summary checkbox that only means anything once the money is routed somewhere.
+$(function () {
+    initPayeeDestination('eed', {
+        employeeWrap: '#eedPayeeEmployeeWrapper',
+        companyWrap: '#eedCompanyAccountWrapper',
+        externalWrap: '#eedDestinationWrapper',
+        onChange: function (payeeType, dest) {
+            $('#eed_payee_employee_id').toggleClass('required', dest === 'employee');
+            if (dest !== 'employee') {
+                $('#eed_payee_employee_id').val(null).trigger('change');
+            }
+            // 2026-09-10, Batch 3B item 3: the account is mandatory once the deduction is recorded
+            // against one (see EmployeeEarningDeductionModel::save()'s own docblock).
+            $('#eed_bank_account_id').toggleClass('required', payeeType === 'company');
+            if (payeeType !== 'company') {
+                $('#eed_bank_account_id').val(null).trigger('change');
+            } else {
+                applyDefaultCompanyBankAccount('#eed_bank_account_id');
+            }
+            // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
+            if (dest !== 'external') {
+                $('#eed_destination_select').val(null).trigger('change');
+                $('#eed_dest_account_name, #eed_dest_account_no, #eed_dest_bank_branch').val('');
+                $('#eed_dest_bank').val(null).trigger('change');
+                $('#eed_dest_save_for_reuse').prop('checked', false);
+                $('#eedDestinationNewFields').removeClass('d-none');
+            } else {
+                // Manual Entry / Platform UX review Phase 7 -- see applyFirstSavedDestinationDefault()'s
+                // own docblock in app.js. No-op if populateEedForm() is about to (or just did) set a
+                // real saved destination for an existing record -- that guard lives in the helper.
+                applyFirstSavedDestinationDefault('#eed_destination_select', '#eedDestinationNewFields');
+            }
+            $('#eedIncludeCashSummaryWrapper').toggleClass('d-none', payeeType === 'none');
+        },
+    });
+});
 function setEedPayeeType(type) {
-    $('#eedPayeeTypeToggle button').removeClass('active').filter(`[data-payee-type="${type}"]`).addClass('active');
-    $('#eedPayeeEmployeeWrapper').toggleClass('d-none', type !== 'employee');
-    $('#eed_payee_employee_id').toggleClass('required', type === 'employee');
-    if (type !== 'employee') {
-        $('#eed_payee_employee_id').val(null).trigger('change');
-    }
-    // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- mandatory (see
-    // EmployeeEarningDeductionModel::save()'s own docblock), same required-toggle convention as
-    // #eed_payee_employee_id above.
-    $('#eedCompanyAccountWrapper').toggleClass('d-none', type !== 'company');
-    $('#eed_bank_account_id').toggleClass('required', type === 'company');
-    if (type !== 'company') {
-        $('#eed_bank_account_id').val(null).trigger('change');
-    }
-    // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- same destination
-    // sub-form pattern as #erdDestinationWrapper (Phase 6)/#manualLineDestinationWrapper (Phase 2).
-    $('#eedDestinationWrapper').toggleClass('d-none', type !== 'other_person');
-    if (type !== 'other_person') {
-        $('#eed_destination_select').val(null).trigger('change');
-        $('#eed_dest_account_name, #eed_dest_account_no, #eed_dest_bank_branch').val('');
-        $('#eed_dest_bank').val(null).trigger('change');
-        $('#eed_dest_save_for_reuse').prop('checked', false);
-        $('#eedDestinationNewFields').removeClass('d-none');
-    } else {
-        // Manual Entry / Platform UX review Phase 7 -- see applyFirstSavedDestinationDefault()'s
-        // own docblock in app.js. No-op if populateEedForm() is about to (or just did) set a real
-        // saved destination for an existing record -- that guard lives inside the helper itself.
-        applyFirstSavedDestinationDefault('#eed_destination_select', '#eedDestinationNewFields');
-    }
-    // 2026-08-31, same-day follow-up: 'not_disbursed' never shows this checkbox -- forced excluded
-    // at the model layer (EmployeeEarningDeductionModel::save()'s own comment), a toggle here would
-    // be misleading since unchecking/checking it would have no actual effect.
-    $('#eedIncludeCashSummaryWrapper').toggleClass('d-none', type === 'none' || type === 'not_disbursed');
+    setPayeeDestination('eed', type);
 }
 // Catalog vs custom item toggle (2026-08-19, explicit request). #eed_ped_type_id stays required only
 // in catalog mode, the custom pair only in custom mode -- validateEedForm() already skips anything
@@ -3054,31 +3058,39 @@ function setEedPayeeType(type) {
 // repeated here). This is the TEMPLATE-level payee/destination (employee_recurring_deductions);
 // a specific payroll run can still override it for itself only, via that run's own Manage Items
 // modal -- never written back to this form.
+$(function () {
+    initPayeeDestination('erd', {
+        employeeWrap: '#erdPayeeEmployeeWrapper',
+        companyWrap: '#erdCompanyAccountWrapper',
+        externalWrap: '#erdDestinationWrapper',
+        onChange: function (payeeType, dest) {
+            $('#erd_payee_employee_id').toggleClass('required', dest === 'employee');
+            if (dest !== 'employee') {
+                $('#erd_payee_employee_id').val(null).trigger('change');
+            }
+            // 2026-09-10, Batch 3B item 3: same level-2 as the #eedModal picker above.
+            $('#erd_bank_account_id').toggleClass('required', payeeType === 'company');
+            if (payeeType !== 'company') {
+                $('#erd_bank_account_id').val(null).trigger('change');
+            } else {
+                applyDefaultCompanyBankAccount('#erd_bank_account_id');
+            }
+            if (dest !== 'external') {
+                $('#erd_destination_select').val(null).trigger('change');
+                $('#erd_dest_account_name, #erd_dest_account_no, #erd_dest_bank_branch').val('');
+                $('#erd_dest_bank').val(null).trigger('change');
+                $('#erd_dest_save_for_reuse').prop('checked', false);
+                $('#erdDestinationNewFields').removeClass('d-none');
+            } else {
+                // Manual Entry / Platform UX review Phase 7 -- see applyFirstSavedDestinationDefault()'s
+                // own docblock in app.js.
+                applyFirstSavedDestinationDefault('#erd_destination_select', '#erdDestinationNewFields');
+            }
+        },
+    });
+});
 function setErdPayeeType(type) {
-    $('#erdPayeeTypeToggle button').removeClass('active').filter(`[data-payee-type="${type}"]`).addClass('active');
-    $('#erdPayeeEmployeeWrapper').toggleClass('d-none', type !== 'employee');
-    $('#erd_payee_employee_id').toggleClass('required', type === 'employee');
-    if (type !== 'employee') {
-        $('#erd_payee_employee_id').val(null).trigger('change');
-    }
-    // 2026-09-10, Batch 3B item 3: same level-2 as setEedPayeeType() above.
-    $('#erdCompanyAccountWrapper').toggleClass('d-none', type !== 'company');
-    $('#erd_bank_account_id').toggleClass('required', type === 'company');
-    if (type !== 'company') {
-        $('#erd_bank_account_id').val(null).trigger('change');
-    }
-    $('#erdDestinationWrapper').toggleClass('d-none', type !== 'other_person');
-    if (type !== 'other_person') {
-        $('#erd_destination_select').val(null).trigger('change');
-        $('#erd_dest_account_name, #erd_dest_account_no, #erd_dest_bank_branch').val('');
-        $('#erd_dest_bank').val(null).trigger('change');
-        $('#erd_dest_save_for_reuse').prop('checked', false);
-        $('#erdDestinationNewFields').removeClass('d-none');
-    } else {
-        // Manual Entry / Platform UX review Phase 7 -- see setEedPayeeType()'s own comment above /
-        // applyFirstSavedDestinationDefault()'s own docblock in app.js.
-        applyFirstSavedDestinationDefault('#erd_destination_select', '#erdDestinationNewFields');
-    }
+    setPayeeDestination('erd', type);
 }
 // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- a 3rd mode, "Other"
 // ('other'), reuses #eedCustomFields' own free-text #eed_custom_item_name input VERBATIM (no new
@@ -3220,12 +3232,10 @@ function populateEedForm(row, readOnly) {
         const destOpt = new Option(row.destination_account_name || '', row.destination_id, true, true);
         $('#eed_destination_select').empty().append(destOpt).trigger('change');
         $('#eedDestinationNewFields').addClass('d-none');
-    } else if (row.payee_type === 'not_disbursed') {
-        // 2026-08-31, same-day follow-up -- without this branch an existing not_disbursed row
-        // would silently fall into the 'else' below and reset to 'none' every time it's reopened.
-        $('#eed_payee_employee_id').val(null).trigger('change');
-        setEedPayeeType('not_disbursed');
     } else {
+        // 2026-09-16: a legacy 'not_disbursed' row lands here on purpose -- that choice is no longer
+        // offered, and "retained by company / no record" is what it always computed as anyway. The
+        // stored value is untouched until the admin actually saves this form again.
         $('#eed_payee_employee_id').val(null).trigger('change');
         setEedPayeeType('none');
     }
@@ -3284,7 +3294,8 @@ function collectEedFormData() {
         interest_type: interestType,
         notes: $('#eed_notes').val().trim(),
         external_reference_no: $('#eed_external_reference_no').val().trim(),
-        payee_type: $('#eedPayeeTypeToggle button.active').data('payee-type') || 'none',
+        // The UI's own 3 destinations map onto `payee_type` here, one place, right before submit.
+        payee_type: payeeDestinationType('eed'),
         payee_employee_id: $('#eed_payee_employee_id').val() || undefined,
         include_in_cash_summary: $('#eed_include_in_cash_summary').is(':checked')
     };
@@ -3423,9 +3434,6 @@ function initEedUI() {
     $(document).on('click', '#eedModeToggle button', function () {
         setEedMode($(this).data('mode'));
     });
-    $(document).on('click', '#eedPayeeTypeToggle button', function () {
-        setEedPayeeType($(this).data('payee-type'));
-    });
     $(document).on('select2:select', '#eed_destination_select', function () {
         $('#eedDestinationNewFields').addClass('d-none');
     });
@@ -3518,7 +3526,7 @@ function initEedUI() {
         }
         // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- same either/or
         // check as the Process Detail manual-line flow's own #manualLineDestinationWrapper (Phase 2).
-        if ($('#eedPayeeTypeToggle button.active').data('payee-type') === 'other_person' && !$('#eed_destination_select').val()) {
+        if (payeeDestinationType('eed') === 'other_person' && !$('#eed_destination_select').val()) {
             const hasNewFields = $('#eed_dest_account_name').val().trim() && $('#eed_dest_account_no').val().trim() && $('#eed_dest_bank').val();
             if (!hasNewFields) {
                 showWarning(langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.');
@@ -4167,9 +4175,6 @@ function initRecurringDeductionUI() {
     $(document).on('click', '#erdFeeToggle button', function () {
         setErdFeeOn($(this).data('value') === 'fee');
     });
-    $(document).on('click', '#erdPayeeTypeToggle button', function () {
-        setErdPayeeType($(this).data('payee-type'));
-    });
     $(document).on('select2:select', '#erd_destination_select', function () {
         $('#erdDestinationNewFields').addClass('d-none');
     });
@@ -4233,7 +4238,7 @@ function initRecurringDeductionUI() {
             payload.fee_percent = $('#erd_fee_percent').val();
             payload.fee_base = $('#erd_fee_base').val();
         }
-        const payeeType = $('#erdPayeeTypeToggle button.active').data('payee-type') || 'none';
+        const payeeType = payeeDestinationType('erd');
         if (payeeType !== 'none') {
             payload.payee_type = payeeType;
             if (payeeType === 'employee') {
@@ -4348,8 +4353,10 @@ function populateRecurringDeductionForm(row) {
     const hasFee = !!row.fee_percent;
     setErdFeeOn(hasFee);
     $('#erd_fee_percent').val(hasFee ? row.fee_percent : '');
-    const payeeType = row.payee_type || 'none';
-    setErdPayeeType(payeeType);
+    // A stored value this picker cannot show (a legacy 'not_disbursed') opens on "retained by
+    // company / no record", which is what it always computed as -- see setPayeeDestination().
+    setErdPayeeType(row.payee_type);
+    const payeeType = payeeDestinationType('erd');
     if (payeeType === 'employee' && row.payee_employee_id) {
         const payeeLabel = (currentLang === 'th' ? `${row.payee_name_th || ''} ${row.payee_surname_th || ''}` : `${row.payee_name_en || ''} ${row.payee_surname_en || ''}`).trim();
         const payeeOpt = new Option(`${payeeLabel} (${row.payee_employee_no || ''})`, row.payee_employee_id, true, true);
