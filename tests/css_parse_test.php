@@ -142,6 +142,54 @@ function cssParseCheck(string $css): array {
     return ['count' => $topLevelCount, 'selectors' => $selectors, 'error' => null];
 }
 
+/**
+ * 2026-09-16, SECOND real instance of the exact bug class this file was written for, found in
+ * style.css's own shared-popover block: an asterisk immediately followed by a slash, in the middle
+ * of a token-name list in prose, closed that comment mid-sentence -- so the whole
+ * `.popover { --bs-popover-... }` rule after it was never applied, and every popover in the app had
+ * been rendering at Bootstrap's own defaults (0.875rem text, default colors) instead of this app's
+ * tokens ever since that comment was written.
+ *
+ * The existing assertions could not catch it: an early close leaves the file BALANCED (the comment's
+ * real closing marker closes nothing, and the prose in between eats no braces), and style.css is far
+ * too big for a fixed selector-list assertion like tokens.css gets.
+ *
+ * What is always true, though: a comment-CLOSING marker that appears while NOT inside a comment is
+ * meaningless CSS. A real selector/declaration never contains one, so every occurrence is, by
+ * construction, the leftover marker of a comment something already closed early. That is what this
+ * finds -- deterministically, no heuristics, no length guessing.
+ *
+ * @return int[] 1-based line numbers of every stray closing marker
+ */
+function cssStrayCommentCloses(string $css): array {
+    $len = strlen($css);
+    $i = 0;
+    $line = 1;
+    $inComment = false;
+    $inString = null;
+    $stray = [];
+    while ($i < $len) {
+        $ch = $css[$i];
+        if ($ch === "\n") { $line++; $i++; continue; }
+        if ($inComment) {
+            if ($ch === '*' && $i + 1 < $len && $css[$i + 1] === '/') { $inComment = false; $i += 2; continue; }
+            $i++;
+            continue;
+        }
+        if ($inString !== null) {
+            if ($ch === '\\') { $i += 2; continue; }
+            if ($ch === $inString) { $inString = null; }
+            $i++;
+            continue;
+        }
+        if ($ch === '/' && $i + 1 < $len && $css[$i + 1] === '*') { $inComment = true; $i += 2; continue; }
+        if ($ch === '"' || $ch === "'") { $inString = $ch; $i++; continue; }
+        if ($ch === '*' && $i + 1 < $len && $css[$i + 1] === '/') { $stray[] = $line; $i += 2; continue; }
+        $i++;
+    }
+    return $stray;
+}
+
 $failures = 0;
 $passes = 0;
 function check(string $label, $actual, $expected): void {
@@ -169,6 +217,12 @@ function checkSelectorNotGarbled(string $label, string $selector): void {
     }
 }
 
+define('CLEAN_FIXTURE', "/" . "* plain --sp-x, --fs-y comment *" . "/
+:root { --a: 1; }
+");
+define('STRING_FIXTURE', '.x::after { content: "*' . '/"; }' . "
+");
+
 $tokensPath = __DIR__ . '/../public/css/tokens.css';
 $stylePath = __DIR__ . '/../public/css/style.css';
 
@@ -184,9 +238,12 @@ foreach ($tokensResult['selectors'] as $idx => $sel) {
     checkSelectorNotGarbled("tokens.css rule #{$idx} selector is not a garbled prose blob", $sel);
 }
 
+check('tokens.css has no stray comment-close (nothing closed a comment early before it)', cssStrayCommentCloses($tokensCss), []);
+
 $styleCss = file_get_contents($stylePath);
 $styleResult = cssParseCheck($styleCss);
 check('style.css parses cleanly (no unterminated comment/string, balanced braces)', $styleResult['error'], null);
+check('style.css has no stray comment-close (nothing closed a comment early before it)', cssStrayCommentCloses($styleCss), []);
 
 // Sanity checks on the tokenizer itself -- a test that could never fail isn't testing anything.
 // These use small inline fixtures, not the real files, so they don't depend on app state.
@@ -201,6 +258,12 @@ $brokenCommentFixture = "/* explains several things -- --sp-*/--fs-* are spacing
 $brokenResult = cssParseCheck($brokenCommentFixture);
 check('fixture: a stray */ inside a comment does not throw a fatal error (tokenizer stays in sync)', $brokenResult['error'], null);
 check('fixture: a stray */ inside a comment corrupts the NEXT selector into a long garbled blob, not a clean one', strlen($brokenResult['selectors'][0] ?? '') > 120, true);
+
+// The fixture's prose is all on one line, so its own real closing marker -- the one left stranded
+// outside a comment by the early close -- is on line 1 too.
+check('fixture: the stray-close detector flags the early-close bug shape, by line', cssStrayCommentCloses($brokenCommentFixture), [1]);
+check('fixture: a clean comment is not flagged', cssStrayCommentCloses(CLEAN_FIXTURE), []);
+check('fixture: a closing marker inside a quoted string is not flagged', cssStrayCommentCloses(STRING_FIXTURE), []);
 
 $unterminatedFixture = "/* this comment never closes\n:root { --x: 1; }\n";
 $unterminatedResult = cssParseCheck($unterminatedFixture);

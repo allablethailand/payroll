@@ -1836,7 +1836,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 /* Bootstrap-datepicker -- token theme (applies app-wide, all .datepicker inputs share this design
    system). Migrated 2026-09-13 (Round 2 item 9) off the old --app-* token set (T069, 2026-09-05 --
    see git history if the old values are ever needed for reference) onto the current
-   docs/design/rules.md §1 --c-*/--radius-lg/--shadow-modal set, same token family the notification
+   docs/design/rules.md §1 --c-*, --radius-lg, --shadow-modal set, same token family the notification
    dropdown/Select2/SweetAlert2 overrides elsewhere in this file already use -- --app-* itself is
    NOT being retired app-wide by this change (still ~220 lines using it elsewhere in this file, T069's
    own app-wide dark-mode system, out of this round's scope -- flagged in docs/design/audit.md as a
@@ -3459,11 +3459,36 @@ th.col-money div.dt-column-header .dt-column-title {
 .formula-info-btn i {
     font-size: 14px;
 }
+/* Calculation column's advisory notes (2026-09-16, Payroll Detail employee table) -- the "N คำเตือน"
+   badge is a popover trigger, so the button around it must not add a button's own box/padding on top
+   of the badge (§5: the badge is the whole control here). The popover's own list is a plain stack of
+   sentences, one per line -- no bullet gutter, since each line is already a separate note. */
+.rd-calc-warning-btn {
+    text-decoration: none;
+    line-height: 1;
+}
+.rd-calc-warning-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--sp-2);
+}
+/* The row's calculation notes in the Calculation Breakdown modal -- collapses completely (no stray
+   bottom margin) for the rows that have none, which is most of them. */
+.rd-calc-notes {
+    display: grid;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-3);
+}
+.rd-calc-notes:empty {
+    display: none;
+}
 /* Shared popover (§9/§11, Round 3 item 3c-2 follow-up, explicit instruction) -- overrides Bootstrap's
    OWN --bs-popover-* CSS custom properties (exact names confirmed in bootstrap.min.css) rather than
    fighting its positioning/arrow mechanics with a hand-rolled box -- the arrow reads these same
-   variables internally, so it stays correctly colored/positioned for free. Every value is a --c-*/
-   --fs-*/--radius*/--shadow-* token, so dark mode needs no separate block here (tokens.css already
+   variables internally, so it stays correctly colored/positioned for free. Every value is a
+   --c-*, --fs-*, --radius*, --shadow-* token, so dark mode needs no separate block here (tokens.css already
    carries the dark value for each one). initPopovers() (app.js) is what actually creates every
    popover with this template/behavior -- see its own docblock for the ✕-button/single-open/Esc/
    click-outside mechanics this CSS is styling. */

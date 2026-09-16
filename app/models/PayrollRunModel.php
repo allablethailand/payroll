@@ -366,6 +366,24 @@ class PayrollRunModel {
                     (SELECT COUNT(*) FROM `payroll_run_manual_lines` pml WHERE pml.run_id = d.run_id AND pml.employee_id = d.employee_id) AS manual_line_count,
                     (SELECT 1 FROM `payroll_run_employee_exemptions` ex WHERE ex.run_id = d.run_id AND ex.employee_id = d.employee_id
                         AND (ex.tax_calculate_override != 'inherit' OR ex.sso_calculate_override != 'inherit') LIMIT 1) AS has_calc_override,
+                    -- 2026-09-16: one count for EVERY per-employee adjustment the Adjustments modal
+                    -- (#manageLinesModal) can make, across all 5 of its tabs -- shown as the count
+                    -- badge on that modal's own row button. line_override_count/manual_line_count
+                    -- above stay as they are (employeeAdjustments()'s viewer still lists those 2
+                    -- specifically); this is the wider was-this-employee-touched-at-all figure.
+                    -- payroll_run_item_exclusions is deliberately NOT part of it: that table is
+                    -- keyed by run+item_code with no employee_id at all (a run-wide setting), so it
+                    -- cannot be attributed to one employee.
+                    (
+                        (SELECT COUNT(*) FROM `payroll_run_manual_lines` aml WHERE aml.run_id = d.run_id AND aml.employee_id = d.employee_id)
+                        + (SELECT COUNT(*) FROM `payroll_run_line_overrides` alo WHERE alo.run_id = d.run_id AND alo.employee_id = d.employee_id)
+                        + (SELECT COUNT(*) FROM `payroll_run_sync_item_overrides` aso WHERE aso.run_id = d.run_id AND aso.employee_id = d.employee_id)
+                        + (SELECT COUNT(*) FROM `payroll_run_recurring_deduction_overrides` ardo
+                            JOIN `employee_recurring_deductions` erd ON erd.id = ardo.recurring_id
+                            WHERE ardo.run_id = d.run_id AND erd.employee_id = d.employee_id)
+                        + (SELECT COUNT(*) FROM `payroll_run_employee_exemptions` aex WHERE aex.run_id = d.run_id AND aex.employee_id = d.employee_id
+                            AND (aex.exempt_tax = 1 OR aex.exempt_sso = 1 OR aex.tax_calculate_override != 'inherit' OR aex.sso_calculate_override != 'inherit'))
+                    ) AS adjustment_count,
                     -- 2026-08-29, explicit follow-up request: base salary excluded should show as a
                     -- red 'not calculated' label instead of 0 in the employee table -- effective
                     -- exclusion state for base salary specifically, same per-employee-override-wins-
@@ -416,6 +434,14 @@ class PayrollRunModel {
             $row['line_override_count'] = (int)$row['line_override_count'];
             $row['manual_line_count'] = (int)$row['manual_line_count'];
             $row['has_calc_override'] = !empty($row['has_calc_override']);
+            $row['adjustment_count'] = (int)$row['adjustment_count'];
+            // 2026-09-16: calc_errors stays exactly as stored; these 2 are the same string split by
+            // ADVISORY_CALC_ERROR_CODES/_PREFIXES so the table can show advisory notes as a
+            // "N คำเตือน" badge and blocking ones as the red 'error' state, without every reader
+            // re-deriving which is which.
+            $split = self::splitCalcErrors($row['calc_errors'] ?? null);
+            $row['calc_warnings'] = $split['warnings'];
+            $row['calc_blocking'] = $split['blocking'];
             // 2026-09-10, real gap found and fixed (confirmed business rule): this used to check
             // only the per-employee override + Run Settings item-exclusion -- it had NO awareness
             // at all of an incentive run's own include_base_salary=0 toggle, which zeroes
@@ -907,6 +933,65 @@ class PayrollRunModel {
     private const COMMENT_LOCKED_STATES = ['paid', 'locked', 'cancelled'];
     /** Reserved item_code for lineOverrideSave()'s own base-salary special case -- see that method's own docblock. */
     public const BASE_SALARY_OVERRIDE_CODE = '__base_salary__';
+
+    /**
+     * 2026-09-16: the advisory/blocking split of `payroll_run_details.calc_errors`, lifted verbatim
+     * out of recalculate()'s own inline exclusion list (where it had lived since 2026-09-02) so BOTH
+     * writers and readers resolve it from one place. Behaviour is unchanged -- same codes, same
+     * prefixes, same resulting calc_status.
+     *
+     * "Advisory" = a note the admin should read and may need to act on, but which must NOT flip
+     * calc_status to 'error' or block submit(): the run still pays out using a documented safe
+     * default. Everything NOT listed here is blocking (missing_base_salary/no_rate_configured/
+     * profile_incomplete/...). Each entry's own reasoning lives at its push site in recalculate().
+     */
+    public const ADVISORY_CALC_ERROR_CODES = [
+        'daily_salary_no_shift_pattern',
+        'salary_type_hourly_not_supported',
+        'hourly_salary_no_attendance_data',
+        'no_attendance_data_this_period',
+        'ot_not_calculated_ineligible',
+        'mixed_payment_lines_mismatch',
+    ];
+    /** Advisory codes that carry a ":value" suffix, so they can never exact-match the list above. */
+    public const ADVISORY_CALC_ERROR_PREFIXES = [
+        'working_days_fallback_with_attendance_deduction:',
+        'transfer_payee_not_in_run:',
+    ];
+
+    public static function isAdvisoryCalcError(string $code): bool
+    {
+        if (in_array($code, self::ADVISORY_CALC_ERROR_CODES, true)) {
+            return true;
+        }
+        foreach (self::ADVISORY_CALC_ERROR_PREFIXES as $prefix) {
+            if (strpos($code, $prefix) === 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Splits a stored `calc_errors` string ("code, code:value, ...") into the 2 lists the Employee
+     * Breakdown table renders separately: `warnings` (advisory, a "N คำเตือน" badge) and `blocking`
+     * (what actually made calc_status 'error'). Raw codes are returned unchanged -- translating them
+     * is the client's job (detail.js's own calcErrorMessageRd()).
+     */
+    public static function splitCalcErrors(?string $calcErrors): array
+    {
+        $codes = array_values(array_filter(array_map('trim', explode(',', (string)$calcErrors)), static fn($c) => $c !== ''));
+        $warnings = [];
+        $blocking = [];
+        foreach ($codes as $code) {
+            if (self::isAdvisoryCalcError($code)) {
+                $warnings[] = $code;
+            } else {
+                $blocking[] = $code;
+            }
+        }
+        return ['warnings' => $warnings, 'blocking' => $blocking];
+    }
 
     /**
      * 2026-09-10, real gap found and fixed (confirmed business rule): the single source of truth
@@ -4495,14 +4580,10 @@ class PayrollRunModel {
                 // making it blocking would have broken that entire, already-accepted-as-a-known-
                 // limitation code path. Kept as a visible Remark (still useful: tells an admin exactly
                 // which event's amount used the fallback divisor) without ever blocking submit().
-                $blockingErrors = array_filter(
-                    array_diff($errors, ['daily_salary_no_shift_pattern', 'salary_type_hourly_not_supported', 'hourly_salary_no_attendance_data', 'no_attendance_data_this_period', 'ot_not_calculated_ineligible', 'mixed_payment_lines_mismatch']),
-                    static fn($e) => strpos((string)$e, 'working_days_fallback_with_attendance_deduction:') !== 0
-                        // 2026-09-02, Deduction Destination & Third-Party Remittance -- see this
-                        // error's own push site (the transfer-credit pass above) for why this is
-                        // now advisory, not blocking.
-                        && strpos((string)$e, 'transfer_payee_not_in_run:') !== 0
-                );
+                // 2026-09-16: the list itself moved to ADVISORY_CALC_ERROR_CODES/_PREFIXES (top of
+                // this class) so the table that READS calc_errors can split the same way -- the
+                // codes, the prefixes and the resulting calc_status are unchanged.
+                $blockingErrors = array_filter($errors, static fn($e) => !self::isAdvisoryCalcError((string)$e));
                 $calcStatus = empty($blockingErrors) ? 'calculated' : 'error';
                 if ($calcStatus === 'error') {
                     $anyError = true;

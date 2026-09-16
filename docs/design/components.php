@@ -1765,6 +1765,25 @@ $(function () {
     $cpUnmappedRow.find('.d-flex').append($cpUnmappedChip);
     $cpBadgeShowcase.append($cpUnmappedRow);
 
+    // countBadgeHtml() (§5) -- the plain number, and the `label` variant (2026-09-16) for a badge
+    // that stands alone in a table cell where a bare number would not say what it counts.
+    const $cpCountRow = $(
+        '<div class="mb-3">' +
+            '<div class="fw-semibold small text-uppercase text-muted mb-1">countBadgeHtml()</div>' +
+            '<div class="d-flex flex-wrap gap-2 align-items-center"></div>' +
+        '</div>'
+    );
+    [
+        { label: 'ตัวเลขเปล่า (default, neutral)', html: countBadgeHtml(3) },
+        { label: 'มี label + tone', html: countBadgeHtml(2, { tone: 'warning', label: getLangValue('calc_warning_count') || '{n} warnings' }) },
+    ].forEach(function (item) {
+        const $chip = $('<span class="d-inline-flex align-items-center gap-1 border rounded-2 px-2 py-1"></span>');
+        $chip.append($('<code class="small text-muted"></code>').text(item.label));
+        $chip.append(item.html);
+        $cpCountRow.find('.d-flex').append($chip);
+    });
+    $cpBadgeShowcase.append($cpCountRow);
+
     // Badge dropdown (§5, 2026-09-15) -- BOTH modes of the same helper, side by side:
     //  (1) value picker: the exact config payroll/detail.js's own comment composer passes (4
     //      'employee_comment_tag' choices, 'none' marked `outline` so an untagged comment's toggle

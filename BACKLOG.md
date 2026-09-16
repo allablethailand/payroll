@@ -969,3 +969,40 @@ assertion เองตั้งสมมติฐานผิด** ว่าเ�
 ไม่ใช่ทั้งสองที่ (`public/js/payroll/detail.js` บรรทัดที่เรียก `validation_errors_banner`)
 
 **Source:** รอบ filter-bar/empty state (2026-09-16) — ไม่ได้แก้ในรอบนั้นตาม §0.7 (phase design ห้ามแก้ logic)
+
+---
+
+## popover ไม่มีเงาจริง — rules.md §6 บอก `--shadow-soft` แต่ Bootstrap ไม่เคย apply
+
+วัดที่หน้าจริงหลังแก้บั๊ก comment (2026-09-16): `.popover` computed `box-shadow: none` ทั้ง 2 theme
+ทั้งที่ `style.css` ตั้ง `--bs-popover-box-shadow: var(--shadow-soft)` ไว้ — ต้นเหตุไม่ใช่ override ไม่ติด
+แต่เป็นเพราะ **`bootstrap.min.css` ประกาศตัวแปร `--bs-popover-box-shadow` ไว้เฉยๆ แล้วไม่เคยเขียน
+`box-shadow: var(--bs-popover-box-shadow)` บน `.popover` เลย** (ยืนยันจากอ่านไฟล์ตรง — popover ของ
+Bootstrap ไม่มีเงามาแต่เดิม ต่างจาก `.dropdown-menu` ที่ apply จริง) บรรทัดนั้นจึงเป็น no-op มาตลอด
+ไม่ใช่ของที่เพิ่งหายไปพร้อมบั๊ก comment
+
+**ตัดสินตอนรอบ 3d (2 ทาง เลือกทางเดียว)**:
+(ก) ประกาศ `box-shadow: var(--shadow-soft)` ตรงๆ บน `.popover` ให้ตรงกับที่ §6 เขียนไว้ — surface ลอย
+ควรมีเงาตามหลักการเดียวกับ dropdown/notification; หรือ (ข) แก้ §6 ให้ตรงกับความจริงว่า popover ใช้ขอบ
+`--c-border` อย่างเดียวไม่มีเงา แล้วลบบรรทัด `--bs-popover-box-shadow` ทิ้ง (ไม่ทิ้ง dead declaration ไว้)
+
+**Source:** รอบตาราง "ย้ายข้อมูลออกจากเซลล์" (2026-09-16) — เจอตอนวัดของที่เพิ่งได้ token คืน
+
+---
+
+## legacy base text `#555` ยังเป็นสีตกทอดของ `.popover` และ panel column-filter
+
+`html, body { color: #555555 }` (`style.css` บนสุด — ค่าเดียวกับ legacy token `--app-text` ของ T069)
+ยังเป็นสีที่ **surface ลอย 2 ตัวนี้รับช่วงมา** เพราะทั้งคู่ไม่ประกาศ `color` ของตัวเอง: `.tcf-panel`
+(ตั้ง background/border/radius/shadow/font-size ครบแต่ไม่มี `color`) และ `.popover` (ตั้งแต่ `--bs-popover-
+body-color` ซึ่งมีผลกับ `.popover-body` ไม่ใช่กล่องนอก)
+
+**ตอนนี้ยังไม่เห็นผลด้วยตา** เพราะ child ทุกตัวที่มีข้อความจริง (`.popover-header`/`.popover-body`/
+`.tcf-panel-title`/`.tcf-item`) ตั้งสีของตัวเองทับหมด — เป็นสีที่รอ inherit ให้ผิด ถ้ามีใครเพิ่ม element
+ข้อความใหม่ในกล่องพวกนี้แล้วลืมตั้งสี
+
+**ทำตอนรอบ 3d ที่ mark `design:clean`**: ตั้ง `color: var(--c-text)` ที่ `.tcf-panel`/`.popover` ให้จบ
+(หรือถ้าจะแก้ที่ต้นทางจริงคือ `html, body`'s `#555` ซึ่งกระทบทั้งแอป ต้องเป็นงานของตัวเองพร้อมวัดหน้าอื่นด้วย
+ไม่ควรพ่วงกับ 3d เงียบๆ) — ดู `--app-*` ~220 บรรทัดที่เหลือใน `style.css` เป็นงานเดียวกันชุดใหญ่กว่า
+
+**Source:** รอบตาราง "ย้ายข้อมูลออกจากเซลล์" (2026-09-16) — เจอตอนวัดของที่เพิ่งได้ token คืน

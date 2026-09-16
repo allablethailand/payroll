@@ -1689,6 +1689,13 @@
                          renderBreakdownModal() in detail.js) so this card doesn't get wiped along
                          with it. -->
                     <div id="breakdownHeaderCard"></div>
+                    <!-- 2026-09-16: the calculation notes for this row (calc_blocking as danger
+                         callouts, calc_warnings as warning ones -- see renderBreakdownModal()). The
+                         table cell itself only shows the count now, so this is where the full text
+                         is read. Static sibling of #breakdownModalBody for the same reason the
+                         header card above is one: that div's content is replaced wholesale on every
+                         open. -->
+                    <div id="breakdownCalcNotes" class="rd-calc-notes"></div>
                     <!-- 2026-09-06, explicit request: display Origami's opt-in TOTAL_DAYS
                          item_values entry (calendar-based day count) when present -- hidden
                          entirely for a run/employee with no data (cycle-based/off-cycle run, or a

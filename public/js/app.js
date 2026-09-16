@@ -1815,7 +1815,12 @@ function initBadgeDropdown(scope, options) {
 function countBadgeHtml(n, options) {
     options = options || {};
     const tone = options.tone || 'neutral';
-    return `<span class="badge badge-${tone}" data-badge="count">${escapeHtml(String(n))}</span>`;
+    // 2026-09-16: `options.label` is a caller-resolved i18n string containing `{n}` (e.g. "{n} คำเตือน")
+    // for the case where the number alone does not say what it counts -- a count badge standing next
+    // to a status badge in the same cell, rather than overlaid on a button that already names the
+    // thing. Without it the badge stays exactly what it has always been: the bare number.
+    const text = options.label ? String(options.label).replace('{n}', String(n)) : String(n);
+    return `<span class="badge badge-${tone}" data-badge="count">${escapeHtml(text)}</span>`;
 }
 // Status stepper (§6, Round 2 item 6, extended 2026-09-13 Round 3 item 3a -- see
 // status-stepper.php's own docblock for the full per-step date/tone shape and the branch-state

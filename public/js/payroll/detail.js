@@ -60,62 +60,83 @@ function stateBadgeRd(state) {
 // retired -- its one caller (initRunDetailTable()'s calc_status column) now routes through the shared
 // statusBadgeHtml() + status_map.php's existing 'payroll_calc_status' context instead (see that
 // column's own comment).
-/* ---------- Remark column on the calculation table: payroll_run_details.calc_errors is a
-   comma-separated list of machine codes (e.g. "profile_incomplete, missing_base_salary") --
-   translate each known code to a readable sentence; an unrecognized code (defensive) falls back
-   to showing the raw code rather than hiding it. profile_incomplete is what a placeholder
-   employee (auto-created via Origami SSO or a Payroll Sync pull) shows here -- per explicit
-   request, these employees are pulled into this table like anyone else rather than being
-   silently excluded, so this Remark is what tells the admin WHY that row still needs attention. */
-function calcErrorsRemarkRd(calcErrors) {
-    if (!calcErrors) return '';
-    const codes = String(calcErrors).split(',').map(s => s.trim()).filter(Boolean);
-    const labels = codes.map(code => {
-        if (code === 'profile_incomplete') return langData['calc_error_profile_incomplete'] || 'Employee profile is incomplete -- complete it via Employee Detail, then recalculate.';
-        if (code === 'missing_base_salary') return langData['calc_error_missing_base_salary'] || 'Missing base salary.';
-        if (code === 'no_manual_lines') return langData['calc_error_no_manual_lines'] || 'No payment items added yet -- use "Items" to add one.';
-        if (code === 'daily_salary_no_shift_pattern') return langData['calc_error_daily_salary_no_shift_pattern'] || 'This salary type is paid per day/week/period but no Shift is assigned -- paid for every non-holiday day; assign a Shift to exclude weekly off-days.';
-        // 2026-08-31, real hourly formula now exists (was previously flagged unsupported and
-        // silently used the monthly formula) -- salary_type_hourly_not_supported itself is retired
-        // going forward but kept translatable here in case an older, already-calculated run still
-        // carries it in its preserved calc_errors.
-        if (code === 'salary_type_hourly_not_supported') return langData['calc_error_salary_type_hourly_not_supported'] || 'Hourly salary type was not yet supported when this was calculated -- used the monthly formula instead. Recalculate to use the real hourly formula.';
-        if (code === 'hourly_salary_no_attendance_data') return langData['calc_error_hourly_salary_no_attendance_data'] || 'Hourly salary type but no attendance data (clock in/out) was found for this employee this period -- paid 0 for base salary; verify attendance has been recorded/synced.';
-        if (code === 'sync_actual_days_no_data') return langData['calc_error_sync_actual_days_no_data'] || 'Base Salary Basis is "Actual Days (Origami Sync)" but no PROBATION_WORKING_DAYS was available for this employee this cycle -- paid in full instead.';
-        if (code === 'no_attendance_data_this_period') return langData['calc_error_no_attendance_data_this_period'] || 'No attendance/OT/leave data found for this employee this period -- verify Origami sync has completed, or confirm this is expected.';
-        if (code === 'ot_not_calculated_ineligible') return langData['calc_error_ot_not_calculated_ineligible'] || 'This employee is not marked eligible for OT -- Origami sent OT hours this period, but they were NOT calculated. Verify with the employee/HR whether this is correct.';
-        if (code.indexOf('no_rate_configured:') === 0) {
-            const item = code.substring('no_rate_configured:'.length);
-            const tpl = langData['calc_error_no_rate_configured'] || 'No statutory rate configured for {item}.';
-            return tpl.replace('{item}', item);
-        }
-        if (code.indexOf('transfer_payee_not_in_run:') === 0) {
-            const item = code.substring('transfer_payee_not_in_run:'.length);
-            const tpl = langData['calc_error_transfer_payee_not_in_run'] || 'The transfer payee for {item} is not part of this run -- the deduction still applies, but nobody was credited.';
-            return tpl.replace('{item}', item);
-        }
-        // 2026-09-02, advisory-only (never blocks submit -- see PayrollRunModel::recalculate()'s
-        // own $blockingErrors filter). Origami confirmed this can never fire from a genuine sync
-        // payload (working_days/working_mins share the same umbrella selection flag as Late/Absent,
-        // never independently 0) -- it fires in practice for a Manual Entry/Import-driven cycle run,
-        // where there's genuinely no scheduled working-day count available at all (see
-        // TransactionDataPayAdapter's own docblock). See SyncPayResolver::resolve()'s own 2026-09-02
-        // docblock for the full reasoning.
-        if (code.indexOf('working_days_fallback_with_attendance_deduction:') === 0) {
-            const eventLabel = code.substring('working_days_fallback_with_attendance_deduction:'.length);
-            const tpl = langData['calc_error_working_days_fallback_with_attendance_deduction'] || 'The {event} deduction this period was computed using the fixed 30-day standard divisor (no real scheduled working-day count was available for this period) -- this may under- or over-deduct compared to the period\'s actual working days. Review this amount.';
-            return tpl.replace('{event}', eventLabel);
-        }
-        // 2026-09-02, explicit request: "การตั้งค่าเงินรวมกันถ้าเกินจำนวนเงินเดือนมีการดักส่วนนี้ไว้ไหม" --
-        // PayrollRunModel::recalculate() now checks a Mixed-payment employee's FULL line set
-        // (cash+transfer+check together) against this row's own net pay the moment it's known,
-        // instead of the mismatch only ever surfacing later as a silently-skipped row inside an
-        // exported Bank Transfer/Cash Payment file. Advisory only (never blocks submit -- same
-        // exclusion-list treatment as daily_salary_no_shift_pattern above).
-        if (code === 'mixed_payment_lines_mismatch') return langData['calc_error_mixed_payment_lines_mismatch'] || "This employee's Mixed payment lines don't add up to their net pay -- check the Payment tab on Employee Detail.";
-        return code;
-    });
-    return `<span class="text-danger small">${escapeHtml(labels.join(' '))}</span>`;
+/* ---------- payroll_run_details.calc_errors is a comma-separated list of machine codes (e.g.
+   "profile_incomplete, missing_base_salary") -- this translates ONE code to a readable sentence; an
+   unrecognized code (defensive) falls back to showing the raw code rather than hiding it.
+   profile_incomplete is what a placeholder employee (auto-created via Origami SSO or a Payroll Sync
+   pull) shows -- per explicit request these employees are pulled into the table like anyone else
+   rather than being silently excluded, so this message is what tells the admin WHY that row still
+   needs attention.
+   2026-09-16: these sentences no longer live in the table cell itself (2 wrapped lines per row made
+   every row a different height) -- the calculation column shows a "N คำเตือน" badge whose popover
+   lists them, and the Calculation Breakdown modal shows them in full as callouts. */
+function calcErrorMessageRd(code) {
+    if (code === 'profile_incomplete') return langData['calc_error_profile_incomplete'] || 'Employee profile is incomplete -- complete it via Employee Detail, then recalculate.';
+    if (code === 'missing_base_salary') return langData['calc_error_missing_base_salary'] || 'Missing base salary.';
+    if (code === 'no_manual_lines') return langData['calc_error_no_manual_lines'] || 'No payment items added yet -- use "Items" to add one.';
+    if (code === 'daily_salary_no_shift_pattern') return langData['calc_error_daily_salary_no_shift_pattern'] || 'This salary type is paid per day/week/period but no Shift is assigned -- paid for every non-holiday day; assign a Shift to exclude weekly off-days.';
+    // 2026-08-31, real hourly formula now exists (was previously flagged unsupported and
+    // silently used the monthly formula) -- salary_type_hourly_not_supported itself is retired
+    // going forward but kept translatable here in case an older, already-calculated run still
+    // carries it in its preserved calc_errors.
+    if (code === 'salary_type_hourly_not_supported') return langData['calc_error_salary_type_hourly_not_supported'] || 'Hourly salary type was not yet supported when this was calculated -- used the monthly formula instead. Recalculate to use the real hourly formula.';
+    if (code === 'hourly_salary_no_attendance_data') return langData['calc_error_hourly_salary_no_attendance_data'] || 'Hourly salary type but no attendance data (clock in/out) was found for this employee this period -- paid 0 for base salary; verify attendance has been recorded/synced.';
+    if (code === 'sync_actual_days_no_data') return langData['calc_error_sync_actual_days_no_data'] || 'Base Salary Basis is "Actual Days (Origami Sync)" but no PROBATION_WORKING_DAYS was available for this employee this cycle -- paid in full instead.';
+    if (code === 'no_attendance_data_this_period') return langData['calc_error_no_attendance_data_this_period'] || 'No attendance/OT/leave data found for this employee this period -- verify Origami sync has completed, or confirm this is expected.';
+    if (code === 'ot_not_calculated_ineligible') return langData['calc_error_ot_not_calculated_ineligible'] || 'This employee is not marked eligible for OT -- Origami sent OT hours this period, but they were NOT calculated. Verify with the employee/HR whether this is correct.';
+    if (code.indexOf('no_rate_configured:') === 0) {
+        const item = code.substring('no_rate_configured:'.length);
+        const tpl = langData['calc_error_no_rate_configured'] || 'No statutory rate configured for {item}.';
+        return tpl.replace('{item}', item);
+    }
+    if (code.indexOf('transfer_payee_not_in_run:') === 0) {
+        const item = code.substring('transfer_payee_not_in_run:'.length);
+        const tpl = langData['calc_error_transfer_payee_not_in_run'] || 'The transfer payee for {item} is not part of this run -- the deduction still applies, but nobody was credited.';
+        return tpl.replace('{item}', item);
+    }
+    // 2026-09-02, advisory-only (never blocks submit -- see PayrollRunModel::recalculate()'s
+    // own $blockingErrors filter). Origami confirmed this can never fire from a genuine sync
+    // payload (working_days/working_mins share the same umbrella selection flag as Late/Absent,
+    // never independently 0) -- it fires in practice for a Manual Entry/Import-driven cycle run,
+    // where there's genuinely no scheduled working-day count available at all (see
+    // TransactionDataPayAdapter's own docblock). See SyncPayResolver::resolve()'s own 2026-09-02
+    // docblock for the full reasoning.
+    if (code.indexOf('working_days_fallback_with_attendance_deduction:') === 0) {
+        const eventLabel = code.substring('working_days_fallback_with_attendance_deduction:'.length);
+        const tpl = langData['calc_error_working_days_fallback_with_attendance_deduction'] || 'The {event} deduction this period was computed using the fixed 30-day standard divisor (no real scheduled working-day count was available for this period) -- this may under- or over-deduct compared to the period\'s actual working days. Review this amount.';
+        return tpl.replace('{event}', eventLabel);
+    }
+    // 2026-09-02, explicit request: "การตั้งค่าเงินรวมกันถ้าเกินจำนวนเงินเดือนมีการดักส่วนนี้ไว้ไหม" --
+    // PayrollRunModel::recalculate() now checks a Mixed-payment employee's FULL line set
+    // (cash+transfer+check together) against this row's own net pay the moment it's known,
+    // instead of the mismatch only ever surfacing later as a silently-skipped row inside an
+    // exported Bank Transfer/Cash Payment file. Advisory only (never blocks submit -- same
+    // exclusion-list treatment as daily_salary_no_shift_pattern above).
+    if (code === 'mixed_payment_lines_mismatch') return langData['calc_error_mixed_payment_lines_mismatch'] || "This employee's Mixed payment lines don't add up to their net pay -- check the Payment tab on Employee Detail.";
+    return code;
+}
+// 2026-09-16: the server already splits calc_errors into calc_warnings/calc_blocking
+// (PayrollRunModel::splitCalcErrors(), one advisory list shared with recalculate()) -- these 2 just
+// translate whichever list they are handed. Nothing here decides advisory-vs-blocking anymore.
+function calcErrorMessagesRd(codes) {
+    return (codes || []).map(calcErrorMessageRd);
+}
+// 2026-09-16, explicit instruction ("คอลัมน์การคำนวณ = statusBadge สถานะ + badge 'N คำเตือน' tone
+// warning ไม่มีไอคอน คลิกเปิด popover รายการบรรทัดละข้อ"): advisory notes leave the cell. The badge is
+// countBadgeHtml()'s own markup with the count wrapped in the sentence (§5: a non-neutral tone only
+// when the number itself needs attention -- a warning is exactly that), and the list opens in the
+// app's shared popover (initPopovers(), app.js/§11 -- token-styled, closes on Esc/click-outside,
+// one open at a time) rather than the column-filter panel: that panel is a single app-wide instance
+// built around a checklist + Clear/Apply footer, nothing of which this read-only list needs.
+function calcWarningBadgeRd(row) {
+    const messages = calcErrorMessagesRd(row.calc_warnings);
+    if (!messages.length) return '';
+    const badge = countBadgeHtml(messages.length, { tone: 'warning', label: langData['calc_warning_count'] || '{n} warnings' });
+    const content = `<ul class="rd-calc-warning-list">${messages.map(m => `<li>${escapeHtml(m)}</li>`).join('')}</ul>`;
+    return `<button type="button" class="btn btn-link p-0 border-0 ms-1 align-baseline rd-calc-warning-btn"
+        data-bs-toggle="popover" data-bs-trigger="click" data-bs-html="true" data-bs-placement="left"
+        data-bs-title="${escapeAttr(langData['calc_warnings_title'] || 'Warnings')}"
+        data-bs-content="${escapeAttr(content)}">${badge}</button>`;
 }
 // 2026-09-14, Round 3 item 3c-1 follow-up, real bug fix (explicit report: "column filter popup
 // แสดงค่าดิบ 'calculated' แทน 'คำนวณแล้ว'") -- a status_map-backed badge column's own `render.filter`
@@ -1888,11 +1909,23 @@ $(document).on('submit', '#runMarkPaidForm', function (e) {
 // standalone .btn-circle-action circle (one of the row's 3, draft-only so effectively 2 outside draft
 // -- §7 revised to "≤3 ปุ่ม + ⋮", not always exactly 3). Click handler (.btn-manage-manual-lines)
 // unchanged.
+// 2026-09-16, explicit instruction: the "ปรับแล้ว N" text button is gone from the Employee Code cell
+// -- its number now rides on THIS button as a count badge (§5's countBadgeHtml + the same
+// .btn-circle-action-badge overlay commentButtonRd() uses), because this is the button that opens
+// the very modal those adjustments were made in. The count itself is row.adjustment_count
+// (PayrollRunModel::getDetails()), which covers every table all 5 tabs of #manageLinesModal write to
+// -- not just the 2 the old badge counted. Neutral tone: §5 reserves `primary` for genuinely
+// new/unread items, and "this employee has adjustments" is a standing fact, not news.
 function manageItemsButtonRd(row) {
     if (!currentRun || currentRun.state !== 'draft') {
         return '';
     }
-    return `<button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-manual-lines" data-employee-id="${row.employee_id}" title="${langData['action_manage_items'] || 'Items'}"><i class="fa-solid fa-list-check"></i></button>`;
+    const count = Number(row.adjustment_count || 0);
+    const countBadge = count > 0 ? `<span class="btn-circle-action-badge">${countBadgeHtml(count)}</span>` : '';
+    return `<div class="position-relative d-inline-block">
+        <button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-manual-lines" data-employee-id="${row.employee_id}" title="${langData['action_manage_items'] || 'Items'}"><i class="fa-solid fa-list-check"></i></button>
+        ${countBadge}
+    </div>`;
 }
 // Raw Sync Data viewer (2026-08-21, explicit request: "ถ้าเป็นการ Sync ข้อมูลมาจาก Origami...เพิ่มปุ่ม
 // ดูข้อมูลดิบได้") -- only for a row that actually came from the sync payload; a manually-added
@@ -2046,9 +2079,19 @@ function viewBreakdownButtonRd(row) {
 // row shows only 2) always stay inline; everything else (Raw Sync Data, conditional; Remove,
 // draft-only) collapses into the ⋮ menu. Unverify is NOT part of this menu anymore -- see the Verify
 // column's own badge dropdown instead (verifyLockButtonsRd()).
+// 2026-09-16: the read-only "รายการที่ปรับ" viewer (empAdjustmentsModal) used to be reachable only
+// through the Employee Code cell's own "ปรับแล้ว N" button, which that instruction removed -- moved
+// here so it is still reachable, and on a non-draft run too (where the Items circle, and therefore
+// its count badge, is gone entirely). Same .btn-view-emp-adjustments class, same delegated handler.
+function viewAdjustmentsMenuItemRd(row) {
+    if (Number(row.adjustment_count || 0) <= 0) {
+        return '';
+    }
+    return `<li><button type="button" class="dropdown-item btn-view-emp-adjustments" data-employee-id="${row.employee_id}">${escapeHtml(langData['emp_adjustments_modal_title'] || 'Adjusted Items')}</button></li>`;
+}
 function runDetailActionsRd(row) {
     const circles = [viewBreakdownButtonRd(row), commentButtonRd(row), manageItemsButtonRd(row)].filter(Boolean).join('');
-    const menuItems = [rawSyncDataButtonRd(row)].filter(Boolean);
+    const menuItems = [viewAdjustmentsMenuItemRd(row), rawSyncDataButtonRd(row)].filter(Boolean);
     const removeItem = removeEmployeeButtonRd(row);
     // 2026-09-10, explicit request: Remove sits at the bottom with a divider above it, only when
     // there's actually something above it to divide from.
@@ -2376,6 +2419,15 @@ function renderBreakdownModal(row) {
     // correct here (0 would be a real, displayable value if it ever happened).
     // 2026-09-14, Round 3 item 3c-2: moved out of the modal-header into the body (§9 "Header = ชื่อ
     // + × เท่านั้น") -- still ≤1 line, right under the employee header card.
+    // 2026-09-16, explicit instruction ("quick-view แสดง calc_blocking เป็น callout danger /
+    // calc_warnings เป็น callout warning ส่วนบน ข้อความเต็ม"): the row's own calculation view is where
+    // the full sentences live now that the table cell only carries the count -- one callout per
+    // message (§15: a callout is one statement; 3 stacked notes read as 3 things to act on, a single
+    // callout holding 3 sentences reads as one). Blocking first: it is why the row says 'error'.
+    $('#breakdownCalcNotes').html(
+        calcErrorMessagesRd(row.calc_blocking).map(m => calloutHtml(escapeHtml(m), 'danger')).join('')
+        + calcErrorMessagesRd(row.calc_warnings).map(m => calloutHtml(escapeHtml(m), 'warning')).join('')
+    );
     const $totalDays = $('#breakdownTotalDays');
     if (row.total_days !== null && row.total_days !== undefined) {
         $totalDays.text(`${langData['total_days'] || 'Total Days'}: ${fmtNum(row.total_days)}`).removeClass('d-none');
@@ -2956,37 +3008,16 @@ function initRunDetailTable(details) {
             // (computed just above from currentRun.state, see this function's own top-of-function
             // comment for why it's set HERE at construction time and not inside drawCallback).
             { data: null, orderable: false, visible: showCheckboxColumn, render: (d, t, row) => `<input type="checkbox" class="form-check-input run-detail-row-check" data-employee-id="${row.employee_id}">` },
-            // 2026-08-29, explicit follow-up request (own earlier suggestion, accepted): "มีไอคอน
-            // เล็กๆ บนแถวพนักงานที่บอกว่าคนนี้ถูกปรับแต่งอะไรไปแล้วบ้าง" -- shown here (not tied to the
-            // "Items" button, which disappears entirely once the run leaves draft -- see
-            // manageItemsButtonRd()) so the indicator stays visible for a locked/paid/approved run
-            // too, when knowing "was this person customized" matters most. Comment count already
-            // gets its own red-dot badge on the Comment button itself (commentButtonRd()) -- not
-            // repeated here to avoid saying the same thing twice.
             // 2026-09-02, explicit request: "ตารางพนักงาน แยก code และชื่อคนละ Column Code อยู่ก่อน" --
             // was one combined 2-line cell (name bold on top, code muted underneath); split into its
-            // own Code column (badges moved here, since it's the leftmost/anchor column now) and a
-            // separate plain Name column right after it.
-            { data: 'employee_no', orderable: false, render: (d, t, row) => {
-                const badges = [];
-                // 2026-09-10, Batch 3A item 5, explicit request: replace the fa-sliders icon (which
-                // only ever hinted "something changed," no detail) with a text badge showing HOW
-                // MANY items were adjusted (overrides + ad-hoc added items combined -- see
-                // PayrollRunModel::employeeAdjustments()'s own docblock), clickable to open a
-                // view-only modal listing each one (item/old value/new value/who/when).
-                const adjustedCount = Number(row.line_override_count || 0) + Number(row.manual_line_count || 0);
-                // 2026-09-13, Round 3 item 3b: was its own hardcoded warning-colored badge holding a
-                // "Adjusted {n}" template string; now plain text (this app's own established
-                // "count badge = neutral, unless a tone is genuinely needed" rule, §5) + countBadgeHtml()
-                // (app.js) for just the number, same shape as commentButtonRd()'s own count badge below.
-                if (adjustedCount > 0) {
-                    badges.push(`<button type="button" class="btn btn-link btn-sm p-0 border-0 ms-1 btn-view-emp-adjustments" data-employee-id="${row.employee_id}" title="${langData['row_badge_item_override'] || 'Has item override(s)'}">${escapeHtml(langData['row_badge_adjusted'] || 'Adjusted')} ${countBadgeHtml(adjustedCount)}</button>`);
-                }
-                if (row.has_calc_override) {
-                    badges.push(`<i class="fa-solid fa-file-invoice-dollar text-info ms-1" title="${langData['row_badge_calc_override'] || 'Has tax/SSO override'}"></i>`);
-                }
-                return `<span class="fw-semibold">${escapeHtml(d)}</span>${badges.join('')}`;
-            } },
+            // own Code column and a separate plain Name column right after it.
+            // 2026-09-16, explicit instruction ("คอลัมน์รหัสพนักงาน = รหัสอย่างเดียว"): the 2 extra
+            // markers this cell used to carry are gone from it -- the "Adjusted N" button (its count
+            // is now the count badge on the row's own Items circle, manageItemsButtonRd(), and the
+            // viewer it opened moved to the row's ⋮ menu so it stays reachable on a non-draft run)
+            // and the blue fa-file-invoice-dollar tax/SSO-override icon (§3 kills blue outright, and
+            // a tax/SSO override is one of the adjustments the same count now covers).
+            { data: 'employee_no', orderable: false, render: (d) => `<span class="fw-semibold">${escapeHtml(d)}</span>` },
             // 2026-09-10, Batch 3A item 4: avatar + name (not avatar alone -- this column must stay
             // searchable by name via the table's own global search box). Object-form render (this
             // app's own DataTables sort-safety convention) since display is now HTML -- filter (what
@@ -3085,8 +3116,12 @@ function initRunDetailTable(details) {
             // calcErrorsRemarkRd()), not a small set of distinct values an Excel-style column filter
             // checklist makes sense for -- concatenating them back in would just reproduce the same
             // "raw data leaking into the popup" problem one level down.
+            // 2026-09-16, explicit instruction: the cell is 1 line again -- status badge + (only when
+            // there are advisory notes) a "N คำเตือน" badge that opens them in a popover. Red stays
+            // exclusively the calc_status='error' badge's own job; the full text of both lists lives
+            // in the Calculation Breakdown modal (renderBreakdownModal()).
             { data: 'calc_status', render: {
-                display: (d, t, row) => `${statusBadgeHtml(d, 'payroll_calc_status')}<div class="small mt-1">${calcErrorsRemarkRd(row.calc_errors)}</div>`,
+                display: (d, t, row) => `${statusBadgeHtml(d, 'payroll_calc_status')}${calcWarningBadgeRd(row)}`,
                 sort: d => d,
                 filter: d => statusMapFilterLabelRd(d, 'payroll_calc_status'),
             } },
@@ -3144,6 +3179,9 @@ function initRunDetailTable(details) {
             getTableLang();
             updateRunDetailBulkBar();
             updateSummaryCardsFromTable();
+            // Every draw rebuilds the cells, so the "N คำเตือน" triggers are new DOM nodes each time
+            // -- initPopovers() is idempotent per element (disposes an existing instance first).
+            if (typeof initPopovers === 'function') initPopovers('#tb_run_detail');
         },
         // 2026-08-29, same-day follow-up: "ตอนนี้เหมือนมี Summary ด้านขวาเล็กๆ ให้ตัดออก...อยากให้มี Summary
         // ของแต่ละ Column ใน Footer" -- replaces the old updateRunDetailVerifyLockSummaryRd() side
@@ -3164,8 +3202,16 @@ function initRunDetailTable(details) {
             $('#rdFootGross').text(fmtNum(sumColRd(6)));
             $('#rdFootDeduction').text(fmtNum(sumColRd(7)));
             $('#rdFootNet').text(fmtNum(sumColRd(8)));
+            // 2026-09-16, explicit instruction ("แถวสรุปท้าย 'คำนวณแล้ว a/b · คำเตือน c'"): c counts
+            // EMPLOYEES with at least one advisory note, not total notes -- it sits next to a/b,
+            // which are employee counts too, so mixing units in one line would misread.
             const calculatedCount = visibleRows.filter(r => r.calc_status === 'calculated').length;
-            $('#rdFootCalcStatus').text(`${langData['calc_status_calculated'] || 'Calculated'} ${calculatedCount}/${visibleRows.length}`);
+            const warningRowCount = visibleRows.filter(r => (r.calc_warnings || []).length > 0).length;
+            const calcFootParts = [`${langData['calc_status_calculated'] || 'Calculated'} ${calculatedCount}/${visibleRows.length}`];
+            if (warningRowCount > 0) {
+                calcFootParts.push((langData['calc_warning_count'] || '{n} warnings').replace('{n}', String(warningRowCount)));
+            }
+            $('#rdFootCalcStatus').text(calcFootParts.join(' · '));
             const verifiedCount = visibleRows.filter(r => r.is_verified).length;
             $('#rdFootVerifyLock').text(`${langData['verify_status_verified'] || 'Verified'} ${verifiedCount}/${visibleRows.length}`);
         },
