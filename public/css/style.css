@@ -1,9 +1,17 @@
-/* Phase Design Round 2 item 1 (docs/design/rules.md §1) -- @import must be the very first statement
-   in the file (CSS spec: only preceded by comments/whitespace) so tokens.css's :root vars are
-   defined before anything below reads them. This is how tokens.css loads "before style.css" without
-   touching layout/header.php (out of this round's allowed scope) -- both files still reach the
-   browser via the ONE existing <link> to style.css. */
-@import url("tokens.css");
+/* 2026-09-16, real bug found and fixed. tokens.css used to be pulled in from here with
+   `@import url("tokens.css")`. That URL carries NO version, while this file is always requested as
+   `style.css?v=<filemtime>` (asset(), helpers.php) -- so a browser refetches THIS file on every
+   change and keeps serving tokens.css from its own HTTP cache. Any token ADDED to tokens.css is
+   therefore undefined for everyone whose cache still holds the old copy, and `var()` on an undefined
+   custom property does not fall back to nothing: it makes the whole declaration invalid at computed-
+   value time. `z-index: var(--bs-modal-zindex)` collapsed to `auto` on BOTH `.modal` and
+   `.modal-backdrop`, which put every modal UNDER its own backdrop (whole box dimmed) while the
+   navbar, the help button and anything else with a real z-index floated above it. Reproduced
+   deterministically by serving this file new and tokens.css old -- see
+   docs/decisions/2026-09-16-z-index-scale.md.
+   tokens.css now loads as its own versioned <link>, before this one (layout/header.php,
+   docs/design/components.php). Do not put the @import back: a versioned file must never depend on an
+   unversioned one. */
 
 /* Employment Certificate Template canvas fonts (2026-08-24, bug fix: "เลือก Font แล้วการแสดงในหน้าขาว
    ไม่เปลี่ยน Font ตาม แต่ใน PDF ขึ้น Font ถูก") -- the canvas preview sets font-family:'TH Sarabun New'/
@@ -1057,7 +1065,10 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     background-color: #ffffff;
     border-right: 1px solid #f0f0f0;
     box-shadow: 4px 8px 15px rgba(0, 0, 0, 0.05);
-    z-index: 1050;
+    /* Page chrome: under a modal backdrop, above this page's own overlay (--z-page is 5 below the
+       backdrop, the overlay below that). It used to be a bare 1050 -- a tie with the backdrop, which
+       DOM order happened to resolve in the backdrop's favour. */
+    z-index: var(--z-page, 1045);
     transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     overflow-y: auto;
     box-sizing: border-box;
@@ -2384,6 +2395,52 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    CSS already sets `font-family: inherit` (confirmed by reading the library's source directly), and
    `html, body { font-family: 'Sarabun', sans-serif; }` above already covers every page a Swal2 popup
    could ever be appended to -- it was already inheriting Sarabun correctly before this round. */
+/* Layering (§3's own z-index scale, tokens.css) -- every floating layer reads its level from the one
+   ordered list instead of carrying a number of its own. Bootstrap's components take it through their
+   own per-component custom property (the same technique §4's colour overrides use, because Bootstrap
+   hardcodes these on the component, not on :root); SweetAlert2 takes it as a plain declaration on the
+   rendered class, which is the ONLY way that survives its injected stylesheet -- see
+   docs/decisions/swal2-css-override.md before touching the 2 rules below. */
+/* Every one of these carries the literal as a `var()` fallback. Not belt-and-braces for its own
+   sake: a z-index built on an undefined token does not degrade to "some other number", it degrades
+   to `auto`, which unstacks the element entirely -- the exact failure a stale tokens.css produced
+   once already. A fallback turns that class of mistake into "the old number", which is survivable. */
+.modal {
+    --bs-modal-zindex: var(--z-modal, 1055);
+}
+.modal-backdrop {
+    --bs-backdrop-zindex: var(--z-modal-backdrop, 1050);
+}
+/* A popover is only ever opened from something the user is already looking at -- and inside a modal
+   that means it has to clear the modal, stacked ones included. */
+.popover {
+    --bs-popover-zindex: var(--z-modal-overlay, 1090);
+}
+/* select2's own theme ships ONE z-index (1056) for its dropdown, which is above a modal backdrop --
+   so a select2 opened on the PAGE floated over the dim while a modal was open. It needs two levels,
+   not one: page level here, modal-overlay level below (initSelect2() sets dropdownParent to the
+   modal, so the second selector is what those instances actually match). */
+.select2-container--bootstrap-5 + .select2-container--bootstrap-5,
+.select2-container--bootstrap-5 .select2-dropdown {
+    z-index: var(--z-page, 1045);
+}
+.modal .select2-container--bootstrap-5 + .select2-container--bootstrap-5,
+.modal .select2-container--bootstrap-5 .select2-dropdown,
+.modal .select2-container--bootstrap-5 {
+    z-index: var(--z-modal-overlay, 1090);
+}
+.modal .tcf-panel {
+    z-index: var(--z-modal-overlay, 1090);
+}
+/* A dialog is how a modal asks a question, so it has to clear every modal, stacked ones included.
+   `div:where(.swal2-container)` (the library's own rule) is specificity (0,0,1); this is (0,1,0). */
+.swal2-container {
+    z-index: var(--z-swal, 1100);
+}
+/* ...and a toast has to clear the dialog: a save started from inside one still has to be seen. */
+.swal2-container.swal2-toast-shown {
+    z-index: var(--z-toast, 1110);
+}
 /* 2026-09-14, Round 3 Phase A -- every property below moved OFF `:root { --swal2-*: ... }` onto a
    direct declaration on the real rendered class (`.swal2-popup`/`.swal2-confirm`/`.swal2-cancel`/
    etc.) -- a `:root`-based override here is silently dead (`sweetalert2.all.min.js` injects its own
@@ -2555,6 +2612,23 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     --bs-btn-active-bg: var(--c-primary-hover);
     --bs-btn-active-border-color: var(--c-primary-hover);
     --bs-btn-disabled-bg: var(--c-primary);
+    --bs-btn-disabled-border-color: var(--c-primary);
+    --bs-btn-focus-shadow-rgb: 255, 153, 0;
+}
+/* §4, 2026-09-16: Bootstrap hardcodes #0d6efd on `.btn-outline-primary` exactly the way it does on
+   `.btn-primary` (verified in the bundled bootstrap.min.css) -- the app's own `--bs-primary` override
+   never reaches either of them, so every outline-primary button in this app had been rendering
+   Bootstrap BLUE, off-palette (§3), at all 8 of its call sites. Same per-component fix as
+   `.btn-primary` above. `--bs-btn-hover-color` is left as Bootstrap's own #fff -- white on
+   `--c-primary` is what the solid variant already uses. */
+.btn-outline-primary {
+    --bs-btn-color: var(--c-primary);
+    --bs-btn-border-color: var(--c-primary);
+    --bs-btn-hover-bg: var(--c-primary);
+    --bs-btn-hover-border-color: var(--c-primary);
+    --bs-btn-active-bg: var(--c-primary-hover);
+    --bs-btn-active-border-color: var(--c-primary-hover);
+    --bs-btn-disabled-color: var(--c-primary);
     --bs-btn-disabled-border-color: var(--c-primary);
     --bs-btn-focus-shadow-rgb: 255, 153, 0;
 }
@@ -4989,16 +5063,34 @@ button.badge {
     font-size: var(--fs-sm);
     margin-top: 2px;
 }
+/* A full-width band, same shape as a slip's own group heading (small, 600, muted, no icon, no color).
+   It deliberately COVERS the connecting line: the line is drawn per item and runs `--sp-4` past that
+   item's own box, so a band with a background starting right at that edge (no top margin) breaks the
+   line at every day boundary -- which is what a day boundary is. `position: relative` puts it above
+   the line, which is drawn by an equally-positioned `.timeline-item`, so DOM order decides. */
 .timeline-day-header {
+    position: relative;
+    z-index: 1;
     color: var(--c-text-muted);
     font-size: var(--fs-xs);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: .04em;
-    padding: 0 0 var(--sp-2) 24px;
+    font-weight: 600;
+    padding: var(--sp-1) var(--sp-2);
+    /* A day break is a section break: more air above the band than below it, so the header reads as
+       belonging to the entries that follow rather than floating between the two groups. */
+    margin: var(--sp-4) 0 var(--sp-2);
+    background: var(--c-bg-subtle);
 }
-.timeline-day-header:not(:first-child) {
-    padding-top: var(--sp-3);
+.timeline-day-header:first-child {
+    margin-top: 0;
+}
+/* The count is a fact about the group, not part of its name -- same size, no weight of its own. */
+.timeline-day-count {
+    font-weight: 400;
+}
+/* The connecting line runs `--sp-4` past its own item, which is exactly the gap a day header now
+   opens -- cut it at the boundary instead, so the line reads as breaking per day. */
+.timeline-item:has(+ .timeline-day-header)::before {
+    bottom: 0;
 }
 /* 2026-09-14, Round 3 -- REVERTED back to Round 2 item (3)/6b's original shape (no
    `.timeline-head-right`/`.timeline-actions`/`.timeline-action-btn*`/`.timeline-body-content*`,
@@ -7433,7 +7525,12 @@ html, body {
 .form-compact .payee-detail,
 .form-compact .payee-detail-name,
 .form-compact .payee-detail-meta,
-.form-compact .payee-detail-empty {
+.form-compact .payee-detail-empty,
+/* 2026-09-16: the line-override table is part of its tab's form, so it reads at the form's own
+   scale -- listed explicitly here rather than left to inherit, same as every other line above
+   (a `<td>` picks up the app's 12px root, not this block's --fs-sm, if nobody says otherwise). */
+.form-compact .lo-table > thead > tr > th,
+.form-compact .lo-table > tbody > tr > td {
     font-size: var(--fs-sm);
 }
 .form-compact .form-control::placeholder {
@@ -9815,6 +9912,227 @@ html, body {
 }
 
 /* ============================================================================
+   Adjustments modal > "ปรับตัวเลข" tab -- the single line-override table (2026-09-16, batch 3/4).
+   §7 for the table itself (this one is a plain `.table`, not a DataTable -- no paging/sorting/search
+   makes sense over ~10 rows the user has to read as one list), §8 for the money columns, §9 for the
+   form scale (the pane carries `.form-compact`, so everything inside is already `--fs-sm`).
+   ============================================================================ */
+/* The group heading is deliberately one step smaller than the rows it labels. Same specificity as
+   the `.form-compact ... > td` rule far above (2 classes + 3 elements each), so what decides is
+   source order -- this block is later in the file, which is why it wins. */
+.lo-table > tbody > tr.lo-group > td {
+    /* Group heading, same shape as the payslip's own sub-group label: small, bold, no icon, no color,
+       and NOT a status -- just a divider that names what the rows under it are. */
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    color: var(--c-text-muted);
+    background: var(--c-bg-subtle);
+    padding-top: var(--sp-1);
+    padding-bottom: var(--sp-1);
+}
+.lo-table .lo-new-amount {
+    max-width: 140px;
+}
+/* A row that is not included: its name goes quiet and its current amount reads as struck out -- the
+   figure is still shown (it is what the row WOULD contribute) but it is not part of the total. */
+.lo-row-off .lo-name {
+    color: var(--c-text-faint);
+}
+.lo-row-off td.col-money span {
+    text-decoration: line-through;
+    color: var(--c-text-faint);
+}
+/* The "show N hidden" row: the LAST row of the table (what it reveals are rows), so it sits in the
+   same grid -- a quiet, full-width tertiary button, no border/background of its own. */
+.lo-hidden-row > td {
+    padding-top: var(--sp-1);
+    padding-bottom: var(--sp-1);
+}
+.lo-hidden-toggle,
+.lo-hidden-toggle:focus {
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+    text-decoration: none;
+    padding: 0;
+}
+.lo-hidden-toggle:hover {
+    color: var(--c-text);
+    text-decoration: underline;
+}
+.lo-hidden-toggle i {
+    font-size: var(--fs-xs);
+    margin-left: var(--sp-1);
+}
+/* History column: the badge is the whole control, so the cell adds nothing around it. */
+.lo-history-cell,
+th.lo-history-col {
+    width: 1%;
+    white-space: nowrap;
+}
+.lo-history-toggle {
+    cursor: pointer;
+}
+/* Fixed width, so the menu does not resize itself around whatever the longest name or figure in it
+   happens to be -- it opens the same size on every row. Three parts: a sticky head (the calculated
+   figure), the edits scrolling at about 5 rows, and a sticky foot into the full-history modal. The
+   menu itself is the scroll container -- `position: sticky` on the two ends is what keeps them
+   in place, so the menu drops its own padding (padding above a sticky head shows through it). */
+.lo-history-cell .dropdown-menu {
+    --lo-history-row-h: 34px;
+    width: 320px;
+    max-width: calc(100vw - var(--sp-4));
+    padding: 0;
+    /* 5 rows of list between the two sticky ends (the head is --fs-xs, the foot one more row). */
+    max-height: calc(var(--lo-history-row-h) * 6 + 22px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+.lo-history-head,
+.lo-history-foot {
+    position: sticky;
+    z-index: 1;
+    font-size: var(--fs-xs);
+}
+/* The head is a pickable row like any other (same [value | meta] skeleton, same hover/cursor) -- the
+   subtle surface is what says it is the baseline, not that it is inert. */
+.lo-history-head {
+    top: 0;
+    background: var(--c-bg-subtle);
+    border-bottom: 1px solid var(--c-border);
+}
+.lo-history-head .lo-history-item:hover,
+.lo-history-head .lo-history-item:focus {
+    background: var(--c-bg-hover);
+}
+.lo-history-foot {
+    bottom: 0;
+    background: var(--c-bg);
+    border-top: 1px solid var(--c-border);
+}
+/* Not a row of data -- a way out of the list, so it sits where an action sits: right, quiet. Aligned
+   with `justify-content`, not `text-align`: every item in this menu is already a flex box
+   (`.badge-dropdown .dropdown-item` above), which makes text-align inert on it. */
+.lo-history-foot .lo-history-view-all {
+    justify-content: flex-end;
+    font-size: var(--fs-sm);
+}
+/* One menu row = ONE line: the value on the left (it is what is being chosen between), what explains
+   it on the right. Same skeleton for all 3 kinds of row -- calculated value, an edit, the current
+   one -- so the values line up in a column and can be compared by eye. */
+.lo-history-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-2);
+}
+.lo-history-item .lo-history-value {
+    flex: 0 0 auto;
+}
+.lo-history-meta {
+    font-size: var(--fs-xs);
+    color: var(--c-text-muted);
+    flex: 1 1 auto;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.lo-history-item,
+.lo-history-view-all {
+    min-height: var(--lo-history-row-h);
+}
+.lo-history-view-all {
+    color: var(--c-text-muted);
+}
+/* An entry with no date of its own (the calculated value, pinned to the top of the history modal)
+   produces an empty day header -- there is no day to announce. */
+.timeline-day-header:empty {
+    display: none;
+}
+.timeline-action {
+    margin-top: var(--sp-1);
+}
+/* Scoped to the line-override history modal, not the timeline component itself: here each entry IS a
+   value you can choose, so its button belongs on the value's own line, right-aligned, where the eye
+   already is. `display: contents` on the action wrapper lets its 2 children (the button/badge and
+   the note) land in different cells of the entry's grid instead of stacking under it. The dot stays
+   absolutely positioned, so it is not a grid item. */
+.lo-history-timeline .timeline-item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    column-gap: var(--sp-3);
+    align-items: center;
+}
+.lo-history-timeline .timeline-head {
+    grid-column: 1 / -1;
+    grid-row: 1;
+}
+.lo-history-timeline .timeline-title {
+    grid-column: 1;
+    grid-row: 2;
+    font-weight: 600;
+}
+.lo-history-timeline .timeline-detail {
+    grid-column: 1;
+    grid-row: 3;
+}
+.lo-history-timeline .timeline-action {
+    display: contents;
+}
+.lo-history-timeline .lo-history-use,
+.lo-history-timeline .timeline-action > .badge {
+    grid-column: 2;
+    grid-row: 2 / span 2;
+    justify-self: end;
+    align-self: center;
+    margin-top: 0;
+}
+.lo-history-timeline .lo-history-note {
+    grid-column: 1;
+    grid-row: 4;
+}
+.lo-history-note {
+    font-size: var(--fs-xs);
+    color: var(--c-text-muted);
+    margin-top: 2px;
+}
+.lo-history-footnote {
+    font-size: var(--fs-xs);
+    color: var(--c-text-faint);
+    padding: var(--sp-1) var(--sp-3);
+    border-top: 1px solid var(--c-border);
+    margin-top: var(--sp-1);
+}
+/* A field filled from the history dropdown -- the value did not come from the keyboard, so it needs
+   to be obvious that this row now carries an unsaved change. */
+.lo-input-dirty {
+    border-color: var(--c-primary);
+}
+@media (max-width: 575.98px) {
+    /* The item name is the only cell that can give ground -- everything else is a control or a
+       figure. Wrapping it keeps all 5 columns (History included) inside a 430px screen instead of
+       pushing the table into a horizontal scroll. */
+    .lo-table > tbody > tr > td,
+    .lo-table > thead > tr > th {
+        padding-left: var(--sp-1);
+        padding-right: var(--sp-1);
+    }
+    .lo-table .lo-name {
+        white-space: normal;
+        word-break: break-word;
+    }
+    .lo-table .lo-new-amount {
+        max-width: 84px;
+    }
+}
+.lo-occurrences {
+    font-size: var(--fs-xs);
+    color: var(--c-text-muted);
+    margin-top: var(--sp-1);
+    max-width: 320px;
+}
+
+/* ============================================================================
    .modal-tabbed -- a modal whose body holds a tab row (rules.md 10). The body is a FIXED height,
    not a max-height, so the dialog keeps one size no matter which tab is active; the tab row stays
    pinned while only the pane under it scrolls. The height is the same value the shared
@@ -10433,7 +10751,10 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
    see tokens.css's own --fs-sm value) -- byte-identical swap to the real token, not a visual change. */
 .tcf-panel {
     position: absolute;
-    z-index: 2000;
+    /* Page chrome, like any other overlay opened from a table -- 2000 put it over a modal backdrop
+       (and over a SweetAlert dialog). Inside a modal the table's own stacking context already lifts
+       it; the second rule just says so out loud rather than relying on that. */
+    z-index: var(--z-page, 1045);
     width: 260px;
     background: var(--c-bg);
     border: 1px solid var(--c-border);
@@ -12040,7 +12361,8 @@ div.dt-processing {
     border: none;
     box-shadow: 0 4px 14px rgba(0, 0, 0, .25);
     font-size: 22px;
-    z-index: 1045;
+    /* One step under the panel it opens, which is the order these two already had. */
+    z-index: calc(var(--z-page, 1045) - 1);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -12060,7 +12382,7 @@ div.dt-processing {
     background: var(--app-surface-bg);
     border-left: 1px solid var(--app-border);
     box-shadow: -4px 0 16px rgba(0, 0, 0, .15);
-    z-index: 1050;
+    z-index: var(--z-page, 1045); /* page chrome -- under a modal backdrop */
     transition: right .25s ease;
     display: flex;
     flex-direction: column;

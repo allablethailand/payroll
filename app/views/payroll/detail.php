@@ -1521,33 +1521,18 @@
                              employee's currently sync-computed deduction lines with an inline
                              override/exclude/reset control per line. Per-run only (confirmed choice),
                              not a standing setting. -->
-                        <div class="tab-pane fade" id="manageLinesSyncOverridePane" role="tabpanel">
-                            <!-- 2026-08-29, explicit follow-up request: "อยากให้มี List รายการและติ๊กเข้าออก
-                                 ได้เหมือนตอนที่ Set ทั้ง Template" -- a checklist for THIS employee only,
-                                 same visual/interaction pattern as the run-wide "Run Settings" panel's own
-                                 checklist (base salary + full catalog, tick to exclude, one Save button)
-                                 instead of having to open each item's row individually below. Backed by
-                                 the SAME payroll_run_line_overrides 'exclude' mechanism as the per-row
-                                 list further down -- this is just a faster, bulk way to set it, not a
-                                 separate concern. An item already excluded by the run-level default (Run
-                                 Settings panel) shows pre-checked and disabled here, since there's no
-                                 "force this one item back in" action distinct from typing a specific
-                                 override amount in the per-row list below (see
-                                 PayrollRunModel::recalculate()'s own docblock on this known,
-                                 accepted simplification). -->
-                            <div class="border rounded-3 p-3 bg-light bg-opacity-50 mb-3">
-                                <h6 class="text-secondary fw-bold mb-1"><i class="fa-solid fa-list-check me-1"></i><span data-i18n="employee_item_exclusion_title">Exclude from This Employee's Calculation</span></h6>
-                                <div class="text-muted small mb-2" data-i18n="employee_item_exclusion_hint">Ticked items are left out of this employee's calculation for this run. Greyed-out items are already excluded by this run's own Run Settings default.</div>
-                                <div id="empItemExclusionChecklist"></div>
-                                <!-- 2026-09-14, Round 3 item 4 batch 1/4: hidden, not removed -- see
-                                     #btnSaveAttendanceData's own comment above for why. -->
-                                <div class="text-end mt-2 d-none">
-                                    <button type="button" class="btn btn-sm btn-primary" id="btnSaveEmpItemExclusion"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
-                                </div>
-                            </div>
-                            <hr>
-                            <p class="text-muted small mb-2" data-i18n="sync_line_override_hint">Override the computed amount, or exclude it entirely, for this run only.</p>
-                            <div id="syncLineOverrideList"></div>
+                        <!-- 2026-09-16, batch 3/4: this tab is ONE table now. The separate
+                             "ไม่นำมาคำนวณสำหรับพนักงานคนนี้" checklist panel that used to sit above the
+                             per-item cards is gone -- it wrote the exact same field through the exact
+                             same endpoint as each card's own "ยกเว้นรอบนี้" checkbox
+                             (payroll_run_line_overrides.action='exclude'), i.e. it was a second UI for
+                             one concept. See docs/decisions/2026-09-16-line-override-table.md for what
+                             that costs (pre-excluding an item this employee has no calculated line for)
+                             and why it was accepted. itemChecklistBoxesHtml() itself stays -- the
+                             run-wide Run Settings panel (#runSettingsItemChecklist) still uses it. -->
+                        <div class="tab-pane fade form-compact" id="manageLinesSyncOverridePane" role="tabpanel">
+                            <p class="text-muted mb-3" id="lineOverrideHint" data-i18n="line_override_hint">Tick the items to include in this employee's calculation for this run, and enter a &ldquo;New value&rdquo; only where you want to replace the system-calculated amount (blank = no change; go back to the system value from the history menu or the Restore-all button). Every change is recorded in history.</p>
+                            <div id="lineOverrideTableWrap"></div>
                         </div>
                         <div class="tab-pane fade" id="manageLinesRecurringDestPane" role="tabpanel">
                             <p class="text-muted small mb-2" data-i18n="recurring_dest_override_hint">Override which account a recurring deduction is routed to, for this payroll run only -- the employee's own saved default is never changed.</p>
@@ -1661,6 +1646,29 @@
                      saveActiveAdjustmentTab() wires up; it dispatches to whichever of the 5 tabs' own
                      EXISTING (now-hidden) save buttons applies to the currently active tab, unchanged. -->
                 <div class="modal-footer" id="manageLinesModalFooter"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit-history modal for ONE line of the Adjustments modal's "ปรับตัวเลข" tab -- opened from
+         that row's own history badge when there are more edits than the 5 the dropdown shows, and
+         the only place the full chain is readable (each edit's from/to, its note, and its own
+         "use this value" action). Stacked ON TOP of #manageLinesModal: no special handling needed
+         here, app.js's own generic shown/hidden.bs.modal handlers already re-apply the scroll lock
+         and bump the z-index of whichever modal is not the first one open. Body + title are filled
+         by openLineOverrideHistoryModalRd() (detail.js); the footer is the plain [Close]
+         `data-footer="view"` injects. -->
+    <div class="modal fade" id="lineOverrideHistoryModal" data-footer="view" tabindex="-1" aria-labelledby="lineOverrideHistoryModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary mb-0" id="lineOverrideHistoryModalLabel"></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="lineOverrideHistoryModalBody"></div>
+                    <div class="lo-history-footnote text-muted d-none" id="lineOverrideHistoryModalNote"></div>
+                </div>
             </div>
         </div>
     </div>

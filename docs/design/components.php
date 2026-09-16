@@ -137,6 +137,7 @@ function cpLangText(string $key, string $fallback = ''): string {
      comment" at all, so it would try to parse whatever followed as real code, exactly what happened
      the first time this comment was drafted (a literal example of the tag syntax here broke this
      file's own `php -l`, caught by that exact check before this was ever committed). -->
+<link rel="stylesheet" href="../../public/css/tokens.css?v=<?=assetVersion('public/css/tokens.css')?>">
 <link rel="stylesheet" href="../../public/css/style.css?v=<?=assetVersion('public/css/style.css')?>">
 <style>
     /* Page chrome for THIS preview tool only -- not a shared component, not counted against §12
@@ -1178,11 +1179,17 @@ $cpCallouts = [
 
 <div class="cp-section">
     <h2>Timeline (ข้อ (3)/6b)</h2>
-    <p class="cp-section-note"><code>app/views/partials/timeline.php</code> + JS <code>renderTimeline(items, {groupByDay})</code> (<code>app.js</code>) -- feed กิจกรรมแนวตั้งความยาวเท่าไหร่ก็ได้ (audit log/ประวัติอนุมัติ) <b>คนละตัวกับ Stepper ด้านบน</b> (นั่นคือ milestone คงที่ 5 ขั้นของรอบ, นี่คือ log ที่ยาวไม่จำกัด caller เรียงมาใหม่สุดบนสุดเอง ไม่ sort/dedupe เอง) -- เส้นแนวตั้ง <code>--c-border</code> ซ้าย, จุด 10px สีตาม <code>tone</code> (default เทา), ไม่มีการ์ด/พื้นสีต่อรายการ, avatar 24px (ใช้ <code>.apv-person-avatar</code> class เดียวกับ <code>apvAvatarHtml()</code> -- PHP เรียก JS function ไม่ได้ เลย mirror เฉพาะภาพ ไม่ใช่ทั้งฟังก์ชัน), badge (ถ้ามี) ผ่าน <code>statusBadge()</code>/<code>statusBadgeHtml()</code> จริง (ข้อ 5) -- เปิดด้วย <code>groupByDay:true</code> ด้านล่าง เห็นหัววัน "dd/mm/yyyy" คั่นเป็นข้อความเทาเล็ก (เส้นเชื่อมหยุดเองตรงหัววันโดยไม่ต้องเขียน JS พิเศษ เพราะหัววันไม่มี <code>::before</code> ของตัวเอง).</p>
+    <p class="cp-section-note"><code>app/views/partials/timeline.php</code> + JS <code>renderTimeline(items, {groupByDay})</code> (<code>app.js</code>) -- feed กิจกรรมแนวตั้งความยาวเท่าไหร่ก็ได้ (audit log/ประวัติอนุมัติ) <b>คนละตัวกับ Stepper ด้านบน</b> (นั่นคือ milestone คงที่ 5 ขั้นของรอบ, นี่คือ log ที่ยาวไม่จำกัด caller เรียงมาใหม่สุดบนสุดเอง ไม่ sort/dedupe เอง) -- เส้นแนวตั้ง <code>--c-border</code> ซ้าย, จุด 10px สีตาม <code>tone</code> (default เทา), ไม่มีการ์ด/พื้นสีต่อรายการ, avatar 24px (ใช้ <code>.apv-person-avatar</code> class เดียวกับ <code>apvAvatarHtml()</code> -- PHP เรียก JS function ไม่ได้ เลย mirror เฉพาะภาพ ไม่ใช่ทั้งฟังก์ชัน), badge (ถ้ามี) ผ่าน <code>statusBadge()</code>/<code>statusBadgeHtml()</code> จริง (ข้อ 5) -- เปิดด้วย <code>groupByDay:true</code> ด้านล่าง เห็นหัววัน "dd/mm/yyyy · N รายการ" คั่นเป็นแถบเต็มความกว้าง (ดูย่อหน้าใต้ภาพ).</p>
     <p class="cp-section-note"><b>ผสมกับ Stepper (จำลอง modal ไทม์ไลน์อนุมัติของรอบ, Batch 2/3C):</b> Stepper แนวนอนบน + Timeline นี้ล่าง คือหน้าตาที่ modal ไทม์ไลน์อนุมัติจริงจะเป็นถ้าย้ายมาใช้ 2 component นี้ในรอบ 4 -- <b>ไม่แตะโค้ดจริงของ <code>payroll/detail.js</code>'s <code>renderApprovalTimelineBody()</code> เลยรอบนี้</b> แค่ demo ให้เห็นภาพรวมประกอบกันด้านล่าง (เรื่องราวเดียวกับ log 6 รายการ: สร้าง → แก้ → ส่งอนุมัติ → ไม่อนุมัติ → อนุมัติ → จ่ายเงิน จบที่ "จ่ายเงิน" จึง current ของ stepper = "ปิดรอบ" ตามกฎเดียวกับ Stepper section ด้านบน).</p>
     <div id="cpTimelineComboShowcase" class="d-flex flex-column gap-3 mb-4" style="max-width:420px;"></div>
     <p class="cp-section-note mb-1"><b>Log เดี่ยว (ไม่มี stepper) light/dark:</b> สลับ theme มุมขวาบนดูสี tone ของจุด</p>
     <div id="cpTimelineShowcase" style="max-width:420px;"></div>
+    <p class="cp-section-note mt-2">หัววัน (<code>groupByDay:true</code>) = <b>แถบเต็มความกว้าง</b> พื้น <code>--c-bg-subtle</code>, <code>--fs-xs</code> 600 muted, padding <code>--sp-1 --sp-2</code> — แถบ<b>บังเส้นไทม์ไลน์</b>ที่ลากจากจุดของรายการก่อนหน้า เส้นจึง<b>ขาดเป็นช่วงตามวัน</b> — คือสิ่งที่รอยต่อระหว่างวันควรเป็นจริง (<code>.timeline-item:has(+ .timeline-day-header)::before { bottom: 0 }</code> ตัดเส้นที่รอยต่อ บวกกับพื้นของแถบเอง). ระยะบนแถบ <code>--sp-4</code> ล่าง <code>--sp-2</code> (แถบแรกไม่มีระยะบน) และต่อท้ายด้วยจำนวนรายการของ<b>กลุ่มนั้น</b> (<code>.timeline-day-count</code>, นับเป็นช่วงติดกัน ไม่ใช่ยอดรวมของวันที่ซ้ำกัน).</p>
+    <div class="mt-4" style="max-width:420px;">
+        <div class="fw-semibold small text-uppercase text-muted mb-1">Timeline + <code>item.actionHtml</code> (ใหม่ 2026-09-16) — modal ประวัติการแก้ไขของรายการหนึ่ง</div>
+        <p class="cp-section-note"><code>item.actionHtml</code> = ช่อง HTML ดิบ <b>ช่องเดียว</b> ต่อรายการ render ท้ายสุด — caller สร้าง markup + ผูก handler เอง component ไม่รู้จักและไม่ผูกอะไรให้ (แบบเดียวกับ <code>menuHtml</code> ของ badge dropdown ข้อ 5) <b>ห้ามส่ง user input ดิบเข้ามา</b>. ของจริงคือ modal "ประวัติการแก้ไข" ของ tab ปรับตัวเลข: ค่าที่แก้เป็น <code>title</code> (เด่น), "จาก X → Y" เป็น <code>detail</code>, เวลา·ผู้แก้มาจากหัวรายการของ component เอง, แล้ว <code>actionHtml</code> = note (ถ้ามี) + ปุ่ม ghost "ใช้ค่านี้" — ยกเว้นค่าที่ใช้อยู่ตอนนี้ที่เป็น badge "ปัจจุบัน" แทนปุ่ม. แถว "ค่าที่ระบบคำนวณ" ไม่มีวันที่ของตัวเอง (อยู่บนสุดเสมอ) หัววันของมันจึงว่างและถูกซ่อน.</p>
+        <div id="cpHistoryTimelineShowcase"></div>
+    </div>
 </div>
 
 <div class="cp-section">
@@ -1792,6 +1799,17 @@ $(function () {
     //      statusBadgeHtml('verified','verify_status',{menu}) exactly as that page calls it, with a
     //      plain dropdown-item as the "action" (this demo has nothing to unverify, so the item is
     //      inert on purpose -- the point is the SHAPE, and that both callers go through one helper).
+    // 7 edits, newest first -- more than the ~5 rows the list shows, so the demo actually scrolls
+    // between its two sticky ends. The one in effect keeps its own when/who and adds a badge.
+    const CP_HISTORY_MENU_ITEMS = [
+        { value: '40,000.00', meta: '16/09 11:20 · สมชาย ทำเงินเดือน', current: true },
+        { value: '38,000.00', meta: '16/09 10:42 · สมชาย ทำเงินเดือน' },
+        { value: '36,000.00', meta: '16/09 09:05 · ฝ่ายบัญชี' },
+        { value: '34,000.00', meta: '15/09 17:05 · สมชาย ทำเงินเดือน' },
+        { value: '32,000.00', meta: '15/09 14:30 · ฝ่ายบัญชี' },
+        { value: '30,000.00', meta: '15/09 09:18 · ฝ่ายบัญชี' },
+        { value: '28,500.00', meta: '14/09 16:02 · สมชาย ทำเงินเดือน' },
+    ];
     const CP_TAG_OPTIONS = [
         { value: '', enum: 'none', outline: true },
         { value: 'in_progress', enum: 'in_progress' },
@@ -1811,6 +1829,24 @@ $(function () {
                 + escapeHtml(getLangValue('action_unverify') || 'Unverify') + '</button></li>',
         })
         + '</div>'
+        // (3) action menu, ONE-LINE rows + sticky ends: the Adjustments modal's own "ประวัติ" column.
+        // Same helper, same `menuHtml` slot as (2) -- what is new is the row SHAPE (value left, meta
+        // right) and the head/list/foot split, which is CSS on `.lo-history-*`, not another component.
+        + '<div><div class="small text-muted mb-1">action menu 1 บรรทัด + หัว/ท้าย sticky (ประวัติการแก้ไขของรายการหนึ่ง)</div>'
+        + '<div class="lo-history-cell">' + badgeDropdownHtml({
+            enum: 'edited', label: 'แก้ไข 7',
+            menuHtml: '<li class="lo-history-head"><button type="button" class="dropdown-item lo-history-item">'
+                + '<span class="lo-history-value num">25,000.00</span>'
+                + '<span class="lo-history-meta">ค่าที่ระบบคำนวณ</span></button></li>'
+            + CP_HISTORY_MENU_ITEMS.map(function (it) {
+                const meta = escapeHtml(it.meta);
+                return '<li><button type="button" class="dropdown-item lo-history-item"' + (it.current ? ' disabled' : '') + '>'
+                    + '<span class="lo-history-value num">' + escapeHtml(it.value) + '</span>'
+                    + '<span class="lo-history-meta">' + (it.current ? countBadgeHtml(0, { label: 'ปัจจุบัน' }) + ' ' + meta : meta) + '</span>'
+                    + '</button></li>';
+            }).join('')
+            + '<li class="lo-history-foot"><button type="button" class="dropdown-item lo-history-view-all">ดูรายละเอียดทั้งหมด (7)</button></li>',
+        }) + '</div></div>'
     );
     // Scope-level (delegated) init, the same way the real modal wires it -- one call covers every
     // badge dropdown inside, now and after any re-render.
@@ -1902,6 +1938,20 @@ $(function () {
         { time: '2026-09-10 09:00:00', actor: { name: 'สมชาย ทำเงินเดือน' }, title: 'สร้างรายการ' },
     ];
     $('#cpTimelineShowcase').html(renderTimeline(CP_TIMELINE_ITEMS, { groupByDay: true }));
+    // Same component, second real caller (2026-09-16): the "ประวัติการแก้ไข" modal of one line in the
+    // Adjustments modal. What it adds is `item.actionHtml` -- one raw-HTML slot per entry, rendered
+    // last, which the caller owns entirely (here: a note + either a ghost "ใช้ค่านี้" button or the
+    // "ปัจจุบัน" badge on the value already in effect). The calculated value is pinned to the top
+    // with no date of its own, so its day header renders empty and is hidden.
+    const CP_HISTORY_USE = '<button type="button" class="btn btn-outline-primary lo-history-use">ใช้ค่านี้</button>';
+    $('#cpHistoryTimelineShowcase').html('<div class="lo-history-timeline">' + renderTimeline([
+        { time: '2026-09-16 10:42:00', actor: { name: 'สมชาย ทำเงินเดือน' }, title: '40,000.00', detail: 'จาก 38,000.00 → 40,000.00',
+          actionHtml: countBadgeHtml(0, { label: 'ปัจจุบัน' }) },
+        { time: '2026-09-15 17:05:00', actor: { name: 'สมชาย ทำเงินเดือน' }, title: '38,000.00', detail: 'จาก 30,000.00 → 38,000.00',
+          actionHtml: CP_HISTORY_USE + '<div class="lo-history-note">ปรับตามหนังสือปรับเงินเดือน</div>' },
+        { time: '2026-09-15 09:18:00', actor: { name: 'ฝ่ายบัญชี' }, title: '30,000.00', detail: 'จาก 25,000.00 → 30,000.00', actionHtml: CP_HISTORY_USE },
+        { time: '', title: '25,000.00', detail: 'ค่าที่ระบบคำนวณ', actionHtml: CP_HISTORY_USE },
+    ], { groupByDay: true }) + '</div>');
     // Combo demo -- same story, stepper on top ending at "จ่ายเงิน" so current = "ปิดรอบ" (same
     // currentIndex = reachedIdx + 1 rule the Stepper section above already uses).
     const $cpCombo = $('#cpTimelineComboShowcase');

@@ -79,6 +79,8 @@
     $router->post('api/payroll-run.remove-employee', 'PayrollController@removeEmployee');
     $router->get('api/payroll-run.manual-lines', 'PayrollController@manualLinesForEmployee');
     $router->get('api/payroll-run.employee-adjustments', 'PayrollController@employeeAdjustments');
+    // 2026-09-16: read-only per-employee edit history, backing the Adjustments modal's "ประวัติ" column.
+    $router->get('api/payroll-run.line-override-history', 'PayrollController@lineOverrideHistory');
     $router->post('api/payroll-run.add-manual-line', 'PayrollController@addManualLine');
     $router->post('api/payroll-run.remove-manual-line', 'PayrollController@removeManualLine');
     $router->get('api/payroll-run.sync-lines-for-employee', 'PayrollController@syncLinesForEmployee');

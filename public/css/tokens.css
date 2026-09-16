@@ -92,6 +92,35 @@
      to legitimately apply to warning at all -- WCAG's relaxed bold-text minimum only holds when the
      text actually IS bold; this was the trigger for adding `font-weight:600` there (see its own
      comment), not a separate, unrelated styling choice. */
+  /* ---- Layering (2026-09-16) -------------------------------------------------------------------
+     One ordered scale for everything that can float over the page, so "which of these two is on top"
+     is answered here instead of at each component. Values start from Bootstrap's own modal band
+     (1050/1055) because that is what the bundled bootstrap.css already ships; everything above it is
+     ours. Reserved bands, not a dense sequence -- a stacked modal needs room between itself and the
+     layer above it.
+       1045  ceiling for the PAGE itself (navbar, sticky table columns, help button, a select2 or
+             dropdown opened on the page) -- everything here must go UNDER a backdrop
+       1050  modal backdrop
+       1055  modal
+       1075  backdrop of a modal stacked on another modal
+       1085  that stacked modal
+       1090  overlay opened from INSIDE a modal (popover, select2, dropdown) -- must clear a stacked
+             modal, which is why one flat value for "select2" cannot serve both this and the page
+       1100  SweetAlert dialog  (must clear EVERY modal: it is what a modal asks a question with)
+       1110  SweetAlert toast   (must clear the dialog: a save inside a dialog-driven flow still
+                                 has to announce itself)
+     Real bug this fixed: `.swal2-container` shipped at 1060, which cleared a single modal (1055) by
+     5 and was BELOW a stacked one (1085) -- a confirm opened from the nested history modal rendered
+     underneath it, unreadable and unclickable (hit-tested, not eyeballed). */
+  --z-page: 1045;
+  --z-modal-backdrop: 1050;
+  --z-modal: 1055;
+  --z-modal-nested-backdrop: 1075;
+  --z-modal-nested: 1085;
+  --z-modal-overlay: 1090;
+  --z-swal: 1100;
+  --z-toast: 1110;
+
   --c-success-on-fill: #fff;
   --c-warning-on-fill: #fff;
   --c-danger-on-fill: #fff;

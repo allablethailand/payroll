@@ -91,19 +91,31 @@ class PayrollController extends Controller {
      * combined overrides+manual-lines shape -- these are itemized payroll figures too, so anything
      * short of FULL salary_amount.view_payroll_process visibility must not see the real numbers here.
      */
+    /**
+     * 2026-09-16: the value-masking half of maskEmployeeAdjustments(), lifted out so the new
+     * line-override-history endpoint masks by exactly the same rule instead of growing a second
+     * copy of it -- both serve the same figures (original/current + every edit's own before/after),
+     * so they must never drift apart on who may see them. Masks in place, null stays null (there is
+     * nothing to hide about "no value").
+     */
+    private function maskOverrideDiffLine(array $line): array {
+        $line['original_value'] = $line['original_value'] !== null ? PermissionModel::MASK_VALUE : null;
+        $line['current_value'] = $line['current_value'] !== null ? PermissionModel::MASK_VALUE : null;
+        foreach ($line['edits'] as &$edit) {
+            $edit['old_value'] = $edit['old_value'] !== null ? PermissionModel::MASK_VALUE : null;
+            $edit['new_value'] = $edit['new_value'] !== null ? PermissionModel::MASK_VALUE : null;
+        }
+        unset($edit);
+        return $line;
+    }
+
     private function maskEmployeeAdjustments(array $data, int $compId): array {
         $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), $compId);
         if ($visibility['full']) {
             return $data;
         }
         foreach ($data['overrides'] as &$ov) {
-            $ov['original_value'] = $ov['original_value'] !== null ? PermissionModel::MASK_VALUE : null;
-            $ov['current_value'] = $ov['current_value'] !== null ? PermissionModel::MASK_VALUE : null;
-            foreach ($ov['edits'] as &$edit) {
-                $edit['old_value'] = $edit['old_value'] !== null ? PermissionModel::MASK_VALUE : null;
-                $edit['new_value'] = $edit['new_value'] !== null ? PermissionModel::MASK_VALUE : null;
-            }
-            unset($edit);
+            $ov = $this->maskOverrideDiffLine($ov);
         }
         unset($ov);
         foreach ($data['manual_lines'] as &$line) {
@@ -111,6 +123,35 @@ class PayrollController extends Controller {
         }
         unset($line);
         return $data;
+    }
+
+    /**
+     * 2026-09-16: per-employee edit history for the Adjustments modal's own "ประวัติ" column -- the
+     * same lineOverrideAuditDiff() the whole-run Payroll Run Audit report uses, just scoped by the
+     * employee filter that method already took. Deliberately NOT served by the existing
+     * employee-adjustments endpoint: that one lists what still HAS an override row, so a line whose
+     * override was removed drops off it entirely -- which is exactly the line whose history a user
+     * needs to go back through. Read-only; every figure goes through the same mask as its sibling.
+     */
+    public function lineOverrideHistory() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = intval($_GET['run_id'] ?? 0);
+        $employeeId = intval($_GET['employee_id'] ?? 0);
+        if (!$compId || $runId <= 0 || $employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $data = $this->model->lineOverrideAuditDiff($runId, (int)$compId, $employeeId);
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), (int)$compId);
+        if (!$visibility['full']) {
+            foreach ($data['lines'] as &$line) {
+                $line = $this->maskOverrideDiffLine($line);
+            }
+            unset($line);
+        }
+        $data['history_start_date'] = PayrollRunModel::LINE_OVERRIDE_HISTORY_FEATURE_START_DATE;
+        $this->json(['status' => true, 'data' => $data]);
     }
 
     public function employeeAdjustments() {

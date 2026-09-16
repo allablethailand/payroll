@@ -89,6 +89,9 @@ if ($navUserId > 0) {
      Quill (snow theme -- the classic toolbar-on-top look), same node_modules-served convention as
      every other JS dependency in this project. -->
 <link rel="stylesheet" href="<?=BASE_URL?>/node_modules/quill/dist/quill.snow.css">
+<!-- tokens.css BEFORE style.css, and versioned like it -- see style.css's own top comment for the
+     real bug that came from loading it through an unversioned @import instead. -->
+<link rel="stylesheet" href="<?=asset('public/css/tokens.css')?>">
 <link rel="stylesheet" href="<?=asset('public/css/style.css')?>">
 <script>
     const BASE_URL = "<?=BASE_URL?>";

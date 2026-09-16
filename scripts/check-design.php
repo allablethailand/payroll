@@ -7,7 +7,7 @@
  *      (exempt: `--bs-*-rgb:` lines in style.css's Bootstrap-override section -- a mechanical
  *      RGB-triplet decomposition of an EXISTING token, not a new color)
  *   2. inline `style="` in a view/JS (exempt: `display:none` in JS, a table column's own `width`)
- *   3. forbidden classes: btn-success/info/warning/light/dark, btn-outline-(?!secondary),
+ *   3. forbidden classes: btn-success/info/warning/light/dark, btn-outline-(?!secondary|primary),
  *      bg-primary/info/success, text-primary/info/success, border-primary, rounded-circle, btn-circle
  *   4. `<i class="fa` inside a `.nav-link` (a tab icon)
  *   5. `.DataTable(`/`.dataTable(` outside initSharedDataTable() (app.js's own definition is exempt)
@@ -290,7 +290,12 @@ function designLintRule3(array $lines): array {
             $lowerTokens = array_map('strtolower', $tokens);
             foreach ($lowerTokens as $t) {
                 if (in_array($t, $exactForbidden, true)) { $hit = true; $matchedToken = $t; break; }
-                if (preg_match('/^btn-outline-(?!secondary$)[a-z]+$/', $t)) { $hit = true; $matchedToken = $t; break; }
+                // 2026-09-16: `btn-outline-primary` joins `btn-outline-secondary` as an allowed tier
+                // -- rules.md §4 now has a real job for it (an action repeated down a list, where a
+                // solid primary per row would put N primary buttons on one view, §0.2). Every other
+                // `btn-outline-*` stays banned, for the reason that banned all of them originally:
+                // colour as the only difference between two secondary buttons says nothing.
+                if (preg_match('/^btn-outline-(?!secondary$|primary$)[a-z]+$/', $t)) { $hit = true; $matchedToken = $t; break; }
             }
             // §8/item D, 2026-09-13: `text-danger` alone stays legal (destructive dropdown items etc.
             // still use it plainly) -- but combined with `.num` on the SAME element it's an ad-hoc

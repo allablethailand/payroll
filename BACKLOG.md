@@ -1015,3 +1015,39 @@ body-color` ซึ่งมีผลกับ `.popover-body` ไม่ใช่
 ก่อน ถึงจะมีปุ่ม "คำนวณใหม่" ต่อแถว/"คำนวณที่เลือก N" ได้ · เป็นงาน logic จึงไม่ทำในเฟส design (§0.7)
 และรอบ design **ไม่โชว์ control ที่ยังไม่มี backend** · สเปกเต็มที่ตัดสินแล้ว (พฤติกรรม/กรณีขอบ/UI/
 audit note/test 4 ข้อ): `docs/specs/partial-recalculate.md`
+
+---
+
+## Batch 5: `line-override.save-batch` (บันทึกหลายแถว recalculate ครั้งเดียว)
+
+tab "ปรับตัวเลข" เป็นตารางเดียว + ปุ่มบันทึกเดียวแล้ว แต่ backend ยังไม่มี endpoint รับหลายแถว และ
+`lineOverrideSave()` เองจบด้วย `recalculate()` ทั้งรอบทุกครั้ง → แก้ 5 แถว = 5 request + 5 full
+recalculate (ยิงพร้อมกันไม่ได้ recalculate จะเขียนทับกัน) · เป็นงาน logic ทำในเฟส design ไม่ได้ (§0.7)
+สเปกเต็ม (endpoint/transaction/audit/test 5 ข้อ + สิ่งที่ต้องถอดออกจาก UI ตอนนั้น):
+`docs/specs/line-override-batch.md`
+
+---
+
+## ปุ่มบันทึกซ่อนของ Adjustments modal — เหลืออีก 3 tab
+
+dispatcher (`ADJUSTMENT_TAB_CONFIG_RD`) เดิมสั่งบันทึกด้วยการ "กดปุ่มที่ซ่อนไว้" (`saveSelector`)
+ของแต่ละ tab · 2026-09-16 tab "ปรับตัวเลข" เปลี่ยนเป็นเรียกฟังก์ชันตรง (`saveFn`) และลบปุ่มซ่อนของตัวเองทิ้งแล้ว
+— เหลือ **ข้อมูลเข้างาน / ปลายทางรายการหักประจำ / ภาษี & ประกันสังคม** ที่ยังมี `<button class="d-none">`
+ของตัวเองอยู่ ให้ย้ายเป็น `saveFn` ทีละ tab ตอนไล่ทำ batch 4/4 แล้วลบ `saveSelector` ทิ้งทั้งกลไก
+
+---
+
+## เวลาที่แสดง = UTC หรือเวลาเครื่อง? (`changed_at`/`created_at` ทั้งแอป)
+
+`formatDisplayDateTime()` (app.js) ถือว่า datetime ที่เก็บในฐานเป็น **UTC** แล้วแปลงเป็นเวลาเครื่องผู้ใช้
+(เติม `Z` ก่อน parse) — แต่คอลัมน์พวกนี้ส่วนใหญ่เขียนด้วย MySQL `NOW()`/`DEFAULT CURRENT_TIMESTAMP`
+ซึ่งเป็น **เวลาของเซิร์ฟเวอร์ฐานข้อมูล** (dev = Asia/Bangkok) ทั้งที่ PHP ตั้ง `date_default_timezone_set('UTC')`
+ไว้ที่ `index.php` · ผลจริงที่วัดได้ 2026-09-16: override ที่บันทึกตอน 09:56 แสดงเป็น 16:56 (+7 ชม.)
+ทั้งใน dropdown ประวัติและ modal ประวัติ — และเหมือนกันทุกที่ในแอปที่แสดงเวลาจากคอลัมน์เหล่านี้
+(audit log, timeline อนุมัติ, ประวัติการเข้าใช้งาน ฯลฯ) ไม่ใช่ปัญหาเฉพาะรอบนี้
+
+**ต้องตัดสินว่าอะไรคือความจริง** ก่อนแก้: (ก) เขียนเป็น UTC ให้หมด (PHP คุมเวลาเอง ไม่ใช้ `NOW()` ของ MySQL)
+แล้ว `formatDisplayDateTime()` ถูกอยู่แล้ว หรือ (ข) ยอมรับว่าเก็บเป็นเวลาเซิร์ฟเวอร์ แล้วเลิกเติม `Z`
+· ห้ามแก้ทีละหน้า — เป็นกฎเดียวทั้งแอป · งาน logic ไม่ใช่ design (§0.7)
+
+**Source:** วัดด้วย Playwright ตอนทำ dropdown/modal ประวัติของ tab ปรับตัวเลข (2026-09-16)

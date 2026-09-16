@@ -21,6 +21,21 @@
 
 ไฟล์: `public/css/tokens.css` (โหลดก่อน style.css ทุกหน้า) — **ห้ามมี hex/rgb ใหม่ที่อื่น** ทั้ง CSS/PHP/JS
 
+**Layering มี scale เดียว — `--z-*` ใน `tokens.css`**, เรียงตามนี้เสมอ: **หน้า (navbar / sticky column ของตาราง /
+select2 หรือ dropdown ที่เปิดในหน้า / ปุ่มช่วยเหลือ) `--z-page` 1045** < `--z-modal-backdrop` 1050 <
+`--z-modal` 1055 < `--z-modal-nested-backdrop` 1075 < `--z-modal-nested` 1085 < **`--z-modal-overlay` 1090
+(dropdown / select2 / popover ที่เปิดจากใน modal)** < `--z-swal` 1100 < `--z-toast` 1110
+- **ห้ามเขียนเลข z-index ลงที่ component หรือใน JS ตรงๆ** — component ของ Bootstrap รับผ่าน custom property
+  ของมันเอง (`.modal { --bs-modal-zindex: var(--z-modal, 1055) }`), SweetAlert2 รับเป็น declaration บน class ที่ render
+  จริง (ห้ามผ่าน `:root --swal2-*`, ห้าม `!important` — `docs/decisions/swal2-css-override.md`), JS ที่ต้องตั้งเอง
+  (modal ซ้อน) อ่าน token กลับมาด้วย `getComputedStyle()` · **`.modal` กับ `.modal-backdrop` ต้องคนละ token เสมอ**
+  และ backdrop ของ modal ซ้อนก็คนละตัวกับของ modal ชั้นแรก
+- **ทุก `var(--z-*)` ต้องมีตัวเลขเป็น fallback เสมอ** (`var(--z-modal, 1055)`) — z-index ที่อ้าง token ที่หาไม่เจอ
+  ไม่ได้กลายเป็น "เลขอื่น" แต่กลายเป็น `auto` — element หลุดออกจากการเรียงชั้นทั้งหมด (เกิดจริงมาแล้ว 1 ครั้ง)
+- **ไฟล์ CSS ที่มี version ห้ามขึ้นกับไฟล์ที่ไม่มี** — `tokens.css` โหลดเป็น `<link>` ของตัวเองผ่าน `asset()`
+  ก่อน `style.css` **ห้ามใช้ `@import url("tokens.css")`** (ไม่มี `?v=` → เบราว์เซอร์ใช้ของเก่าใน cache คู่กับ
+  style.css ใหม่ → token ที่เพิ่งเพิ่มหายทั้งชุด) · ที่มา/บั๊กที่เกิดจริง: `docs/decisions/2026-09-16-z-index-scale.md`
+
 **Dark mode มีที่เดียว — `tokens.css` เท่านั้น** (ตัดสินใจแล้วรอบ 2 item 1b): token สี (`--c-*`) มี 2 ชุด
 light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่าน selector convention เดียวกับที่ Backlog Phase 11 T069 ใช้อยู่แล้ว
 กับ `--app-*` ของตัวเอง (`style.css`, ค้นคำว่า "3-state model") — ไม่ประดิษฐ์ selector ใหม่:
@@ -102,6 +117,12 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 กฎ:
 - **Bootstrap override เป็นราย-component เสมอ ไม่ใช่แค่ root variable** (แก้ตามความจริงที่ตรวจพบแล้วในโค้ด — ดูรอบ 0's conflict report: Bootstrap 5.3.3's compiled `bootstrap.min.css` hardcode `--bs-btn-bg`/`--bs-btn-border-color` ฯลฯ ไว้ที่ class ของแต่ละ component ตรงๆ ไม่ได้อ่านจาก `--bs-primary` root token เลย — ตั้ง root var เดียวไม่พอ, ยืนยันจริงแล้วใน `style.css`'s "Bootstrap primary recolor" comment ปี 2026-08-20): `tokens.css` ต้อง (1) ตั้ง root token (`--bs-primary`, `--bs-primary-rgb`, `--bs-body-color`, `--bs-border-color`, `--bs-border-radius` ฯลฯ) สำหรับ utility ที่อ่าน var ตรง (`.text-primary`, `.bg-primary-subtle`) **และ** (2) override ทับทุก component ที่ Bootstrap hardcode ค่าไว้เอง ด้วยเทคนิคเดียวกับที่ `style.css` ใช้อยู่แล้ว (`.btn-primary { --bs-btn-bg: var(--c-primary); --bs-btn-border-color: var(--c-primary); --bs-btn-hover-bg: var(--c-primary-hover); ... }`) — รายการ component ที่ต้อง override แบบนี้อย่างน้อย: `.btn-primary`, `.btn-outline-secondary`, `.form-control`/`.form-select`, `.nav-tabs .nav-link`, `.badge` (ที่ยังไม่ผ่าน `statusBadge()`), `.dropdown-menu`, `.modal-content` — เช็คทุก component เพิ่มเติมที่ hardcode สีไว้ก่อน assume ว่า root var พอ (ยืนยันเป็นรายตัว ไม่ inherit จากที่เดียว)
 - **`.btn-outline-brand` (ของเดิม — สร้างขึ้นเพราะปัญหาเดียวกันนี้เป๊ะ: outline ก็ไม่ได้สีจาก `--bs-primary` เหมือนกัน) ถูกแทนที่ด้วย `.btn-outline-secondary` ทั้งหมด หลังจากที่ tokens.css override `.btn-outline-secondary` ให้ใช้สีตาม §4 แล้ว** — ไม่มี "outline สีแบรนด์" อีกต่อไปตาม §4 (ปุ่มรองทุกตัวเป็นเทา แยกด้วยคำ ไม่แยกด้วยสี) ไม่ใช่ย้ายไปใช้ token อื่นแทน
+  - **แก้ 2026-09-16**: มี `btn-outline-primary` กลับมาเป็น tier จริง แต่ใช้เฉพาะกรณีเดียวที่ระบุไว้ในข้อถัดไป
+    (action ที่ซ้ำหลายตัวใน list) — ไม่ใช่การรื้อ "outline สีแบรนด์" กลับมาเป็นปุ่มรองทั่วไป (ปุ่มรองที่
+    ไม่ซ้ำ ยังเป็น `btn-outline-secondary` เหมือนเดิม) · `check-design.php` rule 3 อนุญาต 2 ตัวนี้เท่านั้น · Bootstrap
+    hardcode #0d6efd ไว้ที่ `.btn-outline-primary` เหมือนที่ทำกับ `.btn-primary` จึงต้อง override ราย component
+    ใน `style.css` ด้วย (ข้อด้านบน) — ก่อนหน้านี้ปุ่ม outline-primary ทั้ง 8 จุดในแอปเป็น**สีน้ำเงินของ Bootstrap**
+    มาตลอด (นอก palette §3) โดยไม่มีใครสังเกต
 - ไม่ใช้ `btn-info`, `btn-success`, `btn-warning`, `bg-primary`, `text-primary` ฯลฯ ที่ไม่ได้ map (ดู §12 lint)
 - ตัวเลขทุกที่ (ตาราง, stat, สลิป) ใช้ `.num` → `font-variant-numeric: tabular-nums; text-align:right`
 - ไอคอน: Font Awesome ชุดเดียว น้ำหนักเดียว (`fa-regular` หรือ `fa-solid` เลือกอันเดียวทั้งระบบ) สี = สีข้อความปัจจุบัน (`currentColor`) เสมอ ไม่มีไอคอนหลากสี
@@ -287,6 +308,8 @@ tone ปรากฏบนตัว container ได้ ไม่ใช่แค
   คือปัญหาที่ระบุไว้ตั้งแต่ต้นของ phase design นี้เอง (ปุ่มกลมหลายสีต่อแถวในตาราง คือตัวอย่างที่ §0/§3 พูดถึง
   ตรงๆ) แม้จะเป็นมติที่เคย roll out ทั่วระบบมาก่อนหน้านี้ (14 ไฟล์) ก็ถือว่าถูกแทนที่โดย rules.md ฉบับนี้~~
   (ข้อความเดิมด้านบน — เก็บไว้ให้เห็นประวัติการกลับมติ ไม่ใช่กฎที่ใช้จริงอีกต่อไป)
+- **action ที่ซ้ำหลายตัวใน list/ตาราง/ไทม์ไลน์ = `btn-outline-primary`** (ขอบ+ตัวหนังสือ `--c-primary`
+  พื้นโปร่ง hover ถมส้มตัวหนังสือขาว) — **solid `btn-primary` มีได้ตัวเดียวต่อ view/modal** (§0.2)
 - Save/Cancel วางขวาล่างเสมอ ลำดับ `[บันทึก] [ยกเลิก]` (primary ซ้าย, secondary ขวาสุด) ทั้งใน modal footer และฟอร์มเต็มหน้า — `payroll-configuration` ต้องเป็นแบบนี้ด้วย — **แก้ 2026-09-14 (Round 3 item 3c-1)**: ก่อนหน้านี้เขียนสลับด้าน (`[ยกเลิก] [บันทึก]`, secondary ซ้าย) ผิดจากที่ approve จริง — ของจริงที่ใช้อยู่แล้วทั่วแอป (`style.css`'s Platform Hardening Phase 1.2 CSS, `.modal-footer > [data-bs-dismiss] { order:2 }` / primary-ish `{ order:1 }`, ~100 modal) คือ primary ซ้าย/secondary ขวาเสมอมา ไม่เคยเปลี่ยน — เอกสารนี้เขียนผิดไปเอง ไม่ใช่โค้ดผิด
 - ปุ่มระหว่างโหลด: `disabled` + spinner ในปุ่มเดิม ไม่เปลี่ยนคำ
 - **ข้อยกเว้น: Decision set (ใหม่, 2026-09-13, page-header.php's `$decision_actions`; REVISED หลายรอบ
@@ -397,6 +420,17 @@ component กลางแทนการคัดลอก — §0.4)
   แถว, Enter/Space เลือก — **เงื่อนไขคือทุกแถวต้องเป็น `<button class="dropdown-item">` จริง** (ห้าม `<div>`/`<a>`
   ที่จัดสไตล์เอาเอง) — หน้าที่มี Esc handler ของตัวเอง (เช่น inline edit ของ comment) ต้องเช็คก่อนว่ามี
   `.dropdown-menu.show` อยู่ไหม ถ้ามีให้เมนูกินก่อน
+- **`label` (ใหม่ 2026-09-16)** = ข้อความ toggle ที่ caller resolve เอง (เช่น "แก้ไข 7" ที่มีตัวเลขอยู่ข้างใน
+  จึงมาจาก `status_map` ไม่ได้) — ใช้แล้ว `data-i18n` ถูกตัดทิ้งด้วย (re-sweep จะทับตัวเลข)
+- **เมนูที่เป็นรายการประวัติ/รายการยาว = 3 ส่วน หัว-list-ท้าย** (ใหม่ 2026-09-16, ของจริง: คอลัมน์ "ประวัติ"
+  ของ tab ปรับตัวเลข) — กว้างคงที่ (ไม่ยืดตามข้อความที่ยาวที่สุด), **หัว sticky** = ค่าอ้างอิงที่ทุกแถวเป็น
+  ส่วนต่างจากมัน — พื้น `--c-bg-subtle` + เส้นคั่นใต้ ไม่มีสีสถานะ/ไอคอน แต่**เป็นตัวเลือกจริง** (โครงเดียวกับ
+  แถวอื่น กดได้ hover/cursor เหมือนกัน — "กลับไปใช้ค่าที่ระบบคำนวณ" ก็เป็นทางเลือกหนึ่ง),
+  **list ตรงกลาง scroll ~5 แถว แต่แสดงครบทุกแถว** (ห้ามตัดเหลือ N แถวแรกเงียบๆ — ผู้ใช้ไม่มีทางรู้ว่าอะไรหายไป),
+  **ท้าย sticky** = ทางไป modal รายละเอียดเต็ม ไม่ใช่แถวข้อมูล จึงจัด**ชิดขวา `--fs-sm` ไม่มีไอคอน ไม่มี …**;
+  ทุกแถวเป็น 1 บรรทัดโครงเดียวกัน `[ค่า ชิดซ้าย | meta --fs-xs muted ชิดขวา]` เพื่อให้ค่าเรียงเป็นคอลัมน์
+  เทียบกันด้วยตาได้ — แถวที่เป็นค่าที่ใช้อยู่จริง = badge neutral นำหน้า meta **เดิม** (ไม่ใช่แทนที่ —
+  เวลา·ผู้แก้ยังต้องอ่านได้) + `disabled`
 - **`initBadgeDropdown()` ผูกแบบ delegated ต่อ scope พร้อม once-guard** (ไม่ผูกทีละ element) — คอมเมนต์โมดอล
   re-render composer/list หลายรอบต่อการเปิด 1 ครั้ง direct binding จะหายตั้งแต่ re-render แรก (บั๊กคลาสเดียวกับ
   ที่ `initFilterBar()` เคยเจอมาแล้วจริง) — การอัปเดตหน้าตาปุ่ม toggle คัดลอกจาก badge ของแถวที่เลือก
@@ -441,6 +475,7 @@ component กลางแทนการคัดลอก — §0.4)
 | `document_delivery_status` | payslip/certificate delivery outcome (union) | |
 | `sync_batch_status` | `sync_batches.status` | `running`=**warning** (ไม่ใช่ neutral — "กำลังทำงาน" ต้องรอ) |
 | `payroll_calc_status` | `payroll_run_details.calc_status` | |
+| `payroll_line_type` | ชนิดของแถวในตาราง "ปรับตัวเลข" (มีแค่ `statutory`) | **ไม่ใช่สถานะจริง** — แทน badge ฟ้าที่เขียนมือ, neutral เสมอ |
 | `eed_status` | `employee_earning_deductions.status` (แผนผ่อนจ่าย) | `completed`=**neutral** (ไม่ใช่ success) |
 | `eed_installment_status` | `employee_earning_deduction_installments.status` (รายงวด) | |
 | `remittance_status` | `payroll_remittances.status` | `transferred`=**warning** (ยังไม่ยืนยันรับ) |
@@ -658,6 +693,17 @@ approved → ...) ไม่ใช่สลับหน้า)
   **ไม่แตะโค้ดจริงของ `payroll/detail.js`'s `renderApprovalTimelineBody()` เลยรอบนี้** (ห้ามแตะหน้าจริง §13)
 - Demo จริง: audit log 6 รายการ 2 วัน (สร้าง/แก้/ส่งอนุมัติ/ไม่อนุมัติ `danger`/อนุมัติ `success`/จ่าย
   `success`) — light/dark ผ่านปุ่มสลับ theme มุมขวาบนของหน้าเดียวกัน
+- **หัววัน (`groupByDay`)** = **แถบเต็มความกว้าง** พื้น `--c-bg-subtle` padding `--sp-1 --sp-2` `--fs-xs` 600 muted,
+ระยะบน `--sp-4` (ระยะ section) ล่าง `--sp-2` — แถบแรกสุดไม่มีระยะบน, ต่อท้ายวันที่ด้วยจำนวนของ
+กลุ่มนั้นจริง ("16/09/2026 · 2 รายการ", `--fs-xs` muted นับเป็นช่วงติดกัน ไม่ใช่ยอดรวมทั้งวัน),
+และ**บังเส้น timeline ให้ขาดเป็นช่วงตามวัน** (ไม่มี uppercase/letter-spacing, ไม่มีไอคอน) — รอยต่อระหว่างวัน
+ควรอ่านออกเป็นรอยต่อจริง ไม่ใช่บรรทัดหนึ่งของรายการ · รายการที่ไม่มีวันที่ของตัวเอง (เช่นแถว "ค่าที่ระบบคำนวณ" ที่ pin ไว้บนสุด) ส่ง `time: ''`
+แล้วหัววันว่างของมันถูกซ่อนด้วย `.timeline-day-header:empty`
+
+**`item.actionHtml` (ใหม่ 2026-09-16, ช่องเดียว, HTML ดิบที่ caller สร้างเอง) — render ท้ายสุดของรายการ**
+  สำหรับ action ต่อรายการ (ตัวอย่างจริง: ปุ่ม "ใช้ค่านี้" ใน modal ประวัติการแก้ไขรายการจ่าย) — component
+  ไม่รู้จักความหมายและไม่ผูก handler ให้ เหมือน `statusBadgeHtml()`'s `{menu}` · ห้ามส่ง user input ดิบเข้ามา
+  (ข้อนี้เปิดสิ่งที่บรรทัดถัดไปเคยปิดไว้ โดยตั้งใจ — ตอนที่ปิดยังไม่มี caller จริงที่ต้องการ action ต่อรายการ)
 - **`item.actions`/`options.relativeTime`/`item.bodyHtml`/`.timeline-body-content` ไม่มีอีกแล้ว** —
   component นี้กลับมาตรงสเปกเดิมของ item (3)/6b ด้านบนนี้ทุกจุด ไม่มีส่วนขยายใดๆ ทั้งสิ้น **เนื้อหาที่เป็น
   "ความเห็น/ข้อความจากคนหลายคน" ให้ใช้ "Comment list" หัวข้อถัดไปทันทีด้านล่างนี้เสมอ ไม่ใช่ Timeline** —
@@ -1589,6 +1635,14 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
     แก้บั๊กจริงจาก 2026-08-30 ที่ modal backdrop บังสวิตช์ภาษาจริงที่ header หน้า — แก้ที่จุดเดียวใน `app.js`
     (`modalLangDropdownHtml()` + `show.bs.modal` global handler), วางหลัง `.modal-title` (ขวาของชื่อ
     ก่อน ×)~~ (ข้อความเดิมด้านบน — ถูกแทนที่ทั้งหมดโดยมติ 2026-09-14 ด้านบนนี้แล้ว)
+- **Footer มี slot ซ้ายได้ 1 ช่อง 1 ปุ่ม** (`modalFooterButtonsHtml({left, leftHtml})`) สำหรับ action ที่ไม่ใช่
+  ทั้ง action หลักและทางออก — outline ไม่มีไอคอน, **ไม่ยิงอะไรเอง** (แค่ mark แถว/เติมค่าให้ฟอร์ม dirty
+  แล้วผู้ใช้กดปุ่มหลักตามปกติ โดยมี `showConfirm` บอกจำนวนที่กระทบก่อนบันทึก), เงื่อนไข enable = **มีของให้ทำจริง**
+  ไม่ใช่ dirty; ปุ่มหลัก/ปิด ยังชิดขวาเหมือนเดิม — ของจริง: tab "ปรับตัวเลข" ซ้าย `[คืนค่าระบบทั้งหมด]`
+  ขวา `[บันทึก][ปิด]`; < sm ให้ปุ่ม footer wrap ได้ 2 แถว
+  - **ห้ามมีปุ่ม "ยกเลิกการแก้ไข"/"คืนค่า" ที่แค่ล้างสิ่งที่พิมพ์** — dirty-guard ตอนปิด modal/สลับ tab
+    (§9 ด้านล่าง) ถามเรื่องนี้อยู่แล้วตอนที่มันสำคัญจริง ปุ่มที่ทำงานซ้ำกับมันคือปุ่มที่ผู้ใช้ต้องอ่านทุกครั้ง
+    เพื่อจะข้ามทุกครั้ง (เคยมีใน tab "ปรับตัวเลข" 1 รอบแล้วถอดออก 2026-09-16)
 - Footer: พื้น `--c-bg-subtle`, `[บันทึก] [ยกเลิก]` ขวา (primary ซ้าย, secondary ขวาสุด — แก้ 2026-09-14 Round 3 item 3c-1, ดู §4 เดียวกันสำหรับ note เต็ม); ปุ่มทำลาย (ลบ) ถ้ามี = tertiary ซ้ายสุด
 - **confirm ก่อนปิด modal ที่มีข้อมูลค้าง — เสร็จแล้ว รอบ 2 item 7b, เป็น redesign ไม่ใช่การรื้อของเดิมกลับมาตรงๆ**:
   ใช้กลไกเดิม `isFormDirty($container, baselineSnapshot)` + `confirmIfDirtyThen($container, baselineSnapshot, onProceed, promptOptions)`
@@ -1669,6 +1723,8 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 
 **Checkbox / Radio / Switch — เสร็จแล้ว รอบ 2 item (2)** (Bootstrap `.form-check`/`.form-switch` ตรงๆ,
 ไม่สร้าง component ใหม่ — override สีใน `style.css` เท่านั้น)
+- **ความหมายเป็นบวกเสมอ: ☑ = "ทำ/เอา/นำมาคำนวณ" ไม่ใช่ "ไม่เอา/ยกเว้น"** — ถ้า field ที่เก็บเป็นความหมายลบ
+  (เช่น แถว `exclude`) ให้กลับค่าที่ขอบเดียวก่อนส่ง ไม่ใช่ให้ผู้ใช้แปลในหัวเอง
 - unchecked: ขอบ `--c-border-strong`, พื้น `--c-bg`
 - checked/on: พื้น `--c-primary` (ส้ม), เครื่องหมายขาว — **ข้อยกเว้นตรงใน §3** (เหมือน tab ที่เลือก) ไม่ใช่กฎใหม่
 - disabled: `--c-text-faint` (แทน opacity เฉยๆ ให้ตรงกับ element disabled อื่นในแอป) — `checked+disabled`

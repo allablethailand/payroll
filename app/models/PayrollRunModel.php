@@ -6315,7 +6315,10 @@ class PayrollRunModel {
         $attachOverride = function (array $row) use ($overrides): array {
             $ov = $overrides[$row['code']] ?? null;
             $row['override_action'] = $ov['action'] ?? null;
-            $row['override_amount'] = $ov['override_amount'] !== null ? (float)$ov['override_amount'] : null;
+            // `?? null` first: a row with no override at all has $ov === null, and reading a key off
+            // null is a PHP 8 warning on every single line of every open of this modal (found while
+            // adding item_type -- pre-existing, not a behaviour change: the value was, and stays, null).
+            $row['override_amount'] = ($ov['override_amount'] ?? null) !== null ? (float)$ov['override_amount'] : null;
             $row['override_note'] = $ov['note'] ?? null;
             return $row;
         };
@@ -6325,7 +6328,10 @@ class PayrollRunModel {
         $attachStatutoryOverride = function (array $row) use ($overrides): array {
             $ov = $overrides[$this->statutoryOverrideCode($row['code'])] ?? null;
             $row['override_action'] = $ov['action'] ?? null;
-            $row['override_amount'] = $ov['override_amount'] !== null ? (float)$ov['override_amount'] : null;
+            // `?? null` first: a row with no override at all has $ov === null, and reading a key off
+            // null is a PHP 8 warning on every single line of every open of this modal (found while
+            // adding item_type -- pre-existing, not a behaviour change: the value was, and stays, null).
+            $row['override_amount'] = ($ov['override_amount'] ?? null) !== null ? (float)$ov['override_amount'] : null;
             $row['override_note'] = $ov['note'] ?? null;
             return $row;
         };
@@ -6335,12 +6341,21 @@ class PayrollRunModel {
             'code' => self::BASE_SALARY_OVERRIDE_CODE,
             'name_th' => 'เงินเดือนพื้นฐาน', 'name_en' => 'Base Salary',
             'current_amount' => $detail['base_salary_amount'] !== null ? (float)$detail['base_salary_amount'] : 0.0,
+            // 2026-09-16: `item_type` is a READ-ONLY grouping hint for the Adjustments modal's own
+            // single table (base_salary / earning / deduction / statutory / other). It is derived
+            // here, never stored: for these rows it is simply WHICH breakdown column the row came
+            // out of, which only this method knows -- the response used to flatten earning and
+            // deduction into one indistinguishable `line_type: 'earning_deduction'`.
+            'item_type' => 'base_salary',
+            // Only statutory lines carry an engine note (see the statutory loop below); every other
+            // row shape reports null so the client never has to special-case a missing key.
+            'note' => null,
             // 2026-08-31, same-day follow-up (item 9a): lets the frontend route Save/Reset to the
             // right endpoint (api/payroll-run.line-override.* vs .statutory-line-override.*)
             // without having to pattern-match item codes client-side.
             'line_type' => 'earning_deduction',
         ])];
-        foreach (['earning_breakdown', 'deduction_breakdown'] as $col) {
+        foreach (['earning_breakdown' => 'earning', 'deduction_breakdown' => 'deduction'] as $col => $itemType) {
             $lines = $detail[$col] !== null ? json_decode((string)$detail[$col], true) : [];
             foreach ((is_array($lines) ? $lines : []) as $line) {
                 if (empty($line['code'])) {
@@ -6353,6 +6368,8 @@ class PayrollRunModel {
                     'name_en' => $line['name_en'] ?? $line['code'],
                     'current_amount' => isset($line['amount']) ? (float)$line['amount'] : 0.0,
                     'line_type' => 'earning_deduction',
+                    'item_type' => $itemType,
+                    'note' => null,
                     // 2026-08-31: SyncPayResolver's own raw Origami item_code, when this line came
                     // through the generic item_values loop -- see that method's own comment on why
                     // this can genuinely differ from 'code' above (the CUSTOM: fallback especially).
@@ -6380,6 +6397,15 @@ class PayrollRunModel {
                 'name_en' => $line['name_en'] ?? $line['code'],
                 'current_amount' => isset($line['employee_amount']) ? (float)$line['employee_amount'] : 0.0,
                 'line_type' => 'statutory',
+                'item_type' => 'statutory',
+                // 2026-09-16: StatutoryCalculationEngine writes WHY a line came out at 0 into the
+                // breakdown itself ('employee_not_enrolled'/'employee_tax_exempt'/'disabled' =
+                // deliberately skipped for this employee; 'no_rate_configured'/'no_rate_ever_
+                // configured'/'unrecognized_calc_base' = something is not set up; 'manually_
+                // overridden'/'manually_excluded' = someone already acted on it). Passed straight
+                // through, read-only, so the Adjustments table can tell those 3 groups apart -- it
+                // hides only the first, and must never hide the second.
+                'note' => $line['note'] ?? null,
             ]);
         }
         // An 'exclude' override drops its line out of the persisted breakdown entirely (that's the
@@ -6391,11 +6417,52 @@ class PayrollRunModel {
         // this fallback (seenCodes above is keyed by the WRAPPED code for them, always populated by
         // the statutory loop just above regardless of exclude state) -- letting a wrapped
         // '__statutory_..__' code fall through here would create a garbled duplicate row.
+        // 2026-09-16: these rows are not in any breakdown (that is why they are here), so their
+        // `item_type` cannot come from a column the way every row above gets it -- looked up in the
+        // company's own catalog by item_code instead, falling back to 'other' for a code with no
+        // catalog row at all (a retired item, or the reserved base-salary sentinel's siblings). The
+        // catalog query only runs when there is actually something to look up.
+        $fallbackCodes = [];
         foreach ($overrides as $code => $ov) {
             if (isset($seenCodes[$code]) || $ov['action'] !== 'exclude' || (str_starts_with($code, '__statutory_') && str_ends_with($code, '__'))) {
                 continue;
             }
-            $rows[] = $attachOverride(['code' => $code, 'name_th' => $code, 'name_en' => $code, 'current_amount' => 0.0, 'line_type' => 'earning_deduction']);
+            $fallbackCodes[] = $code;
+        }
+        // 2026-09-16: an item the RUN turned off (Run Settings) drops out of the breakdown on the
+        // next recalculate exactly like a personally-excluded one does, but has no override row to
+        // be found by the loop above -- so its row used to appear before a recalculate and vanish
+        // after it, for the same unchanged setting. Listed here too, so the Adjustments table shows
+        // it as the (disabled) row it is, in both states.
+        $stmtRunExcluded = $this->db->prepare("SELECT item_code FROM `payroll_run_item_exclusions` WHERE run_id = :run_id");
+        $stmtRunExcluded->execute([':run_id' => $runId]);
+        foreach ($stmtRunExcluded->fetchAll(PDO::FETCH_COLUMN) as $runExcludedCode) {
+            if (isset($seenCodes[$runExcludedCode]) || in_array($runExcludedCode, $fallbackCodes, true)) {
+                continue;
+            }
+            $fallbackCodes[] = $runExcludedCode;
+        }
+        $catalogTypeByCode = [];
+        if (!empty($fallbackCodes)) {
+            $placeholders = implode(',', array_fill(0, count($fallbackCodes), '?'));
+            $stmtTypes = $this->db->prepare("SELECT item_code, item_type, item_name_th, item_name_en
+                FROM `payroll_earning_deduction_types` WHERE comp_id = ? AND item_code IN ({$placeholders})");
+            $stmtTypes->execute(array_merge([$compId], $fallbackCodes));
+            foreach ($stmtTypes->fetchAll(PDO::FETCH_ASSOC) as $catalogRow) {
+                $catalogTypeByCode[$catalogRow['item_code']] = $catalogRow;
+            }
+        }
+        foreach ($fallbackCodes as $code) {
+            $catalog = $catalogTypeByCode[$code] ?? null;
+            $rows[] = $attachOverride([
+                'code' => $code,
+                'name_th' => $catalog['item_name_th'] ?? $code,
+                'name_en' => $catalog['item_name_en'] ?? $code,
+                'current_amount' => 0.0,
+                'line_type' => 'earning_deduction',
+                'item_type' => $catalog['item_type'] ?? 'other',
+                'note' => null,
+            ]);
         }
 
         // 2026-08-31, same-day follow-up (Origami's `scheduled_item_occurrences[]` proposal, per-

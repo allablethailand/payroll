@@ -1755,9 +1755,13 @@ function badgeDropdownHtml(config) {
     const entry = getStatusMapEntry(config.enum, config.context);
     const tone = (entry && entry.tone) || 'neutral';
     const labelKey = entry ? entry.label_key : '';
-    const label = entry ? (getLangValue(entry.label_key) || entry.label_key) : config.enum;
+    // 2026-09-16: `config.label` (a caller-resolved string, usually one holding a count like
+    // "แก้ไข 3") replaces the map's own label for a toggle whose text is templated and so cannot come
+    // from status_map at all -- when it is used, `data-i18n` is dropped too, since re-sweeping it
+    // would overwrite the number with the bare label.
+    const label = config.label || (entry ? (getLangValue(entry.label_key) || entry.label_key) : config.enum);
     const outlineCls = config.outline ? ' badge-outline' : '';
-    const i18nAttr = labelKey ? ` data-i18n="${escapeAttr(labelKey)}"` : '';
+    const i18nAttr = (labelKey && !config.label) ? ` data-i18n="${escapeAttr(labelKey)}"` : '';
     const idAttr = config.id ? ` id="${escapeAttr(config.id)}"` : '';
     const toggleClass = config.toggleClass ? ' ' + config.toggleClass : '';
     let menuHtml = config.menuHtml || '';
@@ -1920,26 +1924,57 @@ function renderStatusStepper(steps, current) {
 //   title, detail? (1 line), badge?: {enum, context}, tone?: 'neutral'|'warning'|'danger'|'success'
 //   (default 'neutral' -- dot color only) }. `time` renders as HH:MM (not date+day -- §6's own
 // spec is literally "เวลา", the date is what the optional day-header groups by instead).
+// 2026-09-16: both of these now go through formatDisplayDateTime() instead of parsing `value`
+// themselves. Their own `new Date('YYYY-MM-DD HH:mm:ss'.replace(' ','T'))` read a stored timestamp as
+// LOCAL time, while formatDisplayDateTime() -- the app's single date-display helper (CLAUDE.md, UI
+// Convention) -- reads the same string as UTC and converts, so the very same `changed_at` printed one
+// time inside a timeline and a different one everywhere else on the same page. One parser, one
+// answer; the split day/time strings are just slices of its own 'dd/mm/yyyy HH:mm' output.
+function timelineDisplayDateTime(value) {
+    return value ? String(formatDisplayDateTime(value)) : '';
+}
 function timelineTimeOfDay(value) {
-    const d = new Date(String(value).replace(' ', 'T'));
-    if (isNaN(d.getTime())) return escapeHtml(String(value));
-    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    const text = timelineDisplayDateTime(value);
+    const m = /(\d{2}:\d{2})$/.exec(text);
+    return m ? m[1] : escapeHtml(text);
 }
 function timelineDayLabel(value) {
-    const d = new Date(String(value).replace(' ', 'T'));
-    if (isNaN(d.getTime())) return String(value);
-    return String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0') + '/' + d.getFullYear();
+    const text = timelineDisplayDateTime(value);
+    const m = /^(\d{2}\/\d{2}\/\d{4})/.exec(text);
+    return m ? m[1] : text;
 }
 function renderTimeline(items, options) {
     options = options || {};
     const groupByDay = !!options.groupByDay;
+    const list = items || [];
+    // How many entries each day header actually covers. Counted as a RUN, not as a total per date:
+    // the caller owns the order (this function never sorts), so the same date reaching the list
+    // twice is two groups, and each header must say the size of the group it opens -- not the sum of
+    // every group that happens to share its date.
+    const dayRunLength = {};
+    if (groupByDay) {
+        let runStart = 0;
+        for (let i = 0; i <= list.length; i++) {
+            const same = i < list.length && timelineDayLabel(list[i].time) === timelineDayLabel(list[runStart].time);
+            if (!same) {
+                dayRunLength[runStart] = i - runStart;
+                runStart = i;
+            }
+        }
+    }
+    const dayCountTpl = getLangValue('timeline_day_count') || '{n} entries';
     let html = '<ul class="timeline">';
     let lastDayLabel = null;
-    (items || []).forEach(function (item) {
+    list.forEach(function (item, index) {
         if (groupByDay) {
             const dayLabel = timelineDayLabel(item.time);
             if (dayLabel !== lastDayLabel) {
-                html += `<li class="timeline-day-header">${escapeHtml(dayLabel)}</li>`;
+                // An entry with no date of its own produces an empty header, hidden in CSS -- so it
+                // gets no count either, or the header stops being empty and starts showing.
+                const countHtml = dayLabel === ''
+                    ? ''
+                    : ` <span class="timeline-day-count">· ${escapeHtml(dayCountTpl.replace('{n}', String(dayRunLength[index] || 1)))}</span>`;
+                html += `<li class="timeline-day-header">${escapeHtml(dayLabel)}${countHtml}</li>`;
                 lastDayLabel = dayLabel;
             }
         }
@@ -1948,6 +1983,14 @@ function renderTimeline(items, options) {
             ? apvAvatarHtml(item.actor.name, 24, item.actor.avatar) + `<span>${escapeHtml(item.actor.name || '')}</span>`
             : '';
         const badgeHtml = item.badge ? `<div class="mt-1">${statusBadgeHtml(item.badge.enum, item.badge.context)}</div>` : '';
+        // 2026-09-16: ONE optional raw-HTML slot per entry, rendered last. This deliberately reopens
+        // something §6 closed ("item.actions ไม่มีอีกแล้ว") -- that removal was written when no caller
+        // needed a per-entry action at all; the line-override history modal does (each past value has
+        // its own "use this value" button), and the only alternative was a second hand-rolled list of
+        // the same shape, which §0.4 forbids outright. Kept deliberately dumb: the component neither
+        // knows nor binds anything, the caller owns the markup and its handler, exactly like
+        // statusBadgeHtml()'s own `{menu}` option. `actionHtml` must be caller-built HTML, never user input.
+        const actionHtml = item.actionHtml ? `<div class="timeline-action">${item.actionHtml}</div>` : '';
         const detailHtml = item.detail ? `<div class="timeline-detail">${escapeHtml(item.detail)}</div>` : '';
         html += `<li class="timeline-item">
             <span class="timeline-dot timeline-dot-${tone}"></span>
@@ -1958,6 +2001,7 @@ function renderTimeline(items, options) {
             <div class="timeline-title">${escapeHtml(item.title)}</div>
             ${detailHtml}
             ${badgeHtml}
+            ${actionHtml}
         </li>`;
     });
     html += '</ul>';
@@ -2266,7 +2310,15 @@ function modalFooterButtonsHtml(config) {
         const label = (spec.key && langData && langData[spec.key]) || spec.fallback || '';
         return `<button type="button" class="${cls}${extraClass || ''}"${idAttr}${i18nAttr}${dismissAttr}>${escapeHtml(label)}</button>`;
     }
-    return buttonHtml(config.primary, '', true) + buttonHtml(config.secondary, '', false);
+    // 2026-09-16: an optional LEFT slot (§9) for the one kind of footer action that is neither the
+    // modal's main action nor its way out -- one that PREPARES a bulk edit for the main button to
+    // save -- which reads wrong sitting next to [บันทึก][ปิด]. `me-auto` on the slot is what pushes
+    // those two to the right; anything the caller needs beside it (a progress line, a count) goes in
+    // `leftHtml` and shares the same slot.
+    const left = config.left || config.leftHtml
+        ? `<div class="modal-footer-left me-auto d-flex align-items-center gap-2">${buttonHtml(config.left, '', false)}${config.leftHtml || ''}</div>`
+        : '';
+    return left + buttonHtml(config.primary, '', true) + buttonHtml(config.secondary, '', false);
 }
 // initSharedDataTable()'s own `emptyState` option (see that function's own comment on the
 // stickyColumns/columnFilters/export composition block, which this hooks into the same way) --
@@ -3897,11 +3949,19 @@ $(document).on('shown.bs.modal', '.modal', function () {
     const openModals = document.querySelectorAll('.modal.show');
     const stackLevel = openModals.length - 1;
     if (stackLevel <= 0) return;
-    const baseZ = 1055 + stackLevel * 20;
-    this.style.zIndex = String(baseZ + 10);
+    // 2026-09-16: the two levels come from the app's own z-index scale (tokens.css) rather than from
+    // arithmetic here -- the scale is what says a stacked modal still sits BELOW a popover, a
+    // SweetAlert dialog and a toast, and that answer has to live in one place. A third stacked modal
+    // (a shape this app does not have) deliberately lands on the same level as the second rather
+    // than climbing past those layers; being later in the DOM already puts it on top of the second.
+    const rootStyle = getComputedStyle(document.documentElement);
+    const level = name => parseInt(rootStyle.getPropertyValue(name), 10);
+    const nestedZ = level('--z-modal-nested') || 1085;
+    const nestedBackdropZ = level('--z-modal-nested-backdrop') || 1075;
+    this.style.zIndex = String(nestedZ);
     const backdrops = document.querySelectorAll('.modal-backdrop');
     const thisBackdrop = backdrops[backdrops.length - 1];
-    if (thisBackdrop) thisBackdrop.style.zIndex = String(baseZ);
+    if (thisBackdrop) thisBackdrop.style.zIndex = String(nestedBackdropZ);
 });
 // 2026-09-10, real bug found and fixed (explicit report: raw action codes like "employee_verified"
 // showing in Payroll Process's own Approval Timeline modal "History" list) -- was 3 separate, drifted
@@ -4760,7 +4820,10 @@ function _refreshAllDataTablesLanguageInner() {
         table.draw(false);
 
         const $wrapper = $(table.table().container());
-        const searchLabelText = (lang.search || 'Search').replace('_INPUT_', '').trim();
+        // NOT `lang.search || 'Search'`: the label is deliberately an EMPTY string now (getTableLang(),
+        // 2026-09-16) and `'' || 'Search'` puts the English word back on every language refresh --
+        // seen live, the toolbar read "Search" again the moment applyLanguage() ran.
+        const searchLabelText = String(lang.search === undefined || lang.search === null ? '' : lang.search).replace('_INPUT_', '').trim();
         $wrapper.find('.dt-search > label').text(searchLabelText);
         // 2026-09-13, same fix as the label above, same reason -- the input's own `placeholder`
         // attribute is ALSO written once at construction time and never re-read from

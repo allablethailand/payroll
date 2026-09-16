@@ -45,14 +45,44 @@
  */
 $tlGroupByDay = $groupByDay ?? false;
 $tlLastDayLabel = null;
+// Same per-GROUP count the JS twin renders (renderTimeline(), app.js): a run of consecutive entries
+// sharing a date, not a total per date -- the caller owns the order, so one date can open two
+// separate groups and each header describes the one it opens.
+$tlDayLabelOf = static function ($tlItem): string {
+    $ts = strtotime((string)($tlItem['time'] ?? ''));
+    return $ts ? date('d/m/Y', $ts) : (string)($tlItem['time'] ?? '');
+};
+$tlRunLength = [];
+if ($tlGroupByDay) {
+    $tlList = array_values($items);
+    $tlRunStart = 0;
+    for ($i = 0, $n = count($tlList); $i <= $n; $i++) {
+        $same = $i < $n && $tlDayLabelOf($tlList[$i]) === $tlDayLabelOf($tlList[$tlRunStart]);
+        if (!$same) {
+            $tlRunLength[$tlRunStart] = $i - $tlRunStart;
+            $tlRunStart = $i;
+        }
+    }
+}
+// No lang() helper exists for PHP partials (they render a static fallback and rely on data-i18n for
+// live switching) -- and this string carries a number, so data-i18n would overwrite it. The caller
+// passes the resolved template instead, exactly as it already passes resolved titles.
+$tlCountTpl = $dayCountTemplate ?? '{n} entries';
+$tlIndex = -1;
 ?>
 <ul class="timeline">
 <?php foreach ($items as $tlItem):
+    $tlIndex++;
     $tlTs = strtotime((string)($tlItem['time'] ?? ''));
     if ($tlGroupByDay) {
         $tlDayLabel = $tlTs ? date('d/m/Y', $tlTs) : (string)($tlItem['time'] ?? '');
         if ($tlDayLabel !== $tlLastDayLabel) {
-            echo '<li class="timeline-day-header">' . htmlspecialchars($tlDayLabel) . '</li>';
+            // An entry with no date of its own produces an empty header, hidden in CSS -- so it gets
+            // no count either, or the header stops being empty and starts showing.
+            $tlCountHtml = $tlDayLabel === ''
+                ? ''
+                : ' <span class="timeline-day-count">&middot; ' . htmlspecialchars(str_replace('{n}', (string)($tlRunLength[$tlIndex] ?? 1), $tlCountTpl)) . '</span>';
+            echo '<li class="timeline-day-header">' . htmlspecialchars($tlDayLabel) . $tlCountHtml . '</li>';
             $tlLastDayLabel = $tlDayLabel;
         }
     }
