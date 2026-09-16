@@ -647,39 +647,80 @@ class PayrollController extends Controller {
     public function addManualLine() {
         if (!$this->requirePermission('payroll_run.add')) return;
         $compId = getCompId();
-        $data = json_decode(file_get_contents('php://input'), true);
-        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
-        $employeeId = (is_array($data) && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0;
-        // ped_type_id is optional now -- omitted (or 0) means a custom, not-in-the-catalog item
-        // instead (custom_item_name + custom_item_type), see PayrollRunModel::addManualLine()'s
-        // docblock. At least one of the two forms must be present, checked below.
-        $pedTypeIdRaw = (is_array($data) && isset($data['ped_type_id'])) ? (int)$data['ped_type_id'] : 0;
-        $pedTypeId = $pedTypeIdRaw > 0 ? $pedTypeIdRaw : null;
-        $amount = (is_array($data) && isset($data['amount']) && is_numeric($data['amount'])) ? (float)$data['amount'] : 0.0;
-        $note = (is_array($data) && isset($data['note'])) ? (string)$data['note'] : null;
-        $customItemName = (is_array($data) && isset($data['custom_item_name'])) ? (string)$data['custom_item_name'] : null;
-        $customItemType = (is_array($data) && isset($data['custom_item_type'])) ? (string)$data['custom_item_type'] : null;
-        $payeeEmployeeIdRaw = (is_array($data) && isset($data['payee_employee_id'])) ? (int)$data['payee_employee_id'] : 0;
-        $payeeEmployeeId = $payeeEmployeeIdRaw > 0 ? $payeeEmployeeIdRaw : null;
-        // 2026-08-31, same-day follow-up ("รายการหัก...ในหน้าทำรอบ...ให้เพิ่มเติมตรงที่หักไปที่ไหน") --
-        // see PayrollRunModel::addManualLine()'s own docblock for validation/defaulting.
-        $payeeType = (is_array($data) && !empty($data['payee_type'])) ? (string)$data['payee_type'] : null;
-        $includeInCashSummary = (is_array($data) && array_key_exists('include_in_cash_summary', $data)) ? (bool)$data['include_in_cash_summary'] : null;
-        // 2026-09-02, Deduction Destination & Third-Party Remittance -- only meaningful when
-        // payee_type='other_person'; PayrollRunModel::addManualLine()/PaymentDestinationModel
-        // itself validate the shape, this layer just passes it through untouched.
-        $destinationData = (is_array($data) && isset($data['destination']) && is_array($data['destination'])) ? $data['destination'] : null;
-        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
-        $isOther = (is_array($data) && !empty($data['is_other'])) ? true : null;
-        // 2026-09-10, Batch 3B item 3: only meaningful when payee_type='company'; PayrollRunModel::
-        // addManualLine() itself validates it belongs to this company/is required for that type.
-        $bankAccountIdRaw = (is_array($data) && isset($data['bank_account_id'])) ? (int)$data['bank_account_id'] : 0;
-        $bankAccountId = $bankAccountIdRaw > 0 ? $bankAccountIdRaw : null;
-        if (!$compId || $id <= 0 || $employeeId <= 0 || ($pedTypeId === null && ($customItemName === null || trim($customItemName) === ''))) {
+        $p = $this->manualLinePayload(json_decode(file_get_contents('php://input'), true));
+        if (!$compId || !$p['valid']) {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json($this->model->addManualLine($id, (int)$compId, $employeeId, $pedTypeId, $amount, $this->userId(), $this->isAdmin(), $note, $customItemName, $customItemType, $payeeEmployeeId, $payeeType, $includeInCashSummary, $destinationData, $isOther, $bankAccountId));
+        $this->json($this->model->addManualLine($p['id'], (int)$compId, $p['employee_id'], $p['ped_type_id'], $p['amount'], $this->userId(), $this->isAdmin(), $p['note'], $p['custom_item_name'], $p['custom_item_type'], $p['payee_employee_id'], $p['payee_type'], $p['include_in_cash_summary'], $p['destination'], $p['is_other'], $p['bank_account_id']));
+    }
+
+    /**
+     * 2026-09-16: edits one existing manual line. Gated exactly like addManualLine() above -- same
+     * permission, same payload, same model-side validation -- because it is the same write; only
+     * the row it lands on differs. `line_id` is checked against (run, employee) by the model, not
+     * here, so that check sits with the gates it belongs to.
+     */
+    public function updateManualLine() {
+        if (!$this->requirePermission('payroll_run.add')) return;
+        $compId = getCompId();
+        $p = $this->manualLinePayload(json_decode(file_get_contents('php://input'), true));
+        if (!$compId || !$p['valid'] || $p['line_id'] <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $result = $this->model->updateManualLine($p['id'], (int)$compId, $p['line_id'], $p['employee_id'], $p['ped_type_id'], $p['amount'], $this->userId(), $this->isAdmin(), $p['note'], $p['custom_item_name'], $p['custom_item_type'], $p['payee_employee_id'], $p['payee_type'], $p['include_in_cash_summary'], $p['destination'], $p['is_other'], $p['bank_account_id']);
+        if (!empty($result['status'])) {
+            $lines = $this->model->manualLinesForEmployee((int)$compId, $p['id'], $p['employee_id']);
+            $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), (int)$compId);
+            $result['manual_lines'] = $visibility['full'] ? $lines : $this->maskManualLines($lines);
+        }
+        $this->json($result);
+    }
+
+    /**
+     * 2026-09-16: the manual-line field set as it arrives on the wire, parsed once for both
+     * add-manual-line and update-manual-line -- editing a line takes exactly the fields adding it
+     * took, so the two endpoints read them the same way or they will drift apart the first time a
+     * field is added to one of them. `valid` covers only the shape checks this layer can make
+     * (ids present, one of the two item forms supplied); everything about what those values MEAN
+     * stays in PayrollRunModel::resolveManualLineInput(), the model-side twin of this method.
+     */
+    private function manualLinePayload($data): array {
+        $isArr = is_array($data);
+        // ped_type_id is optional -- omitted (or 0) means a custom, not-in-the-catalog item
+        // instead (custom_item_name + custom_item_type), see PayrollRunModel::addManualLine()'s
+        // docblock. At least one of the two forms must be present, checked as `valid` below.
+        $pedTypeIdRaw = ($isArr && isset($data['ped_type_id'])) ? (int)$data['ped_type_id'] : 0;
+        $payeeEmployeeIdRaw = ($isArr && isset($data['payee_employee_id'])) ? (int)$data['payee_employee_id'] : 0;
+        // 2026-09-10, Batch 3B item 3: only meaningful when payee_type='company'; PayrollRunModel
+        // itself validates it belongs to this company/is required for that type.
+        $bankAccountIdRaw = ($isArr && isset($data['bank_account_id'])) ? (int)$data['bank_account_id'] : 0;
+        $p = [
+            'id' => ($isArr && isset($data['id'])) ? (int)$data['id'] : 0,
+            'line_id' => ($isArr && isset($data['line_id'])) ? (int)$data['line_id'] : 0,
+            'employee_id' => ($isArr && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0,
+            'ped_type_id' => $pedTypeIdRaw > 0 ? $pedTypeIdRaw : null,
+            'amount' => ($isArr && isset($data['amount']) && is_numeric($data['amount'])) ? (float)$data['amount'] : 0.0,
+            'note' => ($isArr && isset($data['note'])) ? (string)$data['note'] : null,
+            'custom_item_name' => ($isArr && isset($data['custom_item_name'])) ? (string)$data['custom_item_name'] : null,
+            'custom_item_type' => ($isArr && isset($data['custom_item_type'])) ? (string)$data['custom_item_type'] : null,
+            'payee_employee_id' => $payeeEmployeeIdRaw > 0 ? $payeeEmployeeIdRaw : null,
+            // 2026-08-31, same-day follow-up ("รายการหัก...ในหน้าทำรอบ...ให้เพิ่มเติมตรงที่หักไปที่ไหน") --
+            // see PayrollRunModel::addManualLine()'s own docblock for validation/defaulting.
+            'payee_type' => ($isArr && !empty($data['payee_type'])) ? (string)$data['payee_type'] : null,
+            'include_in_cash_summary' => ($isArr && array_key_exists('include_in_cash_summary', $data)) ? (bool)$data['include_in_cash_summary'] : null,
+            // 2026-09-02, Deduction Destination & Third-Party Remittance -- only meaningful when
+            // payee_type='other_person'; the model/PaymentDestinationModel validate the shape,
+            // this layer just passes it through untouched.
+            'destination' => ($isArr && isset($data['destination']) && is_array($data['destination'])) ? $data['destination'] : null,
+            // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
+            'is_other' => ($isArr && !empty($data['is_other'])) ? true : null,
+            'bank_account_id' => $bankAccountIdRaw > 0 ? $bankAccountIdRaw : null,
+        ];
+        $p['valid'] = $p['id'] > 0 && $p['employee_id'] > 0
+            && ($p['ped_type_id'] !== null || ($p['custom_item_name'] !== null && trim($p['custom_item_name']) !== ''));
+        return $p;
     }
 
     public function removeManualLine() {

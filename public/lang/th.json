@@ -1796,6 +1796,7 @@
     "overflow_actions_label": "อื่นๆ",
     "action_cancel": "ยกเลิก",
     "action_add_manual_line": "เพิ่มรายการ",
+    "action_update_manual_line": "แก้ไขรายการ",
     "action_remove_manual_line": "ลบรายการ",
     "action_line_override_save": "ปรับรายการหักจาก Sync",
     "action_line_override_remove": "คืนค่ารายการหักจาก Sync",

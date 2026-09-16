@@ -5071,30 +5071,24 @@ class PayrollRunModel {
         ];
     }
 
+    /** The ':column' => value map PDO wants, out of resolveManualLineInput()'s column => value
+     *  fields plus whatever the caller binds on top (INSERT and UPDATE bind different extras). */
+    private function manualLineParams(array $fields, array $extra): array {
+        foreach ($fields as $column => $value) {
+            $extra[':' . $column] = $value;
+        }
+        return $extra;
+    }
+
     /**
-     * Adds one earning/deduction line for one employee on this run, then recalculates immediately
-     * (same as joinEmployees()). For an 'incentive' run this is the only source of pay per explicit
-     * request (2026-08-19: "pick item + enter the amount separately per person" -- not one flat
-     * amount applied to everyone); for any other run it's an additive one-off adjustment on top of
-     * the normal calculation.
-     *
-     * Two mutually-exclusive ways to specify the item (2026-08-19, explicit request: "ระบุ item ได้
-     * เอง ว่าจะจ่ายเพิ่มหรือหักจากอะไร" -- let the admin type their own item too):
-     *   - $pedTypeId set: a catalog payroll_earning_deduction_types item (existing behavior).
-     *   - $pedTypeId null: a free-text $customItemName + explicit $customItemType('earning'/
-     *     'deduction') -- for a genuine one-off that isn't worth creating a standing catalog entry
-     *     for. Whichever $customItemName/$customItemType are passed are IGNORED when $pedTypeId is
-     *     set (not an error -- the catalog item wins, matching how a frontend toggle between the
-     *     two modes would only ever send one side populated anyway).
+     * 2026-09-16: everything addManualLine() checks between "is this run still editable" and its
+     * own INSERT, lifted out verbatim so updateManualLine() gates an edit by exactly the same
+     * rules rather than growing a second copy of them -- editing a line must never be able to
+     * reach a state adding that same line would have refused. Returns either a refusal (the same
+     * {status:false,message} shape both callers hand straight back) or the resolved column values
+     * ready to write, plus the employee_no/item label both callers put in their audit note.
      */
-    public function addManualLine(int $id, int $compId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, bool $isAdmin, ?string $note = null, ?string $customItemName = null, ?string $customItemType = null, ?int $payeeEmployeeId = null, ?string $payeeType = null, ?bool $includeInCashSummary = null, ?array $destinationData = null, ?bool $isOther = null, ?int $bankAccountId = null): array {
-        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
-            return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
-        }
-        [$run, $err] = $this->assertManualLinesEditable($id, $compId, $employeeId);
-        if ($err !== null) {
-            return ['status' => false, 'message' => $err];
-        }
+    private function resolveManualLineInput(int $compId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, ?string $note, ?string $customItemName, ?string $customItemType, ?int $payeeEmployeeId, ?string $payeeType, ?bool $includeInCashSummary, ?array $destinationData, ?bool $isOther, ?int $bankAccountId): array {
         if ($amount <= 0) {
             return ['status' => false, 'message' => 'Amount must be greater than 0.'];
         }
@@ -5201,16 +5195,60 @@ class PayrollRunModel {
         // Same "forced 0 for not_disbursed, otherwise honor the caller (default included)" rule as
         // EmployeeEarningDeductionModel::save()'s own include_in_cash_summary comment.
         $includeInCashSummaryVal = $payeeType === 'not_disbursed' ? 0 : ($includeInCashSummary === false ? 0 : 1);
+        return [
+            'status' => true,
+            'employee_no' => $employeeNo,
+            'item_label' => $itemLabel,
+            'fields' => [
+                'ped_type_id' => $pedTypeId,
+                'custom_item_name' => $customItemName,
+                'custom_item_type' => $customItemType,
+                'is_other' => $isOtherFlag ? 1 : 0,
+                'amount' => $amount,
+                'note' => $note,
+                'payee_employee_id' => $payeeEmployeeId,
+                'payee_type' => $payeeType,
+                'destination_id' => $destinationId,
+                'bank_account_id' => $bankAccountId,
+                'include_in_cash_summary' => $includeInCashSummaryVal,
+            ],
+        ];
+    }
+
+    /**
+     * Adds one earning/deduction line for one employee on this run, then recalculates immediately
+     * (same as joinEmployees()). For an 'incentive' run this is the only source of pay per explicit
+     * request (2026-08-19: "pick item + enter the amount separately per person" -- not one flat
+     * amount applied to everyone); for any other run it's an additive one-off adjustment on top of
+     * the normal calculation.
+     *
+     * Two mutually-exclusive ways to specify the item (2026-08-19, explicit request: "ระบุ item ได้
+     * เอง ว่าจะจ่ายเพิ่มหรือหักจากอะไร" -- let the admin type their own item too):
+     *   - $pedTypeId set: a catalog payroll_earning_deduction_types item (existing behavior).
+     *   - $pedTypeId null: a free-text $customItemName + explicit $customItemType('earning'/
+     *     'deduction') -- for a genuine one-off that isn't worth creating a standing catalog entry
+     *     for. Whichever $customItemName/$customItemType are passed are IGNORED when $pedTypeId is
+     *     set (not an error -- the catalog item wins, matching how a frontend toggle between the
+     *     two modes would only ever send one side populated anyway).
+     */
+    public function addManualLine(int $id, int $compId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, bool $isAdmin, ?string $note = null, ?string $customItemName = null, ?string $customItemType = null, ?int $payeeEmployeeId = null, ?string $payeeType = null, ?bool $includeInCashSummary = null, ?array $destinationData = null, ?bool $isOther = null, ?int $bankAccountId = null): array {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
+        }
+        [$run, $err] = $this->assertManualLinesEditable($id, $compId, $employeeId);
+        if ($err !== null) {
+            return ['status' => false, 'message' => $err];
+        }
+        $resolved = $this->resolveManualLineInput($compId, $employeeId, $pedTypeId, $amount, $userId, $note, $customItemName, $customItemType, $payeeEmployeeId, $payeeType, $includeInCashSummary, $destinationData, $isOther, $bankAccountId);
+        if (!$resolved['status']) {
+            return $resolved;
+        }
+        $fields = $resolved['fields'];
 
         $this->db->prepare("INSERT INTO `payroll_run_manual_lines`
                 (run_id, employee_id, ped_type_id, custom_item_name, custom_item_type, is_other, amount, note, payee_employee_id, payee_type, destination_id, bank_account_id, include_in_cash_summary, created_by)
             VALUES (:run_id, :employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :is_other, :amount, :note, :payee_employee_id, :payee_type, :destination_id, :bank_account_id, :include_in_cash_summary, :created_by)")
-            ->execute([
-                ':run_id' => $id, ':employee_id' => $employeeId, ':ped_type_id' => $pedTypeId,
-                ':custom_item_name' => $customItemName, ':custom_item_type' => $customItemType, ':is_other' => $isOtherFlag ? 1 : 0,
-                ':amount' => $amount, ':note' => $note, ':payee_employee_id' => $payeeEmployeeId,
-                ':payee_type' => $payeeType, ':destination_id' => $destinationId, ':bank_account_id' => $bankAccountId, ':include_in_cash_summary' => $includeInCashSummaryVal, ':created_by' => $userId,
-            ]);
+            ->execute($this->manualLineParams($fields, [':run_id' => $id, ':employee_id' => $employeeId, ':created_by' => $userId]));
 
         // 2026-08-21, explicit request ("ต้องเก็บ Log ว่าใครแก้ไขข้อมูลอะไรไปเมื่อไหร่") -- addManualLine()/
         // removeManualLine() were the only mutating PayrollRunModel methods with no audit trail at
@@ -5218,7 +5256,52 @@ class PayrollRunModel {
         // payroll_run_audit_logs, so the affected employee/item/amount go into the existing
         // free-text `note`, same as recalculate()'s own "N employee(s) calculated" note.
         $this->logAudit($id, 'draft', 'draft', 'add_manual_line', $userId,
-            "Employee {$employeeNo}: added \"{$itemLabel}\" amount " . number_format($amount, 2) . ($note ? " (note: {$note})" : ''));
+            "Employee {$resolved['employee_no']}: added \"{$resolved['item_label']}\" amount " . number_format($fields['amount'], 2) . ($fields['note'] ? " (note: {$fields['note']})" : ''));
+
+        return $this->recalculate($id, $compId, $userId, $isAdmin);
+    }
+
+    /**
+     * 2026-09-16: edits one existing manual line in place -- the same fields, the same validation
+     * (resolveManualLineInput()) and the same gate as adding that very line fresh, followed by the
+     * same immediate recalculate(). Editing must never reach a state adding could not, so there is
+     * deliberately no looser path here.
+     *
+     * The row is located by (line_id, run_id, employee_id) TOGETHER, never by line_id alone: the
+     * run/verified gates above were evaluated for $employeeId, so a line id belonging to a different
+     * employee (or a different run) has to be a refusal rather than an edit those gates never
+     * actually covered.
+     */
+    public function updateManualLine(int $id, int $compId, int $lineId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, bool $isAdmin, ?string $note = null, ?string $customItemName = null, ?string $customItemType = null, ?int $payeeEmployeeId = null, ?string $payeeType = null, ?bool $includeInCashSummary = null, ?array $destinationData = null, ?bool $isOther = null, ?int $bankAccountId = null): array {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
+        }
+        [$run, $err] = $this->assertManualLinesEditable($id, $compId, $employeeId);
+        if ($err !== null) {
+            return ['status' => false, 'message' => $err];
+        }
+        $stmtLine = $this->db->prepare("SELECT id FROM `payroll_run_manual_lines`
+            WHERE id = :line_id AND run_id = :run_id AND employee_id = :employee_id");
+        $stmtLine->execute([':line_id' => $lineId, ':run_id' => $id, ':employee_id' => $employeeId]);
+        if (!$stmtLine->fetch()) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $resolved = $this->resolveManualLineInput($compId, $employeeId, $pedTypeId, $amount, $userId, $note, $customItemName, $customItemType, $payeeEmployeeId, $payeeType, $includeInCashSummary, $destinationData, $isOther, $bankAccountId);
+        if (!$resolved['status']) {
+            return $resolved;
+        }
+        $fields = $resolved['fields'];
+
+        // Every resolved column is written, including the ones this edit left at null (a line
+        // switched away from payee_type='other_person' must lose its destination_id, not keep a
+        // stale one) -- which is exactly why the SET list is derived from $fields itself.
+        $set = implode(', ', array_map(fn(string $column): string => "`{$column}` = :{$column}", array_keys($fields)));
+        $this->db->prepare("UPDATE `payroll_run_manual_lines` SET {$set}
+            WHERE id = :line_id AND run_id = :run_id AND employee_id = :employee_id")
+            ->execute($this->manualLineParams($fields, [':line_id' => $lineId, ':run_id' => $id, ':employee_id' => $employeeId]));
+
+        $this->logAudit($id, 'draft', 'draft', 'update_manual_line', $userId,
+            "Employee {$resolved['employee_no']}: updated \"{$resolved['item_label']}\" amount " . number_format($fields['amount'], 2) . ($fields['note'] ? " (note: {$fields['note']})" : ''));
 
         return $this->recalculate($id, $compId, $userId, $isAdmin);
     }

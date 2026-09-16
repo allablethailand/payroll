@@ -3980,7 +3980,7 @@ const AUDIT_ACTION_LABEL_KEYS = {
     request_info: 'action_request_info', markPaid: 'action_mark_paid',
     lock: 'action_verify_run', reopen: 'action_reopen',
     delete: 'action_delete', cancel: 'action_cancel',
-    add_manual_line: 'action_add_manual_line', remove_manual_line: 'action_remove_manual_line',
+    add_manual_line: 'action_add_manual_line', update_manual_line: 'action_update_manual_line', remove_manual_line: 'action_remove_manual_line',
     merge_supplemental: 'action_merge_supplemental', merge_run: 'action_merge_run',
     line_override_save: 'action_line_override_save', line_override_remove: 'action_line_override_remove',
     recurring_deduction_destination_override_save: 'action_recurring_deduction_destination_override_save',

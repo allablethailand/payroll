@@ -1796,6 +1796,7 @@
     "overflow_actions_label": "Other Actions",
     "action_cancel": "Cancel",
     "action_add_manual_line": "Add Item",
+    "action_update_manual_line": "Edit Item",
     "action_remove_manual_line": "Remove Item",
     "action_line_override_save": "Adjust Sync Deduction",
     "action_line_override_remove": "Reset Sync Deduction",
