@@ -192,6 +192,52 @@ try {
         $stored = $pdo->query("SELECT DISTINCT action FROM `payroll_run_line_overrides`
             WHERE run_id = {$runId} AND employee_id = {$employeeId} ORDER BY action")->fetchAll(PDO::FETCH_COLUMN);
         check('only the 2 documented actions are ever stored', array_values(array_diff($stored, ['exclude', 'override_amount'])), []);
+
+        echo "
+=== 6b. a hand-added line is not listed here at all (2026-09-16) ===
+";
+        // A manual line is edited and removed on its own tab, as the row it really is. It must not
+        // also appear here with a switch and a pencil: an override is keyed by item_code, and two
+        // manual lines are allowed to share one code, so an override on that code has no single line
+        // to mean. Filtered in the model so BOTH mount points of this table agree without either
+        // remembering to do it -- which is exactly what this asserts by calling the model directly.
+        $pdo->prepare("UPDATE `payroll_run_details`
+                SET earning_breakdown = :earning, deduction_breakdown = :deduction
+                WHERE run_id = :run_id AND employee_id = :employee_id")
+            ->execute([
+                ':earning' => json_encode([
+                    ['source' => 'manual_line', 'manual_line_id' => 9001, 'code' => 'TEST_BONUS', 'name_th' => 'โบนัสทดสอบ', 'name_en' => 'Test bonus', 'amount' => 2000],
+                    ['code' => 'TEST_CALC_EARN', 'name_th' => 'รายได้จากระบบ', 'name_en' => 'Calculated earning', 'amount' => 500],
+                ], JSON_UNESCAPED_UNICODE),
+                ':deduction' => json_encode([
+                    ['source' => 'manual_line', 'manual_line_id' => 9002, 'code' => 'TEST_UNIFORM', 'name_th' => 'หักทดสอบ', 'name_en' => 'Test deduction', 'amount' => 550],
+                ], JSON_UNESCAPED_UNICODE),
+                ':run_id' => $runId,
+                ':employee_id' => $employeeId,
+            ]);
+        $codes = array_column($model->syncDeductionLinesForEmployee($compId, $runId, $employeeId), 'code');
+        check('a hand-added earning is not offered for adjustment', in_array('TEST_BONUS', $codes, true), false);
+        check('a hand-added deduction is not either', in_array('TEST_UNIFORM', $codes, true), false);
+        // The filter has to be about WHERE the line came from, not about it being an earning: a
+        // calculated line in the same column stays.
+        check('a calculated line in the same column is still listed', in_array('TEST_CALC_EARN', $codes, true), true);
+        check('base salary is still listed', in_array(PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, $codes, true), true);
+        // The line is filtered out of ONE endpoint, not out of the payroll. It is still in the
+        // breakdown the payslip renders, and still in the money the employee is paid -- a filter
+        // that quietly dropped it from either would be a pay bug, not a UI change.
+        $detail = $model->getDetails($runId, $compId);
+        $row = null;
+        foreach ($detail as $d) { if ((int)$d['employee_id'] === $employeeId) { $row = $d; break; } }
+        $breakdownCodes = array_merge(array_column($row['earning_breakdown'], 'code'), array_column($row['deduction_breakdown'], 'code'));
+        check('the hand-added lines are still in the breakdown the payslip renders',
+            [in_array('TEST_BONUS', $breakdownCodes, true), in_array('TEST_UNIFORM', $breakdownCodes, true)], [true, true]);
+        // Totals are the persisted ones recalculate() wrote; reading them back proves this endpoint's
+        // own filter changed nothing about them.
+        $persisted = $pdo->query("SELECT gross_amount, total_deduction_amount, net_amount FROM `payroll_run_details`
+            WHERE run_id = {$runId} AND employee_id = {$employeeId}")->fetch(PDO::FETCH_ASSOC);
+        check('and the run totals are untouched by the filter',
+            [$row['gross_amount'], $row['total_deduction_amount'], $row['net_amount']],
+            [$persisted['gross_amount'], $persisted['total_deduction_amount'], $persisted['net_amount']]);
     }
 } finally {
     $pdo->rollBack();
@@ -246,7 +292,9 @@ checkTrue('opening an editor closes any other', strpos($js, "function lineOverri
 checkTrue('the field opens focused and selected', strpos($js, "\$input.trigger('focus').trigger('select');") !== false);
 
 echo "\n=== 9. the switch asks, both ways ===\n";
-$swStart = (int)strpos($js, "on('change', '#lineOverrideTableWrap .lo-include'");
+// 2026-09-16: bound on `.lo-mount`, the class BOTH hosts of this table carry, not on tab 3's own id
+// -- see setLineOverrideHostRd()'s docblock for why the table has 2 mount points and one handler set.
+$swStart = (int)strpos($js, "on('change', '.lo-mount .lo-include'");
 $sw = substr($js, $swStart, 1400);
 checkTrue('turning it OFF asks in the warning tone', strpos($sw, "line_override_confirm_exclude_message") !== false);
 checkTrue('turning it ON asks too', strpos($sw, "line_override_confirm_include_message") !== false);

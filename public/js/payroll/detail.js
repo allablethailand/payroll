@@ -2410,11 +2410,20 @@ function statutoryRowsRd(items) {
 function payslipEmptyRowRd() {
     return `<tr class="payslip-row"><td colspan="2" class="text-center text-muted small">-</td></tr>`;
 }
+
+// The row the Calculation Breakdown modal is currently showing -- kept module-level because the
+// editable table below it reloads on its own (after a save) and has to know whose lines it is
+// showing without the click that opened the modal still being on the stack.
+let breakdownRowRd = null;
 function renderBreakdownModal(row) {
+    // 2026-09-16, D1: the row every later refresh reads from -- set before anything renders, so a
+    // reload triggered by a save can never run against the previous employee's figures.
+    breakdownRowRd = row;
     // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
     // name in the modal-header (#breakdownEmployeeName removed from the view -- see this modal's
     // own markup comment).
     $('#breakdownHeaderCard').html(employeeHeaderCardHtml(row));
+    renderBreakdownStatusLineRd(row);
     // 2026-09-06, explicit request: Origami's opt-in TOTAL_DAYS item_values entry (calendar-based
     // day count) -- row.total_days is null (see PayrollRunModel::getDetails()'s own docblock) for
     // every run/employee with no data, never 0, so a plain truthiness-adjacent null check is
@@ -2437,6 +2446,29 @@ function renderBreakdownModal(row) {
         $totalDays.addClass('d-none').text('');
     }
 
+    // A row that cannot be edited renders exactly the slip it always did -- same function, same
+    // output, byte for byte (tests/breakdown_slip_render_test.js pins it). Only an editable row gets
+    // the other layout.
+    // Height follows the content, in BOTH layouts. `.modal-tabbed`
+    // (docs/decisions/2026-09-15-modal-tabbed-height.md) was tried here and removed: it pins the body
+    // at one height so a modal cannot resize between tabs, but this modal has no tabs -- what it
+    // bought was a stable height across saves, at the price that doc itself names for short content
+    // (an employee with few lines left ~140px of empty modal under the net band, measured).
+    if (breakdownCanEditRd(row)) {
+        renderBreakdownEditableBodyRd(row);
+        return;
+    }
+    $('#breakdownModalBody').html(breakdownViewSlipHtml(row));
+    // 2026-09-14, centralized -- initPopovers() (app.js) now owns per-element init (dispose-then-
+    // create, same idempotent pattern this file used to do inline here) AND the shared close-on-Esc/
+    // click-outside/single-open-at-a-time/✕ behavior, wired once globally the first time it's called
+    // anywhere in the app. Scoped to this modal's own body so re-rendering for a different employee
+    // doesn't touch popovers elsewhere on the page.
+    if (typeof initPopovers === 'function') initPopovers('#breakdownModalBody');
+}
+// The read-only slip, unchanged -- this is the exact body renderBreakdownModal() built inline before
+// the editable layout existed, moved as-is so the 2 sit beside each other instead of nested.
+function breakdownViewSlipHtml(row) {
     let earningRowsHtml = '';
     if (Number(row.base_salary_amount) > 0) {
         earningRowsHtml += `<tr class="payslip-row">
@@ -2458,7 +2490,7 @@ function renderBreakdownModal(row) {
     // breakdownSectionHtml() (removed, no longer used anywhere), so this modal and a future
     // print/PDF payslip page share one layout. row.total_deduction_amount already combines item +
     // statutory deductions (PayrollRunModel::recalculate(), confirmed) -- no extra sum needed here.
-    const html = payslipViewHtml({
+    return payslipViewHtml({
         earningRowsHtml: earningRowsHtml || payslipEmptyRowRd(),
         deductionStatutoryRowsHtml: deductionStatutoryRowsHtml,
         deductionItemRowsHtml: deductionItemRowsHtml,
@@ -2466,13 +2498,108 @@ function renderBreakdownModal(row) {
         totalDeductionAmount: row.total_deduction_amount,
         netAmount: row.net_amount
     });
-    $('#breakdownModalBody').html(html);
-    // 2026-09-14, centralized -- initPopovers() (app.js) now owns per-element init (dispose-then-
-    // create, same idempotent pattern this file used to do inline here) AND the shared close-on-Esc/
-    // click-outside/single-open-at-a-time/✕ behavior, wired once globally the first time it's called
-    // anywhere in the app. Scoped to this modal's own body so re-rendering for a different employee
-    // doesn't touch popovers elsewhere on the page.
-    if (typeof initPopovers === 'function') initPopovers('#breakdownModalBody');
+}
+/* ---------- Calculation Breakdown modal, EDITABLE layout (2026-09-16, D1 "สลิปที่แก้ได้").
+   A row that can still be edited (draft run, not verified) gets the SAME editing surface the
+   Adjustments modal's "ปรับตัวเลข" tab has -- not a second implementation of it: the whole table
+   (render, switch, inline edit, history dropdown/modal, hidden rows, busy lock) is one set of
+   functions with 2 mount points, see the "ปรับตัวเลข" section further down. Everything else is
+   read-only and renders exactly the slip it always did. ---------- */
+// The gate: manageItemsButtonRd()'s own condition (draft run) plus this row's verify lock. Both are
+// real server-side rules, not styling -- lineOverrideSave() refuses a non-draft run AND a verified
+// employee (isEmployeeVerifiedForRun()), so showing the controls in either case would only produce
+// errors the user cannot act on.
+function breakdownCanEditRd(row) {
+    return !!currentRun && currentRun.state === 'draft' && !row.is_verified;
+}
+// The slot under the employee header card: one line of status, or nothing. Only the verified-draft
+// case has anything to say -- unverifying is a real action the user can take, so naming it beats the
+// editing surface simply being absent. Past draft there is no action to point at, so the slot stays
+// empty (rules.md §9).
+function renderBreakdownStatusLineRd(row) {
+    const $slot = $('#breakdownStatusLine');
+    if (!!currentRun && currentRun.state === 'draft' && row.is_verified) {
+        $slot.html(`<span class="breakdown-status-text">${escapeHtml(langData['breakdown_verified_lock_hint'] || 'Verified -- unverify before editing')}</span>`).removeClass('d-none');
+        return;
+    }
+    $slot.empty().addClass('d-none');
+}
+// The add-an-item button on a column head. Disabled in this chunk (adding a line from here is its own
+// chunk) -- rendered rather than omitted so the column head reads the same as it will once it works,
+// with a tooltip that says why it does not yet.
+function breakdownAddLineButtonHtml() {
+    return `<button type="button" class="btn-icon breakdown-add-line-btn" disabled title="${escapeAttr(langData['breakdown_add_line_unavailable'] || 'Add an item -- not available yet')}"><i class="fa-solid fa-plus"></i></button>`;
+}
+// Section 2: the lines somebody added by hand, in the slip's own 2-column layout so they read as the
+// same kind of thing as the calculated ones above. Rows come from manualLineListItemHtml() -- the
+// Adjustments modal's own row renderer, reused as-is. No totals here: the one figure that matters is
+// the run's own net pay, which section 3 carries.
+function renderBreakdownManualLinesRd(lines) {
+    const all = lines || [];
+    const earningLines = all.filter(l => l.item_type === 'earning');
+    const deductionLines = all.filter(l => l.item_type === 'deduction');
+    $('#breakdownManualLines').html(payslipViewHtml({
+        earningTitle: langData['breakdown_earnings'] || 'Income',
+        deductionTitle: langData['payslip_deductions_title'] || 'Deductions',
+        earningTitleActionHtml: breakdownAddLineButtonHtml(),
+        deductionTitleActionHtml: breakdownAddLineButtonHtml(),
+        earningRowsHtml: earningLines.map(manualLineListItemHtml).join(''),
+        deductionItemRowsHtml: deductionLines.map(manualLineListItemHtml).join(''),
+        showTotals: false,
+    }));
+}
+function loadBreakdownManualLinesRd(employeeId) {
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.manual-lines`,
+        method: 'GET',
+        data: { run_id: PAYROLL_RUN_ID, employee_id: employeeId },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status) return;
+            renderBreakdownManualLinesRd(res.data || []);
+        }
+    });
+}
+// Section 3: the run's own net pay for this employee, through the same component band the read-only
+// slip ends with. Re-read from api/payroll-run.get after every write, because a single override
+// changes what the statutory lines compute to and therefore this figure.
+function renderBreakdownNetSummaryRd(row) {
+    $('#breakdownNetSummary').html(payslipNetSummaryHtml(row.net_amount));
+}
+function refreshBreakdownNetSummaryRd() {
+    if (!breakdownRowRd) return;
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.get`,
+        method: 'GET',
+        data: { id: PAYROLL_RUN_ID },
+        dataType: 'json',
+        success: function (res) {
+            if (!res.status || !res.data) return;
+            const fresh = (res.data.details || []).find(d => Number(d.employee_id) === Number(breakdownRowRd.employee_id));
+            if (!fresh) return;
+            breakdownRowRd = fresh;
+            renderBreakdownNetSummaryRd(fresh);
+        }
+    });
+}
+function renderBreakdownEditableBodyRd(row) {
+    $('#breakdownModalBody').html(`<div class="breakdown-edit">
+        <section class="breakdown-edit-section">
+            <h6 class="breakdown-edit-title">${escapeHtml(langData['breakdown_group_from_system'] || 'From the system')}</h6>
+            <div id="breakdownLineOverrideWrap" class="lo-mount"></div>
+        </section>
+        <section class="breakdown-edit-section">
+            <h6 class="breakdown-edit-title">${escapeHtml(langData['breakdown_group_added_manually'] || 'Added manually')}</h6>
+            <div id="breakdownManualLines"></div>
+        </section>
+        <div id="breakdownNetSummary"></div>
+    </div>`);
+    renderBreakdownNetSummaryRd(row);
+    renderBreakdownManualLinesRd([]);
+    // One host, one employee, one reload path -- see setLineOverrideHostRd()'s own docblock.
+    setLineOverrideHostRd('#breakdownLineOverrideWrap', row.employee_id, refreshBreakdownNetSummaryRd);
+    loadSyncLineOverridesRd();
+    loadBreakdownManualLinesRd(row.employee_id);
 }
 $(document).on('click', '.btn-view-breakdown', function () {
     const employeeId = $(this).data('employee-id');
@@ -4265,9 +4392,15 @@ let manageLinesEmployeeId = null;
 // `badge bg-info-subtle`/`bg-secondary-subtle` markup (which also failed §12's lint rule 8). A
 // catalog-picked line gets NO badge at all, just its item code as quiet text, exactly as the
 // instruction describes ("badge โหมด ... เฉพาะที่ไม่ใช่ เลือกจากรายการ").
+// 2026-09-16: a catalog line's plain item_code is no longer printed beside the name -- it is an
+// internal identifier, and the name already says what the row is. It survives as the name's own
+// `title` (see manualLineListItemHtml()), the same place breakdownLineRowsRd() moved its codes to.
+// The custom/other BADGES stay: those classify the line itself (someone typed this in / it is an
+// "other" destination), they are not an identifier -- the same distinction breakdownLineRowsRd()
+// already draws between the 2 kinds.
 function manualLineTagHtml(line) {
     if (!line.is_custom) {
-        return `<span class="manual-line-code">${escapeHtml(line.item_code || '')}</span>`;
+        return '';
     }
     return statusBadgeHtml(line.is_other ? 'other' : 'custom', 'manual_line_mode', { outline: true });
 }
@@ -4305,7 +4438,7 @@ function manualLineListItemHtml(line) {
     const removeBtn = `<span class="manual-line-actions"><button type="button" class="btn-icon-ghost manual-line-remove-btn btn-remove-manual-line" data-line-id="${line.id}" title="${escapeAttr(langData['action_remove'] || 'Remove')}"><i class="fa-solid fa-trash-can"></i></button></span>`;
     return `<tr class="payslip-row manual-line-item">
         <td>
-            <div class="payslip-line-head"><span class="payslip-line-name">${escapeHtml(name)}</span>${manualLineTagHtml(line)}</div>
+            <div class="payslip-line-head"><span class="payslip-line-name"${line.is_custom ? '' : ` title="${escapeAttr(line.item_code || '')}"`}>${escapeHtml(name)}</span>${manualLineTagHtml(line)}</div>
             ${noteHtml}
             ${payeeHtml}
         </td>
@@ -4498,6 +4631,36 @@ function lineOverrideIsSkippedRd(line) {
     return !line.override_action && !!lineOverrideSkipEnumRd(line);
 }
 let lineOverrideRowsRd = [];
+/* 2026-09-16, D1: this table has TWO mount points -- the Adjustments modal's "ปรับตัวเลข" tab and the
+   Calculation Breakdown modal's editable layout -- and exactly ONE implementation. `lineOverrideHostRd`
+   is the whole of the difference between them: where to render, whose lines to fetch, and what else to
+   refresh after a write. Every function below reads it instead of naming a container, so neither host
+   owns the table and neither can drift from the other.
+   Only one host is live at a time: setLineOverrideHostRd() empties the other mount when it switches.
+   That is not tidiness -- the rendered table carries real ids (`loInc{n}`, `lineOverrideHiddenRow`,
+   `btnToggleHiddenLineOverrides`), so leaving a previous host's markup in the DOM would mean duplicate
+   ids the moment the second host renders. */
+let lineOverrideHostRd = { mount: '#lineOverrideTableWrap', employeeId: null, onSaved: null, isAdjustmentsTab: true };
+function lineOverrideMountRd() {
+    return $(lineOverrideHostRd.mount);
+}
+function lineOverrideEmployeeIdRd() {
+    return lineOverrideHostRd.employeeId !== null ? lineOverrideHostRd.employeeId : manageLinesEmployeeId;
+}
+function setLineOverrideHostRd(mount, employeeId, onSaved) {
+    if (lineOverrideHostRd.mount !== mount) {
+        $(lineOverrideHostRd.mount).empty();
+    }
+    lineOverrideHostRd = {
+        mount: mount,
+        employeeId: employeeId,
+        onSaved: onSaved || null,
+        // The Adjustments tab owns things this table does not: the Tax/SSO radios that ride along in
+        // the same response, its own dirty guard and its own footer button. They are skipped outright
+        // for any other host rather than firing against markup that is not on screen.
+        isAdjustmentsTab: mount === '#lineOverrideTableWrap',
+    };
+}
 // Edit history for THIS employee, keyed 'line_type|item_code' -- fetched once alongside the table's
 // own data (loadSyncLineOverridesRd) because the table has to know at RENDER time which rows even
 // have a history badge to draw.
@@ -4642,7 +4805,7 @@ function lineOverrideRowHtml(line, idx, group, runDisabled) {
 }
 function renderLineOverrideTableRd(lines, runSettings) {
     lineOverrideRowsRd = lines || [];
-    const $wrap = $('#lineOverrideTableWrap');
+    const $wrap = lineOverrideMountRd();
     // The lock taken when a write started is released HERE, not when the request came back: it has to
     // hold across the reload too, or the user can act on rows that are about to be replaced. Only the
     // wrapper's own class is cleared -- every control below is brand-new markup that already carries
@@ -4703,7 +4866,7 @@ function lineOverrideHiddenRowHtml(hiddenCount) {
 }
 // Show/hide only ever toggles classes -- no field's value or disabled state changes, so the dirty
 // guard (§9, which snapshots field values) correctly sees nothing happening here.
-$(document).on('click', '#btnToggleHiddenLineOverrides', function () {
+$(document).on('click', '.lo-mount .lo-hidden-toggle', function () {
     const $btn = $(this);
     const show = $btn.attr('data-shown') !== '1';
     const count = $btn.attr('data-count') || '0';
@@ -4712,11 +4875,11 @@ $(document).on('click', '#btnToggleHiddenLineOverrides', function () {
         : (langData['line_override_show_hidden_rows'] || 'Show {n} hidden').replace('{n}', count);
     $btn.attr('data-shown', show ? '1' : '0');
     $btn.html(escapeHtml(label) + ` <i class="fa-solid fa-chevron-${show ? 'up' : 'down'}"></i>`);
-    $('#lineOverrideTableWrap').find('.lo-row-skipped, .lo-group-skipped').toggleClass('d-none', !show);
+    lineOverrideMountRd().find('.lo-row-skipped, .lo-group-skipped').toggleClass('d-none', !show);
 });
 // Picking a value out of a row's own history is a write like any other in this tab: it confirms,
 // then sends.
-$(document).on('click', '#lineOverrideTableWrap .lo-history-item', function () {
+$(document).on('click', '.lo-mount .lo-history-item', function () {
     lineOverrideConfirmApplyHistoryValueRd($(this).closest('tr.lo-row').data('item-code'), $(this).attr('data-value') || '',
         $(this).hasClass('lo-history-computed'));
 });
@@ -4784,7 +4947,7 @@ function openLineOverrideHistoryModalRd(itemCode) {
     }
     new bootstrap.Modal(document.getElementById('lineOverrideHistoryModal')).show();
 }
-$(document).on('click', '#lineOverrideTableWrap .lo-history-view-all', function () {
+$(document).on('click', '.lo-mount .lo-history-view-all', function () {
     openLineOverrideHistoryModalRd($(this).closest('tr.lo-row').data('item-code'));
 });
 $(document).on('click', '#lineOverrideHistoryModal .lo-history-use', function () {
@@ -4824,10 +4987,12 @@ function lineOverrideConfirmApplyHistoryValueRd(itemCode, value, asComputed, onA
     });
 }
 function loadSyncLineOverridesRd() {
+    const employeeId = lineOverrideEmployeeIdRd();
+    const isAdjustmentsTab = lineOverrideHostRd.isAdjustmentsTab;
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.sync-lines-for-employee`,
         method: 'GET',
-        data: { run_id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId },
+        data: { run_id: PAYROLL_RUN_ID, employee_id: employeeId },
         dataType: 'json',
         success: function (res) {
             if (!res.status) return;
@@ -4836,7 +5001,7 @@ function loadSyncLineOverridesRd() {
             $.ajax({
                 url: `${BASE_URL}/api/payroll-run.line-override-history`,
                 method: 'GET',
-                data: { run_id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId },
+                data: { run_id: PAYROLL_RUN_ID, employee_id: employeeId },
                 dataType: 'json',
             }).always(function (historyRes) {
                 const payload = (historyRes && historyRes.status && historyRes.data) ? historyRes.data : null;
@@ -4845,11 +5010,16 @@ function loadSyncLineOverridesRd() {
                     lineOverrideHistoryRd.byKey[line.line_type + '|' + line.item_code] = line;
                 });
                 renderLineOverrideTableRd(res.data || [], res.run_settings);
-                refreshAdjustmentTabDirtyGuard('manageLinesSyncOverridePane');
-                refreshAdjustmentSaveButtonState();
+                if (isAdjustmentsTab) {
+                    refreshAdjustmentTabDirtyGuard('manageLinesSyncOverridePane');
+                    refreshAdjustmentSaveButtonState();
+                }
             });
             // 2026-08-29: "Tax & SSO" tab -- see PayrollController::syncLinesForEmployee()'s own
             // docblock for why this is bundled into the same fetch instead of a separate one.
+            // Skipped entirely for any host other than that tab: those radios are its markup, and
+            // re-baselining a dirty guard for a pane that is not on screen is not a no-op.
+            if (!isAdjustmentsTab) return;
             const ex = res.exemption || { tax_calculate_override: 'inherit', sso_calculate_override: 'inherit' };
             $(`#empCalcTaxGroup input[value="${ex.tax_calculate_override || 'inherit'}"]`).prop('checked', true);
             $(`#empCalcSsoGroup input[value="${ex.sso_calculate_override || 'inherit'}"]`).prop('checked', true);
@@ -4861,12 +5031,12 @@ function loadSyncLineOverridesRd() {
     });
 }
 function lineOverrideRowByCodeRd(itemCode) {
-    return $('#lineOverrideTableWrap').find(`tr.lo-row[data-item-code="${itemCode}"]`);
+    return lineOverrideMountRd().find(`tr.lo-row[data-item-code="${itemCode}"]`);
 }
 // Flipping the switch changes what this employee gets paid, in both directions -- so both directions
 // ask, and neither writes anything until the answer is yes. A cancelled confirm puts the switch back
 // where it was rather than leaving the control disagreeing with the data behind it.
-$(document).on('change', '#lineOverrideTableWrap .lo-include', function () {
+$(document).on('change', '.lo-mount .lo-include', function () {
     const $row = $(this).closest('tr.lo-row');
     const included = this.checked;
     const name = String($row.data('item-name') || $row.data('item-code'));
@@ -4911,7 +5081,7 @@ function lineOverrideSaveUrlRd($row, action) {
 // second action started before the first comes back would race it. The rest of the modal stays
 // usable -- only this tab writes on every action.
 function setLineOverrideTableBusyRd(busy) {
-    const $wrap = $('#lineOverrideTableWrap');
+    const $wrap = lineOverrideMountRd();
     $wrap.toggleClass('lo-table-busy', busy);
     $wrap.find('.lo-include, .lo-edit-btn, .lo-history-toggle, .lo-hidden-toggle').each(function () {
         const $el = $(this);
@@ -4931,7 +5101,7 @@ function setLineOverrideTableBusyRd(busy) {
 // one) -- everything else just locks.
 function lineOverrideSendRd($row, plan, $busyBtn) {
     if (!$row || !$row.length || !plan) return;
-    const payload = { id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, item_code: $row.data('item-code') };
+    const payload = { id: PAYROLL_RUN_ID, employee_id: lineOverrideEmployeeIdRd(), item_code: $row.data('item-code') };
     if (plan.action === 'override_amount') { payload.action = 'override_amount'; payload.override_amount = plan.amount; }
     if (plan.action === 'exclude') { payload.action = 'exclude'; }
     setLineOverrideTableBusyRd(true);
@@ -4943,9 +5113,11 @@ function lineOverrideSendRd($row, plan, $busyBtn) {
             if (!res.status) { lineOverrideSendFailedRd($row, $busyBtn, res.message); return; }
             showSuccess(langData['line_override_saved'] || 'Saved.');
             // A full reload, not a local patch: one override changes what the statutory lines
-            // calculate to, so every row's amount (and the run's own totals) can move.
+            // calculate to, so every row's amount (and the run's own totals) can move. The host's
+            // own hook is what refreshes anything OUTSIDE this table that moved with it.
             loadSyncLineOverridesRd();
             loadRunDetail();
+            if (lineOverrideHostRd.onSaved) lineOverrideHostRd.onSaved();
         },
         error: function () { lineOverrideSendFailedRd($row, $busyBtn); },
     });
@@ -4964,7 +5136,7 @@ function lineOverrideSendFailedRd($row, $busyBtn, message) {
    two half-finished edits on one table is a state nobody can read off the screen. */
 let lineOverrideEditingCodeRd = null;
 function lineOverrideCloseEditorRd() {
-    const $wrap = $('#lineOverrideTableWrap');
+    const $wrap = lineOverrideMountRd();
     $wrap.find('tr.lo-row').each(function () {
         const $row = $(this);
         const $cell = $row.find('.lo-amount-cell');
@@ -5007,11 +5179,11 @@ function lineOverrideEditPlanRd($row) {
 function lineOverrideRefreshEditButtonRd($row) {
     $row.find('.lo-edit-save').prop('disabled', !lineOverrideEditPlanRd($row));
 }
-$(document).on('click', '#lineOverrideTableWrap .lo-edit-btn', function () {
+$(document).on('click', '.lo-mount .lo-edit-btn', function () {
     lineOverrideOpenEditorRd($(this).closest('tr.lo-row'));
 });
-$(document).on('click', '#lineOverrideTableWrap .lo-edit-cancel', lineOverrideCloseEditorRd);
-$(document).on('input change', '#lineOverrideTableWrap .lo-edit-input', function () {
+$(document).on('click', '.lo-mount .lo-edit-cancel', lineOverrideCloseEditorRd);
+$(document).on('input change', '.lo-mount .lo-edit-input', function () {
     lineOverrideRefreshEditButtonRd($(this).closest('tr.lo-row'));
 });
 // Bound INSIDE the modal, not on `document` like every other handler in this file. Bootstrap's own
@@ -5031,7 +5203,7 @@ $(function () {
         if (plan) lineOverrideSendRd($row, plan, $row.find('.lo-edit-save'));
     });
 });
-$(document).on('click', '#lineOverrideTableWrap .lo-edit-save', function () {
+$(document).on('click', '.lo-mount .lo-edit-save', function () {
     const $row = $(this).closest('tr.lo-row');
     const plan = lineOverrideEditPlanRd($row);
     if (plan) lineOverrideSendRd($row, plan, $(this));
@@ -5056,7 +5228,7 @@ function runSequentialAjaxRd(calls, onDone) {
 // opened, which is why it is the one thing that still counts before it asks.
 function restoreAllComputedLineOverridesRd() {
     const rows = [];
-    $('#lineOverrideTableWrap .lo-row').each(function () {
+    lineOverrideMountRd().find('.lo-row').each(function () {
         const $row = $(this);
         if ($row.find('.lo-include').is(':disabled') || !($row.data('orig-action') || '')) return;
         rows.push($row);
@@ -5083,7 +5255,7 @@ function runRestoreAllComputedRd(rows) {
             $.ajax({
                 url: lineOverrideSaveUrlRd($row, 'remove'),
                 method: 'POST', contentType: 'application/json', dataType: 'json',
-                data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, item_code: $row.data('item-code') }),
+                data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: lineOverrideEmployeeIdRd(), item_code: $row.data('item-code') }),
                 success: function (res) {
                     if (res.status) { saved++; next(true); return; }
                     failedName = $row.data('item-name');
@@ -5107,6 +5279,7 @@ function runRestoreAllComputedRd(rows) {
         // holds now, including the rows that did get through before a failure.
         loadSyncLineOverridesRd();
         loadRunDetail();
+        if (lineOverrideHostRd.onSaved) lineOverrideHostRd.onSaved();
     });
 }
 $(document).on('click', '#btnRestoreAllComputedLineOverrides', restoreAllComputedLineOverridesRd);
@@ -5672,7 +5845,7 @@ function refreshAdjustmentSaveButtonState() {
     // hide-when-there-is-no-target rule. It has nothing to do until at least one row actually
     // carries an override, which is a different question from whether anything has been typed yet.
     const $restoreAllBtn = $('#btnRestoreAllComputedLineOverrides');
-    const overrideRowCount = $('#lineOverrideTableWrap .lo-row').filter(function () {
+    const overrideRowCount = lineOverrideMountRd().find('.lo-row').filter(function () {
         return !!($(this).data('orig-action') || '') && !$(this).find('.lo-include').is(':disabled');
     }).length;
     $restoreAllBtn.toggleClass('d-none', !(cfg && cfg.restoreAllFn));
@@ -5777,6 +5950,10 @@ $(document).on('click', '.btn-manage-manual-lines', function () {
         $(ADJUSTMENT_TAB_CONFIG_RD[paneId].scope).removeData('dirtyGuardBaseline');
     });
     manageLinesEmployeeId = $(this).data('employee-id');
+    // This modal takes the shared line-override table back (the Calculation Breakdown modal may have
+    // been the last host) -- see setLineOverrideHostRd()'s own docblock. Also clears the other mount,
+    // which is what keeps the rendered table's own ids unique in the DOM.
+    setLineOverrideHostRd('#lineOverrideTableWrap', manageLinesEmployeeId, null);
     const rowData = runDetailRowByEmployeeId(manageLinesEmployeeId);
     // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
     // name in the modal-header (#manageLinesEmployeeName removed from the view).

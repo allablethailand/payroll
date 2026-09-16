@@ -3555,6 +3555,48 @@ th.col-money div.dt-column-header .dt-column-title {
     display: grid;
     gap: var(--sp-2);
 }
+/* 2026-09-16, D1 ("สลิปที่แก้ได้") -- one line of status under the employee header card of the
+   Calculation Breakdown modal (rules.md §9). Right-aligned: it is about the slip below it, not about
+   the employee named to its left. `--sp-3` from the card; whatever follows keeps its own top gap
+   (the sibling rule gives a row's calculation notes the same `--sp-3` when they sit in between). */
+.breakdown-status-line {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: var(--sp-3);
+}
+.breakdown-status-line + .rd-calc-notes {
+    margin-top: var(--sp-3);
+}
+/* A caption, not a callout: it explains a control that is absent, it is not a thing to act on
+   (§15's own "ไม่ใช่ทุกข้อความเตือนต้องเป็น callout" lesson, same treatment #recalcReminderBanner got). */
+.breakdown-status-text {
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+}
+/* The editable layout: 2 titled sections (the calculated lines, then the hand-added ones) and the
+   run's own net band. Section spacing is the one `--sp-5` §2 uses between blocks of a page; the title
+   is the same weight/size as the slip's own column titles so the 3 read as one stack, not as a page
+   inside a modal. */
+/* The same `--sp-4` the read-only slip gets from `.payslip-view`'s own padding-top -- measured, the
+   first section title otherwise starts flush against the header card's bottom border (0px). */
+.breakdown-edit {
+    padding-top: var(--sp-4);
+}
+.breakdown-edit-section {
+    margin-bottom: var(--sp-5);
+}
+.breakdown-edit-title {
+    margin: 0 0 var(--sp-2);
+    font-size: var(--fs-sm);
+    font-weight: 700;
+    color: var(--c-text);
+}
+/* The slip inside a section brings its own top padding for a column title that is not there in this
+   layout (the section title above replaces it) -- the 2 would otherwise stack into a gap twice the
+   size of every other one in the modal. */
+.breakdown-edit-section .payslip-view {
+    padding-top: 0;
+}
 /* The row's calculation notes in the Calculation Breakdown modal -- collapses completely (no stray
    bottom margin) for the rows that have none, which is most of them. */
 .rd-calc-notes {
@@ -5715,6 +5757,23 @@ button.badge {
 .payslip-line-table-grouped .payslip-row td:first-child {
     padding-left: calc(var(--payslip-inset) + var(--sp-3));
 }
+/* 2026-09-16: a column title that carries an action (the Calculation Breakdown modal's own
+   add-an-item button) -- the title becomes the flex row, the button sits at the column's right edge
+   on the same `--payslip-inset` every other part of the slip uses, so it lines up with the amounts
+   below it. `.btn-icon` (§7) keeps its own 32px; nothing here sets a second size. */
+.payslip-col-title-with-action {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+    /* The title's own padding stops short of the amount column's inset (it was only ever a text
+       label); the action needs the full one to line up with the numbers. */
+    padding-right: var(--payslip-inset);
+}
+.payslip-col-title-action {
+    flex: none;
+    display: inline-flex;
+}
 /* Name + source badge + inline buttons on one line; the name is always first, so every row's name
    starts at the same x whether or not the row has a badge. */
 .payslip-line-head {
@@ -7788,12 +7847,6 @@ html, body {
    clip against. Scoped to THIS tab's slip only -- a real payslip's rows wrap normally and keep their
    content-driven column widths (verified unchanged in the Calculation Breakdown modal). */
 
-/* A catalog line shows its item code instead of a badge -- quiet, monospace-free, never competing
-   with the name next to it. */
-.manual-line-code {
-    font-size: var(--fs-xs);
-    color: var(--c-text-faint);
-}
 /* Note + payee lines: one line each, clipped with an ellipsis (the full text is on the element's own
    `title`, set by the caller) so a long note can never push the row's own height around. */
 .manual-line-payee {

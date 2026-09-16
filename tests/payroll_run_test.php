@@ -900,10 +900,17 @@ try {
     // (float) cast, not ===: json_encode(1000.0) writes "1000", which decodes back as an int -- a
     // pre-existing round-trip fact of every breakdown ever persisted, not something this key changed.
     check('every other field on the legacy line is untouched', [(float)($legacyLine['amount'] ?? 0), $legacyLine['source'] ?? null], [1000.0, 'manual_line']);
-    // syncDeductionLinesForEmployee() reads the same JSON for the Adjustments modal -- it must still
-    // build a row for a line that has no manual_line_id.
+    // syncDeductionLinesForEmployee() reads the same JSON for the Adjustments modal. 2026-09-16: a
+    // hand-added line is no longer offered for adjustment there at all (see that method's own comment
+    // -- an override is keyed by item_code, and two manual lines may share one). What this still
+    // pins is that the filter keys off `source`, which EVERY breakdown ever written has, and not off
+    // `manual_line_id`, which only today's do: a legacy line must be filtered just the same, never
+    // slip through as an adjustable row because one key happens to be missing.
     $legacyAdjustCodes = array_column($runModel->syncDeductionLinesForEmployee($compId, $pulledRunId, $employeeOptOutId), 'code');
-    checkTrue('the Adjustments listing still shows the legacy manual line', in_array('CUSTOM:Manual Income', $legacyAdjustCodes, true));
+    check('a legacy manual line (no manual_line_id) is filtered out of the Adjustments listing too',
+        in_array('CUSTOM:Manual Income', $legacyAdjustCodes, true), false);
+    checkTrue('and the listing is not simply empty -- calculated rows are still there',
+        in_array(PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, $legacyAdjustCodes, true));
 
     echo "=== rawSyncDataForEmployee(): full raw row for a synced employee, null for a manually-added one or a non-sync run ===\n";
     $rawSyncData = $runModel->rawSyncDataForEmployee($compId, $pulledRunId, $employeeFullId);

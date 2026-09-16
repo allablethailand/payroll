@@ -6450,6 +6450,20 @@ class PayrollRunModel {
                 if (empty($line['code'])) {
                     continue; // a line with no code has nothing lineOverrideSave() could ever target
                 }
+                // 2026-09-16: a line somebody added by hand is NOT adjustable here. It has its own
+                // surface (the Adjustments modal's Payment Items tab) where it is edited and removed
+                // as the row it really is, and an override keyed by item_code could not target it
+                // even in principle -- two manual lines are allowed to share one item_code, so an
+                // override on that code has no single line to mean. Filtered server-side, once, so
+                // every caller of this endpoint agrees on it (both mount points of the table, and
+                // anything added later) instead of each one remembering to exclude them.
+                // NOT added to $seenCodes on purpose: that set exists to stop the fallback loop below
+                // from re-listing a line this loop already emitted, and this one was never emitted.
+                // The fallback only ever lists codes carrying an 'exclude' override, which by
+                // definition are NOT in this breakdown, so the two cannot collide here.
+                if (($line['source'] ?? null) === 'manual_line') {
+                    continue;
+                }
                 $seenCodes[$line['code']] = true;
                 $rows[] = $attachOverride([
                     'code' => $line['code'],

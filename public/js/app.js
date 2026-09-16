@@ -4320,7 +4320,11 @@ function payslipViewHtml(data) {
         }
         deductionBody += itemRows;
     }
-    if (deductionBody === '') {
+    // The "-" placeholder exists so a payslip column is never a blank space between its title and its
+    // total band. A caller in list mode (`showTotals: false`) has no total band for it to sit above,
+    // and its own empty column is simply empty -- so the placeholder is skipped rather than left as
+    // the one asymmetric thing on screen (the Income column never had one to begin with).
+    if (deductionBody === '' && d.showTotals !== false) {
         deductionBody = `<tr class="payslip-row"><td colspan="2" class="text-center text-muted small">-</td></tr>`;
     }
     // 2026-09-15, Round 3 item 4 batch 2/4 -- 4 OPTIONAL label overrides (`earningTitle`,
@@ -4334,37 +4338,57 @@ function payslipViewHtml(data) {
     const deductionTitle = d.deductionTitle || langData['payslip_deductions_title'] || 'Deductions';
     const earningTotalLabel = d.earningTotalLabel || langData['payslip_total_earnings'] || 'Total Income';
     const deductionTotalLabel = d.deductionTotalLabel || langData['payslip_total_deductions'] || 'Total Deductions';
-    const netLabel = d.netLabel || langData['table_net_pay'] || 'Net Pay';
+    // 2026-09-16: 2 more OPTIONAL slots, same contract as the 5 label overrides above -- every
+    // existing caller omits them and renders byte-for-byte what it rendered before.
+    // `earningTitleActionHtml`/`deductionTitleActionHtml` = raw HTML pinned to the right of a column
+    // title (the caller owns it; this component does not know what it is or bind anything to it);
+    // `showTotals: false` drops the per-column total band AND the net band, for a caller that is
+    // showing a LIST in this layout and carries its own total somewhere else. Added rather than
+    // copying the 2-column grid into a caller -- a second copy of this markup is exactly what this
+    // component exists to prevent (§0.4).
+    const showTotals = d.showTotals !== false;
+    const titleAction = html => html ? `<span class="payslip-col-title-action">${html}</span>` : '';
+    // A modifier class rather than `:has()` on the title -- this component renders in every browser
+    // the app supports, and a layout that only lines up on the newer ones is not a layout.
+    const titleCls = html => 'payslip-col-title' + (html ? ' payslip-col-title-with-action' : '');
     return `<div class="payslip-view">
         <div class="payslip-columns">
             <div class="payslip-col">
-                <div class="payslip-col-title">${escapeHtml(earningTitle)}</div>
+                <div class="${titleCls(d.earningTitleActionHtml)}">${escapeHtml(earningTitle)}${titleAction(d.earningTitleActionHtml)}</div>
                 <table class="table table-sm payslip-line-table mb-0">
                     <tbody>${d.earningRowsHtml || ''}</tbody>
                 </table>
-                <div class="payslip-col-total">
+                ${showTotals ? `<div class="payslip-col-total">
                     <span>${escapeHtml(earningTotalLabel)}</span>
                     <span class="num money-gross">${fmtNum(d.grossAmount)}</span>
-                </div>
+                </div>` : ''}
             </div>
             <div class="payslip-col">
-                <div class="payslip-col-title">${escapeHtml(deductionTitle)}</div>
+                <div class="${titleCls(d.deductionTitleActionHtml)}">${escapeHtml(deductionTitle)}${titleAction(d.deductionTitleActionHtml)}</div>
                 <table class="table table-sm payslip-line-table mb-0${showGroupLabels ? ' payslip-line-table-grouped' : ''}">
                     <tbody>${deductionBody}</tbody>
                 </table>
-                <div class="payslip-col-total">
+                ${showTotals ? `<div class="payslip-col-total">
                     <span>${escapeHtml(deductionTotalLabel)}</span>
                     <span class="num money-deduction">${fmtNum(d.totalDeductionAmount)}</span>
-                </div>
+                </div>` : ''}
             </div>
         </div>
-        <div class="payslip-summary">
+        ${showTotals ? payslipNetSummaryHtml(d.netAmount, d.netLabel) : ''}
+    </div>`;
+}
+// The net band on its own (2026-09-16) -- lifted out of payslipViewHtml() above unchanged, because
+// a caller that lays the slip out itself still has to end with the SAME band, and a second copy of
+// it is how two "ยอดจ่ายสุทธิ" rows start looking different from each other (§0.4). Its only real
+// caller besides payslipViewHtml() is the Calculation Breakdown modal's editable layout.
+function payslipNetSummaryHtml(netAmount, netLabelOverride) {
+    const netLabel = netLabelOverride || langData['table_net_pay'] || 'Net Pay';
+    return `<div class="payslip-summary">
             <div class="payslip-summary-row payslip-summary-row-net">
                 <span class="payslip-summary-label">${escapeHtml(netLabel)}</span>
-                <span class="num money-net fs-5">${fmtNum(d.netAmount)}</span>
+                <span class="num money-net fs-5">${fmtNum(netAmount)}</span>
             </div>
-        </div>
-    </div>`;
+        </div>`;
 }
 // 2026-09-11, Batch 3C item 3, explicit instruction: "ห้าม trigger row click ไปหน้า Detail
 // (stopPropagation ใน handler กลางของ .emp-avatar-link ไม่ใช่แก้รายหน้า)" -- a plain jQuery

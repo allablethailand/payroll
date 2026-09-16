@@ -99,7 +99,7 @@ foreach (['lineOverrideHistoryModal', 'lineOverrideHistoryModalLabel', 'lineOver
 checkTrue('it is built on the shared timeline', strpos($js, 'renderTimeline(lineOverrideHistoryTimelineItemsRd(history)') !== false);
 checkTrue("through the timeline's own per-item action slot", strpos($js, 'actionHtml:') !== false);
 checkTrue('renderTimeline() actually renders that slot', strpos($appJs, 'item.actionHtml') !== false);
-checkTrue('the foot opens it', strpos($js, "'#lineOverrideTableWrap .lo-history-view-all'") !== false);
+checkTrue('the foot opens it', strpos($js, "'.lo-mount .lo-history-view-all'") !== false);
 checkTrue('"use this value" is an outline-primary button, not a text link', strpos($js, 'class="btn btn-outline-primary lo-history-use"') !== false);
 // Bootstrap hardcodes #0d6efd on .btn-outline-primary the same way it does on .btn-primary, so
 // without a per-component override every one of these buttons renders Bootstrap blue, off-palette.
