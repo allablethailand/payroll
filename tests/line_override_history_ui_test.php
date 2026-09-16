@@ -128,48 +128,53 @@ checkTrue('the count is per group, not per date', strpos($appJs, 'const dayRunLe
 checkTrue('an undated entry still produces an empty (hidden) header', strpos($appJs, "dayLabel === ''") !== false);
 // Both the dropdown and the modal fill the field through ONE function -- two copies is how the two
 // paths drift into setting different attributes on the row.
-checkTrue('both paths go through one confirm and one applier',
-    substr_count($js, 'lineOverrideConfirmApplyHistoryValueRd(') === 3
-    // declaration + the single call inside the confirm's onYes, and nowhere else
-    && substr_count($js, 'lineOverrideApplyHistoryValueRd(itemCode, value, asComputed)') === 2);
+checkTrue('both paths go through one confirm', substr_count($js, 'lineOverrideConfirmApplyHistoryValueRd(') === 3);
 
-echo "\n=== 4b. picking a value asks first ===\n";
+echo "\n=== 4b. picking a value asks first, then writes ===\n";
 // Both lists sit under the pointer while scrolling, and one click would otherwise replace a figure
-// someone else set. The confirm names the value, the item, and that nothing is saved yet.
+// someone else set. The confirm names the value and the item -- and since 2026-09-16 this tab writes
+// immediately, it also says so rather than promising a Save step that no longer exists.
 checkTrue('the dropdown goes through the confirm', strpos($js, "lineOverrideConfirmApplyHistoryValueRd(\$(this).closest('tr.lo-row')") !== false);
 checkTrue('so does the modal', strpos($js, 'lineOverrideConfirmApplyHistoryValueRd(lineOverrideHistoryModalCode') !== false);
 $confirmStart = (int)strpos($js, 'function lineOverrideConfirmApplyHistoryValueRd(');
-$confirmBody = substr($js, $confirmStart, (int)strpos($js, '// One place that puts a chosen value into a row') - $confirmStart);
+$confirmBody = substr($js, $confirmStart, (int)strpos($js, 'function loadSyncLineOverridesRd(') - $confirmStart);
 checkTrue('it is an info-tone confirm', strpos($confirmBody, "tone: 'info'") !== false);
 checkTrue('its buttons are [use this value][cancel]', strpos($confirmBody, "confirmText: langData['line_override_history_use_value']") !== false
     && strpos($confirmBody, "cancelText: langData['cancel']") !== false);
 checkTrue('the message names the value and the item', strpos($confirmBody, "replace('{value}', valueLabel).replace('{item}'") !== false);
-// Nothing may move before the user says yes.
-checkTrue('the field is only filled inside onYes', strpos($confirmBody, 'onYes: function () {') < strpos($confirmBody, 'lineOverrideApplyHistoryValueRd(itemCode, value, asComputed);'));
-checkTrue('and the history modal closes only then', strpos($confirmBody, 'onApplied') !== false);
-// Asking again at save time would be the same question twice about the same click.
-checkTrue('save no longer re-asks about a picked value', strpos($js, 'line_override_confirm_revert_message') === false);
+// Nothing may be sent before the user says yes.
+checkTrue('the write happens only inside onYes', strpos($confirmBody, 'onYes: function () {') < strpos($confirmBody, 'lineOverrideSendRd('));
+checkTrue('and the history modal closes with it', strpos($confirmBody, 'onApplied') !== false);
+// The calculated-value row means "drop the override", not "save this number as one".
+checkTrue('the calculated row removes instead of overriding',
+    strpos($confirmBody, "if (asComputed) {\n                lineOverrideSendRd(\$row, { action: 'remove' });") !== false);
+// Asking again at save time is impossible now -- there is no save step to ask at.
+checkTrue('no save-time revert confirm is left', strpos($js, 'line_override_confirm_revert_message') === false);
 $thKeys = json_decode(file_get_contents(__DIR__ . '/../public/lang/th.json'), true);
 checkTrue('and the old revert-confirm keys are gone', !array_key_exists('line_override_confirm_revert_title', $thKeys)
     && !array_key_exists('line_override_confirm_revert_message', $thKeys));
 
-echo "\n=== 5. restore-all stages, it does not send ===\n";
-$restoreStart = strpos($js, 'function restoreAllComputedLineOverridesRd(');
-$restoreBody = substr($js, $restoreStart, strpos($js, "\$(document).on('click', '#btnRestoreAllComputedLineOverrides'") - $restoreStart);
-checkTrue('it marks rows', strpos($restoreBody, "attr('data-force-remove', '1')") !== false);
-checkTrue('it never calls the save/remove endpoints itself', strpos($restoreBody, 'line-override') === false);
-checkTrue('it skips rows the run itself turned off', strpos($restoreBody, "\$check.is(':disabled')") !== false);
-$planStart = strpos($js, 'function lineOverrideRowPlanRd(');
-$planBody = substr($js, $planStart, strpos($js, 'function lineOverrideSaveUrlRd(') - $planStart);
-checkTrue('a marked row becomes a .remove, not an override', strpos($planBody, "{ action: 'remove' }") !== false);
-checkTrue('the mark is read BEFORE the field is', strpos($planBody, 'data-force-remove') < strpos($planBody, '.lo-new-amount'));
-checkTrue('a marked row with no override at all is a no-op', strpos($planBody, ': null;') !== false);
-checkTrue('the save step confirms, with the count', strpos($js, 'line_override_confirm_restore_all_message') !== false);
-checkTrue('typing over a mark clears it', strpos($js, "removeAttr('data-from-history').removeAttr('data-force-remove')") !== false);
-checkTrue('a marked row counts as dirty on its own', strpos($js, '.lo-row[data-force-remove="1"]') !== false);
-checkTrue('the button is enabled by having overrides, not by being dirty', strpos($js, 'overrideRowCount === 0') !== false);
-// The footer's left slot holds exactly one button, and it is this one -- a second "undo what I
-// typed" button there would only repeat what the close/tab-switch dirty guard already asks.
+echo "\n=== 5. restore-all is the one bulk action left ===\n";
+// Every other control in this tab handles one line; this is the only thing that touches rows the
+// user never opened, which is why it is the only thing that still counts before it asks.
+$restoreStart = (int)strpos($js, 'function restoreAllComputedLineOverridesRd(');
+$restoreBody = substr($js, $restoreStart, (int)strpos($js, 'function runRestoreAllComputedRd(') - $restoreStart);
+checkTrue('it collects only rows that carry an override', strpos($restoreBody, "!(\$row.data('orig-action') || '')") !== false);
+checkTrue('it skips rows the run itself turned off', strpos($restoreBody, "\$row.find('.lo-include').is(':disabled')") !== false);
+checkTrue('it asks first, with the count', strpos($restoreBody, "replace('{n}', String(rows.length))") !== false
+    && strpos($restoreBody, "tone: 'warning'") !== false);
+checkTrue('nothing is sent from the collector itself', strpos($restoreBody, 'lineOverrideSaveUrlRd') === false);
+checkTrue('the sending happens only on yes', strpos($restoreBody, 'onYes: function () { runRestoreAllComputedRd(rows); }') !== false);
+// One request per row, in order: each one recalculates the whole run internally, so two in flight
+// would race each other.
+$runStart = (int)strpos($js, 'function runRestoreAllComputedRd(');
+$runBody = substr($js, $runStart, 1800);
+checkTrue('it sends one .remove per row, sequentially', strpos($runBody, "lineOverrideSaveUrlRd(\$row, 'remove')") !== false
+    && strpos($runBody, 'runSequentialAjaxRd(calls,') !== false);
+checkTrue('it reports progress while it runs', strpos($runBody, 'lineOverrideProgressRd(i + 1, total)') !== false);
+checkTrue('it reloads the table and the run at the end', strpos($runBody, 'loadSyncLineOverridesRd();') !== false
+    && strpos($runBody, 'loadRunDetail();') !== false);
+// It is the footer's left-slot button, and the only one there.
 checkTrue('it is the footer\'s left-slot button', strpos($js, "left: { id: 'btnRestoreAllComputedLineOverrides'") !== false);
 checkTrue('no "cancel edits" button is left anywhere', strpos($js, 'btnCancelLineOverrideEdits') === false);
 checkTrue('and its i18n key is gone with it', !array_key_exists('line_override_cancel_edits', json_decode(file_get_contents(__DIR__ . '/../public/lang/th.json'), true)));

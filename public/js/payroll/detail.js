@@ -4463,7 +4463,8 @@ $(document).on('click', '#btnResetAttendanceData', function () {
 
    Checkbox meaning is POSITIVE throughout: ticked = included in the calculation. The stored field is
    unchanged and still means the opposite (a `payroll_run_line_overrides` row with action='exclude'),
-   so the inversion happens here, at the edge, in lineOverrideRowPlanRd() -- see that function.
+   so the inversion happens at the edge, where the switch's own change handler turns "off" into a
+   stored `exclude` and "on" into removing one.
    ---------- */
 const LINE_OVERRIDE_GROUPS_RD = [
     { type: 'base_salary', key: 'table_base_salary', fallback: 'Base Salary', money: '' },
@@ -4600,19 +4601,17 @@ function lineOverrideOccurrencesHtml(occurrences) {
     </div>`).join('');
     return `<div class="lo-occurrences">${rows}</div>`;
 }
+// 2026-09-16, round 6: this tab edits ONE line at a time and sends it immediately, like the
+// "รายการจ่าย" tab next to it -- so it has no "New value" column and no Save button of its own
+// (rules.md §9: a tab that writes on every action hides the footer's Save). What used to be a
+// staged form is now: a switch that asks before it fires, and a pencil that opens the amount for
+// editing in place. See docs/decisions/2026-09-16-line-override-table.md for why the staged version
+// was abandoned -- it kept growing rules ("empty means…", "unticking parks…") that only existed to
+// describe a batch that was never sent as a batch anyway.
 function lineOverrideRowHtml(line, idx, group, runDisabled) {
     const name = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || line.code;
     const origAction = line.override_action || '';
     const included = runDisabled ? false : origAction !== 'exclude';
-    // 2026-09-16, real data-loss bug: this field used to PREFILL an existing override, which made
-    // "empty" mean "go back to the calculated figure" -- so unticking a row (which clears the field)
-    // and ticking it straight back deleted a real override on the next Save, with nothing on screen
-    // saying so. The field is now only ever "what I want to change this to": it starts empty on every
-    // row, and empty means DO NOT TOUCH, always. The value in effect is already in the "ค่าปัจจุบัน"
-    // column next to it, so nothing is hidden by leaving this blank. Going back to the calculated
-    // figure is now said explicitly -- the history menu's own top row, or the footer's restore-all
-    // button -- both of which mark the row (data-force-remove) rather than relying on emptiness.
-    const amountValue = '';
     const skipEnum = lineOverrideSkipEnumRd(line);
     // Reason first, then what kind of line it is -- "ไม่ได้เข้ากองทุน" answers the question the row
     // itself raises ("why is this 0.00?"), which the user is asking before anything else.
@@ -4621,23 +4620,34 @@ function lineOverrideRowHtml(line, idx, group, runDisabled) {
     const runDisabledAttr = runDisabled ? ' disabled' : '';
     const title = runDisabled ? ' title="' + escapeAttr(langData['line_override_run_disabled'] || 'Turned off in Run Settings') + '"' : '';
     const hiddenCls = lineOverrideIsSkippedRd(line) ? ' lo-row-skipped d-none' : '';
+    // The pencil is hidden on an off row rather than disabled: there is no amount to edit on a line
+    // that is not being calculated at all, and a greyed control still invites the click.
+    const pencil = (included && !runDisabled)
+        ? `<button type="button" class="btn btn-icon btn-icon-ghost lo-edit-btn" title="${escapeAttr(langData['line_override_edit_amount'] || 'Edit amount')}"><i class="fa-solid fa-pen"></i></button>`
+        : '';
     return `<tr class="lo-row${included ? '' : ' lo-row-off'}${hiddenCls}" data-item-code="${escapeAttr(line.code)}" data-line-type="${escapeAttr(line.line_type || 'earning_deduction')}"
-        data-orig-action="${escapeAttr(origAction)}" data-item-name="${escapeAttr(name)}"${title}>
-        <td class="col-check"><input type="checkbox" class="form-check-input lo-include" id="loInc${idx}" ${included ? 'checked' : ''}${runDisabledAttr}></td>
+        data-orig-action="${escapeAttr(origAction)}" data-item-name="${escapeAttr(name)}" data-amount="${escapeAttr(fmtNum(line.current_amount))}"${title}>
+        <td class="col-check"><div class="form-check form-switch mb-0">
+            <input class="form-check-input lo-include" type="checkbox" role="switch" id="loInc${idx}" ${included ? 'checked' : ''}${runDisabledAttr}>
+        </div></td>
         <td>
             <span class="lo-name" title="${escapeAttr(line.code)}">${escapeHtml(name)}</span>${skipBadge}${statutoryBadge}
             ${lineOverrideOccurrencesHtml(line.occurrences)}
         </td>
-        <td class="num col-money"><span class="${group.money}">${fmtNum(line.current_amount)}</span></td>
-        <td><input type="text" inputmode="decimal" class="form-control money-input lo-new-amount" id="loAmt${idx}"
-            value="${escapeAttr(amountValue)}" placeholder="${escapeAttr(langData['line_override_new_placeholder'] || 'No change')}"
-            ${included ? '' : 'disabled'}${runDisabledAttr}></td>
+        <td class="num col-money lo-amount-cell"><div class="lo-amount-view">
+            <span class="${group.money}">${fmtNum(line.current_amount)}</span>${pencil}
+        </div></td>
         <td class="lo-history-cell">${lineOverrideHistoryCellHtml(line)}</td>
     </tr>`;
 }
 function renderLineOverrideTableRd(lines, runSettings) {
     lineOverrideRowsRd = lines || [];
     const $wrap = $('#lineOverrideTableWrap');
+    // The lock taken when a write started is released HERE, not when the request came back: it has to
+    // hold across the reload too, or the user can act on rows that are about to be replaced. Only the
+    // wrapper's own class is cleared -- every control below is brand-new markup that already carries
+    // the right disabled state (re-enabling them by hand would switch a Run-Settings row back on).
+    $wrap.removeClass('lo-table-busy');
     if (!lineOverrideRowsRd.length) {
         $wrap.html(`<div class="text-center text-muted py-3">${escapeHtml(langData['sync_line_override_empty'] || 'No calculated amounts for this employee yet -- recalculate the run first.')}</div>`);
         return;
@@ -4652,7 +4662,7 @@ function renderLineOverrideTableRd(lines, runSettings) {
         // A group whose every row is hidden has nothing to label -- the heading goes with them, and
         // comes back with them (same `.lo-group-skipped` class the toggle flips).
         const allSkipped = groupLines.every(lineOverrideIsSkippedRd);
-        body += `<tr class="lo-group${allSkipped ? ' lo-group-skipped d-none' : ''}"><td colspan="5">${escapeHtml(langData[group.key] || group.fallback)}</td></tr>`;
+        body += `<tr class="lo-group${allSkipped ? ' lo-group-skipped d-none' : ''}"><td colspan="4">${escapeHtml(langData[group.key] || group.fallback)}</td></tr>`;
         groupLines.forEach(function (line) {
             if (lineOverrideIsSkippedRd(line)) hiddenCount++;
             // Disabled only where the run-level exclusion is genuinely in charge: a personal override
@@ -4667,14 +4677,13 @@ function renderLineOverrideTableRd(lines, runSettings) {
             <tr>
                 <th class="col-check">${escapeHtml(langData['line_override_col_include'] || 'Include')}</th>
                 <th>${escapeHtml(langData['line_override_col_item'] || 'Item')}</th>
-                <th class="col-money">${escapeHtml(langData['sync_line_override_computed'] || 'Current')}</th>
-                <th>${escapeHtml(langData['line_override_col_new'] || 'New amount')}</th>
+                <th class="col-money">${escapeHtml(langData['line_override_col_amount'] || 'Amount')}</th>
                 <th class="lo-history-col">${escapeHtml(langData['line_override_col_history'] || 'History')}</th>
             </tr>
         </thead>
         <tbody>${body}${lineOverrideHiddenRowHtml(hiddenCount)}</tbody>
     </table></div>`);
-    if (typeof initMoneyInputs === 'function') initMoneyInputs($wrap);
+    lineOverrideEditingCodeRd = null;
     // Delegated once per scope (the wrapper survives every re-render inside it) -- no onSelect here:
     // this table's menus are action menus, the row's own click handler above does the work.
     if (typeof initBadgeDropdown === 'function') initBadgeDropdown($wrap);
@@ -4687,7 +4696,7 @@ function lineOverrideHiddenRowHtml(hiddenCount) {
     // WHY those rows are hidden is a footnote to this one button, not something the tab's own hint
     // has to carry for every reader who has no hidden rows at all -- so it rides on the button.
     const why = langData['line_override_hidden_why'] || '';
-    return `<tr class="lo-hidden-row" id="lineOverrideHiddenRow"><td colspan="5">
+    return `<tr class="lo-hidden-row" id="lineOverrideHiddenRow"><td colspan="4">
         <button type="button" class="btn btn-link lo-hidden-toggle" id="btnToggleHiddenLineOverrides"
             data-shown="0" data-count="${hiddenCount}" title="${escapeAttr(why)}">${escapeHtml(text)} <i class="fa-solid fa-chevron-down"></i></button>
     </td></tr>`;
@@ -4705,16 +4714,11 @@ $(document).on('click', '#btnToggleHiddenLineOverrides', function () {
     $btn.html(escapeHtml(label) + ` <i class="fa-solid fa-chevron-${show ? 'up' : 'down'}"></i>`);
     $('#lineOverrideTableWrap').find('.lo-row-skipped, .lo-group-skipped').toggleClass('d-none', !show);
 });
-// Picking a value out of a row's own history just FILLS THAT ROW'S FIELD -- nothing is sent until
-// Save, exactly like typing the number by hand would be. `data-from-history` is what lets the save
-// step warn that this is a revert; typing over it afterwards clears the flag (it is no longer a
-// revert to a recorded value at that point).
+// Picking a value out of a row's own history is a write like any other in this tab: it confirms,
+// then sends.
 $(document).on('click', '#lineOverrideTableWrap .lo-history-item', function () {
     lineOverrideConfirmApplyHistoryValueRd($(this).closest('tr.lo-row').data('item-code'), $(this).attr('data-value') || '',
         $(this).hasClass('lo-history-computed'));
-});
-$(document).on('input', '#lineOverrideTableWrap .lo-new-amount', function () {
-    $(this).closest('tr.lo-row').removeAttr('data-from-history').removeAttr('data-force-remove').removeAttr('data-typed-amount');
 });
 /* ---------- "ประวัติการแก้ไข" modal (stacked on top of the Adjustments modal) -- the full chain for
    ONE line: every past value with when/who/note, and the same "use this value" action the dropdown
@@ -4790,16 +4794,16 @@ $(document).on('click', '#lineOverrideHistoryModal .lo-history-use', function ()
             bootstrap.Modal.getInstance(document.getElementById('lineOverrideHistoryModal')).hide();
         });
 });
-// Picking a value out of a history list is one click away from silently replacing a figure someone
-// else set -- and the two lists sit right under the pointer while scrolling. The confirm says what
-// will be filled in, into which item, and that nothing is saved yet; only then does the value move.
+// Picking a value out of a history list is one click away from replacing a figure someone else set,
+// and the two lists sit right under the pointer while scrolling -- so it asks first. The row is
+// written the moment it is confirmed (this tab has no Save button to press afterwards).
 function lineOverrideConfirmApplyHistoryValueRd(itemCode, value, asComputed, onApplied) {
-    const $row = $('#lineOverrideTableWrap').find(`tr.lo-row[data-item-code="${itemCode}"]`);
-    if (!$row.length || $row.find('.lo-new-amount').is(':disabled')) return;
+    const $row = lineOverrideRowByCodeRd(itemCode);
+    if (!$row.length || $row.hasClass('lo-row-off')) return;
     // A calculated figure history never recorded has no number to name -- say what it IS instead.
     const valueLabel = value === '' ? (langData['line_override_history_computed'] || 'the calculated value') : value;
     const tpl = langData['line_override_confirm_use_value_message']
-        || '{value} will be filled into the New value field of {item} -- nothing is saved until you press Save.';
+        || '{item} will be set to {value} and saved immediately.';
     showConfirm({
         title: langData['line_override_confirm_use_value_title'] || 'Use this value instead of the current one',
         message: tpl.replace('{value}', valueLabel).replace('{item}', String($row.data('item-name') || itemCode)),
@@ -4807,24 +4811,17 @@ function lineOverrideConfirmApplyHistoryValueRd(itemCode, value, asComputed, onA
         confirmText: langData['line_override_history_use_value'] || 'Use this value',
         cancelText: langData['cancel'] || 'Cancel',
         onYes: function () {
-            lineOverrideApplyHistoryValueRd(itemCode, value, asComputed);
             if (typeof onApplied === 'function') onApplied();
+            // The calculated-value row means "drop the override", not "save this number as one".
+            if (asComputed) {
+                lineOverrideSendRd($row, { action: 'remove' });
+            } else {
+                const parsed = typeof parseMoneyInput === 'function' ? parseMoneyInput(value) : parseFloat(value);
+                if (isNaN(parsed)) return;
+                lineOverrideSendRd($row, { action: 'override_amount', amount: parsed });
+            }
         },
     });
-}
-// One place that puts a chosen value into a row, for both the dropdown and the modal. `asComputed`
-// is the calculated-value row: the field shows the figure so the user can see what they are getting,
-// but the row MEANS "drop the override" -- the same mark the footer's own restore-all button sets,
-// read back by lineOverrideRowPlanRd() before the field is.
-function lineOverrideApplyHistoryValueRd(itemCode, value, asComputed) {
-    const $row = $('#lineOverrideTableWrap').find(`tr.lo-row[data-item-code="${itemCode}"]`);
-    const $input = $row.find('.lo-new-amount');
-    if (!$row.length || $input.is(':disabled')) return;
-    $input.val(value).attr('data-raw-value', String(value).replace(/,/g, ''));
-    $row.attr(asComputed ? 'data-force-remove' : 'data-from-history', '1')
-        .removeAttr(asComputed ? 'data-from-history' : 'data-force-remove');
-    $input.addClass('lo-input-dirty');
-    refreshAdjustmentSaveButtonState();
 }
 function loadSyncLineOverridesRd() {
     $.ajax({
@@ -4863,27 +4860,32 @@ function loadSyncLineOverridesRd() {
         }
     });
 }
-// A row that is off has no meaningful amount: its field is disabled and the row reads as struck out.
+function lineOverrideRowByCodeRd(itemCode) {
+    return $('#lineOverrideTableWrap').find(`tr.lo-row[data-item-code="${itemCode}"]`);
+}
+// Flipping the switch changes what this employee gets paid, in both directions -- so both directions
+// ask, and neither writes anything until the answer is yes. A cancelled confirm puts the switch back
+// where it was rather than leaving the control disagreeing with the data behind it.
 $(document).on('change', '#lineOverrideTableWrap .lo-include', function () {
-    const $row = $(this).closest('tr');
-    const $input = $row.find('.lo-new-amount');
+    const $row = $(this).closest('tr.lo-row');
     const included = this.checked;
-    // Unticking parks whatever was typed instead of throwing it away -- ticking back on is an undo,
-    // and an undo that loses the number the user just entered is not one. Keyed off the row's
-    // CURRENT state, not just the checkbox, so a second `change` for the same state is a no-op: the
-    // naive version parked the value on the first firing and then overwrote it with the (already
-    // cleared) empty field on the second, losing exactly what it was there to protect.
-    const wasOff = $row.hasClass('lo-row-off');
-    if (!included && !wasOff) {
-        $row.attr('data-typed-amount', String($input.val() || ''));
-        $input.val('');
-    } else if (included && wasOff) {
-        const parked = $row.attr('data-typed-amount');
-        if (parked) $input.val(parked);
-        $row.removeAttr('data-typed-amount');
-    }
-    $row.toggleClass('lo-row-off', !included);
-    $input.prop('disabled', !included);
+    const name = String($row.data('item-name') || $row.data('item-code'));
+    const snapBack = function () { $row.find('.lo-include').prop('checked', !included); };
+    const tpl = included
+        ? (langData['line_override_confirm_include_message'] || 'Include {item} in this run again?')
+        : (langData['line_override_confirm_exclude_message'] || 'Leave {item} out of this run?');
+    showConfirm({
+        title: included
+            ? (langData['line_override_confirm_include_title'] || 'Include this item')
+            : (langData['line_override_confirm_exclude_title'] || 'Exclude this item'),
+        message: tpl.replace('{item}', name),
+        tone: included ? 'info' : 'warning',
+        onYes: function () {
+            // Turning it back ON is an undo of the stored exclusion, not a new value.
+            lineOverrideSendRd($row, included ? { action: 'remove' } : { action: 'exclude' });
+        },
+        onNo: snapBack,
+    });
 });
 // Sequential (not parallel) on purpose -- each lineOverrideSave()/lineOverrideRemove() call
 // recalculates the whole run internally; firing several at once risks two overlapping
@@ -4896,55 +4898,8 @@ function runSequentialAjaxRd(calls, onDone) {
         runSequentialAjaxRd(calls, onDone);
     });
 }
-/* What one row wants done, derived by comparing the UI's POSITIVE meaning against the row's stored
-   (negative) state. No backend field changes in this round:
-     unticked                      -> save action='exclude'
-     ticked + amount typed/changed -> save action='override_amount'
-     ticked + amount cleared/none  -> remove the row's override (only if it had one)
-   A statutory row goes to its own endpoint, which wraps the item_code itself -- never wrapped here. */
-// What one row will send, and nothing else. The whole table is 6 cases (the truth table in
-// docs/decisions/2026-09-16-line-override-table.md) -- kept in this order because each one is a
-// different KIND of intent and the first match wins:
-//   1. marked "back to the calculated figure" (history top row / restore-all)  -> .remove
-//   2. turned off by Run Settings                                              -> nothing (no intent)
-//   3. unticked                                                                -> exclude
-//   4. re-ticked a row that was excluded                                       -> .remove (undo it)
-//   5. ticked + a value typed                                                  -> override_amount
-//   6. ticked + empty                                                          -> NOTHING
-// Case 6 is the one that used to be wrong: empty meant "remove the override", so clearing the field
-// by any route (including unticking and re-ticking) silently deleted a real figure on Save.
-function lineOverrideRowPlanRd($row) {
-    const $check = $row.find('.lo-include');
-    const origAction = $row.data('orig-action') || '';
-    // (1) The mark is read BEFORE the field: the row means "drop the override" regardless of what is
-    // sitting in the box for orientation -- reading the box back would save that figure as a NEW
-    // override, the exact opposite.
-    if ($row.attr('data-force-remove') === '1') {
-        return origAction ? { action: 'remove' } : null;
-    }
-    // (2) A row the run itself turned off is disabled here and carries no user intent at all --
-    // without this guard it reads as "unticked" like any other and would send a PERSONAL exclude for
-    // an item nobody touched (found in the browser: a save of 2 edited rows fired 3 requests, the
-    // third one silently writing an override for the run-disabled row).
-    if ($check.is(':disabled')) return null;
-    const included = $check.is(':checked');
-    const rawValue = $row.find('.lo-new-amount').val();
-    const newAmount = (rawValue === null || rawValue === undefined) ? '' : String(rawValue).trim();
-    // (3)
-    if (!included) {
-        return origAction === 'exclude' ? null : { action: 'exclude' };
-    }
-    // (4) Ticking an excluded row back on, with nothing typed, is an undo of that exclusion. With a
-    // value typed it falls through to (5): one `override_amount` replaces the stored `exclude` row,
-    // so the undo comes for free -- two requests for one intent would just be a race with itself.
-    if (origAction === 'exclude' && newAmount === '') return { action: 'remove' };
-    // (6) Empty means "do not touch this row", on every row, always.
-    if (newAmount === '') return null;
-    // (5)
-    const parsed = typeof parseMoneyInput === 'function' ? parseMoneyInput(newAmount) : parseFloat(newAmount);
-    if (isNaN(parsed) || parsed < 0) return { action: 'invalid' };
-    return { action: 'override_amount', amount: parsed };
-}
+/* One row, one request, sent the moment the user says yes. A statutory row goes to its own endpoint,
+   which wraps the item_code itself -- never wrapped here. */
 function lineOverrideSaveUrlRd($row, action) {
     const statutory = ($row.data('line-type') || 'earning_deduction') === 'statutory';
     const verb = action === 'remove' ? 'remove' : 'save';
@@ -4952,10 +4907,13 @@ function lineOverrideSaveUrlRd($row, action) {
         ? `${BASE_URL}/api/payroll-run.statutory-line-override.${verb}`
         : `${BASE_URL}/api/payroll-run.line-override.${verb}`;
 }
-// Whole-modal lock for the duration of a save run: a second Save (or a tab switch mid-way) would
-// interleave with the sequential calls above, each of which recalculates the whole run.
-function setAdjustmentModalBusyRd(busy) {
-    $('#manageLinesModal').find('button, input, select, textarea').each(function () {
+// Whole-TABLE lock for the duration of one write: every save recalculates the run internally, so a
+// second action started before the first comes back would race it. The rest of the modal stays
+// usable -- only this tab writes on every action.
+function setLineOverrideTableBusyRd(busy) {
+    const $wrap = $('#lineOverrideTableWrap');
+    $wrap.toggleClass('lo-table-busy', busy);
+    $wrap.find('.lo-include, .lo-edit-btn, .lo-history-toggle, .lo-hidden-toggle').each(function () {
         const $el = $(this);
         if (busy) {
             if ($el.is(':disabled')) $el.attr('data-was-disabled', '1');
@@ -4966,79 +4924,181 @@ function setAdjustmentModalBusyRd(busy) {
             $el.prop('disabled', false);
         }
     });
+    $('#btnRestoreAllComputedLineOverrides').prop('disabled', busy);
 }
+// The one write path for this tab: switch, pencil, and both "use this value" entry points all end
+// here. `$busyBtn` is the control that should carry the spinner (the row's own Save, when there is
+// one) -- everything else just locks.
+function lineOverrideSendRd($row, plan, $busyBtn) {
+    if (!$row || !$row.length || !plan) return;
+    const payload = { id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, item_code: $row.data('item-code') };
+    if (plan.action === 'override_amount') { payload.action = 'override_amount'; payload.override_amount = plan.amount; }
+    if (plan.action === 'exclude') { payload.action = 'exclude'; }
+    setLineOverrideTableBusyRd(true);
+    if ($busyBtn && $busyBtn.length) setButtonLoading($busyBtn, true);
+    $.ajax({
+        url: lineOverrideSaveUrlRd($row, plan.action),
+        method: 'POST', contentType: 'application/json', dataType: 'json', data: JSON.stringify(payload),
+        success: function (res) {
+            if (!res.status) { lineOverrideSendFailedRd($row, $busyBtn, res.message); return; }
+            showSuccess(langData['line_override_saved'] || 'Saved.');
+            // A full reload, not a local patch: one override changes what the statutory lines
+            // calculate to, so every row's amount (and the run's own totals) can move.
+            loadSyncLineOverridesRd();
+            loadRunDetail();
+        },
+        error: function () { lineOverrideSendFailedRd($row, $busyBtn); },
+    });
+}
+// A failed write leaves the table exactly as the user left it -- including whatever they typed --
+// so they can fix the value and try again rather than start over.
+function lineOverrideSendFailedRd($row, $busyBtn, message) {
+    setLineOverrideTableBusyRd(false);
+    if ($busyBtn && $busyBtn.length) setButtonLoading($busyBtn, false);
+    showError(message || langData['save_failed'] || 'Could not save.');
+}
+
+/* ---- inline edit of one amount ---------------------------------------------------------------
+   The cell becomes the editor: the figure is replaced in place by an input carrying that same
+   figure, plus Save and a ghost ✗. One row at a time -- opening a second closes the first, because
+   two half-finished edits on one table is a state nobody can read off the screen. */
+let lineOverrideEditingCodeRd = null;
+function lineOverrideCloseEditorRd() {
+    const $wrap = $('#lineOverrideTableWrap');
+    $wrap.find('tr.lo-row').each(function () {
+        const $row = $(this);
+        const $cell = $row.find('.lo-amount-cell');
+        if (!$cell.find('.lo-amount-edit').length) return;
+        $cell.find('.lo-amount-edit').remove();
+        $cell.find('.lo-amount-view').removeClass('d-none');
+    });
+    lineOverrideEditingCodeRd = null;
+}
+function lineOverrideOpenEditorRd($row) {
+    lineOverrideCloseEditorRd();
+    const $cell = $row.find('.lo-amount-cell');
+    const current = String($row.data('amount') || '');
+    $cell.find('.lo-amount-view').addClass('d-none');
+    $cell.append(`<div class="lo-amount-edit">
+        <input type="text" inputmode="decimal" class="form-control money-input lo-edit-input" value="${escapeAttr(current)}">
+        <button type="button" class="btn btn-outline-primary lo-edit-save" disabled>${escapeHtml(langData['save'] || 'Save')}</button>
+        <button type="button" class="btn btn-icon btn-icon-ghost lo-edit-cancel" title="${escapeAttr(langData['cancel'] || 'Cancel')}"><i class="fa-solid fa-xmark"></i></button>
+    </div>`);
+    const $input = $cell.find('.lo-edit-input');
+    if (typeof initMoneyInputs === 'function') initMoneyInputs($cell);
+    lineOverrideEditingCodeRd = String($row.data('item-code'));
+    $input.trigger('focus').trigger('select');
+}
+// Saving the figure that is already there writes nothing and means nothing -- so the button says so
+// by being disabled, and Enter does nothing either.
+function lineOverrideEditPlanRd($row) {
+    const $input = $row.find('.lo-edit-input');
+    if (!$input.length) return null;
+    const raw = String($input.val() || '').trim();
+    if (raw === '') return null;
+    const parsed = typeof parseMoneyInput === 'function' ? parseMoneyInput(raw) : parseFloat(raw);
+    if (isNaN(parsed) || parsed < 0) return null;
+    const current = typeof parseMoneyInput === 'function'
+        ? parseMoneyInput(String($row.data('amount') || ''))
+        : parseFloat(String($row.data('amount') || ''));
+    if (!isNaN(current) && Math.abs(parsed - current) < 0.005) return null;
+    return { action: 'override_amount', amount: parsed };
+}
+function lineOverrideRefreshEditButtonRd($row) {
+    $row.find('.lo-edit-save').prop('disabled', !lineOverrideEditPlanRd($row));
+}
+$(document).on('click', '#lineOverrideTableWrap .lo-edit-btn', function () {
+    lineOverrideOpenEditorRd($(this).closest('tr.lo-row'));
+});
+$(document).on('click', '#lineOverrideTableWrap .lo-edit-cancel', lineOverrideCloseEditorRd);
+$(document).on('input change', '#lineOverrideTableWrap .lo-edit-input', function () {
+    lineOverrideRefreshEditButtonRd($(this).closest('tr.lo-row'));
+});
+// Bound INSIDE the modal, not on `document` like every other handler in this file. Bootstrap's own
+// modal keydown listener sits on the modal element itself, so an event that reaches `document` has
+// already passed through it -- stopPropagation() there is too late, and Esc closed the whole
+// Adjustments modal instead of just this editor (caught in a screenshot; the measurement only
+// checked that the editor had closed, which it had). Delegating from a node BELOW the modal runs
+// first, which is what makes stopPropagation() mean anything here.
+$(function () {
+    $('#manageLinesSyncOverridePane').on('keydown', '.lo-edit-input', function (e) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); lineOverrideCloseEditorRd(); return; }
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        e.stopPropagation();
+        const $row = $(this).closest('tr.lo-row');
+        const plan = lineOverrideEditPlanRd($row);
+        if (plan) lineOverrideSendRd($row, plan, $row.find('.lo-edit-save'));
+    });
+});
+$(document).on('click', '#lineOverrideTableWrap .lo-edit-save', function () {
+    const $row = $(this).closest('tr.lo-row');
+    const plan = lineOverrideEditPlanRd($row);
+    if (plan) lineOverrideSendRd($row, plan, $(this));
+});
+
 function lineOverrideProgressRd(i, n) {
     const tpl = langData['line_override_saving_progress'] || 'Saving {i}/{n}…';
     $('#lineOverrideSaveProgress').text(tpl.replace('{i}', String(i)).replace('{n}', String(n)));
 }
-// The footer's one Save button for this tab (there are no per-row Save buttons any more) -- every
-// changed row is sent in order, one request each, because the backend has no batch endpoint and a
-// single save already recalculates the whole run (docs/specs/line-override-batch.md).
-function saveLineOverrideTableRd() {
+// Sequential (not parallel) on purpose -- each call recalculates the whole run internally; firing
+// several at once risks two overlapping recalculate() writes racing each other.
+function runSequentialAjaxRd(calls, onDone) {
+    if (!calls.length) { onDone(); return; }
+    const call = calls.shift();
+    call(function (ok) {
+        if (!ok) { onDone(); return; }
+        runSequentialAjaxRd(calls, onDone);
+    });
+}
+// The footer's only action for this tab: drop EVERY override this employee carries, in one go. The
+// per-row controls each handle one line; this is the one thing that touches rows the user never
+// opened, which is why it is the one thing that still counts before it asks.
+function restoreAllComputedLineOverridesRd() {
     const rows = [];
-    let invalidName = null;
     $('#lineOverrideTableWrap .lo-row').each(function () {
         const $row = $(this);
-        const plan = lineOverrideRowPlanRd($row);
-        if (!plan) return;
-        if (plan.action === 'invalid') { invalidName = $row.data('item-name'); return false; }
-        rows.push({ $row: $row, plan: plan, name: $row.data('item-name') });
+        if ($row.find('.lo-include').is(':disabled') || !($row.data('orig-action') || '')) return;
+        rows.push($row);
     });
-    if (invalidName) {
-        showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
-        return;
-    }
     if (!rows.length) return;
-    // Rows whose value came out of the history dropdown are a REVERT, not a fresh number -- ask once,
-    // for all of them together, before anything is sent (§10's own confirm convention, warning tone:
-    // this overwrites what is in effect now with something older).
-    const restoreAllCount = rows.filter(r => r.$row.attr('data-force-remove') === '1').length;
-    if (restoreAllCount > 0) {
-        const tpl = langData['line_override_confirm_restore_all_message'] || '{n} item(s) will go back to their calculated value. Continue?';
-        showConfirm({
-            title: langData['line_override_confirm_restore_all_title'] || 'Restore calculated values',
-            message: tpl.replace('{n}', String(restoreAllCount)),
-            tone: 'warning',
-            onYes: function () { runLineOverrideSaveRd(rows); },
-        });
-        return;
-    }
-    // Nothing else asks twice: a value picked out of a history list is already confirmed at the
-    // moment it is picked (lineOverrideConfirmApplyHistoryValueRd), and a figure typed by hand was
-    // never a "revert" to begin with. Only the footer's bulk action, which touches rows the user
-    // never opened, still needs a count in front of it.
-    runLineOverrideSaveRd(rows);
+    const tpl = langData['line_override_confirm_restore_all_message'] || '{n} item(s) will go back to their calculated value. Continue?';
+    showConfirm({
+        title: langData['line_override_confirm_restore_all_title'] || 'Restore calculated values',
+        message: tpl.replace('{n}', String(rows.length)),
+        tone: 'warning',
+        onYes: function () { runRestoreAllComputedRd(rows); },
+    });
 }
-function runLineOverrideSaveRd(rows) {
+function runRestoreAllComputedRd(rows) {
     const total = rows.length;
     let saved = 0;
     let failedName = null;
-    setAdjustmentModalBusyRd(true);
+    lineOverrideCloseEditorRd();
+    setLineOverrideTableBusyRd(true);
     lineOverrideProgressRd(1, total);
-    const calls = rows.map(function (row, i) {
+    const calls = rows.map(function ($row, i) {
         return function (next) {
             lineOverrideProgressRd(i + 1, total);
-            const payload = { id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, item_code: row.$row.data('item-code') };
-            if (row.plan.action === 'override_amount') { payload.action = 'override_amount'; payload.override_amount = row.plan.amount; }
-            if (row.plan.action === 'exclude') { payload.action = 'exclude'; }
             $.ajax({
-                url: lineOverrideSaveUrlRd(row.$row, row.plan.action),
-                method: 'POST', contentType: 'application/json', dataType: 'json', data: JSON.stringify(payload),
+                url: lineOverrideSaveUrlRd($row, 'remove'),
+                method: 'POST', contentType: 'application/json', dataType: 'json',
+                data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, item_code: $row.data('item-code') }),
                 success: function (res) {
                     if (res.status) { saved++; next(true); return; }
-                    failedName = row.name;
+                    failedName = $row.data('item-name');
                     next(false);
                 },
-                error: function () { failedName = row.name; next(false); },
+                error: function () { failedName = $row.data('item-name'); next(false); },
             });
         };
     });
     runSequentialAjaxRd(calls, function () {
-        setAdjustmentModalBusyRd(false);
+        setLineOverrideTableBusyRd(false);
         $('#lineOverrideSaveProgress').text('');
         if (failedName) {
             const tpl = langData['line_override_save_failed_at'] || 'Could not save "{item}" -- {n} item(s) saved before it.';
-            showWarning(tpl.replace('{item}', failedName).replace('{n}', String(saved)));
+            showError(tpl.replace('{item}', failedName).replace('{n}', String(saved)));
         } else {
             const tpl = langData['line_override_saved_count'] || '{n} item(s) saved.';
             showSuccess(tpl.replace('{n}', String(saved)));
@@ -5048,30 +5108,6 @@ function runLineOverrideSaveRd(rows) {
         loadSyncLineOverridesRd();
         loadRunDetail();
     });
-}
-// "คืนค่า" (footer, this tab only) -- puts every field back to the state the table loaded in.
-// It only touches the form; nothing is sent until Save.
-// Every row that currently carries an override, back to what the system calculated -- staged only,
-// the same as typing: nothing is sent until Save (which asks for confirmation first).
-function restoreAllComputedLineOverridesRd() {
-    let marked = 0;
-    $('#lineOverrideTableWrap .lo-row').each(function () {
-        const $row = $(this);
-        const $check = $row.find('.lo-include');
-        if ($check.is(':disabled') || !($row.data('orig-action') || '')) return;
-        const line = lineOverrideRowsRd.find(l => l.code === $row.data('item-code'));
-        const history = line ? lineOverrideHistoryFor(line) : null;
-        // The calculated figure is only known where history recorded it (it is the value the first
-        // edit replaced); with no history the field stays empty -- the row is still marked, and the
-        // confirmation on Save is what says what will happen.
-        const computed = history ? lineOverrideHistoryValueRd(history.original_value) : '';
-        $check.prop('checked', true);
-        $row.removeClass('lo-row-off').attr('data-force-remove', '1')
-            .removeAttr('data-from-history').removeAttr('data-typed-amount');
-        $row.find('.lo-new-amount').prop('disabled', false).val(computed).addClass('lo-input-dirty');
-        marked++;
-    });
-    if (marked) refreshAdjustmentSaveButtonState();
 }
 $(document).on('click', '#btnRestoreAllComputedLineOverrides', restoreAllComputedLineOverridesRd);
 $(document).on('click', '#btnSaveEmpCalcOverride', function () {
@@ -5591,7 +5627,11 @@ $(document).on('keydown', '#manualLineAmount', function (e) {
 const ADJUSTMENT_TAB_CONFIG_RD = {
     manageLinesItemsPane: { scope: '#manageLinesItemsPane', saveSelector: null },
     manageLinesAttendancePane: { scope: '#manageLinesAttendancePane', saveSelector: '#btnSaveAttendanceData' },
-    manageLinesSyncOverridePane: { scope: '#manageLinesSyncOverridePane', saveFn: saveLineOverrideTableRd, restoreAllFn: restoreAllComputedLineOverridesRd },
+    // `immediate`: every action in this tab writes the moment it is confirmed, so there is nothing to
+    // save later and nothing to warn about on the way out -- the footer hides Save and the dirty
+    // guard skips the tab entirely (rules.md §9). Same shape as Tab 1, which has always worked this
+    // way; `restoreAllFn` is the one footer action it does keep.
+    manageLinesSyncOverridePane: { scope: '#manageLinesSyncOverridePane', immediate: true, restoreAllFn: restoreAllComputedLineOverridesRd },
     manageLinesRecurringDestPane: { scope: '#recurringDestEditorCard', saveSelector: '#btnSaveRecurringDestOverride', activeOnly: true },
     manageLinesCalcPane: { scope: '#manageLinesCalcPane', saveSelector: '#btnSaveEmpCalcOverride' },
 };
@@ -5608,11 +5648,10 @@ function refreshAdjustmentTabDirtyGuard(paneId) {
 }
 function adjustmentTabIsDirty(cfg) {
     if (!cfg) return false;
+    // A tab that writes on every action is never "unsaved" -- asking on the way out would be asking
+    // about work that is already on the server.
+    if (cfg.immediate) return false;
     const $scope = $(cfg.scope);
-    // A "คืนค่าระบบทั้งหมด" mark is an edit the form fields cannot always show: where history never
-    // recorded the calculated figure the field just goes blank, which on an excluded row looks
-    // exactly like its baseline.
-    if ($scope.find('.lo-row[data-force-remove="1"]').length) return true;
     return isFormDirty($scope, $scope.data('dirtyGuardBaseline'));
 }
 // Footer's single Save button: disabled unless the active tab both HAS a save target and is actually

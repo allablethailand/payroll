@@ -733,6 +733,20 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
     </table>
 </div>
 
+<!-- ==================== แก้ค่าในตาราง inline + switch (§7/§9, ใหม่ 2026-09-16) ==================== -->
+<div class="cp-section">
+    <h2>แก้ค่าในตาราง inline + switch เป็นการกระทำ (§7/§9)</h2>
+    <p class="cp-section-note">ตารางที่ <b>ยิง API ทันทีทุกการกระทำ</b> (ของจริง: tab "ปรับตัวเลข" ของ Adjustments modal) — ไม่มีปุ่มบันทึกที่ footer และไม่มี dirty-guard เพราะสิ่งที่อยู่บนหน้าจอคือสิ่งที่อยู่บนเซิร์ฟเวอร์เสมอ. <b>ดินสอ</b> (ghost, อยู่ในคอลัมน์ตัวเลขเอง, โผล่ตอน hover แถว) เปลี่ยนเซลล์เป็น <code>[input ค่าปัจจุบัน][บันทึก outline-primary][✗ ghost]</code> — Enter = บันทึก, Esc = ยกเลิก, <b>ค่าเท่าเดิม/ว่าง = ปุ่มบันทึก disabled</b> (ลองพิมพ์ดู), เปิดได้ทีละแถว. <b>switch</b> เป็น <code>.form-check.form-switch</code> ตัวเดียวกับ <code>setting-row.php</code> — ของจริงจะถาม <code>showConfirm</code> ทั้งสองทางก่อนยิง (เดโมนี้ไม่ยิงอะไร). แถวที่ปิดอยู่: ชื่อจาง + ตัวเลขขีดฆ่า + ไม่มีดินสอ.</p>
+    <div style="max-width:560px;">
+        <div class="table-responsive"><table class="table align-middle lo-table mb-0">
+            <thead><tr>
+                <th class="col-check">นำมาคำนวณ</th><th>รายการ</th><th class="col-money">จำนวนเงิน</th>
+            </tr></thead>
+            <tbody id="cpInlineEditRows"></tbody>
+        </table></div>
+    </div>
+</div>
+
 <!-- ==================== Page Header (§2) ==================== -->
 <div class="cp-section">
     <h2>Page Header (§2)</h2>
@@ -1926,6 +1940,50 @@ $(function () {
         desc_off: 'หากแก้ไขข้อมูล ให้กด <b>คำนวณ</b> เองทุกครั้ง',
         checked: false,
     }));
+
+    // Inline edit + switch in a table (§7/§9, 2026-09-16) -- the same markup the real "ปรับตัวเลข" tab
+    // renders, with the send step replaced by nothing (this page never writes anything).
+    const CP_INLINE_ROWS = [
+        { name: 'เงินเดือนพื้นฐาน', amount: '25,000.00', on: true },
+        { name: 'โบนัส', amount: '2,000.00', on: true },
+        { name: 'หักค่าเครื่องแบบ', amount: '550.00', on: false },
+    ];
+    $('#cpInlineEditRows').html(CP_INLINE_ROWS.map(function (r, i) {
+        const pencil = r.on
+            ? '<button type="button" class="btn btn-icon btn-icon-ghost cp-inline-edit" title="แก้ไขจำนวนเงิน"><i class="fa-solid fa-pen"></i></button>'
+            : '';
+        return '<tr class="lo-row' + (r.on ? '' : ' lo-row-off') + '" data-amount="' + r.amount + '">'
+            + '<td class="col-check"><div class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" role="switch" id="cpInlineSw' + i + '"' + (r.on ? ' checked' : '') + '></div></td>'
+            + '<td><span class="lo-name">' + escapeHtml(r.name) + '</span></td>'
+            + '<td class="num col-money lo-amount-cell"><div class="lo-amount-view"><span class="money">' + r.amount + '</span>' + pencil + '</div></td>'
+            + '</tr>';
+    }).join(''));
+    const cpCloseInline = function () {
+        $('#cpInlineEditRows .lo-amount-edit').remove();
+        $('#cpInlineEditRows .lo-amount-view').removeClass('d-none');
+    };
+    $('#cpInlineEditRows').on('click', '.cp-inline-edit', function () {
+        cpCloseInline();
+        const $row = $(this).closest('tr');
+        const $cell = $row.find('.lo-amount-cell');
+        $cell.find('.lo-amount-view').addClass('d-none');
+        $cell.append('<div class="lo-amount-edit">'
+            + '<input type="text" inputmode="decimal" class="form-control money-input cp-inline-input" value="' + $row.data('amount') + '">'
+            + '<button type="button" class="btn btn-outline-primary cp-inline-save" disabled>บันทึก</button>'
+            + '<button type="button" class="btn btn-icon btn-icon-ghost cp-inline-cancel" title="ยกเลิก"><i class="fa-solid fa-xmark"></i></button>'
+            + '</div>');
+        if (typeof initMoneyInputs === 'function') initMoneyInputs($cell);
+        $cell.find('.cp-inline-input').trigger('focus').trigger('select');
+    });
+    $('#cpInlineEditRows').on('input', '.cp-inline-input', function () {
+        const $row = $(this).closest('tr');
+        const same = String($(this).val() || '').trim() === String($row.data('amount'));
+        $row.find('.cp-inline-save').prop('disabled', same || String($(this).val() || '').trim() === '');
+    });
+    $('#cpInlineEditRows').on('click', '.cp-inline-cancel', cpCloseInline);
+    $('#cpInlineEditRows').on('keydown', '.cp-inline-input', function (e) {
+        if (e.key === 'Escape') { e.preventDefault(); cpCloseInline(); }
+    });
 
     // Timeline (ข้อ (3)/6b) -- 6 รายการ 2 วัน, เรียงใหม่สุดบนสุดเอง (renderTimeline() ไม่ sort เอง) --
     // เรื่องราวเดียวกับที่ combo demo ด้านล่างใช้ประกอบกับ stepper.

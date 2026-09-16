@@ -1531,7 +1531,7 @@
                              and why it was accepted. itemChecklistBoxesHtml() itself stays -- the
                              run-wide Run Settings panel (#runSettingsItemChecklist) still uses it. -->
                         <div class="tab-pane fade form-compact" id="manageLinesSyncOverridePane" role="tabpanel">
-                            <p class="text-muted mb-3" id="lineOverrideHint" data-i18n="line_override_hint">Tick the items to include in this employee's calculation for this run, and enter a &ldquo;New value&rdquo; only where you want to replace the system-calculated amount (blank = no change; go back to the system value from the history menu or the Restore-all button). Every change is recorded in history.</p>
+                            <p class="text-muted mb-3" id="lineOverrideHint" data-i18n="line_override_hint">Turn on the items to include in this employee's calculation for this run, and use the pencil to enter an amount other than the system-calculated one. Every change is saved immediately and kept in the history.</p>
                             <div id="lineOverrideTableWrap"></div>
                         </div>
                         <div class="tab-pane fade" id="manageLinesRecurringDestPane" role="tabpanel">

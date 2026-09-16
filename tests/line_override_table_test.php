@@ -197,64 +197,137 @@ try {
     $pdo->rollBack();
 }
 
-echo "\n=== 7. the New-value field only ever means \"change it to this\" ===\n";
-// 2026-09-16, real data-loss bug the user reproduced: the field used to PREFILL an existing override,
-// and an empty field meant "drop the override". Unticking a row clears the field, so untick +
-// re-tick + Save deleted a real 40,000 with nothing on screen saying it would. The field now starts
-// empty on every row and empty means DO NOT TOUCH -- these assertions are the 6-row truth table in
+echo "\n=== 7. one action, one request, sent immediately ===\n";
+// 2026-09-16, round 6: this tab stopped staging. The staged version existed for a batch endpoint
+// that was never built -- its single Save button fired one request per row anyway -- so all it
+// really produced was a screen that disagreed with the server, plus the rules invented to describe
+// that gap ("empty means...", "unticking parks...", the data-loss bug of round 5). Every action now
+// writes the moment it is confirmed. These assertions are the action table in
 // docs/decisions/2026-09-16-line-override-table.md, read off the source that implements it.
 $js = file_get_contents(__DIR__ . '/../public/js/payroll/detail.js');
-$planStart = strpos($js, 'function lineOverrideRowPlanRd(');
-$plan = substr($js, (int)$planStart, (int)strpos($js, 'function lineOverrideSaveUrlRd(') - (int)$planStart);
 
-// (6) the case that was wrong: ticked + empty sends nothing, on EVERY row
-checkTrue('ticked + empty returns no plan at all', strpos($plan, "if (newAmount === '') return null;") !== false);
-// ...and the old rule is gone, not merely shadowed by something earlier
-checkTrue('empty no longer maps to .remove on an overridden row',
-    strpos($plan, "if (newAmount === '') {") === false);
-// (1) the mark is read before the field
-checkTrue('a marked row is a .remove, decided before the field is read',
-    strpos($plan, 'data-force-remove') < strpos($plan, '.lo-new-amount'));
-// (2)(3)(4)(5)
-checkTrue('a Run-Settings row sends nothing', strpos($plan, "if (\$check.is(':disabled')) return null;") !== false);
-checkTrue('unticked sends exclude, unless it already is one', strpos($plan, "return origAction === 'exclude' ? null : { action: 'exclude' };") !== false);
-checkTrue('re-ticking an excluded row with nothing typed undoes the exclusion',
-    strpos($plan, "if (origAction === 'exclude' && newAmount === '') return { action: 'remove' };") !== false);
-checkTrue('a typed value is always an override_amount', strpos($plan, "return { action: 'override_amount', amount: parsed };") !== false);
-// ...and it no longer skips sending when the typed value happens to equal the stored one, because
-// there is nothing prefilled for it to equal any more.
-checkTrue('no stored-amount comparison is left in the plan', strpos($plan, 'newAmount === origAmount') === false);
+// There is exactly ONE write path, and every entry point goes through it.
+checkTrue('one sender for the whole tab', substr_count($js, 'function lineOverrideSendRd(') === 1);
+foreach ([
+    'the pencil editor' => "lineOverrideSendRd(\$row, plan, \$row.find('.lo-edit-save'))",
+    'the switch' => "lineOverrideSendRd(\$row, included ? { action: 'remove' } : { action: 'exclude' })",
+    'history -> a recorded value' => "lineOverrideSendRd(\$row, { action: 'override_amount', amount: parsed })",
+    'history -> the calculated value' => "lineOverrideSendRd(\$row, { action: 'remove' })",
+] as $label => $call) {
+    checkTrue("{$label} sends through it", strpos($js, $call) !== false);
+}
+// ...and the staged machinery is gone, not merely unused.
+foreach (['lineOverrideRowPlanRd', 'saveLineOverrideTableRd', 'data-force-remove', 'data-typed-amount',
+          'data-from-history', 'lo-new-amount', 'lo-input-dirty'] as $dead) {
+    checkTrue("no trace of `{$dead}` is left", strpos($js, $dead) === false);
+}
 
-echo "\n=== 8. the field starts empty, and unticking parks what was typed ===\n";
+echo "\n=== 8. the pencil editor ===\n";
+$editStart = (int)strpos($js, 'function lineOverrideEditPlanRd(');
+$edit = substr($js, $editStart, (int)strpos($js, 'function lineOverrideRefreshEditButtonRd(') - $editStart);
+// Saving the figure that is already there writes nothing and means nothing.
+checkTrue('an unchanged value produces no plan', strpos($edit, 'Math.abs(parsed - current) < 0.005') !== false);
+checkTrue('an empty value produces no plan', strpos($edit, "if (raw === '') return null;") !== false);
+checkTrue('a negative or unparseable value produces no plan', strpos($edit, 'isNaN(parsed) || parsed < 0') !== false);
+// ...and "no plan" is what disables the button AND what makes Enter a no-op -- one source, not two.
+checkTrue('the Save button follows that same plan', strpos($js, "\$row.find('.lo-edit-save').prop('disabled', !lineOverrideEditPlanRd(\$row));") !== false);
+checkTrue('Enter follows it too', strpos($js, "if (plan) lineOverrideSendRd(\$row, plan, \$row.find('.lo-edit-save'));") !== false);
+checkTrue('Esc closes without sending', strpos($js, "if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); lineOverrideCloseEditorRd(); return; }") !== false);
+// Bootstrap's modal keydown listener sits on the modal ELEMENT, so an event that reaches `document`
+// has already passed through it -- this one handler is therefore delegated from inside the modal,
+// which is what makes its stopPropagation() mean anything (Esc closed the whole modal otherwise).
+$keyStart = (int)strpos($js, "on('keydown', '.lo-edit-input'");
+checkTrue('the key handler is delegated from inside the modal',
+    strpos($js, "\$('#manageLinesSyncOverridePane').on('keydown', '.lo-edit-input'") !== false);
+checkTrue('and neither key reaches the modal behind it', substr_count(substr($js, $keyStart, 700), 'e.stopPropagation();') === 2);
+// Two half-finished edits on one table is a state nobody can read off the screen.
+checkTrue('opening an editor closes any other', strpos($js, "function lineOverrideOpenEditorRd(\$row) {
+    lineOverrideCloseEditorRd();") !== false);
+checkTrue('the field opens focused and selected', strpos($js, "\$input.trigger('focus').trigger('select');") !== false);
+
+echo "\n=== 9. the switch asks, both ways ===\n";
+$swStart = (int)strpos($js, "on('change', '#lineOverrideTableWrap .lo-include'");
+$sw = substr($js, $swStart, 1400);
+checkTrue('turning it OFF asks in the warning tone', strpos($sw, "line_override_confirm_exclude_message") !== false);
+checkTrue('turning it ON asks too', strpos($sw, "line_override_confirm_include_message") !== false);
+checkTrue('the tone differs by direction', strpos($sw, "tone: included ? 'info' : 'warning'") !== false);
+// A cancelled confirm must not leave the control disagreeing with the data behind it.
+checkTrue('cancelling puts the switch back', strpos($sw, 'onNo: snapBack') !== false
+    && strpos($sw, "\$row.find('.lo-include').prop('checked', !included)") !== false);
+checkTrue('nothing is sent before the answer', strpos($sw, 'onYes: function () {') < strpos($sw, 'lineOverrideSendRd('));
+
+echo "\n=== 10. the table is locked while one write is in flight ===\n";
+// Each save recalculates the whole run internally; a second action started before the first comes
+// back would race it.
+$busyStart = (int)strpos($js, 'function setLineOverrideTableBusyRd(');
+$busy = substr($js, $busyStart, 900);
+foreach (['.lo-include', '.lo-edit-btn', '.lo-history-toggle', '.lo-hidden-toggle'] as $control) {
+    checkTrue("`{$control}` is disabled while busy", strpos($busy, $control) !== false);
+}
+checkTrue('the footer action is locked too', strpos($busy, "\$('#btnRestoreAllComputedLineOverrides').prop('disabled', busy);") !== false);
+// A row that was ALREADY disabled (Run Settings) must not come back enabled when the lock lifts.
+checkTrue('an already-disabled control stays disabled afterwards', strpos($busy, "data-was-disabled") !== false);
+// A failed write leaves what the user typed where it is, so they can fix it rather than start over.
+// The lock has to survive the reload that follows a successful write, or the user can act on rows
+// that are about to be replaced -- so it is released where the fresh rows land, not where the
+// request came back. (Found by measuring: the table stayed dimmed forever without this.)
+checkTrue('the lock is released when the new rows render', strpos($js, "\$wrap.removeClass('lo-table-busy');") !== false);
+checkTrue('a failure unlocks and keeps the typed value', strpos($js, 'function lineOverrideSendFailedRd(') !== false
+    && strpos($js, 'lineOverrideCloseEditorRd();\n    setLineOverrideTableBusyRd(false);') === false);
+// One override changes what the statutory lines calculate to, so the whole table (and the run's own
+// totals) is reloaded, never patched row-locally.
+checkTrue('success reloads the table and the run', strpos($js, "loadSyncLineOverridesRd();\n            loadRunDetail();") !== false);
+
+echo "\n=== 11. no Save button, no dirty guard, for this tab ===\n";
+checkTrue('the tab declares itself immediate', strpos($js, "manageLinesSyncOverridePane: { scope: '#manageLinesSyncOverridePane', immediate: true") !== false);
+checkTrue('...so it has no save target at all', strpos($js, "immediate: true, restoreAllFn: restoreAllComputedLineOverridesRd }") !== false);
+// A tab that writes on every action is never "unsaved" -- asking on the way out would be asking
+// about work that is already on the server.
+checkTrue('the dirty guard skips it', strpos($js, 'if (cfg.immediate) return false;') !== false);
+// The footer keeps exactly one action for this tab, and it is the only one that counts first.
+checkTrue('restore-all confirms with a count before sending', strpos($js, 'line_override_confirm_restore_all_message') !== false);
+checkTrue('and sends one .remove per row, in order', strpos($js, "url: lineOverrideSaveUrlRd(\$row, 'remove')") !== false
+    && strpos($js, 'runSequentialAjaxRd(calls,') !== false);
+
+echo "\n=== 12. the row, and what it says ===\n";
 $rowStart = (int)strpos($js, 'function lineOverrideRowHtml(');
 $rowHtml = substr($js, $rowStart, (int)strpos($js, 'function renderLineOverrideTableRd(') - $rowStart);
-checkTrue('the field renders empty on every row', strpos($rowHtml, "const amountValue = '';") !== false);
-// The stored figure is not carried anywhere on the row either: the "ค่าปัจจุบัน" column already shows
-// what is in effect, and a second copy of it is exactly what the field's prefill was.
-checkTrue('the stored override figure reaches neither the field nor the row', strpos($rowHtml, 'data-orig-amount') === false
-    && strpos($rowHtml, 'fmtNum(line.override_amount)') === false);
-checkTrue('unticking parks the typed value', strpos($js, "data-typed-amount', String(\$input.val()") !== false);
-checkTrue('re-ticking restores it', strpos($js, "const parked = \$row.attr('data-typed-amount');") !== false);
-// A second `change` for the same state must not overwrite the parked value with the already-cleared
-// field -- the naive version did exactly that and lost the number it existed to protect.
-checkTrue('parking is keyed off the row state, so a repeated change is a no-op',
-    strpos($js, "const wasOff = \$row.hasClass('lo-row-off');") !== false
-    && strpos($js, 'if (!included && !wasOff)') !== false
-    && strpos($js, '} else if (included && wasOff) {') !== false);
+checkTrue('the include control is a switch', strpos($rowHtml, 'class="form-check form-switch mb-0"') !== false
+    && strpos($rowHtml, 'role="switch"') !== false);
+checkTrue('the amount column carries the figure and its pencil', strpos($rowHtml, 'lo-amount-cell') !== false
+    && strpos($rowHtml, 'lo-edit-btn') !== false);
+// No amount to edit on a line that is not being calculated -- and a greyed control still invites the
+// click, so the pencil is absent rather than disabled.
+checkTrue('an off row has no pencil at all', strpos($rowHtml, 'const pencil = (included && !runDisabled)') !== false);
+checkTrue('the row carries its own current figure for the editor', strpos($rowHtml, 'data-amount="${escapeAttr(fmtNum(line.current_amount))}"') !== false);
 
 $thLang = json_decode(file_get_contents(__DIR__ . '/../public/lang/th.json'), true);
 $enLang = json_decode(file_get_contents(__DIR__ . '/../public/lang/en.json'), true);
-// The hint has to say what empty means now, or the screen still teaches the rule that lost data.
-checkTrue('the hint no longer says blank = use the system value',
-    strpos((string)$thLang['line_override_hint'], 'เว้นว่าง = ใช้ค่าระบบ') === false
-    && strpos((string)$enLang['line_override_hint'], 'blank = use system value') === false);
-checkTrue('the hint says blank = no change, in both languages',
-    strpos((string)$thLang['line_override_hint'], 'เว้นว่าง = ไม่เปลี่ยน') !== false
-    && strpos((string)$enLang['line_override_hint'], 'blank = no change') !== false);
-// ...and names the two ways back to the calculated figure, since empty is no longer one of them.
-checkTrue('and names how to get back to the system value',
-    strpos((string)$thLang['line_override_hint'], 'คืนค่าระบบทั้งหมด') !== false
-    && strpos((string)$enLang['line_override_hint'], 'Restore-all') !== false);
+foreach (['line_override_col_amount', 'line_override_edit_amount', 'line_override_saved',
+          'line_override_confirm_exclude_title', 'line_override_confirm_exclude_message',
+          'line_override_confirm_include_title', 'line_override_confirm_include_message'] as $key) {
+    checkTrue("{$key} exists in both languages", isset($thLang[$key], $enLang[$key]));
+}
+foreach (['line_override_confirm_exclude_message', 'line_override_confirm_include_message'] as $key) {
+    checkTrue("{$key} names the item", strpos((string)$thLang[$key], '{item}') !== false
+        && strpos((string)$enLang[$key], '{item}') !== false);
+}
+// The staged version's vocabulary is gone from the screen too.
+foreach (['line_override_col_new', 'line_override_new_placeholder', 'line_override_cancel_edits'] as $key) {
+    checkTrue("{$key} is gone", !array_key_exists($key, $thLang) && !array_key_exists($key, $enLang));
+}
+// The hint has to teach the tab that exists now, not the one that was replaced.
+checkTrue('the hint says the pencil and that it saves immediately',
+    strpos((string)$thLang['line_override_hint'], 'ดินสอ') !== false
+    && strpos((string)$thLang['line_override_hint'], 'บันทึกทันที') !== false
+    && strpos((string)$enLang['line_override_hint'], 'pencil') !== false
+    && strpos((string)$enLang['line_override_hint'], 'saved') !== false);
+checkTrue('and no longer explains an empty field', strpos((string)$thLang['line_override_hint'], 'เว้นว่าง') === false
+    && strpos((string)$enLang['line_override_hint'], 'blank') === false);
+// "Use this value" now writes on confirm, so its own wording had to change with it.
+checkTrue('the use-this-value confirm says it saves immediately',
+    strpos((string)$thLang['line_override_confirm_use_value_message'], 'บันทึกทันที') !== false
+    && strpos((string)$enLang['line_override_confirm_use_value_message'], 'saved immediately') !== false);
 
 echo "\n--------------------------------------------------\n";
 echo "Passed: {$passes}, Failed: {$failures}\n";

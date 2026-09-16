@@ -9930,8 +9930,33 @@ html, body {
     padding-top: var(--sp-1);
     padding-bottom: var(--sp-1);
 }
-.lo-table .lo-new-amount {
-    max-width: 140px;
+/* The amount cell holds either the figure + its pencil, or the editor that replaces them in place.
+   Both are right-aligned like any money column; the pencil only appears next to a figure that can
+   actually be edited (an off row renders none at all). */
+.lo-amount-view,
+.lo-amount-edit {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+}
+/* The pencil holds its space whether or not it is showing, so the figures in this column stay in one
+   line instead of shifting by a button's width from row to row. */
+.lo-amount-view .btn-icon {
+    visibility: hidden;
+}
+.lo-row:hover .lo-amount-view .btn-icon,
+.lo-amount-view .btn-icon:focus-visible {
+    visibility: visible;
+}
+.lo-amount-edit .lo-edit-input {
+    max-width: 120px;
+    text-align: right;
+}
+/* While one write is in flight the whole table is inert -- a second action would race a recalculate
+   that is already running. Controls are really disabled; this only says so. */
+.lo-table-busy {
+    opacity: .6;
 }
 /* A row that is not included: its name goes quiet and its current amount reads as struck out -- the
    figure is still shown (it is what the row WOULD contribute) but it is not part of the total. */
@@ -10103,14 +10128,9 @@ th.lo-history-col {
     border-top: 1px solid var(--c-border);
     margin-top: var(--sp-1);
 }
-/* A field filled from the history dropdown -- the value did not come from the keyboard, so it needs
-   to be obvious that this row now carries an unsaved change. */
-.lo-input-dirty {
-    border-color: var(--c-primary);
-}
 @media (max-width: 575.98px) {
     /* The item name is the only cell that can give ground -- everything else is a control or a
-       figure. Wrapping it keeps all 5 columns (History included) inside a 430px screen instead of
+       figure. Wrapping it keeps all 4 columns (History included) inside a 430px screen instead of
        pushing the table into a horizontal scroll. */
     .lo-table > tbody > tr > td,
     .lo-table > thead > tr > th {
@@ -10121,8 +10141,18 @@ th.lo-history-col {
         white-space: normal;
         word-break: break-word;
     }
-    .lo-table .lo-new-amount {
+    /* The editor is 3 controls in a money column -- at this width it wraps under the figure rather
+       than forcing the table sideways. */
+    .lo-amount-edit {
+        flex-wrap: wrap;
+        row-gap: var(--sp-1);
+    }
+    .lo-amount-edit .lo-edit-input {
         max-width: 84px;
+    }
+    /* No hover on a touch screen, so the pencil cannot hide behind one. */
+    .lo-amount-view .btn-icon {
+        visibility: visible;
     }
 }
 .lo-occurrences {
