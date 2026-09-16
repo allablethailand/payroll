@@ -836,7 +836,16 @@ function getTableLang() {
         // `opts.text = language.sSearch`). Trailing dots belong on the placeholder (inside the field,
         // where the hint is actually read) not doubled onto the label too -- `.replace(/\.+$/, '')`
         // strips them for the label only, leaving the shared key's own canonical value untouched.
-        search: (langData.search || "Search...").replace(/\.+$/, ''),
+        // 2026-09-16, explicit instruction ("ตัด label 'ค้นหา' หน้าช่อง เหลือ placeholder + aria-label"):
+        // the visible <label> is now EMPTY for every table in the app (86 call sites all read this
+        // helper) -- the placeholder inside the field already says the same word, and a label that
+        // only repeats it costs a control-row slot on a 430px screen for nothing. The word itself is
+        // NOT lost: it becomes the input's `aria-label` (wired once for every table in the app by the
+        // delegated `init.dt` handler further down, and re-applied on a live language switch by
+        // _refreshAllDataTablesLanguageInner()), so screen readers still announce the field.
+        // `.dt-search > label:empty` is hidden in style.css so the empty element leaves no gap.
+        search: '',
+        searchAriaLabel: (langData.search || "Search...").replace(/\.+$/, ''),
         searchPlaceholder: langData.search || "Search...",
         lengthMenu: langData.lengthMenu || "Show _MENU_ entries",
         zeroRecords: langData.zeroRecords || "No matching records found",
@@ -1108,6 +1117,20 @@ $(function () {
     if (ext.classes.search) ext.classes.search.input = 'form-control';
     if (ext.classes.length) ext.classes.length.select = 'form-select';
 });
+// 2026-09-16: the search field's accessible name, for EVERY DataTable in the app -- its visible
+// <label> is empty now (getTableLang()'s own `search: ''`), so without this the input would have no
+// accessible name at all. Delegated on `document` rather than wired per table: `init.dt` bubbles up
+// from every table DataTables constructs, including the 14 pages that still build their own with
+// `$().DataTable()` and never reach initSharedDataTable() (BACKLOG "รอบ 4"). Placeholder alone is not
+// an accessible name -- some screen readers ignore it entirely, and it disappears the moment the
+// user types.
+$(document).on('init.dt', function (e, settings) {
+    if (!$.fn.dataTable || !$.fn.dataTable.Api) return;
+    const api = new $.fn.dataTable.Api(settings);
+    const lang = api.settings()[0].oLanguage || {};
+    const label = lang.searchAriaLabel || (getLangValue('search') || 'Search').replace(/\.+$/, '');
+    $(api.table().container()).find('.dt-search > input').attr('aria-label', label);
+});
 function initSharedDataTable(selector, options) {
     options = options || {};
     const $table = $(selector);
@@ -1167,6 +1190,19 @@ function initSharedDataTable(selector, options) {
         // callers pass their own `layout` option (confirmed via grep) -- ships automatically via
         // this shared config, no page edit needed, same mechanism as item 1's button/tab recolor.
         layout: { topStart: 'pageLength', topEnd: 'search' },
+        // 2026-09-16, explicit instruction ("ค้นหา: พิมพ์ไปค้นไป debounce 300ms client-side, พฤติกรรม
+        // เดียวทั้งแอป"). DataTables' own `searchDelay` option, NOT a hand-rolled unbind/rebind of its
+        // input handlers: the library already wires `keyup/search/input/paste/cut` through its own
+        // `DataTable.util.debounce` when this is set (read from the installed 2.x source directly),
+        // so every one of those entry points -- including paste, which a keyup-only rebind would
+        // miss -- gets the same single trailing redraw. Default 0 = one full redraw per keystroke,
+        // which on these tables drags sticky columns + column filters + the empty-state re-render
+        // along with it every time.
+        // Only client-side tables reach this today (none of this helper's own tables are serverSide;
+        // the app's 6 real serverSide tables still build themselves with `$().DataTable()` --
+        // BACKLOG "รอบ 4"). When those migrate they pass their own `searchDelay: 400` here rather
+        // than this helper guessing a second value for a mode nothing currently uses.
+        searchDelay: 300,
     }, options.dtOptions || {});
     dtOptions.language = Object.assign({}, getTableLang(), dtOptions.language || {});
     // 2026-09-12, Round 2 item 3 -- auto columnDefs from marker classes (§7), prepended so an
@@ -4733,6 +4769,9 @@ function _refreshAllDataTablesLanguageInner() {
         // a live language switch updates it instead of leaving it stuck in whatever language was
         // active the first time this table was ever built.
         $wrapper.find('.dt-search > input').attr('placeholder', lang.searchPlaceholder || '');
+        // 2026-09-16: the label is empty now (see getTableLang()), so the accessible name lives on
+        // this attribute -- it has to follow the language switch just like the placeholder above.
+        $wrapper.find('.dt-search > input').attr('aria-label', lang.searchAriaLabel || lang.searchPlaceholder || '');
 
         const menuTemplate = lang.lengthMenu || 'Show _MENU_ entries';
         const menuIdx = menuTemplate.indexOf('_MENU_');

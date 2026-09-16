@@ -3183,6 +3183,13 @@ table.dataTable {
 .dt-container .dt-length label {
     white-space: nowrap;
 }
+/* 2026-09-16, explicit instruction: the search field keeps its placeholder (and an aria-label, wired
+   in app.js) but loses its visible label -- DataTables still renders the <label> element itself, so
+   hide the now-empty one or the flex `gap` above would leave a phantom 8px before the input. Scoped
+   to :empty so a table that genuinely supplies its own label text is untouched. */
+.dt-container .dt-search > label:empty {
+    display: none;
+}
 /* .num (§7/§8) -- real gap found while building item 7a: `stat-card.php` (item 4, "stat-value num"),
    `initSharedDataTable()`'s own `DT_MARKER_CLASSES` (item 3, app.js -- applies `className:'num'`/
    `'num col-money'` to DataTable body <td>s expecting THIS class alone to right-align them), and the

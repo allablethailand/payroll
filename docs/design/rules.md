@@ -1202,6 +1202,10 @@ component ทุกตัวของรอบ 2 จากนี้**: markup �
   ถ้าแถว 2 ไม่พอ ปุ่มใน actions wrap กันเองก่อน แล้วค่อยขึ้นแถวใหม่ — ตัดแถวด้วย flex line-break
   (`::after`) ไม่ใช่ container ใหม่ DOM ที่ DataTables สร้างจึงไม่เปลี่ยน
 - **หน้าที่ไม่ส่ง `toolbar` ต้องหน้าตาเหมือนเดิมทุกประการ** — slot เป็น opt-in ไม่แทรก markup ของหน้าที่ยังไม่ย้าย
+- **ช่องค้นหาไม่มี label ข้างหน้า** — placeholder ในช่องพอแล้ว ชื่อสำหรับ screen reader อยู่ที่ `aria-label`
+  (ผูกให้ทุกตารางในแอปจาก `init.dt` ที่เดียว) — กฎเดียวทุกตาราง ไม่ใช่ต่อหน้า
+- **ค้นหาแบบพิมพ์ไปค้นไป debounce 300ms** ผ่าน `searchDelay` ของ DataTables เอง (ไม่ rebind handler เอง)
+  — ตั้งที่ `initSharedDataTable()` ที่เดียว
 - **ทุก control ใน toolbar อ่านเป็นขนาดเดียวกับปุ่มใน page header (§4)** — `-sm` ของ datatables.net-bs5 (length/search) ถูกปิดที่ `$.fn.dataTable.ext.classes` ใน app.js ครั้งเดียวทั้งแอป ห้ามใส่ `.btn-sm` กลับมาใน `options.toolbar` ของหน้าใดหน้าหนึ่ง
 - **ไอคอนบนหัวคอลัมน์ (filter/sort) ใช้ขนาดไอคอน control ปกติ** ไม่ตั้งขนาดของตัวเอง — ที่มา/ตัวเลขที่วัดได้: `docs/decisions/2026-09-16-control-scale-and-filter-panel.md`
 

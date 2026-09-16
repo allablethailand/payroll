@@ -2087,7 +2087,9 @@ function viewAdjustmentsMenuItemRd(row) {
     if (Number(row.adjustment_count || 0) <= 0) {
         return '';
     }
-    return `<li><button type="button" class="dropdown-item btn-view-emp-adjustments" data-employee-id="${row.employee_id}">${escapeHtml(langData['emp_adjustments_modal_title'] || 'Adjusted Items')}</button></li>`;
+    // ไอคอนเป็น child ตัวแรกของ .dropdown-item ตาม rules.md §6 (CSS กลางบังคับกว้าง 16px จัดกลาง ให้
+    // ข้อความทุกแถวในเมนูเดียวกันเริ่มที่ x เดียวกัน) -- glyph เดียวกับหัว modal ที่มันเปิด (§0.5)
+    return `<li><button type="button" class="dropdown-item btn-view-emp-adjustments" data-employee-id="${row.employee_id}"><i class="fa-solid fa-pen-to-square text-secondary me-2"></i>${escapeHtml(langData['emp_adjustments_modal_title'] || 'Adjusted Items')}</button></li>`;
 }
 function runDetailActionsRd(row) {
     const circles = [viewBreakdownButtonRd(row), commentButtonRd(row), manageItemsButtonRd(row)].filter(Boolean).join('');
