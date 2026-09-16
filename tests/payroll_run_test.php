@@ -875,6 +875,36 @@ try {
     checkTrue('the manual earning line appears in their own breakdown', current(array_filter($manualRowAfterLine['earning_breakdown'], fn($l) => $l['code'] === 'CUSTOM:Manual Income')) !== false);
     check('gross_amount increased by exactly the manually-entered income (1000)', round((float)$manualRowAfterLine['gross_amount'] - $grossBeforeManualLine, 2), 1000.0);
 
+    // 2026-09-16: recalculate() now stamps the originating payroll_run_manual_lines.id onto every
+    // manual_line breakdown entry, so a consumer can get back to the source row without re-matching
+    // on item_code (two manual lines can legitimately share one code). Both of recalculate()'s own
+    // manual-line SELECTs do it -- this is the non-incentive one.
+    echo "=== recalculate(): manual_line breakdown entries carry manual_line_id ===\n";
+    $manualBreakdownLine = current(array_filter($manualRowAfterLine['earning_breakdown'], fn($l) => $l['code'] === 'CUSTOM:Manual Income'));
+    $realManualLineId = (int)$pdo->query("SELECT id FROM payroll_run_manual_lines WHERE run_id={$pulledRunId} AND employee_id={$employeeOptOutId} AND custom_item_name='Manual Income'")->fetchColumn();
+    check('the breakdown line points back at the real payroll_run_manual_lines row', $manualBreakdownLine['manual_line_id'] ?? null, $realManualLineId);
+
+    // The ONE case that matters for everything already persisted: breakdown JSON written before this
+    // key existed must still decode and render, with the key simply absent (reads as null) -- never a
+    // warning, never a dropped line. Simulated by writing back a pre-2026-09-16-shaped breakdown.
+    $legacyBreakdown = array_map(function (array $l): array { unset($l['manual_line_id']); return $l; }, $manualRowAfterLine['earning_breakdown']);
+    checkTrue('the simulated legacy breakdown genuinely has no manual_line_id key on any line',
+        array_reduce($legacyBreakdown, fn($carry, $l) => $carry && !array_key_exists('manual_line_id', $l), true));
+    $pdo->prepare("UPDATE payroll_run_details SET earning_breakdown = :bd WHERE run_id = :run_id AND employee_id = :employee_id")
+        ->execute([':bd' => json_encode($legacyBreakdown, JSON_UNESCAPED_UNICODE), ':run_id' => $pulledRunId, ':employee_id' => $employeeOptOutId]);
+    $legacyRow = current(array_filter($runModel->getDetails($pulledRunId, $compId), fn($d) => (int)$d['employee_id'] === $employeeOptOutId));
+    checkTrue('legacy breakdown JSON still decodes to an array', is_array($legacyRow['earning_breakdown'] ?? null));
+    $legacyLine = current(array_filter($legacyRow['earning_breakdown'], fn($l) => $l['code'] === 'CUSTOM:Manual Income'));
+    checkTrue('the legacy manual line is still listed, not dropped', is_array($legacyLine));
+    check('its manual_line_id reads as null, which is what every consumer must tolerate', $legacyLine['manual_line_id'] ?? null, null);
+    // (float) cast, not ===: json_encode(1000.0) writes "1000", which decodes back as an int -- a
+    // pre-existing round-trip fact of every breakdown ever persisted, not something this key changed.
+    check('every other field on the legacy line is untouched', [(float)($legacyLine['amount'] ?? 0), $legacyLine['source'] ?? null], [1000.0, 'manual_line']);
+    // syncDeductionLinesForEmployee() reads the same JSON for the Adjustments modal -- it must still
+    // build a row for a line that has no manual_line_id.
+    $legacyAdjustCodes = array_column($runModel->syncDeductionLinesForEmployee($compId, $pulledRunId, $employeeOptOutId), 'code');
+    checkTrue('the Adjustments listing still shows the legacy manual line', in_array('CUSTOM:Manual Income', $legacyAdjustCodes, true));
+
     echo "=== rawSyncDataForEmployee(): full raw row for a synced employee, null for a manually-added one or a non-sync run ===\n";
     $rawSyncData = $runModel->rawSyncDataForEmployee($compId, $pulledRunId, $employeeFullId);
     checkTrue('rawSyncDataForEmployee() returns data for the genuinely-synced employee', $rawSyncData !== null);
@@ -1037,6 +1067,12 @@ try {
     check('employee 1 net = 4500 (5000 earning - 500 manual deduction, statutory opted out)', (float)($emp1Detail['net_amount'] ?? -1), 4500.0);
     check('employee 1 statutory_breakdown is empty (compute_statutory=0)', $emp1Detail['statutory_breakdown'] ?? null, []);
     check('employee 1 calc_status is calculated (no more errors)', $emp1Detail['calc_status'] ?? null, 'calculated');
+    // recalculate()'s OTHER manual-line SELECT -- the incentive branch, where manual lines are the
+    // only source rather than an addition. Same stamp, so a consumer never has to know which branch
+    // built the row it is looking at.
+    $incentiveOtLine = current(array_filter($emp1Detail['earning_breakdown'], fn($l) => ($l['source'] ?? null) === 'manual_line'));
+    $incentiveOtLineId = (int)$pdo->query("SELECT id FROM payroll_run_manual_lines WHERE run_id={$incentiveRunId} AND employee_id={$employeeOptOutId} AND ped_type_id={$otPedTypeId}")->fetchColumn();
+    check('the incentive branch stamps manual_line_id too', $incentiveOtLine['manual_line_id'] ?? null, $incentiveOtLineId);
     check('employee 2 gross = 3000 (OT earning only)', (float)($emp2Detail['gross_amount'] ?? -1), 3000.0);
     check('employee 2 prorate_days is null (incentive runs never prorate)', $emp2Detail['prorate_days'], null);
 

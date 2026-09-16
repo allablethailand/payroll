@@ -150,7 +150,7 @@ PHP 8.x, MySQL 8.x, Bootstrap 5, jQuery, SweetAlert2, CSS (custom, ไม่ใ�
 | `isFormDirty()` / `confirmIfDirtyThen()` | app.js (มีแล้ว) | ผูก dirty-check เองทีละ modal — ไม่สร้าง `guardDirtyModal()` ใหม่ |
 | `showConfirm()` (ขยายรับ object form) / `showSuccess` / `showError` | app.js/alert.js (มีแล้ว) | Swal.fire ตรง — ไม่สร้าง `confirmAction()` ใหม่ |
 | `resetModalTabs()` | app.js (มีแล้ว) | strip class เอง |
-| `payslip-view.php` | partials | modal คำนวณแบบตาราง |
+| `payslipViewHtml()` | app.js | modal คำนวณแบบตาราง (PHP twin `payslip-view.php` ถูกลบแล้ว 2026-09-16 — `docs/decisions/remove-payslip-view-php-twin.md`) |
 | `payee-destination.php` + `initPayeeDestination()` | partials + app.js | payee picker ที่เขียนเองทีละที่ |
 
 เพิ่ม component ใหม่ต้องเสนอชื่อ + API + ที่ใช้ ≥ 2 จุด ก่อนเขียน — ดูรายละเอียดเต็ม (tokens, สี, ปุ่ม, badge, tabs/stepper/filter bar, ตาราง, ตัวเลข, modal/ฟอร์ม, feedback, lint, กระบวนการ 4 รอบ) ใน `docs/design/rules.md`

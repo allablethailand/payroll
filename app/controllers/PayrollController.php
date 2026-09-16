@@ -109,6 +109,31 @@ class PayrollController extends Controller {
         return $line;
     }
 
+    /**
+     * 2026-09-16: every monetary key present on one line becomes 'XXXX'; a null stays null (there is
+     * nothing to hide about "no value", same rule as maskOverrideDiffLine() above) and every
+     * non-monetary key survives untouched -- who/when/item code/action/note are not salary data, and
+     * hiding them would leave the Adjustments table unreadable rather than merely figure-free.
+     * WHICH keys are monetary is the caller's business (it differs per response shape), the rule
+     * itself is not -- that is exactly why this exists instead of a third copy of the same loop.
+     */
+    private function maskMonetaryKeys(array $row, array $keys): array {
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $row) && $row[$key] !== null) {
+                $row[$key] = PermissionModel::MASK_VALUE;
+            }
+        }
+        return $row;
+    }
+
+    /** The money on one manualLinesForEmployee() row -- shared by the two endpoints that serve it. */
+    private const MANUAL_LINE_MONEY_KEYS = ['amount'];
+
+    /** The money on one syncDeductionLinesForEmployee() row; its `occurrences[]` sub-rows carry
+     *  their own `amount` and are masked alongside it (an installment breakdown adds up to the very
+     *  figure being hidden, so leaving it readable would hand the whole number straight back). */
+    private const ADJUST_LINE_MONEY_KEYS = ['current_amount', 'override_amount'];
+
     private function maskEmployeeAdjustments(array $data, int $compId): array {
         $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), $compId);
         if ($visibility['full']) {
@@ -118,11 +143,40 @@ class PayrollController extends Controller {
             $ov = $this->maskOverrideDiffLine($ov);
         }
         unset($ov);
-        foreach ($data['manual_lines'] as &$line) {
-            $line['amount'] = PermissionModel::MASK_VALUE;
+        $data['manual_lines'] = $this->maskManualLines($data['manual_lines']);
+        return $data;
+    }
+
+    /** Unconditional -- the two callers decide WHETHER to mask, this decides WHAT. */
+    private function maskManualLines(array $lines): array {
+        foreach ($lines as &$line) {
+            $line = $this->maskMonetaryKeys($line, self::MANUAL_LINE_MONEY_KEYS);
         }
         unset($line);
-        return $data;
+        return $lines;
+    }
+
+    /**
+     * 2026-09-16: the Adjustments modal's "ปรับตัวเลข" rows carry the same itemized payroll figures
+     * the Detail page's own breakdown does, so they go through the same gate payroll-run.get's
+     * breakdown lines do (maskRunDetailRows(): anything short of FULL salary visibility, i.e.
+     * masked AND summary_only, sees no line-level figure). Only figures are hidden: `note` here is
+     * either StatutoryCalculationEngine's own reason code ('employee_not_enrolled' etc.) or text a
+     * user typed -- never a system-rendered amount -- and stays readable, exactly as the equivalent
+     * breakdown-line `note` does in payroll-run.get.
+     */
+    private function maskAdjustLines(array $lines): array {
+        foreach ($lines as &$line) {
+            $line = $this->maskMonetaryKeys($line, self::ADJUST_LINE_MONEY_KEYS);
+            if (!empty($line['occurrences']) && is_array($line['occurrences'])) {
+                foreach ($line['occurrences'] as &$occurrence) {
+                    $occurrence = $this->maskMonetaryKeys($occurrence, ['amount']);
+                }
+                unset($occurrence);
+            }
+        }
+        unset($line);
+        return $lines;
     }
 
     /**
@@ -585,7 +639,9 @@ class PayrollController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json(['status' => true, 'data' => $this->model->manualLinesForEmployee((int)$compId, $runId, $employeeId)]);
+        $lines = $this->model->manualLinesForEmployee((int)$compId, $runId, $employeeId);
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), (int)$compId);
+        $this->json(['status' => true, 'data' => $visibility['full'] ? $lines : $this->maskManualLines($lines)]);
     }
 
     public function addManualLine() {
@@ -657,9 +713,13 @@ class PayrollController extends Controller {
         // `run_settings` (item_options + excluded_item_codes, from the SAME source Run Settings'
         // own panel uses) additionally backs this tab's own item-exclusion checklist (2026-08-29
         // follow-up: "อยากให้มี List รายการและติ๊กเข้าออกได้เหมือนตอนที่ Set ทั้ง Template").
+        // 2026-09-16: `exemption`/`run_settings` carry no figure at all (tri-state flags, item
+        // codes and names), so only `data` needs the mask -- see maskAdjustLines().
+        $lines = $this->model->syncDeductionLinesForEmployee((int)$compId, $runId, $employeeId);
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), (int)$compId);
         $this->json([
             'status' => true,
-            'data' => $this->model->syncDeductionLinesForEmployee((int)$compId, $runId, $employeeId),
+            'data' => $visibility['full'] ? $lines : $this->maskAdjustLines($lines),
             'exemption' => $this->model->getEmployeeExemption($runId, (int)$compId, $employeeId),
             'run_settings' => $this->model->runSettingsGet($runId, (int)$compId)['data'] ?? null,
         ]);

@@ -3716,7 +3716,7 @@ class PayrollRunModel {
                     // additive on top of the standing items above when include_standing_items is on,
                     // or the ONLY source when it's off (today's original/default incentive-run
                     // behavior, unchanged).
-                    $stmtLines = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
+                    $stmtLines = $this->db->prepare("SELECT pml.id, pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
                             pml.payee_type, pml.destination_id, pml.bank_account_id,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `payroll_run_manual_lines` pml
@@ -3728,6 +3728,11 @@ class PayrollRunModel {
                         $resolved = $this->resolveManualLineRow($line);
                         $entry = [
                             'source' => 'manual_line',
+                            // 2026-09-16: which payroll_run_manual_lines row this breakdown line came
+                            // from, so a consumer can get back to it without re-matching on item code
+                            // (two manual lines can share one code). Breakdown JSON written before
+                            // today has no such key at all -- every reader must treat it as optional.
+                            'manual_line_id' => (int)$line['id'],
                             'code' => $resolved['code'],
                             'name_th' => $resolved['name_th'],
                             'name_en' => $resolved['name_en'],
@@ -3894,7 +3899,7 @@ class PayrollRunModel {
                     // one-off earning/deduction for a single employee without it affecting anyone
                     // else or needing a whole separate off-cycle run). Contrast with the $isIncentive
                     // branch above, where manual lines are the ONLY source instead of an addition.
-                    $stmtAdj = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
+                    $stmtAdj = $this->db->prepare("SELECT pml.id, pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
                             pml.payee_type, pml.destination_id, pml.bank_account_id,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `payroll_run_manual_lines` pml
@@ -3905,6 +3910,7 @@ class PayrollRunModel {
                         $resolvedAdj = $this->resolveManualLineRow($adj);
                         $line = [
                             'source' => 'manual_line',
+                            'manual_line_id' => (int)$adj['id'],
                             'code' => $resolvedAdj['code'],
                             'name_th' => $resolvedAdj['name_th'],
                             'name_en' => $resolvedAdj['name_en'],
