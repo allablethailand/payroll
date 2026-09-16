@@ -14,21 +14,27 @@ declare(strict_types=1);
 
 const MAX_CHARS = 80000;
 
+$passes = 0;
+$failures = 0;
+
 $path = __DIR__ . '/../CLAUDE.md';
 $content = file_get_contents($path);
+
 if ($content === false) {
-    echo "FAIL: could not read $path\n";
-    exit(1);
+    $failures++;
+    echo "  FAIL  could not read $path\n";
+} else {
+    $len = mb_strlen($content, 'UTF-8');
+    if ($len > MAX_CHARS) {
+        $failures++;
+        echo "  FAIL  CLAUDE.md is $len chars, over the " . MAX_CHARS . "-char limit. Move round-by-round " .
+            "history/decision narrative into docs/decisions/<หัวข้อ>.md (copy whole, don't trim it) and " .
+            "leave only a short current-rules summary + pointer line in CLAUDE.md.\n";
+    } else {
+        $passes++;
+        echo "  PASS  CLAUDE.md is $len chars (limit " . MAX_CHARS . ")\n";
+    }
 }
 
-$len = mb_strlen($content, 'UTF-8');
-
-if ($len > MAX_CHARS) {
-    echo "FAIL: CLAUDE.md is $len chars, over the " . MAX_CHARS . "-char limit. Move round-by-round " .
-        "history/decision narrative into docs/decisions/<หัวข้อ>.md (copy whole, don't trim it) and " .
-        "leave only a short current-rules summary + pointer line in CLAUDE.md.\n";
-    exit(1);
-}
-
-echo "PASS: CLAUDE.md is $len chars (limit " . MAX_CHARS . ")\n";
-exit(0);
+echo "\nPassed: {$passes}, Failed: {$failures}\n";
+exit($failures > 0 ? 1 : 0);

@@ -15,3 +15,6 @@ public/uploads/
 
 # User-uploaded employee documents/photos + import originals (Platform Hardening Phase 5C)
 storage/uploads/
+
+# Central test runner output (tests/run_all.php) -- a local baseline, not a repo artifact
+tests/.last-run.json

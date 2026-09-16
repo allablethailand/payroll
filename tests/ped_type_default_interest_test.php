@@ -134,9 +134,9 @@ try {
         check('activeOptions() exposes default_fee_base', $itemsById[$feeId]['default_fee_base'], 'principal_amount');
     }
 
-    echo "\n=== SUMMARY: {$passes} passed, {$failures} failed ===\n";
 } finally {
     $pdo->rollBack();
 }
 
+echo "\nPassed: {$passes}, Failed: {$failures}\n";
 exit($failures > 0 ? 1 : 0);

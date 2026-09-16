@@ -314,9 +314,9 @@ try {
         checkTrue('rule delete: logged as a real delete action row', count($ruleDeleteRows) > 0);
     }
 
-    echo "\n=== SUMMARY: {$passes} passed, {$failures} failed ===\n";
 } finally {
     $pdo->rollBack();
 }
 
+echo "\nPassed: {$passes}, Failed: {$failures}\n";
 exit($failures > 0 ? 1 : 0);

@@ -223,12 +223,11 @@ try {
     check('the payee still reads (where the money goes is not the figure)', $masked[0]['payee_type'], 'not_disbursed');
     check('the line id still reads (it is what a further edit targets)', (int)$masked[0]['id'], $lineAId);
 
-    echo "\n";
-    echo $failures === 0 ? "ALL PASSED ({$passes} assertions)\n" : "{$failures} FAILED, {$passes} passed\n";
 } catch (Throwable $e) {
     $failures++;
     echo "  FATAL  " . $e->getMessage() . "\n" . $e->getTraceAsString() . "\n";
 } finally {
     $pdo->rollBack();
 }
+echo "\nPassed: {$passes}, Failed: {$failures}\n";
 exit($failures === 0 ? 0 : 1);

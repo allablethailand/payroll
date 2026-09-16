@@ -230,7 +230,7 @@ try {
     checkTrue('unreadCount() lazily triggered checkProbationInternExpiring() and now shows >= 1 unread', $unread >= 1);
 
     echo "\n" . ($failures === 0 ? "ALL TESTS PASSED (transaction rolled back, no data persisted)" : "SOME TESTS FAILED") . "\n";
-    echo "{$passes} passed, {$failures} failed.\n";
+    echo "\nPassed: {$passes}, Failed: {$failures}\n";
 } finally {
     $pdo->rollBack();
 }

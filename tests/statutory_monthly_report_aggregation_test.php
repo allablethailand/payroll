@@ -266,7 +266,7 @@ try {
     checkTrue('PND1: neither run_id nor year+month present throws a clear error', $neitherContextThrown);
 
     echo "\n" . ($failures === 0 ? "ALL TESTS PASSED (transaction rolled back, no data persisted)" : "SOME TESTS FAILED") . "\n";
-    echo "{$passes} passed, {$failures} failed.\n";
+    echo "\nPassed: {$passes}, Failed: {$failures}\n";
 } finally {
     $pdo->rollBack();
 }
