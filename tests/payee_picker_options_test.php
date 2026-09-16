@@ -50,7 +50,12 @@ $html = renderPayeePartial($root, 'demo', true, '<div id="demoSlotMarker"></div>
 preg_match_all('/name="demo_payee_dest" id="([^"]+)" value="([^"]+)"/', $html, $m);
 check('3 destinations, in order', implode(',', $m[2] ?? []), 'company_retained,employee,external');
 check('the first destination is the one pre-selected', substr_count($html, 'value="company_retained" checked'), 1);
-check('destination labels come from lang keys, not literals', substr_count($html, 'data-i18n="payee_dest_'), 3);
+check('destination labels come from lang keys, not literals', substr_count($html, 'data-i18n="payee_dest_retained"') + substr_count($html, 'data-i18n="payee_dest_employee"') + substr_count($html, 'data-i18n="payee_dest_external"'), 3);
+// The 2 long labels carry a shorter wording for < sm, swapped by CSS at the breakpoint (rules.md §9)
+// -- both halves are real i18n nodes, so a language switch repaints whichever one is showing.
+check('the 2 long destinations carry a short label too', substr_count($html, 'class="seg-label-short"'), 2);
+check('...paired with the full one inside the same segment', substr_count($html, 'class="seg-label-full"'), 2);
+check('short labels are their own lang keys', substr_count($html, 'data-i18n="payee_dest_employee_short"') + substr_count($html, 'data-i18n="payee_dest_external_short"'), 2);
 check('the helper line under the control is rendered empty for JS to fill', strpos($html, '<p class="payee-dest-desc" id="demoPayeeDestDesc"></p>') !== false, true);
 check('the callout wraps the sub-forms', strpos($html, 'class="payee-dest-subform" id="demoPayeeSubform"') !== false, true);
 check("the caller's own slot is inside that callout", strpos($html, 'demoSlotMarker') > strpos($html, 'demoPayeeSubform'), true);
@@ -84,6 +89,7 @@ check('en.json parses', is_array($en), true);
 $uiKeys = [
     'payee_type_label',
     'payee_dest_retained', 'payee_dest_employee', 'payee_dest_external',
+    'payee_dest_employee_short', 'payee_dest_external_short',
     'payee_dest_desc_retained', 'payee_dest_desc_employee', 'payee_dest_desc_external',
     'payee_record_label', 'payee_record_no', 'payee_record_yes', 'payee_record_desc',
 ];

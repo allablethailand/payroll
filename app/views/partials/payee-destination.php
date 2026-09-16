@@ -32,9 +32,12 @@ $labelClass = $payee_label_class ?? '';
     <input type="radio" name="<?=$p?>_payee_dest" id="<?=$p?>PayeeDestRetained" value="company_retained" checked>
     <label for="<?=$p?>PayeeDestRetained" data-i18n="payee_dest_retained">Retained by company</label>
     <input type="radio" name="<?=$p?>_payee_dest" id="<?=$p?>PayeeDestEmployee" value="employee">
-    <label for="<?=$p?>PayeeDestEmployee" data-i18n="payee_dest_employee">Transfer to another employee</label>
+    <!-- 2 labels per segment, swapped by CSS at the `sm` breakpoint (rules.md §9): below it the 3
+         segments share the row equally and these two do not fit, so they read as a shorter wording
+         rather than as an ellipsis. Both are real i18n keys -- the swap is CSS only, no JS. -->
+    <label for="<?=$p?>PayeeDestEmployee"><span class="seg-label-full" data-i18n="payee_dest_employee">Transfer to another employee</span><span class="seg-label-short" data-i18n="payee_dest_employee_short">Transfer to employee</span></label>
     <input type="radio" name="<?=$p?>_payee_dest" id="<?=$p?>PayeeDestExternal" value="external">
-    <label for="<?=$p?>PayeeDestExternal" data-i18n="payee_dest_external">Transfer to an external person or organization</label>
+    <label for="<?=$p?>PayeeDestExternal"><span class="seg-label-full" data-i18n="payee_dest_external">Transfer to an external person or organization</span><span class="seg-label-short" data-i18n="payee_dest_external_short">Transfer externally</span></label>
 </div>
 <p class="payee-dest-desc" id="<?=$p?>PayeeDestDesc"></p>
 <div class="payee-dest-subform" id="<?=$p?>PayeeSubform">

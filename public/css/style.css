@@ -2880,6 +2880,10 @@ table.dataTable thead th .dt-column-order {
     border-bottom: 2px solid transparent;
     border-radius: 0;
     color: var(--c-text-muted);
+    /* Stated, not inherited: a `<button>` takes its size from the ancestor chain, which here is the
+       app's 12px root -- a tab row then read one step smaller than the `--fs-sm` form under it
+       (measured 12px vs 13px). The tab bar and the content below it are one scale (rules.md §6). */
+    font-size: var(--fs-sm);
     /* Bootstrap's own `calc(-1 * var(--bs-nav-tabs-border-width))` pulls the underline outside the
        row's padding box, where a scroll container clips it -- must be stated, not just omitted. */
     margin-bottom: 0;
@@ -7278,7 +7282,6 @@ html, body {
 .form-compact .select2-selection__placeholder,
 .form-compact .select2-selection__choice,
 .form-compact .select2-search__field,
-.form-compact .segmented > label,
 .form-compact .add-manual-line-card .btn,
 .form-compact .manual-line-mode-desc,
 .form-compact .manual-line-field-hint,
@@ -7309,6 +7312,13 @@ html, body {
 .form-compact .form-select,
 .form-compact .select2-selection__rendered {
     font-weight: 400;
+    color: var(--c-text);
+}
+/* The select2 theme colours its own chosen value through the app's OTHER (legacy `--app-*`) token
+   set at 3-class specificity, so the 2-class rule above never reached it and a select read a step
+   lighter than the inputs beside it (measured #555 vs `--c-text` in light). Same 4 properties, one
+   class deeper, scoped to a form block -- no `!important`, and the app-wide rule is left alone. */
+.form-compact .select2-container--bootstrap-5 .select2-selection--single .select2-selection__rendered {
     color: var(--c-text);
 }
 /* Every explanatory line in the form is the same size as the control above it and differs only by
@@ -7372,6 +7382,25 @@ html, body {
     border: 1px solid var(--c-border);
     border-radius: var(--radius);
     overflow: hidden;
+    /* NO size of its own: the control reads at whatever scale its container sets -- `--fs-sm` inside
+       a `.form-compact` block, the ambient size anywhere else. A component that pinned `--fs-sm`
+       here would be a second size inside any form that is not on that scale yet (measured: 13px
+       segments inside the 12px #eedModal). */
+    font-size: inherit;
+}
+/* A segment whose label is too long to share the row below `sm` carries BOTH wordings and the
+   breakpoint picks one (rules.md §9). Two real elements rather than `content: attr(...)` because
+   each one has to be a translatable `data-i18n` node like every other label in the app. */
+.segmented > label > .seg-label-short {
+    display: none;
+}
+@media (max-width: 575.98px) {
+    .segmented > label > .seg-label-full {
+        display: none;
+    }
+    .segmented > label > .seg-label-short {
+        display: inline;
+    }
 }
 .segmented input[type="radio"] {
     position: absolute;
@@ -7388,7 +7417,10 @@ html, body {
     align-items: center;
     margin: 0;
     padding: var(--sp-1) var(--sp-3);
-    font-size: var(--fs-sm);
+    /* The size decision belongs to the control (above), not to each segment: `inherit` is what lets
+       a `.form-compact` block hand this component its own scale instead of the component pinning a
+       second size of its own inside a form (rules.md §9). */
+    font-size: inherit;
     line-height: 1.5;
     white-space: nowrap;
     color: var(--c-text);
@@ -7495,7 +7527,9 @@ html, body {
    explanatory line in a form (§9), stated here too so it holds outside `.form-compact` as well. */
 .payee-dest-desc {
     margin: var(--sp-2) 0 0;
-    font-size: var(--fs-sm);
+    /* Same reasoning as `.segmented` above -- the explanatory line is the size of the form it sits
+       in, and differs from the control only by colour (rules.md §9). */
+    font-size: inherit;
     font-weight: 400;
     color: var(--c-text-muted);
 }

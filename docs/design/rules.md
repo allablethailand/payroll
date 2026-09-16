@@ -460,6 +460,8 @@ switch ไม่เคยเป็น badge เลยที่ไหนในแ
 - ไม่มีไอคอนใน tab ทุกหน้า (เอาออกทั้งหมด รวม tab รายงาน)
 - ไม่มี chevron / ลูกศร
 - tab ที่เลือก: ตัวหนังสือ `--c-text` + เส้นใต้ 2px `--c-primary`; ไม่เลือก: `--c-text-muted`
+- **ขนาดตัวอักษรของ tab = `--fs-sm` (ระบุใน CSS ตรงๆ ห้ามปล่อยให้ inherit)** — `<button>` รับขนาดจาก
+  ancestor ซึ่งคือ root 12px ของแอป ทำให้แถว tab เล็กกว่าฟอร์ม `--fs-sm` ที่อยู่ใต้มัน 1 ระดับ (วัดได้ 12 vs 13px)
 - **เส้นใต้ tab ที่เลือกต้องอยู่ใน content box ของ `.nav-tabs` ทั้งเส้น** — ห้ามใช้ margin ลบ
   (`margin-bottom: -1px` ของ Bootstrap) ดันเส้นออกนอกกล่อง เพราะแถว tab เป็น scroll container (`overflow-x: auto`)
   ที่ clip ทุกอย่างนอก padding box — เส้นเทาของแถววาดด้วย `box-shadow: inset 0 -1px 0` แทน `border-bottom`
@@ -1632,11 +1634,14 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
   ที่ขอบของมัน เพราะมันต้องเหมือนกันกับที่อื่นที่ component เดียวกันถูก render
   — **ภายใน `.form-compact` ปิด gutter แนวตั้งของ `.row` (`--bs-gutter-y: 0`) แล้วใช้ `row-gap`** — gutter ดึงกล่องแถวขึ้น
   แล้วดันคอลัมน์ลง มาร์จิ้นที่ตั้งจึงไม่เท่าระยะที่เห็นจริง (บั๊กจริง 2026-09-15: margin 12px → เห็น 18px) — demo ใน `docs/design/components.php`
+- **ป้าย segment ที่ยาวเกิน ~10 ตัวอักษรต้องมี key สั้นสำหรับจอ < `sm`** — ใส่ 2 `<span>` ในป้ายเดียวกัน
+  (`.seg-label-full` / `.seg-label-short`, i18n key คนละตัว) แล้วให้ CSS ที่ breakpoint สลับให้ **ห้ามสลับด้วย JS**
+  — ป้ายสั้นคือคำที่สั้นลงจริง ไม่ใช่ ellipsis (ตัวอย่างจริง: "โอนให้พนักงานคนอื่น" → "โอนให้พนักงาน")
 - **จอ < `sm`: `.segmented` กว้างเต็มความกว้าง แต่ละ segment `flex: 1` กว้างเท่ากันในแถวเดียว — ห้าม stack แนวตั้ง**
   (ตัวเลือก ≤ 3 ตัวอ่านเป็น control เดียว การซ้อนแนวตั้งทำให้ดูเหมือนปุ่มแยกกัน) ข้อความยัง nowrap ตัดด้วย ellipsis ถ้าไม่พอ
 - **`.segmented` = component กลางตัวเดียว ห้ามใช้ `.btn-group` + `.btn-check` ของ Bootstrap สร้างเอง** — `<input type="radio">`
   ซ่อน + `<label>` เป็นตัว segment (ลูกศรซ้าย-ขวาสลับได้เอง): ขอบ 1px `--c-border` + `--radius` ที่มุมนอก,
-  padding `--sp-2 --sp-3`, `--fs-sm`, กว้างตามเนื้อหา (nowrap ไม่ยืดเต็มแถว), ไม่เลือก = โปร่ง/hover `--c-bg-subtle`,
+  padding `--sp-2 --sp-3`, **ขนาดตัวอักษร `inherit` จาก container ไม่ตั้งขนาดของตัวเอง** (อยู่ใน `.form-compact` ก็ได้ `--fs-sm` ตามฟอร์ม), กว้างตามเนื้อหา (nowrap ไม่ยืดเต็มแถว), ไม่เลือก = โปร่ง/hover `--c-bg-subtle`,
   **เลือก = `--c-primary` ตัวขาว 600** (ข้อยกเว้นที่ยืนยันแล้วสำหรับ segmented ที่เป็นตัวเลือกหลักของฟอร์ม),
   focus-visible = ring ส้ม, จอแคบ (< `lg`) กลายเป็น stack แนวตั้งเต็มความกว้าง — demo ใน `docs/design/components.php`
 - Segmented/toggle (ใช่-ไม่ใช่): `.btn-group` ของ `.btn-outline-secondary.btn-sm` ตัวที่เลือกเป็น `active` (พื้น `--c-bg-subtle` ขอบ `--c-border-strong`) — ไม่ใช้ส้มกับ toggle **(คนละ component กับ checkbox/switch ด้านล่าง — segmented toggle เป็นปุ่มคู่แข่งกันเลือกได้ 1 ทาง (เทาเสมอ), checkbox/switch เป็น input จริงที่มีสถานะ checked/unchecked (ส้มตอน checked/on) — อย่าสลับกฎกัน)**

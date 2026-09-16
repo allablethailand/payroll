@@ -545,6 +545,17 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
             <label for="cp-seg-d2">ระบุใหม่</label>
         </div>
     </div>
+    <p class="cp-section-note mt-4 mb-2"><b>ป้ายยาวเกิน ~10 ตัวอักษร ต้องมีป้ายสั้นสำหรับจอ &lt; <code>sm</code></b> — 2 <code>&lt;span&gt;</code> ในป้ายเดียวกัน (<code>.seg-label-full</code>/<code>.seg-label-short</code>, i18n key คนละตัว) สลับด้วย CSS ที่ breakpoint <b>ไม่ใช่ JS</b>. <b>ย่อหน้าต่างให้แคบกว่า 576px</b> แล้วดูแถวล่างนี้: ป้ายที่ 2/3 เปลี่ยนเป็นคำสั้น ไม่ใช่ถูกตัดด้วย ellipsis (แถวบนคือตัวอย่างป้ายที่สั้นพออยู่แล้ว ไม่ต้องมีคู่สั้น).</p>
+    <div class="cp-row">
+        <div class="segmented">
+            <input type="radio" name="cp-seg-long" id="cp-seg-l1" checked>
+            <label for="cp-seg-l1">หักเข้าบริษัท</label>
+            <input type="radio" name="cp-seg-long" id="cp-seg-l2">
+            <label for="cp-seg-l2"><span class="seg-label-full">โอนให้พนักงานคนอื่น</span><span class="seg-label-short">โอนให้พนักงาน</span></label>
+            <input type="radio" name="cp-seg-long" id="cp-seg-l3">
+            <label for="cp-seg-l3"><span class="seg-label-full">โอนให้บุคคล/หน่วยงานภายนอก</span><span class="seg-label-short">โอนให้ภายนอก</span></label>
+        </div>
+    </div>
 </div>
 
 <!-- ==================== Payee destination (§9/§15) ==================== -->

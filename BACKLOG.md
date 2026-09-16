@@ -920,3 +920,19 @@ questions about the payee sub-form (2026-09-15).
 `tests/payee_option_masking_test.php`) เพราะทั้ง 2 เรื่องอยู่ที่หน้าจอเดียวกันและกระทบตัวเลือกชุดเดียวกัน
 
 **Source:** รอบเล็ก "ซ่อน payee not_disbursed + เขียนคำใหม่" (2026-09-16)
+
+---
+
+## `tests/id_codec_test.php` — assertion "tampered real token (flipped last char)" flaky ~6%
+
+เจอตอนรัน suite เต็มรอบ typography (2026-09-16): ไฟล์นี้ fail 1 assertion ใน batch แต่รันเดี่ยวผ่าน 5/5 —
+วัดจริงแล้ว: สร้าง token 3,000 ใบแล้วพลิกตัวอักษรสุดท้าย 'A'↔'B' **decode ผ่าน 193/3000 = 6.4%**
+
+ไม่ใช่บั๊กของ `IdCodec` — ตัวอักษร base64url ตัวสุดท้ายถือ bit จริงแค่ 2-4 bit ที่เหลือเป็น padding ที่ถูกทิ้ง
+ตอน decode การพลิกตัวสุดท้ายจึงได้ byte payload ชุดเดิม (signature ครอบ payload ไม่ใช่ตัวอักษร) — **ตัว
+assertion เองตั้งสมมติฐานผิด** ว่าเปลี่ยน 1 ตัวอักษรต้องทำให้ token เสียเสมอ
+
+**ทางแก้เมื่อหยิบขึ้นมา**: เปลี่ยนไปพลิกตัวอักษร**กลางๆ** ของ token (bit จริงทั้งหมด) หรือวนพลิกจนกว่าค่าที่ได้
+จะต่างจริง แล้วค่อย assert — ห้ามแก้ `IdCodec` เพื่อให้ test ผ่าน (พฤติกรรมปัจจุบันถูกแล้ว)
+
+**Source:** รอบ typography ของ tab รายการจ่าย (2026-09-16) — เจอระหว่างรัน suite ไม่เกี่ยวกับ diff รอบนั้น
