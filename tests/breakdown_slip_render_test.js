@@ -77,7 +77,12 @@ const langData = {
     payslip_group_statutory: 'ภาครัฐ',
     payslip_group_items: 'รายการเพิ่มเติม',
     table_net_pay: 'ยอดจ่ายสุทธิ',
-    breakdown_add_line_unavailable: 'เพิ่มรายการ — ยังใช้ไม่ได้'
+    manual_line_add_earning: 'เพิ่มรายการเงินได้',
+    manual_line_add_deduction: 'เพิ่มรายการหัก',
+    manual_line_add_locked: 'เพิ่มรายการได้เฉพาะรอบที่เป็นฉบับร่าง และพนักงานที่ยังไม่ถูกยืนยัน',
+    manual_line_form_edit_title: 'แก้ไขรายการ',
+    manual_line_legacy_locked: 'รายการนี้บันทึกไว้ก่อนที่หน้านี้จะแก้ไขได้ แก้หรือลบจากที่นี่ไม่ได้',
+    action_remove: 'ลบออก'
 };
 let calls = { formula: 0, badge: 0 };
 function formulaButtonRd() { calls.formula++; return '<!--formula-->'; }
@@ -94,14 +99,17 @@ const extracted = [
     extractFunctionSource(detailSource, 'statutoryRowsRd', 'detail.js'),
     extractFunctionSource(detailSource, 'payslipEmptyRowRd', 'detail.js'),
     extractFunctionSource(detailSource, 'breakdownViewSlipHtml', 'detail.js'),
-    extractFunctionSource(detailSource, 'breakdownAddLineButtonHtml', 'detail.js'),
-    'module.exports = { breakdownViewSlipHtml, breakdownAddLineButtonHtml, payslipViewHtml, payslipNetSummaryHtml, getCalls: () => calls, resetCalls };'
+    extractFunctionSource(detailSource, 'manualLineAddButtonHtml', 'detail.js'),
+    extractFunctionSource(detailSource, 'manualLineTagHtml', 'detail.js'),
+    extractFunctionSource(detailSource, 'manualLineRowActionsHtml', 'detail.js'),
+    extractFunctionSource(detailSource, 'manualLineListItemHtml', 'detail.js'),
+    'module.exports = { breakdownViewSlipHtml, manualLineAddButtonHtml, manualLineListItemHtml, payslipViewHtml, payslipNetSummaryHtml, getCalls: () => calls, resetCalls };'
 ].join('\n');
 
 const Module = require('module');
 const m = new Module(detailJsPath);
 m._compile(extracted, detailJsPath);
-const { breakdownViewSlipHtml, breakdownAddLineButtonHtml, payslipViewHtml, payslipNetSummaryHtml, getCalls, resetCalls } = m.exports;
+const { breakdownViewSlipHtml, manualLineAddButtonHtml, manualLineListItemHtml, payslipViewHtml, payslipNetSummaryHtml, getCalls, resetCalls } = m.exports;
 
 let passed = 0;
 let failed = 0;
@@ -258,10 +266,49 @@ check('a real payslip still gets its "-" placeholder (the band above it needs so
 
 console.log('\n=== the add-an-item button on a column head ===');
 
-const addBtn = breakdownAddLineButtonHtml();
-check('it is the shared 32px round action (.btn-icon, §7), not a size of its own', addBtn.indexOf('class="btn-icon breakdown-add-line-btn"') !== -1);
-check('it is disabled in this chunk, with a tooltip saying so', /disabled title="เพิ่มรายการ — ยังใช้ไม่ได้"/.test(addBtn));
-check('its label comes from langData, never a hardcoded string', addBtn.indexOf('เพิ่มรายการ') !== -1);
+const addBtn = manualLineAddButtonHtml('earning', true);
+check('it is the shared 32px round action (.btn-icon, §7), not a size of its own', addBtn.indexOf('class="btn-icon manual-line-add-btn"') !== -1);
+check('it carries the column it sits on, which is what decides the new line type', addBtn.indexOf('data-item-type="earning"') !== -1);
+check('D2: it is no longer disabled for an editable row', addBtn.indexOf('disabled') === -1);
+check('its tooltip names the column it adds to', addBtn.indexOf('title="เพิ่มรายการเงินได้"') !== -1);
+const addBtnDeduction = manualLineAddButtonHtml('deduction', true);
+check('the deduction column head gets its own type and its own wording',
+    addBtnDeduction.indexOf('data-item-type="deduction"') !== -1 && addBtnDeduction.indexOf('title="เพิ่มรายการหัก"') !== -1);
+const addBtnLocked = manualLineAddButtonHtml('earning', false);
+check('a frozen row gets the SAME button, disabled, with the reason in its tooltip',
+    addBtnLocked.indexOf(' disabled ') !== -1 && addBtnLocked.indexOf('เพิ่มรายการได้เฉพาะรอบที่เป็นฉบับร่าง') !== -1);
+check('every label comes from langData, never a hardcoded string',
+    addBtn.indexOf('Add an income item') === -1 && addBtnLocked.indexOf('Items can only be added') === -1);
+
+console.log('');
+console.log('=== one hand-added row: its actions, and who gets them ===');
+
+const MANUAL_LINE = { id: 146, item_type: 'earning', item_name_th: 'โบนัส', item_name_en: 'Bonus', item_code: 'BONUS', amount: 2000, note: null, is_custom: false, is_other: false };
+
+const rowEditable = manualLineListItemHtml(MANUAL_LINE, true);
+check('the row carries its own line id, for both the pencil and the press-the-row path',
+    rowEditable.indexOf('data-line-id="146"') !== -1);
+check('an editable row is marked as one (the whole row opens the form)',
+    rowEditable.indexOf('manual-line-item manual-line-item-editable') !== -1);
+check('both actions are the shared 32px round button (§7), not a size or colour of their own',
+    rowEditable.indexOf('class="btn-icon manual-line-edit-btn"') !== -1
+    && rowEditable.indexOf('class="btn-icon manual-line-remove-btn"') !== -1);
+check('the actions sit at the END of the row, in the flex wrapper beside the figure (never on the <td> itself, §7)',
+    rowEditable.indexOf('<div class="manual-line-amount-wrap"><span class="manual-line-amount">2,000.00</span><span class="manual-line-actions">') !== -1);
+check('the figure keeps its own money colour and .num alignment', rowEditable.indexOf('class="text-end num money-gross"') !== -1);
+
+const rowReadOnly = manualLineListItemHtml(MANUAL_LINE, false);
+check('a block that cannot be edited renders NO action slot at all',
+    rowReadOnly.indexOf('manual-line-actions') === -1 && rowReadOnly.indexOf('manual-line-item-editable') === -1);
+check('...and still renders the same figure', rowReadOnly.indexOf('>2,000.00<') !== -1);
+
+const rowLegacy = manualLineListItemHtml(Object.assign({}, MANUAL_LINE, { id: null }), true);
+check('a legacy line (no id of its own) gets no buttons -- there is no row for them to act on',
+    rowLegacy.indexOf('manual-line-edit-btn') === -1 && rowLegacy.indexOf('manual-line-remove-btn') === -1);
+check('...but keeps the slot, so the figures around it stay in one column',
+    rowLegacy.indexOf('manual-line-actions manual-line-actions-empty') !== -1);
+check('...and says on the row itself why it has none', rowLegacy.indexOf('รายการนี้บันทึกไว้ก่อน') !== -1);
+check('...and is not a press target', rowLegacy.indexOf('manual-line-item-editable') === -1);
 
 console.log('\n' + '-'.repeat(50));
 console.log(`Passed: ${passed}, Failed: ${failed}`);

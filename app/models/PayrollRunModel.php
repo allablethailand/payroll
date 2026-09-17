@@ -5781,6 +5781,10 @@ class PayrollRunModel {
             $resolved = $this->resolveManualLineRow($row);
             return [
                 'id' => (int)$row['id'],
+                // 2026-09-16, D2: the catalog item's own id, so the edit form can put the line's item
+                // back INTO its picker (a select2-remote has no options of its own to match on -- see
+                // prefillManualLineFormRd(), payroll/detail.js). Read-only field, nothing else changed.
+                'ped_type_id' => $row['ped_type_id'] !== null ? (int)$row['ped_type_id'] : null,
                 'amount' => (float)$row['amount'],
                 'note' => $row['note'],
                 'item_code' => $resolved['code'],

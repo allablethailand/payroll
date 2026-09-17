@@ -7532,14 +7532,10 @@ html, body {
    toggle. The per-mode explanation sits under the group as one quiet line instead of inside each
    button. */
 
-/* Add form: a surface, not a box -- `--c-bg-subtle` + `--radius`, no border (§9's "ไม่ใช้ card ซ้อน
-   card" posture; the panel already sits inside a modal). */
-.add-manual-line-card {
-    background: var(--c-bg-subtle);
-    border-radius: var(--radius);
-    padding: var(--sp-3);
-    margin-bottom: var(--sp-5);
-}
+/* 2026-09-16, D2: the add form is a modal of its own (#manualLineFormModal) instead of a block
+   sitting inside a tab, so it has no surface of its own any more -- the modal IS the surface, and a
+   tinted panel inside a modal body is the "card ซ้อน card" §9 rules out. Only the spacing between
+   its own sections is still this form's own business (see `.manual-line-form >` below). */
 /* ============================================================================
    .form-compact -- ONE scale for a whole form area (rules.md 9). Put it on the tab pane / panel that
    holds the form and everything inside it follows:
@@ -7578,7 +7574,7 @@ html, body {
 .form-compact .select2-selection__placeholder,
 .form-compact .select2-selection__choice,
 .form-compact .select2-search__field,
-.form-compact .add-manual-line-card .btn,
+.form-compact .manual-line-form .btn,
 .form-compact .manual-line-mode-desc,
 .form-compact .manual-line-field-hint,
 .form-compact .payee-detail,
@@ -7658,14 +7654,13 @@ html, body {
     --bs-gutter-y: 0;
     row-gap: var(--sp-3);
 }
-.form-compact .add-manual-line-card > .row {
+.form-compact .manual-line-form > .row {
     margin-top: var(--sp-3);
 }
-.form-compact .add-manual-line-card > .manual-line-payee-block,
-.form-compact .add-manual-line-card > .manual-line-add-row {
+.form-compact .manual-line-form > .manual-line-payee-block {
     margin-top: var(--sp-4);
 }
-.form-compact .add-manual-line-card > :first-child {
+.form-compact .manual-line-form > :first-child {
     margin-top: 0;
 }
 
@@ -7770,13 +7765,6 @@ html, body {
     }
 }
 
-/* 2026-09-15 follow-up: the Add button is its own last row, right-aligned, so it stays below every
-   field it commits (the payee block can open between the fields and this button). Its own top gap
-   comes from `.form-compact` like every other section's. */
-.manual-line-add-row {
-    text-align: end;
-}
-
 /* The destination sub-choice sits to its own width, not stretched across the callout. */
 #manualLineDestModeToggle {
     margin-bottom: var(--sp-3);
@@ -7871,58 +7859,44 @@ html, body {
    hiding it never shifts the amount by a single pixel -- the same technique the comment list's own
    row actions use (see `.comment-item-actions`). Hidden until the row is hovered or something inside
    it has keyboard focus. */
-.manual-line-amount-cell {
-    position: relative;
+/* 2026-09-16, D2: the row's actions moved from a hover-revealed 20px ghost inside the cell to the
+   shared 32px round buttons (§7) at the END of the row, shown always. An affordance that has to be
+   hovered to be discovered is not one -- the same conclusion §6 already reached for the comment
+   list -- and these rows now carry 2 actions, not 1.
+   The cell is a flex row (the wrapper `<div>`, never the `<td>` itself -- §7: display:flex on a cell
+   kills its table-cell behaviour and its colspan with it), with the figure keeping the space it
+   needs and the buttons pinned to the right edge. */
+.manual-line-amount-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+}
+/* The figure clips rather than pushing the buttons out of the column: the slip's own table is
+   `table-layout: fixed`, so this cell's width is decided by the table, not by its content. The full
+   value is never a surprise -- it is the row that was just typed in. */
+.manual-line-amount {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .manual-line-actions {
-    position: absolute;
-    top: 50%;
-    /* Anchored INSIDE the amount cell's own left edge, not outside it (`right: 100%`, which is what
-       the comment list uses for its own row actions). 2026-09-15, real bug found in Playwright: a
-       `<td>` is not a plain box -- an absolutely-positioned child that sticks out into the NEIGHBOURING
-       cell loses hit-testing to that cell (Playwright reported the amount `<td>` itself intercepting
-       every click on the button). Inside the cell there is no cross-cell overlap at all, and since the
-       amount itself is right-aligned, the left edge of that cell is empty space anyway -- so the
-       button still never moves the number. */
-    left: 0;
-    transform: translateY(-50%);
-    /* Sits at the far-left edge of its own cell, which is also right where the NEXT column's first
-       cell begins -- and a later table cell paints above an earlier one, so without a z-index the
-       neighbouring column swallowed every click on this button (real bug, found by hit-testing with
-       document.elementFromPoint(), not by eye). */
-    z-index: 2;
     display: inline-flex;
     align-items: center;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity .15s ease;
+    gap: var(--sp-1);
+    flex: none;
 }
-.manual-line-item:hover .manual-line-actions,
-.manual-line-item:focus-within .manual-line-actions {
-    opacity: 1;
-    pointer-events: auto;
+/* A row that cannot carry actions (a legacy line with no id of its own) still reserves their width,
+   so the figures above and below it stay in one column. 2 buttons + the gap between them. */
+.manual-line-actions-empty {
+    width: calc(32px * 2 + var(--sp-1));
 }
-@media (pointer: coarse) {
-    .manual-line-actions {
-        opacity: 1;
-        pointer-events: auto;
-    }
+/* The whole row opens the edit form, so it reads as a target. */
+.manual-line-item-editable {
+    cursor: pointer;
 }
-.manual-line-remove-btn {
-    width: 20px;
-    height: 20px;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    color: var(--c-text-faint);
-}
-.manual-line-remove-btn:hover {
-    color: var(--c-danger);
-}
-.manual-line-remove-btn i {
-    font-size: 12px;
+.manual-line-item-editable:hover {
+    background: var(--c-bg-hover);
 }
 
 /* Run Information / Employee Breakdown as two visually distinct sub-sections within the Details
@@ -10006,9 +9980,13 @@ html, body {
     max-width: 120px;
     text-align: right;
 }
-/* While one write is in flight the whole table is inert -- a second action would race a recalculate
-   that is already running. Controls are really disabled; this only says so. */
-.lo-table-busy {
+/* While one write is in flight the whole block is inert -- a second action would race a recalculate
+   that is already running. Controls are really disabled; this only says so.
+   2026-09-16, D2: `.block-busy` is the same state for any block that writes on its own (the "added
+   by hand" list), declared here beside the table's own name rather than as a second rule with the
+   same body. */
+.lo-table-busy,
+.block-busy {
     opacity: .6;
 }
 /* A row that is not included: its name goes quiet and its current amount reads as struck out -- the

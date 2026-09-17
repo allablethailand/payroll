@@ -1519,6 +1519,12 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
   action ตัวใดตัวหนึ่งตายตัว ระบุตามหน้าจริงที่ใช้ (Detail › รายละเอียดพนักงาน ระบุไว้แล้วข้างบน)
 - > 3 action ที่เหลือ: ปุ่ม ⋮ วงกลม**เดียวกัน** (`.btn-icon`) เปิด dropdown (pattern เดียวกับ Detail › รายละเอียดพนักงาน) — รายการลบอยู่ล่างสุดคั่นด้วยเส้น ตัวหนังสือ `--c-danger`
 - ไอคอนต้องสื่อความหมาย + tooltip เสมอ (BACKLOG: ทบทวนไอคอนทั้งระบบ ทำในรอบ 4)
+- **action ของแถวในรายการ/สลิปที่แก้ได้ = ปุ่มกลม `.btn-icon` ท้ายแถว แสดงตลอด ไม่ใช่โผล่ตอน hover**
+  (เหตุผลเดียวกับ comment list §6: affordance ที่ต้อง hover ก่อนถึงจะรู้ว่ามี ไม่นับเป็น affordance) —
+  ทั้งแถวเปิด action หลัก (แก้ไข) ได้ด้วย, ปุ่มในแถวต้อง `stopPropagation()` เพื่อไม่ให้แถวทำงานซ้อน
+- **ช่องปุ่มท้ายแถวต้องกว้างคงที่เสมอ แม้แถวนั้นจะไม่มีปุ่ม** (render slot เปล่าแทนการไม่ render) — ไม่งั้น
+  ตัวเลขของแถวที่มีปุ่มกับไม่มีปุ่มจะไม่อยู่คอลัมน์เดียวกัน · แถวที่ไม่มีปุ่มต้องบอกเหตุผลบนแถว (`title`)
+  ไม่ใช่เว้นว่างเงียบๆ
 - **`.btn-circle-action` เป็น alias ชั่วคราวของ `.btn-icon`** (ประกาศร่วมกันเป็น selector เดียวใน
   `style.css` — ลบสีทั้ง 7 tone ที่เคยผูกกับ `.text-{color}` ที่บางไฟล์เอาไปวางซ้อนออกแล้ว ด้วย
   `!important` เดียวกับที่ `.btn-icon` เองใช้กัน tone จริงหลุดมาได้) — รอบ 2 ไม่ต้องแตะ 14 ไฟล์เดิมเลย
@@ -1703,6 +1709,18 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
   - `data-dirty-guard` **ยังไม่มีหน้าจริงใช้เลยรอบนี้** (ห้ามแตะหน้าจริง §13) — demo ครบ 3 สถานการณ์ใน
     `docs/design/components.php`
 - Modal ซ้อน: ใช้ global z-index/scroll fix ใน app.js ที่มีแล้ว ไม่จัดการเองต่อ modal
+- **ฟอร์มเดียวกันที่เปิดได้จาก 2 ที่ขึ้นไป = modal ซ้อน 1 ตัว มาร์กอัปชุดเดียว ห้ามมีฟอร์มที่สอง** (§0.4) —
+  ทุก field คง id เดิมตอนย้าย (handler ที่อ่าน id เหล่านั้นอยู่แล้วจะได้ไม่ต้องแก้), ปุ่มหลักของ footer
+  สร้างด้วย `modalFooterButtonsHtml()` **ต่อการเปิด 1 ครั้ง** เมื่อป้ายของมันต่างกันตามงาน (เพิ่ม/บันทึก) —
+  ป้ายที่ต่างกันเป็นเรื่องตอน build ไม่ใช่ `disabled`/`d-none` · "host" (ฟอร์มนี้กำลังทำงานให้ block ไหน)
+  ต้องตัดสินจาก**ตัวที่ถูกกด** (mount ที่ครอบมันอยู่) ไม่ใช่ตัวแปร "host ปัจจุบัน" เมื่อ block ทั้ง 2 อยู่บน
+  หน้าเดียวกันได้พร้อมกัน
+- **error ที่ server ปฏิเสธการบันทึกของฟอร์มใน modal = callout (§15) ในตัวฟอร์ม และ modal ไม่ปิด** —
+  ห้ามใช้ `showError`/`showWarning` (dialog กลางจอ) เพราะมันบังค่าที่เพิ่งถูกปฏิเสธ · ฟังก์ชันที่ประกอบ
+  payload ให้ **คืน** ข้อความปฏิเสธออกมา ไม่แสดงเอง (ผู้เรียกเป็นคนรู้ว่าข้อความควรไปอยู่ที่ไหน)
+- **ค่าที่บริบทตอบไปแล้ว (เช่น ประเภทรายการ ที่มาจากคอลัมน์ที่กด `+` หรือจากแถวที่กดแก้) = แสดงแต่ `disabled`
+  ไม่ซ่อน** — ฟอร์มยังต้องบอกได้ว่ากำลังทำรายการฝั่งไหน · ปลดล็อกคืนตอน `hidden.bs.modal` (select2 ที่ถูก
+  disable ค้างอยู่อย่างนั้นจนกว่าจะสั่งกลับ)
 - ซ่อน block ที่ว่าง (ทำแล้วใน 3B) เป็นกฎถาวร
 
 **ฟอร์ม**
@@ -1933,6 +1951,7 @@ page-local block มา 2 รอบก่อนหน้า (callout ก่อ�
 | `resetModalTabs()` | app.js (มีแล้ว) | strip class เอง |
 | `payslipViewHtml()` | app.js | modal คำนวณแบบตาราง (PHP twin `payslip-view.php` ถูกลบแล้ว 2026-09-16 — `docs/decisions/remove-payslip-view-php-twin.md`) |
 | `payee-destination.php` + `initPayeeDestination()`/`payeeDestinationType()`/`setPayeeDestination()` (ใหม่ 2026-09-16 — ปลายทางของรายการหัก 3 แบบ + คำถามย่อย "บันทึกเป็นรายการโอนเข้าบัญชีบริษัทหรือไม่", `$payee_slot` = sub-form ของผู้เรียกเอง, `$payee_allow_no_record=false` สำหรับ editor ที่ไม่มีค่า "ไม่มี payee"; การแปลง UI → `payee_type` อยู่ที่ `payeeDestinationType()` ที่เดียว) | `app/views/partials/` + `app.js` | payee picker ที่เขียนเองทีละที่ (4 จุด) |
+| `.block-busy` (ใหม่ 2026-09-17 — CSS class ล้วน, ประกาศคู่กับ `.lo-table-busy` เดิมในกฎเดียว: block ที่กำลังยิง write ของตัวเองอยู่ ทึบลงและปุ่มข้างในถูก `disabled` จริง จนกว่าจะจบ) | `style.css` | แต่ละ block คิดวิธีบอก "กำลังบันทึก" ของตัวเอง |
 | `.scroll-thin` (ใหม่, notification "ซอฟต์ลง" follow-up 2026-09-13 — CSS utility class ล้วนๆ ไม่มี JS, scrollbar บาง 6px โปร่ง) | `style.css` | scrollbar เริ่มต้นหนาของ browser บน dropdown/panel ที่ scroll — ใช้กับ `.notif-list` แล้ว, ตัวไหนใน dropdown/panel ที่ scroll ต่อไปในระบบให้เรียกซ้ำ ไม่เขียน scrollbar CSS เองใหม่ |
 | `calendar-widget.php` + `renderCalendarWidget(el, {month, events, onSelect})` (ใหม่, item 9 — เสร็จแล้ว; โครงคงเดิมจาก dashboard จริงแต่ class namespace ใหม่ทั้งหมด, ยังไม่มีหน้าจริงเรียกใช้ รอรอบ 4 — ดู §14) | `app/views/partials/` + `app.js` | `.dash-calendar-*` ของจริง (ไม่แตะ, ไม่ reuse ชื่อเดิม) |
 | `chartColor()` / `chartColors()` / `chartDefaults(overrides)` (ใหม่, item 9 — เสร็จแล้ว; อ่าน token `--chart-*`/`--chart-grid`/`--c-*` สดจาก `getComputedStyle` ทุกครั้งที่เรียก ไม่ cache ค่า) | `app.js` | สี/font/grid ที่แต่ละกราฟ (8 กราฟทั้งแอป) ตั้งเองแยกกันตอนนี้ — ยังไม่ migrate หน้าจริง รอรอบ 4 |

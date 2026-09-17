@@ -2454,7 +2454,7 @@ function renderBreakdownModal(row) {
     // at one height so a modal cannot resize between tabs, but this modal has no tabs -- what it
     // bought was a stable height across saves, at the price that doc itself names for short content
     // (an employee with few lines left ~140px of empty modal under the net band, measured).
-    if (breakdownCanEditRd(row)) {
+    if (employeeRowEditableRd(row)) {
         renderBreakdownEditableBodyRd(row);
         return;
     }
@@ -2509,8 +2509,12 @@ function breakdownViewSlipHtml(row) {
 // real server-side rules, not styling -- lineOverrideSave() refuses a non-draft run AND a verified
 // employee (isEmployeeVerifiedForRun()), so showing the controls in either case would only produce
 // errors the user cannot act on.
-function breakdownCanEditRd(row) {
-    return !!currentRun && currentRun.state === 'draft' && !row.is_verified;
+// 2026-09-16, D2: renamed from breakdownCanEditRd() because it is no longer only the Calculation
+// Breakdown modal's question -- assertManualLinesEditable() (PayrollRunModel) refuses exactly the
+// same 2 cases for adding/editing/removing a hand-added line, so the "Added manually" block asks it
+// too, in BOTH the places that block is shown. One predicate, not a second one that can drift.
+function employeeRowEditableRd(row) {
+    return !!row && !!currentRun && currentRun.state === 'draft' && !row.is_verified;
 }
 // The slot under the employee header card: one line of status, or nothing. Only the verified-draft
 // case has anything to say -- unverifying is a real action the user can take, so naming it beats the
@@ -2524,11 +2528,17 @@ function renderBreakdownStatusLineRd(row) {
     }
     $slot.empty().addClass('d-none');
 }
-// The add-an-item button on a column head. Disabled in this chunk (adding a line from here is its own
-// chunk) -- rendered rather than omitted so the column head reads the same as it will once it works,
-// with a tooltip that says why it does not yet.
-function breakdownAddLineButtonHtml() {
-    return `<button type="button" class="btn-icon breakdown-add-line-btn" disabled title="${escapeAttr(langData['breakdown_add_line_unavailable'] || 'Add an item -- not available yet')}"><i class="fa-solid fa-plus"></i></button>`;
+// The add-an-item button on a column head -- one per column, which is what decides the new line's
+// type: the form never asks "earning or deduction?" because the head that was pressed already said.
+// Disabled (reason in its own tooltip) rather than hidden when this employee's figures are frozen --
+// the column head then reads the same as always and names what has to happen first, instead of
+// quietly missing a control that was there a moment ago.
+function manualLineAddButtonHtml(itemType, canEdit) {
+    const labelKey = itemType === 'deduction' ? 'manual_line_add_deduction' : 'manual_line_add_earning';
+    const label = canEdit
+        ? (langData[labelKey] || (itemType === 'deduction' ? 'Add a deduction item' : 'Add an income item'))
+        : (langData['manual_line_add_locked'] || 'Items can only be added while the run is a draft and this employee is not verified');
+    return `<button type="button" class="btn-icon manual-line-add-btn" data-item-type="${escapeAttr(itemType)}"${canEdit ? '' : ' disabled'} title="${escapeAttr(label)}"><i class="fa-solid fa-plus"></i></button>`;
 }
 // Section 2: the lines somebody added by hand, in the slip's own 2-column layout so they read as the
 // same kind of thing as the calculated ones above. Rows come from manualLineListItemHtml() -- the
@@ -2536,15 +2546,16 @@ function breakdownAddLineButtonHtml() {
 // the run's own net pay, which section 3 carries.
 function renderBreakdownManualLinesRd(lines) {
     const all = lines || [];
+    const canEdit = employeeRowEditableRd(breakdownRowRd);
     const earningLines = all.filter(l => l.item_type === 'earning');
     const deductionLines = all.filter(l => l.item_type === 'deduction');
     $('#breakdownManualLines').html(payslipViewHtml({
         earningTitle: langData['breakdown_earnings'] || 'Income',
         deductionTitle: langData['payslip_deductions_title'] || 'Deductions',
-        earningTitleActionHtml: breakdownAddLineButtonHtml(),
-        deductionTitleActionHtml: breakdownAddLineButtonHtml(),
-        earningRowsHtml: earningLines.map(manualLineListItemHtml).join(''),
-        deductionItemRowsHtml: deductionLines.map(manualLineListItemHtml).join(''),
+        earningTitleActionHtml: manualLineAddButtonHtml('earning', canEdit),
+        deductionTitleActionHtml: manualLineAddButtonHtml('deduction', canEdit),
+        earningRowsHtml: earningLines.map(l => manualLineListItemHtml(l, canEdit)).join(''),
+        deductionItemRowsHtml: deductionLines.map(l => manualLineListItemHtml(l, canEdit)).join(''),
         showTotals: false,
     }));
 }
@@ -2590,7 +2601,7 @@ function renderBreakdownEditableBodyRd(row) {
         </section>
         <section class="breakdown-edit-section">
             <h6 class="breakdown-edit-title">${escapeHtml(langData['breakdown_group_added_manually'] || 'Added manually')}</h6>
-            <div id="breakdownManualLines"></div>
+            <div id="breakdownManualLines" class="ml-mount"></div>
         </section>
         <div id="breakdownNetSummary"></div>
     </div>`);
@@ -4404,14 +4415,18 @@ function manualLineTagHtml(line) {
     }
     return statusBadgeHtml(line.is_other ? 'other' : 'custom', 'manual_line_mode', { outline: true });
 }
-// One line of the adjustments slip -- a `.payslip-row` `<tr>` in the SAME shape the real payslip
+// One line of the "added by hand" block -- a `.payslip-row` `<tr>` in the SAME shape the real payslip
 // component renders (name cell + right-aligned `.num.money-*` amount), so both live under
-// payslipViewHtml() (§9) with no second layout. 2 things are specific to this tab and live in the
-// name/amount cells rather than in the component: the mode badge above, and the per-row Remove
-// button, which is absolutely positioned just LEFT of the amount (`.manual-line-actions`, style.css)
-// so revealing it on hover can never shift the number -- the identical technique the comment list's
-// own row actions already use.
-function manualLineListItemHtml(line) {
+// payslipViewHtml() (§9) with no second layout. 2 things are specific to these rows and live in the
+// name/amount cells rather than in the component: the mode badge above, and the row's own actions.
+// 2026-09-16, D2: the actions are the shared 32px round buttons (§7's `.btn-icon`) at the END of the
+// row, shown always instead of on hover -- an affordance that has to be discovered by hovering is
+// not one (the same conclusion rules.md §6 reached for the comment list's own row actions). Pressing
+// the row anywhere else opens the same form its pencil does.
+// `canEdit` is the answer for the whole block (employeeRowEditableRd(), asked once by the caller),
+// never per row -- and a row with no `id` of its own (a line stored before manual lines became
+// addressable) keeps the slot but gets no buttons, so the figures around it stay on one line.
+function manualLineListItemHtml(line, canEdit) {
     const name = (currentLang === 'th' ? line.item_name_th : line.item_name_en) || line.item_name_th || line.item_name_en;
     const moneyCls = line.item_type === 'earning' ? 'money-gross' : 'money-deduction';
     // Long notes clip to one line with the full text as a native tooltip (explicit instruction) --
@@ -4435,15 +4450,33 @@ function manualLineListItemHtml(line) {
     } else if (line.payee_type === 'not_disbursed') {
         payeeHtml = `<div class="manual-line-payee">${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
     }
-    const removeBtn = `<span class="manual-line-actions"><button type="button" class="btn-icon-ghost manual-line-remove-btn btn-remove-manual-line" data-line-id="${line.id}" title="${escapeAttr(langData['action_remove'] || 'Remove')}"><i class="fa-solid fa-trash-can"></i></button></span>`;
-    return `<tr class="payslip-row manual-line-item">
+    const editable = !!canEdit && !!line.id;
+    // A legacy row inside an otherwise editable block says why it has no buttons, on the row itself
+    // -- an empty slot with no explanation reads as a rendering glitch.
+    const rowTitle = (canEdit && !line.id)
+        ? ` title="${escapeAttr(langData['manual_line_legacy_locked'] || 'Added before items became editable here -- it cannot be edited or removed from this screen')}"`
+        : '';
+    return `<tr class="payslip-row manual-line-item${editable ? ' manual-line-item-editable' : ''}" data-line-id="${line.id || ''}"${rowTitle}>
         <td>
             <div class="payslip-line-head"><span class="payslip-line-name"${line.is_custom ? '' : ` title="${escapeAttr(line.item_code || '')}"`}>${escapeHtml(name)}</span>${manualLineTagHtml(line)}</div>
             ${noteHtml}
             ${payeeHtml}
         </td>
-        <td class="text-end num ${moneyCls} manual-line-amount-cell">${removeBtn}${fmtNum(line.amount)}</td>
+        <td class="text-end num ${moneyCls}">
+            <div class="manual-line-amount-wrap"><span class="manual-line-amount">${fmtNum(line.amount)}</span>${manualLineRowActionsHtml(line, canEdit)}</div>
+        </td>
     </tr>`;
+}
+// The row's own actions (§7: at most 3 round 32px buttons, one size and one colour for every action
+// -- delete is grey here and only turns red on the confirm, §3/§4). An empty, same-width slot for a
+// row that cannot carry them keeps every figure in the column on one line.
+function manualLineRowActionsHtml(line, canEdit) {
+    if (!canEdit) return '';
+    if (!line.id) return '<span class="manual-line-actions manual-line-actions-empty"></span>';
+    return `<span class="manual-line-actions">
+        <button type="button" class="btn-icon manual-line-edit-btn" data-line-id="${line.id}" title="${escapeAttr(langData['manual_line_form_edit_title'] || 'Edit item')}"><i class="fa-solid fa-pen"></i></button>
+        <button type="button" class="btn-icon manual-line-remove-btn" data-line-id="${line.id}" title="${escapeAttr(langData['action_remove'] || 'Remove')}"><i class="fa-solid fa-trash-can"></i></button>
+    </span>`;
 }
 // Empty column = ONE quiet gray line inside the slip's own table (explicit instruction: not the big
 // empty-state component -- a column with nothing in it yet is not a page-level dead end).
@@ -4468,12 +4501,18 @@ function loadManualLinesRd() {
             // not "ยอดจ่ายสุทธิ". Deduction rows go in as `deductionItemRowsHtml` -- there is no statutory
             // half here at all, so the component's own 2-group sub-labels never render (see its own
             // showGroupLabels condition).
+            // 2026-09-16, D2: the same column-head + and the same row actions the Calculation
+            // Breakdown modal's own block renders -- this tab's inline add form is gone (it IS
+            // #manualLineFormModal now), so both places offer adding in exactly one way.
+            const canEdit = employeeRowEditableRd(runDetailRowByEmployeeId(manageLinesEmployeeId));
             $('#manualLinesSlip').html(payslipViewHtml({
+                earningTitleActionHtml: manualLineAddButtonHtml('earning', canEdit),
+                deductionTitleActionHtml: manualLineAddButtonHtml('deduction', canEdit),
                 earningRowsHtml: earningLines.length
-                    ? earningLines.map(manualLineListItemHtml).join('')
+                    ? earningLines.map(l => manualLineListItemHtml(l, canEdit)).join('')
                     : manualLineEmptyRowHtml('no_manual_earning_lines', 'No income items added yet.'),
                 deductionItemRowsHtml: deductionLines.length
-                    ? deductionLines.map(manualLineListItemHtml).join('')
+                    ? deductionLines.map(l => manualLineListItemHtml(l, canEdit)).join('')
                     : manualLineEmptyRowHtml('no_manual_deduction_lines', 'No deduction items added yet.'),
                 grossAmount: earningTotal,
                 totalDeductionAmount: deductionTotal,
@@ -5456,8 +5495,7 @@ $(document).on('click', '#btnSaveRecurringDestOverride', function () {
     if (payeeType === 'employee') {
         const payeeEmployeeId = $('#recurringDestPayeeEmployeeSelect').val();
         if (!payeeEmployeeId) {
-            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
-            return;
+            return { ok: false, message: langData['required_star_message'] || 'Please fill all fields marked with *' };
         }
         payload.payee_employee_id = payeeEmployeeId;
     } else if (payeeType === 'company') {
@@ -5465,8 +5503,7 @@ $(document).on('click', '#btnSaveRecurringDestOverride', function () {
         // recurringDeductionDestinationOverrideSave() itself rejects a missing value.
         const bankAccountId = $('#recurringDestBankAccountSelect').val();
         if (!bankAccountId) {
-            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
-            return;
+            return { ok: false, message: langData['required_star_message'] || 'Please fill all fields marked with *' };
         }
         payload.bank_account_id = bankAccountId;
     } else if (payeeType === 'other_person') {
@@ -5704,8 +5741,8 @@ $(document).on('change', '#manualLineCustomType', function () {
 let manualLineMode = 'catalog';
 // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- "Other" reuses
 // #manualLineCustomFields verbatim, same as #eedModal's own "Other" mode (see that modal's
-// setEedMode() docblock in employee/detail.js) -- only #btnAddManualLine's own click handler below
-// differs (sends is_other=true).
+// setEedMode() docblock in employee/detail.js) -- only manualLineFormPayloadRd() below differs
+// (sends is_other=true).
 const MANUAL_LINE_MODE_DESC_RD = {
     catalog: { key: 'mode_desc_catalog', fallback: 'Pick from your saved item types' },
     custom: { key: 'mode_desc_custom', fallback: 'One-time item with its own name' },
@@ -5740,7 +5777,7 @@ function manualLineHasItemRd() {
 function refreshManualLineAddStateRd() {
     const amount = manualLineAmountValueRd();
     const blocked = manualLinePayeeEmployeeBlockedRd && payeeDestinationType('manualLine') === 'employee';
-    $('#btnAddManualLine')
+    $('#btnSaveManualLine')
         .prop('disabled', blocked || !(manualLineHasItemRd() && amount > 0))
         .attr('title', blocked ? (langData['payee_employee_no_bank_account'] || 'This employee has no bank account on file yet') : null);
 }
@@ -5756,7 +5793,11 @@ function resetManualLineFormRd() {
     $('#manualLineComment').val('').trigger('input');
     // An employee can't be their own transfer payee -- excluded the same way #eed_payee_employee_id
     // excludes self on the Employee Detail page (data-exclude-id, read fresh on every ajax search).
-    $('#manualLinePayeeEmployee').attr('data-exclude-id', manageLinesEmployeeId || '').val(null).trigger('change');
+    // 2026-09-16, D2: whose form this is comes from the open context, not from the Adjustments tab's
+    // own employee -- the same form now also opens over the Calculation Breakdown modal.
+    $('#manualLinePayeeEmployee')
+        .attr('data-exclude-id', (manualLineFormCtxRd && manualLineFormCtxRd.employeeId) || '')
+        .val(null).trigger('change');
     setManualLinePayeeTypeRd('none');
     refreshManualLineAddStateRd();
 }
@@ -5773,7 +5814,7 @@ $(document).on('input change', '#manualLineAmount, #manualLineCustomName, #manua
 $(document).on('keydown', '#manualLineAmount', function (e) {
     if (e.key !== 'Enter') return;
     e.preventDefault();
-    if (!$('#btnAddManualLine').prop('disabled')) $('#btnAddManualLine').trigger('click');
+    if (!$('#btnSaveManualLine').prop('disabled')) $('#btnSaveManualLine').trigger('click');
 });
 
 /* ---------- #manageLinesModal shell: footer dispatcher + per-tab dirty-guard (2026-09-14, Round 3
@@ -5798,7 +5839,10 @@ $(document).on('keydown', '#manualLineAmount', function (e) {
    dispatcher calls the function directly rather than clicking an invisible button. `saveSelector`
    stays for the 3 tabs that still own their own (hidden) button; see BACKLOG for retiring those too. */
 const ADJUSTMENT_TAB_CONFIG_RD = {
-    manageLinesItemsPane: { scope: '#manageLinesItemsPane', saveSelector: null },
+    // 2026-09-16, D2: this tab holds no form at all any more (adding/editing is #manualLineFormModal,
+    // which writes the moment it is confirmed), so it is `immediate` in the same sense Tab 3 is --
+    // nothing to save later, nothing to warn about on the way out (rules.md §9).
+    manageLinesItemsPane: { scope: '#manageLinesItemsPane', saveSelector: null, immediate: true },
     manageLinesAttendancePane: { scope: '#manageLinesAttendancePane', saveSelector: '#btnSaveAttendanceData' },
     // `immediate`: every action in this tab writes the moment it is confirmed, so there is nothing to
     // save later and nothing to warn about on the way out -- the footer hides Save and the dirty
@@ -5992,7 +6036,6 @@ $(document).on('click', '.btn-manage-manual-lines', function () {
         primary: { id: 'btnSaveActiveAdjustmentTab', key: 'save', fallback: 'Save' },
         secondary: { key: 'close', fallback: 'Close', dismiss: true },
     }));
-    resetManualLineFormRd();
     refreshAdjustmentTabDirtyGuard('manageLinesItemsPane');
     // Always reopen on Tab 1 -- a stale "Attendance Data" tab left active from a previous employee
     // would otherwise show up front-and-center unexpectedly.
@@ -6015,16 +6058,21 @@ $(document).on('click', '.btn-manage-manual-lines', function () {
     new bootstrap.Modal(document.getElementById('manageLinesModal')).show();
     loadManualLinesRd();
 });
-$(document).on('click', '#btnAddManualLine', function () {
+// The payload for one manual line out of whatever the form currently holds -- ONE builder for both
+// endpoints, because add-manual-line and update-manual-line take exactly the same field set (see
+// PayrollController::manualLinePayload()'s own docblock on why the two must never drift apart).
+// It RETURNS a refusal instead of showing one: the caller is what knows where it belongs (inside the
+// form, which stays open), and a dialog on top of the form would hide the very values it is about.
+function manualLineFormPayloadRd() {
+    const ctx = manualLineFormCtxRd || {};
     const amount = manualLineAmountValueRd();
     const comment = $('#manualLineComment').val().trim();
-    const payload = { id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, amount: amount, note: comment };
+    const payload = { id: PAYROLL_RUN_ID, employee_id: ctx.employeeId, amount: amount, note: comment };
     if (manualLineMode === 'custom' || manualLineMode === 'other') {
         const customName = $('#manualLineCustomName').val().trim();
         const customType = $('#manualLineCustomType').val();
         if (!customName || !customType || !amount || amount <= 0) {
-            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
-            return;
+            return { ok: false, message: langData['required_star_message'] || 'Please fill all fields marked with *' };
         }
         payload.custom_item_name = customName;
         payload.custom_item_type = customType;
@@ -6035,8 +6083,7 @@ $(document).on('click', '#btnAddManualLine', function () {
     } else {
         const pedTypeId = $('#manualLineItemSelect').val();
         if (!pedTypeId || !amount || amount <= 0) {
-            showWarning(langData['required_star_message'] || 'Please fill all fields marked with *');
-            return;
+            return { ok: false, message: langData['required_star_message'] || 'Please fill all fields marked with *' };
         }
         payload.ped_type_id = pedTypeId;
     }
@@ -6067,8 +6114,7 @@ $(document).on('click', '#btnAddManualLine', function () {
             const savedDestinationId = useSavedDestination ? $('#manualLineDestinationSelect').val() : '';
             if (useSavedDestination) {
                 if (!savedDestinationId) {
-                    showWarning(langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.');
-                    return;
+                    return { ok: false, message: langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.' };
                 }
                 payload.destination = { destination_id: savedDestinationId };
             } else {
@@ -6076,8 +6122,7 @@ $(document).on('click', '#btnAddManualLine', function () {
                 const accountNo = $('#manualLineDestAccountNo').val().trim();
                 const bankId = $('#manualLineDestBank').val();
                 if (!accountName || !accountNo || !bankId) {
-                    showWarning(langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.');
-                    return;
+                    return { ok: false, message: langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.' };
                 }
                 payload.destination = {
                     account_name: accountName, account_no: accountNo, bank_id: bankId,
@@ -6087,47 +6132,256 @@ $(document).on('click', '#btnAddManualLine', function () {
             }
         }
     }
-    const $btn = $(this);
+    return { ok: true, payload: payload };
+}
+
+/* ---------- The add/edit form (#manualLineFormModal) -- one form, two hosts (2026-09-16, D2) -------
+   The form itself is markup in payroll/detail.php, inside a nested modal; this is everything that
+   drives it. It opens from the + on a column head (the type comes from WHICH head) or from a row
+   (edit). There is deliberately no second implementation for the Payment Items tab: that tab's own
+   inline form WAS this markup, and it now opens this modal through the same + button the
+   Calculation Breakdown modal's own block uses (§0.4). */
+// Which block the open form belongs to: whose lines, which row (absent = a new one), where the block
+// is, and what has to be reloaded once the write lands.
+let manualLineFormCtxRd = null;
+// Both blocks exist in the DOM at the same time (the Adjustments modal stays rendered underneath the
+// Breakdown one), so the host is resolved from the mount the click happened in -- never from a
+// "current block" variable the other one could have overwritten. Same reasoning as
+// setLineOverrideHostRd()'s own, with the difference that these 2 mounts can both be live at once.
+function manualLineHostForMountRd($mount) {
+    const id = $mount.attr('id');
+    if (id === 'manualLinesSlip') {
+        return {
+            mount: '#manualLinesSlip',
+            employeeId: manageLinesEmployeeId,
+            canEdit: employeeRowEditableRd(runDetailRowByEmployeeId(manageLinesEmployeeId)),
+            onSaved: function () { loadManualLinesRd(); loadRunDetail(); },
+        };
+    }
+    if (id === 'breakdownManualLines' && breakdownRowRd) {
+        return {
+            mount: '#breakdownManualLines',
+            employeeId: breakdownRowRd.employee_id,
+            canEdit: employeeRowEditableRd(breakdownRowRd),
+            // The net band is re-read from the server rather than adjusted here: one added line moves
+            // the statutory figures with it (see refreshBreakdownNetSummaryRd()'s own comment).
+            onSaved: function () {
+                loadBreakdownManualLinesRd(breakdownRowRd.employee_id);
+                refreshBreakdownNetSummaryRd();
+                loadRunDetail();
+            },
+        };
+    }
+    return null;
+}
+// While a write is in flight the whole block is inert -- a second action would race the recalculate
+// the first one is already running (the same rule, and the same `.block-busy`, as the line-override
+// table above).
+function manualLineBlockBusyRd(mountSelector, busy) {
+    const $mount = $(mountSelector);
+    $mount.toggleClass('block-busy', !!busy);
+    $mount.find('button').prop('disabled', !!busy);
+}
+// A refusal belongs where the values that caused it still are: inside the form, which stays open.
+function manualLineFormErrorRd(message) {
+    const $box = $('#manualLineFormError');
+    if (!message) {
+        $box.empty().addClass('d-none');
+        return;
+    }
+    $box.html(calloutHtml(escapeHtml(message), 'danger')).removeClass('d-none');
+}
+// The type is never a choice in this form: it comes from the column head that was pressed, or from
+// the row being edited. The control still shows it, read-only, so the form says which column the
+// line belongs to.
+function setManualLineTypeRd(itemType) {
+    const type = itemType === 'deduction' ? 'deduction' : 'earning';
+    $('#manualLineCustomType').val(type).prop('disabled', true).trigger('change.select2');
+    applyManualLineItemTypeRd(type);
+}
+function openManualLineFormRd(ctx) {
+    manualLineFormCtxRd = ctx;
+    const isEdit = !!ctx.line;
+    manualLineFormErrorRd('');
+    resetManualLineFormRd();
+    const titleKey = isEdit ? 'manual_line_form_edit_title' : 'manual_line_form_add_title';
+    $('#manualLineFormModalLabel')
+        .attr('data-i18n', titleKey)
+        .text(langData[titleKey] || (isEdit ? 'Edit Item' : 'Add Item'));
+    // Built per open, not toggled: the primary button's LABEL is the difference between adding and
+    // saving an edit, and modalFooterButtonsHtml() (§9/§11) is what keeps the pair from drifting on
+    // size/class. [เพิ่มรายการ|บันทึก] left, [ปิด] right -- §4's order.
+    $('#manualLineFormFooter').html(modalFooterButtonsHtml({
+        primary: { id: 'btnSaveManualLine', key: isEdit ? 'save' : 'add_line', fallback: isEdit ? 'Save' : 'Add Line' },
+        secondary: { key: 'close', fallback: 'Close', dismiss: true },
+    }));
+    if (isEdit) {
+        prefillManualLineFormRd(ctx.line);
+    } else {
+        setManualLineTypeRd(ctx.itemType);
+    }
+    refreshManualLineAddStateRd();
+    new bootstrap.Modal(document.getElementById('manualLineFormModal')).show();
+}
+// Every field of an existing line, back into the form it was created with. The catalog picker is a
+// select2-remote (no options in the markup at all), so its current value has to be appended as a
+// real option first -- the same populate-a-remote-select step Employee Detail's own
+// populateSelect2Field() does, and the same silent data loss if it is skipped.
+function prefillManualLineFormRd(line) {
+    const mode = line.is_custom ? (line.is_other ? 'other' : 'custom') : 'catalog';
+    setManualLineModeRd(mode);
+    setManualLineTypeRd(line.item_type);
+    const label = (currentLang === 'th' ? line.item_name_th : line.item_name_en) || line.item_name_th || line.item_name_en || '';
+    if (mode === 'catalog') {
+        $('#manualLineItemSelect').empty().append(new Option(label, line.ped_type_id, true, true)).trigger('change');
+    } else {
+        $('#manualLineCustomName').val(label);
+    }
+    $('#manualLineAmount').val(fmtNum(line.amount)).attr('data-raw-value', line.amount);
+    $('#manualLineComment').val(line.note || '').trigger('input');
+    // The destination choice first (it shows/hides the 3 sub-forms and can fetch a default company
+    // account), then this line's own values on top -- applyDefaultCompanyBankAccount() re-checks the
+    // field before applying, so its in-flight request cannot overwrite what is set here.
+    setPayeeDestination('manualLine', line.payee_type || 'none');
+    if (line.payee_type === 'employee' && line.payee_employee_id) {
+        $('#manualLinePayeeEmployee').empty()
+            .append(new Option(line.payee_employee_no || ('#' + line.payee_employee_id), line.payee_employee_id, true, true))
+            .trigger('change');
+    } else if (line.payee_type === 'company' && line.bank_account_id) {
+        $('#manualLineBankAccount').empty()
+            .append(new Option(line.bank_account_name || ('#' + line.bank_account_id), line.bank_account_id, true, true))
+            .trigger('change');
+    } else if (line.payee_type === 'other_person' && line.destination_id) {
+        // A saved destination is what this line already points at, so the picker opens on "saved"
+        // with that row selected rather than on an empty new-account form.
+        setManualLineDestModeRd('saved');
+        $('#manualLineDestinationSelect').empty()
+            .append(new Option(line.destination_account_name || ('#' + line.destination_id), line.destination_id, true, true))
+            .trigger('change');
+    }
+}
+// Adding and editing differ in 2 places only: the endpoint, and one extra id in the body. Everything
+// else -- validation, the busy lock, what happens after -- is deliberately one path.
+function submitManualLineFormRd($btn) {
+    const ctx = manualLineFormCtxRd;
+    if (!ctx) return;
+    const built = manualLineFormPayloadRd();
+    if (!built.ok) {
+        manualLineFormErrorRd(built.message);
+        return;
+    }
+    const payload = built.payload;
+    const isEdit = !!ctx.line;
+    if (isEdit) payload.line_id = ctx.line.id;
+    manualLineFormErrorRd('');
     setButtonLoading($btn, true);
+    manualLineBlockBusyRd(ctx.mount, true);
     $.ajax({
-        url: `${BASE_URL}/api/payroll-run.add-manual-line`,
+        url: `${BASE_URL}/api/payroll-run.${isEdit ? 'update' : 'add'}-manual-line`,
         method: 'POST',
         contentType: 'application/json',
         dataType: 'json',
         data: JSON.stringify(payload),
         success: function (res) {
             setButtonLoading($btn, false);
-            if (res.status) {
-                if (payload.destination && payload.destination.is_saved) {
-                    manualLineDestHasSavedRd = null; // this add just created the first/next saved one
-                }
-                resetManualLineFormRd();
-                // 2026-09-14, Round 3 item 4 batch 1/4: the Add form was just cleared back to its
-                // defaults -- re-baseline Tab 1 against that, not the values that were just added.
-                refreshAdjustmentTabDirtyGuard('manageLinesItemsPane');
-                refreshAdjustmentSaveButtonState();
-                loadManualLinesRd();
-                loadRunDetail();
-            } else {
-                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+            manualLineBlockBusyRd(ctx.mount, false);
+            if (!res.status) {
+                // Stays open, with the values that were refused still in it.
+                manualLineFormErrorRd(res.message || langData['save_failed'] || 'Failed to save data.');
+                return;
             }
+            if (payload.destination && payload.destination.is_saved) {
+                manualLineDestHasSavedRd = null; // this write just created the first/next saved one
+            }
+            const inst = bootstrap.Modal.getInstance(document.getElementById('manualLineFormModal'));
+            if (inst) inst.hide();
+            ctx.onSaved();
         },
         error: function () {
             setButtonLoading($btn, false);
-            showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+            manualLineBlockBusyRd(ctx.mount, false);
+            manualLineFormErrorRd(langData['save_failed'] || 'An error occurred while saving the data.');
         }
     });
+}
+$(document).on('click', '#btnSaveManualLine', function () {
+    submitManualLineFormRd($(this));
 });
-$(document).on('click', '.btn-remove-manual-line', function () {
+// Leaving the form re-enables the type control for the next open (it is disabled while open, and a
+// disabled select2 stays disabled until it is told otherwise).
+$(document).on('hidden.bs.modal', '#manualLineFormModal', function () {
+    $('#manualLineCustomType').prop('disabled', false).trigger('change.select2');
+    manualLineFormCtxRd = null;
+});
+$(document).on('click', '.ml-mount .manual-line-add-btn', function () {
+    const host = manualLineHostForMountRd($(this).closest('.ml-mount'));
+    if (!host || !host.canEdit) return;
+    openManualLineFormRd({
+        mount: host.mount,
+        employeeId: host.employeeId,
+        itemType: $(this).data('item-type'),
+        onSaved: host.onSaved,
+    });
+});
+// Edit reads the line back from the server before filling the form in, never out of the rendered
+// row: what is on screen is as old as the last load of the block, and this form writes every column
+// of that row back (updateManualLine() sets them all, including the ones left empty).
+function openManualLineEditRd($mount, lineId) {
+    const host = manualLineHostForMountRd($mount);
+    if (!host || !host.canEdit || !lineId) return;
+    manualLineBlockBusyRd(host.mount, true);
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.manual-lines`,
+        method: 'GET',
+        data: { run_id: PAYROLL_RUN_ID, employee_id: host.employeeId },
+        dataType: 'json',
+        success: function (res) {
+            manualLineBlockBusyRd(host.mount, false);
+            const line = ((res && res.data) || []).find(l => Number(l.id) === Number(lineId));
+            if (!line) {
+                showWarning(langData['load_failed'] || 'Failed to load data.');
+                return;
+            }
+            openManualLineFormRd({
+                mount: host.mount,
+                employeeId: host.employeeId,
+                itemType: line.item_type,
+                line: line,
+                onSaved: host.onSaved,
+            });
+        },
+        error: function () {
+            manualLineBlockBusyRd(host.mount, false);
+            showWarning(langData['load_failed'] || 'Failed to load data.');
+        }
+    });
+}
+$(document).on('click', '.ml-mount .manual-line-edit-btn', function (e) {
+    e.stopPropagation();
+    openManualLineEditRd($(this).closest('.ml-mount'), $(this).data('line-id'));
+});
+// The row itself opens the same form -- the pencil is the visible affordance, this is the whole
+// target. A press that landed on a button belongs to that button (the delete confirm must not have
+// the edit form opening behind it).
+$(document).on('click', '.ml-mount .manual-line-item-editable', function (e) {
+    if ($(e.target).closest('button, a, input, select, textarea').length) return;
+    openManualLineEditRd($(this).closest('.ml-mount'), $(this).data('line-id'));
+});
+$(document).on('click', '.ml-mount .manual-line-remove-btn', function (e) {
+    e.stopPropagation();
+    const host = manualLineHostForMountRd($(this).closest('.ml-mount'));
     const lineId = $(this).data('line-id');
-    // §10: object form with `tone: 'danger'` -- removing a line is destructive and writes immediately
-    // (there is no Save step on this tab to undo it before), so the confirm reads as the red one.
+    if (!host || !host.canEdit || !lineId) return;
+    // §10: object form with `tone: 'danger'` -- removing a line is destructive and writes
+    // immediately (there is no Save step to undo it before), so the confirm reads as the red one.
+    // One confirm, then the write -- never a second question.
     showConfirm({
         title: langData['action_remove'] || 'Remove',
         message: langData['confirm_remove_line_message'] || 'Remove this item?',
         confirmText: langData['action_remove'] || 'Remove',
         tone: 'danger',
         onYes: function () {
+            manualLineBlockBusyRd(host.mount, true);
             $.ajax({
                 url: `${BASE_URL}/api/payroll-run.remove-manual-line`,
                 method: 'POST',
@@ -6135,14 +6389,15 @@ $(document).on('click', '.btn-remove-manual-line', function () {
                 dataType: 'json',
                 data: JSON.stringify({ id: PAYROLL_RUN_ID, line_id: lineId }),
                 success: function (res) {
-                    if (res.status) {
-                        loadManualLinesRd();
-                        loadRunDetail();
-                    } else {
+                    manualLineBlockBusyRd(host.mount, false);
+                    if (!res.status) {
                         showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                        return;
                     }
+                    host.onSaved();
                 },
                 error: function () {
+                    manualLineBlockBusyRd(host.mount, false);
                     showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
                 }
             });

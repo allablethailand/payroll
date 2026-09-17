@@ -1320,166 +1320,13 @@
                                  top, 3 has one per sub-section). JS (openManageLinesModal's own click
                                  handler) still sets its text via this same #manageLinesHint id. -->
                             <p class="text-muted small mb-2" id="manageLinesHint"></p>
-                            <div class="add-manual-line-card">
-                                <!-- 2026-09-15, Round 3 item 4 batch 2/4, explicit instruction: the
-                                     3-mode picker is a plain segmented btn-group on ONE line -- no
-                                     icons, no gradient, no per-button description inside the button.
-                                     The selected one is `.btn-primary` (ส้มถม) rather than §9's usual
-                                     neutral `active` state: confirmed explicitly for THIS control
-                                     because it is the tab's own primary choice, not a yes/no toggle.
-                                     The chosen mode's description moves to one gray line below the
-                                     group (#manualLineModeDesc, set by setManualLineMode() in
-                                     detail.js).
-                                     NOTE: `.mode-select-group` (the old markup here) still exists and
-                                     is still used by Employee Detail's own #eedModal -- untouched by
-                                     this batch, so that modal keeps its current look. -->
-                                <div class="segmented" id="manualLineModeToggle">
-                                    <input type="radio" name="manualLineMode" id="manualLineModeCatalog" value="catalog" checked>
-                                    <label for="manualLineModeCatalog" data-i18n="manual_line_mode_catalog">From List</label>
-                                    <input type="radio" name="manualLineMode" id="manualLineModeCustom" value="custom">
-                                    <label for="manualLineModeCustom" data-i18n="manual_line_mode_custom">Custom Item</label>
-                                    <input type="radio" name="manualLineMode" id="manualLineModeOther" value="other">
-                                    <label for="manualLineModeOther" data-i18n="manual_line_mode_other">Other</label>
-                                </div>
-                                <p class="manual-line-mode-desc" id="manualLineModeDesc"></p>
-                                <!-- 2026-09-15, batch 2/4 follow-up: the add form is 2 rows + an
-                                     always-last Add row. Row 1 = type / item / amount, row 2 = the note
-                                     as a real textarea (T002 auto-grows it, see input.js). The Add
-                                     button moved out of the field row entirely so it can stay the LAST
-                                     thing in the panel even when the payee block below is open -- a
-                                     button that commits the whole form should never sit above half of
-                                     the fields it commits. -->
-                                <div class="row g-2 align-items-end manual-line-form-row">
-                                    <div class="col-lg-3">
-                                        <label class="form-label" for="manualLineCustomType" data-i18n="modal_item_type">Type</label>
-                                        <select class="form-select select2-static" id="manualLineCustomType" data-option-keys="breakdown_earnings,table_deduction_amount" data-option-values="earning,deduction"></select>
-                                    </div>
-                                    <!-- The catalog picker filters itself to the chosen type through the
-                                         `data-type` attribute this endpoint already honours (input.js
-                                         re-reads it on every search, see its own docblock) -- the same
-                                         wiring #eedModal's own catalog picker uses. Its label text swaps
-                                         between two lang keys, set by applyManualLineItemTypeRd(). -->
-                                    <div class="col-lg-6" id="manualLineCatalogFields">
-                                        <label class="form-label" for="manualLineItemSelect" id="manualLineItemSelectLabel" data-i18n="manual_line_select_earning_item">Select an income item</label>
-                                        <select class="form-select select2-remote" id="manualLineItemSelect" data-api="/api/employee.earning-deduction.options" data-type="earning"></select>
-                                    </div>
-                                    <div class="col-lg-6 d-none" id="manualLineCustomFields">
-                                        <label class="form-label" for="manualLineCustomName" data-i18n="modal_custom_item_name">Item Name</label>
-                                        <input type="text" class="form-control" id="manualLineCustomName" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
-                                    </div>
-                                    <div class="col-lg-3">
-                                        <label class="form-label" for="manualLineAmount" data-i18n="modal_amount">Amount</label>
-                                        <!-- 8: money-input + initMoneyInputs() (comma/2-decimal on blur, raw
-                                             value mirrored to data-raw-value) instead of a bare number
-                                             field -- read back through parseMoneyInput() in detail.js. -->
-                                        <input type="text" class="form-control money-input" id="manualLineAmount" inputmode="decimal" placeholder="0.00">
-                                    </div>
-                                </div>
-                                <div class="row g-2 manual-line-note-row">
-                                    <div class="col-12">
-                                        <label class="form-label" for="manualLineComment" data-i18n="modal_comment">Comment</label>
-                                        <textarea class="form-control" id="manualLineComment" rows="2" maxlength="255" data-i18n="modal_comment_placeholder" placeholder="e.g. August OT shortfall top-up"></textarea>
-                                    </div>
-                                </div>
-                                <!-- Transfer-to-payee (2026-08-21) -- only meaningful when the item being
-                                     added is a deduction, toggled by syncManualLineTypeDependentsRd() in
-                                     detail.js.
-                                     The choice is a segmented control (the confirmed "segmented that is a
-                                     form's primary choice" exception in rules.md 4 -- selected one is
-                                     `.btn-primary`), with one gray line under it saying what the chosen
-                                     routing actually DOES, and every per-choice sub-form indented inside
-                                     ONE callout block so it reads as belonging to the chosen option. -->
-                                <div class="manual-line-payee-block d-none" id="manualLinePayeeTypeWrapper">
-                                    <!-- 2026-09-16: the choice is 3 destinations (what happens to the
-                                         money) with one sub-question under the first, not a flat list of
-                                         payee_type values -- shared markup/behaviour with the other 3
-                                         payee pickers, see partials/payee-destination.php and
-                                         docs/decisions/2026-09-16-payee-three-destinations.md.
-                                         The 3 sub-forms below are this tab's own (they keep their ids,
-                                         and the component only shows/hides them). -->
-                                    <?php ob_start(); ?>
-                                        <div class="d-none" id="manualLinePayeeWrapper">
-                                            <label class="form-label" for="manualLinePayeeEmployee" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
-                                            <select class="form-select select2-remote" id="manualLinePayeeEmployee" data-api="/api/employee.report_to.get" data-type="employee"></select>
-                                            <div id="manualLinePayeeEmployeeDetail"></div>
-                                        </div>
-                                        <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company'. -->
-                                        <div class="d-none" id="manualLineCompanyAccountWrapper">
-                                            <label class="form-label" for="manualLineBankAccount" data-i18n="payee_bank_account_label">Company Bank Account</label>
-                                            <select class="form-select select2-remote" id="manualLineBankAccount" data-api="/api/payroll-cycle.bank-account.options"></select>
-                                            <div id="manualLineBankAccountDetail"></div>
-                                        </div>
-                                        <!-- 2026-09-02, Deduction Destination and Third-Party Remittance.
-                                             2026-09-15: the old "pick a saved one OR leave blank and fill
-                                             the fields below" pairing is now an explicit 2-way segmented
-                                             choice -- the two paths were never meant to be filled at the
-                                             same time. The saved half disappears entirely (with a gray
-                                             line in its place) for a company that has none yet. -->
-                                        <div class="d-none" id="manualLineDestinationWrapper">
-                                            <!-- 2026-09-15: with nothing saved yet there is no choice to
-                                                 offer, so the whole segmented row (and the "none saved"
-                                                 line that used to stand in for it) is absent and the
-                                                 new-destination form is simply what this block IS. -->
-                                            <div class="segmented d-none" id="manualLineDestModeToggle">
-                                                <input type="radio" name="manualLineDestMode" id="manualLineDestModeSaved" value="saved" checked>
-                                                <label for="manualLineDestModeSaved" data-i18n="destination_mode_saved">Choose a saved destination</label>
-                                                <input type="radio" name="manualLineDestMode" id="manualLineDestModeNew" value="new">
-                                                <label for="manualLineDestModeNew" data-i18n="destination_mode_new">Enter a new one</label>
-                                            </div>
-                                            <div id="manualLineDestSavedFields">
-                                                <label class="form-label" for="manualLineDestinationSelect" data-i18n="destination_saved_pick_label">Saved destination</label>
-                                                <select class="form-select select2-remote" id="manualLineDestinationSelect" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
-                                                <div id="manualLineDestinationDetail"></div>
-                                            </div>
-                                            <div class="d-none" id="manualLineDestinationNewFields">
-                                                <div class="row g-2">
-                                                    <div class="col-sm-6">
-                                                        <label class="form-label" for="manualLineDestAccountName" data-i18n="destination_account_name">Account Name</label>
-                                                        <input type="text" class="form-control" id="manualLineDestAccountName" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee">
-                                                    </div>
-                                                    <div class="col-sm-6">
-                                                        <label class="form-label" for="manualLineDestAccountNo" data-i18n="destination_account_no">Account No.</label>
-                                                        <input type="text" class="form-control" id="manualLineDestAccountNo" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890">
-                                                    </div>
-                                                    <div class="col-sm-6">
-                                                        <label class="form-label" for="manualLineDestBank" data-i18n="destination_bank">Bank</label>
-                                                        <select class="form-select select2-remote" id="manualLineDestBank" data-api="/api/bank.get" data-type="bank"></select>
-                                                    </div>
-                                                    <div class="col-sm-6">
-                                                        <label class="form-label" for="manualLineDestBankBranch" data-i18n="destination_bank_branch">Branch</label>
-                                                        <input type="text" class="form-control" id="manualLineDestBankBranch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch">
-                                                    </div>
-                                                    <div class="col-12">
-                                                        <div class="form-check">
-                                                            <input type="checkbox" class="form-check-input" id="manualLineDestSaveForReuse">
-                                                            <label class="form-check-label" for="manualLineDestSaveForReuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label>
-                                                        </div>
-                                                        <p class="manual-line-field-hint" data-i18n="destination_save_for_reuse_hint">Saved destinations are shared across the whole company; any employee can pick them.</p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    <?php
-                                    $payee_slot = ob_get_clean();
-                                    $payee_prefix = 'manualLine';
-                                    include __DIR__ . '/../partials/payee-destination.php';
-                                    ?>
-                                </div>
-                                <!-- .btn-primary as confirmed: this is the tab's own primary action -- no
-                                     icon (rules.md 4), disabled until both an item and an amount > 0 are
-                                     present (refreshManualLineAddStateRd()). Always the LAST row of the
-                                     panel, right-aligned. -->
-                                <div class="manual-line-add-row">
-                                    <button type="button" class="btn btn-primary" id="btnAddManualLine" data-i18n="add_line" disabled>Add Line</button>
-                                </div>
-                            </div>
                             <!-- 2026-09-15, batch 2/4, explicit instruction: the 2 bordered
                                  .ped-type-panel cards + their own totals + the separate net row are
                                  replaced by the SHARED slip component (payslipViewHtml(), app.js --
                                  §9's "สลิป / รายละเอียดการคำนวณ"): 2 columns, no per-row line, both column
                                  totals pinned to the same bottom line, and one `--c-bg-subtle` band for
                                  the net figure. Rendered into this one div by loadManualLinesRd(). -->
-                            <div id="manualLinesSlip"></div>
+                            <div id="manualLinesSlip" class="ml-mount"></div>
                         </div>
                         <!-- Attendance Data (from Sync) (2026-08-21, explicit request: "ต้องการแก้ตัวเลขดิบ
                              ที่ Sync มา ไม่ใช่แค่ยอดเงิน") -- corrects the RAW numbers Origami sent (late
@@ -2032,6 +1879,181 @@
                     <div id="runTimelineModalActions" class="d-flex flex-wrap gap-2"></div>
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2026-09-16, D2 ("สลิปที่แก้ได้" -- the added-by-hand block works for real): the add/edit
+         form for one manual line, as a nested modal (§1's --z-modal-nested scale, applied by
+         app.js's own stacked-modal handler -- nothing here sets a z-index). This is the ONLY copy
+         of that form in the app: the "Payment Items" tab used to carry it inline and now opens
+         this same modal through the + on its own column heads, exactly like the Calculation
+         Breakdown modal's "Added manually" block does (§0.4 -- markup that appears in 2 places is
+         one partial/one node, never a second copy). Every field below keeps its own id, so every
+         handler that already read them (detail.js's payee picker wiring, the mode toggle, the
+         money input) keeps working unchanged.
+         Footer is built by modalFooterButtonsHtml() on each open (detail.js) -- the primary
+         button's LABEL differs between adding and editing, which is a build-time difference, not
+         a `disabled`/`d-none` one. -->
+    <div class="modal fade" id="manualLineFormModal" data-footer="form" data-bs-backdrop="static" tabindex="-1" aria-labelledby="manualLineFormModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary mb-0" id="manualLineFormModalLabel" data-i18n="manual_line_form_add_title">Add Item</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body form-compact">
+                    <!-- A refused save says why HERE and leaves the form open (the modal is where the
+                         values that were refused still are) -- calloutHtml(msg, 'danger'), §15. -->
+                    <div id="manualLineFormError" class="d-none"></div>
+                    <div id="manualLineFormFields" class="manual-line-form">
+                    <!-- 2026-09-15, Round 3 item 4 batch 2/4, explicit instruction: the
+                         3-mode picker is a plain segmented btn-group on ONE line -- no
+                         icons, no gradient, no per-button description inside the button.
+                         The selected one is `.btn-primary` (ส้มถม) rather than §9's usual
+                         neutral `active` state: confirmed explicitly for THIS control
+                         because it is the tab's own primary choice, not a yes/no toggle.
+                         The chosen mode's description moves to one gray line below the
+                         group (#manualLineModeDesc, set by setManualLineMode() in
+                         detail.js).
+                         NOTE: `.mode-select-group` (the old markup here) still exists and
+                         is still used by Employee Detail's own #eedModal -- untouched by
+                         this batch, so that modal keeps its current look. -->
+                    <div class="segmented" id="manualLineModeToggle">
+                        <input type="radio" name="manualLineMode" id="manualLineModeCatalog" value="catalog" checked>
+                        <label for="manualLineModeCatalog" data-i18n="manual_line_mode_catalog">From List</label>
+                        <input type="radio" name="manualLineMode" id="manualLineModeCustom" value="custom">
+                        <label for="manualLineModeCustom" data-i18n="manual_line_mode_custom">Custom Item</label>
+                        <input type="radio" name="manualLineMode" id="manualLineModeOther" value="other">
+                        <label for="manualLineModeOther" data-i18n="manual_line_mode_other">Other</label>
+                    </div>
+                    <p class="manual-line-mode-desc" id="manualLineModeDesc"></p>
+                    <!-- 2026-09-15, batch 2/4 follow-up: the add form is 2 rows + an
+                         always-last Add row. Row 1 = type / item / amount, row 2 = the note
+                         as a real textarea (T002 auto-grows it, see input.js). The Add
+                         button moved out of the field row entirely so it can stay the LAST
+                         thing in the panel even when the payee block below is open -- a
+                         button that commits the whole form should never sit above half of
+                         the fields it commits. -->
+                    <div class="row g-2 align-items-end manual-line-form-row">
+                        <div class="col-lg-3">
+                            <label class="form-label" for="manualLineCustomType" data-i18n="modal_item_type">Type</label>
+                            <select class="form-select select2-static" id="manualLineCustomType" data-option-keys="breakdown_earnings,table_deduction_amount" data-option-values="earning,deduction"></select>
+                        </div>
+                        <!-- The catalog picker filters itself to the chosen type through the
+                             `data-type` attribute this endpoint already honours (input.js
+                             re-reads it on every search, see its own docblock) -- the same
+                             wiring #eedModal's own catalog picker uses. Its label text swaps
+                             between two lang keys, set by applyManualLineItemTypeRd(). -->
+                        <div class="col-lg-6" id="manualLineCatalogFields">
+                            <label class="form-label" for="manualLineItemSelect" id="manualLineItemSelectLabel" data-i18n="manual_line_select_earning_item">Select an income item</label>
+                            <select class="form-select select2-remote" id="manualLineItemSelect" data-api="/api/employee.earning-deduction.options" data-type="earning"></select>
+                        </div>
+                        <div class="col-lg-6 d-none" id="manualLineCustomFields">
+                            <label class="form-label" for="manualLineCustomName" data-i18n="modal_custom_item_name">Item Name</label>
+                            <input type="text" class="form-control" id="manualLineCustomName" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
+                        </div>
+                        <div class="col-lg-3">
+                            <label class="form-label" for="manualLineAmount" data-i18n="modal_amount">Amount</label>
+                            <!-- 8: money-input + initMoneyInputs() (comma/2-decimal on blur, raw
+                                 value mirrored to data-raw-value) instead of a bare number
+                                 field -- read back through parseMoneyInput() in detail.js. -->
+                            <input type="text" class="form-control money-input" id="manualLineAmount" inputmode="decimal" placeholder="0.00">
+                        </div>
+                    </div>
+                    <div class="row g-2 manual-line-note-row">
+                        <div class="col-12">
+                            <label class="form-label" for="manualLineComment" data-i18n="modal_comment">Comment</label>
+                            <textarea class="form-control" id="manualLineComment" rows="2" maxlength="255" data-i18n="modal_comment_placeholder" placeholder="e.g. August OT shortfall top-up"></textarea>
+                        </div>
+                    </div>
+                    <!-- Transfer-to-payee (2026-08-21) -- only meaningful when the item being
+                         added is a deduction, toggled by syncManualLineTypeDependentsRd() in
+                         detail.js.
+                         The choice is a segmented control (the confirmed "segmented that is a
+                         form's primary choice" exception in rules.md 4 -- selected one is
+                         `.btn-primary`), with one gray line under it saying what the chosen
+                         routing actually DOES, and every per-choice sub-form indented inside
+                         ONE callout block so it reads as belonging to the chosen option. -->
+                    <div class="manual-line-payee-block d-none" id="manualLinePayeeTypeWrapper">
+                        <!-- 2026-09-16: the choice is 3 destinations (what happens to the
+                             money) with one sub-question under the first, not a flat list of
+                             payee_type values -- shared markup/behaviour with the other 3
+                             payee pickers, see partials/payee-destination.php and
+                             docs/decisions/2026-09-16-payee-three-destinations.md.
+                             The 3 sub-forms below are this tab's own (they keep their ids,
+                             and the component only shows/hides them). -->
+                        <?php ob_start(); ?>
+                            <div class="d-none" id="manualLinePayeeWrapper">
+                                <label class="form-label" for="manualLinePayeeEmployee" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
+                                <select class="form-select select2-remote" id="manualLinePayeeEmployee" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                                <div id="manualLinePayeeEmployeeDetail"></div>
+                            </div>
+                            <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company'. -->
+                            <div class="d-none" id="manualLineCompanyAccountWrapper">
+                                <label class="form-label" for="manualLineBankAccount" data-i18n="payee_bank_account_label">Company Bank Account</label>
+                                <select class="form-select select2-remote" id="manualLineBankAccount" data-api="/api/payroll-cycle.bank-account.options"></select>
+                                <div id="manualLineBankAccountDetail"></div>
+                            </div>
+                            <!-- 2026-09-02, Deduction Destination and Third-Party Remittance.
+                                 2026-09-15: the old "pick a saved one OR leave blank and fill
+                                 the fields below" pairing is now an explicit 2-way segmented
+                                 choice -- the two paths were never meant to be filled at the
+                                 same time. The saved half disappears entirely (with a gray
+                                 line in its place) for a company that has none yet. -->
+                            <div class="d-none" id="manualLineDestinationWrapper">
+                                <!-- 2026-09-15: with nothing saved yet there is no choice to
+                                     offer, so the whole segmented row (and the "none saved"
+                                     line that used to stand in for it) is absent and the
+                                     new-destination form is simply what this block IS. -->
+                                <div class="segmented d-none" id="manualLineDestModeToggle">
+                                    <input type="radio" name="manualLineDestMode" id="manualLineDestModeSaved" value="saved" checked>
+                                    <label for="manualLineDestModeSaved" data-i18n="destination_mode_saved">Choose a saved destination</label>
+                                    <input type="radio" name="manualLineDestMode" id="manualLineDestModeNew" value="new">
+                                    <label for="manualLineDestModeNew" data-i18n="destination_mode_new">Enter a new one</label>
+                                </div>
+                                <div id="manualLineDestSavedFields">
+                                    <label class="form-label" for="manualLineDestinationSelect" data-i18n="destination_saved_pick_label">Saved destination</label>
+                                    <select class="form-select select2-remote" id="manualLineDestinationSelect" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
+                                    <div id="manualLineDestinationDetail"></div>
+                                </div>
+                                <div class="d-none" id="manualLineDestinationNewFields">
+                                    <div class="row g-2">
+                                        <div class="col-sm-6">
+                                            <label class="form-label" for="manualLineDestAccountName" data-i18n="destination_account_name">Account Name</label>
+                                            <input type="text" class="form-control" id="manualLineDestAccountName" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee">
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <label class="form-label" for="manualLineDestAccountNo" data-i18n="destination_account_no">Account No.</label>
+                                            <input type="text" class="form-control" id="manualLineDestAccountNo" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890">
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <label class="form-label" for="manualLineDestBank" data-i18n="destination_bank">Bank</label>
+                                            <select class="form-select select2-remote" id="manualLineDestBank" data-api="/api/bank.get" data-type="bank"></select>
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <label class="form-label" for="manualLineDestBankBranch" data-i18n="destination_bank_branch">Branch</label>
+                                            <input type="text" class="form-control" id="manualLineDestBankBranch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch">
+                                        </div>
+                                        <div class="col-12">
+                                            <div class="form-check">
+                                                <input type="checkbox" class="form-check-input" id="manualLineDestSaveForReuse">
+                                                <label class="form-check-label" for="manualLineDestSaveForReuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label>
+                                            </div>
+                                            <p class="manual-line-field-hint" data-i18n="destination_save_for_reuse_hint">Saved destinations are shared across the whole company; any employee can pick them.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php
+                        $payee_slot = ob_get_clean();
+                        $payee_prefix = 'manualLine';
+                        include __DIR__ . '/../partials/payee-destination.php';
+                        ?>
+                    </div>
+                    </div>
+                </div>
+                <div class="modal-footer" id="manualLineFormFooter"></div>
             </div>
         </div>
     </div>
