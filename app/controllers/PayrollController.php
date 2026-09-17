@@ -889,7 +889,15 @@ class PayrollController extends Controller {
             $this->json(['status' => false, 'data' => []]);
             return;
         }
-        $this->json(['status' => true, 'data' => $this->model->recurringDeductionDestinationsForEmployee($runId, (int)$compId, $employeeId)]);
+        // 2026-09-18, tiny-L3: `data` is untouched (same rows, same fields, same order -- the tab's
+        // editable cards read it). `eed_rows` rides along as a SEPARATE read-only list so the tab can
+        // also show the per-installment assignments whose destination lives on Employee Detail, in
+        // the same request the tab already makes.
+        $this->json([
+            'status' => true,
+            'data' => $this->model->recurringDeductionDestinationsForEmployee($runId, (int)$compId, $employeeId),
+            'eed_rows' => $this->model->earningDeductionDestinationsForEmployee($runId, (int)$compId, $employeeId),
+        ]);
     }
 
     public function recurringDeductionDestinationOverrideSave() {

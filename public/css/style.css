@@ -12657,3 +12657,17 @@ div.dt-processing {
     border-radius: 10px;
     margin-bottom: .75rem;
 }
+
+/* 2026-09-18, tiny-L3 -- the read-only half of the Recurring Deduction Destination tab: one row per
+   employee_earning_deductions assignment this run routes somewhere. Nothing here is editable (the
+   destination belongs to the assignment, edited on Employee Detail), so the row is a plain surface,
+   not a card: tokens only (§1), neutral (§3), no tone anywhere. Kept as a class rather than
+   `bg-light`/`bg-opacity-*` utilities so both themes get a real token value. */
+.eed-dest-row {
+    background: var(--c-bg-subtle);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: var(--sp-2) var(--sp-3);
+    margin-bottom: var(--sp-2);
+}
+.eed-dest-row:last-child { margin-bottom: 0; }

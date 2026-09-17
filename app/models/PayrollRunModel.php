@@ -6188,6 +6188,105 @@ class PayrollRunModel {
     }
 
     /**
+     * The row-selection clause recalculate() applies to standing PED assignments, verbatim (see
+     * earningDeductionDestinationsForEmployee() for why it is a copy and what locks it).
+     * The trailing OR-group is $pedRestrictSql in its permanently-unrestricted form -- both restrict
+     * id lists in recalculate() are hard-coded empty, so $buildTypeCondition() always falls through
+     * to its "no rows = unrestricted" branch, which is the form spelled out here.
+     */
+    private const EED_ASSIGNMENT_WHERE_SQL = "eed.employee_id = :employee_id AND eed.status = 'active' AND eed.deleted_at IS NULL"
+        . " AND eed.effective_date <= :period_end"
+        . " AND (pt.is_sync_only = 1 OR COALESCE(pt.item_type, eed.custom_item_type) = 'earning' OR COALESCE(pt.item_type, eed.custom_item_type) = 'deduction')";
+
+    /**
+     * 2026-09-18, tiny-L3 -- READ-ONLY companion to recurringDeductionDestinationsForEmployee()
+     * below: the per-installment assignments (employee_earning_deductions -- Employee Detail's own
+     * "Payment Items"/EED section) that this run's calculation will route somewhere, so the
+     * Recurring Deduction Destination tab stops looking empty for an employee whose deduction
+     * destinations all live in that OTHER table. Reported for real: EM009's Breakdown listed 4 EED
+     * deductions while this tab showed nothing at all, because the tab only ever read recurring
+     * deductions.
+     *
+     * Nothing here is editable: an EED row's destination belongs to the assignment itself and is
+     * changed on Employee Detail (hence `employee_detail_url`), not per run -- there is no
+     * per-run override table for it, and this method deliberately does not create one.
+     *
+     * The WHERE clause is character-for-character the one recalculate()'s own PED-assignment SELECT
+     * uses (its non-incentive branch, "PED assignments: pick the earliest pending installment per
+     * assignment"), including $pedRestrictSql's permanently-unrestricted form and the "first pending
+     * installment per assignment only" rule -- copied rather than shared because generalising it
+     * would mean editing recalculate(), which this round is explicitly not allowed to touch;
+     * tests/eed_dest_payload_test.php asserts the two clauses are still the same string.
+     * ONE filter is added on top, in PHP so the SQL stays comparable: a row with no payee_type at
+     * all has no destination to show and is left out (it is not "routed" anywhere yet).
+     */
+    public function earningDeductionDestinationsForEmployee(int $runId, int $compId, int $employeeId): array {
+        $run = $this->get($runId, $compId);
+        if (!$run) {
+            return [];
+        }
+        $stmt = $this->db->prepare("SELECT eed.id AS assignment_id, i.id AS installment_id, i.installment_no, i.amount,
+                eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.is_other, eed.total_installments,
+                eed.payee_employee_id, eed.payee_type, eed.destination_id, eed.bank_account_id,
+                pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type, pt.calculation_method
+            FROM `employee_earning_deductions` eed
+            LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = eed.ped_type_id
+            JOIN `employee_earning_deduction_installments` i ON i.assignment_id = eed.id AND i.status = 'pending'
+            WHERE " . self::EED_ASSIGNMENT_WHERE_SQL . "
+            ORDER BY eed.id ASC, i.installment_no ASC");
+        $stmt->execute([':employee_id' => $employeeId, ':period_end' => $run['period_end_date']]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $destIds = [];
+        $payeeEmpIds = [];
+        $bankAccountIds = [];
+        foreach ($rows as $r) {
+            if (!empty($r['destination_id'])) { $destIds[] = (int)$r['destination_id']; }
+            if (!empty($r['payee_employee_id'])) { $payeeEmpIds[] = (int)$r['payee_employee_id']; }
+            if (!empty($r['bank_account_id'])) { $bankAccountIds[] = (int)$r['bank_account_id']; }
+        }
+        require_once __DIR__ . '/PaymentDestinationModel.php';
+        require_once __DIR__ . '/PayrollCycleModel.php';
+        $payeeRows = (new EmployeeModel($this->db))->optionRowsByIds($compId, $payeeEmpIds);
+        $destRows = (new PaymentDestinationModel($this->db))->optionRowsByIds($compId, $destIds);
+        $bankRows = (new PayrollCycleModel($this->db))->bankAccountOptionRowsByIds($compId, $bankAccountIds);
+
+        $result = [];
+        $seen = [];
+        foreach ($rows as $r) {
+            $assignmentId = (int)$r['assignment_id'];
+            if (isset($seen[$assignmentId])) {
+                continue; // only the first (earliest) pending installment per assignment
+            }
+            $seen[$assignmentId] = true;
+            if ($r['payee_type'] === null) {
+                continue; // nothing routed anywhere -- this tab has nothing to say about it
+            }
+            $resolved = $this->resolveManualLineRow($r);
+            $result[] = [
+                'assignment_id' => $assignmentId,
+                'installment_id' => (int)$r['installment_id'],
+                'item_code' => $resolved['code'],
+                'item_name_th' => $resolved['name_th'],
+                'item_name_en' => $resolved['name_en'],
+                'item_type' => $resolved['item_type'],
+                // A custom item has no catalog row, so no calculation_method -- null, never invented.
+                'calculation_method' => $r['calculation_method'],
+                'installment_no' => (int)$r['installment_no'],
+                'total_installments' => (int)$r['total_installments'],
+                'is_installment_plan' => (int)$r['total_installments'] > 1,
+                'amount' => (float)$r['amount'],
+                // SAME shape, SAME builder as the recurring rows' template/override -- one client-side
+                // summary helper reads both.
+                'destination' => $this->payeeDestinationDescriptor($r, $payeeRows, $destRows, $bankRows),
+                'readonly' => true,
+                'employee_detail_url' => BASE_URL . '/employees/' . $employeeId,
+            ];
+        }
+        return $result;
+    }
+
+    /**
      * 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 6 -- read-only, for the
      * "Recurring Deduction Destination" section of the Manage Items modal: one row per recurring
      * deduction active for this employee in this run's own pay period

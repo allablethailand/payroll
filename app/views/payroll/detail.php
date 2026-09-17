@@ -1350,6 +1350,12 @@
                         <div class="tab-pane fade" id="manageLinesRecurringDestPane" role="tabpanel">
                             <p class="text-muted small mb-2" data-i18n="recurring_dest_override_hint">Override which account a recurring deduction is routed to, for this payroll run only -- the employee's own saved default is never changed.</p>
                             <div id="recurringDestOverrideList"></div>
+                            <!-- 2026-09-18, tiny-L3: read-only companion list -- the per-installment
+                                 assignments (employee_earning_deductions) this run routes somewhere.
+                                 Their destination belongs to the assignment itself and is edited on
+                                 Employee Detail, so nothing in here is a control; filled by
+                                 loadRecurringDeductionDestinationsRd() from the SAME response. -->
+                            <div id="eedDestList"></div>
                             <div class="border rounded-3 p-3 bg-light bg-opacity-50 mt-3 d-none" id="recurringDestEditorCard">
                                 <input type="hidden" id="recurringDestEditorRecurringId">
                                 <div class="fw-bold text-dark small mb-2" id="recurringDestEditorItemName"></div>

@@ -5495,6 +5495,63 @@ $(document).on('change', '.sync-line-exclude-check', function () {
    modal, just extended to a shared rich sub-form since a payee needs an employee/bank picker, not
    just a number. ---------- */
 let recurringDestRows = [];
+/* 2026-09-18, tiny-L3 -- the READ-ONLY half of this tab: the per-installment assignments
+   (employee_earning_deductions -- Employee Detail's own Payment Items section) that this run routes
+   somewhere. Reported for real: an employee whose deduction destinations all live in that table saw
+   an empty tab here, because this tab only ever read recurring deductions.
+   Deliberately controlless: an EED destination belongs to the assignment, not to a run, so there is
+   nothing to override here and nothing in this markup is focusable or dirty-able -- the dirty guard's
+   scope (#recurringDestEditorCard, see ADJUSTMENT_TAB_CONFIG_RD) never reaches it. */
+let eedDestRows = [];
+function eedDestRowHtml(row) {
+    const name = (currentLang === 'th' ? row.item_name_th : row.item_name_en) || row.item_code;
+    const dest = recurringDestPayeeSummary(row.destination);
+    // A plan of several installments says which one this run pays; a single-installment assignment
+    // has no sequence worth showing.
+    const installment = row.is_installment_plan
+        ? (langData['eed_dest_installment'] || 'Installment {no}/{total}')
+            .replace('{no}', row.installment_no).replace('{total}', row.total_installments)
+        : '';
+    return `<div class="eed-dest-row" data-assignment-id="${row.assignment_id}">
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
+            <div>
+                <div class="fw-bold text-dark">${escapeHtml(name)}</div>
+                <div class="small">${escapeHtml(langData['recurring_dest_effective'] || 'Currently routed to')}: <strong>${escapeHtml(dest)}</strong></div>
+            </div>
+            <div class="small text-muted text-end">
+                <div class="num">${fmtNum(row.amount)}</div>
+                ${installment ? `<div>${escapeHtml(installment)}</div>` : ''}
+            </div>
+        </div>
+    </div>`;
+}
+function eedDestGroupHtml(rows) {
+    if (!rows.length) return '';
+    // §6/rules.md: markup JS builds itself reads langData directly -- a data-i18n sweep has already
+    // run by the time this is inserted and would never come back to it.
+    const url = rows[0].employee_detail_url || '';
+    const link = url
+        ? ` <a href="${escapeAttr(url)}" target="_blank" rel="noopener">${escapeHtml(langData['eed_dest_open_employee'] || 'Open Employee Detail')}</a>`
+        : '';
+    return `<div class="small text-muted mt-3 mb-2">${escapeHtml(langData['eed_dest_group_title'] || 'Destinations set on Employee Detail')}${link}</div>
+        ${rows.map(eedDestRowHtml).join('')}`;
+}
+// Both groups come out of ONE response, so this is also the one place that decides whether the tab
+// is genuinely empty -- the inline empty line belongs to the tab, not to the editable list, and must
+// not appear while the read-only group has rows.
+function renderRecurringDestListsRd() {
+    $('#recurringDestOverrideList').html(recurringDestRows.length
+        ? recurringDestRows.map(recurringDestRowHtml).join('')
+        : (eedDestRows.length ? '' : `<div class="text-center text-muted small py-2">${escapeHtml(langData['recurring_dest_empty'] || 'No recurring deductions active for this employee in this pay period.')}</div>`));
+    $('#eedDestList').html(eedDestGroupHtml(eedDestRows));
+}
+// Language switch: re-render the READ-ONLY group only, from the rows already in hand. Re-running the
+// loader would fire a second request and re-init the editor card's 3 Select2s underneath the user
+// (applyLanguage() already re-inits them once, which is exactly the pattern these rows must not add
+// to) -- and the editable list is left alone for the same reason.
+function refreshEedDestLanguageRd() {
+    $('#eedDestList').html(eedDestGroupHtml(eedDestRows));
+}
 /* `p` is a payee descriptor -- PayrollRunModel::payeeDestinationDescriptor(), the same shape for a
    template default and for this run's override. 2026-09-17, tiny-L2: every label it reads is the one
    that row's own picker would show (the code is taken off the employee's name the same way the
@@ -5549,9 +5606,9 @@ function loadRecurringDeductionDestinationsRd() {
     $.getJSON(`${BASE_URL}/api/payroll-run.recurring-deduction-destinations-for-employee`, { run_id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId }, function (res) {
         if (!res.status) return;
         recurringDestRows = res.data || [];
-        $('#recurringDestOverrideList').html(recurringDestRows.length
-            ? recurringDestRows.map(recurringDestRowHtml).join('')
-            : `<div class="text-center text-muted small py-2">${langData['recurring_dest_empty'] || 'No recurring deductions active for this employee in this pay period.'}</div>`);
+        // 2026-09-18, tiny-L3: same response, second (read-only) list -- see renderRecurringDestListsRd().
+        eedDestRows = res.eed_rows || [];
+        renderRecurringDestListsRd();
         // 2026-09-14, Round 3 item 4 batch 1/4: the editor card is hidden right above -- baseline it
         // empty so a stale open-card snapshot from a previous employee never lingers.
         refreshAdjustmentTabDirtyGuard('manageLinesRecurringDestPane');
@@ -7310,6 +7367,9 @@ function refreshPayrollDetailLanguage() {
     // it -- without this, switching language could leave columns visibly misaligned until the next
     // resize/redraw for an unrelated reason.
     if (tb_run_detail) tb_run_detail.columns.adjust();
+    // 2026-09-18, tiny-L3: the Recurring Deduction Destination tab's read-only rows are JS-built
+    // from a payload that carries both languages, so no data-i18n sweep ever reaches them.
+    refreshEedDestLanguageRd();
 }
 // 2026-09-13, §1 follow-up: activateTabFromHash() itself moved to app.js (shared with employee/list.js
 // and employee/detail.js's own near-identical versions -- see that function's own docblock) -- the
