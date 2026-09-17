@@ -1877,57 +1877,29 @@
                     <!-- A refused save says why HERE and leaves the form open (the modal is where the
                          values that were refused still are) -- calloutHtml(msg, 'danger'), §15. -->
                     <div id="manualLineFormError" class="d-none"></div>
-                    <div id="manualLineFormFields" class="manual-line-form">
-                    <!-- 2026-09-15, Round 3 item 4 batch 2/4, explicit instruction: the
-                         3-mode picker is a plain segmented btn-group on ONE line -- no
-                         icons, no gradient, no per-button description inside the button.
-                         The selected one is `.btn-primary` (ส้มถม) rather than §9's usual
-                         neutral `active` state: confirmed explicitly for THIS control
-                         because it is the tab's own primary choice, not a yes/no toggle.
-                         The chosen mode's description moves to one gray line below the
-                         group (#manualLineModeDesc, set by setManualLineMode() in
-                         detail.js).
-                         NOTE: `.mode-select-group` (the old markup here) still exists and
-                         is still used by Employee Detail's own #eedModal -- untouched by
-                         this batch, so that modal keeps its current look. -->
-                    <div class="segmented" id="manualLineModeToggle">
-                        <input type="radio" name="manualLineMode" id="manualLineModeCatalog" value="catalog" checked>
-                        <label for="manualLineModeCatalog" data-i18n="manual_line_mode_catalog">From List</label>
-                        <input type="radio" name="manualLineMode" id="manualLineModeCustom" value="custom">
-                        <label for="manualLineModeCustom" data-i18n="manual_line_mode_custom">Custom Item</label>
-                        <input type="radio" name="manualLineMode" id="manualLineModeOther" value="other">
-                        <label for="manualLineModeOther" data-i18n="manual_line_mode_other">Other</label>
-                    </div>
-                    <p class="manual-line-mode-desc" id="manualLineModeDesc"></p>
-                    <!-- 2026-09-15, batch 2/4 follow-up: the add form is 2 rows + an
-                         always-last Add row. Row 1 = type / item / amount, row 2 = the note
-                         as a real textarea (T002 auto-grows it, see input.js). The Add
-                         button moved out of the field row entirely so it can stay the LAST
-                         thing in the panel even when the payee block below is open -- a
-                         button that commits the whole form should never sit above half of
-                         the fields it commits. -->
-                    <!-- 2026-09-17, R1: the Type control is gone. It was `disabled` on every open
-                         (the column head that was pressed, or the row being edited, already decided
-                         it) so it was never a choice -- and a permanently-disabled control is one
-                         more thing to read past. It survives as a HIDDEN input under the same id, so
-                         every reader (payload builder, catalog `data-type` filter) is unchanged; the
-                         modal's own title is what tells the user which column this line is for now.
-                         The 2 remaining fields take the freed width at the ratio they already had
-                         (6:3 -> 8:4). -->
+                    <!-- Outside `.manual-line-form` on purpose: that block's own spacing rules key
+                         off its FIRST CHILD, and a hidden input sitting in that slot would push the
+                         first visible row down by one gap. -->
                     <input type="hidden" id="manualLineCustomType" value="earning">
+                    <div id="manualLineFormFields" class="manual-line-form">
+                    <!-- 2026-09-17, R1b: the 3-mode segmented picker (From List / Custom Item /
+                         Other) is gone. "Which item is this" was being asked twice -- once as a mode,
+                         then again as the field the mode revealed -- and 2 of the 3 modes led to the
+                         same single text box. It is now ONE select: the catalog rows for the column
+                         that was pressed, plus a pinned last option ("Other (enter a name)") under a
+                         divider. Picking that one reveals the name box below and nothing else; the
+                         old `other` mode has no way in from the UI any more (the enum still exists
+                         server-side, unused-from-here like `not_disbursed`).
+                         See docs/decisions/2026-09-17-manual-line-item-picker.md. -->
                     <div class="row g-2 align-items-end manual-line-form-row">
                         <!-- The catalog picker filters itself to the chosen type through the
-                             `data-type` attribute this endpoint already honours (input.js
-                             re-reads it on every search, see its own docblock) -- the same
-                             wiring #eedModal's own catalog picker uses. Its label text swaps
-                             between two lang keys, set by applyManualLineItemTypeRd(). -->
-                        <div class="col-lg-8" id="manualLineCatalogFields">
-                            <label class="form-label" for="manualLineItemSelect" id="manualLineItemSelectLabel" data-i18n="manual_line_select_earning_item">Select an income item</label>
+                             `data-type` attribute this endpoint already honours (input.js re-reads it
+                             on every search, see its own docblock) -- the same wiring #eedModal's own
+                             catalog picker uses. Its label no longer swaps per type: the modal title
+                             ("Add additional pay"/"Add deduction") already says which side this is. -->
+                        <div class="col-lg-8">
+                            <label class="form-label" for="manualLineItemSelect" data-i18n="manual_line_item_label">Item</label>
                             <select class="form-select select2-remote" id="manualLineItemSelect" data-api="/api/employee.earning-deduction.options" data-type="earning"></select>
-                        </div>
-                        <div class="col-lg-8 d-none" id="manualLineCustomFields">
-                            <label class="form-label" for="manualLineCustomName" data-i18n="modal_custom_item_name">Item Name</label>
-                            <input type="text" class="form-control" id="manualLineCustomName" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
                         </div>
                         <div class="col-lg-4">
                             <label class="form-label" for="manualLineAmount" data-i18n="modal_amount">Amount</label>
@@ -1935,6 +1907,15 @@
                                  value mirrored to data-raw-value) instead of a bare number
                                  field -- read back through parseMoneyInput() in detail.js. -->
                             <input type="text" class="form-control money-input" id="manualLineAmount" inputmode="decimal" placeholder="0.00">
+                        </div>
+                    </div>
+                    <!-- Only reachable by picking the pinned "Other" option above, and full-width on
+                         its own row rather than swapped into the picker's column: the picker stays
+                         visible so the choice that opened this box can be changed back. -->
+                    <div class="row g-2 d-none" id="manualLineCustomFields">
+                        <div class="col-12">
+                            <label class="form-label" for="manualLineCustomName" data-i18n="modal_custom_item_name">Item Name</label>
+                            <input type="text" class="form-control" id="manualLineCustomName" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
                         </div>
                     </div>
                     <div class="row g-2 manual-line-note-row">

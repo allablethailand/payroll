@@ -279,7 +279,10 @@ return [
     // failed §12's lint rule 8). Both tones are neutral: neither one is something to act on.
     // label_key values reuse the 2 EXISTING keys that renderer already used verbatim.
     'manual_line_mode' => [
-        'custom' => ['label_key' => 'manual_line_custom_badge', 'tone' => 'neutral'],
+        // 2026-09-17, R1b: no 'custom' entry any more -- a plain typed-in manual line carries no
+        // badge at all now (the form has one way to type a name, so the badge classified nothing).
+        // The `manual_line_custom_badge` lang key stays: #eedModal (employee/detail.js) still prints
+        // it from langData directly, not through this map.
         'other' => ['label_key' => 'manual_line_other_badge', 'tone' => 'neutral'],
         // 2026-09-15: the payslip's own "where this line came from" badge shares this context -- a
         // transfer-in earning line is the third source a line can have, alongside custom/other.

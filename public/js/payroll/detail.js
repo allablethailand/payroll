@@ -2319,15 +2319,19 @@ function breakdownLineRowsRd(lines, moneyColorCls) {
         // `badge bg-info-subtle`/`bg-secondary-subtle` variants with their own icons are gone, and
         // with them 3 more hits of 12's lint rule 8). It now sits AFTER the name, so every row's
         // name starts at the same x no matter which badge (or none) the row carries.
+        // 2026-09-17, R1b: a plain typed-in line ("Custom") carries NO badge any more -- with the form
+        // down to one picker there is exactly one way to type a name, so the badge classified nothing
+        // the reader could act on. `other` keeps its badge because it is genuinely different: those
+        // rows are the retired mode, still bucketed into "Other Income/Deduction" on reports, and the
+        // UI can no longer produce another one. A custom line gets no `title` either -- its `code` is
+        // the synthetic `CUSTOM:{name}`, which is the name it is already showing.
         let codeHtml = '';
         let nameTitleAttr = '';
         if (line.source === 'transfer_in') {
             codeHtml = statusBadgeHtml('transfer', 'manual_line_mode', { outline: true });
-        } else if (line.is_custom && line.is_other) {
-            // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
-            codeHtml = statusBadgeHtml('other', 'manual_line_mode', { outline: true });
         } else if (line.is_custom) {
-            codeHtml = statusBadgeHtml('custom', 'manual_line_mode', { outline: true });
+            // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
+            if (line.is_other) codeHtml = statusBadgeHtml('other', 'manual_line_mode', { outline: true });
         } else {
             nameTitleAttr = ` title="${escapeAttr(line.code || '-')}"`;
         }
@@ -4463,14 +4467,13 @@ let manageLinesEmployeeId = null;
 // 2026-09-16: a catalog line's plain item_code is no longer printed beside the name -- it is an
 // internal identifier, and the name already says what the row is. It survives as the name's own
 // `title` (see manualLineListItemHtml()), the same place breakdownLineRowsRd() moved its codes to.
-// The custom/other BADGES stay: those classify the line itself (someone typed this in / it is an
-// "other" destination), they are not an identifier -- the same distinction breakdownLineRowsRd()
-// already draws between the 2 kinds.
+// 2026-09-17, R1b: down to ONE badge, the retired `other` kind -- see breakdownLineRowsRd()'s own
+// comment for why a plain typed-in ("Custom") line no longer carries one.
 function manualLineTagHtml(line) {
-    if (!line.is_custom) {
+    if (!line.is_other) {
         return '';
     }
-    return statusBadgeHtml(line.is_other ? 'other' : 'custom', 'manual_line_mode', { outline: true });
+    return statusBadgeHtml('other', 'manual_line_mode', { outline: true });
 }
 // One line of the "added by hand" block -- a `.payslip-row` `<tr>` in the SAME shape the real payslip
 // component renders (name cell + right-aligned `.num.money-*` amount), so both live under
@@ -5822,9 +5825,8 @@ function syncManualLineTypeDependentsRd(itemType) {
 // that was just switched away from.
 function applyManualLineItemTypeRd(itemType) {
     const type = itemType === 'deduction' ? 'deduction' : 'earning';
-    const labelKey = type === 'deduction' ? 'manual_line_select_deduction_item' : 'manual_line_select_earning_item';
-    const labelFallback = type === 'deduction' ? 'Select a deduction item' : 'Select an income item';
-    $('#manualLineItemSelectLabel').attr('data-i18n', labelKey).text(langData[labelKey] || labelFallback);
+    // 2026-09-17, R1b: the picker's label no longer swaps per type -- it reads "Item" either way,
+    // because the modal's own title is what says which column the line belongs to.
     const $item = $('#manualLineItemSelect');
     if ($item.attr('data-type') !== type) {
         $item.attr('data-type', type);
@@ -5857,31 +5859,23 @@ $(document).on('select2:clear', '#manualLineDestinationSelect', function () {
 $(document).on('change', '#manualLineDestModeToggle input[type="radio"]', function () {
     setManualLineDestModeRd($(this).val());
 });
-// Toggle between picking a catalog item and typing a custom, not-in-the-catalog one (2026-08-19,
-// explicit request) -- catalog mode is the default since it's still the common case.
-let manualLineMode = 'catalog';
-// 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- "Other" reuses
-// #manualLineCustomFields verbatim, same as #eedModal's own "Other" mode (see that modal's
-// setEedMode() docblock in employee/detail.js) -- only manualLineFormPayloadRd() below differs
-// (sends is_other=true).
-const MANUAL_LINE_MODE_DESC_RD = {
-    catalog: { key: 'mode_desc_catalog', fallback: 'Pick from your saved item types' },
-    custom: { key: 'mode_desc_custom', fallback: 'One-time item with its own name' },
-    other: { key: 'mode_desc_other', fallback: 'Grouped into "Other Income/Deduction" on reports' },
-};
-// 2026-09-15, batch 2/4: the segmented group carries the selection as a real button VARIANT swap
-// (`.btn-primary` for the chosen one, `.btn-outline-secondary` for the rest) rather than an `active`
-// class -- confirmed explicitly for this control (it is the tab's own primary choice, not a neutral
-// toggle). The per-mode description is one gray line under the group, swapped here, so the buttons
-// themselves stay single-line labels.
-function setManualLineModeRd(mode) {
-    manualLineMode = mode;
-    $(`#manualLineModeToggle input[value="${mode}"]`).prop('checked', true);
-    const desc = MANUAL_LINE_MODE_DESC_RD[mode] || MANUAL_LINE_MODE_DESC_RD.catalog;
-    $('#manualLineModeDesc').text(langData[desc.key] || desc.fallback).attr('data-i18n', desc.key);
-    $('#manualLineCatalogFields').toggleClass('d-none', mode !== 'catalog');
-    $('#manualLineCustomFields').toggleClass('d-none', mode === 'catalog');
-    applyManualLineItemTypeRd($('#manualLineCustomType').val());
+// 2026-09-17, R1b: there is no "mode" control any more. The item picker holds the whole answer --
+// a real catalog id, or the one pinned option that means "not in the catalog, I'll type the name".
+// The mode is therefore READ from the picker, never stored: a second variable holding the same fact
+// is a second thing that can disagree with what the user is looking at.
+// The old third mode (`other`, which sent is_other=true and made reports bucket the line into
+// "Other Income/Deduction") has no way in from the UI now -- see prefillManualLineFormRd() for what
+// happens to a row that still carries it.
+const MANUAL_LINE_CUSTOM_OPTION_ID_RD = '__custom__';
+function manualLineIsCustomRd() {
+    return $('#manualLineItemSelect').val() === MANUAL_LINE_CUSTOM_OPTION_ID_RD;
+}
+// The name box exists only while the pinned option is the selection. Clearing it on the way out
+// matters: a name left behind would be submitted the next time the pinned option is picked.
+function syncManualLineCustomFieldRd() {
+    const isCustom = manualLineIsCustomRd();
+    $('#manualLineCustomFields').toggleClass('d-none', !isCustom);
+    if (!isCustom) $('#manualLineCustomName').val('');
 }
 // The Add button stays disabled until the row genuinely has both halves of an item: a chosen/typed
 // item AND a positive amount (explicit instruction). Amount is read through parseMoneyInput()
@@ -5891,9 +5885,8 @@ function manualLineAmountValueRd() {
     return parseMoneyInput($('#manualLineAmount').val());
 }
 function manualLineHasItemRd() {
-    return manualLineMode === 'catalog'
-        ? !!$('#manualLineItemSelect').val()
-        : ($('#manualLineCustomName').val() || '').trim() !== '';
+    if (!$('#manualLineItemSelect').val()) return false;
+    return manualLineIsCustomRd() ? ($('#manualLineCustomName').val() || '').trim() !== '' : true;
 }
 function refreshManualLineAddStateRd() {
     const amount = manualLineAmountValueRd();
@@ -5903,9 +5896,9 @@ function refreshManualLineAddStateRd() {
         .attr('title', blocked ? (langData['payee_employee_no_bank_account'] || 'This employee has no bank account on file yet') : null);
 }
 function resetManualLineFormRd() {
-    setManualLineModeRd('catalog');
     $('#manualLineItemSelect').val(null).trigger('change');
     $('#manualLineCustomName').val('');
+    syncManualLineCustomFieldRd();
     $('#manualLineCustomType').val('earning');
     applyManualLineItemTypeRd('earning');
     $('#manualLineAmount').val('');
@@ -5922,8 +5915,17 @@ function resetManualLineFormRd() {
     setManualLinePayeeTypeRd('none');
     refreshManualLineAddStateRd();
 }
-$(document).on('change', '#manualLineModeToggle input[type="radio"]', function () {
-    setManualLineModeRd($(this).val());
+// Show/hide is driven by `change` so it also covers the programmatic .val()+trigger('change') that
+// reset and prefill use. The FOCUS is bound to select2:select instead, because it must only happen
+// when a person picked the option -- prefilling an existing row must not pull the caret out of the
+// field the user was about to read. setTimeout(0) lets Select2 finish closing (and returning focus
+// to its own container) before the name box takes it.
+$(document).on('change', '#manualLineItemSelect', function () {
+    syncManualLineCustomFieldRd();
+});
+$(document).on('select2:select', '#manualLineItemSelect', function () {
+    if (!manualLineIsCustomRd()) return;
+    setTimeout(() => $('#manualLineCustomName').trigger('focus'), 0);
 });
 // Keep the Add button's enabled state in sync with whatever the 2 required fields currently hold --
 // `change` covers select2 (which fires it on the underlying <select>), `input` covers typing.
@@ -6123,18 +6125,16 @@ function manualLineFormPayloadRd() {
     const amount = manualLineAmountValueRd();
     const comment = $('#manualLineComment').val().trim();
     const payload = { id: PAYROLL_RUN_ID, employee_id: ctx.employeeId, amount: amount, note: comment };
-    if (manualLineMode === 'custom' || manualLineMode === 'other') {
+    if (manualLineIsCustomRd()) {
         const customName = $('#manualLineCustomName').val().trim();
         const customType = $('#manualLineCustomType').val();
         if (!customName || !customType || !amount || amount <= 0) {
             return { ok: false, message: langData['required_star_message'] || 'Please fill all fields marked with *' };
         }
+        // Always a plain custom line (stored as `CUSTOM:{name}`) -- `is_other` is never sent from
+        // here any more, so a legacy `other` row saved through this form comes back as custom.
         payload.custom_item_name = customName;
         payload.custom_item_type = customType;
-        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
-        if (manualLineMode === 'other') {
-            payload.is_other = true;
-        }
     } else {
         const pedTypeId = $('#manualLineItemSelect').val();
         if (!pedTypeId || !amount || amount <= 0) {
@@ -6283,14 +6283,19 @@ function openManualLineFormRd(ctx) {
 // real option first -- the same populate-a-remote-select step Employee Detail's own
 // populateSelect2Field() does, and the same silent data loss if it is skipped.
 function prefillManualLineFormRd(line) {
-    const mode = line.is_custom ? (line.is_other ? 'other' : 'custom') : 'catalog';
-    setManualLineModeRd(mode);
     setManualLineTypeRd(line.item_type);
     const label = (currentLang === 'th' ? line.item_name_th : line.item_name_en) || line.item_name_th || line.item_name_en || '';
-    if (mode === 'catalog') {
-        $('#manualLineItemSelect').empty().append(new Option(label, line.ped_type_id, true, true)).trigger('change');
-    } else {
+    // 2026-09-17, R1b: both kinds of hand-typed line -- plain custom AND the retired `other` -- open
+    // on the pinned option with the stored name in the box, because that is the only way in the UI
+    // now. Saving such a row back therefore drops `is_other` (see manualLineFormPayloadRd()); the
+    // column and its enum are untouched server-side.
+    if (line.is_custom) {
+        $('#manualLineItemSelect').empty()
+            .append(new Option(langData['manual_line_item_custom_option'] || 'Other (enter a name)', MANUAL_LINE_CUSTOM_OPTION_ID_RD, true, true))
+            .trigger('change');
         $('#manualLineCustomName').val(label);
+    } else {
+        $('#manualLineItemSelect').empty().append(new Option(label, line.ped_type_id, true, true)).trigger('change');
     }
     $('#manualLineAmount').val(fmtNum(line.amount)).attr('data-raw-value', line.amount);
     $('#manualLineComment').val(line.note || '').trigger('input');
@@ -6992,7 +6997,15 @@ $(document).ready(function () {
     }
     if (typeof initSelect2 === 'function') {
         initSelect2('#joinFilterDepartment, #joinFilterTeam, #joinFilterPosition, #joinFilterCycle', { mode: 'ajax' });
-        initSelect2('#manualLineItemSelect', { mode: 'ajax' });
+        // The pinned last option is this picker's whole "not in the catalog" path, and
+        // stripCodePrefix drops the "[CODE] " the catalog endpoint puts in front of every label --
+        // see initSelect2()'s own docblocks for both in input.js. Typing a code still finds the row
+        // (the endpoint's own WHERE matches item_code as well as both names); it just isn't printed.
+        initSelect2('#manualLineItemSelect', {
+            mode: 'ajax',
+            stripCodePrefix: true,
+            pinnedOption: { id: MANUAL_LINE_CUSTOM_OPTION_ID_RD, key: 'manual_line_item_custom_option', fallback: 'Other (enter a name)' },
+        });
         // Initialized once here, not per-modal-open (2026-08-21 bug fix precedent from the
         // Attendance Deduction rate_unit dropdown -- re-initializing a select2 field on every open
         // can leave stale state/duplicate options behind).

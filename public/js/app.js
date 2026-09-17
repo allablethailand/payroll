@@ -3510,6 +3510,21 @@ function syncPayeeDestination(prefix) {
     // unlike the previous 4-choice version there is no "empty indented box" case to hide.
     if (typeof opts.onChange === 'function') opts.onChange(payeeType, dest);
 }
+/* ---------- Option label: "[CODE] Name" -> name, code kept aside (2026-09-17, R1b) ----------
+   Several catalog endpoints hand a select2 option its label already prefixed with the row's own code
+   (`CONCAT('[', item_code, '] ', item_name_th)`), from before this app settled on "an internal code
+   is never printed inline, it is the element's own `title`" (rules.md §5/§6). This splits that label
+   back apart on the READ side so a picker can show the name alone without the endpoint -- shared by
+   other, untouched pickers -- having to change what it returns. SEARCHING is unaffected: these
+   endpoints match the term against item_code AND both names in SQL, so a code the user types still
+   finds its row even though no visible option spells it out.
+   A label with no `[...]` prefix comes back unchanged, with an empty code. */
+function splitOptionCodePrefix(text) {
+    const raw = (text === null || text === undefined) ? '' : String(text);
+    const m = raw.match(/^\[([^\]]*)\]\s*([\s\S]*)$/);
+    if (!m || m[2] === '') return { code: '', text: raw };
+    return { code: m[1], text: m[2] };
+}
 // Every payee picker's endpoint hands back the same 4 optional fields on its option data (the
 // payee employee's own account, one of the company's accounts, a saved third-party destination);
 // anything an endpoint does not send simply does not show up in the summary (payeeDetailHtml()

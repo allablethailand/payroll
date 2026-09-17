@@ -1834,6 +1834,14 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .select2-container--bootstrap-5 .select2-results__options .select2-results__option {
     color: var(--app-text);
 }
+/* 2026-09-17, R1b -- initSelect2()'s `pinnedOption` (input.js): one fixed choice that is not a row
+   the endpoint returns, always last. The line above it is what says so; the option itself keeps the
+   normal option look, because it IS a normal choice, just not one that came from the data. */
+.select2-container--bootstrap-5 .select2-results__options .select2-results__option.select2-pinned-option {
+    border-top: 1px solid var(--c-border);
+    margin-top: var(--sp-1);
+    padding-top: var(--sp-2);
+}
 /* Multi-select "choice" chips (e.g. the checkbox-driven Assign-To pickers) -- the library gives
    these only a border color of their own, no background, so they'd otherwise sit flush against the
    (now dark) selection box with nothing visually separating one chip from the next. --app-hover-bg
@@ -7587,7 +7595,6 @@ html, body {
 .form-compact .select2-selection__choice,
 .form-compact .select2-search__field,
 .form-compact .manual-line-form .btn,
-.form-compact .manual-line-mode-desc,
 .form-compact .manual-line-field-hint,
 .form-compact .payee-detail,
 .form-compact .payee-detail-name,
@@ -7621,9 +7628,8 @@ html, body {
     color: var(--c-text);
 }
 /* Every explanatory line in the form is the same size as the control above it and differs only by
-   colour -- under the segmented control, under a select, under a checkbox, and the account summary. */
+   colour -- under a select, under a checkbox, and the account summary. */
 .form-compact .form-text,
-.form-compact .manual-line-mode-desc,
 .form-compact .manual-line-field-hint,
 .form-compact .payee-detail-empty,
 .form-compact .payee-detail-name,
@@ -7632,7 +7638,6 @@ html, body {
     color: var(--c-text-muted);
 }
 .form-compact .form-text,
-.form-compact .manual-line-mode-desc,
 .form-compact .manual-line-field-hint,
 .form-compact .payee-detail-empty {
     margin: var(--sp-2) 0 0;
@@ -12439,13 +12444,12 @@ div.dt-processing {
    flag that changes which report bucket the item lands in (its own report column vs the shared
    "Other Income/Deduction" aggregate) -- nothing in the old UI surfaced that distinction at all.
    Card-style segmented control instead: icon + title + one-line description per option, so the
-   difference is visible without having to pick one, save, and go compare a report. Shared by exactly
-   the 2 places this pattern exists in the app -- #eedModeToggle (Employee Detail's Earning/Deduction
-   modal) and #manualLineModeToggle (Payroll Run Detail's Add Manual Line) -- both built together in
-   the same 2026-09-02 Deduction Destination & Third-Party Remittance work, so both get the same fix.
-   Pure markup/CSS -- the existing `.active` class + `data-mode` attribute + click handlers in
-   detail.js/payroll/detail.js are untouched, neither reads any Bootstrap btn-group/btn-outline-*
-   class specifically. */
+   difference is visible without having to pick one, save, and go compare a report. Pure markup/CSS --
+   the existing `.active` class + `data-mode` attribute + click handlers in detail.js are untouched,
+   neither reads any Bootstrap btn-group/btn-outline-* class specifically.
+   2026-09-17, R1b: ONE user left, #eedModeToggle (Employee Detail's Earning/Deduction modal). The
+   other (#manualLineModeToggle, Payroll Run Detail) became a `.segmented` on 2026-09-15 and is gone
+   entirely now -- that form asks for the item in a single select instead of picking a mode first. */
 .mode-select-group {
     display: flex;
     gap: .5rem;

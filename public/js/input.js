@@ -220,19 +220,32 @@ $(document).on('shown.bs.modal', '.modal', function () {
 function initSelect2(selector, options = {}) {
     $(selector).each(function () {
         const $this = $(this);
+        // 2026-09-17, R1b -- REAL BUG, found by measuring: per-field options did not survive a
+        // RE-init. applyLanguage() (app.js) re-runs `initSelect2Remote($field)` over every
+        // `.select2-remote` on the page with NO options at all, so whatever a field's own init had
+        // asked for was silently thrown away on page load and on every language switch -- this
+        // picker's pinnedOption/stripCodePrefix, and `allowClear` on 3 other pickers that had been
+        // quietly losing it the same way. Remembered per ELEMENT (not per call: one selector can
+        // match many fields), merged UNDER the new call so an explicit new value still wins.
+        const opts = $.extend({}, $this.data('select2InitOptions'), options);
+        // `selectedValue` is a one-shot instruction for THIS call, not a trait of the field, so it is
+        // never remembered -- re-applying a stale one later would put back a value the user changed.
+        const remembered = $.extend({}, opts);
+        delete remembered.selectedValue;
+        $this.data('select2InitOptions', remembered);
         const $modal = $this.closest('.modal');
         const originalTabIndex = $this.attr('tabindex') || '0';
-        const isStatic = options.mode === 'static' || (!options.mode && $this.hasClass('select2-static'));
-        const isNative = !isStatic && (options.mode === 'native' || (!options.mode && $this.hasClass('select2-native')));
+        const isStatic = opts.mode === 'static' || (!opts.mode && $this.hasClass('select2-static'));
+        const isNative = !isStatic && (opts.mode === 'native' || (!opts.mode && $this.hasClass('select2-native')));
         let config;
         if (isStatic) {
-            const keys = options.keys || (($this.data('optionKeys') || '') + '').split(',').filter(Boolean);
-            const explicitValues = options.values || (($this.data('optionValues') || '') + '').split(',').filter(Boolean);
+            const keys = opts.keys || (($this.data('optionKeys') || '') + '').split(',').filter(Boolean);
+            const explicitValues = opts.values || (($this.data('optionValues') || '') + '').split(',').filter(Boolean);
             const data = keys.map((key, idx) => ({ id: explicitValues[idx] !== undefined ? explicitValues[idx] : key, text: getLangValue(key) || key }));
             config = {
                 theme: 'bootstrap-5',
                 width: '100%',
-                allowClear: !!options.allowClear,
+                allowClear: !!opts.allowClear,
                 data: data,
                 placeholder: {
                     id: '',
@@ -241,7 +254,7 @@ function initSelect2(selector, options = {}) {
                 language: {
                     noResults: () => langData['no_results'] || 'No results found'
                 },
-                minimumResultsForSearch: options.searchable ? 0 : Infinity
+                minimumResultsForSearch: opts.searchable ? 0 : Infinity
             };
         } else if (isNative) {
             // Keeps the native look (no Select2 dropdown chrome beyond the required init) while
@@ -251,7 +264,7 @@ function initSelect2(selector, options = {}) {
             config = {
                 theme: 'bootstrap-5',
                 width: '100%',
-                allowClear: !!options.allowClear,
+                allowClear: !!opts.allowClear,
                 placeholder: {
                     id: '',
                     text: langData['select_option'] || 'Select an option'
@@ -259,10 +272,10 @@ function initSelect2(selector, options = {}) {
                 language: {
                     noResults: () => langData['no_results'] || 'No results found'
                 },
-                minimumResultsForSearch: options.searchable === false ? Infinity : 0
+                minimumResultsForSearch: opts.searchable === false ? Infinity : 0
             };
         } else {
-            const apiUrl = ($this.data('api') || options.api) ? `${BASE_URL}${$this.data('api') || options.api}` : null;
+            const apiUrl = ($this.data('api') || opts.api) ? `${BASE_URL}${$this.data('api') || opts.api}` : null;
             if (!apiUrl) return;
             config = {
                 theme: 'bootstrap-5',
@@ -289,7 +302,7 @@ function initSelect2(selector, options = {}) {
                     // known) silently kept using whatever value was live at page-load, forever.
                     data: function (params) {
                         const extraData = {
-                            type: $this.attr('data-type') || options.apiType || ''
+                            type: $this.attr('data-type') || opts.apiType || ''
                         };
                         const excludeId = $this.attr('data-exclude-id');
                         if (excludeId !== undefined && excludeId !== '') {
@@ -360,17 +373,41 @@ function initSelect2(selector, options = {}) {
                         const data = res.data || res.status || {};
                         const items = (data.items || []).map(item => {
                             const localizedText = (currentLang === 'th') ? item.text_th : item.text_en;
-                            return {
-                                ...item,
-                                id: item.id,
-                                text: localizedText || item.text_th || item.text_en || item.text
-                            };
+                            const text = localizedText || item.text_th || item.text_en || item.text;
+                            // 2026-09-17, R1b: `stripCodePrefix` -- for endpoints whose label is
+                            // already "[CODE] Name" and that no picker is allowed to reformat
+                            // server-side (other pickers share the same endpoint). Verified first:
+                            // this endpoint sends NO separate name/code fields, only the joined
+                            // text_th/text_en, so splitting the label is the only read-side option.
+                            // The code becomes the option's `title` (Select2 puts data.title on both
+                            // the result <li> and the closed box, read from its own source), which is
+                            // where rules.md §5/§6 wants an internal code. Search is untouched: it
+                            // happens server-side and still matches the code.
+                            if (opts.stripCodePrefix) {
+                                const split = splitOptionCodePrefix(text);
+                                return { ...item, id: item.id, text: split.text, title: split.code || undefined };
+                            }
+                            return { ...item, id: item.id, text: text };
                         });
                         const total = parseInt(data.total_count || 0);
+                        const more = (params.page * 10) < total;
+                        // 2026-09-17, R1b: `pinnedOption` -- one fixed choice that is NOT a row the
+                        // endpoint can ever return, always last, under a divider. It rides on the
+                        // LAST page only (so it doesn't repeat as the user scrolls) and it is added
+                        // whatever the search term is, so the escape hatch stays reachable even when
+                        // the term matches nothing. First consumer: the payroll manual-line item
+                        // picker's "Other (enter a name)".
+                        if (opts.pinnedOption && !more) {
+                            items.push({
+                                id: opts.pinnedOption.id,
+                                text: getLangValue(opts.pinnedOption.key) || opts.pinnedOption.fallback || opts.pinnedOption.key,
+                                isPinnedOption: true
+                            });
+                        }
                         return {
                             results: items,
                             pagination: {
-                                more: (params.page * 10) < total
+                                more: more
                             }
                         };
                     },
@@ -387,6 +424,32 @@ function initSelect2(selector, options = {}) {
                 },
                 minimumInputLength: 0
             };
+            // Both templates are set from the same 2 flags, because both halves of the widget have
+            // to agree: the dropdown row (templateResult) and the closed box (templateSelection).
+            //  - stripCodePrefix: strip again HERE as well as in processResults, so an option that
+            //    did NOT come through processResults (a prefilled `new Option('[CODE] Name', id)`)
+            //    still renders name-only. Stripping an already-stripped name is a no-op -- there is
+            //    no second "[...]" to take off.
+            //  - pinnedOption: the divider class goes on the result's own <li> (the container
+            //    Select2 hands in), because a border on the inner text would stop at the text
+            //    instead of spanning the row.
+            // Select2's own loading/"no results" messages come through templateResult too, carrying
+            // only a `text` -- they fall through both branches unchanged.
+            if (opts.pinnedOption || opts.stripCodePrefix) {
+                const displayText = function (data) {
+                    const raw = (data && data.text) || '';
+                    return opts.stripCodePrefix ? splitOptionCodePrefix(raw).text : raw;
+                };
+                config.templateResult = function (result, container) {
+                    if (opts.pinnedOption && result.isPinnedOption && container) {
+                        $(container).addClass('select2-pinned-option');
+                    }
+                    return displayText(result);
+                };
+                config.templateSelection = function (selection) {
+                    return displayText(selection);
+                };
+            }
             // 2026-09-10, Batch 3A item 7b: ajax + tags combo (Select2's own supported pattern, not
             // a new mechanism) -- lets a field search/pick an existing comp_id-scoped lookup row
             // (via the SAME api endpoint/shape every other select2-remote already uses) OR type a
@@ -396,7 +459,7 @@ function initSelect2(selector, options = {}) {
             // is what actually tells a real existing numeric id apart from new free text and
             // auto-creates the row, not this field. First consumers: #sso_hospital_id/#pvd_plan_id
             // (.select2-remote-tags class, see employee/detail.php).
-            if (options.tags) {
+            if (opts.tags) {
                 config.tags = true;
                 config.createTag = function (params) {
                     const term = $.trim(params.term);
@@ -415,8 +478,8 @@ function initSelect2(selector, options = {}) {
         if ($container.length) {
             $container.find('.select2-selection').attr('tabindex', originalTabIndex);
         }
-        if (isStatic && options.selectedValue !== undefined && options.selectedValue !== '' && options.selectedValue !== null) {
-            $this.val(options.selectedValue).trigger('change.select2');
+        if (isStatic && opts.selectedValue !== undefined && opts.selectedValue !== '' && opts.selectedValue !== null) {
+            $this.val(opts.selectedValue).trigger('change.select2');
         }
     });
 }
