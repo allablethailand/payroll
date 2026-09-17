@@ -1999,6 +1999,36 @@ class EmployeeModel {
     // $payrollParticipantsOnly rather than baked into $where unconditionally -- the one caller that
     // DOES need it is the Payment Voucher report's own employee picker (Reports > Annual Reports),
     // wired via #reportsPreviewEmployeeSelect's `data-payroll-participants-only="1"` (see input.js).
+    /** The ONE definition of an employee picker option's label ("EM001 - ชื่อ นามสกุล"). 2026-09-17,
+     *  tiny-M round 3: shared with optionRowsByIds() below so a form that PREFILLS such a picker
+     *  from a stored id shows the same text as the option the user would have picked by hand --
+     *  before this, a prefill wrote the employee_no alone and the same row read 2 different ways. */
+    private const OPTION_LABEL_SELECT = "CONCAT(employee_no, ' - ', name_th, ' ', surname_th) AS text_th,
+                    CONCAT(employee_no, ' - ', name_en, ' ', surname_en) AS text_en";
+
+    /**
+     * The same option rows reportToOptions() serves, for a known set of ids instead of a search --
+     * same label, same payout-account fields, same shape. For prefilling a picker with a value that
+     * is already stored (so no search term would reliably return it).
+     */
+    public function optionRowsByIds(int $compId, array $ids): array {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn($id) => $id > 0)));
+        if (!$ids) {
+            return [];
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare("SELECT id, " . self::OPTION_LABEL_SELECT . "
+            FROM `employees` WHERE comp_id = ? AND deleted_at IS NULL AND id IN ({$in})");
+        $stmt->execute(array_merge([$compId], $ids));
+        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $this->attachPayoutAccountToOptions($items);
+        $byId = [];
+        foreach ($items as $item) {
+            $byId[(int)$item['id']] = $item;
+        }
+        return $byId;
+    }
+
     public function reportToOptions(int $compId, ?int $excludeId, string $search, int $page, int $limit, bool $payrollParticipantsOnly = false): array {
         $offset = ($page - 1) * $limit;
         $where = "comp_id = :comp_id AND deleted_at IS NULL";
@@ -2020,9 +2050,7 @@ class EmployeeModel {
         $totalStmt->execute($params);
         $totalCount = (int)$totalStmt->fetchColumn();
 
-        $sql = "SELECT id,
-                    CONCAT(employee_no, ' - ', name_th, ' ', surname_th) AS text_th,
-                    CONCAT(employee_no, ' - ', name_en, ' ', surname_en) AS text_en
+        $sql = "SELECT id, " . self::OPTION_LABEL_SELECT . "
                 FROM `employees` WHERE {$where} ORDER BY name_th ASC LIMIT :limit OFFSET :offset";
         $stmt = $this->db->prepare($sql);
         foreach ($params as $key => $val) {

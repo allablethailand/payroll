@@ -4498,7 +4498,10 @@ function manualLineListItemHtml(line, canEdit) {
     // 'employee' transfer only) -- same branching as Employee Detail's own eedItemNameCell().
     let payeeHtml = '';
     if (line.payee_type === 'employee' && line.payee_employee_id) {
-        payeeHtml = `<div class="manual-line-payee">${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
+        // 2026-09-17, tiny-M round 3: the person's NAME, in the language on screen -- the row used to
+        // print the bare employee_no, which is the same internal code §5/§6 keeps out of a label.
+        // Same read-side strip the picker itself uses, so the two never disagree on what to show.
+        payeeHtml = `<div class="manual-line-payee">${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(manualLinePayeeNameRd(line))}</div>`;
     } else if (line.payee_type === 'company') {
         // 2026-09-10, Batch 3B item 3: manualLinesForEmployee() joins bank_account_name for this
         // exact display -- the real account, or a "needs review" warning when unspecified.
@@ -5826,9 +5829,109 @@ function refreshManualLineSavedDestinationsRd() {
         applyManualLineDestAvailabilityRd(manualLineDestHasSavedRd);
     }, 'json');
 }
+/* 2026-09-17, tiny-M -- the destination the ROW being edited already points at.
+   Two real bugs came from this not existing (both measured in a browser, both on the same line):
+   (a) this lookup is async and its answer used to be the last word, so on the FIRST open of the
+       form in a page load it landed ~124ms AFTER prefill and wiped the destination prefill had just
+       put in -- the line still pointed at it, the form no longer did; on every later open the cache
+       made the same call run INSIDE prefill, so prefill won instead and the form looked different
+       for the same row. One order must not produce a different form from the other.
+   (b) `payment-destination.options` only ever returns is_saved = 1 rows, so a line pointing at an
+       ad-hoc destination had nothing in the picker to represent it at all -- it could not even be
+       re-selected after being cleared.
+   Both are answered by the same fact: what the row holds is pinned into the picker (initSelect2's
+   own `pinnedOption`, input.js) and counts as "there is something to choose from" on its own.
+   Availability therefore never moves the mode or clears the field while a row destination is
+   pinned -- the same "check what is there before writing over it" rule
+   applyFirstSavedDestinationDefault() already follows. */
+let manualLineRowDestinationRd = null;
+function manualLineHasPinnedDestinationRd() {
+    return !!(manualLineRowDestinationRd && manualLineRowDestinationRd.id);
+}
+/* 2026-09-17, tiny-M round 3: the other 2 payee pickers (the company's bank account, and the payee
+   employee) had the SAME two faults as the destination one -- the summary box under them was filled
+   only by select2:select, which programmatic selection never fires, and their option was hand-built
+   from whatever single field the read payload happened to carry (the employee's `employee_no`),
+   so the same row read "CEO - ชื่อ" when picked by hand and "CEO" when prefilled. Same answer for all
+   3: pin the row's own option through initSelect2, and render the summary with the same helper the
+   user-driven path uses. These 2 are simpler than the destination picker -- no saved/new mode to
+   protect -- so they share the pin/unpin pair and nothing else. */
+let manualLineRowPayeeEmployeeRd = null;
+let manualLineRowBankAccountRd = null;
+function pinManualLineRowOptionRd(selector, pinned) {
+    if (!pinned || !pinned.id) return false;
+    initSelect2(selector, {
+        pinnedOption: { id: pinned.id, text: pinned.text, data: pinned.data, selected: true },
+    });
+    return true;
+}
+function unpinManualLineRowOptionRd(selector) {
+    initSelect2(selector, { pinnedOption: null });
+}
+// Picks the label the picker's own endpoint would have shown for this row, in the language on
+// screen -- never re-composed here (both come from that endpoint's own builder, server side).
+// The payee's name alone for a manual line row: the picker's own label with its code taken off by
+// the shared splitter. Falls back to the employee_no only when the payload carries no label at all
+// (a row read through an older payload shape), never to a blank.
+function manualLinePayeeNameRd(line) {
+    const label = manualLineRowLabelRd(line.payee_employee_label_th, line.payee_employee_label_en, '');
+    const name = label ? splitOptionCodePrefix(label, 'dash').text : '';
+    return name || line.payee_employee_no || ('#' + line.payee_employee_id);
+}
+function manualLineRowLabelRd(thLabel, enLabel, fallback) {
+    const preferred = currentLang === 'th' ? thLabel : enLabel;
+    return preferred || thLabel || enLabel || fallback || '';
+}
+function applyManualLineRowPayeeEmployeeRd() {
+    if (!pinManualLineRowOptionRd('#manualLinePayeeEmployee', manualLineRowPayeeEmployeeRd)) return;
+    // The same renderer select2:select uses -- it also decides the "no bank account on file" block,
+    // which a prefilled row has to be subject to exactly as a hand-picked one is.
+    renderManualLinePayeeEmployeeDetailRd(manualLineRowPayeeEmployeeRd.data);
+}
+function applyManualLineRowBankAccountRd() {
+    if (!pinManualLineRowOptionRd('#manualLineBankAccount', manualLineRowBankAccountRd)) return;
+    renderManualLineBankAccountDetailRd(manualLineRowBankAccountRd.data);
+}
+// One place decides whether the saved/new choice is offered at all: a saved destination exists, or
+// this row brought its own.
+function syncManualLineDestModeToggleRd() {
+    $('#manualLineDestModeToggle').toggleClass('d-none', !(manualLineDestHasSavedRd || manualLineHasPinnedDestinationRd()));
+}
 function applyManualLineDestAvailabilityRd(hasSaved) {
-    $('#manualLineDestModeToggle').toggleClass('d-none', !hasSaved);
+    syncManualLineDestModeToggleRd();
+    // A pinned row destination is already IN the field -- whichever way round this and prefill run,
+    // the answer is the same and the value is never touched.
+    if (manualLineHasPinnedDestinationRd()) {
+        setManualLineDestModeRd('saved');
+        return;
+    }
     setManualLineDestModeRd(hasSaved ? 'saved' : 'new');
+}
+// Puts the row's own destination into the picker and describes it underneath, without waiting for a
+// select2:select that programmatic selection never fires (that missing event is why the summary box
+// was empty in edit mode from the day it was added).
+function applyManualLineRowDestinationRd() {
+    const dest = manualLineRowDestinationRd;
+    if (!pinManualLineRowOptionRd('#manualLineDestinationSelect', dest)) return;
+    setManualLineDestModeRd('saved');
+    syncManualLineDestModeToggleRd();
+    $('#manualLineDestinationDetail').html(payeeDetailHtml(payeeDetailFromOption(dest.data)));
+}
+// Dropped when the form moves on to another line (or to a fresh Add), so a previous row's
+// destination can never be offered as if it belonged to this one.
+function clearManualLineRowDestinationRd() {
+    if (manualLineHasPinnedDestinationRd()) {
+        manualLineRowDestinationRd = null;
+        unpinManualLineRowOptionRd('#manualLineDestinationSelect');
+    }
+    if (manualLineRowPayeeEmployeeRd) {
+        manualLineRowPayeeEmployeeRd = null;
+        unpinManualLineRowOptionRd('#manualLinePayeeEmployee');
+    }
+    if (manualLineRowBankAccountRd) {
+        manualLineRowBankAccountRd = null;
+        unpinManualLineRowOptionRd('#manualLineBankAccount');
+    }
 }
 // 2026-09-15, batch 2/4 follow-up: the "Will be added as: Income/Deduction" hint this used to render
 // under the form is gone -- it restated the Type field sitting right above it and broke two rules at
@@ -5870,17 +5973,36 @@ $(document).on('select2:select', '#manualLinePayeeEmployee', function (e) {
 $(document).on('select2:clear', '#manualLinePayeeEmployee', function () {
     renderManualLinePayeeEmployeeDetailRd(null);
 });
+// One renderer for both ways this box gets filled (a user picking an account, and a row being
+// prefilled) -- the pair drifting apart is what left an edited row with no account summary at all.
+function renderManualLineBankAccountDetailRd(data) {
+    const $box = $('#manualLineBankAccountDetail');
+    if (!data) {
+        $box.empty();
+        return;
+    }
+    $box.html(payeeDetailHtml(payeeDetailFromOption(data)));
+}
 $(document).on('select2:select', '#manualLineBankAccount', function (e) {
-    $('#manualLineBankAccountDetail').html(payeeDetailHtml(payeeDetailFromOption(e.params.data)));
+    renderManualLineBankAccountDetailRd(e.params.data);
 });
+// Clearing empties the summary but KEEPS the row's own option pinned, so the account this line
+// already pointed at can be chosen again (same rule as the destination picker).
 $(document).on('select2:clear', '#manualLineBankAccount', function () {
-    $('#manualLineBankAccountDetail').empty();
+    renderManualLineBankAccountDetailRd(null);
 });
 $(document).on('select2:select', '#manualLineDestinationSelect', function (e) {
     $('#manualLineDestinationDetail').html(payeeDetailHtml(payeeDetailFromOption(e.params.data)));
 });
+// 2026-09-17, tiny-M: clearing used to leave the form with an empty saved-picker and no way back --
+// the 4 account fields stayed hidden and the saved/new choice was hidden too whenever the company
+// had nothing saved. Now it behaves like the other 2 payee forms: the account fields come back.
+// The row's own destination stays PINNED in the picker on purpose, so switching back to "saved"
+// can re-select the very destination this line already had (id and all) instead of forcing a new one.
 $(document).on('select2:clear', '#manualLineDestinationSelect', function () {
     $('#manualLineDestinationDetail').empty();
+    syncManualLineDestModeToggleRd();
+    setManualLineDestModeRd('new');
 });
 $(document).on('change', '#manualLineDestModeToggle input[type="radio"]', function () {
     setManualLineDestModeRd($(this).val());
@@ -5938,6 +6060,9 @@ function resetManualLineFormRd() {
     $('#manualLinePayeeEmployee')
         .attr('data-exclude-id', (manualLineFormCtxRd && manualLineFormCtxRd.employeeId) || '')
         .val(null).trigger('change');
+    // Before the payee reset below, which walks the same availability path: a destination pinned for
+    // the row this form was last opened on must not still count as "this row has one".
+    clearManualLineRowDestinationRd();
     setManualLinePayeeTypeRd('none');
     refreshManualLineAddStateRd();
 }
@@ -6325,6 +6450,57 @@ function openManualLineFormRd(ctx) {
 // real option first -- the same populate-a-remote-select step Employee Detail's own
 // populateSelect2Field() does, and the same silent data loss if it is skipped.
 function prefillManualLineFormRd(line) {
+    // FIRST, before anything can ask "is there a destination to choose from": setPayeeDestination()
+    // below reaches refreshManualLineSavedDestinationsRd() synchronously once its answer is cached,
+    // and that path must already be able to see what this row holds (see
+    // applyManualLineDestAvailabilityRd()'s own docblock for the 2 bugs this ordering fixes).
+    // Same for the other 2 pickers: set before the payee choice below, because its onChange can
+    // reach applyDefaultCompanyBankAccount() straight away.
+    manualLineRowPayeeEmployeeRd = (line.payee_type === 'employee' && line.payee_employee_id)
+        ? {
+            id: line.payee_employee_id,
+            text: manualLineRowLabelRd(line.payee_employee_label_th, line.payee_employee_label_en,
+                line.payee_employee_no || ('#' + line.payee_employee_id)),
+            data: {
+                account_name: line.payee_employee_account_name,
+                bank_name_th: line.payee_employee_bank_name_th,
+                bank_name_en: line.payee_employee_bank_name_en,
+                bank_branch: line.payee_employee_bank_branch,
+                account_no_masked: line.payee_employee_account_no_masked,
+                has_bank_account: line.payee_employee_has_bank_account,
+            },
+        }
+        : null;
+    manualLineRowBankAccountRd = (line.payee_type === 'company' && line.bank_account_id)
+        ? {
+            id: line.bank_account_id,
+            text: manualLineRowLabelRd(line.bank_account_label_th, line.bank_account_label_en,
+                line.bank_account_name || ('#' + line.bank_account_id)),
+            data: {
+                account_name: line.bank_account_name,
+                bank_name_th: line.bank_account_bank_name_th,
+                bank_name_en: line.bank_account_bank_name_en,
+                bank_branch: line.bank_account_branch,
+                account_no_masked: line.bank_account_no_masked,
+            },
+        }
+        : null;
+    manualLineRowDestinationRd = (line.payee_type === 'other_person' && line.destination_id)
+        ? {
+            id: line.destination_id,
+            text: line.destination_account_name || ('#' + line.destination_id),
+            is_saved: line.destination_is_saved,
+            // Exactly the shape payeeDetailFromOption() reads, so the summary under the picker is
+            // built by the same pair of helpers as every other payee picker's.
+            data: {
+                account_name: line.destination_account_name,
+                bank_name_th: line.destination_bank_name_th,
+                bank_name_en: line.destination_bank_name_en,
+                bank_branch: line.destination_bank_branch,
+                account_no_masked: line.destination_account_no_masked,
+            },
+        }
+        : null;
     setManualLineTypeRd(line.item_type);
     const label = (currentLang === 'th' ? line.item_name_th : line.item_name_en) || line.item_name_th || line.item_name_en || '';
     // 2026-09-17, R1b: both kinds of hand-typed line -- plain custom AND the retired `other` -- open
@@ -6345,21 +6521,17 @@ function prefillManualLineFormRd(line) {
     // account), then this line's own values on top -- applyDefaultCompanyBankAccount() re-checks the
     // field before applying, so its in-flight request cannot overwrite what is set here.
     setPayeeDestination('manualLine', line.payee_type || 'none');
+    // All 3 destinations go back the same way now: the row's own option, pinned, plus the same
+    // summary the user-driven path renders.
     if (line.payee_type === 'employee' && line.payee_employee_id) {
-        $('#manualLinePayeeEmployee').empty()
-            .append(new Option(line.payee_employee_no || ('#' + line.payee_employee_id), line.payee_employee_id, true, true))
-            .trigger('change');
+        applyManualLineRowPayeeEmployeeRd();
     } else if (line.payee_type === 'company' && line.bank_account_id) {
-        $('#manualLineBankAccount').empty()
-            .append(new Option(line.bank_account_name || ('#' + line.bank_account_id), line.bank_account_id, true, true))
-            .trigger('change');
+        applyManualLineRowBankAccountRd();
     } else if (line.payee_type === 'other_person' && line.destination_id) {
-        // A saved destination is what this line already points at, so the picker opens on "saved"
-        // with that row selected rather than on an empty new-account form.
-        setManualLineDestModeRd('saved');
-        $('#manualLineDestinationSelect').empty()
-            .append(new Option(line.destination_account_name || ('#' + line.destination_id), line.destination_id, true, true))
-            .trigger('change');
+        // The destination this line already points at, put back through the shared pinned-option
+        // mechanism (it may be an is_saved = 0 row the picker's own endpoint will never return) and
+        // described underneath from the fields the read payload now carries.
+        applyManualLineRowDestinationRd();
     }
 }
 // Adding and editing differ in 2 places only: the endpoint, and one extra id in the body. Everything
@@ -7051,7 +7223,12 @@ $(document).ready(function () {
         // Initialized once here, not per-modal-open (2026-08-21 bug fix precedent from the
         // Attendance Deduction rate_unit dropdown -- re-initializing a select2 field on every open
         // can leave stale state/duplicate options behind).
-        initSelect2('#manualLinePayeeEmployee', { mode: 'ajax', allowClear: true });
+        // 2026-09-17, tiny-M round 3: the employee picker's own endpoint labels every option
+        // "CODE - ชื่อ นามสกุล"; rules.md §5/§6 wants the code as the option's `title`, not printed
+        // inline, so the same read-side strip the catalog picker uses takes it off -- 'dash' for this
+        // label shape. Searching is untouched: api/employee.report_to.get matches the term against
+        // employee_no AND both th/en names in SQL, so typing a code still finds its row.
+        initSelect2('#manualLinePayeeEmployee', { mode: 'ajax', allowClear: true, stripCodePrefix: 'dash' });
         // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 2 -- real bug found and
         // fixed while wiring Phase 6's own equivalent fields into this SAME explicit init list
         // (these two were added to the modal markup but never added here, so the destination

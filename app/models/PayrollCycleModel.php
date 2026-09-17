@@ -232,6 +232,20 @@ class PayrollCycleModel {
      * shares) -- account_no is intentionally NOT selected/decrypted here, this is a picker label
      * list only, not a place PII needs to round-trip through.
      */
+    /**
+     * The ONE composer for a company bank account's picker label: "bank • masked (account name)",
+     * dropping whichever parts are missing. 2026-09-17, tiny-M round 3: pulled out of
+     * bankAccountOptions()'s own closure so that a form PREFILLING this picker from a stored row
+     * (PayrollRunModel::manualLinesForEmployee()) shows the identical text to the option the user
+     * would have picked by hand -- the same row reading two different ways in the same field is
+     * exactly the bug this round is fixing.
+     */
+    public static function bankAccountOptionLabel(?string $bankName, ?string $maskedAccountNo, ?string $accountName): string {
+        $head = implode(' • ', array_filter([$bankName, $maskedAccountNo], static fn($x) => $x !== null && $x !== ''));
+        $name = trim((string)($accountName ?? ''));
+        return $name !== '' ? ($head !== '' ? "{$head} ({$name})" : $name) : $head;
+    }
+
     public function bankAccountOptions(int $compId, string $search, int $page, int $limit): array {
         $offset = ($page - 1) * $limit;
         $where = "WHERE ba.comp_id = :comp_id AND ba.deleted_at IS NULL AND ba.status = 'active'";
@@ -269,12 +283,7 @@ class PayrollCycleModel {
             $masked = EncryptionService::maskAccountNo(
                 EncryptionService::decrypt($r['account_no'] ?? null, isset($r['key_version']) ? (int)$r['key_version'] : null)
             );
-            $label = static function (?string $bankName) use ($r, $masked): string {
-                $parts = array_filter([$bankName, $masked], static fn($x) => $x !== null && $x !== '');
-                $head = implode(' • ', $parts);
-                $name = trim((string)($r['account_name'] ?? ''));
-                return $name !== '' ? ($head !== '' ? "{$head} ({$name})" : $name) : $head;
-            };
+            $label = static fn(?string $bankName): string => self::bankAccountOptionLabel($bankName, $masked, $r['account_name'] ?? null);
             return [
                 'id' => (int)$r['id'],
                 'text_th' => $label($r['bank_name_th']),

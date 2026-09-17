@@ -3518,9 +3518,21 @@ function syncPayeeDestination(prefix) {
    other, untouched pickers -- having to change what it returns. SEARCHING is unaffected: these
    endpoints match the term against item_code AND both names in SQL, so a code the user types still
    finds its row even though no visible option spells it out.
-   A label with no `[...]` prefix comes back unchanged, with an empty code. */
-function splitOptionCodePrefix(text) {
+   A label with no `[...]` prefix comes back unchanged, with an empty code.
+
+   2026-09-17, tiny-M round 3: a second prefix SHAPE, `style: 'dash'` -- "CODE - Name", which is what
+   the employee pickers' own endpoint composes (`CONCAT(employee_no, ' - ', name, ' ', surname)`).
+   Same read-side-only contract as the bracket shape: the endpoint keeps returning what it always
+   returned, and its WHERE still matches the code, so typing a code still finds the row. The split is
+   on the FIRST ' - ' only and the code half must look like a code (no spaces) -- a name that itself
+   contains ' - ' therefore survives intact, which a greedy split would have mangled. */
+function splitOptionCodePrefix(text, style) {
     const raw = (text === null || text === undefined) ? '' : String(text);
+    if (style === 'dash') {
+        const m = raw.match(/^(\S+)\s+-\s+([\s\S]+)$/);
+        if (!m) return { code: '', text: raw };
+        return { code: m[1], text: m[2] };
+    }
     const m = raw.match(/^\[([^\]]*)\]\s*([\s\S]*)$/);
     if (!m || m[2] === '') return { code: '', text: raw };
     return { code: m[1], text: m[2] };

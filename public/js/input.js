@@ -232,6 +232,15 @@ function initSelect2(selector, options = {}) {
         // never remembered -- re-applying a stale one later would put back a value the user changed.
         const remembered = $.extend({}, opts);
         delete remembered.selectedValue;
+        // 2026-09-17, tiny-M: `pinnedOption.selected` is the same kind of one-shot instruction as
+        // `selectedValue` -- "put this in the box NOW" -- so it is stripped from what the element
+        // remembers. The pinned option ITSELF is remembered (it must survive applyLanguage()'s
+        // re-init like every other per-field option), only the act of selecting it is not: a
+        // re-init later must never put back a value the user has since changed.
+        if (remembered.pinnedOption && remembered.pinnedOption.selected) {
+            remembered.pinnedOption = $.extend({}, remembered.pinnedOption);
+            delete remembered.pinnedOption.selected;
+        }
         $this.data('select2InitOptions', remembered);
         const $modal = $this.closest('.modal');
         const originalTabIndex = $this.attr('tabindex') || '0';
@@ -384,7 +393,8 @@ function initSelect2(selector, options = {}) {
                             // where rules.md §5/§6 wants an internal code. Search is untouched: it
                             // happens server-side and still matches the code.
                             if (opts.stripCodePrefix) {
-                                const split = splitOptionCodePrefix(text);
+                                // `true` = the "[CODE] Name" shape, 'dash' = "CODE - Name".
+                                const split = splitOptionCodePrefix(text, opts.stripCodePrefix);
                                 return { ...item, id: item.id, text: split.text, title: split.code || undefined };
                             }
                             return { ...item, id: item.id, text: text };
@@ -397,12 +407,19 @@ function initSelect2(selector, options = {}) {
                         // whatever the search term is, so the escape hatch stays reachable even when
                         // the term matches nothing. First consumer: the payroll manual-line item
                         // picker's "Other (enter a name)".
+                        // 2026-09-17, tiny-M: the label may also be given outright (`text`) instead of
+                        // as a lang key, and arbitrary `data` rides along on the option -- which is
+                        // what lets a pinned entry be a REAL record the endpoint just cannot return
+                        // (a `payment_destinations` row with is_saved = 0), with the same account
+                        // fields on `e.params.data` that a normal option carries, so every
+                        // select2:select reader keeps working unchanged.
                         if (opts.pinnedOption && !more) {
-                            items.push({
+                            items.push($.extend({}, opts.pinnedOption.data, {
                                 id: opts.pinnedOption.id,
-                                text: getLangValue(opts.pinnedOption.key) || opts.pinnedOption.fallback || opts.pinnedOption.key,
+                                text: opts.pinnedOption.text
+                                    || getLangValue(opts.pinnedOption.key) || opts.pinnedOption.fallback || opts.pinnedOption.key,
                                 isPinnedOption: true
-                            });
+                            }));
                         }
                         return {
                             results: items,
@@ -438,7 +455,7 @@ function initSelect2(selector, options = {}) {
             if (opts.pinnedOption || opts.stripCodePrefix) {
                 const displayText = function (data) {
                     const raw = (data && data.text) || '';
-                    return opts.stripCodePrefix ? splitOptionCodePrefix(raw).text : raw;
+                    return opts.stripCodePrefix ? splitOptionCodePrefix(raw, opts.stripCodePrefix).text : raw;
                 };
                 config.templateResult = function (result, container) {
                     if (opts.pinnedOption && result.isPinnedOption && container) {
@@ -480,6 +497,16 @@ function initSelect2(selector, options = {}) {
         }
         if (isStatic && opts.selectedValue !== undefined && opts.selectedValue !== '' && opts.selectedValue !== null) {
             $this.val(opts.selectedValue).trigger('change.select2');
+        }
+        // 2026-09-17, tiny-M: a pinned option asked to open SELECTED needs a real <option> in the
+        // DOM -- an ajax select2 has none of its own, so `.val(id)` alone silently selects nothing
+        // (the same trap populateSelect2Field() exists for on Employee Detail). Building it here
+        // rather than in every caller is what keeps "a picker's value came from the row" one
+        // mechanism instead of a hand-rolled `new Option` per form.
+        if (!isStatic && opts.pinnedOption && opts.pinnedOption.selected && opts.pinnedOption.id !== undefined) {
+            const pinnedText = opts.pinnedOption.text
+                || getLangValue(opts.pinnedOption.key) || opts.pinnedOption.fallback || String(opts.pinnedOption.id);
+            $this.empty().append(new Option(pinnedText, opts.pinnedOption.id, true, true)).trigger('change');
         }
     });
 }

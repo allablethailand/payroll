@@ -5767,20 +5767,43 @@ class PayrollRunModel {
                 pml.payee_type, pml.destination_id, pml.bank_account_id, pml.include_in_cash_summary, pml.created_by, pml.created_at,
                 pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type, payee.employee_no AS payee_employee_no,
                 pd.account_name AS destination_account_name,
-                ba.account_name AS bank_account_name,
+                pd.bank_branch AS destination_bank_branch, pd.is_saved AS destination_is_saved,
+                pd.account_no AS destination_account_no, pd.key_version AS destination_key_version,
+                dbank.bank_name_th AS destination_bank_name_th, dbank.bank_name_en AS destination_bank_name_en,
+                ba.account_name AS bank_account_name, ba.branch_name AS bank_account_branch,
+                ba.account_no AS bank_account_no, ba.key_version AS bank_account_key_version,
+                babank.bank_name_th AS bank_account_bank_name_th, babank.bank_name_en AS bank_account_bank_name_en,
                 creator.name_th AS created_by_name_th, creator.name_en AS created_by_name_en
             FROM `payroll_run_manual_lines` pml
             LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
             LEFT JOIN `employees` payee ON payee.id = pml.payee_employee_id
             LEFT JOIN `payment_destinations` pd ON pd.id = pml.destination_id
+            LEFT JOIN `master_banks` dbank ON dbank.id = pd.bank_id
             LEFT JOIN `bank_accounts` ba ON ba.id = pml.bank_account_id
+            LEFT JOIN `master_banks` babank ON babank.id = ba.bank_id
             LEFT JOIN `employees` creator ON creator.id = pml.created_by
             JOIN `payroll_runs` r ON r.id = pml.run_id AND r.comp_id = :comp_id
             WHERE pml.run_id = :run_id AND pml.employee_id = :employee_id
             ORDER BY pml.id ASC");
         $stmt->execute([':comp_id' => $compId, ':run_id' => $runId, ':employee_id' => $employeeId]);
-        return array_map(function (array $row): array {
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // 2026-09-17, tiny-M round 3: the payee employee's own option row (label + that employee's
+        // receiving account), fetched through EmployeeModel's OWN option builder so a prefilled
+        // picker reads identically to the option the user would have chosen -- one lookup for every
+        // line on this employee, not one per line.
+        $payeeOptions = (new EmployeeModel($this->db))->optionRowsByIds(
+            $compId,
+            array_map(static fn(array $r) => (int)($r['payee_employee_id'] ?? 0), $rows)
+        );
+        return array_map(function (array $row) use ($payeeOptions): array {
             $resolved = $this->resolveManualLineRow($row);
+            $payeeOption = $payeeOptions[(int)($row['payee_employee_id'] ?? 0)] ?? null;
+            $bankAccountMasked = $row['bank_account_id'] !== null
+                ? EncryptionService::maskAccountNo(EncryptionService::decrypt(
+                    $row['bank_account_no'] ?? null,
+                    $row['bank_account_key_version'] !== null ? (int)$row['bank_account_key_version'] : null
+                ))
+                : null;
             return [
                 'id' => (int)$row['id'],
                 // 2026-09-16, D2: the catalog item's own id, so the edit form can put the line's item
@@ -5797,18 +5820,57 @@ class PayrollRunModel {
                 'is_other' => $resolved['is_other'],
                 'payee_employee_id' => $row['payee_employee_id'] !== null ? (int)$row['payee_employee_id'] : null,
                 'payee_employee_no' => $row['payee_employee_no'],
+                // 2026-09-17, tiny-M round 3: same 3 destinations, same treatment -- the label comes
+                // from the picker's own builder (never re-composed here) and the payee's account
+                // rides along masked, so the edit form can describe the choice without a 2nd lookup.
+                'payee_employee_label_th' => $payeeOption['text_th'] ?? null,
+                'payee_employee_label_en' => $payeeOption['text_en'] ?? null,
+                'payee_employee_account_name' => $payeeOption['account_name'] ?? null,
+                'payee_employee_bank_name_th' => $payeeOption['bank_name_th'] ?? null,
+                'payee_employee_bank_name_en' => $payeeOption['bank_name_en'] ?? null,
+                'payee_employee_bank_branch' => $payeeOption['bank_branch'] ?? null,
+                'payee_employee_account_no_masked' => $payeeOption['account_no_masked'] ?? null,
+                'payee_employee_has_bank_account' => $payeeOption !== null ? (bool)$payeeOption['has_bank_account'] : null,
                 'payee_type' => $row['payee_type'],
                 'destination_id' => $row['destination_id'] !== null ? (int)$row['destination_id'] : null,
                 'destination_account_name' => $row['destination_account_name'],
+                // 2026-09-17, tiny-M: the same 4 account fields every payee picker's own options
+                // endpoint already hands back (PaymentDestinationController::options()), so the edit
+                // form can describe the destination this line points at without a second lookup --
+                // and `destination_is_saved`, because a line may point at an ad-hoc destination the
+                // saved-only picker can never offer back. Read-only: nothing here reaches a write
+                // path. The number is MASKED through the same 2 shared primitives listSaved() uses
+                // (decrypt -> maskAccountNo); the plaintext never leaves this method.
+                'destination_bank_name_th' => $row['destination_bank_name_th'],
+                'destination_bank_name_en' => $row['destination_bank_name_en'],
+                'destination_bank_branch' => $row['destination_bank_branch'],
+                'destination_account_no_masked' => $row['destination_id'] !== null
+                    ? EncryptionService::maskAccountNo(EncryptionService::decrypt(
+                        $row['destination_account_no'] ?? null,
+                        $row['destination_key_version'] !== null ? (int)$row['destination_key_version'] : null
+                    ))
+                    : null,
+                'destination_is_saved' => $row['destination_is_saved'] !== null ? (int)$row['destination_is_saved'] : null,
                 'bank_account_id' => $row['bank_account_id'] !== null ? (int)$row['bank_account_id'] : null,
                 'bank_account_name' => $row['bank_account_name'],
+                'bank_account_bank_name_th' => $row['bank_account_bank_name_th'],
+                'bank_account_bank_name_en' => $row['bank_account_bank_name_en'],
+                'bank_account_branch' => $row['bank_account_branch'],
+                'bank_account_no_masked' => $bankAccountMasked,
+                // Built by PayrollCycleModel's own option-label composer, not restated here.
+                'bank_account_label_th' => $row['bank_account_id'] !== null
+                    ? PayrollCycleModel::bankAccountOptionLabel($row['bank_account_bank_name_th'], $bankAccountMasked, $row['bank_account_name'])
+                    : null,
+                'bank_account_label_en' => $row['bank_account_id'] !== null
+                    ? PayrollCycleModel::bankAccountOptionLabel($row['bank_account_bank_name_en'], $bankAccountMasked, $row['bank_account_name'])
+                    : null,
                 'include_in_cash_summary' => (int)$row['include_in_cash_summary'],
                 'created_by' => $row['created_by'] !== null ? (int)$row['created_by'] : null,
                 'created_by_name_th' => $row['created_by_name_th'],
                 'created_by_name_en' => $row['created_by_name_en'],
                 'created_at' => $row['created_at'],
             ];
-        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+        }, $rows);
     }
 
     /**
