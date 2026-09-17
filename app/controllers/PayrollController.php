@@ -85,6 +85,50 @@ class PayrollController extends Controller {
         return $details;
     }
 
+    /** The audit actions whose free-text `note` carries a real payroll figure, written by
+     *  PayrollRunModel's own logAudit() calls. attendance_override_save is deliberately NOT here:
+     *  its note carries raw timesheet values (hours/days/minutes), unformatted, not a salary line. */
+    private const AUDIT_ACTIONS_WITH_MONEY_IN_NOTE = [
+        'add_manual_line', 'update_manual_line', 'remove_manual_line',
+        'line_override_save', 'line_override_remove',
+    ];
+
+    /** Exactly the shape number_format($x, 2) writes: comma-grouped, always 2 decimals. The
+     *  lookaround stops it biting into a longer digit run that merely contains that shape. */
+    private const AUDIT_NOTE_MONEY_PATTERN = '/(?<![\d.])-?\d{1,3}(?:,\d{3})*\.\d{2}(?!\d)/';
+
+    /**
+     * 2026-09-17: payroll-run.get's own `audit_log` was the last key on this response still serving
+     * real payroll figures unmasked. Every other key goes through a masker above; the audit notes
+     * never did -- and the actions listed above write the amount straight into that free-text note,
+     * so a reader with no salary_amount.view_payroll_process grant could read off the Action History
+     * tab the very figures the Detail table beside it had just hidden from them.
+     *
+     * TEMPORARY by design, until H4 moves these before/after figures into real columns: a number
+     * living INSIDE a sentence cannot go through maskMonetaryKeys() (that replaces a whole field
+     * value, and there is no field here), only through the shape number_format() writes. That is
+     * why this is ONE function called from ONE place instead of a pattern spread per action --
+     * once the sentence is rendered client-side from i18n over real columns, the field-level masker
+     * covers it and this goes away rather than growing.
+     */
+    private function maskAuditNote(array $auditLog, int $compId): array {
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), $compId);
+        if ($visibility['full']) {
+            return $auditLog;
+        }
+        foreach ($auditLog as &$entry) {
+            if (!in_array($entry['action'] ?? '', self::AUDIT_ACTIONS_WITH_MONEY_IN_NOTE, true)) {
+                continue;
+            }
+            if (($entry['note'] ?? null) === null) {
+                continue;
+            }
+            $entry['note'] = preg_replace(self::AUDIT_NOTE_MONEY_PATTERN, PermissionModel::MASK_VALUE, (string)$entry['note']);
+        }
+        unset($entry);
+        return $auditLog;
+    }
+
     /**
      * 2026-09-10, Batch 3A item 5: same masking convention as maskRunDetailRows()/maskAuditDiffLines()
      * (ReportsController's own copy, for the whole-run report) applied to employeeAdjustments()'s
@@ -395,6 +439,7 @@ class PayrollController extends Controller {
         // 2026-08-31, explicit request: "สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX แต่ยังสามารถคำนวณ
         // เงินเดือน...ได้ตามสิทธิ์" -- see maskRunMonetaryFields()/maskRunDetailRows()'s own docblocks.
         $row['details'] = $this->maskRunDetailRows($row['details'], (int)$compId);
+        $row['audit_log'] = $this->maskAuditNote($row['audit_log'], (int)$compId);
         $row = $this->maskRunMonetaryFields($row, (int)$compId);
         $this->json(['status' => true, 'data' => $row]);
     }
