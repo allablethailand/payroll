@@ -72,6 +72,24 @@ if (in_array('--cleanup', array_slice($argv, 1), true)) {
         $result['run_status_after'] = $after === false ? '(row gone)' : (string)$after;
         $result['run_still_present'] = !in_array($result['run_status_after'], ['deleted', '(row gone)'], true);
         $result['run_detail_rows_left'] = (int)$pdo->query("SELECT COUNT(*) FROM `payroll_run_details` WHERE run_id = " . $runId)->fetchColumn();
+        // 2026-09-17: the run is SOFT-deleted, and `payroll_run_manual_lines` is not one of the
+        // tables delete() clears -- so the manual line this tool creates used to outlive every
+        // cleanup, one row per session, forever. They are this tool's own rows in this tool's own
+        // run, so they go here. Same guard as the run itself: only rows of runs that are really
+        // this tool's and really deleted.
+        $pdo->prepare("DELETE ml FROM `payroll_run_manual_lines` ml
+            JOIN `payroll_runs` r ON r.id = ml.run_id
+            WHERE ml.run_id = :run_id AND r.comp_id = :comp_id
+              AND r.run_name LIKE 'UI test run (delete me)%' AND r.status = 'deleted'")
+            ->execute([':run_id' => $runId, ':comp_id' => COMP_ID]);
+        $result['manual_lines_left'] = (int)$pdo->query("SELECT COUNT(*) FROM `payroll_run_manual_lines` WHERE run_id = " . $runId)->fetchColumn();
+        // Rows this same tool left behind in ITS OWN earlier runs, before the delete above existed.
+        // Bounded by the same 3 conditions, so it can never reach a run this tool did not create.
+        $strays = $pdo->prepare("DELETE ml FROM `payroll_run_manual_lines` ml
+            JOIN `payroll_runs` r ON r.id = ml.run_id
+            WHERE r.comp_id = :comp_id AND r.run_name LIKE 'UI test run (delete me)%' AND r.status = 'deleted'");
+        $strays->execute([':comp_id' => COMP_ID]);
+        $result['stray_manual_lines_removed'] = $strays->rowCount();
     } else {
         $result['run_deleted'] = false;
         $result['run_skipped_reason'] = $runId > 0 ? "run {$runId} is not one of ours (name: '{$name}')" : 'no run id recorded';
