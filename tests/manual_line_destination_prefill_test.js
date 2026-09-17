@@ -109,9 +109,11 @@ const extracted = stubs + '\n'
     + fn(appSource, 'payeeDetailFromOption') + '\n'
     + fn(appSource, 'applyDefaultCompanyBankAccount') + '\n'
     + fn(detailSource, 'setManualLineDestModeRd') + '\n'
-    + fn(detailSource, 'pinManualLineRowOptionRd') + '\n'
-    + fn(detailSource, 'unpinManualLineRowOptionRd') + '\n'
-    + fn(detailSource, 'manualLineRowLabelRd') + '\n'
+    + fn(detailSource, 'pinRowOptionRd') + '\n'
+    + fn(detailSource, 'unpinRowOptionRd') + '\n'
+    + fn(detailSource, 'rowOptionLabelRd') + '\n'
+    + fn(detailSource, 'renderPayeeAccountDetailRd') + '\n'
+    + fn(detailSource, 'renderPayeeEmployeeDetailRd') + '\n'
     + fn(detailSource, 'renderManualLineBankAccountDetailRd') + '\n'
     + fn(detailSource, 'renderManualLinePayeeEmployeeDetailRd') + '\n'
     + fn(detailSource, 'applyManualLineRowPayeeEmployeeRd') + '\n'
@@ -130,7 +132,7 @@ const extracted = stubs + '\n'
         setManualLineDestModeRd, applyManualLineDestAvailabilityRd, applyManualLineRowDestinationRd,
         clearManualLineRowDestinationRd, manualLineHasPinnedDestinationRd, syncManualLineDestModeToggleRd,
         applyManualLineRowPayeeEmployeeRd, applyManualLineRowBankAccountRd, applyDefaultCompanyBankAccount,
-        manualLineRowLabelRd, renderManualLineBankAccountDetailRd, renderManualLinePayeeEmployeeDetailRd,
+        rowOptionLabelRd, renderManualLineBankAccountDetailRd, renderManualLinePayeeEmployeeDetailRd,
         setRowPayeeEmployee: (d) => { manualLineRowPayeeEmployeeRd = d; },
         setRowBankAccount: (d) => { manualLineRowBankAccountRd = d; },
         getRowPayeeEmployee: () => manualLineRowPayeeEmployeeRd,
@@ -346,12 +348,12 @@ check('bank: clear keeps the row pin', api.getRowBankAccount() !== null);
 // --- the label follows the language, and never falls back to a re-composed string ---
 api.setLang('en');
 check('label picks the en text when the page is in English',
-    api.manualLineRowLabelRd('ไทย', 'English', 'fallback') === 'English');
+    api.rowOptionLabelRd('ไทย', 'English', 'fallback') === 'English');
 api.setLang('th');
 check('label picks the th text when the page is in Thai',
-    api.manualLineRowLabelRd('ไทย', 'English', 'fallback') === 'ไทย');
+    api.rowOptionLabelRd('ไทย', 'English', 'fallback') === 'ไทย');
 check('label falls back only when the payload carries neither',
-    api.manualLineRowLabelRd(null, null, '#42') === '#42');
+    api.rowOptionLabelRd(null, null, '#42') === '#42');
 
 // --- moving to another line drops all 3 pins ---
 api.setRowDestination({ id: 1, text: 'd', data: {} });
@@ -390,10 +392,10 @@ check('no client-side matcher was added -- searching stays server-side (R1b rule
     detailStripped.indexOf('matcher:') === -1);
 
 // the slip row shows the name, by language, and falls back rather than going blank
-const nameFnSrc = fn(detailSource, 'manualLinePayeeNameRd');
-const nameApi = new Function('currentLang', 'splitOptionCodePrefix', 'manualLineRowLabelRd',
+const nameFnSrc = fn(detailSource, 'payeeNameFromLabelRd') + '\n' + fn(detailSource, 'manualLinePayeeNameRd');
+const nameApi = new Function('currentLang', 'splitOptionCodePrefix', 'rowOptionLabelRd',
     nameFnSrc + '; return manualLinePayeeNameRd;');
-const rowLabelFn = new Function('currentLang', fn(detailSource, 'manualLineRowLabelRd') + '; return manualLineRowLabelRd;');
+const rowLabelFn = new Function('currentLang', fn(detailSource, 'rowOptionLabelRd') + '; return rowOptionLabelRd;');
 const nameTh = nameApi('th', splitOptionCodePrefix, rowLabelFn('th'));
 const nameEn = nameApi('en', splitOptionCodePrefix, rowLabelFn('en'));
 const LINE_WITH_LABELS = { payee_employee_id: 499, payee_employee_no: 'CEO', payee_employee_label_th: 'CEO - กฤษดา สาธุกิจชัย', payee_employee_label_en: 'CEO - Kritsada Satukitchai' };
@@ -413,8 +415,11 @@ const prefillSrc = stripComments(fn(detailSource, 'prefillManualLineFormRd'));
 check('prefill no longer hand-builds the destination option', prefillSrc.indexOf("$('#manualLineDestinationSelect').empty()") === -1);
 check('prefill sets the row destination BEFORE it touches the payee choice',
     prefillSrc.indexOf('manualLineRowDestinationRd =') < prefillSrc.indexOf("setPayeeDestination('manualLine'"));
-check('prefill reads the masked number from the payload, never a raw one',
-    prefillSrc.indexOf('line.destination_account_no_masked') !== -1 && prefillSrc.indexOf('line.destination_account_no') === prefillSrc.indexOf('line.destination_account_no_masked'));
+// 2026-09-17, tiny-L2: the 3 pinned options are built by one shared function now (the recurring
+// deduction destination card reads the same field names), so this is where the payload is read.
+const pinBuilderSrc = stripComments(fn(detailSource, 'payeeRowPinnedOptionsRd'));
+check('the pinned-option builder reads the masked number from the payload, never a raw one',
+    pinBuilderSrc.indexOf('row.destination_account_no_masked') !== -1 && pinBuilderSrc.indexOf('row.destination_account_no') === pinBuilderSrc.indexOf('row.destination_account_no_masked'));
 check('the availability step no longer forces a mode while a row destination is pinned',
     stripComments(fn(detailSource, 'applyManualLineDestAvailabilityRd')).indexOf('manualLineHasPinnedDestinationRd()') !== -1);
 check('initSelect2 supports a pinned option that opens selected (input.js)',

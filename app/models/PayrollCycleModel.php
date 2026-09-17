@@ -246,6 +246,56 @@ class PayrollCycleModel {
         return $name !== '' ? ($head !== '' ? "{$head} ({$name})" : $name) : $head;
     }
 
+    /** The columns a bank-account option row is built from, and the ONE mapper from such a row to
+     *  the option the picker's endpoint serves -- so a row fetched by SEARCH and the same row
+     *  fetched by ID describe themselves identically. */
+    private const BANK_ACCOUNT_OPTION_COLUMNS = "ba.id, ba.account_name, ba.branch_name, ba.company_code, ba.is_default,
+                    ba.account_no, ba.key_version,
+                    mb.bank_name_th, mb.bank_name_en";
+
+    public static function bankAccountOptionItem(array $r): array {
+        $masked = EncryptionService::maskAccountNo(
+            EncryptionService::decrypt($r['account_no'] ?? null, isset($r['key_version']) ? (int)$r['key_version'] : null)
+        );
+        $label = static fn(?string $bankName): string => self::bankAccountOptionLabel($bankName, $masked, $r['account_name'] ?? null);
+        return [
+            'id' => (int)$r['id'],
+            'text_th' => $label($r['bank_name_th']),
+            'text_en' => $label($r['bank_name_en']),
+            'account_name' => $r['account_name'],
+            'bank_name_th' => $r['bank_name_th'],
+            'bank_name_en' => $r['bank_name_en'],
+            'bank_branch' => $r['branch_name'],
+            'account_no_masked' => $masked,
+            'is_default' => (int)$r['is_default'] === 1,
+        ];
+    }
+
+    /**
+     * The same option rows bankAccountOptions() serves, for a known set of ids instead of a search
+     * (mirrors EmployeeModel::optionRowsByIds()/PaymentDestinationModel::optionRowsByIds()) -- for
+     * prefilling this picker with a value that is already stored, and for describing that account
+     * wherever it is only referenced by id. Deliberately NOT filtered by status: an account
+     * something already points at has to stay describable after it is deactivated.
+     */
+    public function bankAccountOptionRowsByIds(int $compId, array $ids): array {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn($id) => $id > 0)));
+        if (!$ids) {
+            return [];
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare("SELECT " . self::BANK_ACCOUNT_OPTION_COLUMNS . "
+                FROM `bank_accounts` ba
+                LEFT JOIN `master_banks` mb ON mb.id = ba.bank_id
+                WHERE ba.comp_id = ? AND ba.deleted_at IS NULL AND ba.id IN ({$in})");
+        $stmt->execute(array_merge([$compId], $ids));
+        $byId = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $byId[(int)$r['id']] = self::bankAccountOptionItem($r);
+        }
+        return $byId;
+    }
+
     public function bankAccountOptions(int $compId, string $search, int $page, int $limit): array {
         $offset = ($page - 1) * $limit;
         $where = "WHERE ba.comp_id = :comp_id AND ba.deleted_at IS NULL AND ba.status = 'active'";
@@ -265,9 +315,7 @@ class PayrollCycleModel {
         // number -- masking needs the decrypted value, which only PHP has. Shape:
         // "bank " . chr(183) . " masked (account name)". The row also carries the same 4 account fields every
         // other payee picker returns, plus is_default so a caller can preselect the primary account.
-        $sql = "SELECT ba.id, ba.account_name, ba.branch_name, ba.company_code, ba.is_default,
-                    ba.account_no, ba.key_version,
-                    mb.bank_name_th, mb.bank_name_en
+        $sql = "SELECT " . self::BANK_ACCOUNT_OPTION_COLUMNS . "
                 FROM `bank_accounts` ba
                 LEFT JOIN `master_banks` mb ON mb.id = ba.bank_id
                 {$where} ORDER BY ba.is_default DESC, ba.id ASC LIMIT :offset, :limit";
@@ -279,23 +327,7 @@ class PayrollCycleModel {
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
 
-        $items = array_map(static function (array $r): array {
-            $masked = EncryptionService::maskAccountNo(
-                EncryptionService::decrypt($r['account_no'] ?? null, isset($r['key_version']) ? (int)$r['key_version'] : null)
-            );
-            $label = static fn(?string $bankName): string => self::bankAccountOptionLabel($bankName, $masked, $r['account_name'] ?? null);
-            return [
-                'id' => (int)$r['id'],
-                'text_th' => $label($r['bank_name_th']),
-                'text_en' => $label($r['bank_name_en']),
-                'account_name' => $r['account_name'],
-                'bank_name_th' => $r['bank_name_th'],
-                'bank_name_en' => $r['bank_name_en'],
-                'bank_branch' => $r['branch_name'],
-                'account_no_masked' => $masked,
-                'is_default' => (int)$r['is_default'] === 1,
-            ];
-        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+        $items = array_map(static fn(array $r): array => self::bankAccountOptionItem($r), $stmt->fetchAll(PDO::FETCH_ASSOC));
 
         return ['items' => $items, 'total_count' => $totalCount];
     }

@@ -1367,6 +1367,7 @@
                                     <div class="col-12">
                                         <label class="form-label small text-muted mb-1" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
                                         <select class="form-select select2-remote" id="recurringDestPayeeEmployeeSelect" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                                        <div id="recurringDestPayeeEmployeeDetail"></div>
                                     </div>
                                 </div>
                                 <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- same
@@ -1375,12 +1376,14 @@
                                     <div class="col-12">
                                         <label class="form-label small text-muted mb-1" data-i18n="payee_bank_account_label">Company Bank Account</label>
                                         <select class="form-select select2-remote" id="recurringDestBankAccountSelect" data-api="/api/payroll-cycle.bank-account.options"></select>
+                                        <div id="recurringDestBankAccountDetail"></div>
                                     </div>
                                 </div>
                                 <div class="row g-2 align-items-end d-none" id="recurringDestDestinationWrapper">
                                     <div class="col-12">
                                         <label class="form-label small text-muted mb-1" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
                                         <select class="form-select select2-remote" id="recurringDestDestinationSelect" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
+                                        <div id="recurringDestDestinationDetail"></div>
                                     </div>
                                     <div class="col-12 mt-2" id="recurringDestDestinationNewFields">
                                         <div class="row g-2">

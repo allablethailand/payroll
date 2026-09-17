@@ -5495,21 +5495,35 @@ $(document).on('change', '.sync-line-exclude-check', function () {
    modal, just extended to a shared rich sub-form since a payee needs an employee/bank picker, not
    just a number. ---------- */
 let recurringDestRows = [];
+/* `p` is a payee descriptor -- PayrollRunModel::payeeDestinationDescriptor(), the same shape for a
+   template default and for this run's override. 2026-09-17, tiny-L2: every label it reads is the one
+   that row's own picker would show (the code is taken off the employee's name the same way the
+   picker takes it off, rules.md §5/§6), so the list line, the editor and the dropdown can no longer
+   spell the same account 3 ways. */
 function recurringDestPayeeSummary(p) {
     if (!p || !p.payee_type) return langData['payee_dest_retained'] || 'Retained by company';
-    if (p.payee_type === 'employee') return p.payee_label || (langData['payee_dest_employee'] || 'Transfer to another employee');
+    if (p.payee_type === 'employee') {
+        return payeeNameFromLabelRd(p.payee_employee_label_th, p.payee_employee_label_en, '')
+            || (langData['payee_dest_employee'] || 'Transfer to another employee');
+    }
     // 2026-09-10, Batch 3B item 3: shows WHICH company bank account now, instead of the generic
     // "Company Account" label every 'company' row used to get regardless of which account was
     // chosen -- falls back to an explicit "not specified" wording (never a silent blank) when
     // bank_account_id is genuinely unspecified (legacy data, or before this column existed).
-    if (p.payee_type === 'company') return p.bank_account_label ? `${langData['payee_dest_retained'] || 'Retained by company'} - ${p.bank_account_label}` : (langData['payee_type_company_unspecified'] || 'Company Account (not specified)');
-    if (p.payee_type === 'other_person') return p.destination_label || (langData['payee_dest_external'] || 'Transfer to an external person or organization');
+    if (p.payee_type === 'company') {
+        const bankLabel = rowOptionLabelRd(p.bank_account_label_th, p.bank_account_label_en, '');
+        return bankLabel ? `${langData['payee_dest_retained'] || 'Retained by company'} - ${bankLabel}` : (langData['payee_type_company_unspecified'] || 'Company Account (not specified)');
+    }
+    if (p.payee_type === 'other_person') {
+        return rowOptionLabelRd(p.destination_label_th, p.destination_label_en, '')
+            || (langData['payee_dest_external'] || 'Transfer to an external person or organization');
+    }
     if (p.payee_type === 'not_disbursed') return langData['payee_type_not_disbursed'] || 'Not Disbursed';
     return p.payee_type;
 }
 function recurringDestRowHtml(row) {
     const name = (currentLang === 'th' ? row.item_name_th : row.item_name_en) || row.item_code;
-    const templateLabel = recurringDestPayeeSummary({ payee_type: row.template_payee_type, payee_label: row.template_payee_label, destination_label: row.template_destination_label, bank_account_label: row.template_bank_account_label });
+    const templateLabel = recurringDestPayeeSummary(row.template);
     const isOverridden = !!row.override;
     const effectiveLabel = isOverridden ? recurringDestPayeeSummary(row.override) : templateLabel;
     return `<div class="border rounded-3 p-2 mb-2" data-recurring-id="${row.recurring_id}">
@@ -5528,6 +5542,9 @@ function recurringDestRowHtml(row) {
 }
 function loadRecurringDeductionDestinationsRd() {
     $('#recurringDestEditorCard').addClass('d-none');
+    // The card is being hidden for a DIFFERENT employee's list -- whatever row it was open on has
+    // nothing to do with the rows about to arrive, so its pinned options go with it.
+    clearRecurringDestRowPinsRd();
     refreshAdjustmentSaveButtonState();
     $.getJSON(`${BASE_URL}/api/payroll-run.recurring-deduction-destinations-for-employee`, { run_id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId }, function (res) {
         if (!res.status) return;
@@ -5575,11 +5592,84 @@ $(function () {
 function setRecurringDestPayeeType(type) {
     setPayeeDestination('recurringDest', type);
 }
-$(document).on('select2:select', '#recurringDestDestinationSelect', function () {
-    $('#recurringDestDestinationNewFields').addClass('d-none');
+/* 2026-09-17, tiny-L2 -- the destination the ROW this card was opened on already points at, in all 3
+   of its pickers. Same 3 faults the add/edit line form had (tiny-M, see payeeRowPinnedOptionsRd()'s
+   own docblock), same answer: the row's own option is PINNED through initSelect2 instead of being
+   hand-built with `new Option`, so (a) it survives applyLanguage()'s re-init, (b) an ad-hoc
+   (is_saved = 0) destination -- which payment-destination.options never returns -- can still be
+   cleared and chosen again, and (c) the summary box under the picker is filled by prefill itself,
+   which programmatic selection never does via select2:select. */
+let recurringDestRowPinsRd = { payeeEmployee: null, bankAccount: null, destination: null };
+let recurringDestPayeeEmployeeBlockedRd = false;
+function renderRecurringDestPayeeEmployeeDetailRd(data) {
+    // Same 3-state renderer the line form uses -- including "this employee has no bank account on
+    // file", which for this card blocks its Save exactly as it blocks the line form's Add.
+    recurringDestPayeeEmployeeBlockedRd = renderPayeeEmployeeDetailRd('#recurringDestPayeeEmployeeDetail', data);
+    refreshAdjustmentSaveButtonState();
+}
+// True while the card is open on a payee who has nowhere for the money to land. Read by the footer's
+// own Save button state and by the payload builder's refusal -- the editor's own Save is `d-none`
+// (the footer dispatches to it), so disabling that button alone would stop nothing.
+function recurringDestSaveBlockedRd() {
+    return recurringDestPayeeEmployeeBlockedRd
+        && payeeDestinationType('recurringDest') === 'employee'
+        && !$('#recurringDestEditorCard').hasClass('d-none');
+}
+// Puts the row's own 3 options back and describes each underneath. Called LAST when the card opens,
+// after setRecurringDestPayeeType() -- whose onChange fires applyFirstSavedDestinationDefault(), and
+// that lookup must never be the thing that decides what is in a field the row already filled (it
+// re-checks the field before applying, so either arrival order now ends the same way).
+function applyRecurringDestRowPinsRd() {
+    if (pinRowOptionRd('#recurringDestPayeeEmployeeSelect', recurringDestRowPinsRd.payeeEmployee)) {
+        renderRecurringDestPayeeEmployeeDetailRd(recurringDestRowPinsRd.payeeEmployee.data);
+    }
+    if (pinRowOptionRd('#recurringDestBankAccountSelect', recurringDestRowPinsRd.bankAccount)) {
+        renderPayeeAccountDetailRd('#recurringDestBankAccountDetail', recurringDestRowPinsRd.bankAccount.data);
+    }
+    if (pinRowOptionRd('#recurringDestDestinationSelect', recurringDestRowPinsRd.destination)) {
+        renderPayeeAccountDetailRd('#recurringDestDestinationDetail', recurringDestRowPinsRd.destination.data);
+        $('#recurringDestDestinationNewFields').addClass('d-none');
+    }
+}
+// Dropped when the card moves to another row (or closes), so one row's destination can never be
+// offered as if it belonged to the next.
+function clearRecurringDestRowPinsRd() {
+    const SELECTORS = {
+        payeeEmployee: '#recurringDestPayeeEmployeeSelect',
+        bankAccount: '#recurringDestBankAccountSelect',
+        destination: '#recurringDestDestinationSelect',
+    };
+    Object.keys(SELECTORS).forEach(function (key) {
+        if (!recurringDestRowPinsRd[key]) return;
+        recurringDestRowPinsRd[key] = null;
+        unpinRowOptionRd(SELECTORS[key]);
+    });
+    renderRecurringDestPayeeEmployeeDetailRd(null);
+    renderPayeeAccountDetailRd('#recurringDestBankAccountDetail', null);
+    renderPayeeAccountDetailRd('#recurringDestDestinationDetail', null);
+}
+$(document).on('select2:select', '#recurringDestPayeeEmployeeSelect', function (e) {
+    renderRecurringDestPayeeEmployeeDetailRd(e.params.data || {});
 });
+$(document).on('select2:clear', '#recurringDestPayeeEmployeeSelect', function () {
+    renderRecurringDestPayeeEmployeeDetailRd(null);
+});
+$(document).on('select2:select', '#recurringDestBankAccountSelect', function (e) {
+    renderPayeeAccountDetailRd('#recurringDestBankAccountDetail', e.params.data);
+});
+$(document).on('select2:clear', '#recurringDestBankAccountSelect', function () {
+    renderPayeeAccountDetailRd('#recurringDestBankAccountDetail', null);
+});
+$(document).on('select2:select', '#recurringDestDestinationSelect', function (e) {
+    $('#recurringDestDestinationNewFields').addClass('d-none');
+    renderPayeeAccountDetailRd('#recurringDestDestinationDetail', e.params.data);
+});
+// Clearing empties the summary and brings the account fields back, but KEEPS the row's own option
+// pinned, so the destination this override already had can be chosen again (same rule as the line
+// form's own picker).
 $(document).on('select2:clear', '#recurringDestDestinationSelect', function () {
     $('#recurringDestDestinationNewFields').removeClass('d-none');
+    renderPayeeAccountDetailRd('#recurringDestDestinationDetail', null);
 });
 $(document).on('click', '.btn-recurring-dest-edit', function () {
     const recurringId = $(this).data('recurring-id');
@@ -5588,26 +5678,21 @@ $(document).on('click', '.btn-recurring-dest-edit', function () {
     $('#recurringDestEditorRecurringId').val(recurringId);
     const name = (currentLang === 'th' ? row.item_name_th : row.item_name_en) || row.item_code;
     $('#recurringDestEditorItemName').text(name);
+    // Whatever the row this card was last opened on left pinned is not about this row.
+    clearRecurringDestRowPinsRd();
     // An override can never be 'none'/null (that's what Reset achieves) -- if the template itself
     // had no payee at all, default the editor to Company as a neutral starting point, not a guess
     // at what the admin actually wants.
-    const current = row.override || { payee_type: row.template_payee_type || 'company', payee_employee_id: row.template_payee_employee_id, payee_label: row.template_payee_label, destination_id: row.template_destination_id, destination_label: row.template_destination_label, bank_account_id: row.template_bank_account_id, bank_account_label: row.template_bank_account_label };
+    const current = row.override || $.extend({}, row.template, { payee_type: row.template.payee_type || 'company' });
+    // FIRST, before the payee choice below: its onChange can reach
+    // applyFirstSavedDestinationDefault() straight away, and that path has to be looking at a card
+    // that already knows what this row holds (same ordering rule as prefillManualLineFormRd()).
+    recurringDestRowPinsRd = payeeRowPinnedOptionsRd(current);
     // A value this picker cannot show (a legacy 'not_disbursed', or no payee at all) opens on
     // "retained by company", which for this editor means 'company' -- see setPayeeDestination().
     setRecurringDestPayeeType(current.payee_type);
-    const initialType = payeeDestinationType('recurringDest');
-    if (initialType === 'employee' && current.payee_employee_id) {
-        const opt = new Option(current.payee_label || '', current.payee_employee_id, true, true);
-        $('#recurringDestPayeeEmployeeSelect').empty().append(opt).trigger('change');
-    } else if (initialType === 'company' && current.bank_account_id) {
-        // 2026-09-10, Batch 3B item 3: same pre-select pattern as the employee/destination branches.
-        const opt = new Option(current.bank_account_label || '', current.bank_account_id, true, true);
-        $('#recurringDestBankAccountSelect').empty().append(opt).trigger('change');
-    } else if (initialType === 'other_person' && current.destination_id) {
-        const opt = new Option(current.destination_label || '', current.destination_id, true, true);
-        $('#recurringDestDestinationSelect').empty().append(opt).trigger('change');
-        $('#recurringDestDestinationNewFields').addClass('d-none');
-    }
+    // LAST, always: the row's own values win over anything the choice above set off.
+    applyRecurringDestRowPinsRd();
     // A refusal left over from the row this card was last opened on is not about this row.
     recurringDestFormErrorRd('');
     $('#recurringDestEditorCard').removeClass('d-none');
@@ -5621,6 +5706,7 @@ $(document).on('click', '.btn-recurring-dest-edit', function () {
 // leaves the tab holding values nobody is going to save.
 function closeRecurringDestEditorRd() {
     $('#recurringDestEditorCard').addClass('d-none');
+    clearRecurringDestRowPinsRd();
     recurringDestFormErrorRd('');
     refreshAdjustmentTabDirtyGuard('manageLinesRecurringDestPane');
     refreshAdjustmentSaveButtonState();
@@ -5637,6 +5723,13 @@ function recurringDestFormPayloadRd() {
         const payeeEmployeeId = $('#recurringDestPayeeEmployeeSelect').val();
         if (!payeeEmployeeId) {
             return { ok: false, message: langData['payee_employee_select_required'] || 'Please select the payee employee.' };
+        }
+        // 2026-09-17, tiny-L2: a transfer to an employee is paid into THAT employee's own account, so
+        // one with none on file has nowhere for this money to land. The server accepts such a row
+        // today (it only checks the employee exists), so this is the client-side stop -- the same one
+        // the add/edit line form makes, and the reason the footer's Save is disabled while it holds.
+        if (recurringDestPayeeEmployeeBlockedRd) {
+            return { ok: false, message: langData['payee_employee_no_bank_account'] || 'This employee has no bank account on file yet' };
         }
         payload.payee_employee_id = payeeEmployeeId;
     } else if (payeeType === 'company') {
@@ -5762,13 +5855,18 @@ function setManualLinePayeeTypeRd(type) {
 // checks the employee exists -- see BACKLOG), so this is a client-side stop: the summary line says
 // what is missing and Add stays disabled while that employee is selected.
 let manualLinePayeeEmployeeBlockedRd = false;
-function renderManualLinePayeeEmployeeDetailRd(data) {
-    const $box = $('#manualLinePayeeEmployeeDetail');
+/* 2026-09-17, tiny-L2: the 2 summary-box renderers below take the box they write into, because the
+   recurring-deduction destination card (#recurringDestEditorCard) has the same 3 pickers and the
+   same need -- a box filled only by select2:select is empty on every prefilled row. Everything that
+   differs between the two forms (which box, what a blocked payee does to that form's Save) stays
+   with the caller; what a payee account LOOKS like is decided once, here.
+   RETURNS whether the endpoint said this employee has no account on file, so the caller can block
+   its own save -- the renderer never touches a button itself. */
+function renderPayeeEmployeeDetailRd(boxSelector, data) {
+    const $box = $(boxSelector);
     if (!data) {
-        manualLinePayeeEmployeeBlockedRd = false;
         $box.empty();
-        refreshManualLineAddStateRd();
-        return;
+        return false;
     }
     const detail = payeeDetailFromOption(data);
     // 3 states, not 2: the endpoint can say there IS an account (render it), say there is NONE
@@ -5777,7 +5875,6 @@ function renderManualLinePayeeEmployeeDetailRd(data) {
     // account. `has_bank_account` is the explicit signal; account data alone is enough on its own.
     const hasAccount = !!(detail.account_no_masked || detail.account_name) || data.has_bank_account === true;
     const knownMissing = data.has_bank_account === false;
-    manualLinePayeeEmployeeBlockedRd = knownMissing;
     if (hasAccount) {
         $box.html(payeeDetailHtml(detail));
     } else if (knownMissing) {
@@ -5785,6 +5882,19 @@ function renderManualLinePayeeEmployeeDetailRd(data) {
     } else {
         $box.empty();
     }
+    return knownMissing;
+}
+// The plain account summary (a company account, a saved/ad-hoc destination) -- no block to decide.
+function renderPayeeAccountDetailRd(boxSelector, data) {
+    const $box = $(boxSelector);
+    if (!data) {
+        $box.empty();
+        return;
+    }
+    $box.html(payeeDetailHtml(payeeDetailFromOption(data)));
+}
+function renderManualLinePayeeEmployeeDetailRd(data) {
+    manualLinePayeeEmployeeBlockedRd = renderPayeeEmployeeDetailRd('#manualLinePayeeEmployeeDetail', data);
     refreshManualLineAddStateRd();
 }
 // The company's PRIMARY account (bank_accounts.is_default) is preselected when this choice opens
@@ -5858,38 +5968,92 @@ function manualLineHasPinnedDestinationRd() {
    protect -- so they share the pin/unpin pair and nothing else. */
 let manualLineRowPayeeEmployeeRd = null;
 let manualLineRowBankAccountRd = null;
-function pinManualLineRowOptionRd(selector, pinned) {
+function pinRowOptionRd(selector, pinned) {
     if (!pinned || !pinned.id) return false;
     initSelect2(selector, {
         pinnedOption: { id: pinned.id, text: pinned.text, data: pinned.data, selected: true },
     });
     return true;
 }
-function unpinManualLineRowOptionRd(selector) {
+function unpinRowOptionRd(selector) {
     initSelect2(selector, { pinnedOption: null });
+}
+/* 2026-09-17, tiny-L2: the row a payee form opens on, turned into the 3 options that can be pinned
+   into its 3 pickers -- one builder, because both forms that do this read the SAME field names
+   (PayrollRunModel::manualLinesForEmployee() and payeeDestinationDescriptor() deliberately return
+   one shape). `text` is the label that row's own options endpoint would have shown, never composed
+   here; `data` is exactly what payeeDetailFromOption() reads, so the summary under the picker comes
+   out of the same pair of helpers as a hand-picked option's. A payload with no label at all (an
+   older shape) falls back to the account/employee name, never to a blank. */
+function payeeRowPinnedOptionsRd(row) {
+    return {
+        payeeEmployee: (row.payee_type === 'employee' && row.payee_employee_id) ? {
+            id: row.payee_employee_id,
+            text: rowOptionLabelRd(row.payee_employee_label_th, row.payee_employee_label_en,
+                row.payee_employee_no || ('#' + row.payee_employee_id)),
+            data: {
+                account_name: row.payee_employee_account_name,
+                bank_name_th: row.payee_employee_bank_name_th,
+                bank_name_en: row.payee_employee_bank_name_en,
+                bank_branch: row.payee_employee_bank_branch,
+                account_no_masked: row.payee_employee_account_no_masked,
+                has_bank_account: row.payee_employee_has_bank_account,
+            },
+        } : null,
+        bankAccount: (row.payee_type === 'company' && row.bank_account_id) ? {
+            id: row.bank_account_id,
+            text: rowOptionLabelRd(row.bank_account_label_th, row.bank_account_label_en,
+                row.bank_account_name || ('#' + row.bank_account_id)),
+            data: {
+                account_name: row.bank_account_name,
+                bank_name_th: row.bank_account_bank_name_th,
+                bank_name_en: row.bank_account_bank_name_en,
+                bank_branch: row.bank_account_branch,
+                account_no_masked: row.bank_account_no_masked,
+            },
+        } : null,
+        destination: (row.payee_type === 'other_person' && row.destination_id) ? {
+            id: row.destination_id,
+            text: rowOptionLabelRd(row.destination_label_th, row.destination_label_en,
+                row.destination_account_name || ('#' + row.destination_id)),
+            // A destination may be is_saved = 0, i.e. one its own picker endpoint never returns.
+            is_saved: row.destination_is_saved,
+            data: {
+                account_name: row.destination_account_name,
+                bank_name_th: row.destination_bank_name_th,
+                bank_name_en: row.destination_bank_name_en,
+                bank_branch: row.destination_bank_branch,
+                account_no_masked: row.destination_account_no_masked,
+            },
+        } : null,
+    };
 }
 // Picks the label the picker's own endpoint would have shown for this row, in the language on
 // screen -- never re-composed here (both come from that endpoint's own builder, server side).
 // The payee's name alone for a manual line row: the picker's own label with its code taken off by
 // the shared splitter. Falls back to the employee_no only when the payload carries no label at all
 // (a row read through an older payload shape), never to a blank.
-function manualLinePayeeNameRd(line) {
-    const label = manualLineRowLabelRd(line.payee_employee_label_th, line.payee_employee_label_en, '');
+function payeeNameFromLabelRd(thLabel, enLabel, fallback) {
+    const label = rowOptionLabelRd(thLabel, enLabel, '');
     const name = label ? splitOptionCodePrefix(label, 'dash').text : '';
-    return name || line.payee_employee_no || ('#' + line.payee_employee_id);
+    return name || fallback || '';
 }
-function manualLineRowLabelRd(thLabel, enLabel, fallback) {
+function manualLinePayeeNameRd(line) {
+    return payeeNameFromLabelRd(line.payee_employee_label_th, line.payee_employee_label_en,
+        line.payee_employee_no || ('#' + line.payee_employee_id));
+}
+function rowOptionLabelRd(thLabel, enLabel, fallback) {
     const preferred = currentLang === 'th' ? thLabel : enLabel;
     return preferred || thLabel || enLabel || fallback || '';
 }
 function applyManualLineRowPayeeEmployeeRd() {
-    if (!pinManualLineRowOptionRd('#manualLinePayeeEmployee', manualLineRowPayeeEmployeeRd)) return;
+    if (!pinRowOptionRd('#manualLinePayeeEmployee', manualLineRowPayeeEmployeeRd)) return;
     // The same renderer select2:select uses -- it also decides the "no bank account on file" block,
     // which a prefilled row has to be subject to exactly as a hand-picked one is.
     renderManualLinePayeeEmployeeDetailRd(manualLineRowPayeeEmployeeRd.data);
 }
 function applyManualLineRowBankAccountRd() {
-    if (!pinManualLineRowOptionRd('#manualLineBankAccount', manualLineRowBankAccountRd)) return;
+    if (!pinRowOptionRd('#manualLineBankAccount', manualLineRowBankAccountRd)) return;
     renderManualLineBankAccountDetailRd(manualLineRowBankAccountRd.data);
 }
 // One place decides whether the saved/new choice is offered at all: a saved destination exists, or
@@ -5912,25 +6076,25 @@ function applyManualLineDestAvailabilityRd(hasSaved) {
 // was empty in edit mode from the day it was added).
 function applyManualLineRowDestinationRd() {
     const dest = manualLineRowDestinationRd;
-    if (!pinManualLineRowOptionRd('#manualLineDestinationSelect', dest)) return;
+    if (!pinRowOptionRd('#manualLineDestinationSelect', dest)) return;
     setManualLineDestModeRd('saved');
     syncManualLineDestModeToggleRd();
-    $('#manualLineDestinationDetail').html(payeeDetailHtml(payeeDetailFromOption(dest.data)));
+    renderPayeeAccountDetailRd('#manualLineDestinationDetail', dest.data);
 }
 // Dropped when the form moves on to another line (or to a fresh Add), so a previous row's
 // destination can never be offered as if it belonged to this one.
 function clearManualLineRowDestinationRd() {
     if (manualLineHasPinnedDestinationRd()) {
         manualLineRowDestinationRd = null;
-        unpinManualLineRowOptionRd('#manualLineDestinationSelect');
+        unpinRowOptionRd('#manualLineDestinationSelect');
     }
     if (manualLineRowPayeeEmployeeRd) {
         manualLineRowPayeeEmployeeRd = null;
-        unpinManualLineRowOptionRd('#manualLinePayeeEmployee');
+        unpinRowOptionRd('#manualLinePayeeEmployee');
     }
     if (manualLineRowBankAccountRd) {
         manualLineRowBankAccountRd = null;
-        unpinManualLineRowOptionRd('#manualLineBankAccount');
+        unpinRowOptionRd('#manualLineBankAccount');
     }
 }
 // 2026-09-15, batch 2/4 follow-up: the "Will be added as: Income/Deduction" hint this used to render
@@ -5976,12 +6140,7 @@ $(document).on('select2:clear', '#manualLinePayeeEmployee', function () {
 // One renderer for both ways this box gets filled (a user picking an account, and a row being
 // prefilled) -- the pair drifting apart is what left an edited row with no account summary at all.
 function renderManualLineBankAccountDetailRd(data) {
-    const $box = $('#manualLineBankAccountDetail');
-    if (!data) {
-        $box.empty();
-        return;
-    }
-    $box.html(payeeDetailHtml(payeeDetailFromOption(data)));
+    renderPayeeAccountDetailRd('#manualLineBankAccountDetail', data);
 }
 $(document).on('select2:select', '#manualLineBankAccount', function (e) {
     renderManualLineBankAccountDetailRd(e.params.data);
@@ -5992,7 +6151,7 @@ $(document).on('select2:clear', '#manualLineBankAccount', function () {
     renderManualLineBankAccountDetailRd(null);
 });
 $(document).on('select2:select', '#manualLineDestinationSelect', function (e) {
-    $('#manualLineDestinationDetail').html(payeeDetailHtml(payeeDetailFromOption(e.params.data)));
+    renderPayeeAccountDetailRd('#manualLineDestinationDetail', e.params.data);
 });
 // 2026-09-17, tiny-M: clearing used to leave the form with an empty saved-picker and no way back --
 // the 4 account fields stayed hidden and the saved/new choice was hidden too whenever the company
@@ -6114,7 +6273,14 @@ $(document).on('keydown', '#manualLineAmount', function (e) {
    dispatcher is back to one shape. */
 const ADJUSTMENT_TAB_CONFIG_RD = {
     manageLinesAttendancePane: { scope: '#manageLinesAttendancePane', saveSelector: '#btnSaveAttendanceData' },
-    manageLinesRecurringDestPane: { scope: '#recurringDestEditorCard', saveSelector: '#btnSaveRecurringDestOverride', activeOnly: true },
+    // `blockedFn` (2026-09-17, tiny-L2): a tab can be dirty and still have nothing valid to save --
+    // here, a payee employee with no bank account on file. The footer button is the only visible Save
+    // (each tab's own is `d-none`), so this is where such a state has to show up.
+    manageLinesRecurringDestPane: {
+        scope: '#recurringDestEditorCard', saveSelector: '#btnSaveRecurringDestOverride', activeOnly: true,
+        blockedFn: recurringDestSaveBlockedRd, blockedKey: 'payee_employee_no_bank_account',
+        blockedFallback: 'This employee has no bank account on file yet',
+    },
     manageLinesCalcPane: { scope: '#manageLinesCalcPane', saveSelector: '#btnSaveEmpCalcOverride' },
 };
 function adjustmentActiveTabConfig() {
@@ -6149,8 +6315,13 @@ function refreshAdjustmentSaveButtonState() {
     const cfg = adjustmentActiveTabConfig();
     const $btn = $('#btnSaveActiveAdjustmentTab');
     if (!$btn.length) return;
+    $btn.attr('title', null);
     if (!cfg || (cfg.activeOnly && $(cfg.scope).hasClass('d-none'))) {
         $btn.prop('disabled', true);
+        return;
+    }
+    if (cfg.blockedFn && cfg.blockedFn()) {
+        $btn.prop('disabled', true).attr('title', langData[cfg.blockedKey] || cfg.blockedFallback || null);
         return;
     }
     $btn.prop('disabled', !adjustmentTabIsDirty(cfg));
@@ -6163,6 +6334,9 @@ function saveActiveAdjustmentTab() {
     const cfg = adjustmentActiveTabConfig();
     if (!cfg) return;
     if (cfg.activeOnly && $(cfg.scope).hasClass('d-none')) return;
+    // A disabled button still fires its handlers through .trigger('click'), so the block is checked
+    // here too -- the tab's own form says why (recurringDestFormPayloadRd() refuses as well).
+    if (cfg.blockedFn && cfg.blockedFn()) return;
     $(cfg.saveSelector).trigger('click');
 }
 $(document).on('click', '#btnSaveActiveAdjustmentTab', saveActiveAdjustmentTab);
@@ -6456,51 +6630,10 @@ function prefillManualLineFormRd(line) {
     // applyManualLineDestAvailabilityRd()'s own docblock for the 2 bugs this ordering fixes).
     // Same for the other 2 pickers: set before the payee choice below, because its onChange can
     // reach applyDefaultCompanyBankAccount() straight away.
-    manualLineRowPayeeEmployeeRd = (line.payee_type === 'employee' && line.payee_employee_id)
-        ? {
-            id: line.payee_employee_id,
-            text: manualLineRowLabelRd(line.payee_employee_label_th, line.payee_employee_label_en,
-                line.payee_employee_no || ('#' + line.payee_employee_id)),
-            data: {
-                account_name: line.payee_employee_account_name,
-                bank_name_th: line.payee_employee_bank_name_th,
-                bank_name_en: line.payee_employee_bank_name_en,
-                bank_branch: line.payee_employee_bank_branch,
-                account_no_masked: line.payee_employee_account_no_masked,
-                has_bank_account: line.payee_employee_has_bank_account,
-            },
-        }
-        : null;
-    manualLineRowBankAccountRd = (line.payee_type === 'company' && line.bank_account_id)
-        ? {
-            id: line.bank_account_id,
-            text: manualLineRowLabelRd(line.bank_account_label_th, line.bank_account_label_en,
-                line.bank_account_name || ('#' + line.bank_account_id)),
-            data: {
-                account_name: line.bank_account_name,
-                bank_name_th: line.bank_account_bank_name_th,
-                bank_name_en: line.bank_account_bank_name_en,
-                bank_branch: line.bank_account_branch,
-                account_no_masked: line.bank_account_no_masked,
-            },
-        }
-        : null;
-    manualLineRowDestinationRd = (line.payee_type === 'other_person' && line.destination_id)
-        ? {
-            id: line.destination_id,
-            text: line.destination_account_name || ('#' + line.destination_id),
-            is_saved: line.destination_is_saved,
-            // Exactly the shape payeeDetailFromOption() reads, so the summary under the picker is
-            // built by the same pair of helpers as every other payee picker's.
-            data: {
-                account_name: line.destination_account_name,
-                bank_name_th: line.destination_bank_name_th,
-                bank_name_en: line.destination_bank_name_en,
-                bank_branch: line.destination_bank_branch,
-                account_no_masked: line.destination_account_no_masked,
-            },
-        }
-        : null;
+    const pins = payeeRowPinnedOptionsRd(line);
+    manualLineRowPayeeEmployeeRd = pins.payeeEmployee;
+    manualLineRowBankAccountRd = pins.bankAccount;
+    manualLineRowDestinationRd = pins.destination;
     setManualLineTypeRd(line.item_type);
     const label = (currentLang === 'th' ? line.item_name_th : line.item_name_en) || line.item_name_th || line.item_name_en || '';
     // 2026-09-17, R1b: both kinds of hand-typed line -- plain custom AND the retired `other` -- open
@@ -7239,7 +7372,11 @@ $(document).ready(function () {
         initSelect2('#manualLineDestBank', { mode: 'ajax' });
         // Phase 6: run-level recurring-deduction destination override editor (single shared
         // instance reused across every row -- see recurringDest*() functions below).
-        initSelect2('#recurringDestPayeeEmployeeSelect', { mode: 'ajax', allowClear: true });
+        // 2026-09-17, tiny-L2: same 'dash' strip as the line form's own payee picker -- the endpoint
+        // labels every option "CODE - name" and rules.md 5/6 wants that code as the option's `title`,
+        // not printed inline. Searching is untouched (api/employee.report_to.get matches the term
+        // against employee_no AND both th/en names in SQL), so typing a code still finds its row.
+        initSelect2('#recurringDestPayeeEmployeeSelect', { mode: 'ajax', allowClear: true, stripCodePrefix: 'dash' });
         initSelect2('#recurringDestDestinationSelect', { mode: 'ajax', allowClear: true });
         initSelect2('#recurringDestBank', { mode: 'ajax' });
         // 2026-09-11, Batch 3C item 4 sub-step 4a: #run_cycle_id/#run_merge_target_id (renamed from

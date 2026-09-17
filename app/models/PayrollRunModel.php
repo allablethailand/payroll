@@ -6194,7 +6194,8 @@ class PayrollRunModel {
      * (EmployeeRecurringDeductionModel::activeForPeriod()), each carrying both the TEMPLATE's own
      * default payee (from employee_recurring_deductions, unaffected by anything below) and this
      * run's own override (if one exists) so the UI can show "currently routed to X (overridden from
-     * the template's own Y)" without a second round trip.
+     * the template's own Y)" without a second round trip. 2026-09-17, tiny-L2: both of those are one
+     * `template`/`override` sub-array of the SAME shape (payeeDestinationDescriptor()).
      */
     public function recurringDeductionDestinationsForEmployee(int $runId, int $compId, int $employeeId): array {
         $run = $this->get($runId, $compId);
@@ -6217,80 +6218,91 @@ class PayrollRunModel {
         $destIds = [];
         $payeeEmpIds = [];
         $bankAccountIds = [];
-        foreach ($recRows as $r) {
+        foreach (array_merge($recRows, array_values($overridesByRecurringId)) as $r) {
             if (!empty($r['destination_id'])) { $destIds[] = (int)$r['destination_id']; }
             if (!empty($r['payee_employee_id'])) { $payeeEmpIds[] = (int)$r['payee_employee_id']; }
             if (!empty($r['bank_account_id'])) { $bankAccountIds[] = (int)$r['bank_account_id']; }
         }
-        foreach ($overridesByRecurringId as $ov) {
-            if (!empty($ov['destination_id'])) { $destIds[] = (int)$ov['destination_id']; }
-            if (!empty($ov['payee_employee_id'])) { $payeeEmpIds[] = (int)$ov['payee_employee_id']; }
-            if (!empty($ov['bank_account_id'])) { $bankAccountIds[] = (int)$ov['bank_account_id']; }
-        }
-        $destLabels = [];
-        if (!empty($destIds)) {
-            $destIds = array_values(array_unique($destIds));
-            $ph = implode(',', array_fill(0, count($destIds), '?'));
-            $stmtDest = $this->db->prepare("SELECT pd.id, pd.account_name, mb.bank_name_th, mb.bank_name_en
-                FROM `payment_destinations` pd LEFT JOIN `master_banks` mb ON mb.id = pd.bank_id WHERE pd.id IN ({$ph})");
-            $stmtDest->execute($destIds);
-            foreach ($stmtDest->fetchAll(PDO::FETCH_ASSOC) as $d) {
-                $destLabels[(int)$d['id']] = trim(($d['account_name'] ?? '') . ($d['bank_name_th'] ? ' - ' . $d['bank_name_th'] : ''));
-            }
-        }
-        // 2026-09-10, Batch 3B item 3: same label-lookup pattern as $destLabels above, for the new
-        // 'company' level-2 (WHICH of the company's own bank_accounts).
-        $bankAccountLabels = [];
-        if (!empty($bankAccountIds)) {
-            $bankAccountIds = array_values(array_unique($bankAccountIds));
-            $ph3 = implode(',', array_fill(0, count($bankAccountIds), '?'));
-            $stmtBa = $this->db->prepare("SELECT id, account_name FROM `bank_accounts` WHERE id IN ({$ph3})");
-            $stmtBa->execute($bankAccountIds);
-            foreach ($stmtBa->fetchAll(PDO::FETCH_ASSOC) as $ba) {
-                $bankAccountLabels[(int)$ba['id']] = $ba['account_name'];
-            }
-        }
-        $payeeLabels = [];
-        if (!empty($payeeEmpIds)) {
-            $payeeEmpIds = array_values(array_unique($payeeEmpIds));
-            $ph2 = implode(',', array_fill(0, count($payeeEmpIds), '?'));
-            $stmtEmp = $this->db->prepare("SELECT id, employee_no, name_th, surname_th FROM `employees` WHERE id IN ({$ph2})");
-            $stmtEmp->execute($payeeEmpIds);
-            foreach ($stmtEmp->fetchAll(PDO::FETCH_ASSOC) as $e) {
-                $payeeLabels[(int)$e['id']] = trim(($e['name_th'] ?? '') . ' ' . ($e['surname_th'] ?? '')) . ' (' . $e['employee_no'] . ')';
-            }
-        }
+        // 2026-09-17, tiny-L2: all 3 destinations are looked up through the SAME builder their own
+        // picker endpoint uses (EmployeeModel/PaymentDestinationModel/PayrollCycleModel each own
+        // theirs) instead of the 3 private label compositions that used to sit here -- those spelled
+        // the same row differently from the picker in all 3 cases ("name (EM001)" vs "EM001 - name",
+        // account_name alone vs "bank . masked (name)", "name - bankTh" vs "name (bank)"), so the
+        // card, its editor and the dropdown disagreed about the account they were all describing.
+        require_once __DIR__ . '/PaymentDestinationModel.php';
+        require_once __DIR__ . '/PayrollCycleModel.php';
+        $payeeRows = (new EmployeeModel($this->db))->optionRowsByIds($compId, $payeeEmpIds);
+        $destRows = (new PaymentDestinationModel($this->db))->optionRowsByIds($compId, $destIds);
+        $bankRows = (new PayrollCycleModel($this->db))->bankAccountOptionRowsByIds($compId, $bankAccountIds);
 
         $result = [];
         foreach ($recRows as $r) {
             $recurringId = (int)$r['recurring_id'];
             $override = $overridesByRecurringId[$recurringId] ?? null;
-            $templateDestId = $r['destination_id'] !== null ? (int)$r['destination_id'] : null;
-            $templatePayeeEmpId = $r['payee_employee_id'] !== null ? (int)$r['payee_employee_id'] : null;
-            $templateBankAccountId = !empty($r['bank_account_id']) ? (int)$r['bank_account_id'] : null;
             $result[] = [
                 'recurring_id' => $recurringId,
                 'item_code' => $r['item_code'], 'item_name_th' => $r['item_name_th'], 'item_name_en' => $r['item_name_en'],
-                'template_payee_type' => $r['payee_type'],
-                'template_payee_employee_id' => $templatePayeeEmpId,
-                'template_payee_label' => $templatePayeeEmpId !== null ? ($payeeLabels[$templatePayeeEmpId] ?? null) : null,
-                'template_destination_id' => $templateDestId,
-                'template_destination_label' => $templateDestId !== null ? ($destLabels[$templateDestId] ?? null) : null,
-                'template_bank_account_id' => $templateBankAccountId,
-                'template_bank_account_label' => $templateBankAccountId !== null ? ($bankAccountLabels[$templateBankAccountId] ?? null) : null,
-                'override' => $override ? [
-                    'payee_type' => $override['payee_type'],
-                    'payee_employee_id' => $override['payee_employee_id'] !== null ? (int)$override['payee_employee_id'] : null,
-                    'payee_label' => $override['payee_employee_id'] !== null ? ($payeeLabels[(int)$override['payee_employee_id']] ?? null) : null,
-                    'destination_id' => $override['destination_id'] !== null ? (int)$override['destination_id'] : null,
-                    'destination_label' => $override['destination_id'] !== null ? ($destLabels[(int)$override['destination_id']] ?? null) : null,
-                    'bank_account_id' => !empty($override['bank_account_id']) ? (int)$override['bank_account_id'] : null,
-                    'bank_account_label' => !empty($override['bank_account_id']) ? ($bankAccountLabels[(int)$override['bank_account_id']] ?? null) : null,
-                    'note' => $override['note'],
-                ] : null,
+                // Template default and this run's override are the SAME shape, built by the same
+                // method -- the card shows one against the other, and the editor opens on whichever
+                // is in force, so any field one of them carries the other has to carry too.
+                'template' => $this->payeeDestinationDescriptor($r, $payeeRows, $destRows, $bankRows),
+                'override' => $override
+                    ? $this->payeeDestinationDescriptor($override, $payeeRows, $destRows, $bankRows) + ['note' => $override['note']]
+                    : null,
             ];
         }
         return $result;
+    }
+
+    /**
+     * "Where this money goes", read-only, in the one shape every payee form on this page reads --
+     * the SAME field names manualLinesForEmployee() returns per line, so one client-side helper
+     * builds the pinned option + account summary for both. Every label and every account field comes
+     * from that picker's own options endpoint (via each model's optionRowsByIds()); nothing is
+     * composed here. Account numbers are masked at those methods, so no plaintext reaches this array.
+     *
+     * @param array $src a row carrying payee_type/payee_employee_id/destination_id/bank_account_id
+     *                   (a recurring-deduction template row, or one of this run's override rows)
+     */
+    private function payeeDestinationDescriptor(array $src, array $payeeRows, array $destRows, array $bankRows): array {
+        $payeeId = !empty($src['payee_employee_id']) ? (int)$src['payee_employee_id'] : null;
+        $destId = !empty($src['destination_id']) ? (int)$src['destination_id'] : null;
+        $bankId = !empty($src['bank_account_id']) ? (int)$src['bank_account_id'] : null;
+        $payee = $payeeId !== null ? ($payeeRows[$payeeId] ?? null) : null;
+        $dest = $destId !== null ? ($destRows[$destId] ?? null) : null;
+        $bank = $bankId !== null ? ($bankRows[$bankId] ?? null) : null;
+        return [
+            'payee_type' => $src['payee_type'],
+            'payee_employee_id' => $payeeId,
+            'payee_employee_label_th' => $payee['text_th'] ?? null,
+            'payee_employee_label_en' => $payee['text_en'] ?? null,
+            'payee_employee_account_name' => $payee['account_name'] ?? null,
+            'payee_employee_bank_name_th' => $payee['bank_name_th'] ?? null,
+            'payee_employee_bank_name_en' => $payee['bank_name_en'] ?? null,
+            'payee_employee_bank_branch' => $payee['bank_branch'] ?? null,
+            'payee_employee_account_no_masked' => $payee['account_no_masked'] ?? null,
+            'payee_employee_has_bank_account' => $payee !== null ? (bool)$payee['has_bank_account'] : null,
+            'destination_id' => $destId,
+            // The endpoint serves ONE label for both languages (its bank name is Thai-preferred);
+            // mirroring that exactly is the point -- see PaymentDestinationModel::optionLabel().
+            'destination_label_th' => $dest['text_th'] ?? null,
+            'destination_label_en' => $dest['text_en'] ?? null,
+            'destination_account_name' => $dest['account_name'] ?? null,
+            'destination_bank_name_th' => $dest['bank_name_th'] ?? null,
+            'destination_bank_name_en' => $dest['bank_name_en'] ?? null,
+            'destination_bank_branch' => $dest['bank_branch'] ?? null,
+            'destination_account_no_masked' => $dest['account_no_masked'] ?? null,
+            // A row may point at an ad-hoc destination the saved-only picker can never offer back.
+            'destination_is_saved' => $dest !== null ? (int)$dest['is_saved'] : null,
+            'bank_account_id' => $bankId,
+            'bank_account_label_th' => $bank['text_th'] ?? null,
+            'bank_account_label_en' => $bank['text_en'] ?? null,
+            'bank_account_name' => $bank['account_name'] ?? null,
+            'bank_account_bank_name_th' => $bank['bank_name_th'] ?? null,
+            'bank_account_bank_name_en' => $bank['bank_name_en'] ?? null,
+            'bank_account_branch' => $bank['bank_branch'] ?? null,
+            'bank_account_no_masked' => $bank['account_no_masked'] ?? null,
+        ];
     }
 
     /**

@@ -77,8 +77,8 @@ function el(sel) {
     if (!DOM[sel]) DOM[sel] = { classes: new Set(), value: '', checked: false, data: {}, html: '' };
     return DOM[sel];
 }
-let calls = { isFormDirty: 0, refreshGuard: [], refreshSaveBtn: 0 };
-function resetCalls() { calls = { isFormDirty: 0, refreshGuard: [], refreshSaveBtn: 0 }; }
+let calls = { isFormDirty: 0, refreshGuard: [], refreshSaveBtn: 0, clearRowPins: 0 };
+function resetCalls() { calls = { isFormDirty: 0, refreshGuard: [], refreshSaveBtn: 0, clearRowPins: 0 }; }
 function $(sel) {
     const e = el(sel);
     const api = {
@@ -101,17 +101,27 @@ function refreshAdjustmentTabDirtyGuard(paneId) { calls.refreshGuard.push(paneId
 function refreshAdjustmentSaveButtonState() { calls.refreshSaveBtn++; }
 let stubPayeeType = 'company';
 function payeeDestinationType(prefix) { return stubPayeeType; }
+// 2026-09-17, tiny-L2: the card pins the row's own 3 options through initSelect2 now, and closing it
+// drops them. Not what this file is about (see tests/recurring_dest_prefill_test.js) -- stubbed so
+// the close path still runs, and so "blocked" defaults to no for the payload assertions below.
+let recurringDestPayeeEmployeeBlockedRd = false;
+function clearRecurringDestRowPinsRd() { calls.clearRowPins++; }
 function escapeHtml(str) { if (str === null || str === undefined) return ''; return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 const PAYROLL_RUN_ID = 4242;
 let langData = {};
-const ADJUSTMENT_TAB_CONFIG_RD = {
-    manageLinesAttendancePane: { scope: '#manageLinesAttendancePane', saveSelector: '#btnSaveAttendanceData' },
-    manageLinesRecurringDestPane: { scope: '#recurringDestEditorCard', saveSelector: '#btnSaveRecurringDestOverride', activeOnly: true },
-    manageLinesCalcPane: { scope: '#manageLinesCalcPane', saveSelector: '#btnSaveEmpCalcOverride' },
-};
 `;
 
+// The REAL config, not a copy of it: a stand-in here goes stale the moment a tab gains a field (it
+// just did -- `blockedFn`), and every assertion below is about what that config says.
+function extractConstObjectSource(fileText, name) {
+    const marker = `const ${name} = {`;
+    const startIdx = fileText.indexOf(marker);
+    if (startIdx === -1) throw new Error(`${name} not found -- has it been renamed/removed?`);
+    return sliceBalanced(fileText, startIdx, name) + ';';
+}
 const extracted = stubs + '\n'
+    + 'function recurringDestSaveBlockedRd() { return recurringDestPayeeEmployeeBlockedRd; }' + '\n'
+    + extractConstObjectSource(detailSource, 'ADJUSTMENT_TAB_CONFIG_RD') + '\n'
     + extractFunctionSource(appSource, 'calloutHtml') + '\n'
     + extractFunctionSource(detailSource, 'adjustmentTabIsDirty') + '\n'
     + extractFunctionSource(detailSource, 'closeRecurringDestEditorRd') + '\n'
@@ -187,6 +197,9 @@ check('Cancel re-baselines THIS tab (refreshAdjustmentTabDirtyGuard called with 
     getCalls().refreshGuard.length === 1 && getCalls().refreshGuard[0] === 'manageLinesRecurringDestPane');
 check('Cancel refreshes the footer Save button state', getCalls().refreshSaveBtn === 1);
 check('Cancel clears any refusal left in the card', el(ERROR_BOX).html === '' && el(ERROR_BOX).classes.has('d-none') === true);
+// 2026-09-17, tiny-L2: and drops the row's own pinned options with it, so the next row this card
+// opens on can never be offered the previous row's destination.
+check('Cancel drops the row pinned options too', getCalls().clearRowPins === 1);
 check('after Cancel the tab is NOT dirty -> no confirm on tab switch / modal close', adjustmentTabIsDirty(RECURRING_CFG) === false);
 
 /* ================================================================ */
