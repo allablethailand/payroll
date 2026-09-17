@@ -1353,6 +1353,10 @@
                             <div class="border rounded-3 p-3 bg-light bg-opacity-50 mt-3 d-none" id="recurringDestEditorCard">
                                 <input type="hidden" id="recurringDestEditorRecurringId">
                                 <div class="fw-bold text-dark small mb-2" id="recurringDestEditorItemName"></div>
+                                <!-- §9: a refused save says why INSIDE the form (callout, §15) and the
+                                     editor stays open on the values that were refused -- same slot
+                                     #manualLineFormError already is for the add/edit line form. -->
+                                <div id="recurringDestEditorError" class="d-none mb-2"></div>
                                 <!-- Same shared picker as the Payment Items tab, with ONE difference:
                                      an override is always a real payee (removing it is what Reset does),
                                      so there is no "no record" half of the sub-question here --

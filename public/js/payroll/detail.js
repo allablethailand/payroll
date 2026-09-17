@@ -5605,24 +5605,35 @@ $(document).on('click', '.btn-recurring-dest-edit', function () {
         $('#recurringDestDestinationSelect').empty().append(opt).trigger('change');
         $('#recurringDestDestinationNewFields').addClass('d-none');
     }
+    // A refusal left over from the row this card was last opened on is not about this row.
+    recurringDestFormErrorRd('');
     $('#recurringDestEditorCard').removeClass('d-none');
     // 2026-09-14, Round 3 item 4 batch 1/4: baseline the editor against what it was just populated
     // with (this row's current override/template values), not an empty pre-open state.
     refreshAdjustmentTabDirtyGuard('manageLinesRecurringDestPane');
     refreshAdjustmentSaveButtonState();
 });
-$(document).on('click', '#btnCancelRecurringDestEdit', function () {
+// Closing the editor is not just hiding it: the tab's own dirty baseline was taken against the row
+// this card was opened on (see .btn-recurring-dest-edit above), so leaving that baseline behind
+// leaves the tab holding values nobody is going to save.
+function closeRecurringDestEditorRd() {
     $('#recurringDestEditorCard').addClass('d-none');
+    recurringDestFormErrorRd('');
+    refreshAdjustmentTabDirtyGuard('manageLinesRecurringDestPane');
     refreshAdjustmentSaveButtonState();
-});
-$(document).on('click', '#btnSaveRecurringDestOverride', function () {
+}
+$(document).on('click', '#btnCancelRecurringDestEdit', closeRecurringDestEditorRd);
+// RETURNS the refusal instead of showing one, exactly like manualLineFormPayloadRd() below: the
+// caller is what knows the message belongs inside the card (§9), not in a dialog on top of the
+// values it is about. Every refusal leaves the card open and fires nothing.
+function recurringDestFormPayloadRd() {
     const recurringId = $('#recurringDestEditorRecurringId').val();
     const payeeType = payeeDestinationType('recurringDest');
     const payload = { id: PAYROLL_RUN_ID, recurring_id: recurringId, payee_type: payeeType };
     if (payeeType === 'employee') {
         const payeeEmployeeId = $('#recurringDestPayeeEmployeeSelect').val();
         if (!payeeEmployeeId) {
-            return { ok: false, message: langData['required_star_message'] || 'Please fill all fields marked with *' };
+            return { ok: false, message: langData['payee_employee_select_required'] || 'Please select the payee employee.' };
         }
         payload.payee_employee_id = payeeEmployeeId;
     } else if (payeeType === 'company') {
@@ -5630,7 +5641,7 @@ $(document).on('click', '#btnSaveRecurringDestOverride', function () {
         // recurringDeductionDestinationOverrideSave() itself rejects a missing value.
         const bankAccountId = $('#recurringDestBankAccountSelect').val();
         if (!bankAccountId) {
-            return { ok: false, message: langData['required_star_message'] || 'Please fill all fields marked with *' };
+            return { ok: false, message: langData['bank_account_select_required'] || 'Please select a bank account.' };
         }
         payload.bank_account_id = bankAccountId;
     } else if (payeeType === 'other_person') {
@@ -5642,8 +5653,7 @@ $(document).on('click', '#btnSaveRecurringDestOverride', function () {
             const accountNo = $('#recurringDestAccountNo').val().trim();
             const bankId = $('#recurringDestBank').val();
             if (!accountName || !accountNo || !bankId) {
-                showWarning(langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.');
-                return;
+                return { ok: false, message: langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.' };
             }
             payload.account_name = accountName;
             payload.account_no = accountNo;
@@ -5652,6 +5662,20 @@ $(document).on('click', '#btnSaveRecurringDestOverride', function () {
             payload.is_saved = $('#recurringDestSaveForReuse').is(':checked');
         }
     }
+    return { ok: true, payload: payload };
+}
+$(document).on('click', '#btnSaveRecurringDestOverride', function () {
+    // 2026-09-17, tiny-L, real bug: 2 of these 3 refusals used to `return { ok: false, ... }` from
+    // this click handler -- a value jQuery throws away -- so an override with no employee/account
+    // chosen did nothing at all, with no message anywhere. The third one showed a centre-screen
+    // dialog over the field it was about, which §9 rules out too. All 3 are one callout now.
+    const built = recurringDestFormPayloadRd();
+    if (!built.ok) {
+        recurringDestFormErrorRd(built.message);
+        return;
+    }
+    const payload = built.payload;
+    recurringDestFormErrorRd('');
     const $btn = $(this);
     setButtonLoading($btn, true);
     $.ajax({
@@ -5659,12 +5683,14 @@ $(document).on('click', '#btnSaveRecurringDestOverride', function () {
         contentType: 'application/json', dataType: 'json', data: JSON.stringify(payload),
         success: function (res) {
             setButtonLoading($btn, false);
-            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
-            $('#recurringDestEditorCard').addClass('d-none');
+            // A server refusal is the same kind of refusal as the 3 above: it belongs in the card,
+            // on the values that were refused, and the card stays open (§9).
+            if (!res.status) { recurringDestFormErrorRd(res.message || langData['save_failed'] || 'An error occurred.'); return; }
+            closeRecurringDestEditorRd();
             loadRecurringDeductionDestinationsRd();
             loadRunDetail();
         },
-        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
+        error: function () { setButtonLoading($btn, false); recurringDestFormErrorRd(langData['save_failed'] || 'An error occurred while saving.'); }
     });
 });
 $(document).on('click', '.btn-recurring-dest-reset', function () {
@@ -5980,6 +6006,12 @@ function refreshAdjustmentTabDirtyGuard(paneId) {
 function adjustmentTabIsDirty(cfg) {
     if (!cfg) return false;
     const $scope = $(cfg.scope);
+    // 2026-09-17, tiny-L, real bug: an `activeOnly` scope that is CLOSED has nothing to save, so it
+    // cannot be dirty either -- refreshAdjustmentSaveButtonState()/saveActiveAdjustmentTab() both
+    // checked this already, this one did not, and it is the one the 2 guards ask. Result: open the
+    // recurring-destination editor, type, press Cancel (which only hides the card), and both the
+    // tab-switch and the modal-close guard kept asking about changes the user had just abandoned.
+    if (cfg.activeOnly && $scope.hasClass('d-none')) return false;
     return isFormDirty($scope, $scope.data('dirtyGuardBaseline'));
 }
 // Footer's single Save button: disabled unless the active tab is actually dirty (Recurring
@@ -6228,14 +6260,24 @@ function manualLineBlockBusyRd(mountSelector, busy) {
     $mount.toggleClass('block-busy', !!busy);
     $mount.find('button').prop('disabled', !!busy);
 }
-// A refusal belongs where the values that caused it still are: inside the form, which stays open.
-function manualLineFormErrorRd(message) {
-    const $box = $('#manualLineFormError');
+// A refusal belongs where the values that caused it still are: inside the form, which stays open
+// (§9) -- one box per form, `message` falsy clears it.
+// 2026-09-17, tiny-L: generalized from #manualLineFormError-only to take the box, so the recurring
+// destination editor's own refusals render the identical callout instead of a second copy of this
+// (CLAUDE.md's "mirror-by-copy is not acceptable" -- the 2 callers differ only by which box).
+function formCalloutErrorRd(boxSelector, message) {
+    const $box = $(boxSelector);
     if (!message) {
         $box.empty().addClass('d-none');
         return;
     }
     $box.html(calloutHtml(escapeHtml(message), 'danger')).removeClass('d-none');
+}
+function manualLineFormErrorRd(message) {
+    formCalloutErrorRd('#manualLineFormError', message);
+}
+function recurringDestFormErrorRd(message) {
+    formCalloutErrorRd('#recurringDestEditorError', message);
 }
 // The type is never a choice in this form: it comes from the column head that was pressed, or from
 // the row being edited. The control still shows it, read-only, so the form says which column the

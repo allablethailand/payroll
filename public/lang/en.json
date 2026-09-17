@@ -1949,6 +1949,7 @@
     "payee_employee_label": "Payee Employee (transfer to)",
     "payee_transfer_tag": "Paid to",
     "payee_employee_no_bank_account": "This employee has no bank account on file yet",
+    "payee_employee_select_required": "Please select the payee employee.",
     "payee_type_label": "Send deducted amount to",
     "payee_dest_retained": "Retained by company",
     "payee_dest_employee": "Transfer to another employee",

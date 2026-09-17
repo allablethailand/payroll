@@ -1949,6 +1949,7 @@
     "payee_employee_label": "พนักงานผู้รับโอน",
     "payee_transfer_tag": "จ่ายให้",
     "payee_employee_no_bank_account": "พนักงานคนนี้ยังไม่มีบัญชีธนาคาร",
+    "payee_employee_select_required": "กรุณาเลือกพนักงานผู้รับโอน",
     "payee_type_label": "เงินที่หักได้ ส่งไปที่",
     "payee_dest_retained": "หักเข้าบริษัท",
     "payee_dest_employee": "โอนให้พนักงานคนอื่น",
