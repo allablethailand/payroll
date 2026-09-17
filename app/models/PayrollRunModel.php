@@ -366,9 +366,11 @@ class PayrollRunModel {
                     (SELECT COUNT(*) FROM `payroll_run_manual_lines` pml WHERE pml.run_id = d.run_id AND pml.employee_id = d.employee_id) AS manual_line_count,
                     (SELECT 1 FROM `payroll_run_employee_exemptions` ex WHERE ex.run_id = d.run_id AND ex.employee_id = d.employee_id
                         AND (ex.tax_calculate_override != 'inherit' OR ex.sso_calculate_override != 'inherit') LIMIT 1) AS has_calc_override,
-                    -- 2026-09-16: one count for EVERY per-employee adjustment the Adjustments modal
-                    -- (#manageLinesModal) can make, across all 5 of its tabs -- shown as the count
-                    -- badge on that modal's own row button. line_override_count/manual_line_count
+                    -- 2026-09-16: one count for EVERY per-employee adjustment this run can carry
+                    -- for this employee, across all 5 tables below -- shown as the count badge on the
+                    -- row. 2026-09-17 (D3): the badge moved from the settings modal's own button to
+                    -- the Calculation Breakdown one, which is where the first 2 of these tables are
+                    -- edited now; the figure itself is unchanged. line_override_count/manual_line_count
                     -- above stay as they are (employeeAdjustments()'s viewer still lists those 2
                     -- specifically); this is the wider was-this-employee-touched-at-all figure.
                     -- payroll_run_item_exclusions is deliberately NOT part of it: that table is

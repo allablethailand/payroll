@@ -736,7 +736,7 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
 <!-- ==================== แก้ค่าในตาราง inline + switch (§7/§9, ใหม่ 2026-09-16) ==================== -->
 <div class="cp-section">
     <h2>แก้ค่าในตาราง inline + switch เป็นการกระทำ (§7/§9)</h2>
-    <p class="cp-section-note">ตารางที่ <b>ยิง API ทันทีทุกการกระทำ</b> (ของจริง: tab "ปรับตัวเลข" ของ Adjustments modal) — ไม่มีปุ่มบันทึกที่ footer และไม่มี dirty-guard เพราะสิ่งที่อยู่บนหน้าจอคือสิ่งที่อยู่บนเซิร์ฟเวอร์เสมอ. <b>ดินสอ</b> (ghost, อยู่ในคอลัมน์ตัวเลขเอง, โผล่ตอน hover แถว) เปลี่ยนเซลล์เป็น <code>[input ค่าปัจจุบัน][บันทึก outline-primary][✗ ghost]</code> — Enter = บันทึก, Esc = ยกเลิก, <b>ค่าเท่าเดิม/ว่าง = ปุ่มบันทึก disabled</b> (ลองพิมพ์ดู), เปิดได้ทีละแถว. <b>switch</b> เป็น <code>.form-check.form-switch</code> ตัวเดียวกับ <code>setting-row.php</code> — ของจริงจะถาม <code>showConfirm</code> ทั้งสองทางก่อนยิง (เดโมนี้ไม่ยิงอะไร). แถวที่ปิดอยู่: ชื่อจาง + ตัวเลขขีดฆ่า + ไม่มีดินสอ.</p>
+    <p class="cp-section-note">ตารางที่ <b>ยิง API ทันทีทุกการกระทำ</b> (ของจริง: ตาราง line-override ใน modal รายละเอียดการคำนวณ) — ไม่มีปุ่มบันทึกที่ footer และไม่มี dirty-guard เพราะสิ่งที่อยู่บนหน้าจอคือสิ่งที่อยู่บนเซิร์ฟเวอร์เสมอ. <b>ดินสอ</b> (ghost, อยู่ในคอลัมน์ตัวเลขเอง, โผล่ตอน hover แถว) เปลี่ยนเซลล์เป็น <code>[input ค่าปัจจุบัน][บันทึก outline-primary][✗ ghost]</code> — Enter = บันทึก, Esc = ยกเลิก, <b>ค่าเท่าเดิม/ว่าง = ปุ่มบันทึก disabled</b> (ลองพิมพ์ดู), เปิดได้ทีละแถว. <b>switch</b> เป็น <code>.form-check.form-switch</code> ตัวเดียวกับ <code>setting-row.php</code> — ของจริงจะถาม <code>showConfirm</code> ทั้งสองทางก่อนยิง (เดโมนี้ไม่ยิงอะไร). แถวที่ปิดอยู่: ชื่อจาง + ตัวเลขขีดฆ่า + ไม่มีดินสอ.</p>
     <div style="max-width:560px;">
         <div class="table-responsive"><table class="table align-middle lo-table mb-0">
             <thead><tr>
@@ -1201,7 +1201,7 @@ $cpCallouts = [
     <p class="cp-section-note mt-2">หัววัน (<code>groupByDay:true</code>) = <b>แถบเต็มความกว้าง</b> พื้น <code>--c-bg-subtle</code>, <code>--fs-xs</code> 600 muted, padding <code>--sp-1 --sp-2</code> — แถบ<b>บังเส้นไทม์ไลน์</b>ที่ลากจากจุดของรายการก่อนหน้า เส้นจึง<b>ขาดเป็นช่วงตามวัน</b> — คือสิ่งที่รอยต่อระหว่างวันควรเป็นจริง (<code>.timeline-item:has(+ .timeline-day-header)::before { bottom: 0 }</code> ตัดเส้นที่รอยต่อ บวกกับพื้นของแถบเอง). ระยะบนแถบ <code>--sp-4</code> ล่าง <code>--sp-2</code> (แถบแรกไม่มีระยะบน) และต่อท้ายด้วยจำนวนรายการของ<b>กลุ่มนั้น</b> (<code>.timeline-day-count</code>, นับเป็นช่วงติดกัน ไม่ใช่ยอดรวมของวันที่ซ้ำกัน).</p>
     <div class="mt-4" style="max-width:420px;">
         <div class="fw-semibold small text-uppercase text-muted mb-1">Timeline + <code>item.actionHtml</code> (ใหม่ 2026-09-16) — modal ประวัติการแก้ไขของรายการหนึ่ง</div>
-        <p class="cp-section-note"><code>item.actionHtml</code> = ช่อง HTML ดิบ <b>ช่องเดียว</b> ต่อรายการ render ท้ายสุด — caller สร้าง markup + ผูก handler เอง component ไม่รู้จักและไม่ผูกอะไรให้ (แบบเดียวกับ <code>menuHtml</code> ของ badge dropdown ข้อ 5) <b>ห้ามส่ง user input ดิบเข้ามา</b>. ของจริงคือ modal "ประวัติการแก้ไข" ของ tab ปรับตัวเลข: ค่าที่แก้เป็น <code>title</code> (เด่น), "จาก X → Y" เป็น <code>detail</code>, เวลา·ผู้แก้มาจากหัวรายการของ component เอง, แล้ว <code>actionHtml</code> = note (ถ้ามี) + ปุ่ม ghost "ใช้ค่านี้" — ยกเว้นค่าที่ใช้อยู่ตอนนี้ที่เป็น badge "ปัจจุบัน" แทนปุ่ม. แถว "ค่าที่ระบบคำนวณ" ไม่มีวันที่ของตัวเอง (อยู่บนสุดเสมอ) หัววันของมันจึงว่างและถูกซ่อน.</p>
+        <p class="cp-section-note"><code>item.actionHtml</code> = ช่อง HTML ดิบ <b>ช่องเดียว</b> ต่อรายการ render ท้ายสุด — caller สร้าง markup + ผูก handler เอง component ไม่รู้จักและไม่ผูกอะไรให้ (แบบเดียวกับ <code>menuHtml</code> ของ badge dropdown ข้อ 5) <b>ห้ามส่ง user input ดิบเข้ามา</b>. ของจริงคือ modal "ประวัติการแก้ไข" ของตาราง line-override: ค่าที่แก้เป็น <code>title</code> (เด่น), "จาก X → Y" เป็น <code>detail</code>, เวลา·ผู้แก้มาจากหัวรายการของ component เอง, แล้ว <code>actionHtml</code> = note (ถ้ามี) + ปุ่ม ghost "ใช้ค่านี้" — ยกเว้นค่าที่ใช้อยู่ตอนนี้ที่เป็น badge "ปัจจุบัน" แทนปุ่ม. แถว "ค่าที่ระบบคำนวณ" ไม่มีวันที่ของตัวเอง (อยู่บนสุดเสมอ) หัววันของมันจึงว่างและถูกซ่อน.</p>
         <div id="cpHistoryTimelineShowcase"></div>
     </div>
 </div>
@@ -1941,8 +1941,8 @@ $(function () {
         checked: false,
     }));
 
-    // Inline edit + switch in a table (§7/§9, 2026-09-16) -- the same markup the real "ปรับตัวเลข" tab
-    // renders, with the send step replaced by nothing (this page never writes anything).
+    // Inline edit + switch in a table (§7/§9, 2026-09-16) -- the same markup the real line-override
+    // table renders, with the send step replaced by nothing (this page never writes anything).
     const CP_INLINE_ROWS = [
         { name: 'เงินเดือนพื้นฐาน', amount: '25,000.00', on: true },
         { name: 'โบนัส', amount: '2,000.00', on: true },

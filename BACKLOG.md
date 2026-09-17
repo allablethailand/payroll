@@ -879,7 +879,9 @@ questions about the payee sub-form (2026-09-15).
 - **`#statutoryRateModal` ยังกระโดดตอนสลับ tab (25.6px)** — มี tab ใน `.modal-body` เหมือน `#manageLinesModal`
   แต่ไม่ได้ใส่ `.modal-tabbed` ในรอบ 2026-09-15 เพราะเนื้อในเป็นฟอร์มสั้น ไม่มี footer วัดได้
   473.5 → 499.1 — ถ้าบังคับสูง `calc(100vh - 200px)` จะกลายเป็น modal โล่งเกือบครึ่งใบ แย่กว่าเดิม
-  — ตัดสินตอนไล่หน้า Tax & Statutory (ทางเลือก: ใส่ `.modal-tabbed` พร้อม height ที่เล็กกว่า หรือปล่อยไว้)
+  — ตัดสินตอนไล่หน้า Tax & Statutory · **2026-09-17: `.modal-tabbed` ถูกยกเลิกและลบ CSS ทิ้งแล้ว**
+  (ดู `docs/decisions/2026-09-17-remove-manage-lines-tabs.md`) ทางเลือกเหลือ "ปล่อยไว้" กับ "ออกแบบใหม่"
+  ไม่ใช่ "ใส่ class เดิม" อีกต่อไป
 
 ---
 
@@ -1030,10 +1032,10 @@ recalculate (ยิงพร้อมกันไม่ได้ recalculate จ
 
 ## ปุ่มบันทึกซ่อนของ Adjustments modal — เหลืออีก 3 tab
 
-dispatcher (`ADJUSTMENT_TAB_CONFIG_RD`) เดิมสั่งบันทึกด้วยการ "กดปุ่มที่ซ่อนไว้" (`saveSelector`)
-ของแต่ละ tab · 2026-09-16 tab "ปรับตัวเลข" เปลี่ยนเป็นเรียกฟังก์ชันตรง (`saveFn`) และลบปุ่มซ่อนของตัวเองทิ้งแล้ว
-— เหลือ **ข้อมูลเข้างาน / ปลายทางรายการหักประจำ / ภาษี & ประกันสังคม** ที่ยังมี `<button class="d-none">`
-ของตัวเองอยู่ ให้ย้ายเป็น `saveFn` ทีละ tab ตอนไล่ทำ batch 4/4 แล้วลบ `saveSelector` ทิ้งทั้งกลไก
+dispatcher (`ADJUSTMENT_TAB_CONFIG_RD`) สั่งบันทึกด้วยการ "กดปุ่มที่ซ่อนไว้" (`saveSelector`) ของแต่ละ tab
+· 2026-09-17 (D3) tab "ปรับตัวเลข" ที่เคยเป็นตัวอย่าง `saveFn` ถูกลบทั้ง tab แล้ว — เหลือ **ข้อมูลเข้างาน /
+ปลายทางรายการหักประจำ / ภาษี & ประกันสังคม** ที่ยังมี `<button class="d-none">` ของตัวเองอยู่ครบทั้ง 3
+ให้ย้ายเป็นเรียกฟังก์ชันตรงทีละ tab แล้วลบ `saveSelector` ทิ้งทั้งกลไก
 
 ---
 
@@ -1051,3 +1053,44 @@ dispatcher (`ADJUSTMENT_TAB_CONFIG_RD`) เดิมสั่งบันทึ�
 · ห้ามแก้ทีละหน้า — เป็นกฎเดียวทั้งแอป · งาน logic ไม่ใช่ design (§0.7)
 
 **Source:** วัดด้วย Playwright ตอนทำ dropdown/modal ประวัติของ tab ปรับตัวเลข (2026-09-16)
+
+---
+
+## ข้อความปฏิเสธจาก server เป็นภาษาอังกฤษล้วนทั้งแอป
+
+`assertManualLinesEditable()`/`lineOverrideSave()` ฯลฯ คืนข้อความอย่าง `'This employee is verified for
+this run...'` ตรงๆ ไม่ผ่าน i18n — UI แสดงมันใน callout ของฟอร์ม (§15) ตามกฎแล้ว แต่ผู้ใช้ไทยอ่านอังกฤษ
+ทั้งประโยค · แก้ต้องทำทั้งชั้น model (คืน key + params แทน string) ไม่ใช่ทีละจุดเรียก
+
+**Source:** D2 (2026-09-17) flag ไว้, D3 ย้ำอีกครั้งตอนลบ tab
+
+---
+
+## override ค้างบน manual line ใน production — ยังไม่เคยตรวจ
+
+D1 กรอง `source='manual_line'` ออกจาก `syncDeductionLinesForEmployee()` แล้ว · dev DB ตอนนั้นมี
+`payroll_run_line_overrides` 0 แถว จึงยืนยันได้แค่ว่า dev ไม่มีแถวค้าง · ถ้า production มี override
+ที่ผูกกับ `item_code` ของ manual line อยู่จริง มันยังมีผลกับการคำนวณต่อไป แต่มองไม่เห็น/กดยกเลิกจาก
+หน้าไหนไม่ได้เลย — ต้อง query ของจริงก่อน แล้วค่อยตัดสินว่าจะเก็บกวาดยังไง
+
+**Source:** D1 (2026-09-16) flag ไว้, ยังไม่ได้ตรวจ ณ D3
+
+---
+
+## `line-override.save` ยังรับ item_code ของ manual line ได้
+
+ฝั่ง read กรอง manual line ออกแล้ว (D1) แต่ฝั่ง write ไม่ได้กัน — POST `item_code` ที่เป็นของ manual
+line เข้าไปตรงๆ ยังสร้างแถว override ได้ · UI ปัจจุบันไม่มีทางส่งแบบนั้น แต่ endpoint เป็นของสาธารณะ
+· ถ้าจะกัน ต้อง reject ที่ `lineOverrideSave()` และตัดสินด้วยว่าจะทำยังไงกับแถวที่มีอยู่แล้ว (ข้อบน)
+
+**Source:** D3 (2026-09-17)
+
+---
+
+## `tests/id_codec_test.php` flaky ~8% (มาก่อนรอบนี้ ไม่ใช่ regression)
+
+assertion "tampered real token (flipped last char) fails to decode" fail แบบสุ่ม — วัดจริง 5/60 รอบ (2026-09-17)
+· สาเหตุ: base64url ตัวท้ายมี bit ที่ไม่ได้ใช้ พลิกตัวอักษรบางตัวจึงได้ ciphertext ชุดเดิมเป๊ะ แล้ว decode ผ่านตามปกติ
+· แก้ที่ตัว test (พลิก byte กลาง/ตรวจว่า token เปลี่ยนจริงก่อน assert) ไม่ใช่ที่ `IdCodec`
+
+**Source:** เจอตอนรัน run_all รอบ D3 (2026-09-17) — ไฟล์นี้ไม่ได้ถูกแตะในรอบนั้น

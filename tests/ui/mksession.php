@@ -1,0 +1,140 @@
+<?php
+/**
+ * Browser-test harness for the UI rounds: makes a throwaway payroll run to drive, and a local PHP
+ * session so Playwright can open the app as a logged-in admin.
+ *
+ * It exists because this app has NO login form to drive: login is the one-way Origami SSO handshake
+ * in auth/index.php, so a browser test cannot log itself in. See
+ * docs/decisions/ui-test-session.md for what that means and what this is allowed to do.
+ *
+ * Usage:
+ *   php tests/ui/mksession.php              create -- prints one line of JSON
+ *   php tests/ui/mksession.php --cleanup    delete what the last create made
+ *
+ * Guards (all 3, every run): CLI only, BASE_URL must be a loopback host, and the run it deletes
+ * must be one it created itself (the id is read back from its own state file, never from argv).
+ */
+declare(strict_types=1);
+
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit("tests/ui/mksession.php is a CLI tool.\n");
+}
+
+$ROOT = dirname(__DIR__, 2);
+require_once $ROOT . '/vendor/autoload.php';
+Dotenv\Dotenv::createImmutable($ROOT)->load();
+require_once $ROOT . '/config.php';
+require_once $ROOT . '/app/core/Database.php';
+spl_autoload_register(function ($class) use ($ROOT) {
+    foreach (['app/models/', 'app/services/', 'app/core/', 'app/controllers/'] as $p) {
+        $f = $ROOT . '/' . $p . $class . '.php';
+        if (file_exists($f)) { require_once $f; return; }
+    }
+});
+
+// The dev check is the URL this install answers on, not APP_ENV: this repo's own .env ships
+// APP_ENV=production on a developer machine, so trusting that flag would be trusting nothing.
+$host = strtolower((string)parse_url(BASE_URL, PHP_URL_HOST));
+if (!in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
+    fwrite(STDERR, "refusing to run: BASE_URL host is '{$host}', not a loopback address.\n");
+    exit(1);
+}
+
+const STATE_FILE = __DIR__ . '/.last-session.json';
+const COMP_ID = 1;
+const ADMIN_EMPLOYEE_ID = 28;
+
+$pdo = Database::getInstance()->pdo;
+$model = new PayrollRunModel();
+
+if (in_array('--cleanup', array_slice($argv, 1), true)) {
+    if (!is_file(STATE_FILE)) {
+        fwrite(STDERR, "nothing to clean up: " . STATE_FILE . " does not exist.\n");
+        exit(1);
+    }
+    $state = json_decode((string)file_get_contents(STATE_FILE), true) ?: [];
+    $runId = (int)($state['run_id'] ?? 0);
+    $sid = (string)($state['session_id'] ?? '');
+    $result = ['run_id' => $runId, 'session_id' => $sid];
+
+    // Only ever a run this tool created: the id comes from its own state file, and the row must
+    // still carry the name it was created with.
+    $name = $runId > 0
+        ? (string)$pdo->query("SELECT run_name FROM `payroll_runs` WHERE id = " . $runId)->fetchColumn()
+        : '';
+    if ($runId > 0 && strpos($name, 'UI test run (delete me)') !== false) {
+        $del = $model->delete($runId, COMP_ID, ADMIN_EMPLOYEE_ID, true);
+        $result['run_deleted'] = !empty($del['status']);
+        // payroll_runs is soft-deleted (status='deleted' + deleted_at, this app's own convention for
+        // payroll data) -- "gone" is that status, not a missing row. Its detail rows DO go for real.
+        $after = $pdo->query("SELECT status FROM `payroll_runs` WHERE id = " . $runId)->fetchColumn();
+        $result['run_status_after'] = $after === false ? '(row gone)' : (string)$after;
+        $result['run_still_present'] = !in_array($result['run_status_after'], ['deleted', '(row gone)'], true);
+        $result['run_detail_rows_left'] = (int)$pdo->query("SELECT COUNT(*) FROM `payroll_run_details` WHERE run_id = " . $runId)->fetchColumn();
+    } else {
+        $result['run_deleted'] = false;
+        $result['run_skipped_reason'] = $runId > 0 ? "run {$runId} is not one of ours (name: '{$name}')" : 'no run id recorded';
+    }
+
+    // The session file, by the id this tool generated -- it never reads or lists anyone else's.
+    $sessionFile = rtrim((string)session_save_path(), '/\\') . DIRECTORY_SEPARATOR . 'sess_' . $sid;
+    $result['session_deleted'] = ($sid !== '' && is_file($sessionFile)) ? unlink($sessionFile) : false;
+    $result['session_still_present'] = ($sid !== '') && is_file($sessionFile);
+
+    unlink(STATE_FILE);
+    echo json_encode($result, JSON_UNESCAPED_UNICODE) . "\n";
+    exit(empty($result['run_still_present']) && empty($result['session_still_present']) ? 0 : 1);
+}
+
+// A run with NO cycle_id is an off-cycle run, and recalculate() then only pulls in employees
+// somebody joined by hand -- i.e. an empty run, nothing to drive. The company's own active cycle is
+// what makes it a normal run that picks up its employees by employment-date range.
+$cycleId = (int)$pdo->query("SELECT id FROM `payroll_cycles` WHERE comp_id = " . COMP_ID . " AND status = 'active' ORDER BY id LIMIT 1")->fetchColumn();
+if (!$cycleId) {
+    fwrite(STDERR, "no active payroll cycle for company " . COMP_ID . " -- nothing to drive\n");
+    exit(1);
+}
+$res = $model->create(COMP_ID, [
+    'run_name'          => 'UI test run (delete me)',
+    'cycle_id'          => $cycleId,
+    'payment_date'      => date('Y-m-d'),
+    'period_start_date' => date('Y-m-01'),
+    'period_end_date'   => date('Y-m-t'),
+    'run_purpose'       => 'payroll',
+], ADMIN_EMPLOYEE_ID, true);
+if (empty($res['status'])) {
+    fwrite(STDERR, 'create failed: ' . ($res['message'] ?? '?') . "\n");
+    exit(1);
+}
+$runId = (int)$res['id'];
+// Recorded the moment the run exists, before anything else can fail: otherwise a failure below
+// leaves a run behind that --cleanup has no way to find.
+file_put_contents(STATE_FILE, json_encode(['run_id' => $runId], JSON_UNESCAPED_UNICODE) . "\n");
+$model->recalculate($runId, COMP_ID, ADMIN_EMPLOYEE_ID, true);
+
+$employeeId = (int)$pdo->query("SELECT employee_id FROM `payroll_run_details` WHERE run_id = {$runId} ORDER BY employee_id LIMIT 1")->fetchColumn();
+if (!$employeeId) {
+    fwrite(STDERR, "the new run has no employees -- nothing to drive\n");
+    exit(1);
+}
+// One hand-added line and one overridden line, so the row's count badge is non-zero and
+// "คืนค่าระบบทั้งหมด" has a row to act on.
+$model->addManualLine($runId, COMP_ID, $employeeId, null, 1234.50, ADMIN_EMPLOYEE_ID, true, null, 'UI test bonus', 'earning');
+$model->lineOverrideSave($runId, COMP_ID, $employeeId, '__base_salary__', 'override_amount', 28500.00, null, ADMIN_EMPLOYEE_ID, true);
+
+// A real session file, written where this install's own PHP will read it back.
+session_id('uitest' . bin2hex(random_bytes(8)));
+session_start();
+$_SESSION['user'] = ['employee_id' => ADMIN_EMPLOYEE_ID, 'company_id' => COMP_ID, 'role' => 'admin', 'ui_theme' => null];
+$sid = session_id();
+session_write_close();
+
+$state = [
+    'run_id'      => $runId,
+    'token'       => IdCodec::encode($runId),
+    'employee_id' => $employeeId,
+    'session_id'  => $sid,
+];
+file_put_contents(STATE_FILE, json_encode($state, JSON_UNESCAPED_UNICODE) . "\n");
+echo json_encode($state, JSON_UNESCAPED_UNICODE) . "\n";

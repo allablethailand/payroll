@@ -174,8 +174,9 @@ checkTrue('it sends one .remove per row, sequentially', strpos($runBody, "lineOv
 checkTrue('it reports progress while it runs', strpos($runBody, 'lineOverrideProgressRd(i + 1, total)') !== false);
 checkTrue('it reloads the table and the run at the end', strpos($runBody, 'loadSyncLineOverridesRd();') !== false
     && strpos($runBody, 'loadRunDetail();') !== false);
-// It is the footer's left-slot button, and the only one there.
-checkTrue('it is the footer\'s left-slot button', strpos($js, "left: { id: 'btnRestoreAllComputedLineOverrides'") !== false);
+// It is the footer's left-slot button, and the only one there -- 2026-09-17 (D3) in the Calculation
+// Breakdown modal's own footer, beside the table it acts on, and only for a row that can be edited.
+checkTrue('it is the footer\'s left-slot button', strpos($js, "left: canEdit ? { id: 'btnRestoreAllComputedLineOverrides'") !== false);
 checkTrue('no "cancel edits" button is left anywhere', strpos($js, 'btnCancelLineOverrideEdits') === false);
 checkTrue('and its i18n key is gone with it', !array_key_exists('line_override_cancel_edits', json_decode(file_get_contents(__DIR__ . '/../public/lang/th.json'), true)));
 
@@ -206,7 +207,6 @@ $keys = [
     'line_override_history_computed' => null,
     'line_override_history_current' => null,
     'line_override_hidden_why' => null,
-    'line_override_hint' => null,
 ];
 foreach ($keys as $key => $placeholder) {
     checkTrue("{$key} exists in th", isset($th[$key]) && $th[$key] !== '');
@@ -221,8 +221,9 @@ checkTrue('line_override_confirm_use_value_message keeps {item} in both',
     && strpos((string)$en['line_override_confirm_use_value_message'], '{item}') !== false);
 checkTrue('line_override_history_from_to keeps {to} in both', strpos((string)$th['line_override_history_from_to'], '{to}') !== false
     && strpos((string)$en['line_override_history_from_to'], '{to}') !== false);
-// The hidden-rows explanation moved OUT of the tab hint and onto the toggle it actually explains.
-checkTrue('the tab hint no longer carries the hidden-rows explanation', strpos((string)$th['line_override_hint'], 'ซ่อน') === false);
+// The hidden-rows explanation lives on the toggle it actually explains. The tab hint it moved out
+// of (line_override_hint) is gone entirely with its tab, 2026-09-17 (D3).
+checkTrue('the tab hint is gone', !array_key_exists('line_override_hint', $th) && !array_key_exists('line_override_hint', $en));
 checkTrue('the toggle carries it instead', strpos($js, "langData['line_override_hidden_why']") !== false);
 // A trailing ellipsis on a button reads as "this opens something that is still loading".
 checkTrue('the foot copy has no ellipsis', strpos((string)$th['line_override_history_view_all'], '…') === false

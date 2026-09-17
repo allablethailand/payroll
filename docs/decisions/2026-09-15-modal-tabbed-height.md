@@ -1,5 +1,7 @@
 # `#manageLinesModal` ความสูงกระโดดเมื่อสลับ tab → `.modal-tabbed` (2026-09-15)
 
+> **ยกเลิก 2026-09-17: ทุก modal ที่มี tab เป็นฟอร์มสั้น ดู `remove-manage-lines-tabs`**
+
 ## อาการ
 
 สลับ tab ใน `#manageLinesModal` แล้ว modal ทั้งใบขยับความสูงตามเนื้อในของ tab ที่เลือก

@@ -1909,23 +1909,15 @@ $(document).on('submit', '#runMarkPaidForm', function (e) {
 // standalone .btn-circle-action circle (one of the row's 3, draft-only so effectively 2 outside draft
 // -- §7 revised to "≤3 ปุ่ม + ⋮", not always exactly 3). Click handler (.btn-manage-manual-lines)
 // unchanged.
-// 2026-09-16, explicit instruction: the "ปรับแล้ว N" text button is gone from the Employee Code cell
-// -- its number now rides on THIS button as a count badge (§5's countBadgeHtml + the same
-// .btn-circle-action-badge overlay commentButtonRd() uses), because this is the button that opens
-// the very modal those adjustments were made in. The count itself is row.adjustment_count
-// (PayrollRunModel::getDetails()), which covers every table all 5 tabs of #manageLinesModal write to
-// -- not just the 2 the old badge counted. Neutral tone: §5 reserves `primary` for genuinely
-// new/unread items, and "this employee has adjustments" is a standing fact, not news.
+// 2026-09-17, D3: the count badge is NOT on this button any more -- it moved to the slip button
+// (viewBreakdownButtonRd) because that is now where the adjustments it counts are made. The icon is
+// `fa-sliders` (settings), matching what this modal is called now ("ตั้งค่ารายบุคคล"): with the
+// "รายการจ่าย"/"ปรับตัวเลข" tabs gone it holds per-employee SETTINGS for this run, not its figures.
 function manageItemsButtonRd(row) {
     if (!currentRun || currentRun.state !== 'draft') {
         return '';
     }
-    const count = Number(row.adjustment_count || 0);
-    const countBadge = count > 0 ? `<span class="btn-circle-action-badge">${countBadgeHtml(count)}</span>` : '';
-    return `<div class="position-relative d-inline-block">
-        <button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-manual-lines" data-employee-id="${row.employee_id}" title="${langData['action_manage_items'] || 'Items'}"><i class="fa-solid fa-list-check"></i></button>
-        ${countBadge}
-    </div>`;
+    return `<button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-manual-lines" data-employee-id="${row.employee_id}" title="${langData['action_manage_items'] || 'Per-employee settings'}"><i class="fa-solid fa-sliders"></i></button>`;
 }
 // Raw Sync Data viewer (2026-08-21, explicit request: "ถ้าเป็นการ Sync ข้อมูลมาจาก Origami...เพิ่มปุ่ม
 // ดูข้อมูลดิบได้") -- only for a row that actually came from the sync payload; a manually-added
@@ -2071,18 +2063,29 @@ function commentButtonRd(row) {
 // first item earlier this same round (the "รวมเข้า ⋮" instruction), now un-folded back out as its own
 // standalone circle -- unconditional (always available regardless of run state), same .btn-view-
 // breakdown class the existing delegated click handler already binds to, unchanged.
+// 2026-09-17, D3: carries the `adjustment_count` badge that used to sit on the Items circle. The
+// badge belongs on the button that opens the place those adjustments are now MADE (this modal holds
+// both the line-override table and the hand-added lines since D1/D2) -- it counts every
+// per-employee adjustment on this run across all 5 tables (PayrollRunModel::getDetails()), which
+// still includes the 3 that the settings modal's remaining tabs write. Neutral tone: §5 reserves
+// `primary` for genuinely new/unread items, and "this employee has adjustments" is a standing fact.
 function viewBreakdownButtonRd(row) {
-    return `<button type="button" class="btn btn-link btn-circle-action text-info btn-view-breakdown" data-employee-id="${row.employee_id}" title="${langData['action_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-magnifying-glass-dollar"></i></button>`;
+    const count = Number(row.adjustment_count || 0);
+    const countBadge = count > 0 ? `<span class="btn-circle-action-badge">${countBadgeHtml(count)}</span>` : '';
+    return `<div class="position-relative d-inline-block">
+        <button type="button" class="btn btn-link btn-circle-action text-info btn-view-breakdown" data-employee-id="${row.employee_id}" title="${langData['action_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-magnifying-glass-dollar"></i></button>
+        ${countBadge}
+    </div>`;
 }
 // §7, revised this round: "≤ 3 ปุ่ม + ⋮" (was "≤2 ปุ่ม inline, >2 พับเป็น ⋮ ทั้งหมด") -- the 3 circles
-// above (View Breakdown/Comments/Manage Items, "≤3" since Manage Items is draft-only so a non-draft
-// row shows only 2) always stay inline; everything else (Raw Sync Data, conditional; Remove,
-// draft-only) collapses into the ⋮ menu. Unverify is NOT part of this menu anymore -- see the Verify
-// column's own badge dropdown instead (verifyLockButtonsRd()).
+// above (View Breakdown/Comments/ตั้งค่ารายบุคคล, "≤3" since the settings circle is draft-only so a
+// non-draft row shows only 2) always stay inline; everything else (Raw Sync Data, conditional;
+// Remove, draft-only) collapses into the ⋮ menu. Unverify is NOT part of this menu anymore -- see
+// the Verify column's own badge dropdown instead (verifyLockButtonsRd()).
 // 2026-09-16: the read-only "รายการที่ปรับ" viewer (empAdjustmentsModal) used to be reachable only
 // through the Employee Code cell's own "ปรับแล้ว N" button, which that instruction removed -- moved
-// here so it is still reachable, and on a non-draft run too (where the Items circle, and therefore
-// its count badge, is gone entirely). Same .btn-view-emp-adjustments class, same delegated handler.
+// here so it is still reachable on a non-draft run too, where there is no editing surface at all.
+// Same .btn-view-emp-adjustments class, same delegated handler.
 function viewAdjustmentsMenuItemRd(row) {
     if (Number(row.adjustment_count || 0) <= 0) {
         return '';
@@ -2450,10 +2453,12 @@ function renderBreakdownModal(row) {
     // output, byte for byte (tests/breakdown_slip_render_test.js pins it). Only an editable row gets
     // the other layout.
     // Height follows the content, in BOTH layouts. `.modal-tabbed`
-    // (docs/decisions/2026-09-15-modal-tabbed-height.md) was tried here and removed: it pins the body
-    // at one height so a modal cannot resize between tabs, but this modal has no tabs -- what it
-    // bought was a stable height across saves, at the price that doc itself names for short content
-    // (an employee with few lines left ~140px of empty modal under the net band, measured).
+    // (docs/decisions/2026-09-15-modal-tabbed-height.md) was tried here and removed: it pinned the
+    // body at one height so a modal could not resize between tabs, but this modal has no tabs -- what
+    // it bought was a stable height across saves, at the price that doc itself names for short
+    // content (an employee with few lines left ~140px of empty modal under the net band, measured).
+    // That class is retired app-wide as of 2026-09-17 (D3), so there is nothing left to opt out of.
+    renderBreakdownFooterRd(employeeRowEditableRd(row));
     if (employeeRowEditableRd(row)) {
         renderBreakdownEditableBodyRd(row);
         return;
@@ -2465,6 +2470,31 @@ function renderBreakdownModal(row) {
     // anywhere in the app. Scoped to this modal's own body so re-rendering for a different employee
     // doesn't touch popovers elsewhere on the page.
     if (typeof initPopovers === 'function') initPopovers('#breakdownModalBody');
+}
+// 2026-09-17, D3: this modal's footer, built per open through the shared helper (§9/§4). A row that
+// cannot be edited gets [ปิด] alone -- byte for byte what app.js's own `data-footer="view"` fallback
+// used to inject before this modal owned a footer element. An editable row additionally gets §9's
+// LEFT slot: "คืนค่าระบบทั้งหมด" (the one action that is neither the way out nor a save, since
+// every edit in this modal already writes immediately) plus the sequential-restore progress line,
+// both kept away from [ปิด] on the right. Same id/handler/keys it had in the settings modal.
+function renderBreakdownFooterRd(canEdit) {
+    $('#breakdownModalFooter').html(modalFooterButtonsHtml({
+        left: canEdit ? { id: 'btnRestoreAllComputedLineOverrides', key: 'line_override_restore_all_computed', fallback: 'Restore all calculated values' } : null,
+        leftHtml: canEdit ? '<span class="text-muted" id="lineOverrideSaveProgress"></span>' : '',
+        secondary: { key: 'close', fallback: 'Close', dismiss: true },
+    }));
+    refreshBreakdownFooterStateRd();
+}
+// Enabled only when there is something to restore: at least one row really carries an override. That
+// is a different question from "has anything been typed", which is why it counts rows rather than
+// reading a dirty flag.
+function refreshBreakdownFooterStateRd() {
+    const $btn = $('#btnRestoreAllComputedLineOverrides');
+    if (!$btn.length) return;
+    const overrideRowCount = lineOverrideMountRd().find('.lo-row').filter(function () {
+        return !!($(this).data('orig-action') || '') && !$(this).find('.lo-include').is(':disabled');
+    }).length;
+    $btn.prop('disabled', overrideRowCount === 0);
 }
 // The read-only slip, unchanged -- this is the exact body renderBreakdownModal() built inline before
 // the editable layout existed, moved as-is so the 2 sit beside each other instead of nested.
@@ -2500,10 +2530,10 @@ function breakdownViewSlipHtml(row) {
     });
 }
 /* ---------- Calculation Breakdown modal, EDITABLE layout (2026-09-16, D1 "สลิปที่แก้ได้").
-   A row that can still be edited (draft run, not verified) gets the SAME editing surface the
-   Adjustments modal's "ปรับตัวเลข" tab has -- not a second implementation of it: the whole table
-   (render, switch, inline edit, history dropdown/modal, hidden rows, busy lock) is one set of
-   functions with 2 mount points, see the "ปรับตัวเลข" section further down. Everything else is
+   A row that can still be edited (draft run, not verified) is edited HERE, where its figures are
+   read: the line-override table (render, switch, inline edit, history dropdown/modal, hidden rows,
+   busy lock -- see its own section further down) and the hand-added lines. 2026-09-17, D3: this is
+   the only place either one lives now; the 2 tabs they were built in are gone. Everything else is
    read-only and renders exactly the slip it always did. ---------- */
 // The gate: manageItemsButtonRd()'s own condition (draft run) plus this row's verify lock. Both are
 // real server-side rules, not styling -- lineOverrideSave() refuses a non-draft run AND a verified
@@ -2541,9 +2571,8 @@ function manualLineAddButtonHtml(itemType, canEdit) {
     return `<button type="button" class="btn-icon manual-line-add-btn" data-item-type="${escapeAttr(itemType)}"${canEdit ? '' : ' disabled'} title="${escapeAttr(label)}"><i class="fa-solid fa-plus"></i></button>`;
 }
 // Section 2: the lines somebody added by hand, in the slip's own 2-column layout so they read as the
-// same kind of thing as the calculated ones above. Rows come from manualLineListItemHtml() -- the
-// Adjustments modal's own row renderer, reused as-is. No totals here: the one figure that matters is
-// the run's own net pay, which section 3 carries.
+// same kind of thing as the calculated ones above. Rows come from manualLineListItemHtml(). No
+// totals here: the one figure that matters is the run's own net pay, which section 3 carries.
 function renderBreakdownManualLinesRd(lines) {
     const all = lines || [];
     const canEdit = employeeRowEditableRd(breakdownRowRd);
@@ -4478,55 +4507,11 @@ function manualLineRowActionsHtml(line, canEdit) {
         <button type="button" class="btn-icon manual-line-remove-btn" data-line-id="${line.id}" title="${escapeAttr(langData['action_remove'] || 'Remove')}"><i class="fa-solid fa-trash-can"></i></button>
     </span>`;
 }
-// Empty column = ONE quiet gray line inside the slip's own table (explicit instruction: not the big
-// empty-state component -- a column with nothing in it yet is not a page-level dead end).
-function manualLineEmptyRowHtml(key, fallback) {
-    return `<tr class="payslip-row"><td colspan="2" class="manual-line-empty">${escapeHtml(langData[key] || fallback)}</td></tr>`;
-}
-function loadManualLinesRd() {
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-run.manual-lines`,
-        method: 'GET',
-        data: { run_id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId },
-        dataType: 'json',
-        success: function (res) {
-            if (!res.status) return;
-            const lines = res.data || [];
-            const earningLines = lines.filter(l => l.item_type === 'earning');
-            const deductionLines = lines.filter(l => l.item_type === 'deduction');
-            const earningTotal = earningLines.reduce((sum, l) => sum + Number(l.amount || 0), 0);
-            const deductionTotal = deductionLines.reduce((sum, l) => sum + Number(l.amount || 0), 0);
-            // Shared slip component (§9). The label override is the only thing this tab needs that a
-            // real payslip doesn't: these are ADJUSTMENTS, so the bottom band reads "ยอดปรับสุทธิ",
-            // not "ยอดจ่ายสุทธิ". Deduction rows go in as `deductionItemRowsHtml` -- there is no statutory
-            // half here at all, so the component's own 2-group sub-labels never render (see its own
-            // showGroupLabels condition).
-            // 2026-09-16, D2: the same column-head + and the same row actions the Calculation
-            // Breakdown modal's own block renders -- this tab's inline add form is gone (it IS
-            // #manualLineFormModal now), so both places offer adding in exactly one way.
-            const canEdit = employeeRowEditableRd(runDetailRowByEmployeeId(manageLinesEmployeeId));
-            $('#manualLinesSlip').html(payslipViewHtml({
-                earningTitleActionHtml: manualLineAddButtonHtml('earning', canEdit),
-                deductionTitleActionHtml: manualLineAddButtonHtml('deduction', canEdit),
-                earningRowsHtml: earningLines.length
-                    ? earningLines.map(l => manualLineListItemHtml(l, canEdit)).join('')
-                    : manualLineEmptyRowHtml('no_manual_earning_lines', 'No income items added yet.'),
-                deductionItemRowsHtml: deductionLines.length
-                    ? deductionLines.map(l => manualLineListItemHtml(l, canEdit)).join('')
-                    : manualLineEmptyRowHtml('no_manual_deduction_lines', 'No deduction items added yet.'),
-                grossAmount: earningTotal,
-                totalDeductionAmount: deductionTotal,
-                netAmount: earningTotal - deductionTotal,
-                netLabel: langData['manual_line_net_total'] || 'Net Adjustment',
-            }));
-        }
-    });
-}
 
 /* ---------- Attendance Data (from Sync) (2026-08-21, explicit request: "ต้องการแก้ตัวเลขดิบที่ Sync
    มา ไม่ใช่แค่ยอดเงิน") -- corrects the RAW numbers Origami sent (not the resulting deduction/earning
-   amount -- see the Sync Deduction Adjustments section right below for that), shown only on a
-   sync-based run. One combined form/Save for all 7 fields (not per-field) since they represent one
+   amount -- that is the line-override table, which lives in the Calculation Breakdown modal), shown
+   only on a sync-based run. One combined form/Save for all 7 fields (not per-field) since they represent one
    conceptual "corrected timesheet" record, matching payroll_run_sync_item_overrides' one-row-per-
    employee shape. ---------- */
 const ATTENDANCE_DATA_FIELDS_RD = [
@@ -4592,7 +4577,6 @@ $(document).on('click', '#btnSaveAttendanceData', function () {
             if (res.status) {
                 showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
                 loadAttendanceDataRd();
-                loadSyncLineOverridesRd();
                 loadRunDetail();
             } else {
                 showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
@@ -4615,7 +4599,6 @@ $(document).on('click', '#btnResetAttendanceData', function () {
             success: function (res) {
                 if (res.status) {
                     loadAttendanceDataRd();
-                    loadSyncLineOverridesRd();
                     loadRunDetail();
                 } else {
                     showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
@@ -4626,7 +4609,8 @@ $(document).on('click', '#btnResetAttendanceData', function () {
     });
 });
 
-/* ---------- "ปรับตัวเลข" tab -- ONE table (2026-09-16, batch 3/4, rules.md 7/8/9).
+/* ---------- The line-override table -- ONE table (2026-09-16, batch 3/4, rules.md 7/8/9; it was the
+   "ปรับตัวเลข" tab's own until D3 left it with a single host, the Calculation Breakdown modal).
    Every row is a line this employee's own last calculation actually produced (base salary +
    earning/deduction/statutory breakdowns, plus any line an 'exclude' override dropped out of them),
    so the list is never a catalog of things that do not apply to this person --
@@ -4670,16 +4654,16 @@ function lineOverrideIsSkippedRd(line) {
     return !line.override_action && !!lineOverrideSkipEnumRd(line);
 }
 let lineOverrideRowsRd = [];
-/* 2026-09-16, D1: this table has TWO mount points -- the Adjustments modal's "ปรับตัวเลข" tab and the
+/* 2026-09-16, D1: this table had TWO mount points -- the Adjustments modal's "ปรับตัวเลข" tab and the
    Calculation Breakdown modal's editable layout -- and exactly ONE implementation. `lineOverrideHostRd`
    is the whole of the difference between them: where to render, whose lines to fetch, and what else to
-   refresh after a write. Every function below reads it instead of naming a container, so neither host
-   owns the table and neither can drift from the other.
-   Only one host is live at a time: setLineOverrideHostRd() empties the other mount when it switches.
-   That is not tidiness -- the rendered table carries real ids (`loInc{n}`, `lineOverrideHiddenRow`,
-   `btnToggleHiddenLineOverrides`), so leaving a previous host's markup in the DOM would mean duplicate
-   ids the moment the second host renders. */
-let lineOverrideHostRd = { mount: '#lineOverrideTableWrap', employeeId: null, onSaved: null, isAdjustmentsTab: true };
+   refresh after a write. Every function below reads it instead of naming a container, so no host owns
+   the table.
+   2026-09-17, D3: the "ปรับตัวเลข" tab is gone and the Breakdown modal is the only host left. The
+   indirection stays as the ONE place a host is described (a `.lo-mount` is still resolved through it,
+   never named inline) rather than being inlined back into every function -- the alternative is putting
+   `#breakdownLineOverrideWrap` in ~10 places again, which is what D1 removed. */
+let lineOverrideHostRd = { mount: '#breakdownLineOverrideWrap', employeeId: null, onSaved: null };
 function lineOverrideMountRd() {
     return $(lineOverrideHostRd.mount);
 }
@@ -4690,15 +4674,7 @@ function setLineOverrideHostRd(mount, employeeId, onSaved) {
     if (lineOverrideHostRd.mount !== mount) {
         $(lineOverrideHostRd.mount).empty();
     }
-    lineOverrideHostRd = {
-        mount: mount,
-        employeeId: employeeId,
-        onSaved: onSaved || null,
-        // The Adjustments tab owns things this table does not: the Tax/SSO radios that ride along in
-        // the same response, its own dirty guard and its own footer button. They are skipped outright
-        // for any other host rather than firing against markup that is not on screen.
-        isAdjustmentsTab: mount === '#lineOverrideTableWrap',
-    };
+    lineOverrideHostRd = { mount: mount, employeeId: employeeId, onSaved: onSaved || null };
 }
 // Edit history for THIS employee, keyed 'line_type|item_code' -- fetched once alongside the table's
 // own data (loadSyncLineOverridesRd) because the table has to know at RENDER time which rows even
@@ -4803,9 +4779,9 @@ function lineOverrideOccurrencesHtml(occurrences) {
     </div>`).join('');
     return `<div class="lo-occurrences">${rows}</div>`;
 }
-// 2026-09-16, round 6: this tab edits ONE line at a time and sends it immediately, like the
-// "รายการจ่าย" tab next to it -- so it has no "New value" column and no Save button of its own
-// (rules.md §9: a tab that writes on every action hides the footer's Save). What used to be a
+// 2026-09-16, round 6: this table edits ONE line at a time and sends it immediately -- so it has no
+// "New value" column and no Save button of its own (rules.md §9: a surface that writes on every
+// action has no save step to show). What used to be a
 // staged form is now: a switch that asks before it fires, and a pencil that opens the amount for
 // editing in place. See docs/decisions/2026-09-16-line-override-table.md for why the staged version
 // was abandoned -- it kept growing rules ("empty means…", "unticking parks…") that only existed to
@@ -4922,7 +4898,7 @@ $(document).on('click', '.lo-mount .lo-history-item', function () {
     lineOverrideConfirmApplyHistoryValueRd($(this).closest('tr.lo-row').data('item-code'), $(this).attr('data-value') || '',
         $(this).hasClass('lo-history-computed'));
 });
-/* ---------- "ประวัติการแก้ไข" modal (stacked on top of the Adjustments modal) -- the full chain for
+/* ---------- "ประวัติการแก้ไข" modal (stacked on top of the modal holding the table) -- the full chain for
    ONE line: every past value with when/who/note, and the same "use this value" action the dropdown
    offers, for the entries the 5-row dropdown could not show. Rendered with the shared timeline
    component (§6) -- newest first, grouped by day: the timeline's head only ever prints HH:mm, so
@@ -5025,9 +5001,13 @@ function lineOverrideConfirmApplyHistoryValueRd(itemCode, value, asComputed, onA
         },
     });
 }
-function loadSyncLineOverridesRd() {
-    const employeeId = lineOverrideEmployeeIdRd();
-    const isAdjustmentsTab = lineOverrideHostRd.isAdjustmentsTab;
+// `api/payroll-run.sync-lines-for-employee` answers 2 unrelated questions in one response (see
+// PayrollController::syncLinesForEmployee()'s own docblock): this employee's calculated lines, and
+// this employee's per-run Tax/SSO override. 2026-09-17, D3: those 2 readers now sit in different
+// modals -- the table in the Calculation Breakdown modal, the radios in the per-employee settings
+// modal -- and never open at the same time, so each says which half it came for. The request itself
+// is written once, here, rather than in each of them.
+function fetchSyncLinesForEmployeeRd(employeeId, onLoaded) {
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.sync-lines-for-employee`,
         method: 'GET',
@@ -5035,38 +5015,41 @@ function loadSyncLineOverridesRd() {
         dataType: 'json',
         success: function (res) {
             if (!res.status) return;
-            // One extra request per modal open, fired in parallel and rendered together: the table
-            // cannot draw its History column without knowing which rows have edits.
-            $.ajax({
-                url: `${BASE_URL}/api/payroll-run.line-override-history`,
-                method: 'GET',
-                data: { run_id: PAYROLL_RUN_ID, employee_id: employeeId },
-                dataType: 'json',
-            }).always(function (historyRes) {
-                const payload = (historyRes && historyRes.status && historyRes.data) ? historyRes.data : null;
-                lineOverrideHistoryRd = { byKey: {}, historyAvailable: payload ? !!payload.history_available : true, startDate: payload ? payload.history_start_date : null };
-                (payload && payload.lines ? payload.lines : []).forEach(function (line) {
-                    lineOverrideHistoryRd.byKey[line.line_type + '|' + line.item_code] = line;
-                });
-                renderLineOverrideTableRd(res.data || [], res.run_settings);
-                if (isAdjustmentsTab) {
-                    refreshAdjustmentTabDirtyGuard('manageLinesSyncOverridePane');
-                    refreshAdjustmentSaveButtonState();
-                }
-            });
-            // 2026-08-29: "Tax & SSO" tab -- see PayrollController::syncLinesForEmployee()'s own
-            // docblock for why this is bundled into the same fetch instead of a separate one.
-            // Skipped entirely for any host other than that tab: those radios are its markup, and
-            // re-baselining a dirty guard for a pane that is not on screen is not a no-op.
-            if (!isAdjustmentsTab) return;
-            const ex = res.exemption || { tax_calculate_override: 'inherit', sso_calculate_override: 'inherit' };
-            $(`#empCalcTaxGroup input[value="${ex.tax_calculate_override || 'inherit'}"]`).prop('checked', true);
-            $(`#empCalcSsoGroup input[value="${ex.sso_calculate_override || 'inherit'}"]`).prop('checked', true);
-            // This one fetch populates BOTH this tab's table and Tab 5's radios -- re-baseline both.
-            refreshAdjustmentTabDirtyGuard('manageLinesSyncOverridePane');
-            refreshAdjustmentTabDirtyGuard('manageLinesCalcPane');
-            refreshAdjustmentSaveButtonState();
+            onLoaded(res);
         }
+    });
+}
+function loadSyncLineOverridesRd() {
+    const employeeId = lineOverrideEmployeeIdRd();
+    fetchSyncLinesForEmployeeRd(employeeId, function (res) {
+        // One extra request per modal open, fired in parallel and rendered together: the table
+        // cannot draw its History column without knowing which rows have edits.
+        $.ajax({
+            url: `${BASE_URL}/api/payroll-run.line-override-history`,
+            method: 'GET',
+            data: { run_id: PAYROLL_RUN_ID, employee_id: employeeId },
+            dataType: 'json',
+        }).always(function (historyRes) {
+            const payload = (historyRes && historyRes.status && historyRes.data) ? historyRes.data : null;
+            lineOverrideHistoryRd = { byKey: {}, historyAvailable: payload ? !!payload.history_available : true, startDate: payload ? payload.history_start_date : null };
+            (payload && payload.lines ? payload.lines : []).forEach(function (line) {
+                lineOverrideHistoryRd.byKey[line.line_type + '|' + line.item_code] = line;
+            });
+            renderLineOverrideTableRd(res.data || [], res.run_settings);
+            refreshBreakdownFooterStateRd();
+        });
+    });
+}
+// The "Tax & SSO" tab's own half of that same response. Its dirty-guard baseline is re-taken here,
+// once the radios really hold what the server says -- a baseline from `shown.bs.modal` would be the
+// pre-load DOM (see ADJUSTMENT_TAB_CONFIG_RD's own docblock).
+function loadEmployeeExemptionRd() {
+    fetchSyncLinesForEmployeeRd(manageLinesEmployeeId, function (res) {
+        const ex = res.exemption || { tax_calculate_override: 'inherit', sso_calculate_override: 'inherit' };
+        $(`#empCalcTaxGroup input[value="${ex.tax_calculate_override || 'inherit'}"]`).prop('checked', true);
+        $(`#empCalcSsoGroup input[value="${ex.sso_calculate_override || 'inherit'}"]`).prop('checked', true);
+        refreshAdjustmentTabDirtyGuard('manageLinesCalcPane');
+        refreshAdjustmentSaveButtonState();
     });
 }
 function lineOverrideRowByCodeRd(itemCode) {
@@ -5228,11 +5211,14 @@ $(document).on('input change', '.lo-mount .lo-edit-input', function () {
 // Bound INSIDE the modal, not on `document` like every other handler in this file. Bootstrap's own
 // modal keydown listener sits on the modal element itself, so an event that reaches `document` has
 // already passed through it -- stopPropagation() there is too late, and Esc closed the whole
-// Adjustments modal instead of just this editor (caught in a screenshot; the measurement only
-// checked that the editor had closed, which it had). Delegating from a node BELOW the modal runs
-// first, which is what makes stopPropagation() mean anything here.
+// modal instead of just this editor (caught in a screenshot; the measurement only checked that the
+// editor had closed, which it had). Delegating from a node BELOW the modal runs first, which is what
+// makes stopPropagation() mean anything here.
+// 2026-09-17, D3: bound to #breakdownModalBody -- the static node the table's only remaining mount
+// renders into -- instead of the deleted "ปรับตัวเลข" pane. It had to be a static ancestor either
+// way: `.lo-mount` itself is re-created on every open.
 $(function () {
-    $('#manageLinesSyncOverridePane').on('keydown', '.lo-edit-input', function (e) {
+    $('#breakdownModalBody').on('keydown', '.lo-edit-input', function (e) {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); lineOverrideCloseEditorRd(); return; }
         if (e.key !== 'Enter') return;
         e.preventDefault();
@@ -5262,9 +5248,11 @@ function runSequentialAjaxRd(calls, onDone) {
         runSequentialAjaxRd(calls, onDone);
     });
 }
-// The footer's only action for this tab: drop EVERY override this employee carries, in one go. The
+// The footer's only action beside [ปิด]: drop EVERY override this employee carries, in one go. The
 // per-row controls each handle one line; this is the one thing that touches rows the user never
 // opened, which is why it is the one thing that still counts before it asks.
+// 2026-09-17, D3: it moved with the table it acts on, from #manageLinesModal's footer to
+// #runDetailBreakdownModal's -- same §9 left slot, same id, same handler.
 function restoreAllComputedLineOverridesRd() {
     const rows = [];
     lineOverrideMountRd().find('.lo-row').each(function () {
@@ -5410,7 +5398,7 @@ function loadRecurringDeductionDestinationsRd() {
         refreshAdjustmentTabDirtyGuard('manageLinesRecurringDestPane');
     });
 }
-// Same shared picker as the Payment Items tab, minus the sub-question: an override always names a
+// Same shared picker as the add/edit line form, minus the sub-question: an override always names a
 // real payee (removing it is what Reset does), so "retained by company" means 'company' outright --
 // see the partial's own $payee_allow_no_record.
 $(function () {
@@ -5793,8 +5781,8 @@ function resetManualLineFormRd() {
     $('#manualLineComment').val('').trigger('input');
     // An employee can't be their own transfer payee -- excluded the same way #eed_payee_employee_id
     // excludes self on the Employee Detail page (data-exclude-id, read fresh on every ajax search).
-    // 2026-09-16, D2: whose form this is comes from the open context, not from the Adjustments tab's
-    // own employee -- the same form now also opens over the Calculation Breakdown modal.
+    // 2026-09-16, D2: whose form this is comes from the open context (the block the + or the pencil
+    // was pressed in), never from a "current employee" variable.
     $('#manualLinePayeeEmployee')
         .attr('data-exclude-id', (manualLineFormCtxRd && manualLineFormCtxRd.employeeId) || '')
         .val(null).trigger('change');
@@ -5817,38 +5805,29 @@ $(document).on('keydown', '#manualLineAmount', function (e) {
     if (!$('#btnSaveManualLine').prop('disabled')) $('#btnSaveManualLine').trigger('click');
 });
 
-/* ---------- #manageLinesModal shell: footer dispatcher + per-tab dirty-guard (2026-09-14, Round 3
-   item 4 batch 1/4, explicit instruction, §9/§6) ----------
+/* ---------- #manageLinesModal ("ตั้งค่ารายบุคคล") shell: footer dispatcher + per-tab dirty-guard
+   (2026-09-14, Round 3 item 4 batch 1/4, explicit instruction, §9/§6) ----------
    Reuses the SAME primitives the generic `.modal[data-dirty-guard]` mechanism (app.js, §9) is built
    on -- snapshotFormState()/isFormDirty()/showConfirm()/refreshDirtyGuard(), and the identical
    bypass-flag pattern that stops a confirmed "discard" from re-entering its own handler -- but NOT
    that generic delegated handler itself, deliberately: it snapshots/compares the WHOLE `.modal` once
    at `shown.bs.modal`, which is wrong for this modal on two counts -- (a) `shown.bs.modal` fires
-   before this modal's 4 parallel async tab loads land (openManageLinesModal's own click handler
+   before this modal's parallel async tab loads land (openManageLinesModal's own click handler
    below), so a whole-modal baseline would be the pre-load (mostly empty) DOM, making freshly-arrived
-   server data look "dirty" the instant it renders; (b) each tab has its own distinct save target (or
-   none at all, for Tab 1) -- one whole-modal flag can't express "only Tab 2 has unsaved input". Each
-   tab's own baseline is instead captured once THAT tab's own data has actually landed (each
-   loadXRd()'s own success callback below calls refreshAdjustmentTabDirtyGuard()), scoped to that
-   tab's own save-relevant container, not the whole modal.
-   `scope` is deliberately narrower than the whole pane for Tab 4 (#recurringDestEditorCard only, and
-   only actionable while it's open -- `activeOnly` -- matching exactly what
-   #btnSaveRecurringDestOverride itself submits).
-   2026-09-16, batch 3/4: Tab 3 is the first entry with a `saveFn` instead of a `saveSelector` -- its
-   own hidden save button is gone (the whole tab is one table with one save path now), so the
-   dispatcher calls the function directly rather than clicking an invisible button. `saveSelector`
-   stays for the 3 tabs that still own their own (hidden) button; see BACKLOG for retiring those too. */
+   server data look "dirty" the instant it renders; (b) each tab has its own distinct save target --
+   one whole-modal flag can't express "only Attendance Data has unsaved input". Each tab's own
+   baseline is instead captured once THAT tab's own data has actually landed (each loadXRd()'s own
+   success callback below calls refreshAdjustmentTabDirtyGuard()), scoped to that tab's own
+   save-relevant container, not the whole modal.
+   `scope` is deliberately narrower than the whole pane for Recurring Destination
+   (#recurringDestEditorCard only, and only actionable while it's open -- `activeOnly` -- matching
+   exactly what #btnSaveRecurringDestOverride itself submits).
+   2026-09-17, D3: down to the 3 tabs that are per-employee SETTINGS. The 2 that edited figures
+   ("รายการจ่าย"/"ปรับตัวเลข") are gone, and with them the only `immediate` entries and the only
+   `restoreAllFn`/`saveFn` -- every entry left owns a real (hidden) save button again, so the
+   dispatcher is back to one shape. */
 const ADJUSTMENT_TAB_CONFIG_RD = {
-    // 2026-09-16, D2: this tab holds no form at all any more (adding/editing is #manualLineFormModal,
-    // which writes the moment it is confirmed), so it is `immediate` in the same sense Tab 3 is --
-    // nothing to save later, nothing to warn about on the way out (rules.md §9).
-    manageLinesItemsPane: { scope: '#manageLinesItemsPane', saveSelector: null, immediate: true },
     manageLinesAttendancePane: { scope: '#manageLinesAttendancePane', saveSelector: '#btnSaveAttendanceData' },
-    // `immediate`: every action in this tab writes the moment it is confirmed, so there is nothing to
-    // save later and nothing to warn about on the way out -- the footer hides Save and the dirty
-    // guard skips the tab entirely (rules.md §9). Same shape as Tab 1, which has always worked this
-    // way; `restoreAllFn` is the one footer action it does keep.
-    manageLinesSyncOverridePane: { scope: '#manageLinesSyncOverridePane', immediate: true, restoreAllFn: restoreAllComputedLineOverridesRd },
     manageLinesRecurringDestPane: { scope: '#recurringDestEditorCard', saveSelector: '#btnSaveRecurringDestOverride', activeOnly: true },
     manageLinesCalcPane: { scope: '#manageLinesCalcPane', saveSelector: '#btnSaveEmpCalcOverride' },
 };
@@ -5865,36 +5844,20 @@ function refreshAdjustmentTabDirtyGuard(paneId) {
 }
 function adjustmentTabIsDirty(cfg) {
     if (!cfg) return false;
-    // A tab that writes on every action is never "unsaved" -- asking on the way out would be asking
-    // about work that is already on the server.
-    if (cfg.immediate) return false;
     const $scope = $(cfg.scope);
     return isFormDirty($scope, $scope.data('dirtyGuardBaseline'));
 }
-// Footer's single Save button: disabled unless the active tab both HAS a save target and is actually
-// dirty (Tab 1 never has a target at all; Tab 4 only while its inline editor card is open).
+// Footer's single Save button: disabled unless the active tab is actually dirty (Recurring
+// Destination only while its inline editor card is open).
+// 2026-09-17, D3: the hide-when-there-is-no-target branch and the left-slot branch both went with
+// the 2 removed tabs -- every remaining tab has a save target, and the one left-slot button there
+// ever was (the line-override table's "คืนค่าระบบทั้งหมด") lives in the Breakdown modal's own
+// footer now, see refreshBreakdownFooterStateRd().
 function refreshAdjustmentSaveButtonState() {
     const cfg = adjustmentActiveTabConfig();
     const $btn = $('#btnSaveActiveAdjustmentTab');
     if (!$btn.length) return;
-    // 2026-09-15, batch 2/4, explicit instruction: a tab with NO save target at all (Tab 1 -- every
-    // action there writes to the server the moment it is taken, there is nothing to "save") HIDES
-    // this button instead of showing a permanently-disabled one. A disabled button still says "there
-    // is a save step here, you just can't reach it yet", which is untrue for that tab. Tabs that do
-    // have a target keep the disabled-until-dirty behavior unchanged.
-    const hasTarget = !!(cfg && (cfg.saveSelector || cfg.saveFn));
-    $btn.toggleClass('d-none', !hasTarget);
-    // The footer's left slot belongs to whichever tab declares one (only Tab 3 today) -- hidden
-    // everywhere else rather than shown disabled, same reasoning as Save's own
-    // hide-when-there-is-no-target rule. It has nothing to do until at least one row actually
-    // carries an override, which is a different question from whether anything has been typed yet.
-    const $restoreAllBtn = $('#btnRestoreAllComputedLineOverrides');
-    const overrideRowCount = lineOverrideMountRd().find('.lo-row').filter(function () {
-        return !!($(this).data('orig-action') || '') && !$(this).find('.lo-include').is(':disabled');
-    }).length;
-    $restoreAllBtn.toggleClass('d-none', !(cfg && cfg.restoreAllFn));
-    $restoreAllBtn.prop('disabled', !(cfg && cfg.restoreAllFn) || overrideRowCount === 0);
-    if (!hasTarget || (cfg.activeOnly && $(cfg.scope).hasClass('d-none'))) {
+    if (!cfg || (cfg.activeOnly && $(cfg.scope).hasClass('d-none'))) {
         $btn.prop('disabled', true);
         return;
     }
@@ -5908,8 +5871,6 @@ function saveActiveAdjustmentTab() {
     const cfg = adjustmentActiveTabConfig();
     if (!cfg) return;
     if (cfg.activeOnly && $(cfg.scope).hasClass('d-none')) return;
-    if (cfg.saveFn) { cfg.saveFn(); return; }
-    if (!cfg.saveSelector) return;
     $(cfg.saveSelector).trigger('click');
 }
 $(document).on('click', '#btnSaveActiveAdjustmentTab', saveActiveAdjustmentTab);
@@ -5987,76 +5948,37 @@ $(document).on('hide.bs.modal', '#manageLinesModal', function (e) {
 
 $(document).on('click', '.btn-manage-manual-lines', function () {
     // Clear every tab's leftover dirty-guard baseline from whatever employee/tab this modal was last
-    // open on -- without this, the forced "always reopen on Tab 1" switch a few lines below would
-    // compare a NEW employee's not-yet-loaded DOM against a STALE baseline from the previous one,
-    // which could spuriously show the tab-switch-dirty confirm the instant this modal is reopened.
+    // open on -- without this, the forced "always reopen on the first tab" switch a few lines below
+    // would compare a NEW employee's not-yet-loaded DOM against a STALE baseline from the previous
+    // one, which could spuriously show the tab-switch-dirty confirm the instant this modal reopens.
     Object.keys(ADJUSTMENT_TAB_CONFIG_RD).forEach(function (paneId) {
         $(ADJUSTMENT_TAB_CONFIG_RD[paneId].scope).removeData('dirtyGuardBaseline');
     });
     manageLinesEmployeeId = $(this).data('employee-id');
-    // This modal takes the shared line-override table back (the Calculation Breakdown modal may have
-    // been the last host) -- see setLineOverrideHostRd()'s own docblock. Also clears the other mount,
-    // which is what keeps the rendered table's own ids unique in the DOM.
-    setLineOverrideHostRd('#lineOverrideTableWrap', manageLinesEmployeeId, null);
     const rowData = runDetailRowByEmployeeId(manageLinesEmployeeId);
     // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
     // name in the modal-header (#manageLinesEmployeeName removed from the view).
     $('#manageLinesHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
-    const isIncentive = currentRun && currentRun.run_purpose === 'incentive';
-    // 2026-08-27: an incentive run's manual lines are no longer necessarily the ONLY thing
-    // counted -- once include_base_salary/include_standing_items is on for this run (see
-    // PayrollRunModel::recalculate()'s own docblock), manual lines here are additive on top of
-    // those, same spirit (if not the exact same wording) as a normal run's own hint.
-    // 2026-08-30 (Phase 8, T041, real gap found and fixed): include_attendance_pay is a 3rd source
-    // that can ALSO be on alongside/instead of the two above -- the "partial" branch's condition
-    // was missing it entirely, so an OT/trip-only run (include_attendance_pay on, the other two off
-    // -- exactly the scenario this toggle was built for) would have wrongly shown the "no base
-    // salary, no standing items" hint, silently omitting that attendance pay is ALSO being counted.
-    let hint;
-    if (!isIncentive) {
-        hint = langData['manage_items_hint_adjustment'] || 'Added on top of this employee\'s normal calculation, for this run only.';
-    } else if (currentRun.include_base_salary || currentRun.include_standing_items || currentRun.include_attendance_pay) {
-        hint = langData['manage_items_hint_incentive_partial'] || 'Added on top of this run\'s own settings (base salary and/or standing earning/deduction items, as configured for this run), for this employee only.';
-    } else {
-        hint = langData['manage_items_hint_incentive'] || 'These are the only items counted for this employee -- no base salary, no standing income/deduction assignments.';
-    }
-    $('#manageLinesHint').text(hint);
     // 2026-09-14, Round 3 item 4 batch 1/4: footer = modalFooterButtonsHtml() -> [Save][Close outline]
     // (§9/§4), same pattern #employeeCommentModal's own footer already established -- rebuilt fresh on
     // every open (constant shape, no readOnly branching needed here unlike Comments' own footer).
-    // 2026-09-16, batch 3/4: a progress line (left, `me-auto`) for the sequential save of Tab 3's
-    // table, and a "คืนค่า" button that only that tab shows (refreshAdjustmentSaveButtonState()
-    // toggles it) -- both live in the footer because that is where this modal's save action already
-    // is, and a restore that sits away from Save reads as belonging to something else.
-    // §9's own left slot: "ยกเลิกการแก้ไข" (undo what is typed, never closes the modal) plus the
-    // sequential-save progress line, both kept away from [บันทึก][ปิด] on the right.
+    // 2026-09-17, D3: no left slot any more -- the one button that ever used it went to
+    // #runDetailBreakdownModal's footer with the table it acts on.
     $('#manageLinesModalFooter').html(modalFooterButtonsHtml({
-        left: { id: 'btnRestoreAllComputedLineOverrides', key: 'line_override_restore_all_computed', fallback: 'Restore all calculated values' },
-        leftHtml: '<span class="text-muted" id="lineOverrideSaveProgress"></span>',
         primary: { id: 'btnSaveActiveAdjustmentTab', key: 'save', fallback: 'Save' },
         secondary: { key: 'close', fallback: 'Close', dismiss: true },
     }));
-    refreshAdjustmentTabDirtyGuard('manageLinesItemsPane');
-    // Always reopen on Tab 1 -- a stale "Attendance Data" tab left active from a previous employee
-    // would otherwise show up front-and-center unexpectedly.
-    bootstrap.Tab.getOrCreateInstance(document.getElementById('manageLinesItemsTab')).show();
+    // Always reopen on the first tab -- a stale tab left active from a previous employee would
+    // otherwise show up front-and-center unexpectedly.
+    bootstrap.Tab.getOrCreateInstance(document.getElementById('manageLinesAttendanceTab')).show();
     refreshAdjustmentSaveButtonState();
-    // 2026-08-31, same-day follow-up ("ทำทั้ง 3 ข้อเลย" -- item 9b): "Attendance Data" used to be
-    // sync-only here (PayrollRunModel::attendanceOverrideSave() itself refused any non-sync run) --
-    // that backend restriction is gone now (see that method's own updated docblock: the underlying
-    // engine already treats sync/manual/import attendance data uniformly via
-    // TransactionDataPayAdapter, Phase 5), so this tab is always shown. A run with genuinely no
-    // underlying attendance data of any source just shows an empty/zeroed state once opened --
-    // same as a sync-based employee absent from the pulled payload already could before this.
-    $('#manageLinesAttendanceTabWrap').removeClass('d-none');
     loadAttendanceDataRd();
     // Reset the "Tax & SSO" tab to a neutral state before the fresh fetch below lands, so a stale
     // previous employee's radios never flash for even a moment.
     $('#empCalcTaxInherit, #empCalcSsoInherit').prop('checked', true);
-    loadSyncLineOverridesRd();
+    loadEmployeeExemptionRd();
     loadRecurringDeductionDestinationsRd();
     new bootstrap.Modal(document.getElementById('manageLinesModal')).show();
-    loadManualLinesRd();
 });
 // The payload for one manual line out of whatever the form currently holds -- ONE builder for both
 // endpoints, because add-manual-line and update-manual-line take exactly the same field set (see
@@ -6138,26 +6060,17 @@ function manualLineFormPayloadRd() {
 /* ---------- The add/edit form (#manualLineFormModal) -- one form, two hosts (2026-09-16, D2) -------
    The form itself is markup in payroll/detail.php, inside a nested modal; this is everything that
    drives it. It opens from the + on a column head (the type comes from WHICH head) or from a row
-   (edit). There is deliberately no second implementation for the Payment Items tab: that tab's own
-   inline form WAS this markup, and it now opens this modal through the same + button the
-   Calculation Breakdown modal's own block uses (§0.4). */
+   (edit). It has always been the only implementation: the "รายการจ่าย" tab's own inline form WAS
+   this markup before D2 moved it into a modal of its own, and that tab is gone entirely now (§0.4). */
 // Which block the open form belongs to: whose lines, which row (absent = a new one), where the block
 // is, and what has to be reloaded once the write lands.
 let manualLineFormCtxRd = null;
-// Both blocks exist in the DOM at the same time (the Adjustments modal stays rendered underneath the
-// Breakdown one), so the host is resolved from the mount the click happened in -- never from a
-// "current block" variable the other one could have overwritten. Same reasoning as
-// setLineOverrideHostRd()'s own, with the difference that these 2 mounts can both be live at once.
+// The host is resolved from the mount the click happened in, never from a "current block" variable.
+// 2026-09-17, D3: there is one `.ml-mount` left (the settings modal's "รายการจ่าย" tab is gone), but
+// the lookup stays -- it is what keeps every handler below delegated on the class rather than naming
+// a container, which is what let the block move modals at all.
 function manualLineHostForMountRd($mount) {
     const id = $mount.attr('id');
-    if (id === 'manualLinesSlip') {
-        return {
-            mount: '#manualLinesSlip',
-            employeeId: manageLinesEmployeeId,
-            canEdit: employeeRowEditableRd(runDetailRowByEmployeeId(manageLinesEmployeeId)),
-            onSaved: function () { loadManualLinesRd(); loadRunDetail(); },
-        };
-    }
     if (id === 'breakdownManualLines' && breakdownRowRd) {
         return {
             mount: '#breakdownManualLines',

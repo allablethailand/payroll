@@ -9,9 +9,9 @@
  *     the writer does. These assertions exist so that move (and any later edit of the list) can
  *     never quietly turn an advisory note into something that flips calc_status to 'error' and
  *     blocks submit(), or the reverse.
- *  2. `adjustment_count` on every getDetails() row -- one number covering every per-employee table
- *     all 5 tabs of #manageLinesModal write to (it backs the count badge on that modal's own row
- *     button). Verified by inserting one row in each of those tables, inside a transaction that is
+ *  2. `adjustment_count` on every getDetails() row -- one number covering all 5 per-employee
+ *     adjustment tables (it backs the count badge on the Calculation Breakdown row button).
+ *     Verified by inserting one row in each of those tables, inside a transaction that is
  *     always rolled back.
  *
  * Not PHPUnit -- see tests/statutory_engine_test.php for why.

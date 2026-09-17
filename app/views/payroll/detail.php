@@ -336,7 +336,7 @@
                  2026-08-29, explicit request: "เพิ่มให้สามารถเลือกเอาเงินเดือนออกจากการคำนวณได้ หรือค่าอื่นๆที่ไม่
                  นำมาคำนวณ ทั้ง template เลย...และต้องกำหนดได้ด้วยว่าคำนวณภาษี ไม่คำนวณภาษี ส่งประกันสังคมไหม
                  กำหนดแบบทั้งหมด และรายบุคคลได้" -- whole-run defaults (a per-employee override lives in
-                 each row's own "Items" button -> "Tax & SSO" tab instead, see manageLinesModal).
+                 each row's own "ตั้งค่ารายบุคคล" button -> "Tax & SSO" tab instead).
                  2026-08-29, same-day follow-up: "ในหน้า Process Detail แบบ View Mode จะต้องบอกรายละเอียด
                  ของการตั้งค่ารอบด้วยครับ" -- was hidden entirely once a run left draft; now ALWAYS
                  visible, read-only (every control disabled + Save hidden) once the run is no longer
@@ -1238,8 +1238,16 @@
          adjustment on top of the normal calculation (2026-08-19, explicit request) -- see
          PayrollRunModel::recalculate()'s $isIncentive branch vs. the manual-lines block appended
          to the normal branch. #manageLinesHint's wording switches between the two accordingly. -->
-    <div class="modal fade modal-tabbed" id="manageLinesModal" data-footer="view" data-bs-backdrop="static" tabindex="-1" aria-labelledby="manageLinesModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered modal-fullscreen-sm-down">
+    <!-- 2026-09-17, D3: `.modal-tabbed` and the `modal-fullscreen-sm-down` that always rode with it
+         are BOTH gone -- measured numbers and the reasoning in
+         docs/decisions/2026-09-17-remove-manage-lines-tabs.md. Short version: that class pinned the
+         body to one height so a modal could not resize between tabs, and it was adopted here when the
+         tallest tab already reached that height anyway. With the 2 tall tabs removed, the tallest of
+         the 3 left fills 43% of it -- so this modal stopped using it, that left no user at all, and
+         the class was retired (CSS deleted, §9 rule replaced by its own cancellation line). Height
+         follows content, same as #runDetailBreakdownModal. -->
+    <div class="modal fade" id="manageLinesModal" data-footer="view" data-bs-backdrop="static" tabindex="-1" aria-labelledby="manageLinesModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
                     <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
@@ -1264,24 +1272,16 @@
                          Tab 1 is the core content relevant on every run; Tabs 2/3 are sync-only, their
                          <li> hidden/shown by openManageLinesModal() the same way the sections' d-none
                          used to be toggled, and reset to Tab 1 every time the modal opens. -->
+                    <!-- 2026-09-17, D3: the "รายการจ่าย" and "ปรับตัวเลข" tabs are gone -- both now live
+                         in #runDetailBreakdownModal (the slip), where the figures they edit are read
+                         (see docs/decisions/2026-09-17-remove-manage-lines-tabs.md). What is left is
+                         the 3 tabs that are settings for ONE employee on ONE run, which is what this
+                         modal is called now. "ข้อมูลเข้างาน" is the first tab and is always shown
+                         (its backend stopped being sync-only in 2026-08-31, see loadAttendanceDataRd()). -->
                     <ul class="nav nav-tabs" role="tablist">
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link active" id="manageLinesItemsTab" data-bs-toggle="tab" data-bs-target="#manageLinesItemsPane" type="button" role="tab">
-                                <span data-i18n="manage_items_tab_items">Payment Items</span>
-                            </button>
-                        </li>
-                        <li class="nav-item d-none" id="manageLinesAttendanceTabWrap" role="presentation">
-                            <button class="nav-link" id="manageLinesAttendanceTab" data-bs-toggle="tab" data-bs-target="#manageLinesAttendancePane" type="button" role="tab">
+                        <li class="nav-item" id="manageLinesAttendanceTabWrap" role="presentation">
+                            <button class="nav-link active" id="manageLinesAttendanceTab" data-bs-toggle="tab" data-bs-target="#manageLinesAttendancePane" type="button" role="tab">
                                 <span data-i18n="manage_items_tab_attendance">Attendance Data</span>
-                            </button>
-                        </li>
-                        <!-- 2026-08-29, generalized from sync-only (explicit request: "ในหน้าทำจ่าย
-                             น่าจะเปิดให้แก้ไขตัวเลขได้...ทุกค่าเลย") -- no longer toggled d-none for a
-                             non-sync run, see detail.js's own openManageLinesModal()-equivalent
-                             comment on why. -->
-                        <li class="nav-item" id="manageLinesSyncOverrideTabWrap" role="presentation">
-                            <button class="nav-link" id="manageLinesSyncOverrideTab" data-bs-toggle="tab" data-bs-target="#manageLinesSyncOverridePane" type="button" role="tab">
-                                <span data-i18n="manage_items_tab_adjustments">Deduction Adjustments</span>
                             </button>
                         </li>
                         <!-- 2026-08-29, explicit request: "กำหนดได้สำหรับพนักงานรายบุคคล ติ๊กเอาหรือไม่เอา...
@@ -1313,21 +1313,6 @@
                          gap from the tab bar; each pane that still needs the old card's own padding
                          gets it back directly, scoped to that pane's own id (temporary, not a card). -->
                     <div class="tab-content" id="manageLinesTabContent">
-                        <div class="tab-pane fade show active form-compact" id="manageLinesItemsPane" role="tabpanel">
-                            <!-- 2026-09-14, Round 3 item 4 batch 1/4: the modal-header's own description
-                                 line (#manageLinesHint) moved down here -- this is the one tab that had
-                                 no description of its own already (2/4/5 each have one at their own
-                                 top, 3 has one per sub-section). JS (openManageLinesModal's own click
-                                 handler) still sets its text via this same #manageLinesHint id. -->
-                            <p class="text-muted small mb-2" id="manageLinesHint"></p>
-                            <!-- 2026-09-15, batch 2/4, explicit instruction: the 2 bordered
-                                 .ped-type-panel cards + their own totals + the separate net row are
-                                 replaced by the SHARED slip component (payslipViewHtml(), app.js --
-                                 §9's "สลิป / รายละเอียดการคำนวณ"): 2 columns, no per-row line, both column
-                                 totals pinned to the same bottom line, and one `--c-bg-subtle` band for
-                                 the net figure. Rendered into this one div by loadManualLinesRd(). -->
-                            <div id="manualLinesSlip" class="ml-mount"></div>
-                        </div>
                         <!-- Attendance Data (from Sync) (2026-08-21, explicit request: "ต้องการแก้ตัวเลขดิบ
                              ที่ Sync มา ไม่ใช่แค่ยอดเงิน") -- corrects the RAW numbers Origami sent (late
                              minutes, absent days, unpaid leave days, OT hours, trip allowance), which then
@@ -1337,7 +1322,7 @@
                              (currentRun.sync_process_id, tab wrapper toggled in JS). One combined Save
                              (not per-field) since all 7 fields are one conceptual "corrected timesheet"
                              record, matching payroll_run_sync_item_overrides' one-row-per-employee shape. -->
-                        <div class="tab-pane fade" id="manageLinesAttendancePane" role="tabpanel">
+                        <div class="tab-pane fade show active" id="manageLinesAttendancePane" role="tabpanel">
                             <p class="text-muted small mb-2" data-i18n="attendance_data_hint">Correct the raw attendance numbers, for this run only -- amounts recompute from your correction.</p>
                             <div class="table-responsive">
                                 <table class="table table-sm align-middle mb-2">
@@ -1361,29 +1346,6 @@
                                      own visible copy in the tab content is gone. -->
                                 <button type="button" class="btn btn-sm btn-primary d-none" id="btnSaveAttendanceData"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
                             </div>
-                        </div>
-                        <!-- Sync Deduction Adjustments (2026-08-21, explicit request: "ต้องการปรับค่า สาย
-                             ขาดงาน ลาไม่รับเงิน หรือยกเว้นไม่ให้หัก") -- only shown on a sync-based run
-                             (currentRun.sync_process_id set, tab wrapper toggled in JS), lists the
-                             employee's currently sync-computed deduction lines with an inline
-                             override/exclude/reset control per line. Per-run only (confirmed choice),
-                             not a standing setting. -->
-                        <!-- 2026-09-16, batch 3/4: this tab is ONE table now. The separate
-                             "ไม่นำมาคำนวณสำหรับพนักงานคนนี้" checklist panel that used to sit above the
-                             per-item cards is gone -- it wrote the exact same field through the exact
-                             same endpoint as each card's own "ยกเว้นรอบนี้" checkbox
-                             (payroll_run_line_overrides.action='exclude'), i.e. it was a second UI for
-                             one concept. See docs/decisions/2026-09-16-line-override-table.md for what
-                             that costs (pre-excluding an item this employee has no calculated line for)
-                             and why it was accepted. itemChecklistBoxesHtml() itself stays -- the
-                             run-wide Run Settings panel (#runSettingsItemChecklist) still uses it. -->
-                        <div class="tab-pane fade form-compact" id="manageLinesSyncOverridePane" role="tabpanel">
-                            <p class="text-muted mb-3" id="lineOverrideHint" data-i18n="line_override_hint">Turn on the items to include in this employee's calculation for this run, and use the pencil to enter an amount other than the system-calculated one. Every change is saved immediately and kept in the history.</p>
-                            <!-- 2026-09-16, D1: `.lo-mount` marks this as ONE of the 2 places the shared line-override
-                                 table can render (the other is inside #runDetailBreakdownModal). Every
-                                 handler is delegated on that class, so neither host owns the table --
-                                 see setLineOverrideHostRd() in detail.js. -->
-                            <div id="lineOverrideTableWrap" class="lo-mount"></div>
                         </div>
                         <div class="tab-pane fade" id="manageLinesRecurringDestPane" role="tabpanel">
                             <p class="text-muted small mb-2" data-i18n="recurring_dest_override_hint">Override which account a recurring deduction is routed to, for this payroll run only -- the employee's own saved default is never changed.</p>
@@ -1494,17 +1456,18 @@
                 <!-- 2026-09-14, Round 3 item 4 batch 1/4, §9/§4: modalFooterButtonsHtml() (app.js) ->
                      [Save][Close outline], built once per open in openManageLinesModal's own click
                      handler (detail.js) -- Save's id (#btnSaveActiveAdjustmentTab) is the ONE call site
-                     saveActiveAdjustmentTab() wires up; it dispatches to whichever of the 5 tabs' own
-                     EXISTING (now-hidden) save buttons applies to the currently active tab, unchanged. -->
+                     saveActiveAdjustmentTab() wires up; it dispatches to whichever of the 3 remaining
+                     tabs' own EXISTING (now-hidden) save buttons applies to the active tab, unchanged. -->
                 <div class="modal-footer" id="manageLinesModalFooter"></div>
             </div>
         </div>
     </div>
 
-    <!-- Edit-history modal for ONE line of the Adjustments modal's "ปรับตัวเลข" tab -- opened from
-         that row's own history badge when there are more edits than the 5 the dropdown shows, and
-         the only place the full chain is readable (each edit's from/to, its note, and its own
-         "use this value" action). Stacked ON TOP of #manageLinesModal: no special handling needed
+    <!-- Edit-history modal for ONE line of the line-override table (#runDetailBreakdownModal's own
+         "จากระบบ" block) -- opened from that row's own history badge when there are more edits than
+         the 5 the dropdown shows, and the only place the full chain is readable (each edit's
+         from/to, its note, and its own "use this value" action). Stacked ON TOP of the modal that
+         holds the table: no special handling needed
          here, app.js's own generic shown/hidden.bs.modal handlers already re-apply the scroll lock
          and bump the z-index of whichever modal is not the first one open. Body + title are filled
          by openLineOverrideHistoryModalRd() (detail.js); the footer is the plain [Close]
@@ -1573,6 +1536,14 @@
                     <div class="text-muted small mb-2 d-none" id="breakdownTotalDays"></div>
                     <div id="breakdownModalBody"></div>
                 </div>
+                <!-- 2026-09-17, D3: this modal used to have NO footer element, so app.js's own
+                     `data-footer="view"` fallback injected a bare [Close] on first open. It owns one
+                     now because "คืนค่าระบบทั้งหมด" moved here with the line-override table: §9's
+                     footer LEFT slot is where that button already lived (it was #manageLinesModal's),
+                     and it is still neither this modal's main action nor its way out. Filled per open
+                     by renderBreakdownFooterRd() (detail.js) -- read-only rows get [ปิด] alone, i.e.
+                     exactly what the fallback used to inject. -->
+                <div class="modal-footer" id="breakdownModalFooter"></div>
             </div>
         </div>
     </div>

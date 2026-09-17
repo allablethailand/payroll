@@ -283,8 +283,11 @@ checkTrue('Esc closes without sending', strpos($js, "if (e.key === 'Escape') { e
 // has already passed through it -- this one handler is therefore delegated from inside the modal,
 // which is what makes its stopPropagation() mean anything (Esc closed the whole modal otherwise).
 $keyStart = (int)strpos($js, "on('keydown', '.lo-edit-input'");
+// 2026-09-17, D3: #breakdownModalBody is the static node the table's only remaining mount renders
+// into (the "ปรับตัวเลข" pane it used to hang off is gone) -- it still has to be an ancestor INSIDE
+// the modal, and still has to be static, because `.lo-mount` itself is re-created on every open.
 checkTrue('the key handler is delegated from inside the modal',
-    strpos($js, "\$('#manageLinesSyncOverridePane').on('keydown', '.lo-edit-input'") !== false);
+    strpos($js, "\$('#breakdownModalBody').on('keydown', '.lo-edit-input'") !== false);
 checkTrue('and neither key reaches the modal behind it', substr_count(substr($js, $keyStart, 700), 'e.stopPropagation();') === 2);
 // Two half-finished edits on one table is a state nobody can read off the screen.
 checkTrue('opening an editor closes any other', strpos($js, "function lineOverrideOpenEditorRd(\$row) {
@@ -326,13 +329,17 @@ checkTrue('a failure unlocks and keeps the typed value', strpos($js, 'function l
 // totals) is reloaded, never patched row-locally.
 checkTrue('success reloads the table and the run', strpos($js, "loadSyncLineOverridesRd();\n            loadRunDetail();") !== false);
 
-echo "\n=== 11. no Save button, no dirty guard, for this tab ===\n";
-checkTrue('the tab declares itself immediate', strpos($js, "manageLinesSyncOverridePane: { scope: '#manageLinesSyncOverridePane', immediate: true") !== false);
-checkTrue('...so it has no save target at all', strpos($js, "immediate: true, restoreAllFn: restoreAllComputedLineOverridesRd }") !== false);
-// A tab that writes on every action is never "unsaved" -- asking on the way out would be asking
-// about work that is already on the server.
-checkTrue('the dirty guard skips it', strpos($js, 'if (cfg.immediate) return false;') !== false);
-// The footer keeps exactly one action for this tab, and it is the only one that counts first.
+echo "\n=== 11. no Save button, and restore-all sits with the table ===\n";
+// 2026-09-17, D3: this table has no Save step at all -- every action writes when it is confirmed --
+// and its only host is a modal whose footer is [restore all] ... [Close], with no Save to disable.
+checkTrue('the Breakdown modal footer has no Save button', strpos($js, "function renderBreakdownFooterRd(canEdit) {") !== false
+    && strpos($js, "left: canEdit ? { id: 'btnRestoreAllComputedLineOverrides'") !== false
+    && strpos($js, "secondary: { key: 'close', fallback: 'Close', dismiss: true },\n    }));\n    refreshBreakdownFooterStateRd();") !== false);
+// Restore-all is the one thing that touches rows the user never opened, so it is also the one thing
+// that is disabled until there is really something to restore.
+checkTrue('restore-all is enabled only when a row really carries an override',
+    strpos($js, "function refreshBreakdownFooterStateRd() {") !== false
+    && strpos($js, "\$btn.prop('disabled', overrideRowCount === 0);") !== false);
 checkTrue('restore-all confirms with a count before sending', strpos($js, 'line_override_confirm_restore_all_message') !== false);
 checkTrue('and sends one .remove per row, in order', strpos($js, "url: lineOverrideSaveUrlRd(\$row, 'remove')") !== false
     && strpos($js, 'runSequentialAjaxRd(calls,') !== false);
@@ -364,14 +371,10 @@ foreach (['line_override_confirm_exclude_message', 'line_override_confirm_includ
 foreach (['line_override_col_new', 'line_override_new_placeholder', 'line_override_cancel_edits'] as $key) {
     checkTrue("{$key} is gone", !array_key_exists($key, $thLang) && !array_key_exists($key, $enLang));
 }
-// The hint has to teach the tab that exists now, not the one that was replaced.
-checkTrue('the hint says the pencil and that it saves immediately',
-    strpos((string)$thLang['line_override_hint'], 'ดินสอ') !== false
-    && strpos((string)$thLang['line_override_hint'], 'บันทึกทันที') !== false
-    && strpos((string)$enLang['line_override_hint'], 'pencil') !== false
-    && strpos((string)$enLang['line_override_hint'], 'saved') !== false);
-checkTrue('and no longer explains an empty field', strpos((string)$thLang['line_override_hint'], 'เว้นว่าง') === false
-    && strpos((string)$enLang['line_override_hint'], 'blank') === false);
+// The tab's own hint line went with the tab (D3) -- the table is read inside the Calculation
+// Breakdown modal now, which carries no hint of its own.
+checkTrue('line_override_hint is gone', !array_key_exists('line_override_hint', $thLang)
+    && !array_key_exists('line_override_hint', $enLang));
 // "Use this value" now writes on confirm, so its own wording had to change with it.
 checkTrue('the use-this-value confirm says it saves immediately',
     strpos((string)$thLang['line_override_confirm_use_value_message'], 'บันทึกทันที') !== false
