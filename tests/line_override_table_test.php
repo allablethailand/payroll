@@ -351,9 +351,24 @@ checkTrue('the include control is a switch', strpos($rowHtml, 'class="form-check
     && strpos($rowHtml, 'role="switch"') !== false);
 checkTrue('the amount column carries the figure and its pencil', strpos($rowHtml, 'lo-amount-cell') !== false
     && strpos($rowHtml, 'lo-edit-btn') !== false);
-// No amount to edit on a line that is not being calculated -- and a greyed control still invites the
-// click, so the pencil is absent rather than disabled.
-checkTrue('an off row has no pencil at all', strpos($rowHtml, 'const pencil = (included && !runDisabled)') !== false);
+// 2026-09-17, R1: an off row has no FIGURE either, not just no pencil -- where the amount used to be
+// struck through it now says what is true about the row ("ไม่นำมาคำนวณ"). The editable-only controls
+// (pencil, "use the calculated value") hang off the same one condition.
+checkTrue('an off row shows no figure and no controls', strpos($rowHtml, 'const editable = included && !runDisabled;') !== false
+    && strpos($rowHtml, "line_override_excluded_amount") !== false
+    && strpos($rowHtml, 'const amountCell = included') !== false);
+// The calculated figure is a column of its own now, right-aligned like the live one beside it.
+checkTrue('the calculated figure has its own money column', strpos($rowHtml, 'lo-computed-cell') !== false
+    && strpos($rowHtml, 'num col-money lo-computed-cell') !== false);
+// It comes from the row when nothing has overridden it, and from this line's own history when
+// something has -- the same `original_value` the dropdown's head shows.
+checkTrue('the calculated figure has one resolver, with both sources', strpos($js, 'function lineOverrideComputedTextRd(line) {') !== false
+    && strpos($js, 'if (!line.override_action) return lineOverrideHistoryValueRd(line.current_amount);') !== false
+    && strpos($js, 'const original = history ? history.original_value : null;') !== false);
+// "Back to the calculated value" only exists where the 2 figures actually disagree.
+checkTrue('the use-calculated button is conditional on a real difference',
+    strpos($rowHtml, "computedText !== '' && computedText !== amountText") !== false
+    && strpos($rowHtml, 'lo-use-system-btn') !== false);
 checkTrue('the row carries its own current figure for the editor', strpos($rowHtml, 'data-amount="${escapeAttr(fmtNum(line.current_amount))}"') !== false);
 
 $thLang = json_decode(file_get_contents(__DIR__ . '/../public/lang/th.json'), true);

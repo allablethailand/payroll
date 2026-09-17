@@ -2072,8 +2072,12 @@ function commentButtonRd(row) {
 function viewBreakdownButtonRd(row) {
     const count = Number(row.adjustment_count || 0);
     const countBadge = count > 0 ? `<span class="btn-circle-action-badge">${countBadgeHtml(count)}</span>` : '';
+    // 2026-09-17, R1: `fa-receipt` -- what this opens is the employee's slip for this run, which is
+    // what a receipt glyph says; the magnifier said "look something up" (§7: the icon has to mean
+    // the thing, and it carries a tooltip either way).
+    const label = langData['action_view_breakdown'] || 'View Breakdown';
     return `<div class="position-relative d-inline-block">
-        <button type="button" class="btn btn-link btn-circle-action text-info btn-view-breakdown" data-employee-id="${row.employee_id}" title="${langData['action_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-magnifying-glass-dollar"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action text-info btn-view-breakdown" data-employee-id="${row.employee_id}" title="${label}" aria-label="${escapeAttr(label)}"><i class="fa-solid fa-receipt"></i></button>
         ${countBadge}
     </div>`;
 }
@@ -2573,18 +2577,32 @@ function manualLineAddButtonHtml(itemType, canEdit) {
 // Section 2: the lines somebody added by hand, in the slip's own 2-column layout so they read as the
 // same kind of thing as the calculated ones above. Rows come from manualLineListItemHtml(). No
 // totals here: the one figure that matters is the run's own net pay, which section 3 carries.
+// An empty column of the block, as a row of its own table so it sits in the same grid the real rows
+// do (§7: nothing gets `display` set on a cell). The shared empty state's `inline` variant -- no
+// icon, no button: what to do next is the + already in this column's own title.
+function manualLineEmptyColumnHtml() {
+    const text = langData['manual_line_empty_hint'] || 'No items yet -- press + to add one';
+    return `<tr class="payslip-row manual-line-empty-row"><td colspan="2">${emptyStateHtml({ inline: true, text: text })}</td></tr>`;
+}
 function renderBreakdownManualLinesRd(lines) {
     const all = lines || [];
     const canEdit = employeeRowEditableRd(breakdownRowRd);
     const earningLines = all.filter(l => l.item_type === 'earning');
     const deductionLines = all.filter(l => l.item_type === 'deduction');
+    // 2026-09-17, R1: "เงินเพิ่ม"/"เงินหัก" -- what a hand-added line IS, which is not the same word as
+    // the slip's own "เงินได้"/"รายการหัก" (those name the whole calculation above). An empty column still
+    // renders its head and its + button: that is where adding one starts.
     $('#breakdownManualLines').html(payslipViewHtml({
-        earningTitle: langData['breakdown_earnings'] || 'Income',
-        deductionTitle: langData['payslip_deductions_title'] || 'Deductions',
+        earningTitle: langData['manual_line_col_earning'] || 'Additional pay',
+        deductionTitle: langData['manual_line_col_deduction'] || 'Additional deduction',
         earningTitleActionHtml: manualLineAddButtonHtml('earning', canEdit),
         deductionTitleActionHtml: manualLineAddButtonHtml('deduction', canEdit),
-        earningRowsHtml: earningLines.map(l => manualLineListItemHtml(l, canEdit)).join(''),
-        deductionItemRowsHtml: deductionLines.map(l => manualLineListItemHtml(l, canEdit)).join(''),
+        earningRowsHtml: earningLines.length
+            ? earningLines.map(l => manualLineListItemHtml(l, canEdit)).join('')
+            : manualLineEmptyColumnHtml(),
+        deductionItemRowsHtml: deductionLines.length
+            ? deductionLines.map(l => manualLineListItemHtml(l, canEdit)).join('')
+            : manualLineEmptyColumnHtml(),
         showTotals: false,
     }));
 }
@@ -2603,8 +2621,15 @@ function loadBreakdownManualLinesRd(employeeId) {
 // Section 3: the run's own net pay for this employee, through the same component band the read-only
 // slip ends with. Re-read from api/payroll-run.get after every write, because a single override
 // changes what the statutory lines compute to and therefore this figure.
+// 2026-09-17, R1: 3 lines, not 1 -- gross and deductions in front of the net band, so the figure at
+// the bottom can be read as the result of the 2 above it instead of arriving on its own. All 3 come
+// from the SAME row `api/payroll-run.get` returns and refreshBreakdownNetSummaryRd() already
+// re-reads after every write; nothing is added up on the client.
 function renderBreakdownNetSummaryRd(row) {
-    $('#breakdownNetSummary').html(payslipNetSummaryHtml(row.net_amount));
+    $('#breakdownNetSummary').html(payslipNetSummaryHtml(row.net_amount, null, {
+        grossAmount: row.gross_amount,
+        totalDeductionAmount: row.total_deduction_amount,
+    }));
 }
 function refreshBreakdownNetSummaryRd() {
     if (!breakdownRowRd) return;
@@ -2623,13 +2648,16 @@ function refreshBreakdownNetSummaryRd() {
     });
 }
 function renderBreakdownEditableBodyRd(row) {
+    // 2026-09-17, R1: the calculated table has no heading of its own -- it is what this modal is,
+    // and its own column heads already say what each column holds. A heading over the first thing
+    // under the employee card only repeats the modal's title. The section below still needs one:
+    // it is a DIFFERENT kind of line (someone typed it in) and has to say so.
     $('#breakdownModalBody').html(`<div class="breakdown-edit">
         <section class="breakdown-edit-section">
-            <h6 class="breakdown-edit-title">${escapeHtml(langData['breakdown_group_from_system'] || 'From the system')}</h6>
             <div id="breakdownLineOverrideWrap" class="lo-mount"></div>
         </section>
         <section class="breakdown-edit-section">
-            <h6 class="breakdown-edit-title">${escapeHtml(langData['breakdown_group_added_manually'] || 'Added manually')}</h6>
+            <h6 class="breakdown-edit-title">${escapeHtml(langData['breakdown_group_extra_items'] || 'Additional items')}</h6>
             <div id="breakdownManualLines" class="ml-mount"></div>
         </section>
         <div id="breakdownNetSummary"></div>
@@ -4623,7 +4651,9 @@ $(document).on('click', '#btnResetAttendanceData', function () {
    stored `exclude` and "on" into removing one.
    ---------- */
 const LINE_OVERRIDE_GROUPS_RD = [
-    { type: 'base_salary', key: 'table_base_salary', fallback: 'Base Salary', money: '' },
+    // 2026-09-17, R1: base salary is money coming IN, so it takes the slip's own income colour (§8's
+    // `.money-gross`) rather than staying the only uncoloured figure in a column of coloured ones.
+    { type: 'base_salary', key: 'table_base_salary', fallback: 'Base Salary', money: 'money-gross' },
     { type: 'earning', key: 'breakdown_earnings', fallback: 'Income', money: 'money-gross' },
     { type: 'deduction', key: 'table_deduction_amount', fallback: 'Deductions', money: 'money-deduction' },
     { type: 'statutory', key: 'line_override_group_statutory', fallback: 'Statutory', money: 'money-deduction' },
@@ -4732,16 +4762,15 @@ function lineOverrideHistoryMenuHtml(history) {
     const currentText = lineOverrideHistoryValueRd(history.current_value);
     const computedText = lineOverrideHistoryValueRd(history.original_value);
     const currentBadge = countBadgeHtml(0, { label: langData['line_override_history_current'] || 'Current' });
-    // The head is the same one-line row as everything below it (value first, what it is on the right)
-    // AND is pickable: "back to what the system calculated" is a choice like any other value here --
-    // it just resolves to dropping the override rather than setting one, which is why it carries its
-    // own class instead of only a value.
-    let html = lineOverrideHistoryItemHtml(
-        computedText,
-        escapeHtml(langData['line_override_history_computed'] || 'Calculated value'),
-        false,
-        { liClass: 'lo-history-head', itemClass: 'lo-history-computed' }
-    );
+    // 2026-09-17, R1: the head is REFERENCE, not a choice -- it is the figure every row below is a
+    // departure from, and the row itself now carries a button for going back to it (the round
+    // `.lo-use-system-btn`). A menu row that does the same thing as a button 2 columns away is a
+    // second way to do one thing; this one keeps the same [value | what it is] skeleton as the rows
+    // under it, without being pressable.
+    let html = `<li class="lo-history-head"><div class="lo-history-item lo-history-item-static">
+        <span class="lo-history-value num">${escapeHtml(computedText)}</span>
+        <span class="lo-history-meta">${escapeHtml(langData['line_override_history_computed'] || 'Calculated value')}</span>
+    </div></li>`;
     const edits = (history.edits || []).slice().reverse();
     const currentIdx = lineOverrideHistoryCurrentIndexRd(edits, currentText);
     edits.forEach(function (edit, i) {
@@ -4755,9 +4784,44 @@ function lineOverrideHistoryMenuHtml(history) {
             isCurrent
         );
     });
-    const tpl = langData['line_override_history_view_all'] || 'See full details ({n})';
+    const tpl = langData['line_override_history_view_all'] || 'Full history ({n})';
     html += `<li class="lo-history-foot"><button type="button" class="dropdown-item lo-history-view-all">${escapeHtml(tpl.replace('{n}', String(edits.length)))}</button></li>`;
     return html;
+}
+// 2026-09-17, R1: the figure the system calculated, as a column of its own -- the same number the
+// history dropdown has always shown as its head row, out where it can be compared with the live one
+// without opening anything. It comes from 2 places because that is where it really lives:
+//   - no override on this row  -> the live figure IS the calculated one (nothing has replaced it)
+//   - an override              -> `original_value` of this line's history (the value the FIRST
+//                                 recorded edit replaced), which is exactly what the dropdown's own
+//                                 head row reads
+// An override made before this run's history was ever recorded has neither (the breakdown JSON
+// keeps only the overridden amount, never the engine's own) -- that row shows "-" and says why in
+// its title rather than printing a number nothing backs up. Measured on the dev DB while building
+// this: 0 rows of that kind (1 override, all of it with history).
+// 2026-09-17, R1 follow-up: a group that names a side (base salary/income = green, deduction/
+// statutory = red) decides for its rows. The "other" group cannot: a row lands there precisely
+// because its item_code has no catalog row left to say which side it is (a retired item), so its own
+// `item_type` is the only thing left to ask -- and when that is 'other' too there is genuinely no
+// side recorded anywhere, and the figure stays uncoloured rather than guessing one.
+function lineOverrideMoneyClassRd(line, group) {
+    if (group.money) return group.money;
+    if (line.item_type === 'earning') return 'money-gross';
+    if (line.item_type === 'deduction') return 'money-deduction';
+    return '';
+}
+function lineOverrideComputedTextRd(line) {
+    if (!line.override_action) return lineOverrideHistoryValueRd(line.current_amount);
+    const history = lineOverrideHistoryFor(line);
+    const original = history ? history.original_value : null;
+    return (original === null || original === undefined) ? '' : lineOverrideHistoryValueRd(original);
+}
+function lineOverrideComputedCellHtml(line) {
+    const text = lineOverrideComputedTextRd(line);
+    if (text === '') {
+        return `<span class="lo-computed-unknown" title="${escapeAttr(langData['line_override_computed_unknown'] || 'The calculated value was not recorded for this item')}">-</span>`;
+    }
+    return `<span class="lo-computed-value">${escapeHtml(text)}</span>`;
 }
 function lineOverrideHistoryCellHtml(line) {
     const history = lineOverrideHistoryFor(line);
@@ -4769,6 +4833,10 @@ function lineOverrideHistoryCellHtml(line) {
         label: label,
         menuHtml: lineOverrideHistoryMenuHtml(history),
         toggleClass: 'lo-history-toggle',
+        // This table scrolls inside `.table-responsive`; an absolutely-positioned menu is clipped by
+        // that container the moment it opens below the last rows. Popper's fixed strategy takes it
+        // out of that clip (§6 -- see badgeDropdownHtml()'s own note).
+        fixedStrategy: true,
     });
 }
 function lineOverrideOccurrencesHtml(occurrences) {
@@ -4798,25 +4866,68 @@ function lineOverrideRowHtml(line, idx, group, runDisabled) {
     const runDisabledAttr = runDisabled ? ' disabled' : '';
     const title = runDisabled ? ' title="' + escapeAttr(langData['line_override_run_disabled'] || 'Turned off in Run Settings') + '"' : '';
     const hiddenCls = lineOverrideIsSkippedRd(line) ? ' lo-row-skipped d-none' : '';
-    // The pencil is hidden on an off row rather than disabled: there is no amount to edit on a line
-    // that is not being calculated at all, and a greyed control still invites the click.
-    const pencil = (included && !runDisabled)
-        ? `<button type="button" class="btn btn-icon btn-icon-ghost lo-edit-btn" title="${escapeAttr(langData['line_override_edit_amount'] || 'Edit amount')}"><i class="fa-solid fa-pen"></i></button>`
+    const editable = included && !runDisabled;
+    // 2026-09-17, R1: the pencil shows on every editable row, not on hover -- an affordance nobody
+    // can see until they hover is not one (§7, the same conclusion the comment list reached).
+    // 2026-09-17, R1 follow-up: the plain `.btn-icon` circle, not the ghost variant -- §7's ghost is
+    // for a circle sitting on a panel that already has a surface of its own, which a table row is not.
+    // Same button as the pencil/bin in the "รายการเพิ่มเติม" block below it.
+    const pencil = editable
+        ? `<button type="button" class="btn btn-icon lo-edit-btn" title="${escapeAttr(langData['line_override_edit_amount'] || 'Edit amount')}" aria-label="${escapeAttr(langData['line_override_edit_amount'] || 'Edit amount')}"><i class="fa-solid fa-pen"></i></button>`
         : '';
+    // "Back to what the system calculated", right where the 2 figures disagree -- it only exists on a
+    // row where they DO disagree, and it sends exactly what the history dropdown's calculated row
+    // sends (drop the override), through the same confirm.
+    const amountText = lineOverrideHistoryValueRd(line.current_amount);
+    const computedText = lineOverrideComputedTextRd(line);
+    const useSystem = (editable && computedText !== '' && computedText !== amountText)
+        ? `<button type="button" class="btn btn-icon lo-use-system-btn" title="${escapeAttr(langData['line_override_use_computed'] || 'Use the calculated value')}" aria-label="${escapeAttr(langData['line_override_use_computed'] || 'Use the calculated value')}"><i class="fa-solid fa-rotate-left"></i></button>`
+        : '';
+    // 2026-09-17, R1 follow-up: the buttons are their OWN column now. A figure and the controls that
+    // act on it were sharing a cell, which meant the figure's right edge was wherever the buttons
+    // left it -- so it never lined up with the column head above it, and it moved again when the
+    // editor opened. Separating them lets both be what they are: a money column that ends on one x,
+    // and a fixed-width action column beside it.
+    // An excluded row has no amount to show: 0.00 struck through still reads as a figure that counts
+    // for something. What is true about it is that it is not in the calculation, so it says that.
+    const amountCell = included
+        ? `<span class="num ${lineOverrideMoneyClassRd(line, group)}">${fmtNum(line.current_amount)}</span>`
+        : `<span class="lo-amount-excluded">${escapeHtml(langData['line_override_excluded_amount'] || 'Not calculated')}</span>`;
     return `<tr class="lo-row${included ? '' : ' lo-row-off'}${hiddenCls}" data-item-code="${escapeAttr(line.code)}" data-line-type="${escapeAttr(line.line_type || 'earning_deduction')}"
         data-orig-action="${escapeAttr(origAction)}" data-item-name="${escapeAttr(name)}" data-amount="${escapeAttr(fmtNum(line.current_amount))}"${title}>
-        <td class="col-check"><div class="form-check form-switch mb-0">
+        <td class="col-check tbl-sticky-col"><div class="form-check form-switch mb-0">
             <input class="form-check-input lo-include" type="checkbox" role="switch" id="loInc${idx}" ${included ? 'checked' : ''}${runDisabledAttr}>
         </div></td>
-        <td>
-            <span class="lo-name" title="${escapeAttr(line.code)}">${escapeHtml(name)}</span>${skipBadge}${statutoryBadge}
+        <td class="lo-name-cell tbl-sticky-col tbl-sticky-col-edge-left">
+            <span class="lo-name" title="${escapeAttr(name)} (${escapeAttr(line.code)})">${escapeHtml(name)}</span>${skipBadge}${statutoryBadge}
             ${lineOverrideOccurrencesHtml(line.occurrences)}
         </td>
-        <td class="num col-money lo-amount-cell"><div class="lo-amount-view">
-            <span class="${group.money}">${fmtNum(line.current_amount)}</span>${pencil}
-        </div></td>
-        <td class="lo-history-cell">${lineOverrideHistoryCellHtml(line)}</td>
+        <td class="num col-money lo-computed-cell">${lineOverrideComputedCellHtml(line)}</td>
+        <td class="num col-money lo-amount-cell"><div class="lo-amount-view">${amountCell}</div></td>
+        <td class="lo-action-cell"><div class="lo-actions">${useSystem}${pencil}</div></td>
+        <td class="lo-history-cell">${included ? lineOverrideHistoryCellHtml(line) : ''}</td>
     </tr>`;
+}
+// 2026-09-17, R1 follow-up: the pinned 2nd column starts where the 1st one really ENDS. Its
+// declared width is 78px, but what a sticky `left` has to match is the rendered border-box -- borders
+// and sub-pixel rounding are not in the declaration, and being off by a fraction is exactly what
+// made the pair drift while dragging. Published as a CSS variable so the offset stays in CSS (the
+// media query decides WHETHER to pin; this only says WHERE).
+// Not dtWatchVisibleWidth(): that one publishes a DataTables scroller's visible width for the empty
+// state, a different value on a different element -- same ResizeObserver shape, nothing to share.
+function lineOverridePublishStickyOffsetRd($wrap) {
+    const table = $wrap.find('table.lo-table').get(0);
+    if (!table) return;
+    const publish = function () {
+        const firstCell = table.querySelector('thead th.col-check');
+        if (!firstCell) return;
+        table.style.setProperty('--lo-sticky-left-2', firstCell.getBoundingClientRect().width + 'px');
+    };
+    publish();
+    const scroller = $wrap.get(0);
+    if (typeof ResizeObserver === 'function' && scroller) {
+        new ResizeObserver(publish).observe(scroller);
+    }
 }
 function renderLineOverrideTableRd(lines, runSettings) {
     lineOverrideRowsRd = lines || [];
@@ -4840,7 +4951,7 @@ function renderLineOverrideTableRd(lines, runSettings) {
         // A group whose every row is hidden has nothing to label -- the heading goes with them, and
         // comes back with them (same `.lo-group-skipped` class the toggle flips).
         const allSkipped = groupLines.every(lineOverrideIsSkippedRd);
-        body += `<tr class="lo-group${allSkipped ? ' lo-group-skipped d-none' : ''}"><td colspan="4">${escapeHtml(langData[group.key] || group.fallback)}</td></tr>`;
+        body += `<tr class="lo-group${allSkipped ? ' lo-group-skipped d-none' : ''}"><td colspan="6"><span class="lo-span-sticky">${escapeHtml(langData[group.key] || group.fallback)}</span></td></tr>`;
         groupLines.forEach(function (line) {
             if (lineOverrideIsSkippedRd(line)) hiddenCount++;
             // Disabled only where the run-level exclusion is genuinely in charge: a personal override
@@ -4853,15 +4964,23 @@ function renderLineOverrideTableRd(lines, runSettings) {
     $wrap.html(`<div class="table-responsive"><table class="table align-middle lo-table mb-0">
         <thead>
             <tr>
-                <th class="col-check">${escapeHtml(langData['line_override_col_include'] || 'Include')}</th>
-                <th>${escapeHtml(langData['line_override_col_item'] || 'Item')}</th>
-                <th class="col-money">${escapeHtml(langData['line_override_col_amount'] || 'Amount')}</th>
+                <th class="col-check tbl-sticky-col">${escapeHtml(langData['line_override_col_include'] || 'Include')}</th>
+                <th class="lo-name-col tbl-sticky-col tbl-sticky-col-edge-left">${escapeHtml(langData['line_override_col_item'] || 'Item')}</th>
+                <th class="num col-money lo-computed-col">${escapeHtml(langData['line_override_col_computed'] || 'Calculated')}</th>
+                <th class="num col-money lo-amount-col">${escapeHtml(langData['line_override_col_amount'] || 'Amount')}</th>
+                <th class="lo-action-col"><span class="visually-hidden">${escapeHtml(langData['action'] || 'Action')}</span></th>
                 <th class="lo-history-col">${escapeHtml(langData['line_override_col_history'] || 'History')}</th>
             </tr>
         </thead>
         <tbody>${body}${lineOverrideHiddenRowHtml(hiddenCount)}</tbody>
     </table></div>`);
     lineOverrideEditingCodeRd = null;
+    // 2026-09-17, R1 follow-up: the shared scroller wiring (sticky-table-columns.js) -- it is what
+    // keeps `.tbl-scrolled-x` in sync with scrollLeft, which is what the frozen columns' own right
+    // edge shadow is keyed off (§7). Re-run per render: this markup, wrapper included, is rebuilt
+    // every time, so the previous binding went with it.
+    if (typeof initTableDragScroll === 'function') initTableDragScroll(lineOverrideHostRd.mount + ' .lo-table');
+    lineOverridePublishStickyOffsetRd($wrap.find('.table-responsive').addBack('.table-responsive').first());
     // Delegated once per scope (the wrapper survives every re-render inside it) -- no onSelect here:
     // this table's menus are action menus, the row's own click handler above does the work.
     if (typeof initBadgeDropdown === 'function') initBadgeDropdown($wrap);
@@ -4874,9 +4993,9 @@ function lineOverrideHiddenRowHtml(hiddenCount) {
     // WHY those rows are hidden is a footnote to this one button, not something the tab's own hint
     // has to carry for every reader who has no hidden rows at all -- so it rides on the button.
     const why = langData['line_override_hidden_why'] || '';
-    return `<tr class="lo-hidden-row" id="lineOverrideHiddenRow"><td colspan="4">
-        <button type="button" class="btn btn-link lo-hidden-toggle" id="btnToggleHiddenLineOverrides"
-            data-shown="0" data-count="${hiddenCount}" title="${escapeAttr(why)}">${escapeHtml(text)} <i class="fa-solid fa-chevron-down"></i></button>
+    return `<tr class="lo-hidden-row" id="lineOverrideHiddenRow"><td colspan="6">
+        <span class="lo-span-sticky"><button type="button" class="btn btn-link lo-hidden-toggle" id="btnToggleHiddenLineOverrides"
+            data-shown="0" data-count="${hiddenCount}" title="${escapeAttr(why)}">${escapeHtml(text)} <i class="fa-solid fa-chevron-down"></i></button></span>
     </td></tr>`;
 }
 // Show/hide only ever toggles classes -- no field's value or disabled state changes, so the dirty
@@ -4897,6 +5016,12 @@ $(document).on('click', '.lo-mount .lo-hidden-toggle', function () {
 $(document).on('click', '.lo-mount .lo-history-item', function () {
     lineOverrideConfirmApplyHistoryValueRd($(this).closest('tr.lo-row').data('item-code'), $(this).attr('data-value') || '',
         $(this).hasClass('lo-history-computed'));
+});
+// 2026-09-17, R1: the row's own "back to the calculated value" button -- the SAME confirm and the
+// SAME send the dropdown's calculated row used to do (`asComputed` = drop the override), reached
+// without opening a menu first.
+$(document).on('click', '.lo-mount .lo-use-system-btn', function () {
+    lineOverrideConfirmApplyHistoryValueRd($(this).closest('tr.lo-row').data('item-code'), '', true);
 });
 /* ---------- "ประวัติการแก้ไข" modal (stacked on top of the modal holding the table) -- the full chain for
    ONE line: every past value with when/who/note, and the same "use this value" action the dropdown
@@ -5161,24 +5286,35 @@ function lineOverrideCloseEditorRd() {
     const $wrap = lineOverrideMountRd();
     $wrap.find('tr.lo-row').each(function () {
         const $row = $(this);
-        const $cell = $row.find('.lo-amount-cell');
-        if (!$cell.find('.lo-amount-edit').length) return;
-        $cell.find('.lo-amount-edit').remove();
-        $cell.find('.lo-amount-view').removeClass('d-none');
+        if (!$row.find('.lo-amount-edit').length) return;
+        $row.find('.lo-amount-edit').remove();
+        $row.find('.lo-amount-view, .lo-actions').removeClass('d-none');
+        $row.removeClass('lo-row-editing');
     });
     lineOverrideEditingCodeRd = null;
 }
+// 2026-09-17, R1 follow-up: the editor stays INSIDE the 2 cells the figure and its buttons already
+// occupy -- the input fills the amount cell (so the figure it replaces keeps the same right edge)
+// and the 2 controls take the action cell's place. Nothing is inserted that could widen a column,
+// which is what used to make the whole table shift the moment a pencil was pressed.
 function lineOverrideOpenEditorRd($row) {
     lineOverrideCloseEditorRd();
     const $cell = $row.find('.lo-amount-cell');
     const current = String($row.data('amount') || '');
+    $row.addClass('lo-row-editing');
     $cell.find('.lo-amount-view').addClass('d-none');
-    $cell.append(`<div class="lo-amount-edit">
-        <input type="text" inputmode="decimal" class="form-control money-input lo-edit-input" value="${escapeAttr(current)}">
-        <button type="button" class="btn btn-outline-primary lo-edit-save" disabled>${escapeHtml(langData['save'] || 'Save')}</button>
-        <button type="button" class="btn btn-icon btn-icon-ghost lo-edit-cancel" title="${escapeAttr(langData['cancel'] || 'Cancel')}"><i class="fa-solid fa-xmark"></i></button>
+    $row.find('.lo-actions').addClass('d-none');
+    // 2026-09-17, R1: both controls are the same 32px circle as every other icon button in this
+    // modal (§7) -- a text "Save" button beside 2 round ones was the only control here with a shape
+    // of its own. Icon-only, so each carries its name for screen readers through `aria-label`.
+    const saveLabel = escapeAttr(langData['save'] || 'Save');
+    const cancelLabel = escapeAttr(langData['cancel'] || 'Cancel');
+    $cell.append(`<input type="text" inputmode="decimal" class="form-control money-input lo-edit-input lo-amount-edit" value="${escapeAttr(current)}">`);
+    $row.find('.lo-action-cell').append(`<div class="lo-actions lo-amount-edit">
+        <button type="button" class="btn btn-icon lo-edit-save" title="${saveLabel}" aria-label="${saveLabel}" disabled><i class="fa-solid fa-check"></i></button>
+        <button type="button" class="btn btn-icon lo-edit-cancel" title="${cancelLabel}" aria-label="${cancelLabel}"><i class="fa-solid fa-xmark"></i></button>
     </div>`);
-    const $input = $cell.find('.lo-edit-input');
+    const $input = $row.find('.lo-edit-input');
     if (typeof initMoneyInputs === 'function') initMoneyInputs($cell);
     lineOverrideEditingCodeRd = String($row.data('item-code'));
     $input.trigger('focus').trigger('select');
@@ -5721,9 +5857,6 @@ $(document).on('select2:clear', '#manualLineDestinationSelect', function () {
 $(document).on('change', '#manualLineDestModeToggle input[type="radio"]', function () {
     setManualLineDestModeRd($(this).val());
 });
-$(document).on('change', '#manualLineCustomType', function () {
-    applyManualLineItemTypeRd($(this).val());
-});
 // Toggle between picking a catalog item and typing a custom, not-in-the-catalog one (2026-08-19,
 // explicit request) -- catalog mode is the default since it's still the common case.
 let manualLineMode = 'catalog';
@@ -5773,7 +5906,7 @@ function resetManualLineFormRd() {
     setManualLineModeRd('catalog');
     $('#manualLineItemSelect').val(null).trigger('change');
     $('#manualLineCustomName').val('');
-    $('#manualLineCustomType').val('earning').trigger('change.select2');
+    $('#manualLineCustomType').val('earning');
     applyManualLineItemTypeRd('earning');
     $('#manualLineAmount').val('');
     // `trigger('input')` so T002's auto-grow (input.js) shrinks the note box back to 2 rows -- a
@@ -6107,9 +6240,13 @@ function manualLineFormErrorRd(message) {
 // The type is never a choice in this form: it comes from the column head that was pressed, or from
 // the row being edited. The control still shows it, read-only, so the form says which column the
 // line belongs to.
+// 2026-09-17, R1: the type has no control of its own any more -- the column whose + was pressed (or
+// the row being edited) already answered it, and the modal's own title now says which side this is.
+// It stays in the form as a hidden field so every reader of it (payload builder, catalog filter)
+// keeps reading the same id it always did.
 function setManualLineTypeRd(itemType) {
     const type = itemType === 'deduction' ? 'deduction' : 'earning';
-    $('#manualLineCustomType').val(type).prop('disabled', true).trigger('change.select2');
+    $('#manualLineCustomType').val(type);
     applyManualLineItemTypeRd(type);
 }
 function openManualLineFormRd(ctx) {
@@ -6117,7 +6254,12 @@ function openManualLineFormRd(ctx) {
     const isEdit = !!ctx.line;
     manualLineFormErrorRd('');
     resetManualLineFormRd();
-    const titleKey = isEdit ? 'manual_line_form_edit_title' : 'manual_line_form_add_title';
+    // 2026-09-17, R1: 4 titles, not 2 -- with the type control gone the header is the only thing
+    // left that can say which column this line belongs to, so it says both that and which job is
+    // being done ("เพิ่มเงินเพิ่ม"/"แก้ไขเงินหัก"). The type comes from the row when editing and from the
+    // pressed column head when adding -- the same 2 sources setManualLineTypeRd() reads.
+    const isDeduction = (isEdit ? ctx.line.item_type : ctx.itemType) === 'deduction';
+    const titleKey = (isEdit ? 'manual_line_form_edit_' : 'manual_line_form_add_') + (isDeduction ? 'deduction' : 'earning');
     $('#manualLineFormModalLabel')
         .attr('data-i18n', titleKey)
         .text(langData[titleKey] || (isEdit ? 'Edit Item' : 'Add Item'));
@@ -6220,10 +6362,9 @@ function submitManualLineFormRd($btn) {
 $(document).on('click', '#btnSaveManualLine', function () {
     submitManualLineFormRd($(this));
 });
-// Leaving the form re-enables the type control for the next open (it is disabled while open, and a
-// disabled select2 stays disabled until it is told otherwise).
+// 2026-09-17, R1: nothing to re-enable on the way out any more -- the type is a hidden input now,
+// not a disabled select2 that would stay disabled until told otherwise.
 $(document).on('hidden.bs.modal', '#manualLineFormModal', function () {
-    $('#manualLineCustomType').prop('disabled', false).trigger('change.select2');
     manualLineFormCtxRd = null;
 });
 $(document).on('click', '.ml-mount .manual-line-add-btn', function () {
@@ -6269,15 +6410,12 @@ function openManualLineEditRd($mount, lineId) {
         }
     });
 }
+// 2026-09-17, R1 follow-up: the pencil is the ONLY way in. Pressing the row itself used to open the
+// same form -- which made every name, note and figure in the block a control, with no way to select
+// or even read a row without starting an edit. `.manual-line-item-editable` still marks a row that
+// HAS actions (the class the pencil/bin are rendered under), it just is not a press target.
 $(document).on('click', '.ml-mount .manual-line-edit-btn', function (e) {
     e.stopPropagation();
-    openManualLineEditRd($(this).closest('.ml-mount'), $(this).data('line-id'));
-});
-// The row itself opens the same form -- the pencil is the visible affordance, this is the whole
-// target. A press that landed on a button belongs to that button (the delete confirm must not have
-// the edit form opening behind it).
-$(document).on('click', '.ml-mount .manual-line-item-editable', function (e) {
-    if ($(e.target).closest('button, a, input, select, textarea').length) return;
     openManualLineEditRd($(this).closest('.ml-mount'), $(this).data('line-id'));
 });
 $(document).on('click', '.ml-mount .manual-line-remove-btn', function (e) {
@@ -6855,7 +6993,6 @@ $(document).ready(function () {
     if (typeof initSelect2 === 'function') {
         initSelect2('#joinFilterDepartment, #joinFilterTeam, #joinFilterPosition, #joinFilterCycle', { mode: 'ajax' });
         initSelect2('#manualLineItemSelect', { mode: 'ajax' });
-        initSelect2('#manualLineCustomType', { mode: 'static', selectedValue: 'earning' });
         // Initialized once here, not per-modal-open (2026-08-21 bug fix precedent from the
         // Attendance Deduction rate_unit dropdown -- re-initializing a select2 field on every open
         // can leave stale state/duplicate options behind).

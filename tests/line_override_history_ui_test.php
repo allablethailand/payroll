@@ -55,12 +55,15 @@ checkTrue('the foot reports the real edit count', strpos($menuBody, 'String(edit
 checkTrue('the foot is always rendered (no count threshold)', strpos($menuBody, 'if (edits.length >') === false);
 
 echo "\n=== 2. head / list / foot ===\n";
-checkTrue('the head is its own element', strpos($menuBody, "liClass: 'lo-history-head'") !== false);
+checkTrue('the head is its own element', strpos($menuBody, 'class="lo-history-head"') !== false);
 checkTrue('the foot is its own element', strpos($menuBody, 'class="lo-history-foot"') !== false);
-// The head is the SAME one-line row as the rest (built by the same function) and is pickable --
-// "back to the calculated figure" is a choice here, it just resolves to dropping the override.
-checkTrue('the head is built by the shared row builder', strpos($menuBody, 'let html = lineOverrideHistoryItemHtml(') !== false);
-checkTrue('the head carries its own marker class', strpos($menuBody, "itemClass: 'lo-history-computed'") !== false);
+// 2026-09-17, R1: the head is REFERENCE, not a choice -- going back to the calculated figure is the
+// row's own round button now, so a menu row doing the same thing would be a second way to do one
+// thing. Same [value | meta] skeleton, nothing to press.
+checkTrue('the head is not pressable', strpos($menuBody, 'lo-history-item-static') !== false
+    && strpos($menuBody, "itemClass: 'lo-history-computed'") === false);
+checkTrue('the row button is what drops the override now', strpos($js, "\$(document).on('click', '.lo-mount .lo-use-system-btn'") !== false
+    && strpos($js, "lineOverrideConfirmApplyHistoryValueRd(\$(this).closest('tr.lo-row').data('item-code'), '', true);") !== false);
 checkTrue('picking it means "drop the override", not "save this figure"',
     strpos($js, "\$(this).hasClass('lo-history-computed')") !== false);
 checkTrue('the modal\'s calculated row means the same thing', strpos($js, "\$(this).attr('data-computed') === '1'") !== false);
@@ -69,16 +72,28 @@ foreach (['.lo-history-head', '.lo-history-foot'] as $sel) {
 }
 $stickyBlock = substr($css, (int)strpos($css, '.lo-history-head,'), 400);
 checkTrue('both ends are position: sticky', strpos($stickyBlock, 'position: sticky') !== false);
-$menuBlock = substr($css, (int)strpos($css, '.lo-history-cell .dropdown-menu {'), 400);
+$menuBlock = substr($css, (int)strpos($css, '.lo-history-cell .dropdown-menu {'), 1400);
 checkTrue('the menu has a fixed width', strpos($menuBlock, 'width: 320px') !== false);
 checkTrue('the menu is the scroll container', strpos($menuBlock, 'overflow-y: auto') !== false);
 checkTrue('the menu caps its height', strpos($menuBlock, 'max-height') !== false);
 // Padding on the scroll container shows ABOVE a sticky head as a strip of background.
 checkTrue('the menu drops its own padding', strpos($menuBlock, 'padding: 0') !== false);
+checkTrue('the menu outranks the modal it opens in', strpos($menuBlock, 'z-index: var(--z-modal-overlay)') !== false);
+// R1 follow-up: the fixed strategy frees the menu from the table's clipper, so the dialog itself has
+// to become its explicit boundary -- otherwise "not clipped" turns into "hangs off the dialog".
+checkTrue('the menu is bounded by the dialog it opens in', strpos($appJs, "toggle.closest('.modal-content')") !== false
+    && strpos($appJs, "placement: 'bottom-end'") !== false
+    && strpos($appJs, "name: 'preventOverflow'") !== false
+    && strpos($appJs, "fallbackPlacements: ['top-end']") !== false);
+checkTrue('and never wider than that dialog minus its inset', strpos($menuBlock, '--lo-menu-max-w') !== false
+    && strpos($appJs, "menu.style.setProperty('--lo-menu-max-w'") !== false);
+checkTrue('and is opened with the fixed strategy', strpos($js, 'fixedStrategy: true') !== false
+    && strpos($appJs, "config.fixedStrategy ? ' data-lo-fixed-strategy=\"1\"' : ''") !== false
+    && strpos($appJs, "strategy: 'fixed'") !== false);
 $footBlock = substr($css, (int)strpos($css, '.lo-history-foot .lo-history-view-all {'), 200);
 // `justify-content`, not `text-align`: the menu's items are flex boxes already, which makes
 // text-align inert on them -- a real miss caught by measuring where the text actually landed.
-checkTrue('the foot link sits right, at --fs-sm', strpos($footBlock, 'justify-content: flex-end') !== false
+checkTrue('the foot link is centred, at --fs-sm', strpos($footBlock, 'justify-content: center') !== false
     && strpos($footBlock, 'font-size: var(--fs-sm)') !== false);
 
 echo "\n=== 3. one-line rows, and which one is 'current' ===\n";
@@ -128,7 +143,7 @@ checkTrue('the count is per group, not per date', strpos($appJs, 'const dayRunLe
 checkTrue('an undated entry still produces an empty (hidden) header', strpos($appJs, "dayLabel === ''") !== false);
 // Both the dropdown and the modal fill the field through ONE function -- two copies is how the two
 // paths drift into setting different attributes on the row.
-checkTrue('both paths go through one confirm', substr_count($js, 'lineOverrideConfirmApplyHistoryValueRd(') === 3);
+checkTrue('all 3 paths go through one confirm', substr_count($js, 'lineOverrideConfirmApplyHistoryValueRd(') === 4);
 
 echo "\n=== 4b. picking a value asks first, then writes ===\n";
 // Both lists sit under the pointer while scrolling, and one click would otherwise replace a figure

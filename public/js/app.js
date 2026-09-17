@@ -1780,9 +1780,17 @@ function badgeDropdownHtml(config) {
             hiddenInputHtml = `<input type="hidden" name="${escapeAttr(config.name)}" id="${escapeAttr(config.name)}" value="${escapeAttr(currentValue)}">`;
         }
     }
+    // 2026-09-17, R1: `fixedStrategy` marks a menu that opens from inside a scroll container
+    // (`.table-responsive`), which would otherwise clip it -- absolute positioning cannot escape an
+    // ancestor's `overflow`. The marker is read by initBadgeDropdown() below, which builds the
+    // Dropdown instance with Popper's `fixed` strategy.
+    // NOT `data-bs-strategy`: that is a Tooltip/Popover option -- Bootstrap's Dropdown has no
+    // `strategy` config, so the attribute is ignored outright (measured: the menu stayed
+    // `position: absolute`). `popperConfig` is the only way in, and it has to reach the instance.
+    const strategyAttr = config.fixedStrategy ? ' data-lo-fixed-strategy="1"' : '';
     return `<div class="dropdown d-inline-block badge-dropdown" data-badge-dropdown>
         ${hiddenInputHtml}
-        <button type="button"${idAttr} class="badge badge-${tone}${outlineCls} dropdown-toggle badge-dropdown-toggle${toggleClass}" data-badge="status" data-bs-toggle="dropdown" aria-expanded="false"${i18nAttr}>${escapeHtml(label)}</button>
+        <button type="button"${idAttr} class="badge badge-${tone}${outlineCls} dropdown-toggle badge-dropdown-toggle${toggleClass}" data-badge="status" data-bs-toggle="dropdown"${strategyAttr} aria-expanded="false"${i18nAttr}>${escapeHtml(label)}</button>
         <ul class="dropdown-menu">${menuHtml}</ul>
     </div>`;
 }
@@ -1809,6 +1817,45 @@ function initBadgeDropdown(scope, options) {
     const $scope = $(scope);
     if (!$scope.length || $scope.data('badgeDropdownInitialized')) return;
     $scope.data('badgeDropdownInitialized', true);
+    // 2026-09-17, R1: a toggle marked by badgeDropdownHtml()'s `fixedStrategy` gets its own Dropdown
+    // instance built here with Popper's fixed strategy -- the data API's own instance has no way to
+    // carry it. Built per render (the table re-renders its rows, and a stale instance would point at
+    // a detached element), which `getOrCreateInstance` on a fresh node makes cheap.
+    // The width cap is measured, not guessed: the dialog can be any width, and it changes with the
+    // viewport -- so it is re-read each time a menu opens rather than baked in when it is built.
+    $scope.on('show.bs.dropdown', '.badge-dropdown-toggle[data-lo-fixed-strategy]', function () {
+        const content = this.closest('.modal-content');
+        const menu = this.parentElement.querySelector('.dropdown-menu');
+        if (!content || !menu) return;
+        const inset = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sp-3'), 10) || 12;
+        menu.style.setProperty('--lo-menu-max-w', (content.getBoundingClientRect().width - inset * 2) + 'px');
+    });
+    $scope.find('.badge-dropdown-toggle[data-lo-fixed-strategy]').each(function () {
+        if (typeof bootstrap === 'undefined' || !bootstrap.Dropdown) return;
+        const toggle = this;
+        bootstrap.Dropdown.getOrCreateInstance(toggle, {
+            // Right edge on the badge's own right edge, so a menu wider than its toggle grows INWARD
+            // (to the left) instead of off the side of the dialog.
+            display: 'dynamic',
+            popperConfig: (defaultConfig) => {
+                // The modal's content box is the frame this menu has to stay inside -- without an
+                // explicit boundary the fixed strategy treats the VIEWPORT as the limit, which is
+                // how the menu ended up hanging over the edge of the dialog.
+                const boundary = toggle.closest('.modal-content') || undefined;
+                const inset = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sp-3'), 10) || 12;
+                return Object.assign({}, defaultConfig, {
+                    strategy: 'fixed',
+                    placement: 'bottom-end',
+                    modifiers: (defaultConfig.modifiers || []).concat([
+                        { name: 'preventOverflow', options: { boundary: boundary, padding: inset, altAxis: true } },
+                        // Up when there is no room below: the alternative is a menu that keeps its
+                        // placement and gets cut by the bottom of the dialog.
+                        { name: 'flip', options: { boundary: boundary, padding: inset, fallbackPlacements: ['top-end'] } },
+                    ]),
+                });
+            },
+        });
+    });
     $scope.on('click', '.badge-dropdown-item', function () {
         const $item = $(this);
         const $dropdown = $item.closest('[data-badge-dropdown]');
@@ -2260,6 +2307,13 @@ function setNotificationCount(el, n) {
 // hook) -- both can be set together, neither is required.
 function emptyStateHtml(config) {
     config = config || {};
+    // 2026-09-17, R1 follow-up: `inline` = one muted line, no icon, no title, no action -- for a
+    // slot INSIDE a block (an empty column of a 2-column list) rather than a whole page/table with
+    // nothing in it. Same component so the wording and the muted treatment stay in one place;
+    // everything the full variant adds is exactly what would be wrong at this size.
+    if (config.inline) {
+        return `<div class="empty-state empty-state-inline">${escapeHtml(config.text || '')}</div>`;
+    }
     const icon = config.icon || 'fa-solid fa-inbox';
     const action = config.action;
     const variant = action && ['primary', 'secondary', 'tertiary'].indexOf(action.variant) !== -1 ? action.variant : 'secondary';
@@ -3945,23 +3999,29 @@ $(document).on('hidden.bs.modal', '.modal', function () {
 // NOT the first one open, plus its own just-appended backdrop, using the same technique Bootstrap's
 // own docs have long recommended for nested modals. A single modal opening alone (the normal case,
 // ~100+ other modals in this app) hits the `stackLevel <= 0` guard and is untouched.
-$(document).on('shown.bs.modal', '.modal', function () {
-    const openModals = document.querySelectorAll('.modal.show');
-    const stackLevel = openModals.length - 1;
+// 2026-09-17, R1 follow-up, real bug found by measuring: this ran on `shown.bs.modal`, which fires
+// AFTER the fade-in has finished -- so a stacked modal played its whole entrance at the base level
+// (losing the tie to the modal underneath by DOM order) and only then jumped in front. Everything
+// that decides the stacking now happens BEFORE anything is visible:
+//   - `show.bs.modal` fires at the very start of Modal.show(), before the transition -- the class
+//     goes on there, and the level comes from a CSS rule, not from a style written by JS.
+//   - the modal element is moved to the END of <body> in the same breath, so DOM order agrees with
+//     the z-index instead of fighting it.
+//   - the nested BACKDROP cannot be touched here at all: Bootstrap creates it later inside show().
+//     It is raised by a CSS rule that matches any backdrop preceded by another one, which applies
+//     the instant it is inserted -- no callback to be late.
+// The levels themselves still live in tokens.css (the scale is what says a stacked modal sits BELOW
+// a popover, a SweetAlert dialog and a toast); this file no longer writes any of them.
+$(document).on('show.bs.modal', '.modal', function () {
+    const stackLevel = document.querySelectorAll('.modal.show').length;
     if (stackLevel <= 0) return;
-    // 2026-09-16: the two levels come from the app's own z-index scale (tokens.css) rather than from
-    // arithmetic here -- the scale is what says a stacked modal still sits BELOW a popover, a
-    // SweetAlert dialog and a toast, and that answer has to live in one place. A third stacked modal
-    // (a shape this app does not have) deliberately lands on the same level as the second rather
-    // than climbing past those layers; being later in the DOM already puts it on top of the second.
-    const rootStyle = getComputedStyle(document.documentElement);
-    const level = name => parseInt(rootStyle.getPropertyValue(name), 10);
-    const nestedZ = level('--z-modal-nested') || 1085;
-    const nestedBackdropZ = level('--z-modal-nested-backdrop') || 1075;
-    this.style.zIndex = String(nestedZ);
-    const backdrops = document.querySelectorAll('.modal-backdrop');
-    const thisBackdrop = backdrops[backdrops.length - 1];
-    if (thisBackdrop) thisBackdrop.style.zIndex = String(nestedBackdropZ);
+    this.classList.add('modal-nested');
+    if (this.parentElement === document.body && document.body.lastElementChild !== this) {
+        document.body.appendChild(this);
+    }
+});
+$(document).on('hidden.bs.modal', '.modal', function () {
+    this.classList.remove('modal-nested');
 });
 // 2026-09-10, real bug found and fixed (explicit report: raw action codes like "employee_verified"
 // showing in Payroll Process's own Approval Timeline modal "History" list) -- was 3 separate, drifted
@@ -4351,7 +4411,10 @@ function payslipViewHtml(data) {
     // A modifier class rather than `:has()` on the title -- this component renders in every browser
     // the app supports, and a layout that only lines up on the newer ones is not a layout.
     const titleCls = html => 'payslip-col-title' + (html ? ' payslip-col-title-with-action' : '');
-    return `<div class="payslip-view">
+    // 2026-09-17, R1 follow-up: a list-mode slip (no total bands) marks itself, so its 2 columns can
+    // sit at their own heights instead of stretching to match each other -- there is no pair of
+    // bottom bands left to keep on one line, which is the only reason they stretch.
+    return `<div class="payslip-view${showTotals ? '' : ' payslip-view-list'}">
         <div class="payslip-columns">
             <div class="payslip-col">
                 <div class="${titleCls(d.earningTitleActionHtml)}">${escapeHtml(earningTitle)}${titleAction(d.earningTitleActionHtml)}</div>
@@ -4381,10 +4444,29 @@ function payslipViewHtml(data) {
 // a caller that lays the slip out itself still has to end with the SAME band, and a second copy of
 // it is how two "ยอดจ่ายสุทธิ" rows start looking different from each other (§0.4). Its only real
 // caller besides payslipViewHtml() is the Calculation Breakdown modal's editable layout.
-function payslipNetSummaryHtml(netAmount, netLabelOverride) {
+// 2026-09-17, R1: `totals` (optional) puts the 2 plain rows a slip normally carries above the band
+// back in front of it -- gross and deductions, in the money colours §8 gives them, with the net band
+// itself unchanged underneath. Omitted = exactly the single band every existing caller renders now.
+// It lives here rather than in the caller because these 3 lines ARE the slip's own summary block;
+// a second copy is how the 2 would start disagreeing about which row is the prominent one.
+function payslipNetSummaryHtml(netAmount, netLabelOverride, totals) {
     const netLabel = netLabelOverride || langData['table_net_pay'] || 'Net Pay';
+    let rows = '';
+    if (totals) {
+        const grossLabel = totals.grossLabel || langData['payslip_total_earnings'] || 'Total Income';
+        const deductionLabel = totals.deductionLabel || langData['payslip_total_deductions'] || 'Total Deductions';
+        rows = `<div class="payslip-summary-row">
+                <span class="payslip-summary-label">${escapeHtml(grossLabel)}</span>
+                <span class="num money-gross">${fmtNum(totals.grossAmount)}</span>
+            </div>
+            <div class="payslip-summary-row">
+                <span class="payslip-summary-label">${escapeHtml(deductionLabel)}</span>
+                <span class="num money-deduction">${fmtNum(totals.totalDeductionAmount)}</span>
+            </div>
+            `;
+    }
     return `<div class="payslip-summary">
-            <div class="payslip-summary-row payslip-summary-row-net">
+            ${rows}<div class="payslip-summary-row payslip-summary-row-net">
                 <span class="payslip-summary-label">${escapeHtml(netLabel)}</span>
                 <span class="num money-net fs-5">${fmtNum(netAmount)}</span>
             </div>

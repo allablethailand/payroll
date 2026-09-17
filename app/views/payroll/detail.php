@@ -1870,7 +1870,7 @@
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
-                    <h5 class="modal-title text-secondary mb-0" id="manualLineFormModalLabel" data-i18n="manual_line_form_add_title">Add Item</h5>
+                    <h5 class="modal-title text-secondary mb-0" id="manualLineFormModalLabel" data-i18n="manual_line_form_add_earning">Add additional pay</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body form-compact">
@@ -1906,25 +1906,30 @@
                          thing in the panel even when the payee block below is open -- a
                          button that commits the whole form should never sit above half of
                          the fields it commits. -->
+                    <!-- 2026-09-17, R1: the Type control is gone. It was `disabled` on every open
+                         (the column head that was pressed, or the row being edited, already decided
+                         it) so it was never a choice -- and a permanently-disabled control is one
+                         more thing to read past. It survives as a HIDDEN input under the same id, so
+                         every reader (payload builder, catalog `data-type` filter) is unchanged; the
+                         modal's own title is what tells the user which column this line is for now.
+                         The 2 remaining fields take the freed width at the ratio they already had
+                         (6:3 -> 8:4). -->
+                    <input type="hidden" id="manualLineCustomType" value="earning">
                     <div class="row g-2 align-items-end manual-line-form-row">
-                        <div class="col-lg-3">
-                            <label class="form-label" for="manualLineCustomType" data-i18n="modal_item_type">Type</label>
-                            <select class="form-select select2-static" id="manualLineCustomType" data-option-keys="breakdown_earnings,table_deduction_amount" data-option-values="earning,deduction"></select>
-                        </div>
                         <!-- The catalog picker filters itself to the chosen type through the
                              `data-type` attribute this endpoint already honours (input.js
                              re-reads it on every search, see its own docblock) -- the same
                              wiring #eedModal's own catalog picker uses. Its label text swaps
                              between two lang keys, set by applyManualLineItemTypeRd(). -->
-                        <div class="col-lg-6" id="manualLineCatalogFields">
+                        <div class="col-lg-8" id="manualLineCatalogFields">
                             <label class="form-label" for="manualLineItemSelect" id="manualLineItemSelectLabel" data-i18n="manual_line_select_earning_item">Select an income item</label>
                             <select class="form-select select2-remote" id="manualLineItemSelect" data-api="/api/employee.earning-deduction.options" data-type="earning"></select>
                         </div>
-                        <div class="col-lg-6 d-none" id="manualLineCustomFields">
+                        <div class="col-lg-8 d-none" id="manualLineCustomFields">
                             <label class="form-label" for="manualLineCustomName" data-i18n="modal_custom_item_name">Item Name</label>
                             <input type="text" class="form-control" id="manualLineCustomName" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
                         </div>
-                        <div class="col-lg-3">
+                        <div class="col-lg-4">
                             <label class="form-label" for="manualLineAmount" data-i18n="modal_amount">Amount</label>
                             <!-- 8: money-input + initMoneyInputs() (comma/2-decimal on blur, raw
                                  value mirrored to data-raw-value) instead of a bare number

@@ -124,15 +124,19 @@ foreach (explode("\n", $css) as $i => $line) {
 check('no bare z-index in style.css reaches the backdrop level', $offenders, []);
 
 echo "\n=== 3. nothing writes a raw level any more ===\n";
-$stackStart = strpos($appJs, "openModals.length - 1");
-$stackBody = substr($appJs, (int)$stackStart - 400, 1800);
-checkTrue('the stacked-modal handler reads the tokens off the root',
-    strpos($stackBody, 'getComputedStyle(document.documentElement)') !== false
-    && strpos($stackBody, 'getPropertyValue(name)') !== false
-    && strpos($stackBody, "level('--z-modal-nested')") !== false
-    && strpos($stackBody, "level('--z-modal-nested-backdrop')") !== false);
-// The arithmetic that used to live here is exactly what let the value drift past the layers above it.
-checkTrue('and no longer computes a level of its own', strpos($stackBody, '1055 + stackLevel') === false);
+$stackStart = strpos($appJs, "document.querySelectorAll('.modal.show').length");
+$stackBody = substr($appJs, (int)$stackStart - 400, 1200);
+checkTrue('the stacked modal is marked before it is shown, not after',
+    strpos($stackBody, "\$(document).on('show.bs.modal'") !== false
+    && strpos($stackBody, "this.classList.add('modal-nested')") !== false
+    && strpos($appJs, "this.classList.remove('modal-nested')") !== false);
+checkTrue('and app.js writes no level itself', strpos($stackBody, 'style.zIndex') === false
+    && strpos($stackBody, '1055 + stackLevel') === false);
+// Both levels are CSS, so they hold from the first painted frame instead of from a callback.
+checkTrue('the stacked modal takes --z-modal-nested in CSS',
+    preg_match('/\.modal\.modal-nested\s*\{\s*z-index:\s*var\(--z-modal-nested\)/s', $css) === 1);
+checkTrue('its backdrop takes --z-modal-nested-backdrop, matched structurally',
+    preg_match('/\.modal-backdrop\s*~\s*\.modal-backdrop\s*\{\s*z-index:\s*var\(--z-modal-nested-backdrop\)/s', $css) === 1);
 foreach (['1060', '1065', '1075', '1085'] as $raw) {
     checkTrue("no bare {$raw} is assigned as a z-index in app.js",
         preg_match('/zIndex\s*=\s*[\'"]?' . $raw . '/', $appJs) !== 1);

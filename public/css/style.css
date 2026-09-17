@@ -5526,7 +5526,7 @@ button.badge {
     background: var(--c-bg-subtle);
     border: 1px solid var(--c-border);
     border-radius: var(--radius);
-    padding: var(--sp-3) var(--payslip-inset);
+    padding: var(--sp-3) var(--payslip-inset, var(--sp-3));
 }
 .calendar-widget-detail-date {
     font-weight: 600;
@@ -5811,11 +5811,15 @@ button.badge {
     padding-top: var(--sp-3);
     border-top: 1px solid var(--c-border-strong);
 }
+/* 2026-09-17, R1 follow-up: the horizontal inset is the SAME on all 3 rows (`--payslip-inset`, the
+   one the net band already had) -- with 0 here the 2 rows above it started and ended on a different x
+   from the band under them, which is the exact drift `--payslip-inset` was introduced to stop. Only
+   the vertical padding differs, which is what makes the band the prominent one. */
 .payslip-summary-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: var(--sp-1) 0;
+    padding: var(--sp-1) var(--payslip-inset, var(--sp-3));
 }
 .payslip-summary-label {
     color: var(--c-text-muted);
@@ -5823,11 +5827,32 @@ button.badge {
 .payslip-summary-row-net {
     background-color: var(--c-bg-subtle);
     border-radius: var(--radius);
-    padding: var(--sp-3);
+    padding: var(--sp-3) var(--payslip-inset, var(--sp-3));
 }
 .payslip-summary-row-net .payslip-summary-label {
     color: var(--c-text);
     font-weight: 600;
+}
+/* 2026-09-17, R1 follow-up: in list mode (no total bands) the 2 columns stand at their own heights.
+   They stretch by default so the 2 bottom bands land on one line -- with no bands there is nothing
+   to line up, and stretching only makes the shorter column's empty state a tall blank box. */
+.payslip-view-list .payslip-columns {
+    align-items: start;
+}
+/* The shared empty state's inline variant: one muted line, no icon and no button. */
+.empty-state-inline {
+    padding: 0;
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+    text-align: left;
+}
+/* In the hand-added list its row has to be as tall as a row holding ONE item -- an item row's own
+   height comes from its 32px round buttons, so the empty line reserves the same, centred. Flex on
+   the inline element, never on the `<td>` (§7). */
+.manual-line-empty-row .empty-state-inline {
+    display: flex;
+    align-items: center;
+    min-height: 32px;
 }
 /* Phone-width guard (§ responsive baseline) -- 2 fixed 1fr columns get cramped under ~400px, same
    pattern rules.md already uses elsewhere for a 2-col grid meeting a narrow viewport. */
@@ -7861,13 +7886,9 @@ html, body {
 .manual-line-actions-empty {
     width: calc(32px * 2 + var(--sp-1));
 }
-/* The whole row opens the edit form, so it reads as a target. */
-.manual-line-item-editable {
-    cursor: pointer;
-}
-.manual-line-item-editable:hover {
-    background: var(--c-bg-hover);
-}
+/* 2026-09-17, R1 follow-up: no pointer cursor and no hover surface -- the row is not a target any
+   more, its pencil is. A row that looks pressable but is not is worse than one that never claimed to
+   be (the buttons are visible at rest, so nothing has to be discovered by hovering anyway). */
 
 /* Run Information / Employee Breakdown as two visually distinct sub-sections within the Details
    tab (per explicit request) -- deliberately lighter than .card-surface (no shadow, thinner
@@ -9907,6 +9928,22 @@ html, body {
 .modal-fullscreen .modal-body {
     max-height: 100%;
 }
+/* 2026-09-17, R1 follow-up, real bug found by measuring at 430x932: `.modal-fullscreen` has had the
+   escape above since forever, but `.modal-fullscreen-sm-down` -- fullscreen only BELOW `sm` -- never
+   got one. So on a phone the dialog was the full 932px tall while its body was still capped at
+   `100vh - 200px` = 732, leaving the footer parked 97px above the bottom of the sheet with nothing
+   under it. The body takes the space that is left instead, and the footer lands on the bottom edge
+   where a full-screen sheet's footer belongs. Shared rule, not an override for the one modal that
+   happens to use this class today (`#lineOverrideHistoryModal`) -- the next one to take it would
+   have inherited the same gap. */
+@media (max-width: 575.98px) {
+    .modal-fullscreen-sm-down .modal-body {
+        max-height: none;
+        min-height: 0;
+        flex: 1 1 auto;
+        overflow-y: auto;
+    }
+}
 
 /* ============================================================================
    Adjustments modal > "ปรับตัวเลข" tab -- the single line-override table (2026-09-16, batch 3/4).
@@ -9937,19 +9974,77 @@ html, body {
     justify-content: flex-end;
     gap: var(--sp-2);
 }
-/* The pencil holds its space whether or not it is showing, so the figures in this column stay in one
-   line instead of shifting by a button's width from row to row. */
-.lo-amount-view .btn-icon {
-    visibility: hidden;
+/* 2026-09-17, R1 follow-up: the table's own column widths are FIXED, and the 3 columns on the right
+   are pinned in px. Two things depend on it: a money column whose figures end on the same x as the
+   head above them (a percentage column would end wherever the longest name pushed it), and a table
+   that does not move when an inline editor opens -- the editor now lives inside these same cells, so
+   with the widths locked there is nothing left that can change. `table-layout: fixed` needs the
+   first column to be sized too, or it hands the remainder to it arbitrarily. */
+.lo-table {
+    table-layout: fixed;
+    width: 100%;
+    /* 78 + 140 (name) + 120 + 130 + 92 + 86 */
+    min-width: 646px;
 }
-.lo-row:hover .lo-amount-view .btn-icon,
-.lo-amount-view .btn-icon:focus-visible {
-    visibility: visible;
+.lo-table th.col-check {
+    width: 78px;
 }
-.lo-amount-edit .lo-edit-input {
-    max-width: 120px;
+.lo-table th.lo-computed-col {
+    width: 120px;
+}
+.lo-table th.lo-amount-col {
+    width: 130px;
+}
+/* Exactly 2 circles + the gap between them, plus the cell's own padding -- the column is as wide as
+   its fullest state (use-calculated + pencil, or save + cancel while editing) and no wider. */
+.lo-table th.lo-action-col {
+    width: 92px;
+}
+/* The figure fills its cell so `text-align: right` from `td.num` puts it on the column's own right
+   edge; the buttons sit in their own cell, which is what keeps the two from pushing each other. */
+.lo-amount-view {
+    display: block;
+}
+.lo-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+}
+/* The editor replaces the figure in place: same cell, same right edge, same width -- so the numbers
+   do not jump between reading and editing. */
+input.lo-amount-edit {
+    width: 100%;
+    max-width: none;
     text-align: right;
 }
+/* 2026-09-17, R1 follow-up: the table and the 3 summary rows under it share ONE left/right inset --
+   the same `--payslip-inset` the slip already uses for exactly this (its column titles, its rows and
+   its net band all sit on it). Without it the table's own cell padding and the summary's inset were
+   2 different numbers, so the block read as 2 slightly misaligned panels stacked on each other. */
+.lo-table > thead > tr > th:first-child,
+.lo-table > tbody > tr > td:first-child {
+    padding-left: var(--payslip-inset, var(--sp-3));
+}
+.lo-table > thead > tr > th:last-child,
+.lo-table > tbody > tr > td:last-child {
+    padding-right: var(--payslip-inset, var(--sp-3));
+}
+/* The name column is the only one that may take the slack above `sm`; below it, it is pinned like
+   the switch beside it, so it takes a width of its own there (see the media query below). */
+.lo-table th.lo-name-col {
+    width: auto;
+    min-width: 140px;
+}
+/* A long item name must not be able to widen its column now that the table is fixed. */
+.lo-table td .lo-name {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+}
+
 /* While one write is in flight the whole block is inert -- a second action would race a recalculate
    that is already running. Controls are really disabled; this only says so.
    2026-09-16, D2: `.block-busy` is the same state for any block that writes on its own (the "added
@@ -9959,14 +10054,18 @@ html, body {
 .block-busy {
     opacity: .6;
 }
-/* A row that is not included: its name goes quiet and its current amount reads as struck out -- the
-   figure is still shown (it is what the row WOULD contribute) but it is not part of the total. */
+/* A row that is not included: its name goes quiet, and where its figure used to be struck through it
+   now says what is actually true -- it is not in the calculation at all (2026-09-17, R1: a struck-out
+   0.00 still reads as a number that counts for something). */
 .lo-row-off .lo-name {
     color: var(--c-text-faint);
 }
-.lo-row-off td.col-money span {
-    text-decoration: line-through;
+.lo-row-off td.col-money {
     color: var(--c-text-faint);
+}
+.lo-amount-excluded {
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
 }
 /* The "show N hidden" row: the LAST row of the table (what it reveals are rows), so it sits in the
    same grid -- a quiet, full-width tertiary button, no border/background of its own. */
@@ -9989,10 +10088,70 @@ html, body {
     font-size: var(--fs-xs);
     margin-left: var(--sp-1);
 }
+/* 2026-09-17, R1: the calculated figure is the baseline the live one is a departure from -- it is
+   context, so it is quiet (no money colour of its own, muted) and lets the amount column stay the
+   one being read. "-" is a row whose calculated value was never recorded; its title says so. */
+.lo-computed-cell {
+    color: var(--c-text-muted);
+}
+.lo-computed-unknown {
+    color: var(--c-text-faint);
+    cursor: help;
+}
+/* 2026-09-17, R1 follow-up: below `sm` the dialog is narrower than this table, so the 2 columns that
+   say WHICH row you are reading (the switch and the item name) stay put while the figures scroll
+   under them. Only `position` lives here -- the opaque background per table section and the
+   scrolled-only right-edge shadow are the app's own shared `.tbl-sticky-col` rules (§7), which the
+   cells carry in every viewport; above `sm` the table fits, so nothing is pinned and those classes
+   are inert. `left: 78px` is the switch column's own stated width -- both are fixed, so the offset
+   does not have to be measured at runtime the way the DataTables-based tables need. */
+@media (max-width: 575.98px) {
+    .lo-table > thead > tr > th.col-check,
+    .lo-table > tbody > tr > td.col-check {
+        position: sticky;
+        left: 0;
+        z-index: 2;
+    }
+    /* Collapsed borders are SHARED between neighbouring cells, so a pinned cell carries half of one
+       that its own box does not account for -- the half-pixel that made the 2 columns drift apart
+       while dragging. `separate` + zero spacing renders identically here (this table's rules are all
+       bottom borders) and makes each sticky cell's box exactly what the offset below assumes. */
+    .lo-table {
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+    .lo-table > thead > tr > th.lo-name-col,
+    .lo-table > tbody > tr > td.lo-name-cell {
+        position: sticky;
+        /* measured off column 1, published by lineOverridePublishStickyOffsetRd() */
+        left: var(--lo-sticky-left-2, 78px);
+        z-index: 2;
+    }
+    .lo-table th.lo-name-col {
+        width: 140px;
+        min-width: 140px;
+    }
+}
+/* 2026-09-17, R1 follow-up: a row that spans every column (group heading, the "show N hidden"
+   toggle) writes its text on a sticky span, so the words stay where the 2 frozen columns beside them
+   are while the row's own background still runs the full width. `inline-block` because a sticky
+   element needs a box of its own; `max-width` keeps a long heading from pushing the row wider than
+   the scroller. Sticky on the SPAN and never `display: flex` on the `<td>` -- setting a display on a
+   cell drops it out of the table layout and takes its `colspan` with it (§7, real bug from D1). */
+.lo-span-sticky {
+    position: sticky;
+    left: var(--payslip-inset, var(--sp-3));
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+}
 /* History column: the badge is the whole control, so the cell adds nothing around it. */
 .lo-history-cell,
 th.lo-history-col {
-    width: 1%;
+    width: 86px;
     white-space: nowrap;
 }
 .lo-history-toggle {
@@ -10005,8 +10164,16 @@ th.lo-history-col {
    in place, so the menu drops its own padding (padding above a sticky head shows through it). */
 .lo-history-cell .dropdown-menu {
     --lo-history-row-h: 34px;
+    /* 2026-09-17, R1: opened with Popper's fixed strategy (see badgeDropdownHtml()'s `fixedStrategy`)
+       so `.table-responsive`'s own `overflow` cannot clip it -- which only works if it also outranks
+       the modal it is inside, the same level §1's scale gives every other overlay-in-a-modal
+       (`.popover`, select2). */
+    z-index: var(--z-modal-overlay);
     width: 320px;
-    max-width: calc(100vw - var(--sp-4));
+    /* 2026-09-17, R1 follow-up: never wider than the dialog it opens inside, minus the inset on both
+       sides -- the viewport-based cap it had let the menu be wider than the modal on a narrow screen,
+       which no amount of repositioning can fix. `--modal-inner-w` is set by the JS that opens it. */
+    max-width: min(calc(100vw - var(--sp-4)), var(--lo-menu-max-w, 100vw));
     padding: 0;
     /* 5 rows of list between the two sticky ends (the head is --fs-xs, the foot one more row). */
     max-height: calc(var(--lo-history-row-h) * 6 + 22px);
@@ -10019,27 +10186,29 @@ th.lo-history-col {
     z-index: 1;
     font-size: var(--fs-xs);
 }
-/* The head is a pickable row like any other (same [value | meta] skeleton, same hover/cursor) -- the
-   subtle surface is what says it is the baseline, not that it is inert. */
+/* 2026-09-17, R1: the head is REFERENCE now, not a choice -- going back to the calculated value is
+   the row's own round button, 2 columns away. Same [value | meta] skeleton as the rows below it so
+   the figures still line up, but nothing to press: no hover, no pointer. */
 .lo-history-head {
     top: 0;
     background: var(--c-bg-subtle);
     border-bottom: 1px solid var(--c-border);
 }
-.lo-history-head .lo-history-item:hover,
-.lo-history-head .lo-history-item:focus {
-    background: var(--c-bg-hover);
+.lo-history-item-static {
+    padding: var(--sp-1) var(--sp-3);
+    color: var(--c-text-muted);
 }
 .lo-history-foot {
     bottom: 0;
     background: var(--c-bg);
     border-top: 1px solid var(--c-border);
 }
-/* Not a row of data -- a way out of the list, so it sits where an action sits: right, quiet. Aligned
-   with `justify-content`, not `text-align`: every item in this menu is already a flex box
+/* Not a row of data -- a way into the full history, so it reads as one thing spanning the menu's
+   width rather than a value/meta pair like the rows above it (2026-09-17, R1: centred, was right).
+   Aligned with `justify-content`, not `text-align`: every item in this menu is already a flex box
    (`.badge-dropdown .dropdown-item` above), which makes text-align inert on it. */
 .lo-history-foot .lo-history-view-all {
-    justify-content: flex-end;
+    justify-content: center;
     font-size: var(--fs-sm);
 }
 /* One menu row = ONE line: the value on the left (it is what is being chosen between), what explains
@@ -10161,6 +10330,21 @@ th.lo-history-col {
     color: var(--c-text-muted);
     margin-top: var(--sp-1);
     max-width: 320px;
+}
+
+/* ============================================================================
+   Stacked modals (2026-09-17, R1 follow-up) -- a modal opened from inside another one. Both levels
+   come from the scale in tokens.css (§1's Layering), and both apply from the first painted frame:
+   the class is added in `show.bs.modal` before the transition starts, and the backdrop rule below
+   matches structurally, so neither waits for a callback.
+   `.modal-backdrop ~ .modal-backdrop` = any backdrop with another one before it, i.e. the 2nd and
+   later ones -- which is exactly "the backdrop of a stacked modal", with no JS involved at all.
+   ============================================================================ */
+.modal.modal-nested {
+    z-index: var(--z-modal-nested);
+}
+.modal-backdrop ~ .modal-backdrop {
+    z-index: var(--z-modal-nested-backdrop);
 }
 
 /* Payslip Template editor -- "Template Info" card (language_mode + header/footer text + status/

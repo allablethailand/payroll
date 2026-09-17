@@ -286,9 +286,11 @@ console.log('=== one hand-added row: its actions, and who gets them ===');
 const MANUAL_LINE = { id: 146, item_type: 'earning', item_name_th: 'โบนัส', item_name_en: 'Bonus', item_code: 'BONUS', amount: 2000, note: null, is_custom: false, is_other: false };
 
 const rowEditable = manualLineListItemHtml(MANUAL_LINE, true);
-check('the row carries its own line id, for both the pencil and the press-the-row path',
+check('the row carries its own line id, which its pencil and bin both read',
     rowEditable.indexOf('data-line-id="146"') !== -1);
-check('an editable row is marked as one (the whole row opens the form)',
+// 2026-09-17 (R1 follow-up): the class still marks a row that HAS actions -- it is no longer a press
+// target itself, which is asserted on the handler side below.
+check('an editable row is marked as one',
     rowEditable.indexOf('manual-line-item manual-line-item-editable') !== -1);
 check('both actions are the shared 32px round button (§7), not a size or colour of their own',
     rowEditable.indexOf('class="btn-icon manual-line-edit-btn"') !== -1
@@ -308,7 +310,17 @@ check('a legacy line (no id of its own) gets no buttons -- there is no row for t
 check('...but keeps the slot, so the figures around it stay in one column',
     rowLegacy.indexOf('manual-line-actions manual-line-actions-empty') !== -1);
 check('...and says on the row itself why it has none', rowLegacy.indexOf('รายการนี้บันทึกไว้ก่อน') !== -1);
-check('...and is not a press target', rowLegacy.indexOf('manual-line-item-editable') === -1);
+check('...and is not marked editable at all', rowLegacy.indexOf('manual-line-item-editable') === -1);
+
+// 2026-09-17, R1 follow-up: the pencil is the ONLY way into the edit form. A whole-row handler made
+// every name, note and figure a control -- there was no way to read a row without starting an edit.
+check('no handler opens the form from the row itself',
+    detailSource.indexOf(".on('click', '.ml-mount .manual-line-item-editable'") === -1);
+check('the pencil still does', detailSource.indexOf(".on('click', '.ml-mount .manual-line-edit-btn'") !== -1);
+const styleCss = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'style.css'), 'utf8');
+check('and the row no longer advertises itself as pressable',
+    /\.manual-line-item-editable\s*\{[^}]*cursor:\s*pointer/.test(styleCss) === false
+    && /\.manual-line-item-editable:hover/.test(styleCss) === false);
 
 console.log('\n' + '-'.repeat(50));
 console.log(`Passed: ${passed}, Failed: ${failed}`);
