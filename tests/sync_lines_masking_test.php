@@ -87,6 +87,7 @@ $masked = $masker->invoke($controller, [
         'code' => 'OT', 'name_th' => 'ล่วงเวลา', 'name_en' => 'Overtime',
         'current_amount' => 5000.0, 'override_amount' => 4500.0, 'computed_amount' => 5312.5, 'override_action' => 'override',
         'override_note' => 'ปรับตามใบรับรอง', 'line_type' => 'earning_deduction', 'item_type' => 'earning', 'note' => null,
+        'is_exempted' => true, 'exempted_amount' => 1200.0,
         'occurrences' => [
             ['occurrence_code' => 'INST1', 'installment_no' => 1, 'amount' => 2500.0, 'applied_at' => '2026-09-01'],
             ['occurrence_code' => 'INST2', 'installment_no' => 2, 'amount' => 2500.0, 'applied_at' => '2026-09-15'],
@@ -106,6 +107,10 @@ check('computed_amount is masked', $masked[0]['computed_amount'], PermissionMode
 check('every occurrence amount is masked too (installments add up to the very figure being hidden)',
     [$masked[0]['occurrences'][0]['amount'], $masked[0]['occurrences'][1]['amount']],
     [PermissionModel::MASK_VALUE, PermissionModel::MASK_VALUE]);
+// 2026-09-18, 4a-1: "what this deduction WOULD have been" is a real figure off this employee's own
+// pay -- it arrived on this endpoint the moment the read-only slip started rendering from it.
+check('exempted_amount is masked', $masked[0]['exempted_amount'], PermissionModel::MASK_VALUE);
+check('...and the flag beside it survives, so the row can still say it is exempt', $masked[0]['is_exempted'], true);
 check('a zero amount is still masked (0.00 is a real figure, not "no value")', $masked[1]['current_amount'], PermissionModel::MASK_VALUE);
 check('a null override_amount stays null -- masking it would invent an override nobody made', $masked[1]['override_amount'], null);
 check('a null computed_amount stays null, for the same reason', $masked[1]['computed_amount'], null);

@@ -3447,7 +3447,7 @@ th.col-money div.dt-column-header .dt-column-title {
    same class of gap as the fix above, 2 more call sites: `.btn-close` (Bootstrap's own modal ×)
    hardcodes its own blue box-shadow directly on plain `:focus` (confirmed in bootstrap.min.css --
    `.btn-close:focus{box-shadow:0 0 0 .25rem rgba(13,110,253,.25)}`, unconditional, not just
-   `:focus-visible`), and bare `.btn-icon-ghost` (the popover ✕/formula-info-btn -- these 2 don't
+   `:focus-visible`), and bare `.btn-icon-ghost` (the popover ✕ -- these 2 don't
    always pair with `.btn-icon` the way this class was originally scoped for, so the fix above never
    reached them). Same pattern: reset unconditionally, ring only on real keyboard `:focus-visible`. */
 .btn-close:focus,
@@ -3527,27 +3527,6 @@ th.col-money div.dt-column-header .dt-column-title {
 .badge {
     text-decoration: none !important;
 }
-/* .formula-info-btn (Round 3 item 3c-2 follow-up) -- the small "?" info button sitting inline in a
-   payslip-view line's name cell (formulaButtonRd(), payroll/detail.js), explicit instruction:
-   ".btn-icon-ghost 14px --c-text-faint". Paired with `.btn-icon-ghost` in markup for the shared
-   transparent-until-hover background, but NOT `.btn-icon` -- that class's own 32px fixed circle
-   (§7's row-action button size) and `!important` --c-text-muted color are sized for a standalone
-   row action, not an icon sitting mid-sentence in table text, so this defines its own smaller
-   box/color instead of fighting those `!important`s. */
-.formula-info-btn {
-    width: 18px;
-    height: 18px;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    color: var(--c-text-faint);
-    vertical-align: -3px;
-}
-.formula-info-btn i {
-    font-size: 14px;
-}
 /* Calculation column's advisory notes (2026-09-16, Payroll Detail employee table) -- the "N คำเตือน"
    badge is a popover trigger, so the button around it must not add a button's own box/padding on top
    of the badge (§5: the badge is the whole control here). The popover's own list is a plain stack of
@@ -3563,28 +3542,9 @@ th.col-money div.dt-column-header .dt-column-title {
     display: grid;
     gap: var(--sp-2);
 }
-/* 2026-09-16, D1 ("สลิปที่แก้ได้") -- one line of status under the employee header card of the
-   Calculation Breakdown modal (rules.md §9). Right-aligned: it is about the slip below it, not about
-   the employee named to its left. `--sp-3` from the card; whatever follows keeps its own top gap
-   (the sibling rule gives a row's calculation notes the same `--sp-3` when they sit in between). */
-.breakdown-status-line {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: var(--sp-3);
-}
-.breakdown-status-line + .rd-calc-notes {
-    margin-top: var(--sp-3);
-}
-/* A caption, not a callout: it explains a control that is absent, it is not a thing to act on
-   (§15's own "ไม่ใช่ทุกข้อความเตือนต้องเป็น callout" lesson, same treatment #recalcReminderBanner got). */
-.breakdown-status-text {
-    font-size: var(--fs-sm);
-    color: var(--c-text-muted);
-}
-/* The editable layout: 2 titled sections (the calculated lines, then the hand-added ones) and the
-   run's own net band. Section spacing is the one `--sp-5` §2 uses between blocks of a page; the title
-   is the same weight/size as the slip's own column titles so the 3 read as one stack, not as a page
-   inside a modal. */
+/* Both layouts: the calculated table, then the hand-added lines. Section spacing is the one `--sp-5`
+   §2 uses between blocks of a page. Neither section carries a title of its own -- the table's column
+   heads and the hand-added block's 2 column heads already name what each one holds. */
 /* The same `--sp-4` the read-only slip gets from `.payslip-view`'s own padding-top -- measured, the
    first section title otherwise starts flush against the header card's bottom border (0px). */
 .breakdown-edit {
@@ -3592,12 +3552,6 @@ th.col-money div.dt-column-header .dt-column-title {
 }
 .breakdown-edit-section {
     margin-bottom: var(--sp-5);
-}
-.breakdown-edit-title {
-    margin: 0 0 var(--sp-2);
-    font-size: var(--fs-sm);
-    font-weight: 700;
-    color: var(--c-text);
 }
 /* The slip inside a section brings its own top padding for a column title that is not there in this
    layout (the section title above replaces it) -- the 2 would otherwise stack into a gap twice the
@@ -10066,6 +10020,17 @@ html, body {
 .lo-row-off .payslip-line-tag {
     color: var(--c-text-faint);
 }
+/* 2026-09-18, 4a-1: the slip's 3 summary figures, below BOTH blocks of money (the calculated table
+   and the hand-added card) -- see lineOverrideTotalsHtmlRd(). One row gap under the card, no more. */
+.lo-totals-block .lo-total-row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    border-top: 1px solid var(--c-border);
+    padding: var(--sp-2) 0;
+    font-weight: 600;
+}
+.lo-totals-block .lo-total-row-net { border-top-width: 2px; font-size: var(--fs-md); }
 .lo-amount-excluded {
     font-size: var(--fs-sm);
     color: var(--c-text-muted);

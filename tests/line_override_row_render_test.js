@@ -54,7 +54,11 @@ let currentLang = 'th';
 let langData = {};
 let lineOverrideHistoryRd = { byKey: {}, historyAvailable: true, startDate: null };
 function statusBadgeHtml() { return ''; }
-function payeeDescriptorHtmlRd() { return ''; }
+function payeeDescriptorHtmlRd() { return '<div class="payslip-line-tag">PAYEE</div>'; }
+// 2026-09-18, 4a-1: the 2 HTML builders behind the formula sub-line are not under test here (they
+// are the same ones the retired "?" popover used) -- what IS under test is the flattening.
+function buildFormulaStepsRd(formula) { return formula ? '<li class="mb-1">A × B</li><li class="mb-1">= 1.00</li>' : null; }
+function explainLineNoteRd(note) { return note === 'known_note' ? '<div class="small">คำอธิบาย</div>' : null; }
 function lineOverrideOccurrencesHtml() { return ''; }
 function lineOverrideHistoryCellHtml() { return ''; }
 function lineOverrideSkipEnumRd() { return null; }
@@ -69,9 +73,14 @@ const extracted = [
     fn(detailSource, 'lineOverrideMoneyClassRd'),
     fn(detailSource, 'lineOverrideComputedTextRd'),
     fn(detailSource, 'lineOverrideComputedTagHtml'),
+    fn(detailSource, 'lineOverrideTagHtmlRd'),
+    fn(detailSource, 'formulaTagTextRd'),
+    fn(detailSource, 'lineOverrideExemptTextRd'),
+    fn(detailSource, 'lineOverrideNoteTextRd'),
     fn(detailSource, 'lineOverrideRowHtml'),
     `module.exports = {
         lineOverrideComputedTextRd, lineOverrideComputedTagHtml, lineOverrideRowHtml,
+        formulaTagTextRd, lineOverrideExemptTextRd, lineOverrideNoteTextRd,
         setLang: (l, d) => { currentLang = l; langData = d; },
         setHistory: (h) => { lineOverrideHistoryRd = h; },
     };`,
@@ -132,9 +141,11 @@ Object.keys(LANG).forEach((lang) => {
     check(`[${lang}] overridden row with history: sub-line reads "${expected}"`, tag.indexOf(expected) !== -1, tag);
     check(`[${lang}] ...in the shared quiet tag class`, tag.indexOf('payslip-line-tag') !== -1, tag);
     const overRow = api.lineOverrideRowHtml(overridden, 0, GROUP, false);
+    // lastIndexOf: the name cell above carries sub-lines of its own in the same class now (4a-1),
+    // so "the LAST one" is the one that belongs to the figure.
     check(`[${lang}] ...rendered inside the amount cell, under the figure`,
-        overRow.indexOf('lo-amount-view') < overRow.indexOf('payslip-line-tag')
-        && overRow.indexOf('payslip-line-tag') < overRow.indexOf('lo-action-cell'), overRow);
+        overRow.indexOf('lo-amount-view') < overRow.lastIndexOf('payslip-line-tag')
+        && overRow.lastIndexOf('payslip-line-tag') < overRow.indexOf('lo-action-cell'), overRow);
     check(`[${lang}] ...and the row still has exactly 1 money cell`, countOf(overRow, 'col-money') === 1);
 
     // An excluded row has no figure of its own to compare against, which is the case that most
@@ -182,9 +193,14 @@ const headerThs = (tableSrc.match(/<th class=/g) || []).length;
 check('the header declares 5 columns', headerThs === 5, headerThs);
 check('the header has exactly 1 money column', countOf(tableSrc, 'col-money') === 1, countOf(tableSrc, 'col-money'));
 check('the retired calculated column is gone from the header', tableSrc.indexOf('lo-computed-col') === -1);
-check('the group row spans all 5 columns', tableSrc.indexOf('colspan="5"') !== -1);
+// 2026-09-18, 4a-1: 5 columns in the editable slip, 3 in the read-only one -- every colspan in the
+// table is derived from that one number, never typed per row.
+check('the group row spans whatever the mode really renders', tableSrc.indexOf('colspan="${colCount}"') !== -1);
+check('...and that number is what each mode really has', tableSrc.indexOf("isView ? 3 : 5") !== -1);
 check('no colspan is left at the old 6', detailSource.indexOf('colspan="6"') === -1);
-check('the hidden-rows row spans all 5 columns', fn(detailSource, 'lineOverrideHiddenRowHtml').indexOf('colspan="5"') !== -1);
+check('the hidden-rows collapse is gone entirely -- a skipped row says why on the row itself',
+    detailSource.indexOf('lineOverrideHiddenRowHtml') === -1 && detailSource.indexOf('lo-hidden-toggle') === -1
+    && detailSource.indexOf('lo-group-skipped') === -1);
 
 console.log('\n=== the form hint and the sub-line are the same answer ===');
 // They were already one function; what matters is that neither grew its own second opinion, because
@@ -193,6 +209,46 @@ const hintSrc = fn(detailSource, 'renderLineFormComputedHintRd');
 check('the form hint reads the shared builder', hintSrc.indexOf('lineOverrideComputedTextRd(') !== -1);
 check('...and hides itself when there is no figure, rather than printing one', hintSrc.indexOf("if (!text)") !== -1);
 check('nothing renders the retired "-" placeholder any more', detailSource.indexOf('lo-computed-unknown') === -1);
+
+console.log('');
+console.log('=== 4a-1: the sub-lines under a name, in one fixed order ===');
+api.setLang('th', LANG.th);
+const TAGGED_LINE = {
+    code: 'LOAN_REPAY', name_th: 'ผ่อนชำระ', name_en: 'Loan', current_amount: 1000,
+    line_type: 'earning_deduction', item_type: 'deduction',
+    formula: { type: 'anything' }, note: 'known_note', override_action: 'override_amount',
+    override_note: 'ตกลงกับพนักงานแล้ว', computed_amount: 1500, is_exempted: false,
+};
+const taggedRow = api.lineOverrideRowHtml(TAGGED_LINE, 0, GROUP, false);
+const tagOrder = ['PAYEE', 'A × B', LANG.th['note'] + ': ตกลงกับพนักงานแล้ว'];
+check('payee/instalment, then the formula, then the note somebody typed',
+    tagOrder.every((needle, i, all) => i === 0 || taggedRow.indexOf(needle) > taggedRow.indexOf(all[i - 1])), taggedRow);
+check('the formula is ONE line: its steps joined, never a list',
+    api.formulaTagTextRd(TAGGED_LINE) === 'A × B · = 1.00', api.formulaTagTextRd(TAGGED_LINE));
+check('...and falls back to the line note when there is no formula, same as the retired popover did',
+    api.formulaTagTextRd({ note: 'known_note' }) === 'คำอธิบาย', api.formulaTagTextRd({ note: 'known_note' }));
+check('...and renders nothing at all when there is neither (no dash, no empty tag)',
+    api.formulaTagTextRd({ note: null }) === ''
+    && api.lineOverrideRowHtml({ code: 'X', name_th: 'x', name_en: 'x', current_amount: 1 }, 0, GROUP, false).indexOf('text-truncate') === -1);
+check('the note sub-line is the OVERRIDE note, never the engine note on the line',
+    api.lineOverrideNoteTextRd({ override_note: 'มือ', note: 'manually_overridden' }) === LANG.th['note'] + ': มือ'
+    && api.lineOverrideNoteTextRd({ note: 'manually_overridden' }) === '');
+// 2026-09-18, 4a-1 follow-up: shown in FULL, wrapping -- no clip, no tooltip. A `title` is not
+// reachable at all on a phone, and these sub-lines carry the reason a figure is what it is.
+check('every sub-line is the plain tag class, with no truncation and no tooltip',
+    taggedRow.indexOf('<div class="payslip-line-tag">A × B · = 1.00</div>') !== -1, taggedRow);
+check('...no sub-line in the row carries a title attribute or a truncate class',
+    taggedRow.indexOf('payslip-line-tag text-truncate') === -1
+    && taggedRow.indexOf('payslip-line-tag" title=') === -1, taggedRow);
+check('...and the builder itself no longer emits either', fn(detailSource, 'lineOverrideTagHtmlRd').indexOf('title=') === -1
+    && fn(detailSource, 'lineOverrideTagHtmlRd').indexOf('text-truncate') === -1);
+check('an exempted line says what it would have been, through the same tag',
+    api.lineOverrideExemptTextRd({ is_exempted: true, exempted_amount: 500 })
+        === LANG.th['attendance_deduction_exempted_remark'].replace('{amount}', '500.00'));
+check('...and a masked figure passes through it untouched, never as NaN',
+    api.lineOverrideExemptTextRd({ is_exempted: true, exempted_amount: 'XXXX' }).indexOf('XXXX') !== -1);
+check('no row anywhere opens a "?" popover any more',
+    detailSource.indexOf('formulaButtonRd') === -1 && detailSource.indexOf('formula-info-btn') === -1);
 
 console.log('\n' + '-'.repeat(50));
 console.log(`Passed: ${passed}, Failed: ${failed}`);

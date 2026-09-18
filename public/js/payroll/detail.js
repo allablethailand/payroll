@@ -2255,36 +2255,6 @@ function explainLineNoteRd(note, amount) {
     }
     return null;
 }
-function formulaButtonRd(line) {
-    const amount = line.amount !== undefined ? line.amount : line.employee_amount;
-    const stepsHtml = buildFormulaStepsRd(line.formula);
-    let content;
-    if (stepsHtml) {
-        const title = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || line.code || '';
-        content = `<div><strong>${escapeHtml(title)}</strong></div>
-            <ol class="ps-3 mb-0 mt-1 small">${stepsHtml}</ol>
-            ${formulaResultLineRd(amount)}`;
-    } else {
-        content = explainLineNoteRd(line.note, amount);
-    }
-    if (!content) return '';
-    const contentAttr = content.replace(/"/g, '&quot;');
-    // 2026-09-14, Round 3 item 3c-2 follow-up, explicit instruction: "? ใช้ .btn-icon-ghost 14px
-    // --c-text-faint" -- restyled from the old `btn btn-sm btn-link text-brand` (a colored, orange
-    // "?" that competed with §0's "1 primary action" rule and §3's "ไอคอน...ห้ามใช้[สี]" for a plain
-    // info affordance) to the app's own ghost-icon-button language, sized down for sitting inline in
-    // table-row text rather than as a standalone 32px row-action circle (`.btn-icon`/
-    // `.btn-icon-ghost`'s own base size) -- `.formula-info-btn` (style.css) supplies the 14px
-    // icon/--c-text-faint/small hit-area, `.btn-icon-ghost` supplies the shared transparent-until-
-    // hover background behavior so it still reads as the same family of icon control app-wide.
-    // 2026-09-14, same follow-up, explicit instruction: shared popover behavior (close on Esc/click-
-    // outside/only-1-open-at-a-time, ✕ in the header) -- see initPopovers() (app.js) for all of that,
-    // wired centrally, not here. `data-bs-trigger` dropped from "hover click" to plain "click" --
-    // hover-to-open doesn't compose with "closes on click outside": a hover-opened popover has no
-    // stable notion of "outside" the moment the mouse leaves, so it would just reopen on the next
-    // mouse pass, fighting the click-outside/Esc/✕ close affordances this same instruction asked for.
-    return `<button type="button" class="btn-icon-ghost formula-info-btn" data-bs-toggle="popover" data-bs-trigger="click" data-bs-html="true" data-bs-placement="top" data-bs-title="${langData['formula_popover_title'] || 'How this was calculated'}" data-bs-content="${contentAttr}"><i class="fa-solid fa-circle-question"></i></button>`;
-}
 /* ---------- Payee descriptor, one renderer (2026-09-18, tiny-L4) ----------
    `payee` is PayrollRunModel::enrichLinePayee()'s descriptor -- the SAME shape the recurring-
    destination card's template/override already carry. Three surfaces used to answer "where does this
@@ -2397,122 +2367,6 @@ function payeeDescriptorHtmlRd(payee, opts) {
     const needsReview = !!payeeText && payeeDescriptorNeedsReviewRd(payee);
     return `<div class="payslip-line-tag${needsReview ? ' payslip-line-tag-warn' : ''}">${escapeHtml(parts.join(LINE_TAG_SEP_RD))}</div>`;
 }
-/* ---------- Breakdown modal (section 2/3's table doesn't itemize -- it only shows totals): per-
-   employee itemized view split into clearly-labeled Earnings / Deductions (Items) / Deductions
-   (Statutory) sections, so which line is income vs. a deduction is never ambiguous. ---------- */
-function breakdownLineRowsRd(lines, moneyColorCls) {
-    return (lines || []).map(line => {
-        const name = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || '';
-        // 2026-09-15: the note is the line's own quiet second row -- no icon, not italic, one line
-        // with the full text as a native tooltip (`.payslip-line-note`, shared with the adjustments
-        // slip's own rows, style.css).
-        const commentHtml = line.note ? `<div class="payslip-line-note" title="${escapeAttr(line.note)}">${escapeHtml(line.note)}</div>` : '';
-        // 2026-08-30, explicit request: "มีหมายเหตุในกรณีที่ไม่หัก ในการกดดูของพนักงานด้วยในหน้า Process
-        // Detail" -- SyncPayResolver still emits a LINE (amount forced to 0) for an attendance
-        // deduction this employee is exempt from, rather than dropping it silently, so there's
-        // something here to explain instead of the item just quietly not appearing. Distinct from
-        // the generic `commentHtml` above (which shows the raw technical `note` string) -- this is a
-        // dedicated, human-readable remark keyed off `is_exempted`/`exempted_amount`.
-        const exemptedHtml = line.is_exempted
-            ? `<div class="payslip-line-tag text-warning-emphasis"><i class="fa-solid fa-user-shield me-1"></i>${(langData['attendance_deduction_exempted_remark'] || 'Exempted from this deduction -- would have been {amount}').replace('{amount}', fmtNum(line.exempted_amount))}</div>`
-            : '';
-        // Transfer-to-payee (2026-08-21): a 'transfer_in' earning line gets its own badge (not the
-        // generic "Custom" one, even though it's technically is_custom too) so it reads distinctly
-        // as money credited from another employee, not an ad-hoc typed-in item. A deduction line
-        // that FEEDS a transfer instead shows a "-> employee_no" tag alongside its normal code.
-        // 2026-09-14, Round 3 item 3c-2 follow-up, explicit instruction: "ซ่อนรหัสรายการ...ย้ายไป title
-        // tooltip" -- a PLAIN code (BASE/TH_SSO/...) is no longer printed inline at all; it only ever
-        // shows as the name's native `title` attribute (hover tooltip), never visible text. The 3
-        // BADGE variants (Transfer/Custom/Other) are NOT "a code" in the same sense -- they're a
-        // meaningful visual classification of the line itself, not an internal identifier -- so those
-        // stay exactly as visible as before, unaffected by this change.
-        // 2026-09-15, rules.md 9: the source badge is a real `statusBadgeHtml()` against the
-        // `manual_line_mode` context (neutral + outline, no icon -- the 3 hand-rolled
-        // `badge bg-info-subtle`/`bg-secondary-subtle` variants with their own icons are gone, and
-        // with them 3 more hits of 12's lint rule 8). It now sits AFTER the name, so every row's
-        // name starts at the same x no matter which badge (or none) the row carries.
-        // 2026-09-17, R1b: a plain typed-in line ("Custom") carries NO badge any more -- with the form
-        // down to one picker there is exactly one way to type a name, so the badge classified nothing
-        // the reader could act on. `other` keeps its badge because it is genuinely different: those
-        // rows are the retired mode, still bucketed into "Other Income/Deduction" on reports, and the
-        // UI can no longer produce another one. A custom line gets no `title` either -- its `code` is
-        // the synthetic `CUSTOM:{name}`, which is the name it is already showing.
-        let codeHtml = '';
-        let nameTitleAttr = '';
-        if (line.source === 'transfer_in') {
-            codeHtml = statusBadgeHtml('transfer', 'manual_line_mode', { outline: true });
-        } else if (line.is_custom) {
-            // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
-            if (line.is_other) codeHtml = statusBadgeHtml('other', 'manual_line_mode', { outline: true });
-        } else {
-            nameTitleAttr = ` title="${escapeAttr(line.code || '-')}"`;
-        }
-        // 2026-09-18, tiny-L4: one renderer, one string (payeeDescriptorHtmlRd()). This branch used
-        // to re-derive the label from the raw payee_* columns and, for a transfer, print the payee's
-        // employee_no with no account at all -- the persisted breakdown JSON carried no resolved
-        // name/account, so it had nothing better to show. getDetails() now enriches every line with
-        // the same descriptor the other 2 surfaces read, so the account comes with it.
-        const payeeHtml = payeeDescriptorHtmlRd(line.payee, { variant: 'tag', installment: line.installment });
-        const exemptBadge = line.is_exempted ? `<span class="badge bg-warning-subtle text-warning-emphasis ms-1">${langData['attendance_deduction_exempted_badge'] || 'Exempted'}</span>` : '';
-        return `<tr class="payslip-row${line.is_exempted ? ' text-muted' : ''}">
-            <td>
-                <div class="payslip-line-head"><span class="payslip-line-name"${nameTitleAttr}>${escapeHtml(name)}</span>${codeHtml}${exemptBadge}${formulaButtonRd(line)}</div>
-                ${commentHtml}${exemptedHtml}${payeeHtml}</td>
-            <td class="text-end num ${moneyColorCls || ''}">${fmtNum(line.amount)}</td>
-        </tr>`;
-    }).join('');
-}
-// 2026-09-14, Round 3 item 3c-2 follow-up, explicit instruction: "รายการที่พนักงานไม่ได้ลงทะเบียน/
-// บริษัทปิดใช้...ไม่แสดงแถวเลย" -- StatutoryCalculationEngine::calculateLine() (app/services/
-// StatutoryCalculationEngine.php) writes these 2 EXACT note codes ('disabled'/'employee_not_enrolled',
-// confirmed by reading the engine source directly) when the item doesn't apply to this employee AT
-// ALL -- a genuinely different case from an item that DOES apply and simply computed to ฿0 (e.g. a
-// 0%-bracket PIT line), which the engine leaves with note=null/some OTHER note and must keep
-// showing per the same instruction ("มีสิทธิ์แต่ยอด 0.00 → แสดงปกติ"). 'employee_tax_exempt' added
-// here too (not explicitly named in the instruction) -- same early-return branch in the engine as
-// employee_not_enrolled (an employee this tax plainly doesn't apply to), so excluded on the same
-// "not entitled" basis, not a guess. Every OTHER note the engine can emit
-// (no_rate_configured/no_brackets_configured/unknown_calc_method/unrecognized_calc_base) means a
-// MISCONFIGURED item, not a not-entitled one -- deliberately still shown (hiding a config problem
-// would be worse than a raw note). No separate `is_enrolled`-style boolean exists on this line shape
-// to filter on instead -- these 3 string codes are the only signal the engine gives, so filtering by
-// them (not by amount == 0, which would wrongly also hide the legitimate zero-but-entitled case) is
-// the correct rule here, not a shortcut.
-const STATUTORY_NOT_ENTITLED_NOTES_RD = ['disabled', 'employee_not_enrolled', 'employee_tax_exempt'];
-function statutoryRowsRd(items) {
-    // 2026-08-21, real bug fix (explicit report: "แสดงแค่ Code อยากให้มีชื่อด้วย") -- name_th/
-    // name_en now come through from StatutoryCalculationEngine::calculateLine(), same pattern as
-    // breakdownLineRowsRd() already uses for earning/deduction lines just above.
-    return (items || [])
-        .filter(item => !STATUTORY_NOT_ENTITLED_NOTES_RD.includes(item.note))
-        .map(item => {
-            const name = (currentLang === 'th' ? item.name_th : item.name_en) || item.name_th || item.name_en || '';
-            // 2026-09-14, real bug found and fixed (explicit report, screenshot showed raw
-            // "(employee_not_enrolled)"/"(th_pit_average_annual_tax_2050)" next to the item name) --
-            // `item.note` is an internal code, never end-user prose (StatutoryCalculationEngine's own
-            // source confirms this -- see the const above). It was rendered here as a raw parenthetical
-            // with no i18n lookup at all, completely bypassing explainLineNoteRd() (which ALREADY
-            // translates the known codes, e.g. 'employee_not_enrolled' -> langData['formula_note_not_
-            // enrolled'], and the th_pit_* pattern into real prose) purely because formulaButtonRd()
-            // just below happens to call that translator for its OWN popover content. Dropped entirely
-            // -- the "?" button is now the only place a note ever surfaces, translated when a mapping
-            // exists, silently absent (no button, no raw text) when it doesn't, never a raw code shown
-            // to the employee either way. Logged to BACKLOG.md: the unmapped-code case still means an
-            // employee sees no explanation at all for that line (out of scope to fully fix here, §0.7).
-            // 2026-09-14, same-day follow-up, explicit instruction: "ซ่อนรหัสรายการ...ย้ายไป title
-            // tooltip" -- code moved from a visible <code> chip to the name's own `title` attribute.
-            return `<tr class="payslip-row">
-                <td><span title="${escapeAttr(item.code || '-')}">${escapeHtml(name)}</span>${formulaButtonRd(item)}</td>
-                <td class="text-end num money-deduction">${fmtNum(item.employee_amount)}</td>
-            </tr>`;
-        }).join('');
-}
-// Shared "-" placeholder row for an EMPTY-but-always-shown payslip column (Earnings/Deductions --
-// §9 payslip layout keeps both columns visible for a fixed, symmetric 2-column grid; only the
-// wholly-optional Statutory block below them is hidden outright when empty, see renderBreakdownModal()).
-function payslipEmptyRowRd() {
-    return `<tr class="payslip-row"><td colspan="2" class="text-center text-muted small">-</td></tr>`;
-}
 
 // The row the Calculation Breakdown modal is currently showing -- kept module-level because the
 // editable table below it reloads on its own (after a save) and has to know whose lines it is
@@ -2526,7 +2380,6 @@ function renderBreakdownModal(row) {
     // name in the modal-header (#breakdownEmployeeName removed from the view -- see this modal's
     // own markup comment).
     $('#breakdownHeaderCard').html(employeeHeaderCardHtml(row));
-    renderBreakdownStatusLineRd(row);
     // 2026-09-06, explicit request: Origami's opt-in TOTAL_DAYS item_values entry (calendar-based
     // day count) -- row.total_days is null (see PayrollRunModel::getDetails()'s own docblock) for
     // every run/employee with no data, never 0, so a plain truthiness-adjacent null check is
@@ -2549,9 +2402,8 @@ function renderBreakdownModal(row) {
         $totalDays.addClass('d-none').text('');
     }
 
-    // A row that cannot be edited renders exactly the slip it always did -- same function, same
-    // output, byte for byte (tests/breakdown_slip_render_test.js pins it). Only an editable row gets
-    // the other layout.
+    // 2026-09-18, 4a-1: both layouts are now the SAME table, from the same payload -- 'view' only
+    // decides which columns are rendered at all (docs/decisions/2026-09-18-slip-single-place.md).
     // Height follows the content, in BOTH layouts. `.modal-tabbed`
     // (docs/decisions/2026-09-15-modal-tabbed-height.md) was tried here and removed: it pinned the
     // body at one height so a modal could not resize between tabs, but this modal has no tabs -- what
@@ -2563,13 +2415,7 @@ function renderBreakdownModal(row) {
         renderBreakdownEditableBodyRd(row);
         return;
     }
-    $('#breakdownModalBody').html(breakdownViewSlipHtml(row));
-    // 2026-09-14, centralized -- initPopovers() (app.js) now owns per-element init (dispose-then-
-    // create, same idempotent pattern this file used to do inline here) AND the shared close-on-Esc/
-    // click-outside/single-open-at-a-time/✕ behavior, wired once globally the first time it's called
-    // anywhere in the app. Scoped to this modal's own body so re-rendering for a different employee
-    // doesn't touch popovers elsewhere on the page.
-    if (typeof initPopovers === 'function') initPopovers('#breakdownModalBody');
+    renderBreakdownViewBodyRd(row);
 }
 // 2026-09-17, D3: this modal's footer, built per open through the shared helper (§9/§4). A row that
 // cannot be edited gets [ปิด] alone -- byte for byte what app.js's own `data-footer="view"` fallback
@@ -2596,39 +2442,6 @@ function refreshBreakdownFooterStateRd() {
     }).length;
     $btn.prop('disabled', overrideRowCount === 0);
 }
-// The read-only slip, unchanged -- this is the exact body renderBreakdownModal() built inline before
-// the editable layout existed, moved as-is so the 2 sit beside each other instead of nested.
-function breakdownViewSlipHtml(row) {
-    let earningRowsHtml = '';
-    if (Number(row.base_salary_amount) > 0) {
-        earningRowsHtml += `<tr class="payslip-row">
-            <td><span title="BASE">${escapeHtml(langData['table_base_salary'] || 'Base Salary')}</span></td>
-            <td class="text-end num money-gross">${fmtNum(row.base_salary_amount)}</td>
-        </tr>`;
-    }
-    earningRowsHtml += breakdownLineRowsRd(row.earning_breakdown, 'money-gross');
-    // 2026-09-14, same-day follow-up: Deductions is now ONE merged column (statutory + item/manual
-    // rows, separated by a subheader only when both groups are present) -- payslipViewHtml() (app.js)
-    // owns that grouping decision now, so these 2 stay separate strings here instead of being
-    // concatenated/emptiness-padded in this file the way the single old "Deductions (Items)" column
-    // used to be.
-    const deductionItemRowsHtml = breakdownLineRowsRd(row.deduction_breakdown, 'money-deduction');
-    const deductionStatutoryRowsHtml = statutoryRowsRd(row.statutory_breakdown);
-
-    // 2026-09-14, Round 3 item 3c-2: renders via the shared payslip-view component (payslipViewHtml(),
-    // app.js -- PHP twin app/views/partials/payslip-view.php) instead of this file's own
-    // breakdownSectionHtml() (removed, no longer used anywhere), so this modal and a future
-    // print/PDF payslip page share one layout. row.total_deduction_amount already combines item +
-    // statutory deductions (PayrollRunModel::recalculate(), confirmed) -- no extra sum needed here.
-    return payslipViewHtml({
-        earningRowsHtml: earningRowsHtml || payslipEmptyRowRd(),
-        deductionStatutoryRowsHtml: deductionStatutoryRowsHtml,
-        deductionItemRowsHtml: deductionItemRowsHtml,
-        grossAmount: row.gross_amount,
-        totalDeductionAmount: row.total_deduction_amount,
-        netAmount: row.net_amount
-    });
-}
 /* ---------- Calculation Breakdown modal, EDITABLE layout (2026-09-16, D1 "สลิปที่แก้ได้").
    A row that can still be edited (draft run, not verified) is edited HERE, where its figures are
    read: the line-override table (render, switch, inline edit, history dropdown/modal, hidden rows,
@@ -2645,18 +2458,6 @@ function breakdownViewSlipHtml(row) {
 // too, in BOTH the places that block is shown. One predicate, not a second one that can drift.
 function employeeRowEditableRd(row) {
     return !!row && !!currentRun && currentRun.state === 'draft' && !row.is_verified;
-}
-// The slot under the employee header card: one line of status, or nothing. Only the verified-draft
-// case has anything to say -- unverifying is a real action the user can take, so naming it beats the
-// editing surface simply being absent. Past draft there is no action to point at, so the slot stays
-// empty (rules.md §9).
-function renderBreakdownStatusLineRd(row) {
-    const $slot = $('#breakdownStatusLine');
-    if (!!currentRun && currentRun.state === 'draft' && row.is_verified) {
-        $slot.html(`<span class="breakdown-status-text">${escapeHtml(langData['breakdown_verified_lock_hint'] || 'Verified -- unverify before editing')}</span>`).removeClass('d-none');
-        return;
-    }
-    $slot.empty().addClass('d-none');
 }
 // The add-an-item button on a column head -- one per column, which is what decides the new line's
 // type: the form never asks "earning or deduction?" because the head that was pressed already said.
@@ -2692,6 +2493,12 @@ function manualLineEmptyColumnHtml() {
 function renderBreakdownManualLinesRd(lines) {
     const all = lines || [];
     const canEdit = employeeRowEditableRd(breakdownRowRd);
+    // 2026-09-18, 4a-1: in the read-only slip this block is a LIST, not a surface -- no "add" button
+    // in either column head, and nothing at all when this employee has no hand-added line to list.
+    if (!canEdit && !all.length) {
+        $('#breakdownManualLines').empty();
+        return;
+    }
     const earningLines = all.filter(l => l.item_type === 'earning');
     const deductionLines = all.filter(l => l.item_type === 'deduction');
     // 2026-09-17, R1: "เงินเพิ่ม"/"เงินหัก" -- what a hand-added line IS, which is not the same word as
@@ -2700,14 +2507,14 @@ function renderBreakdownManualLinesRd(lines) {
     $('#breakdownManualLines').html(payslipViewHtml({
         earningTitle: langData['manual_line_col_earning'] || 'Additional pay',
         deductionTitle: langData['manual_line_col_deduction'] || 'Additional deduction',
-        earningTitleActionHtml: manualLineAddButtonHtml('earning', canEdit),
-        deductionTitleActionHtml: manualLineAddButtonHtml('deduction', canEdit),
+        earningTitleActionHtml: canEdit ? manualLineAddButtonHtml('earning', canEdit) : '',
+        deductionTitleActionHtml: canEdit ? manualLineAddButtonHtml('deduction', canEdit) : '',
         earningRowsHtml: earningLines.length
             ? earningLines.map(l => manualLineListItemHtml(l, canEdit)).join('')
-            : manualLineEmptyColumnHtml(),
+            : (canEdit ? manualLineEmptyColumnHtml() : ''),
         deductionItemRowsHtml: deductionLines.length
             ? deductionLines.map(l => manualLineListItemHtml(l, canEdit)).join('')
-            : manualLineEmptyColumnHtml(),
+            : (canEdit ? manualLineEmptyColumnHtml() : ''),
         showTotals: false,
     }));
 }
@@ -2723,18 +2530,16 @@ function loadBreakdownManualLinesRd(employeeId) {
         }
     });
 }
-// Section 3: the run's own net pay for this employee, through the same component band the read-only
-// slip ends with. Re-read from api/payroll-run.get after every write, because a single override
-// changes what the statutory lines compute to and therefore this figure.
-// 2026-09-17, R1: 3 lines, not 1 -- gross and deductions in front of the net band, so the figure at
+// Section 3: the run's own 3 summary figures for this employee. Re-read from api/payroll-run.get
+// after every write, because a single override changes what the statutory lines compute to and
+// therefore all 3 of them.
+// 2026-09-17, R1: 3 lines, not 1 -- gross and deductions in front of the net figure, so the one at
 // the bottom can be read as the result of the 2 above it instead of arriving on its own. All 3 come
-// from the SAME row `api/payroll-run.get` returns and refreshBreakdownNetSummaryRd() already
-// re-reads after every write; nothing is added up on the client.
+// from the SAME row `api/payroll-run.get` returns; nothing is added up on the client.
+// 2026-09-18, 4a-1: its own block under everything else (lineOverrideTotalsHtmlRd()), refilled in
+// place -- the table re-rendering below no longer takes these 3 figures with it.
 function renderBreakdownNetSummaryRd(row) {
-    $('#breakdownNetSummary').html(payslipNetSummaryHtml(row.net_amount, null, {
-        grossAmount: row.gross_amount,
-        totalDeductionAmount: row.total_deduction_amount,
-    }));
+    $('#breakdownNetSummary').html(lineOverrideTotalsHtmlRd(row));
 }
 function refreshBreakdownNetSummaryRd() {
     if (!breakdownRowRd) return;
@@ -2757,21 +2562,49 @@ function renderBreakdownEditableBodyRd(row) {
     // and its own column heads already say what each column holds. A heading over the first thing
     // under the employee card only repeats the modal's title. The section below still needs one:
     // it is a DIFFERENT kind of line (someone typed it in) and has to say so.
+    // 2026-09-18, 4a-1: the hand-added block carries no heading of its own either -- its 2 column
+    // heads ("เงินเพิ่ม"/"เงินหัก") already name what it holds, and a 3rd word over them said the
+    // same thing a third time.
     $('#breakdownModalBody').html(`<div class="breakdown-edit">
         <section class="breakdown-edit-section">
             <div id="breakdownLineOverrideWrap" class="lo-mount"></div>
         </section>
         <section class="breakdown-edit-section">
-            <h6 class="breakdown-edit-title">${escapeHtml(langData['breakdown_group_extra_items'] || 'Additional items')}</h6>
             <div id="breakdownManualLines" class="ml-mount"></div>
+            <div id="breakdownNetSummary" class="lo-totals-block"></div>
         </section>
-        <div id="breakdownNetSummary"></div>
     </div>`);
-    renderBreakdownNetSummaryRd(row);
     renderBreakdownManualLinesRd([]);
+    renderBreakdownNetSummaryRd(row);
     // One host, one employee, one reload path -- see setLineOverrideHostRd()'s own docblock.
-    setLineOverrideHostRd('#breakdownLineOverrideWrap', row.employee_id, refreshBreakdownNetSummaryRd);
+    setLineOverrideHostRd('#breakdownLineOverrideWrap', row.employee_id, refreshBreakdownNetSummaryRd, 'edit');
     loadSyncLineOverridesRd();
+    loadBreakdownManualLinesRd(row.employee_id);
+}
+/* 2026-09-18, 4a-1 ("สลิปเป็นที่เดียว"): the read-only slip is the SAME table as the editable one,
+   from the SAME payload -- `mode: 'view'` is the whole of the difference, and all it decides is
+   which columns are rendered at all (never `d-none`: a column nobody can use is not a column).
+   It reads api/payroll-run.sync-lines-for-employee like the editable slip does, because that is the
+   only payload that has every row: an excluded line is dropped from the persisted breakdown JSON
+   entirely, so a slip rendered from that JSON could never show one. See
+   docs/decisions/2026-09-18-slip-single-place.md. */
+function renderBreakdownViewBodyRd(row) {
+    $('#breakdownModalBody').html(`<div class="breakdown-edit">
+        <section class="breakdown-edit-section">
+            <div id="breakdownLineOverrideWrap" class="lo-mount"></div>
+        </section>
+        <section class="breakdown-edit-section">
+            <div id="breakdownManualLines" class="ml-mount"></div>
+            <div id="breakdownNetSummary" class="lo-totals-block"></div>
+        </section>
+    </div>`);
+    renderBreakdownManualLinesRd([]);
+    renderBreakdownNetSummaryRd(row);
+    setLineOverrideHostRd('#breakdownLineOverrideWrap', row.employee_id, null, 'view');
+    loadSyncLineOverridesRd();
+    // A hand-added line is NOT in the sync-lines payload (it is filtered out server-side -- an
+    // override keyed by item_code could never target it), so without this the read-only slip would
+    // silently drop lines this employee is really paid. They become rows of the table itself in 4a-2.
     loadBreakdownManualLinesRd(row.employee_id);
 }
 $(document).on('click', '.btn-view-breakdown', function () {
@@ -4567,8 +4400,8 @@ let manageLinesEmployeeId = null;
 // instruction describes ("badge โหมด ... เฉพาะที่ไม่ใช่ เลือกจากรายการ").
 // 2026-09-16: a catalog line's plain item_code is no longer printed beside the name -- it is an
 // internal identifier, and the name already says what the row is. It survives as the name's own
-// `title` (see manualLineListItemHtml()), the same place breakdownLineRowsRd() moved its codes to.
-// 2026-09-17, R1b: down to ONE badge, the retired `other` kind -- see breakdownLineRowsRd()'s own
+// `title` (see manualLineListItemHtml()), the same place the calculated rows moved their codes to.
+// 2026-09-17, R1b: down to ONE badge, the retired `other` kind -- see lineOverrideRowHtml()'s own
 // comment for why a plain typed-in ("Custom") line no longer carries one.
 function manualLineTagHtml(line) {
     if (!line.is_other) {
@@ -4788,18 +4621,18 @@ let lineOverrideRowsRd = [];
    indirection stays as the ONE place a host is described (a `.lo-mount` is still resolved through it,
    never named inline) rather than being inlined back into every function -- the alternative is putting
    `#breakdownLineOverrideWrap` in ~10 places again, which is what D1 removed. */
-let lineOverrideHostRd = { mount: '#breakdownLineOverrideWrap', employeeId: null, onSaved: null };
+let lineOverrideHostRd = { mount: '#breakdownLineOverrideWrap', employeeId: null, onSaved: null, mode: 'edit' };
 function lineOverrideMountRd() {
     return $(lineOverrideHostRd.mount);
 }
 function lineOverrideEmployeeIdRd() {
     return lineOverrideHostRd.employeeId !== null ? lineOverrideHostRd.employeeId : manageLinesEmployeeId;
 }
-function setLineOverrideHostRd(mount, employeeId, onSaved) {
+function setLineOverrideHostRd(mount, employeeId, onSaved, mode) {
     if (lineOverrideHostRd.mount !== mount) {
         $(lineOverrideHostRd.mount).empty();
     }
-    lineOverrideHostRd = { mount: mount, employeeId: employeeId, onSaved: onSaved || null };
+    lineOverrideHostRd = { mount: mount, employeeId: employeeId, onSaved: onSaved || null, mode: mode || 'edit' };
 }
 // Edit history for THIS employee, keyed 'line_type|item_code' -- fetched once alongside the table's
 // own data (loadSyncLineOverridesRd) because the table has to know at RENDER time which rows even
@@ -4818,12 +4651,19 @@ function lineOverrideHistoryValueRd(value) {
 // between), whatever explains it on the right. `metaHtml` is caller-built markup, never user input.
 function lineOverrideHistoryItemHtml(valueText, metaHtml, isCurrent, options) {
     options = options || {};
+    const body = `<span class="lo-history-value num">${escapeHtml(valueText)}</span>
+        <span class="lo-history-meta">${metaHtml}</span>`;
+    // 2026-09-18, 4a-1: opened from the read-only slip, an entry is a FACT, not a choice -- so it is
+    // not a control at all (the same static shape the calculated-value head uses), rather than a button
+    // that happens to be disabled.
+    if (options.readOnly) {
+        return `<li class="${options.liClass || ''}"><div class="lo-history-item lo-history-item-static ${options.itemClass || ''}">${body}</div></li>`;
+    }
     // The value in effect is shown for orientation, not offered as a choice -- picking it would be a
     // no-op that still marks the row dirty.
     return `<li class="${options.liClass || ''}"><button type="button" class="dropdown-item lo-history-item ${options.itemClass || ''}" data-value="${escapeAttr(valueText)}"
         ${isCurrent ? 'disabled' : ''}>
-        <span class="lo-history-value num">${escapeHtml(valueText)}</span>
-        <span class="lo-history-meta">${metaHtml}</span>
+        ${body}
     </button></li>`;
 }
 // Short form for the dropdown: dd/mm HH:mm (the year is noise for an edit made inside this run).
@@ -4853,7 +4693,7 @@ function lineOverrideHistoryCurrentIndexRd(editsNewestFirst, currentText) {
 // middle (all of them, scrolling at about 5 rows -- cutting it at 5 would hide edits with no way to
 // tell that anything was missing), and a sticky FOOT into the modal, which is where the note, the
 // full date and the from→to of each edit live.
-function lineOverrideHistoryMenuHtml(history) {
+function lineOverrideHistoryMenuHtml(history, readOnly) {
     const currentText = lineOverrideHistoryValueRd(history.current_value);
     const computedText = lineOverrideHistoryValueRd(history.original_value);
     const currentBadge = countBadgeHtml(0, { label: langData['line_override_history_current'] || 'Current' });
@@ -4876,7 +4716,11 @@ function lineOverrideHistoryMenuHtml(history) {
         html += lineOverrideHistoryItemHtml(
             lineOverrideHistoryValueRd(edit.new_value),
             isCurrent ? currentBadge + ' ' + meta : meta,
-            isCurrent
+            isCurrent,
+            // 2026-09-18, 4a-1: in the read-only slip every entry is reference only -- the list and
+            // the full-history modal are the same in both slips, but picking a value out of the menu
+            // is a WRITE, which that slip has no right to offer.
+            { readOnly: readOnly }
         );
     });
     const tpl = langData['line_override_history_view_all'] || 'Full history ({n})';
@@ -4921,6 +4765,44 @@ function lineOverrideComputedTextRd(line) {
     const original = history ? history.original_value : null;
     return (original === null || original === undefined) ? '' : lineOverrideHistoryValueRd(original);
 }
+// 2026-09-18, 4a-1: the 3 quiet sub-lines a row can carry, in ONE shape -- `.payslip-line-tag`
+// (--fs-xs/--c-text-muted, and --c-text-faint on an excluded row). Order is fixed and is the same in
+// both slips: instalment + destination, then why the figure is what it is, then the note somebody
+// typed when they changed it.
+// Shown in FULL, wrapping inside the item column -- not clipped to one line with the rest in a
+// `title`. A tooltip is not readable on a phone at all, and these lines are the answer to "why is
+// this figure what it is", which is not an optional extra.
+function lineOverrideTagHtmlRd(text) {
+    if (!text) return '';
+    return `<div class="payslip-line-tag">${escapeHtml(text)}</div>`;
+}
+// The calculation steps that used to open in a "?" popover (removed 4a-1: a hover-only affordance is
+// not one, rules.md 7 -- and one popover per row in a table that already scrolls is noise). Flattened
+// from the SAME 2 builders rather than re-formatted: a second formatter for the same steps is how the
+// two would start disagreeing. Falls back to the line's own note, which is what the popover did too.
+function formulaTagTextRd(line) {
+    const amount = line.current_amount !== undefined ? line.current_amount : line.amount;
+    const html = buildFormulaStepsRd(line.formula) || explainLineNoteRd(line.note, amount);
+    if (!html) return '';
+    return html.replace(/<\/(li|div)>/g, ' · ').replace(/<[^>]*>/g, ' ')
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/\s+/g, ' ').replace(/(\s*·\s*)+$/, '').trim();
+}
+// SyncPayResolver still emits a LINE (amount forced to 0) for an attendance deduction this employee
+// is exempt from, rather than dropping it silently -- so there is something here to explain instead
+// of the item just quietly not appearing (2026-08-30, explicit request). The figure it WOULD have
+// been is masked like any other (maskAdjustLines()), so it goes through the same value formatter.
+function lineOverrideExemptTextRd(line) {
+    if (!line.is_exempted) return '';
+    return (langData['attendance_deduction_exempted_remark'] || 'Exempted from this deduction -- would have been {amount}')
+        .replace('{amount}', lineOverrideHistoryValueRd(line.exempted_amount));
+}
+// What somebody typed when they changed this figure -- the override's OWN note, never the engine's
+// internal `note` code (that one explains the calculation and rides in the formula tag above).
+function lineOverrideNoteTextRd(line) {
+    if (!line.override_note) return '';
+    return `${langData['note'] || 'Note'}: ${line.override_note}`;
+}
 // 2026-09-18, tiny-L6b (B3): no longer a column of its own. A fixed 120px that is blank on every row
 // except the handful carrying an override -- in a table that already scrolls sideways on a phone --
 // spends width on nothing (rules.md §0.3). As a sub-line it appears only where it has something to
@@ -4933,7 +4815,7 @@ function lineOverrideComputedTagHtml(line) {
     const tpl = langData['line_override_computed_inline'] || 'System: {amount}';
     return `<div class="payslip-line-tag">${escapeHtml(tpl.replace('{amount}', text))}</div>`;
 }
-function lineOverrideHistoryCellHtml(line) {
+function lineOverrideHistoryCellHtml(line, mode) {
     const history = lineOverrideHistoryFor(line);
     const editCount = history && history.edits ? history.edits.length : 0;
     if (!editCount) return '';
@@ -4941,7 +4823,7 @@ function lineOverrideHistoryCellHtml(line) {
     return badgeDropdownHtml({
         enum: 'edited',
         label: label,
-        menuHtml: lineOverrideHistoryMenuHtml(history),
+        menuHtml: lineOverrideHistoryMenuHtml(history, mode === 'view'),
         toggleClass: 'lo-history-toggle',
         // This table scrolls inside `.table-responsive`; an absolutely-positioned menu is clipped by
         // that container the moment it opens below the last rows. Popper's fixed strategy takes it
@@ -4964,19 +4846,32 @@ function lineOverrideOccurrencesHtml(occurrences) {
 // editing in place. See docs/decisions/2026-09-16-line-override-table.md for why the staged version
 // was abandoned -- it kept growing rules ("empty means…", "unticking parks…") that only existed to
 // describe a batch that was never sent as a batch anyway.
-function lineOverrideRowHtml(line, idx, group, runDisabled) {
+function lineOverrideRowHtml(line, idx, group, runDisabled, mode) {
+    const isView = mode === 'view';
     const name = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || line.code;
     const origAction = line.override_action || '';
     const included = runDisabled ? false : origAction !== 'exclude';
     const skipEnum = lineOverrideSkipEnumRd(line);
+    const skipped = lineOverrideIsSkippedRd(line);
     // Reason first, then what kind of line it is -- "ไม่ได้เข้ากองทุน" answers the question the row
     // itself raises ("why is this 0.00?"), which the user is asking before anything else.
-    const skipBadge = (skipEnum && !line.override_action) ? ' ' + statusBadgeHtml(skipEnum, 'payroll_statutory_skip') : '';
+    // 2026-09-18, 4a-1: the reason rides in the toggle column of the editable slip (it is what stands
+    // in for the switch that row cannot have) and after the name in the read-only one, which has no
+    // toggle column at all. Same badge, same text, one of the 2 places.
+    const skipBadge = (skipEnum && !line.override_action) ? statusBadgeHtml(skipEnum, 'payroll_statutory_skip') : '';
     const statutoryBadge = line.line_type === 'statutory' ? ' ' + statusBadgeHtml('statutory', 'payroll_line_type') : '';
+    // 2026-09-18, 4a-1: the 2 classifications the read-only slip carried and this table did not. They
+    // are not "a code" (those live in the name's own title): money credited FROM another employee, and
+    // the retired "Other Income/Deduction" bucket reports still group by.
+    let sourceBadge = '';
+    if (line.source === 'transfer_in') {
+        sourceBadge = ' ' + statusBadgeHtml('transfer', 'manual_line_mode', { outline: true });
+    } else if (line.is_other) {
+        sourceBadge = ' ' + statusBadgeHtml('other', 'manual_line_mode', { outline: true });
+    }
     const runDisabledAttr = runDisabled ? ' disabled' : '';
     const title = runDisabled ? ' title="' + escapeAttr(langData['line_override_run_disabled'] || 'Turned off in Run Settings') + '"' : '';
-    const hiddenCls = lineOverrideIsSkippedRd(line) ? ' lo-row-skipped d-none' : '';
-    const editable = included && !runDisabled;
+    const editable = included && !runDisabled && !skipped;
     // 2026-09-17, R1: the pencil shows on every editable row, not on hover -- an affordance nobody
     // can see until they hover is not one (§7, the same conclusion the comment list reached).
     // 2026-09-17, R1 follow-up: the plain `.btn-icon` circle, not the ghost variant -- §7's ghost is
@@ -4995,22 +4890,33 @@ function lineOverrideRowHtml(line, idx, group, runDisabled) {
     // and a fixed-width action column beside it.
     // An excluded row has no amount to show: 0.00 struck through still reads as a figure that counts
     // for something. What is true about it is that it is not in the calculation, so it says that.
-    const amountCell = included
-        ? `<span class="num ${lineOverrideMoneyClassRd(line, group)}">${fmtNum(line.current_amount)}</span>`
-        : `<span class="lo-amount-excluded">${escapeHtml(langData['line_override_excluded_amount'] || 'Not calculated')}</span>`;
-    return `<tr class="lo-row${included ? '' : ' lo-row-off'}${hiddenCls}" data-item-code="${escapeAttr(line.code)}" data-line-type="${escapeAttr(line.line_type || 'earning_deduction')}"
+    // 2026-09-18, 4a-1: a skipped row shows nothing at all in the money column -- the badge beside it
+    // already says this item does not apply to this employee, and a 0.00 next to that reads as a
+    // figure that was calculated.
+    let amountCell;
+    if (skipped) {
+        amountCell = '';
+    } else if (included) {
+        amountCell = `<span class="num ${lineOverrideMoneyClassRd(line, group)}">${fmtNum(line.current_amount)}</span>`;
+    } else {
+        amountCell = `<span class="lo-amount-excluded">${escapeHtml(langData['line_override_excluded_amount'] || 'Not calculated')}</span>`;
+    }
+    const checkCell = isView ? '' : `<td class="col-check tbl-sticky-col">${skipped
+        ? skipBadge
+        : `<div class="form-check form-switch mb-0"><input class="form-check-input lo-include" type="checkbox" role="switch" id="loInc${idx}" ${included ? 'checked' : ''}${runDisabledAttr}></div>`}</td>`;
+    const actionCell = isView ? '' : `<td class="lo-action-cell"><div class="lo-actions">${pencil}</div></td>`;
+    return `<tr class="lo-row${included ? '' : ' lo-row-off'}${skipped ? ' lo-row-skipped' : ''}" data-item-code="${escapeAttr(line.code)}" data-line-type="${escapeAttr(line.line_type || 'earning_deduction')}"
         data-orig-action="${escapeAttr(origAction)}" data-item-name="${escapeAttr(name)}" data-amount="${escapeAttr(fmtNum(line.current_amount))}"${title}>
-        <td class="col-check tbl-sticky-col"><div class="form-check form-switch mb-0">
-            <input class="form-check-input lo-include" type="checkbox" role="switch" id="loInc${idx}" ${included ? 'checked' : ''}${runDisabledAttr}>
-        </div></td>
-        <td class="lo-name-cell tbl-sticky-col tbl-sticky-col-edge-left">
-            <span class="lo-name" title="${escapeAttr(name)} (${escapeAttr(line.code)})">${escapeHtml(name)}</span>${skipBadge}${statutoryBadge}
+        ${checkCell}<td class="lo-name-cell tbl-sticky-col tbl-sticky-col-edge-left">
+            <span class="lo-name" title="${escapeAttr(name)} (${escapeAttr(line.code)})">${escapeHtml(name)}</span>${isView && skipBadge ? ' ' + skipBadge : ''}${sourceBadge}${statutoryBadge}
             ${payeeDescriptorHtmlRd(line.payee, { variant: 'tag', installment: line.installment })}
+            ${lineOverrideTagHtmlRd(lineOverrideExemptTextRd(line))}
+            ${lineOverrideTagHtmlRd(formulaTagTextRd(line))}
+            ${lineOverrideTagHtmlRd(lineOverrideNoteTextRd(line))}
             ${lineOverrideOccurrencesHtml(line.occurrences)}
         </td>
         <td class="num col-money lo-amount-cell"><div class="lo-amount-view">${amountCell}</div>${lineOverrideComputedTagHtml(line)}</td>
-        <td class="lo-action-cell"><div class="lo-actions">${pencil}</div></td>
-        <td class="lo-history-cell">${included ? lineOverrideHistoryCellHtml(line) : ''}</td>
+        ${actionCell}<td class="lo-history-cell">${included ? lineOverrideHistoryCellHtml(line, mode) : ''}</td>
     </tr>`;
 }
 // 2026-09-17, R1 follow-up: the pinned 2nd column starts where the 1st one really ENDS. Its
@@ -5024,9 +4930,12 @@ function lineOverridePublishStickyOffsetRd($wrap) {
     const table = $wrap.find('table.lo-table').get(0);
     if (!table) return;
     const publish = function () {
+        // 2026-09-18, 4a-1, real gap found by measurement at 430px: the read-only slip renders no
+        // toggle column at all, so there is no first cell to measure and the offset was never
+        // published -- leaving `left: var(--lo-sticky-left-2)` invalid and the name column not
+        // pinned at all on a phone. With no column in front of it, it starts at 0.
         const firstCell = table.querySelector('thead th.col-check');
-        if (!firstCell) return;
-        table.style.setProperty('--lo-sticky-left-2', firstCell.getBoundingClientRect().width + 'px');
+        table.style.setProperty('--lo-sticky-left-2', (firstCell ? firstCell.getBoundingClientRect().width : 0) + 'px');
     };
     publish();
     const scroller = $wrap.get(0);
@@ -5034,7 +4943,9 @@ function lineOverridePublishStickyOffsetRd($wrap) {
         new ResizeObserver(publish).observe(scroller);
     }
 }
-function renderLineOverrideTableRd(lines, runSettings) {
+function renderLineOverrideTableRd(lines, runSettings, mode) {
+    mode = mode || 'edit';
+    const isView = mode === 'view';
     lineOverrideRowsRd = lines || [];
     const $wrap = lineOverrideMountRd();
     // The lock taken when a write started is released HERE, not when the request came back: it has to
@@ -5047,36 +4958,30 @@ function renderLineOverrideTableRd(lines, runSettings) {
         return;
     }
     const runExcluded = new Set((runSettings && runSettings.excluded_item_codes) || []);
+    const colCount = isView ? 3 : 5;
     let idx = 0;
     let body = '';
-    let hiddenCount = 0;
     LINE_OVERRIDE_GROUPS_RD.forEach(function (group) {
         const groupLines = lineOverrideRowsRd.filter(l => (l.item_type || 'other') === group.type);
         if (!groupLines.length) return;
-        // A group whose every row is hidden has nothing to label -- the heading goes with them, and
-        // comes back with them (same `.lo-group-skipped` class the toggle flips).
-        const allSkipped = groupLines.every(lineOverrideIsSkippedRd);
-        body += `<tr class="lo-group${allSkipped ? ' lo-group-skipped d-none' : ''}"><td colspan="5"><span class="lo-span-sticky">${escapeHtml(langData[group.key] || group.fallback)}</span></td></tr>`;
+        body += `<tr class="lo-group"><td colspan="${colCount}"><span class="lo-span-sticky">${escapeHtml(langData[group.key] || group.fallback)}</span></td></tr>`;
         groupLines.forEach(function (line) {
-            if (lineOverrideIsSkippedRd(line)) hiddenCount++;
             // Disabled only where the run-level exclusion is genuinely in charge: a personal override
             // of any kind already wins over it (PayrollRunModel::recalculate()'s own resolution), so
             // such a row stays editable here.
             const runDisabled = !line.override_action && runExcluded.has(line.code);
-            body += lineOverrideRowHtml(line, idx++, group, runDisabled);
+            body += lineOverrideRowHtml(line, idx++, group, runDisabled, mode);
         });
     });
     $wrap.html(`<div class="table-responsive"><table class="table align-middle lo-table mb-0">
         <thead>
             <tr>
-                <th class="col-check tbl-sticky-col">${escapeHtml(langData['line_override_col_include'] || 'Include')}</th>
-                <th class="lo-name-col tbl-sticky-col tbl-sticky-col-edge-left">${escapeHtml(langData['line_override_col_item'] || 'Item')}</th>
+                ${isView ? '' : `<th class="col-check tbl-sticky-col">${escapeHtml(langData['line_override_col_include'] || 'Include')}</th>`}<th class="lo-name-col tbl-sticky-col tbl-sticky-col-edge-left">${escapeHtml(langData['line_override_col_item'] || 'Item')}</th>
                 <th class="num col-money lo-amount-col">${escapeHtml(langData['line_override_col_amount'] || 'Amount')}</th>
-                <th class="lo-action-col"><span class="visually-hidden">${escapeHtml(langData['action'] || 'Action')}</span></th>
-                <th class="lo-history-col">${escapeHtml(langData['line_override_col_history'] || 'History')}</th>
+                ${isView ? '' : `<th class="lo-action-col"><span class="visually-hidden">${escapeHtml(langData['action'] || 'Action')}</span></th>`}<th class="lo-history-col">${escapeHtml(langData['line_override_col_history'] || 'History')}</th>
             </tr>
         </thead>
-        <tbody>${body}${lineOverrideHiddenRowHtml(hiddenCount)}</tbody>
+        <tbody>${body}</tbody>
     </table></div>`);
     // 2026-09-17, R1 follow-up: the shared scroller wiring (sticky-table-columns.js) -- it is what
     // keeps `.tbl-scrolled-x` in sync with scrollLeft, which is what the frozen columns' own right
@@ -5088,35 +4993,30 @@ function renderLineOverrideTableRd(lines, runSettings) {
     // this table's menus are action menus, the row's own click handler above does the work.
     if (typeof initBadgeDropdown === 'function') initBadgeDropdown($wrap);
 }
-// The last ROW of the table, not a caption under it -- what it reveals are rows, so it belongs in the
-// same column grid they do (§7). Nothing at all when there is nothing hidden.
-function lineOverrideHiddenRowHtml(hiddenCount) {
-    if (!hiddenCount) return '';
-    const text = (langData['line_override_show_hidden_rows'] || 'Show {n} hidden').replace('{n}', String(hiddenCount));
-    // WHY those rows are hidden is a footnote to this one button, not something the tab's own hint
-    // has to carry for every reader who has no hidden rows at all -- so it rides on the button.
-    const why = langData['line_override_hidden_why'] || '';
-    return `<tr class="lo-hidden-row" id="lineOverrideHiddenRow"><td colspan="5">
-        <span class="lo-span-sticky"><button type="button" class="btn btn-link lo-hidden-toggle" id="btnToggleHiddenLineOverrides"
-            data-shown="0" data-count="${hiddenCount}" title="${escapeAttr(why)}">${escapeHtml(text)} <i class="fa-solid fa-chevron-down"></i></button></span>
-    </td></tr>`;
+/* 2026-09-18, 4a-1: the slip's own 3 summary figures. They are the bottom line of EVERYTHING above
+   them -- the calculated table AND the hand-added block -- so they sit below both, as the last thing
+   in the modal, not inside one of the two. (They were the table's own last rows for half a day; that
+   read as "the total of this table", which is wrong while a second block of money sits under it.
+   When 4a-2 moves the hand-added lines INTO the table, they go back to being its last rows.)
+   One renderer, no mode: both slips show the same 3 figures in the same shape. */
+function lineOverrideTotalsHtmlRd(row) {
+    if (!row) return '';
+    const totals = [
+        { label: langData['payslip_total_earnings'] || 'Total Income', amount: row.gross_amount, cls: 'money-gross', rowCls: '' },
+        { label: langData['payslip_total_deductions'] || 'Total Deductions', amount: row.total_deduction_amount, cls: 'money-deduction', rowCls: '' },
+        { label: langData['table_net_pay'] || 'Net Pay', amount: row.net_amount, cls: 'money-net', rowCls: ' lo-total-row-net' },
+    ];
+    return totals.map(t => `<div class="lo-total-row${t.rowCls}">
+            <span>${escapeHtml(t.label)}</span>
+            <span class="num ${t.cls}">${fmtNum(t.amount)}</span>
+        </div>`).join('');
 }
-// Show/hide only ever toggles classes -- no field's value or disabled state changes, so the dirty
-// guard (§9, which snapshots field values) correctly sees nothing happening here.
-$(document).on('click', '.lo-mount .lo-hidden-toggle', function () {
-    const $btn = $(this);
-    const show = $btn.attr('data-shown') !== '1';
-    const count = $btn.attr('data-count') || '0';
-    const label = show
-        ? (langData['line_override_hide_rows'] || 'Hide')
-        : (langData['line_override_show_hidden_rows'] || 'Show {n} hidden').replace('{n}', count);
-    $btn.attr('data-shown', show ? '1' : '0');
-    $btn.html(escapeHtml(label) + ` <i class="fa-solid fa-chevron-${show ? 'up' : 'down'}"></i>`);
-    lineOverrideMountRd().find('.lo-row-skipped, .lo-group-skipped').toggleClass('d-none', !show);
-});
 // Picking a value out of a row's own history is a write like any other in this tab: it confirms,
 // then sends.
 $(document).on('click', '.lo-mount .lo-history-item', function () {
+    // A static entry wears the same layout class and is not a control (read-only slip, and the
+    // calculated-value head in both) -- it has no `data-value` to apply either.
+    if ($(this).hasClass('lo-history-item-static')) return;
     lineOverrideConfirmApplyHistoryValueRd($(this).closest('tr.lo-row').data('item-code'), $(this).attr('data-value') || '',
         $(this).hasClass('lo-history-computed'));
 });
@@ -5127,9 +5027,13 @@ $(document).on('click', '.lo-mount .lo-history-item', function () {
    without the day header two edits made on different days read as the same time. The calculated
    value carries no date at all and gets no header (its empty one is hidden in CSS). */
 let lineOverrideHistoryModalCode = null;
-function lineOverrideHistoryTimelineItemsRd(history) {
+// 2026-09-18, 4a-1: `canEdit` is the slip's own mode, not a second opinion -- a modal opened from a
+// read-only slip offers no way to write, and offers it by NOT RENDERING the button (a disabled one is
+// still a control in the tab order, and still says "this is where you would do it").
+function lineOverrideHistoryTimelineItemsRd(history, canEdit) {
     const currentText = lineOverrideHistoryValueRd(history.current_value);
     const useBtn = function (valueText, isComputed) {
+        if (!canEdit) return '';
         return `<button type="button" class="btn btn-outline-primary lo-history-use" data-value="${escapeAttr(valueText)}"`
             + (isComputed ? ' data-computed="1"' : '') + '>'
             + escapeHtml(langData['line_override_history_use_value'] || 'Use this value') + '</button>';
@@ -5174,7 +5078,7 @@ function openLineOverrideHistoryModalRd(itemCode) {
     const name = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || line.code;
     $('#lineOverrideHistoryModalLabel').text(`${langData['line_override_history_modal_title'] || 'Edit history'} · ${name}`);
     $('#lineOverrideHistoryModalBody').html('<div class="lo-history-timeline">'
-        + renderTimeline(lineOverrideHistoryTimelineItemsRd(history), { groupByDay: true }) + '</div>');
+        + renderTimeline(lineOverrideHistoryTimelineItemsRd(history, lineOverrideHostRd.mode !== 'view'), { groupByDay: true }) + '</div>');
     const $note = $('#lineOverrideHistoryModalNote');
     if (!lineOverrideHistoryRd.historyAvailable && lineOverrideHistoryRd.startDate) {
         const tpl = langData['line_override_history_since'] || 'History has been recorded since {date}';
@@ -5257,7 +5161,7 @@ function loadSyncLineOverridesRd() {
             (payload && payload.lines ? payload.lines : []).forEach(function (line) {
                 lineOverrideHistoryRd.byKey[line.line_type + '|' + line.item_code] = line;
             });
-            renderLineOverrideTableRd(res.data || [], res.run_settings);
+            renderLineOverrideTableRd(res.data || [], res.run_settings, lineOverrideHostRd.mode);
             refreshBreakdownFooterStateRd();
         });
     });
@@ -5338,7 +5242,7 @@ function lineOverrideRequestRd(lineType, payload, action, done) {
 function setLineOverrideTableBusyRd(busy) {
     const $wrap = lineOverrideMountRd();
     $wrap.toggleClass('lo-table-busy', busy);
-    $wrap.find('.lo-include, .lo-edit-btn, .lo-history-toggle, .lo-hidden-toggle').each(function () {
+    $wrap.find('.lo-include, .lo-edit-btn, .lo-history-toggle').each(function () {
         const $el = $(this);
         if (busy) {
             if ($el.is(':disabled')) $el.attr('data-was-disabled', '1');

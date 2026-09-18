@@ -95,17 +95,15 @@ const langData = {
     // 2026-09-18, tiny-L5: the other half of the same sub-line
     payslip_line_installment: 'งวด {n}/{total}'
 };
-let calls = { formula: 0, badge: 0 };
-function formulaButtonRd() { calls.formula++; return '<!--formula-->'; }
 function statusBadgeHtml(enumKey, context, opts) { calls.badge++; return '<!--badge:' + enumKey + '-->'; }
-function resetCalls() { calls = { formula: 0, badge: 0 }; }
+let calls = { badge: 0 };
+function resetCalls() { calls = { badge: 0 }; }
 `;
 
 const extracted = [
     stubs,
     extractFunctionSource(appSource, 'payslipNetSummaryHtml', 'app.js'),
     extractFunctionSource(appSource, 'payslipViewHtml', 'app.js'),
-    extractConst(detailSource, 'STATUTORY_NOT_ENTITLED_NOTES_RD', 'detail.js'),
     // 2026-09-18, tiny-L4: the slip's payee line is rendered by the shared descriptor helper
     // now, so the pinned output below includes whatever IT produces -- pulled from the real
     // source (and from app.js for the code-prefix strip it leans on) like everything else here.
@@ -122,21 +120,17 @@ const extracted = [
     extractFunctionSource(detailSource, 'payeeDescriptorTextRd', 'detail.js'),
     extractFunctionSource(detailSource, 'lineInstallmentTextRd', 'detail.js'),
     extractFunctionSource(detailSource, 'payeeDescriptorHtmlRd', 'detail.js'),
-    extractFunctionSource(detailSource, 'breakdownLineRowsRd', 'detail.js'),
-    extractFunctionSource(detailSource, 'statutoryRowsRd', 'detail.js'),
-    extractFunctionSource(detailSource, 'payslipEmptyRowRd', 'detail.js'),
-    extractFunctionSource(detailSource, 'breakdownViewSlipHtml', 'detail.js'),
     extractFunctionSource(detailSource, 'manualLineAddButtonHtml', 'detail.js'),
     extractFunctionSource(detailSource, 'manualLineTagHtml', 'detail.js'),
     extractFunctionSource(detailSource, 'manualLineRowActionsHtml', 'detail.js'),
     extractFunctionSource(detailSource, 'manualLineListItemHtml', 'detail.js'),
-    'module.exports = { breakdownViewSlipHtml, manualLineAddButtonHtml, manualLineListItemHtml, payslipViewHtml, payslipNetSummaryHtml, payeeDescriptorHtmlRd, getCalls: () => calls, resetCalls };'
+    'module.exports = { manualLineAddButtonHtml, manualLineListItemHtml, payslipViewHtml, payslipNetSummaryHtml, payeeDescriptorHtmlRd, getCalls: () => calls, resetCalls };'
 ].join('\n');
 
 const Module = require('module');
 const m = new Module(detailJsPath);
 m._compile(extracted, detailJsPath);
-const { breakdownViewSlipHtml, manualLineAddButtonHtml, manualLineListItemHtml, payslipViewHtml, payslipNetSummaryHtml, payeeDescriptorHtmlRd, getCalls, resetCalls } = m.exports;
+const { manualLineAddButtonHtml, manualLineListItemHtml, payslipViewHtml, payslipNetSummaryHtml, payeeDescriptorHtmlRd, getCalls, resetCalls } = m.exports;
 
 let passed = 0;
 let failed = 0;
@@ -152,123 +146,14 @@ function check(label, cond) {
 
 // ONE fixture row covering every branch the slip has: base salary, a calculation-produced earning, a
 // hand-added earning and deduction, a statutory line that applies, and one that does not (filtered).
-const FIXTURE_ROW = {
-    base_salary_amount: 30000,
-    gross_amount: 33500,
-    total_deduction_amount: 1300,
-    net_amount: 32200,
-    earning_breakdown: [
-        { code: 'OT', name_th: 'ค่าล่วงเวลา', name_en: 'Overtime', amount: 1500, note: 'OT 10 ชม.' },
-        { source: 'manual_line', manual_line_id: 146, code: 'BONUS', name_th: 'โบนัส', name_en: 'Bonus', amount: 2000, note: null, is_custom: false, is_other: false }
-    ],
-    deduction_breakdown: [
-        { source: 'manual_line', manual_line_id: 147, code: 'UNIFORM_DEDUCT', name_th: 'หักค่าเครื่องแบบ', name_en: 'Uniform Deduction', amount: 550, note: null, is_custom: false, is_other: false, payee_type: 'company', bank_account_id: 4,
-          // 2026-09-18, tiny-L4: what getDetails() now enriches every line with. The 4 raw
-          // columns stay (they are what the descriptor was built FROM), and the renderer reads
-          // only this.
-          // 2026-09-18, tiny-L5: and what enrichLineInstallment() adds beside it -- this line is
-          // the 2nd of a 12-instalment plan, so the golden below pins the combined sub-line.
-          installment: { n: 2, total: 12 },
-          payee: { payee_type: 'company', missing: false, bank_account_id: 4,
-              bank_account_label_th: 'ธนาคารกรุงศรีอยุธยา • ••••5566',
-              bank_account_label_en: 'Bank of Ayudhya (Krungsri) • ••••5566' } }
-    ],
-    statutory_breakdown: [
-        { code: 'TH_SSO', name_th: 'ประกันสังคม', name_en: 'Social Security (SSO)', employee_amount: 750, employer_amount: 750, note: null },
-        { code: 'TH_PVD', name_th: 'กองทุนสำรองเลี้ยงชีพ', name_en: 'Provident Fund', employee_amount: 0, employer_amount: 0, note: 'employee_not_enrolled' }
-    ]
-};
-
-console.log('=== the read-only slip is pinned: the exact HTML, unchanged by the editable layout ===');
-
-resetCalls();
-const viewHtml = breakdownViewSlipHtml(FIXTURE_ROW);
-
-// The fixture. Regenerating it by hand after an intentional change is the point: it forces the
-// change to be looked at, rather than a diff nobody sees.
-// 2026-09-18, tiny-L5 -- ONE line of it changed, deliberately: the routed deduction's sub-line. It
-// was `.small.text-muted` + a per-payee-kind icon; it is now `.payslip-line-tag` (one size for every
-// tag in a slip, which Bootstrap's parent-relative `.small` could not give) and it carries the
-// instalment the line is part of in front of the destination. The icons went with it -- each named
-// the payee kind that the words right after it already named in full.
-const VIEW_FIXTURE = `<div class="payslip-view">
-        <div class="payslip-columns">
-            <div class="payslip-col">
-                <div class="payslip-col-title">เงินได้</div>
-                <table class="table table-sm payslip-line-table mb-0">
-                    <tbody><tr class="payslip-row">
-            <td><span title="BASE">ฐานเงินเดือน</span></td>
-            <td class="text-end num money-gross">30,000.00</td>
-        </tr><tr class="payslip-row">
-            <td>
-                <div class="payslip-line-head"><span class="payslip-line-name" title="OT">ค่าล่วงเวลา</span><!--formula--></div>
-                <div class="payslip-line-note" title="OT 10 ชม.">OT 10 ชม.</div></td>
-            <td class="text-end num money-gross">1,500.00</td>
-        </tr><tr class="payslip-row">
-            <td>
-                <div class="payslip-line-head"><span class="payslip-line-name" title="BONUS">โบนัส</span><!--formula--></div>
-                </td>
-            <td class="text-end num money-gross">2,000.00</td>
-        </tr></tbody>
-                </table>
-                <div class="payslip-col-total">
-                    <span>รวมรายได้</span>
-                    <span class="num money-gross">33,500.00</span>
-                </div>
-            </div>
-            <div class="payslip-col">
-                <div class="payslip-col-title">รายการหัก</div>
-                <table class="table table-sm payslip-line-table mb-0 payslip-line-table-grouped">
-                    <tbody><tr class="payslip-subgroup-row"><td colspan="2" class="payslip-subgroup-label">ภาครัฐ</td></tr><tr class="payslip-row">
-                <td><span title="TH_SSO">ประกันสังคม</span><!--formula--></td>
-                <td class="text-end num money-deduction">750.00</td>
-            </tr><tr class="payslip-subgroup-row"><td colspan="2" class="payslip-subgroup-label">รายการเพิ่มเติม</td></tr><tr class="payslip-row">
-            <td>
-                <div class="payslip-line-head"><span class="payslip-line-name" title="UNIFORM_DEDUCT">หักค่าเครื่องแบบ</span><!--formula--></div>
-                <div class="payslip-line-tag">งวด 2/12 · หักเข้าบริษัท • ธนาคารกรุงศรีอยุธยา • ••••5566</div></td>
-            <td class="text-end num money-deduction">550.00</td>
-        </tr></tbody>
-                </table>
-                <div class="payslip-col-total">
-                    <span>รวมรายการหัก</span>
-                    <span class="num money-deduction">1,300.00</span>
-                </div>
-            </div>
-        </div>
-        <div class="payslip-summary">
-            <div class="payslip-summary-row payslip-summary-row-net">
-                <span class="payslip-summary-label">ยอดจ่ายสุทธิ</span>
-                <span class="num money-net fs-5">32,200.00</span>
-            </div>
-        </div>
-    </div>`;
-
-check('the read-only slip renders EXACTLY the pinned fixture (any diff below is the real one)', viewHtml === VIEW_FIXTURE);
-if (viewHtml !== VIEW_FIXTURE) {
-    // Printed, not swallowed: a golden test whose failure output is just "false" is a test nobody
-    // can act on. First differing character + a window around it.
-    let i = 0;
-    while (i < viewHtml.length && i < VIEW_FIXTURE.length && viewHtml[i] === VIEW_FIXTURE[i]) i++;
-    console.log(`        first difference at char ${i}`);
-    console.log(`        expected: ${JSON.stringify(VIEW_FIXTURE.slice(Math.max(0, i - 40), i + 60))}`);
-    console.log(`        actual  : ${JSON.stringify(viewHtml.slice(Math.max(0, i - 40), i + 60))}`);
-}
-// The things the fixture above would still contain if someone "fixed" it by regenerating it from a
-// broken build -- stated separately so they fail loudly and by name.
-check('the read-only slip carries no column-title action (that is the editable layout only)',
-    viewHtml.indexOf('payslip-col-title-action') === -1 && viewHtml.indexOf('payslip-col-title-with-action') === -1);
-check('the read-only slip still renders both column totals and the net band',
-    (viewHtml.match(/payslip-col-total/g) || []).length === 2 && viewHtml.indexOf('payslip-summary-row-net') !== -1);
-check("it still groups the deduction column the component's own way (ภาครัฐ / รายการเพิ่มเติม)",
-    viewHtml.indexOf('>ภาครัฐ<') !== -1 && viewHtml.indexOf('>รายการเพิ่มเติม<') !== -1);
-check('it still hides a statutory line this employee is not enrolled in', viewHtml.indexOf('กองทุนสำรองเลี้ยงชีพ') === -1);
-check('it still calls formulaButtonRd() per line (4 lines: OT, BONUS, SSO, UNIFORM)', getCalls().formula === 4);
-
 console.log('\n=== payslipViewHtml(): the net band is one implementation, not two ===');
 
+// 2026-09-18, 4a-1: the read-only slip no longer ends with this band (it is the line-override
+// table's own last 3 rows now, tests/slip_single_renderer_test.js) -- what is pinned here is that
+// the band payslipViewHtml() renders IS this function's output, with nothing built twice.
 const netOnly = payslipNetSummaryHtml(32200);
 check('payslipNetSummaryHtml() renders the same band the full slip ends with',
-    viewHtml.indexOf(netOnly) !== -1);
+    payslipViewHtml({ earningRowsHtml: '', deductionItemRowsHtml: '', grossAmount: 1, totalDeductionAmount: 2, netAmount: 32200 }).indexOf(netOnly) !== -1);
 check('it takes a label override, same as the full slip does',
     payslipNetSummaryHtml(10, 'ยอดปรับสุทธิ').indexOf('ยอดปรับสุทธิ') !== -1);
 
@@ -395,17 +280,22 @@ check('every tag under a slip line is the one class, never Bootstrap .small (who
 // The 3 places that sub-line is drawn. Two are rendered right here; the editable table's own row
 // builder needs half this file's module to run, so it is asserted at the source (same technique the
 // handler assertions below/above use).
-check("1/3 the read-only slip passes the line's own instalment, not just its payee",
-    viewHtml.indexOf('<div class="payslip-line-tag">งวด 2/12 · หักเข้าบริษัท • ธนาคารกรุงศรีอยุธยา') !== -1);
+check("1/3 a calculated line passes its own instalment, not just its payee",
+    payeeDescriptorHtmlRd({ payee_type: 'company', destination_label: 'หักเข้าบริษัท • ธนาคารกรุงศรีอยุธยา', missing: false }, { variant: 'tag', installment: { n: 2, total: 12 } })
+        .indexOf('งวด 2/12 · ') !== -1);
 const rowWithPayee = manualLineListItemHtml(Object.assign({}, MANUAL_LINE, {
     payee: { payee_type: 'not_disbursed', missing: false },
 }), true);
 check('2/3 a hand-added line uses the SAME wrapper now (.manual-line-payee is gone)',
     rowWithPayee.indexOf('<div class="payslip-line-tag">หักแต่ไม่มีเงินสดเคลื่อนไหว (Write-off)</div>') !== -1
     && rowWithPayee.indexOf('manual-line-payee') === -1);
-check('3/3 the editable table draws it under the name, beside the occurrences it already had',
-    /\$\{payeeDescriptorHtmlRd\(line\.payee, \{ variant: 'tag', installment: line\.installment \}\)\}\s*\n\s*\$\{lineOverrideOccurrencesHtml\(line\.occurrences\)\}/
-        .test(extractFunctionSource(detailSource, 'lineOverrideRowHtml', 'detail.js')));
+// 2026-09-18, 4a-1: the sub-lines under a name are a FIXED order, the same one in both slips --
+// instalment + destination, then why the figure is what it is, then the note somebody typed.
+const rowSource = extractFunctionSource(detailSource, 'lineOverrideRowHtml', 'detail.js');
+check('3/3 the table draws it under the name, first of the sub-lines, ahead of the occurrences',
+    ['payeeDescriptorHtmlRd(line.payee', 'lineOverrideExemptTextRd(line)', 'formulaTagTextRd(line)',
+     'lineOverrideNoteTextRd(line)', 'lineOverrideOccurrencesHtml(line.occurrences)']
+        .every((needle, i, all) => i === 0 || rowSource.indexOf(needle) > rowSource.indexOf(all[i - 1])));
 check('a switched-off row keeps its tag and fades it with the name -- it is not hidden',
     /\.lo-row-off \.payslip-line-tag\s*\{\s*color:\s*var\(--c-text-faint\)/.test(styleCss)
     && /\.payslip-line-tag\s*\{[^}]*font-size:\s*var\(--fs-xs\)/.test(styleCss));

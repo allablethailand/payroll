@@ -6186,6 +6186,12 @@ class PayrollRunModel {
         if ($run['state'] !== 'draft') {
             return ['status' => false, 'message' => 'Only a draft payroll run can have its earning/deduction items adjusted.'];
         }
+        // 2026-09-18, 4a-1: real gap -- lineOverrideSave() has refused a verified employee since
+        // 2026-08-31, this path never did, so "back to the calculated value" could still move a
+        // verified employee's figures. Same guard, same wording as every other entry point.
+        if ($this->isEmployeeVerifiedForRun($runId, $employeeId)) {
+            return ['status' => false, 'message' => 'This employee is verified for this run and cannot be edited. Unverify first.'];
+        }
 
         $stmtEmp = $this->db->prepare("SELECT employee_no FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmtEmp->execute([':id' => $employeeId, ':comp_id' => $compId]);
@@ -6824,6 +6830,15 @@ class PayrollRunModel {
             $row['payee_employee_no'] = $line['payee_employee_no'] ?? null;
             $row['destination_id'] = $intOrNull($line['destination_id'] ?? null);
             $row['bank_account_id'] = $intOrNull($line['bank_account_id'] ?? null);
+            // 2026-09-18, 4a-1: the 5 read-only facts the read-only slip used to read straight off
+            // the persisted breakdown JSON. This endpoint is now the ONE payload BOTH slips render
+            // from (docs/decisions/2026-09-18-slip-single-place.md), so anything one of them showed
+            // has to arrive here too. Passthrough only -- no figure is computed, reordered or added.
+            $row['formula'] = $line['formula'] ?? null;
+            $row['is_exempted'] = !empty($line['is_exempted']);
+            $row['exempted_amount'] = isset($line['exempted_amount']) ? (float)$line['exempted_amount'] : null;
+            $row['is_custom'] = !empty($line['is_custom']);
+            $row['is_other'] = !empty($line['is_other']);
             return $row;
         };
 
@@ -6880,7 +6895,9 @@ class PayrollRunModel {
                     'computed_amount' => isset($line['computed_amount']) ? (float)$line['computed_amount'] : null,
                     'line_type' => 'earning_deduction',
                     'item_type' => $itemType,
-                    'note' => null,
+                    // 2026-09-18, 4a-1: the line's own note, not a hardcoded null -- the read-only
+                    // slip explained a line from it (explainLineNoteRd()), and now renders from here.
+                    'note' => $line['note'] ?? null,
                     // 2026-08-31: SyncPayResolver's own raw Origami item_code, when this line came
                     // through the generic item_values loop -- see that method's own comment on why
                     // this can genuinely differ from 'code' above (the CUSTOM: fallback especially).

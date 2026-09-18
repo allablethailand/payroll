@@ -5,6 +5,18 @@ Format: Title / 1-2 line detail / Source (which batch).
 
 ---
 
+## 4a-2: manual line เข้าตาราง + tab filter + ลบ payslipViewHtml
+
+4a-1 รวม renderer สลิปดู/สลิปแก้แล้ว เหลือ: ย้าย manual line จากการ์ด `.ml-mount` เข้าเป็นแถวในตาราง (+ แถว
+"เพิ่มรายการ"), tab filter "รายละเอียด / รายการที่แก้ไข (n)", แล้วจึงลบ `payslipViewHtml()`/`payslipNetSummaryHtml()`
+(app.js + แถวใน CLAUDE.md §Shared components) กับ CSS `.payslip-view*` ~245 บรรทัด — **ต้องเก็บ `.payslip-line-tag`
+กับ `.payslip-line-note` ไว้** ทั้ง 2 คลาสอยู่ในบล็อกนั้นแต่ตารางใช้อยู่จริง
+แล้วย้ายยอดรวม 3 แถว (`lineOverrideTotalsHtmlRd()` + `.lo-totals-block`) กลับเข้าเป็นแถวท้ายตาราง
+แถว skipped ให้เหลือ badge เหตุผลตัวเดียว ตัด badge/tag ที่ซ้ำความหมายกันออก
+Source: ก้อน 4a-1 (2026-09-18)
+
+---
+
 ## langReady-gating not applied to 7 files (bind-only ready handlers, no initial langData render)
 
 Batch 2 item 0's original list (re-grepped 2026-09-10) was actually 29 files, not 28 as counted
@@ -1178,6 +1190,8 @@ tiny-C (2026-09-18) เจอฝั่งเดียวกันอีกเร
 เป็นคอลัมน์เดี่ยว) ค่า engine ของมันจึงไม่มีที่เก็บ ต้องเลือกระหว่างคอลัมน์ใหม่ (= DDL + migration) กับยัดเป็น entry
 สังเคราะห์ใน breakdown — **ตัดสินข้อนี้ก่อนเริ่ม tiny-C** · และค่าจะถูกต้องเฉพาะ run ที่ recalculate หลังแก้แล้วเท่านั้น
 run เก่าจะยังไม่มีคีย์นี้ ต้องคง fallback history ไว้ ห้ามถอด
+
+**ยังเปิดอยู่ (ชุด H):** save ที่ยอดไม่เปลี่ยน (แก้แต่หมายเหตุ) ก็เขียนประวัติเป็นแถว `จาก x → x` = noise ต้องไม่บันทึกเป็นรายการยอด
 
 **Source:** tiny-L6a (2026-09-18) — เจอตอนวัด Playwright · interim ลงใน tiny-L6b (2026-09-18)
 

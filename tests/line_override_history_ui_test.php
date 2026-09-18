@@ -103,7 +103,7 @@ checkTrue('the foot link is centred, at --fs-sm', strpos($footBlock, 'justify-co
 
 echo "\n=== 3. one-line rows, and which one is 'current' ===\n";
 $itemStart = strpos($js, 'function lineOverrideHistoryItemHtml(');
-$itemBody = substr($js, $itemStart, 600);
+$itemBody = substr($js, $itemStart, 1100); // 2026-09-18: the read-only branch made this longer
 checkTrue('value and meta are the only 2 parts of a row', substr_count($itemBody, '<span class="lo-history-') === 2);
 checkTrue('the row in effect is disabled', strpos($itemBody, "isCurrent ? 'disabled' : ''") !== false);
 // Badge + the SAME meta, not badge INSTEAD of it -- when/who has to stay readable on that row too.
@@ -116,7 +116,20 @@ echo "\n=== 4. the nested modal ===\n";
 foreach (['lineOverrideHistoryModal', 'lineOverrideHistoryModalLabel', 'lineOverrideHistoryModalBody', 'lineOverrideHistoryModalNote'] as $id) {
     checkTrue("#{$id} exists in the view", strpos($view, 'id="' . $id . '"') !== false);
 }
-checkTrue('it is built on the shared timeline', strpos($js, 'renderTimeline(lineOverrideHistoryTimelineItemsRd(history)') !== false);
+checkTrue('it is built on the shared timeline', strpos($js, 'renderTimeline(lineOverrideHistoryTimelineItemsRd(history') !== false);
+// 2026-09-18, 4a-1: the modal is as read-only as the slip that opened it -- it asks that slip's own
+// mode, and a read-only one renders no [use this value] at all (not a disabled one).
+// 2026-09-18, 4a-1: the dropdown behind the badge answers the same question as the modal -- in the
+// read-only slip an entry is a fact, so it is not a control at all (not a disabled one).
+checkTrue('the dropdown renders a read-only entry as a static element, not a button',
+    strpos($js, 'if (options.readOnly) {') !== false
+    && strpos($js, 'lo-history-item lo-history-item-static') !== false);
+checkTrue('...and the menu is told which mode it is in', strpos($js, "lineOverrideHistoryMenuHtml(history, mode === 'view')") !== false);
+checkTrue('...and a static entry is ignored by the apply handler',
+    strpos($js, 'lo-history-item-static') !== false && strpos($js, 'hasClass') !== false);
+checkTrue('it inherits the slip mode it was opened from', strpos($js, "lineOverrideHistoryTimelineItemsRd(history, lineOverrideHostRd.mode !== 'view')") !== false);
+checkTrue('...and the read-only case renders no button rather than a disabled one',
+    strpos($js, 'if (!canEdit) return') !== false);
 checkTrue("through the timeline's own per-item action slot", strpos($js, 'actionHtml:') !== false);
 checkTrue('renderTimeline() actually renders that slot', strpos($appJs, 'item.actionHtml') !== false);
 checkTrue('the foot opens it', strpos($js, "'.lo-mount .lo-history-view-all'") !== false);
@@ -226,7 +239,6 @@ $keys = [
     'line_override_confirm_restore_all_message' => '{n}',
     'line_override_history_computed' => null,
     'line_override_history_current' => null,
-    'line_override_hidden_why' => null,
 ];
 foreach ($keys as $key => $placeholder) {
     checkTrue("{$key} exists in th", isset($th[$key]) && $th[$key] !== '');
@@ -241,10 +253,14 @@ checkTrue('line_override_confirm_use_value_message keeps {item} in both',
     && strpos((string)$en['line_override_confirm_use_value_message'], '{item}') !== false);
 checkTrue('line_override_history_from_to keeps {to} in both', strpos((string)$th['line_override_history_from_to'], '{to}') !== false
     && strpos((string)$en['line_override_history_from_to'], '{to}') !== false);
-// The hidden-rows explanation lives on the toggle it actually explains. The tab hint it moved out
-// of (line_override_hint) is gone entirely with its tab, 2026-09-17 (D3).
+// The tab hint went with its tab, 2026-09-17 (D3). 2026-09-18 (4a-1): so did the hidden-rows
+// collapse itself -- a skipped row is shown, with its reason on the row, so there is nothing left to
+// explain on a toggle and no copy left to keep.
 checkTrue('the tab hint is gone', !array_key_exists('line_override_hint', $th) && !array_key_exists('line_override_hint', $en));
-checkTrue('the toggle carries it instead', strpos($js, "langData['line_override_hidden_why']") !== false);
+foreach (['line_override_hidden_why', 'line_override_show_hidden_rows', 'line_override_hide_rows'] as $retired) {
+    checkTrue("the retired collapse copy {$retired} is gone from both files",
+        !array_key_exists($retired, $th) && !array_key_exists($retired, $en));
+}
 // A trailing ellipsis on a button reads as "this opens something that is still loading".
 checkTrue('the foot copy has no ellipsis', strpos((string)$th['line_override_history_view_all'], '…') === false
     && strpos((string)$en['line_override_history_view_all'], '…') === false);

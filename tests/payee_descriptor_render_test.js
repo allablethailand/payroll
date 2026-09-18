@@ -60,9 +60,19 @@ function escapeHtml(str) { if (str === null || str === undefined) return ''; ret
 function escapeAttr(str) { return escapeHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 let currentLang = 'th';
 let langData = {};
-function formulaButtonRd() { return ''; }
 function statusBadgeHtml() { return ''; }
-const STATUTORY_NOT_ENTITLED_NOTES_RD = [];
+// 2026-09-18, 4a-1: the read-only slip IS this table now, so its row builder is the surface under
+// test here. Only its payee sub-line matters to this file -- its 3 OTHER sub-lines, its badges and
+// its history cell render as nothing, so payeeLineOf() reads the one tag this file is about.
+function lineOverrideSkipEnumRd() { return null; }
+function lineOverrideIsSkippedRd() { return false; }
+function lineOverrideMoneyClassRd() { return 'money-deduction'; }
+function lineOverrideComputedTagHtml() { return ''; }
+function lineOverrideOccurrencesHtml() { return ''; }
+function lineOverrideHistoryCellHtml() { return ''; }
+function lineOverrideExemptTextRd() { return ''; }
+function formulaTagTextRd() { return ''; }
+function lineOverrideNoteTextRd() { return ''; }
 `;
 
 const extracted = [
@@ -82,7 +92,8 @@ const extracted = [
     fn(detailSource, 'lineInstallmentTextRd'),
     fn(detailSource, 'payeeDescriptorHtmlRd'),
     // The 3 real call sites, so what is compared below is what each of them really renders.
-    fn(detailSource, 'breakdownLineRowsRd'),
+    fn(detailSource, 'lineOverrideTagHtmlRd'),
+    fn(detailSource, 'lineOverrideRowHtml'),
     fn(detailSource, 'manualLineTagHtml'),
     fn(detailSource, 'manualLineRowActionsHtml'),
     fn(detailSource, 'manualLineListItemHtml'),
@@ -91,7 +102,7 @@ const extracted = [
         payeeDescriptorTextRd, payeeDescriptorHtmlRd, lineInstallmentTextRd,
         LINE_TAG_SEP_RD, PAYEE_MASK_SHORT_RD,
         payeeDescriptorShortMaskRd, payeeDescriptorDropAccountNameRd,
-        breakdownLineRowsRd, manualLineListItemHtml, recurringDestPayeeSummary,
+        lineOverrideRowHtml, manualLineListItemHtml, recurringDestPayeeSummary,
         setLang: (l, d) => { currentLang = l; langData = d; },
     };`,
 ].join('\n');
@@ -233,16 +244,16 @@ const dropName = (label) => label.replace(' (Trandar)', '');
             JSON.stringify(api.payeeDescriptorHtmlRd(p, { variant: 'tag' })));
     });
     check(`[${lang}] a slip row with neither half (STUDENT_LOAN: payee_type null, no plan) grows no second line`,
-        api.breakdownLineRowsRd([{ code: 'STUDENT_LOAN', name_th: 'ก', name_en: 'A', amount: 1, payee: null, installment: null }], 'money-deduction')
+        api.lineOverrideRowHtml({ code: 'STUDENT_LOAN', name_th: 'ก', name_en: 'A', current_amount: 1, payee: null, installment: null }, 0, {}, false, 'view')
             .indexOf('payslip-line-tag') === -1);
     check(`[${lang}] ...but a line that is only an instalment of a plan still gets one`,
-        tagLineOf(api.breakdownLineRowsRd([{ code: 'X', name_th: 'ก', name_en: 'A', amount: 1, payee: null, installment: { n: 3, total: 6 } }], 'money-deduction'))
+        tagLineOf(api.lineOverrideRowHtml({ code: 'X', name_th: 'ก', name_en: 'A', current_amount: 1, payee: null, installment: { n: 3, total: 6 } }, 0, {}, false, 'view'))
             === api.lineInstallmentTextRd({ n: 3, total: 6 }));
 
     console.log(`\n=== [${lang}] THE POINT: the 3 surfaces agree, byte for byte ===`);
     Object.entries(KINDS).forEach(([kind, payee]) => {
-        const fromSlip = payeeLineOf(api.breakdownLineRowsRd(
-            [{ code: 'DED', name_th: 'รายการหัก', name_en: 'Deduction', amount: 1000, payee: payee }], 'money-deduction'));
+        const fromSlip = payeeLineOf(api.lineOverrideRowHtml(
+            { code: 'DED', name_th: 'รายการหัก', name_en: 'Deduction', current_amount: 1000, payee: payee }, 0, {}, false, 'view'));
         const fromManual = payeeLineOf(api.manualLineListItemHtml(
             { id: 1, item_type: 'deduction', item_name_th: 'รายการหัก', item_name_en: 'Deduction', item_code: 'DED', amount: 1000, payee: payee }, true));
         const fromCard = api.recurringDestPayeeSummary(payee);
@@ -251,7 +262,7 @@ const dropName = (label) => label.replace(' (Trandar)', '');
             `slip=${JSON.stringify(fromSlip)} manual=${JSON.stringify(fromManual)} card=${JSON.stringify(fromCard)}`);
     });
     check(`[${lang}] and none of the 3 prints an employee code where a name belongs (rules.md §5/§6)`,
-        payeeLineOf(api.breakdownLineRowsRd([{ code: 'D', name_th: 'x', name_en: 'x', amount: 1, payee: EMPLOYEE_PAYEE }], 'money-deduction')).indexOf('CEO -') === -1
+        payeeLineOf(api.lineOverrideRowHtml({ code: 'D', name_th: 'x', name_en: 'x', current_amount: 1, payee: EMPLOYEE_PAYEE }, 0, {}, false, 'view')).indexOf('CEO -') === -1
         && api.recurringDestPayeeSummary(EMPLOYEE_PAYEE).indexOf('CEO -') === -1);
 });
 
@@ -281,7 +292,7 @@ check('no surface opens the destination half with an arrow any more',
     && api.payeeDescriptorHtmlRd(COMPANY_PAYEE, { variant: 'tag' }).indexOf('→') === -1);
 
 console.log('\n=== the 3 call sites really call the one renderer (no branch left behind) ===');
-['breakdownLineRowsRd', 'manualLineListItemHtml', 'lineOverrideRowHtml'].forEach((name) => {
+['manualLineListItemHtml', 'lineOverrideRowHtml'].forEach((name) => {
     const src = fn(detailSource, name);
     check(`${name}() renders its payee through payeeDescriptorHtmlRd()`, src.indexOf('payeeDescriptorHtmlRd(') !== -1);
     check(`${name}() no longer branches on payee_type itself`, src.indexOf('payee_type ===') === -1, src.indexOf('payee_type ==='));

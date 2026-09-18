@@ -178,8 +178,11 @@ class PayrollController extends Controller {
 
     /** The money on one syncDeductionLinesForEmployee() row; its `occurrences[]` sub-rows carry
      *  their own `amount` and are masked alongside it (an installment breakdown adds up to the very
-     *  figure being hidden, so leaving it readable would hand the whole number straight back). */
-    private const ADJUST_LINE_MONEY_KEYS = ['current_amount', 'override_amount', 'computed_amount'];
+     *  figure being hidden, so leaving it readable would hand the whole number straight back).
+     *  2026-09-18, 4a-1: `exempted_amount` joins them -- it is "what this deduction WOULD have been",
+     *  a real figure off this employee's own pay, and it arrived here the moment the read-only slip
+     *  started rendering from this endpoint. */
+    private const ADJUST_LINE_MONEY_KEYS = ['current_amount', 'override_amount', 'computed_amount', 'exempted_amount'];
 
     private function maskEmployeeAdjustments(array $data, int $compId): array {
         $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), $compId);

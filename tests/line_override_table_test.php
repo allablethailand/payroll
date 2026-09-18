@@ -335,7 +335,7 @@ echo "\n=== 10. the table is locked while one write is in flight ===\n";
 // back would race it.
 $busyStart = (int)strpos($js, 'function setLineOverrideTableBusyRd(');
 $busy = substr($js, $busyStart, 900);
-foreach (['.lo-include', '.lo-edit-btn', '.lo-history-toggle', '.lo-hidden-toggle'] as $control) {
+foreach (['.lo-include', '.lo-edit-btn', '.lo-history-toggle'] as $control) {
     checkTrue("`{$control}` is disabled while busy", strpos($busy, $control) !== false);
 }
 checkTrue('the footer action is locked too', strpos($busy, "\$('#btnRestoreAllComputedLineOverrides').prop('disabled', busy);") !== false);
@@ -377,9 +377,9 @@ checkTrue('the amount column carries the figure and its pencil', strpos($rowHtml
 // 2026-09-17, R1: an off row has no FIGURE either, not just no pencil -- where the amount used to be
 // struck through it now says what is true about the row ("ไม่นำมาคำนวณ"). The editable-only controls
 // (pencil, "use the calculated value") hang off the same one condition.
-checkTrue('an off row shows no figure and no controls', strpos($rowHtml, 'const editable = included && !runDisabled;') !== false
+checkTrue('an off row shows no figure and no controls', strpos($rowHtml, 'const editable = included && !runDisabled && !skipped;') !== false
     && strpos($rowHtml, "line_override_excluded_amount") !== false
-    && strpos($rowHtml, 'const amountCell = included') !== false);
+    && strpos($rowHtml, '} else if (included) {') !== false);
 // 2026-09-18, tiny-L6b (B3): NOT a column of its own any more -- a sub-line of the amount cell, so
 // the table carries one money column and the figure sits under the one it is compared with. The
 // markup-level assertions live in tests/line_override_row_render_test.js; what is checked here is
