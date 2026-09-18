@@ -593,14 +593,18 @@ try {
     check('removing the override clears the computed column back to NULL', $baseReset['base_salary_computed_amount'], null);
     check('...and restores the engine figure as the real one', (float)$baseReset['base_salary_amount'], $baseEngineAmount);
 
+    // 2026-09-18, tiny-E: exclude is REFUSED on TH_PIT/TH_SSO -- it only ever zeroed the employee
+    // half while the employer contribution kept computing in full, so per-employee participation is
+    // decided by payroll_run_employee_exemptions' tri-state instead (see
+    // docs/decisions/2026-09-18-tiny-e-exemption-guard.md, tests/exemption_tri_state_test.php).
     $statutoryExcludeRes = $runModel->statutoryLineOverrideSave($pulledRunId, $compId, $employeeFullId, 'TH_SSO', 'exclude', null, null, $adminUserId, true);
-    checkTrue('statutoryLineOverrideSave(exclude) succeeds', $statutoryExcludeRes['status']);
+    check('statutoryLineOverrideSave(exclude) is refused on TH_SSO', $statutoryExcludeRes['status'], false);
     $ssoDetailsAfterExclude = $runModel->getDetails($pulledRunId, $compId);
     $ssoRowAfterExclude = current(array_filter($ssoDetailsAfterExclude, fn($d) => (int)$d['employee_id'] === $employeeFullId));
     $ssoLineAfterExclude = current(array_filter($ssoRowAfterExclude['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'));
-    checkTrue('the TH_SSO line STAYS in statutory_breakdown when excluded (unlike an earning/deduction exclude, which drops the line entirely)', $ssoLineAfterExclude !== false);
-    check('TH_SSO employee_amount is 0 when excluded', (float)$ssoLineAfterExclude['employee_amount'], 0.0);
-    check('note marks this as manually_excluded', $ssoLineAfterExclude['note'], 'manually_excluded');
+    checkTrue('the TH_SSO line is untouched by the refusal', $ssoLineAfterExclude !== false);
+    check('...and still carries the override_amount set just above', (float)$ssoLineAfterExclude['employee_amount'], 123.45);
+    check('...with its own note -- no exclusion was recorded', $ssoLineAfterExclude['note'], 'manually_overridden');
 
     $statutoryRemoveRes = $runModel->statutoryLineOverrideRemove($pulledRunId, $compId, $employeeFullId, 'TH_SSO', $adminUserId, true);
     checkTrue('statutoryLineOverrideRemove() succeeds', $statutoryRemoveRes['status']);

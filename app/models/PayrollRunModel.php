@@ -6229,7 +6229,19 @@ class PayrollRunModel {
      * trigger), only the item_code differs. See recalculate()'s own statutory block for where
      * this is actually applied during calculation.
      */
+    /** The 2 statutory items whose participation is decided per-employee by
+     *  payroll_run_employee_exemptions' tri-state (tax_calculate_override/sso_calculate_override),
+     *  not by an exclusion row -- see docs/decisions/2026-09-18-tiny-e-exemption-guard.md. */
+    private const TRI_STATE_STATUTORY_CODES = ['TH_PIT', 'TH_SSO'];
+
     public function statutoryLineOverrideSave(int $runId, int $compId, int $employeeId, string $statutoryItemCode, string $action, ?float $overrideAmount, ?string $note, int $userId, bool $isAdmin): array {
+        // An exclusion row only zeroes the EMPLOYEE half and leaves the employer contribution
+        // computing in full, so it never meant what "do not send SSO/tax for this person" has to
+        // mean. saveEmployeeExemption()'s tri-state is the one surface for that, and it reaches the
+        // engine's own $employeeFlags. override_amount stays allowed on both codes.
+        if ($action === 'exclude' && in_array(strtoupper(trim($statutoryItemCode)), self::TRI_STATE_STATUTORY_CODES, true)) {
+            return ['status' => false, 'message' => 'Tax and SSO participation is set per employee by the tax/SSO setting for this run, not by excluding the line.'];
+        }
         return $this->lineOverrideSave($runId, $compId, $employeeId, $this->statutoryOverrideCode($statutoryItemCode), $action, $overrideAmount, $note, $userId, $isAdmin, 'statutory', $statutoryItemCode);
     }
 

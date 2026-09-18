@@ -1204,3 +1204,18 @@ payee เป็น company บน run ทดสอบ (คือเงื่อ�
 ไม่มีบัญชีบริษัท — `applyDefaultCompanyBankAccount()` ถึงจะมีอะไรให้เติมจริง) · วัดซ้ำตอนสร้าง fixture แบบนั้นได้
 
 **Source:** tiny-L6a (2026-09-18) · วัดไม่เจอใน tiny-L6b (2026-09-18)
+
+---
+
+## ลบสาขา `manually_excluded` ของ statutory ใน `recalculate()` หลัง query prod ยืนยันว่ามี 0 แถว
+
+tiny-E ปิดทางเขียน `action='exclude'` บน `TH_PIT`/`TH_SSO` แล้ว (`statutoryLineOverrideSave()`) เพราะแถวนั้นทำแค่
+`employee_amount = 0` โดยฝั่งนายจ้างยังคิดเต็ม — tri-state ใน `payroll_run_employee_exemptions` เป็นทางเดียวแทน
+(ดู `docs/decisions/2026-09-18-tiny-e-exemption-guard.md`) · **read path ยังอยู่ครบ** (`PayrollRunModel` ~:4534,
+สาขา `$statutoryOverride['action'] === 'exclude'`) ตายแล้วสำหรับ 2 รหัสนี้แต่ยังใช้กับ `TH_PVD` และยังต้องอ่าน
+แถวเก่าถ้ามี · dev DB วัดแล้ว: `payroll_run_line_overrides` และ `payroll_run_line_override_history` ที่
+`item_code LIKE '__statutory_%'` = **0 แถวทั้งคู่** · สิ่งที่ต้องทำก่อนลบ: query prod ด้วย 2 SELECT เดียวกันนั้น
+(กรอง 2 รหัสนี้) ยืนยัน 0 แถว — **ต้องทำก่อนขึ้น prod** ถ้ามีแถวค้างต้องล้างด้วย `statutoryLineOverrideRemove()`
+(ยังเปิดไว้ให้ทำได้) ก่อน ไม่ใช่ DELETE ตรง เพราะต้องมี history + recalculate ตาม
+
+**Source:** tiny-E (2026-09-18)
