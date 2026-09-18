@@ -377,9 +377,17 @@ checkTrue('the amount column carries the figure and its pencil', strpos($rowHtml
 // 2026-09-17, R1: an off row has no FIGURE either, not just no pencil -- where the amount used to be
 // struck through it now says what is true about the row ("ไม่นำมาคำนวณ"). The editable-only controls
 // (pencil, "use the calculated value") hang off the same one condition.
-checkTrue('an off row shows no figure and no controls', strpos($rowHtml, 'const editable = included && !runDisabled && !skipped;') !== false
+// 2026-09-18, 4a-2 follow-up: `!skipped` dropped out of that condition -- a skipped line is filtered
+// out by renderLineOverrideTableRd() before it can be a row at all, so the row builder has no
+// skipped case left to gate.
+checkTrue('an off row shows no figure and no controls', strpos($rowHtml, 'const editable = included && !runDisabled;') !== false
     && strpos($rowHtml, "line_override_excluded_amount") !== false
-    && strpos($rowHtml, '} else if (included) {') !== false);
+    && strpos($rowHtml, 'const amountCell = included') !== false);
+checkTrue('a skipped line never reaches the row builder at all',
+    strpos($js, '&& !lineOverrideIsSkippedRd(l));') !== false
+    && strpos($rowHtml, 'lo-row-skipped') === false && strpos($rowHtml, 'skipBadge') === false
+    && strpos($rowHtml, 'lineOverrideSkipEnumRd(') === false
+    && strpos($js, 'payroll_statutory_skip') === false);
 // 2026-09-18, tiny-L6b (B3): NOT a column of its own any more -- a sub-line of the amount cell, so
 // the table carries one money column and the figure sits under the one it is compared with. The
 // markup-level assertions live in tests/line_override_row_render_test.js; what is checked here is
@@ -406,9 +414,14 @@ checkTrue('...and it refuses to answer without a recorded history',
 // 2026-09-18, tiny-L6a: "back to the calculated value" is no longer a second round button in the
 // row -- it is the form's own left slot, where both figures are on screen together. So the row
 // carries exactly one control, and the action still exists, just not here.
+// 2026-09-18, 4a-2: the cell holds the pencil for a calculated row and the hand-added row's own 2
+// buttons for a manual one -- one action column, never a second place actions can live.
 checkTrue('the row carries one action button, the pencil',
-    strpos($rowHtml, '<div class="lo-actions">${pencil}</div>') !== false
+    strpos($rowHtml, '<div class="lo-actions">${isManual ? manualActions : pencil}</div>') !== false
     && strpos($rowHtml, 'lo-use-system-btn') === false);
+checkTrue('a hand-added row carries its own 2 instead, addressed by line id',
+    strpos($rowHtml, 'manual-line-edit-btn" data-line-id="${escapeAttr(line.manual_line_id)}"') !== false
+    && strpos($rowHtml, 'manual-line-remove-btn" data-line-id="${escapeAttr(line.manual_line_id)}"') !== false);
 checkTrue('the action moved to the form footer, it was not dropped',
     strpos($js, "{ id: 'btnLineFormUseComputed', key: 'line_override_use_computed'") !== false
     && strpos($js, "\$(document).on('click', '#btnLineFormUseComputed', function () {") !== false);

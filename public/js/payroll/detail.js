@@ -2459,88 +2459,11 @@ function refreshBreakdownFooterStateRd() {
 function employeeRowEditableRd(row) {
     return !!row && !!currentRun && currentRun.state === 'draft' && !row.is_verified;
 }
-// The add-an-item button on a column head -- one per column, which is what decides the new line's
-// type: the form never asks "earning or deduction?" because the head that was pressed already said.
-// Disabled (reason in its own tooltip) rather than hidden when this employee's figures are frozen --
-// the column head then reads the same as always and names what has to happen first, instead of
-// quietly missing a control that was there a moment ago.
-// 2026-09-18, tiny-L6b (B5): a worded button, not a circled +. A + is an affordance for a row's own
-// controls, where the row beside it says what is being added; on a column HEAD the only thing naming
-// what it adds was a tooltip, which is not a label (rules.md §7's own conclusion about hover-only
-// affordances). It carries the same word the form's own submit button carries -- `add_line`, one key
-// for one action all the way through the flow (§0.5) -- and no icon, because the word is the label
-// (§4). Outline, not solid: this repeats once per column, and the slip's solid orange belongs to the
-// one main action of the view (§4's "action ที่ซ้ำหลายตัว" row, §0.2).
-function manualLineAddButtonHtml(itemType, canEdit) {
-    const labelKey = itemType === 'deduction' ? 'manual_line_add_deduction' : 'manual_line_add_earning';
-    const title = canEdit
-        ? (langData[labelKey] || (itemType === 'deduction' ? 'Add a deduction item' : 'Add an income item'))
-        : (langData['manual_line_add_locked'] || 'Items can only be added while the run is a draft and this employee is not verified');
-    const label = langData['add_line'] || 'Add Line';
-    return `<button type="button" class="btn btn-outline-primary manual-line-add-btn" data-item-type="${escapeAttr(itemType)}"${canEdit ? '' : ' disabled'} title="${escapeAttr(title)}">${escapeHtml(label)}</button>`;
-}
-// Section 2: the lines somebody added by hand, in the slip's own 2-column layout so they read as the
-// same kind of thing as the calculated ones above. Rows come from manualLineListItemHtml(). No
-// totals here: the one figure that matters is the run's own net pay, which section 3 carries.
-// An empty column of the block, as a row of its own table so it sits in the same grid the real rows
-// do (§7: nothing gets `display` set on a cell). The shared empty state's `inline` variant -- no
-// icon, no button: what to do next is the button already in this column's own head, and it names
-// itself, so this line points at it by that name rather than repeating the action a second time.
-function manualLineEmptyColumnHtml() {
-    const text = langData['manual_line_empty_hint'] || 'No items yet -- press + to add one';
-    return `<tr class="payslip-row manual-line-empty-row"><td colspan="2">${emptyStateHtml({ inline: true, text: text })}</td></tr>`;
-}
-function renderBreakdownManualLinesRd(lines) {
-    const all = lines || [];
-    const canEdit = employeeRowEditableRd(breakdownRowRd);
-    // 2026-09-18, 4a-1: in the read-only slip this block is a LIST, not a surface -- no "add" button
-    // in either column head, and nothing at all when this employee has no hand-added line to list.
-    if (!canEdit && !all.length) {
-        $('#breakdownManualLines').empty();
-        return;
-    }
-    const earningLines = all.filter(l => l.item_type === 'earning');
-    const deductionLines = all.filter(l => l.item_type === 'deduction');
-    // 2026-09-17, R1: "เงินเพิ่ม"/"เงินหัก" -- what a hand-added line IS, which is not the same word as
-    // the slip's own "เงินได้"/"รายการหัก" (those name the whole calculation above). An empty column still
-    // renders its head and its + button: that is where adding one starts.
-    $('#breakdownManualLines').html(payslipViewHtml({
-        earningTitle: langData['manual_line_col_earning'] || 'Additional pay',
-        deductionTitle: langData['manual_line_col_deduction'] || 'Additional deduction',
-        earningTitleActionHtml: canEdit ? manualLineAddButtonHtml('earning', canEdit) : '',
-        deductionTitleActionHtml: canEdit ? manualLineAddButtonHtml('deduction', canEdit) : '',
-        earningRowsHtml: earningLines.length
-            ? earningLines.map(l => manualLineListItemHtml(l, canEdit)).join('')
-            : (canEdit ? manualLineEmptyColumnHtml() : ''),
-        deductionItemRowsHtml: deductionLines.length
-            ? deductionLines.map(l => manualLineListItemHtml(l, canEdit)).join('')
-            : (canEdit ? manualLineEmptyColumnHtml() : ''),
-        showTotals: false,
-    }));
-}
-function loadBreakdownManualLinesRd(employeeId) {
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-run.manual-lines`,
-        method: 'GET',
-        data: { run_id: PAYROLL_RUN_ID, employee_id: employeeId },
-        dataType: 'json',
-        success: function (res) {
-            if (!res.status) return;
-            renderBreakdownManualLinesRd(res.data || []);
-        }
-    });
-}
-// Section 3: the run's own 3 summary figures for this employee. Re-read from api/payroll-run.get
-// after every write, because a single override changes what the statutory lines compute to and
-// therefore all 3 of them.
-// 2026-09-17, R1: 3 lines, not 1 -- gross and deductions in front of the net figure, so the one at
-// the bottom can be read as the result of the 2 above it instead of arriving on its own. All 3 come
-// from the SAME row `api/payroll-run.get` returns; nothing is added up on the client.
-// 2026-09-18, 4a-1: its own block under everything else (lineOverrideTotalsHtmlRd()), refilled in
-// place -- the table re-rendering below no longer takes these 3 figures with it.
-function renderBreakdownNetSummaryRd(row) {
-    $('#breakdownNetSummary').html(lineOverrideTotalsHtmlRd(row));
-}
+// The 3 totals are re-read from the server rather than adjusted here: one edited line moves the
+// statutory figures with it, so all 3 change together and none of them can be worked out on the
+// client. 2026-09-18, 4a-2: they are the table's own last rows now, so refreshing them means
+// redrawing the table -- from the lines and run settings it already holds, not a second fetch of the
+// identical list (loadSyncLineOverridesRd() is the one that re-reads those, on the same write).
 function refreshBreakdownNetSummaryRd() {
     if (!breakdownRowRd) return;
     $.ajax({
@@ -2553,33 +2476,27 @@ function refreshBreakdownNetSummaryRd() {
             const fresh = (res.data.details || []).find(d => Number(d.employee_id) === Number(breakdownRowRd.employee_id));
             if (!fresh) return;
             breakdownRowRd = fresh;
-            renderBreakdownNetSummaryRd(fresh);
+            if (lineOverrideRowsRd.length) {
+                renderLineOverrideTableRd(lineOverrideRowsRd, lineOverrideRunSettingsRd, lineOverrideHostRd.mode);
+            }
         }
     });
 }
 function renderBreakdownEditableBodyRd(row) {
     // 2026-09-17, R1: the calculated table has no heading of its own -- it is what this modal is,
     // and its own column heads already say what each column holds. A heading over the first thing
-    // under the employee card only repeats the modal's title. The section below still needs one:
-    // it is a DIFFERENT kind of line (someone typed it in) and has to say so.
-    // 2026-09-18, 4a-1: the hand-added block carries no heading of its own either -- its 2 column
-    // heads ("เงินเพิ่ม"/"เงินหัก") already name what it holds, and a 3rd word over them said the
-    // same thing a third time.
+    // under the employee card only repeats the modal's title.
+    // 2026-09-18, 4a-2: and there is only one thing under it now. The hand-added lines are rows of
+    // that same table (their own 2 groups), and the 3 totals are its last rows -- so the second
+    // section, which existed only to hold them, is gone with them.
     $('#breakdownModalBody').html(`<div class="breakdown-edit">
         <section class="breakdown-edit-section">
             <div id="breakdownLineOverrideWrap" class="lo-mount"></div>
         </section>
-        <section class="breakdown-edit-section">
-            <div id="breakdownManualLines" class="ml-mount"></div>
-            <div id="breakdownNetSummary" class="lo-totals-block"></div>
-        </section>
     </div>`);
-    renderBreakdownManualLinesRd([]);
-    renderBreakdownNetSummaryRd(row);
     // One host, one employee, one reload path -- see setLineOverrideHostRd()'s own docblock.
     setLineOverrideHostRd('#breakdownLineOverrideWrap', row.employee_id, refreshBreakdownNetSummaryRd, 'edit');
     loadSyncLineOverridesRd();
-    loadBreakdownManualLinesRd(row.employee_id);
 }
 /* 2026-09-18, 4a-1 ("สลิปเป็นที่เดียว"): the read-only slip is the SAME table as the editable one,
    from the SAME payload -- `mode: 'view'` is the whole of the difference, and all it decides is
@@ -2594,18 +2511,14 @@ function renderBreakdownViewBodyRd(row) {
             <div id="breakdownLineOverrideWrap" class="lo-mount"></div>
         </section>
         <section class="breakdown-edit-section">
-            <div id="breakdownManualLines" class="ml-mount"></div>
-            <div id="breakdownNetSummary" class="lo-totals-block"></div>
         </section>
     </div>`);
-    renderBreakdownManualLinesRd([]);
-    renderBreakdownNetSummaryRd(row);
     setLineOverrideHostRd('#breakdownLineOverrideWrap', row.employee_id, null, 'view');
-    loadSyncLineOverridesRd();
     // A hand-added line is NOT in the sync-lines payload (it is filtered out server-side -- an
-    // override keyed by item_code could never target it), so without this the read-only slip would
-    // silently drop lines this employee is really paid. They become rows of the table itself in 4a-2.
-    loadBreakdownManualLinesRd(row.employee_id);
+    // override keyed by item_code could never target it), so loadSyncLineOverridesRd() fetches it
+    // alongside and folds it in as rows of this same table (2026-09-18, 4a-2). Without it the
+    // read-only slip would silently drop lines this employee is really paid.
+    loadSyncLineOverridesRd();
 }
 $(document).on('click', '.btn-view-breakdown', function () {
     const employeeId = $(this).data('employee-id');
@@ -4391,78 +4304,6 @@ $(document).on('change', '#chkAutoRecalculate', function () {
    one flat mixed table -- makes it immediately obvious what's earning vs. deduction and what the
    combined effect is, without needing to close the modal and check the outer table. ---------- */
 let manageLinesEmployeeId = null;
-// 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- distinct "Other" badge,
-// same reasoning as eedItemNameCell()'s own update in employee/detail.js.
-// 2026-09-15, batch 2/4: the badge is a real `statusBadgeHtml()` call (§5) against the new
-// `manual_line_mode` context in status_map.php -- replaces this function's own hardcoded
-// `badge bg-info-subtle`/`bg-secondary-subtle` markup (which also failed §12's lint rule 8). A
-// catalog-picked line gets NO badge at all, just its item code as quiet text, exactly as the
-// instruction describes ("badge โหมด ... เฉพาะที่ไม่ใช่ เลือกจากรายการ").
-// 2026-09-16: a catalog line's plain item_code is no longer printed beside the name -- it is an
-// internal identifier, and the name already says what the row is. It survives as the name's own
-// `title` (see manualLineListItemHtml()), the same place the calculated rows moved their codes to.
-// 2026-09-17, R1b: down to ONE badge, the retired `other` kind -- see lineOverrideRowHtml()'s own
-// comment for why a plain typed-in ("Custom") line no longer carries one.
-function manualLineTagHtml(line) {
-    if (!line.is_other) {
-        return '';
-    }
-    return statusBadgeHtml('other', 'manual_line_mode', { outline: true });
-}
-// One line of the "added by hand" block -- a `.payslip-row` `<tr>` in the SAME shape the real payslip
-// component renders (name cell + right-aligned `.num.money-*` amount), so both live under
-// payslipViewHtml() (§9) with no second layout. 2 things are specific to these rows and live in the
-// name/amount cells rather than in the component: the mode badge above, and the row's own actions.
-// 2026-09-16, D2: the actions are the shared 32px round buttons (§7's `.btn-icon`) at the END of the
-// row, shown always instead of on hover -- an affordance that has to be discovered by hovering is
-// not one (the same conclusion rules.md §6 reached for the comment list's own row actions). Pressing
-// the row anywhere else opens the same form its pencil does.
-// `canEdit` is the answer for the whole block (employeeRowEditableRd(), asked once by the caller),
-// never per row -- and a row with no `id` of its own (a line stored before manual lines became
-// addressable) keeps the slot but gets no buttons, so the figures around it stay on one line.
-function manualLineListItemHtml(line, canEdit) {
-    const name = (currentLang === 'th' ? line.item_name_th : line.item_name_en) || line.item_name_th || line.item_name_en;
-    const moneyCls = line.item_type === 'earning' ? 'money-gross' : 'money-deduction';
-    // Long notes clip to one line with the full text as a native tooltip (explicit instruction) --
-    // `.payslip-line-note` owns the ellipsis (style.css), shared with the real payslip's own rows.
-    const noteHtml = line.note
-        ? `<div class="payslip-line-note" title="${escapeAttr(line.note)}">${escapeHtml(line.note)}</div>`
-        : '';
-    // 2026-09-18, tiny-L4: the same one renderer the slip's own lines use -- this block used to name
-    // the same 4 payee kinds in its own words (and its own account field per kind), so the identical
-    // row read differently here and in the read-only slip beside it.
-    // 2026-09-18, tiny-L5: and the same WRAPPER too. `.manual-line-payee` was a second class saying
-    // what `.payslip-line-tag` says, on a row sitting in the same slip layout. A hand-added line is
-    // never part of an instalment plan, so this one only ever has the payee half.
-    const payeeHtml = payeeDescriptorHtmlRd(line.payee, { variant: 'tag', installment: line.installment });
-    const editable = !!canEdit && !!line.id;
-    // A legacy row inside an otherwise editable block says why it has no buttons, on the row itself
-    // -- an empty slot with no explanation reads as a rendering glitch.
-    const rowTitle = (canEdit && !line.id)
-        ? ` title="${escapeAttr(langData['manual_line_legacy_locked'] || 'Added before items became editable here -- it cannot be edited or removed from this screen')}"`
-        : '';
-    return `<tr class="payslip-row manual-line-item${editable ? ' manual-line-item-editable' : ''}" data-line-id="${line.id || ''}"${rowTitle}>
-        <td>
-            <div class="payslip-line-head"><span class="payslip-line-name"${line.is_custom ? '' : ` title="${escapeAttr(line.item_code || '')}"`}>${escapeHtml(name)}</span>${manualLineTagHtml(line)}</div>
-            ${noteHtml}
-            ${payeeHtml}
-        </td>
-        <td class="text-end num ${moneyCls}">
-            <div class="manual-line-amount-wrap"><span class="manual-line-amount">${fmtNum(line.amount)}</span>${manualLineRowActionsHtml(line, canEdit)}</div>
-        </td>
-    </tr>`;
-}
-// The row's own actions (§7: at most 3 round 32px buttons, one size and one colour for every action
-// -- delete is grey here and only turns red on the confirm, §3/§4). An empty, same-width slot for a
-// row that cannot carry them keeps every figure in the column on one line.
-function manualLineRowActionsHtml(line, canEdit) {
-    if (!canEdit) return '';
-    if (!line.id) return '<span class="manual-line-actions manual-line-actions-empty"></span>';
-    return `<span class="manual-line-actions">
-        <button type="button" class="btn-icon manual-line-edit-btn" data-line-id="${line.id}" title="${escapeAttr(langData['manual_line_form_edit_title'] || 'Edit item')}"><i class="fa-solid fa-pen"></i></button>
-        <button type="button" class="btn-icon manual-line-remove-btn" data-line-id="${line.id}" title="${escapeAttr(langData['action_remove'] || 'Remove')}"><i class="fa-solid fa-trash-can"></i></button>
-    </span>`;
-}
 
 /* ---------- Attendance Data (from Sync) (2026-08-21, explicit request: "ต้องการแก้ตัวเลขดิบที่ Sync
    มา ไม่ใช่แค่ยอดเงิน") -- corrects the RAW numbers Origami sent (not the resulting deduction/earning
@@ -4585,6 +4426,12 @@ const LINE_OVERRIDE_GROUPS_RD = [
     { type: 'earning', key: 'breakdown_earnings', fallback: 'Income', money: 'money-gross' },
     { type: 'deduction', key: 'table_deduction_amount', fallback: 'Deductions', money: 'money-deduction' },
     { type: 'statutory', key: 'line_override_group_statutory', fallback: 'Statutory', money: 'money-deduction' },
+    // 2026-09-18, 4a-2: the lines somebody typed in, after everything the engine produced -- they are
+    // the last thing added to this employee's pay, and reading them last is reading them in the order
+    // they happened. `manualType` marks a group as one of the 2 (it is also the type a new line gets
+    // when its own "add" row is pressed); no other group has it.
+    { type: 'manual_earning', key: 'line_override_group_manual_earning', fallback: 'Additional earnings', money: 'money-gross', manualType: 'earning' },
+    { type: 'manual_deduction', key: 'line_override_group_manual_deduction', fallback: 'Additional deductions', money: 'money-deduction', manualType: 'deduction' },
     // Last on purpose: a row whose item_code has no catalog row at all (retired item, CUSTOM: line).
     { type: 'other', key: 'line_override_group_other', fallback: 'Other', money: '' },
 ];
@@ -4612,6 +4459,7 @@ function lineOverrideIsSkippedRd(line) {
     return !line.override_action && !!lineOverrideSkipEnumRd(line);
 }
 let lineOverrideRowsRd = [];
+let lineOverrideRunSettingsRd = null;
 /* 2026-09-16, D1: this table had TWO mount points -- the Adjustments modal's "ปรับตัวเลข" tab and the
    Calculation Breakdown modal's editable layout -- and exactly ONE implementation. `lineOverrideHostRd`
    is the whole of the difference between them: where to render, whose lines to fetch, and what else to
@@ -4851,15 +4699,14 @@ function lineOverrideRowHtml(line, idx, group, runDisabled, mode) {
     const name = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || line.code;
     const origAction = line.override_action || '';
     const included = runDisabled ? false : origAction !== 'exclude';
-    const skipEnum = lineOverrideSkipEnumRd(line);
-    const skipped = lineOverrideIsSkippedRd(line);
-    // Reason first, then what kind of line it is -- "ไม่ได้เข้ากองทุน" answers the question the row
-    // itself raises ("why is this 0.00?"), which the user is asking before anything else.
-    // 2026-09-18, 4a-1: the reason rides in the toggle column of the editable slip (it is what stands
-    // in for the switch that row cannot have) and after the name in the read-only one, which has no
-    // toggle column at all. Same badge, same text, one of the 2 places.
-    const skipBadge = (skipEnum && !line.override_action) ? statusBadgeHtml(skipEnum, 'payroll_statutory_skip') : '';
+    // 2026-09-18, 4a-2 follow-up: a skipped row never reaches here -- renderLineOverrideTableRd()
+    // drops it. A line that contributes nothing to any of the 3 totals is not a line of this slip, and
+    // a badge explaining its absence still spent a row on an item that is not part of this pay.
     const statutoryBadge = line.line_type === 'statutory' ? ' ' + statusBadgeHtml('statutory', 'payroll_line_type') : '';
+    // A hand-added line: a row of this table since 4a-2, mapped into this shape by
+    // manualLineToTableRowRd(). It has no switch (nothing calculated it, so there is nothing to put
+    // back), no history, and its own 2 actions instead of the override pencil.
+    const isManual = line.line_type === 'manual_line';
     // 2026-09-18, 4a-1: the 2 classifications the read-only slip carried and this table did not. They
     // are not "a code" (those live in the name's own title): money credited FROM another employee, and
     // the retired "Other Income/Deduction" bucket reports still group by.
@@ -4871,14 +4718,21 @@ function lineOverrideRowHtml(line, idx, group, runDisabled, mode) {
     }
     const runDisabledAttr = runDisabled ? ' disabled' : '';
     const title = runDisabled ? ' title="' + escapeAttr(langData['line_override_run_disabled'] || 'Turned off in Run Settings') + '"' : '';
-    const editable = included && !runDisabled && !skipped;
+    const editable = included && !runDisabled;
     // 2026-09-17, R1: the pencil shows on every editable row, not on hover -- an affordance nobody
     // can see until they hover is not one (§7, the same conclusion the comment list reached).
     // 2026-09-17, R1 follow-up: the plain `.btn-icon` circle, not the ghost variant -- §7's ghost is
     // for a circle sitting on a panel that already has a surface of its own, which a table row is not.
     // Same button as the pencil/bin in the "รายการเพิ่มเติม" block below it.
-    const pencil = editable
+    const pencil = (editable && !isManual)
         ? `<button type="button" class="btn btn-icon lo-edit-btn" title="${escapeAttr(langData['line_override_edit_amount'] || 'Edit amount')}" aria-label="${escapeAttr(langData['line_override_edit_amount'] || 'Edit amount')}"><i class="fa-solid fa-pen"></i></button>`
+        : '';
+    // The same 2 round buttons the hand-added card carried, in this table's own action column so a
+    // pencil means the same thing on every row of it (§7). Delete is grey and only turns red on the
+    // confirm (§3/§4). `manual_line_id` is the PK -- a row without one has nothing to address.
+    const manualActions = (isManual && !isView && line.manual_line_id)
+        ? `<button type="button" class="btn btn-icon manual-line-edit-btn" data-line-id="${escapeAttr(line.manual_line_id)}" title="${escapeAttr(langData['manual_line_form_edit_title'] || 'Edit item')}" aria-label="${escapeAttr(langData['manual_line_form_edit_title'] || 'Edit item')}"><i class="fa-solid fa-pen"></i></button>`
+            + `<button type="button" class="btn btn-icon manual-line-remove-btn" data-line-id="${escapeAttr(line.manual_line_id)}" title="${escapeAttr(langData['action_remove'] || 'Remove')}" aria-label="${escapeAttr(langData['action_remove'] || 'Remove')}"><i class="fa-solid fa-trash-can"></i></button>`
         : '';
     // 2026-09-18, tiny-L6a: "back to what the system calculated" is no longer a second round button
     // in this row -- it is the form's own left-slot action (rules.md §9), where the 2 figures it
@@ -4890,25 +4744,19 @@ function lineOverrideRowHtml(line, idx, group, runDisabled, mode) {
     // and a fixed-width action column beside it.
     // An excluded row has no amount to show: 0.00 struck through still reads as a figure that counts
     // for something. What is true about it is that it is not in the calculation, so it says that.
-    // 2026-09-18, 4a-1: a skipped row shows nothing at all in the money column -- the badge beside it
-    // already says this item does not apply to this employee, and a 0.00 next to that reads as a
-    // figure that was calculated.
-    let amountCell;
-    if (skipped) {
-        amountCell = '';
-    } else if (included) {
-        amountCell = `<span class="num ${lineOverrideMoneyClassRd(line, group)}">${fmtNum(line.current_amount)}</span>`;
-    } else {
-        amountCell = `<span class="lo-amount-excluded">${escapeHtml(langData['line_override_excluded_amount'] || 'Not calculated')}</span>`;
-    }
-    const checkCell = isView ? '' : `<td class="col-check tbl-sticky-col">${skipped
-        ? skipBadge
+    const amountCell = included
+        ? `<span class="num ${lineOverrideMoneyClassRd(line, group)}">${fmtNum(line.current_amount)}</span>`
+        : `<span class="lo-amount-excluded">${escapeHtml(langData['line_override_excluded_amount'] || 'Not calculated')}</span>`;
+    // A manual row keeps the cell and leaves it empty: there is no calculated value behind it to put
+    // back, so a switch there would offer an action that means nothing -- and dropping the cell
+    // would take the row out of the grid every other row is in.
+    const checkCell = isView ? '' : `<td class="col-check tbl-sticky-col">${isManual ? ''
         : `<div class="form-check form-switch mb-0"><input class="form-check-input lo-include" type="checkbox" role="switch" id="loInc${idx}" ${included ? 'checked' : ''}${runDisabledAttr}></div>`}</td>`;
-    const actionCell = isView ? '' : `<td class="lo-action-cell"><div class="lo-actions">${pencil}</div></td>`;
-    return `<tr class="lo-row${included ? '' : ' lo-row-off'}${skipped ? ' lo-row-skipped' : ''}" data-item-code="${escapeAttr(line.code)}" data-line-type="${escapeAttr(line.line_type || 'earning_deduction')}"
+    const actionCell = isView ? '' : `<td class="lo-action-cell"><div class="lo-actions">${isManual ? manualActions : pencil}</div></td>`;
+    return `<tr class="lo-row${included ? '' : ' lo-row-off'}${isManual ? ' lo-row-manual' : ''}" data-item-code="${escapeAttr(line.code)}" data-line-type="${escapeAttr(line.line_type || 'earning_deduction')}"
         data-orig-action="${escapeAttr(origAction)}" data-item-name="${escapeAttr(name)}" data-amount="${escapeAttr(fmtNum(line.current_amount))}"${title}>
         ${checkCell}<td class="lo-name-cell tbl-sticky-col tbl-sticky-col-edge-left">
-            <span class="lo-name" title="${escapeAttr(name)} (${escapeAttr(line.code)})">${escapeHtml(name)}</span>${isView && skipBadge ? ' ' + skipBadge : ''}${sourceBadge}${statutoryBadge}
+            <span class="lo-name" title="${escapeAttr(name)} (${escapeAttr(line.code)})">${escapeHtml(name)}</span>${sourceBadge}${statutoryBadge}
             ${payeeDescriptorHtmlRd(line.payee, { variant: 'tag', installment: line.installment })}
             ${lineOverrideTagHtmlRd(lineOverrideExemptTextRd(line))}
             ${lineOverrideTagHtmlRd(formulaTagTextRd(line))}
@@ -4916,8 +4764,21 @@ function lineOverrideRowHtml(line, idx, group, runDisabled, mode) {
             ${lineOverrideOccurrencesHtml(line.occurrences)}
         </td>
         <td class="num col-money lo-amount-cell"><div class="lo-amount-view">${amountCell}</div>${lineOverrideComputedTagHtml(line)}</td>
-        ${actionCell}<td class="lo-history-cell">${included ? lineOverrideHistoryCellHtml(line, mode) : ''}</td>
+        ${actionCell}<td class="lo-history-cell">${(included && !isManual) ? lineOverrideHistoryCellHtml(line, mode) : ''}</td>
     </tr>`;
+}
+// The way to add the next line, on the head of the group it would be added to -- the heading names
+// the group and the link beside it acts on that same group, so the pair reads as one statement
+// instead of a row of its own that repeated what the heading above it already said.
+// A worded text link, not a solid button: it repeats once per manual group, and this view's solid
+// orange belongs to its one main action (rules.md §4's "action ที่ซ้ำหลายตัว" row, §0.2). It carries
+// the same word the form's own submit button carries (`add_line`, §0.5) and no icon: the word is the
+// label. Rendered in the editable slip only, where `employeeRowEditableRd()` is already true.
+function lineOverrideAddLinkHtmlRd(group) {
+    const titleKey = group.manualType === 'deduction' ? 'manual_line_add_deduction' : 'manual_line_add_earning';
+    const title = langData[titleKey] || (group.manualType === 'deduction' ? 'Add a deduction item' : 'Add an income item');
+    const label = langData['add_line'] || 'Add Line';
+    return `<button type="button" class="btn btn-link lo-add-line-btn" data-item-type="${escapeAttr(group.manualType)}" title="${escapeAttr(title)}">${escapeHtml(label)}</button>`;
 }
 // 2026-09-17, R1 follow-up: the pinned 2nd column starts where the 1st one really ENDS. Its
 // declared width is 78px, but what a sticky `left` has to match is the rendered border-box -- borders
@@ -4947,6 +4808,9 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
     mode = mode || 'edit';
     const isView = mode === 'view';
     lineOverrideRowsRd = lines || [];
+    // 2026-09-18, 4a-2: held so a totals-only refresh (the run's own row changed, the lines did not)
+    // can redraw this table from what it already has, instead of re-fetching the identical list.
+    lineOverrideRunSettingsRd = runSettings || null;
     const $wrap = lineOverrideMountRd();
     // The lock taken when a write started is released HERE, not when the request came back: it has to
     // hold across the reload too, or the user can act on rows that are about to be replaced. Only the
@@ -4962,9 +4826,22 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
     let idx = 0;
     let body = '';
     LINE_OVERRIDE_GROUPS_RD.forEach(function (group) {
-        const groupLines = lineOverrideRowsRd.filter(l => (l.item_type || 'other') === group.type);
-        if (!groupLines.length) return;
-        body += `<tr class="lo-group"><td colspan="${colCount}"><span class="lo-span-sticky">${escapeHtml(langData[group.key] || group.fallback)}</span></td></tr>`;
+        // 2026-09-18, 4a-2 follow-up: a row this employee is not enrolled in / is exempt from / that is
+        // switched off contributes nothing to any of the 3 totals, so it is not rendered at all, in
+        // either mode. (It was hidden behind a toggle, then shown with a reason badge; both spent the
+        // slip's scarcest resource -- a row -- on an item that is not part of this pay.) A personal
+        // override still wins: lineOverrideIsSkippedRd() lets such a row through.
+        const groupLines = lineOverrideRowsRd.filter(l => (l.item_type || 'other') === group.type
+            && !lineOverrideIsSkippedRd(l));
+        // 2026-09-18, 4a-2: an EMPTY manual group still renders in the editable slip -- its head and
+        // its "add a line" row are where adding the first one starts, and a group that appears only
+        // once something is already in it can never be the way in. The read-only slip has nothing to
+        // offer there, so an empty one is simply absent, like any other empty group.
+        const manualOpen = !!group.manualType && !isView;
+        if (!groupLines.length && !manualOpen) return;
+        // Still ONE row with one full-width cell -- the flex sits INSIDE the cell, never on the `<td>`
+        // itself (rules.md §7: display:flex on a cell kills its table-cell behaviour and its colspan).
+        body += `<tr class="lo-group"><td colspan="${colCount}"><div class="lo-group-head"><span class="lo-span-sticky">${escapeHtml(langData[group.key] || group.fallback)}</span>${manualOpen ? lineOverrideAddLinkHtmlRd(group) : ''}</div></td></tr>`;
         groupLines.forEach(function (line) {
             // Disabled only where the run-level exclusion is genuinely in charge: a personal override
             // of any kind already wins over it (PayrollRunModel::recalculate()'s own resolution), so
@@ -4973,6 +4850,7 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
             body += lineOverrideRowHtml(line, idx++, group, runDisabled, mode);
         });
     });
+    body += lineOverrideTotalsHtmlRd(breakdownRowRd, mode);
     $wrap.html(`<div class="table-responsive"><table class="table align-middle lo-table mb-0">
         <thead>
             <tr>
@@ -4993,23 +4871,30 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
     // this table's menus are action menus, the row's own click handler above does the work.
     if (typeof initBadgeDropdown === 'function') initBadgeDropdown($wrap);
 }
-/* 2026-09-18, 4a-1: the slip's own 3 summary figures. They are the bottom line of EVERYTHING above
-   them -- the calculated table AND the hand-added block -- so they sit below both, as the last thing
-   in the modal, not inside one of the two. (They were the table's own last rows for half a day; that
-   read as "the total of this table", which is wrong while a second block of money sits under it.
-   When 4a-2 moves the hand-added lines INTO the table, they go back to being its last rows.)
-   One renderer, no mode: both slips show the same 3 figures in the same shape. */
-function lineOverrideTotalsHtmlRd(row) {
+/* The slip's own 3 summary figures -- the bottom line of every row above them. 4a-1 parked them in a
+   block of their own under the table, because a second block of money (the hand-added card) sat
+   between the table and them; 2026-09-18, 4a-2 put that money INTO the table, so they are the
+   table's own last rows again, which is what they read as.
+   One renderer, one shape in both modes: `mode` only decides how many cells the label and the tail
+   span, because 'view' renders 2 columns fewer. All 3 figures come from the SAME row
+   `api/payroll-run.get` returns -- nothing is added up on the client. */
+function lineOverrideTotalsHtmlRd(row, mode) {
     if (!row) return '';
+    const isView = mode === 'view';
     const totals = [
         { label: langData['payslip_total_earnings'] || 'Total Income', amount: row.gross_amount, cls: 'money-gross', rowCls: '' },
         { label: langData['payslip_total_deductions'] || 'Total Deductions', amount: row.total_deduction_amount, cls: 'money-deduction', rowCls: '' },
         { label: langData['table_net_pay'] || 'Net Pay', amount: row.net_amount, cls: 'money-net', rowCls: ' lo-total-row-net' },
     ];
-    return totals.map(t => `<div class="lo-total-row${t.rowCls}">
-            <span>${escapeHtml(t.label)}</span>
-            <span class="num ${t.cls}">${fmtNum(t.amount)}</span>
-        </div>`).join('');
+    // 2 cells: the label from the left edge, the figure in the LAST one so it ends on the table's own
+    // right edge in both modes. (It sat in the money column with empty cells after it, which left the
+    // 3 totals short of the edge every other figure in the modal ends on.)
+    const headSpan = isView ? 1 : 2;
+    const tailSpan = isView ? 2 : 3;
+    return totals.map(t => `<tr class="lo-total-row${t.rowCls}">
+            <td colspan="${headSpan}">${escapeHtml(t.label)}</td>
+            <td class="num lo-total-amount" colspan="${tailSpan}"><span class="num ${t.cls}">${fmtNum(t.amount)}</span></td>
+        </tr>`).join('');
 }
 // Picking a value out of a row's own history is a write like any other in this tab: it confirms,
 // then sends.
@@ -5145,23 +5030,69 @@ function fetchSyncLinesForEmployeeRd(employeeId, onLoaded) {
         }
     });
 }
+/* 2026-09-18, 4a-2: one hand-added line, in the shape every other row of this table is in, so ONE
+   row builder renders both (rules.md §0.4 -- the card this replaced was a second layout for the same
+   kind of thing). Nothing is computed here: the fields are renamed, not changed.
+   `note` becomes `override_note` because that is the key the row's "หมายเหตุ: …" tag reads, and it
+   lands under the payee tag, which is the order the card showed them in.
+   `override_action` is left unset ON PURPOSE: it is what marks a figure as "somebody replaced what
+   the system calculated", and a hand-added line replaced nothing -- setting it would print a
+   "ระบบ: x" tag under a figure that never had a calculated value. */
+function manualLineToTableRowRd(line) {
+    return {
+        code: line.item_code,
+        name_th: line.item_name_th,
+        name_en: line.item_name_en,
+        current_amount: line.amount,
+        computed_amount: null,
+        line_type: 'manual_line',
+        item_type: line.item_type === 'deduction' ? 'manual_deduction' : 'manual_earning',
+        override_action: null,
+        override_amount: null,
+        override_note: line.note,
+        note: null,
+        source: null,
+        formula: null,
+        is_exempted: false,
+        exempted_amount: null,
+        is_custom: line.is_custom,
+        is_other: line.is_other,
+        payee: line.payee,
+        installment: line.installment,
+        occurrences: null,
+        // The 2 ids the row's own buttons need: which line to address, and which catalog item to put
+        // back into the edit form's picker.
+        manual_line_id: line.id,
+        ped_type_id: line.ped_type_id,
+    };
+}
+// Never rejects: one failed side-request must not stop the table from drawing what it does have.
+function lineOverrideSideRequestRd(endpoint, employeeId) {
+    return $.ajax({
+        url: `${BASE_URL}/${endpoint}`,
+        method: 'GET',
+        data: { run_id: PAYROLL_RUN_ID, employee_id: employeeId },
+        dataType: 'json',
+    }).then(function (res) { return res; }, function () { return null; });
+}
 function loadSyncLineOverridesRd() {
     const employeeId = lineOverrideEmployeeIdRd();
     fetchSyncLinesForEmployeeRd(employeeId, function (res) {
-        // One extra request per modal open, fired in parallel and rendered together: the table
-        // cannot draw its History column without knowing which rows have edits.
-        $.ajax({
-            url: `${BASE_URL}/api/payroll-run.line-override-history`,
-            method: 'GET',
-            data: { run_id: PAYROLL_RUN_ID, employee_id: employeeId },
-            dataType: 'json',
-        }).always(function (historyRes) {
+        // Two more requests per modal open, fired in parallel and rendered TOGETHER: the table cannot
+        // draw its History column without knowing which rows have edits, and since 4a-2 the
+        // hand-added lines are rows of it too. Rendering as each one lands would redraw the whole
+        // table 2 extra times, which is visible as a flicker on every open.
+        $.when(
+            lineOverrideSideRequestRd('api/payroll-run.line-override-history', employeeId),
+            lineOverrideSideRequestRd('api/payroll-run.manual-lines', employeeId)
+        ).done(function (historyRes, manualRes) {
             const payload = (historyRes && historyRes.status && historyRes.data) ? historyRes.data : null;
             lineOverrideHistoryRd = { byKey: {}, historyAvailable: payload ? !!payload.history_available : true, startDate: payload ? payload.history_start_date : null };
             (payload && payload.lines ? payload.lines : []).forEach(function (line) {
                 lineOverrideHistoryRd.byKey[line.line_type + '|' + line.item_code] = line;
             });
-            renderLineOverrideTableRd(res.data || [], res.run_settings, lineOverrideHostRd.mode);
+            const manual = (manualRes && manualRes.status && manualRes.data) ? manualRes.data : [];
+            renderLineOverrideTableRd((res.data || []).concat(manual.map(manualLineToTableRowRd)), res.run_settings, lineOverrideHostRd.mode);
             refreshBreakdownFooterStateRd();
         });
     });
@@ -6567,27 +6498,18 @@ function manualLinePayeeChoiceRd() {
 // Which block the open form belongs to: whose lines, which row (absent = a new one), where the block
 // is, and what has to be reloaded once the write lands.
 let manualLineFormCtxRd = null;
-// The host is resolved from the mount the click happened in, never from a "current block" variable.
-// 2026-09-17, D3: there is one `.ml-mount` left (the settings modal's "รายการจ่าย" tab is gone), but
-// the lookup stays -- it is what keeps every handler below delegated on the class rather than naming
-// a container, which is what let the block move modals at all.
-function manualLineHostForMountRd($mount) {
-    const id = $mount.attr('id');
-    if (id === 'breakdownManualLines' && breakdownRowRd) {
-        return {
-            mount: '#breakdownManualLines',
-            employeeId: breakdownRowRd.employee_id,
-            canEdit: employeeRowEditableRd(breakdownRowRd),
-            // The net band is re-read from the server rather than adjusted here: one added line moves
-            // the statutory figures with it (see refreshBreakdownNetSummaryRd()'s own comment).
-            onSaved: function () {
-                loadBreakdownManualLinesRd(breakdownRowRd.employee_id);
-                refreshBreakdownNetSummaryRd();
-                loadRunDetail();
-            },
-        };
-    }
-    return null;
+// 2026-09-18, 4a-2: a hand-added line is a ROW of the line-override table now, so its own host IS
+// that table's host -- there is no second block to resolve a click into any more. Writing one takes
+// the SAME path an override does (`lineOverrideAfterWriteRd`): one added line moves the statutory
+// figures and all 3 totals with it, so the whole table is re-read, never patched row by row.
+function lineOverrideManualHostRd() {
+    if (!breakdownRowRd) return null;
+    return {
+        mount: lineOverrideHostRd.mount,
+        employeeId: breakdownRowRd.employee_id,
+        canEdit: employeeRowEditableRd(breakdownRowRd),
+        onSaved: lineOverrideAfterWriteRd,
+    };
 }
 // While a write is in flight the whole block is inert -- a second action would race the recalculate
 // the first one is already running (the same rule, and the same `.block-busy`, as the line-override
@@ -7007,8 +6929,10 @@ $(document).on('click', '#btnSaveManualLine', function () {
 $(document).on('hidden.bs.modal', '#manualLineFormModal', function () {
     manualLineFormCtxRd = null;
 });
-$(document).on('click', '.ml-mount .manual-line-add-btn', function () {
-    const host = manualLineHostForMountRd($(this).closest('.ml-mount'));
+// 2026-09-18, 4a-2: the last row of a manual group, not a button on a card head. Same form, and the
+// row's own `data-item-type` still says which group it was pressed under.
+$(document).on('click', '.lo-mount .lo-add-line-btn', function () {
+    const host = lineOverrideManualHostRd();
     if (!host || !host.canEdit) return;
     openManualLineFormRd({
         mount: host.mount,
@@ -7020,8 +6944,8 @@ $(document).on('click', '.ml-mount .manual-line-add-btn', function () {
 // Edit reads the line back from the server before filling the form in, never out of the rendered
 // row: what is on screen is as old as the last load of the block, and this form writes every column
 // of that row back (updateManualLine() sets them all, including the ones left empty).
-function openManualLineEditRd($mount, lineId) {
-    const host = manualLineHostForMountRd($mount);
+function openManualLineEditRd(lineId) {
+    const host = lineOverrideManualHostRd();
     if (!host || !host.canEdit || !lineId) return;
     manualLineBlockBusyRd(host.mount, true);
     $.ajax({
@@ -7054,13 +6978,13 @@ function openManualLineEditRd($mount, lineId) {
 // same form -- which made every name, note and figure in the block a control, with no way to select
 // or even read a row without starting an edit. `.manual-line-item-editable` still marks a row that
 // HAS actions (the class the pencil/bin are rendered under), it just is not a press target.
-$(document).on('click', '.ml-mount .manual-line-edit-btn', function (e) {
+$(document).on('click', '.lo-mount .manual-line-edit-btn', function (e) {
     e.stopPropagation();
-    openManualLineEditRd($(this).closest('.ml-mount'), $(this).data('line-id'));
+    openManualLineEditRd($(this).data('line-id'));
 });
-$(document).on('click', '.ml-mount .manual-line-remove-btn', function (e) {
+$(document).on('click', '.lo-mount .manual-line-remove-btn', function (e) {
     e.stopPropagation();
-    const host = manualLineHostForMountRd($(this).closest('.ml-mount'));
+    const host = lineOverrideManualHostRd();
     const lineId = $(this).data('line-id');
     if (!host || !host.canEdit || !lineId) return;
     // §10: object form with `tone: 'danger'` -- removing a line is destructive and writes

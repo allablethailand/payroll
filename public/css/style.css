@@ -3542,22 +3542,13 @@ th.col-money div.dt-column-header .dt-column-title {
     display: grid;
     gap: var(--sp-2);
 }
-/* Both layouts: the calculated table, then the hand-added lines. Section spacing is the one `--sp-5`
-   §2 uses between blocks of a page. Neither section carries a title of its own -- the table's column
-   heads and the hand-added block's 2 column heads already name what each one holds. */
-/* The same `--sp-4` the read-only slip gets from `.payslip-view`'s own padding-top -- measured, the
-   first section title otherwise starts flush against the header card's bottom border (0px). */
+/* The one section this modal has: the table. Its top padding is what keeps the first column head off
+   the header card's bottom border (measured -- they are otherwise flush at 0px). */
 .breakdown-edit {
     padding-top: var(--sp-4);
 }
 .breakdown-edit-section {
     margin-bottom: var(--sp-5);
-}
-/* The slip inside a section brings its own top padding for a column title that is not there in this
-   layout (the section title above replaces it) -- the 2 would otherwise stack into a gap twice the
-   size of every other one in the modal. */
-.breakdown-edit-section .payslip-view {
-    padding-top: 0;
 }
 /* The row's calculation notes in the Calculation Breakdown modal -- collapses completely (no stray
    bottom margin) for the rows that have none, which is most of them. */
@@ -5586,157 +5577,6 @@ button.badge {
     font-size: var(--fs-base);
     font-weight: 500;
 }
-
-/* payslip-view (§9 "สลิป / รายละเอียดการคำนวณ", Round 3 item 3c-2, revised 3 times same-day) --
-   app/views/partials/payslip-view.php + payslipViewHtml() (app.js): 2-column Income | Deductions
-   (Deductions now a single merged list -- statutory + item/manual rows, an optional small subheader
-   only when both groups are present -- see the PHP partial's own docblock) + a bottom "ยอดจ่ายสุทธิ"
-   line. Used inside runDetailBreakdownModal's #breakdownModalBody today -- kept modal-agnostic (no
-   selector here is scoped to that modal's id) so a future print/PDF payslip page can reuse it
-   unstyled-changed. §8's own rule ("only the number itself changes color -- its label...stays
-   neutral") is why `.payslip-col-title` stays `--c-text`, not `--c-success`/`--c-danger` like the
-   old per-section header this replaces (breakdownSectionHtml(), removed) used to -- only
-   `.num.money-*` on each amount carries the earning/deduction color now.
-   "ลดเส้น" (explicit instruction): removed Bootstrap's own default per-row `<tr>` border entirely
-   (`.payslip-line-table td { border: 0 }` below) -- row separation is padding alone now, not a
-   line. §9's own modal size rule ("modal-lg เป็นค่าเริ่มต้นสำหรับฟอร์ม") already matched --
-   runDetailBreakdownModal's own markup already carries `modal-lg`, confirmed unchanged.
-   2nd same-day follow-up: `.payslip-col-total` is a plain flex row (a sibling of the `<table>`, NOT
-   a `<tfoot>` row inside it), pinned to the bottom of its own column via `margin-top: auto` on a
-   flex column (`.payslip-col`) + `align-items: stretch` on `.payslip-columns` (CSS Grid's own
-   default -- makes both columns share the taller one's height so a short column's own total still
-   lands on the same bottom line as a long column's).
-   3rd same-day follow-up, explicit instruction -- density + highlighted totals:
-   - `.payslip-row` (NEW, explicit marker class on every real line-item `<tr>` -- not the subgroup-
-     label row, not a peer of `.payslip-line-table td`'s old blanket selector) carries the `--sp-2`
-     vertical row padding (≈32px row height at this app's default --fs-sm/line-height, confirmed via
-     computed style) -- `.payslip-line-table td` itself now only resets `border: 0` for every row
-     kind (including the subgroup-label/"-" placeholder rows, which do NOT get `.payslip-row`'s own
-     padding).
-   - The gap right after each column's own title, and right before `.payslip-col-total`, is `--sp-3`
-     (was `--sp-2`) -- `.payslip-col-title`'s own `margin-bottom` and `.payslip-col-total`'s own
-     `padding-top` below.
-   - `.payslip-col-total` and `.payslip-summary-row-net` (the "ยอดจ่ายสุทธิ" line) both get a
-     `background-color` band so the 2 column subtotals and the final net figure read as distinct
-     "answer" rows, not just more list rows -- `--c-surface-2` (as literally requested) does NOT
-     exist anywhere in this app's token set (checked tokens.css directly) -- substituted
-     `--c-bg-subtle`, the established "raised surface distinct from base bg" token already used for
-     modal footer/table header/filter bar (already dark-mode-aware, already proven distinct from
-     `--c-bg` -- the modal's own background -- in both themes, so it does not blend into the modal in
-     dark mode either). 2026-09-15, corrected: these 2 bands used to have NO horizontal
-     padding at all, so their text sat flush against the gray band's own edge (measured 0px) while
-     the "ยอดจ่ายสุทธิ" band right below them had 12px -- 2 bands of the same kind, 2 different insets.
-     There was never a rule making them match (checked before changing anything: nothing was
-     overriding one, the 0 was written here deliberately and is what this paragraph used to defend).
-     Fixed with ONE inset variable, `--payslip-inset` on `.payslip-view`, applied to all 4 things
-     that must share a left edge -- column title, every line row's own first/last cell, the column
-     total band, and the net band -- so they move together instead of drifting apart again. The bands
-     still span their column's FULL width (only their content is inset), so 2 side-by-side bands
-     still never bleed toward each other across the `--sp-4` column gap, which is what the original
-     0 was protecting. No new border added on either (explicit
-     instruction: "ห้ามเพิ่ม border ต่อแถว") -- background + weight only, same "ลดเส้น" posture as the
-     rest of this component. */
-.payslip-view {
-    padding-top: var(--sp-4);
-    /* The ONE horizontal inset every part of this component shares (title, line rows, column-total
-       band, net band) -- a variable, not 4 repeated literals, because the whole point is that these
-       can never disagree again. */
-    --payslip-inset: var(--sp-3);
-}
-.payslip-columns {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    column-gap: var(--sp-4);
-    align-items: stretch;
-}
-.payslip-col {
-    display: flex;
-    flex-direction: column;
-    /* 2026-09-15, real bug found in Playwright (Adjustments modal > Payment Items, which renders its
-       own rows through this same component): a grid item's default `min-width: auto` refuses to
-       shrink below its CONTENT's min-content width, so ONE long non-wrapping line inside a row (that
-       tab's own one-line note, `white-space: nowrap` + ellipsis) stretched column 1 until column 2
-       had no width left at all -- the Deductions column vanished. `min-width: 0` lets both columns
-       hold their 1fr share and lets the ellipsis inside actually engage. Latent until now only
-       because a real payslip's own rows wrap normally. */
-    min-width: 0;
-}
-.payslip-col-title {
-    color: var(--c-text);
-    font-weight: 700;
-    font-size: var(--fs-sm);
-    padding: 0 var(--payslip-inset) var(--sp-2);
-    margin-bottom: var(--sp-3);
-    border-bottom: 1px solid var(--c-border);
-}
-.payslip-line-table td {
-    border: 0;
-}
-/* A one-line ellipsis inside a cell needs the cell to have a width that is NOT content-driven: an
-   auto-layout table refuses to shrink below its own min-content, so a long `white-space: nowrap`
-   note pushes the column out and over its neighbour instead of clipping (real bug, 2026-09-15).
-   Fixed layout + an explicit amount-column share gives every row something to clip against. */
-.payslip-line-table {
-    table-layout: fixed;
-}
-.payslip-line-table td:last-child {
-    width: 38%;
-}
-.payslip-row td {
-    padding: var(--sp-2) 0;
-    /* The amount belongs to the line's FIRST row (its name), not to the middle of a cell that also
-       carries a note/payee row underneath -- the table equivalent of `align-items: flex-start`. */
-    vertical-align: top;
-}
-/* First/last cell carry the shared inset so a line's name and its amount line up with the title
-   above and the total band below. A "-" placeholder row is a single `colspan="2"` cell, i.e. both
-   first AND last child, so it picks up both sides from these same 2 rules. */
-.payslip-row td:first-child,
-.payslip-subgroup-label {
-    padding-left: var(--payslip-inset);
-}
-.payslip-row td:last-child {
-    padding-right: var(--payslip-inset);
-}
-/* Scoped through the table on purpose: Bootstrap's own
-   `.table > :not(caption) > * > *` sets a colour on every cell and outranks a bare single class, so
-   an unscoped rule here loses the muted colour and the header renders as normal body text. */
-.payslip-line-table .payslip-subgroup-label {
-    padding-top: 0;
-    font-size: var(--fs-xs);
-    font-weight: 600;
-    color: var(--c-text-muted);
-}
-/* --sp-3 BETWEEN groups -- the first group's own header sits directly under the column title and
-   needs no extra gap of its own. */
-.payslip-line-table .payslip-subgroup-row:not(:first-child) .payslip-subgroup-label {
-    padding-top: var(--sp-3);
-}
-/* Indent belongs to grouping, not to the slip: rows are only stepped in when there is a subgroup
-   header above them to be stepped in FROM (payslipViewHtml()/payslip-view.php add this class to the
-   table only when they actually render the headers). A column with no headers -- Income always, and
-   Deductions whenever only one group has rows -- keeps the plain `--payslip-inset`. */
-.payslip-line-table-grouped .payslip-row td:first-child {
-    padding-left: calc(var(--payslip-inset) + var(--sp-3));
-}
-/* 2026-09-16: a column title that carries an action (the Calculation Breakdown modal's own
-   add-an-item button) -- the title becomes the flex row, the button sits at the column's right edge
-   on the same `--payslip-inset` every other part of the slip uses, so it lines up with the amounts
-   below it. 2026-09-18, tiny-L6b: that action is a worded `.btn-outline-primary` now rather than a
-   circled `.btn-icon`, and it still brings its own height from §4 -- nothing here sets a size. */
-.payslip-col-title-with-action {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-2);
-    /* The title's own padding stops short of the amount column's inset (it was only ever a text
-       label); the action needs the full one to line up with the numbers. */
-    padding-right: var(--payslip-inset);
-}
-.payslip-col-title-action {
-    flex: none;
-    display: inline-flex;
-}
 /* Name + source badge + inline buttons on one line; the name is always first, so every row's name
    starts at the same x whether or not the row has a badge. */
 .payslip-line-head {
@@ -5771,70 +5611,12 @@ button.badge {
 .payslip-line-tag-warn {
     color: var(--c-warning);
 }
-.payslip-col-total {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: auto;
-    padding: var(--sp-3) var(--payslip-inset) var(--sp-2);
-    background-color: var(--c-bg-subtle);
-    font-weight: 600;
-}
-.payslip-summary {
-    margin-top: var(--sp-4);
-    padding-top: var(--sp-3);
-    border-top: 1px solid var(--c-border-strong);
-}
-/* 2026-09-17, R1 follow-up: the horizontal inset is the SAME on all 3 rows (`--payslip-inset`, the
-   one the net band already had) -- with 0 here the 2 rows above it started and ended on a different x
-   from the band under them, which is the exact drift `--payslip-inset` was introduced to stop. Only
-   the vertical padding differs, which is what makes the band the prominent one. */
-.payslip-summary-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--sp-1) var(--payslip-inset, var(--sp-3));
-}
-.payslip-summary-label {
-    color: var(--c-text-muted);
-}
-.payslip-summary-row-net {
-    background-color: var(--c-bg-subtle);
-    border-radius: var(--radius);
-    padding: var(--sp-3) var(--payslip-inset, var(--sp-3));
-}
-.payslip-summary-row-net .payslip-summary-label {
-    color: var(--c-text);
-    font-weight: 600;
-}
-/* 2026-09-17, R1 follow-up: in list mode (no total bands) the 2 columns stand at their own heights.
-   They stretch by default so the 2 bottom bands land on one line -- with no bands there is nothing
-   to line up, and stretching only makes the shorter column's empty state a tall blank box. */
-.payslip-view-list .payslip-columns {
-    align-items: start;
-}
 /* The shared empty state's inline variant: one muted line, no icon and no button. */
 .empty-state-inline {
     padding: 0;
     font-size: var(--fs-sm);
     color: var(--c-text-muted);
     text-align: left;
-}
-/* In the hand-added list its row has to be as tall as a row holding ONE item -- an item row's own
-   height comes from its 32px round buttons, so the empty line reserves the same, centred. Flex on
-   the inline element, never on the `<td>` (§7). */
-.manual-line-empty-row .empty-state-inline {
-    display: flex;
-    align-items: center;
-    min-height: 32px;
-}
-/* Phone-width guard (§ responsive baseline) -- 2 fixed 1fr columns get cramped under ~400px, same
-   pattern rules.md already uses elsewhere for a 2-col grid meeting a narrow viewport. */
-@media (max-width: 480px) {
-    .payslip-columns {
-        grid-template-columns: 1fr;
-        row-gap: var(--sp-4);
-    }
 }
 
 /* ==========================================================================
@@ -7796,60 +7578,6 @@ html, body {
     color: var(--c-text-muted);
 }
 
-/* Added lines render through the SHARED slip component (payslipViewHtml(), §9) -- these rules only
-   add what a payslip line itself never has: the mode badge/code, the note line, and a Remove button
-   that must not move the number when it appears. */
-/* 2026-09-15, real bug found in Playwright (2nd one in this area): the note line is
-   `white-space: nowrap` (its whole point -- one line + ellipsis), which pushes a TABLE's min-content
-   width out, and a table refuses to shrink below that -- so the Income column's own table overflowed
-   its grid column and painted across the Deductions column (the row's own amount ended up on top of
-   the neighbouring column's numbers). `table-layout: fixed` sizes columns from the table's OWN width
-   instead of its content, which both stops the overflow and finally gives the ellipsis a boundary to
-   clip against. Scoped to THIS tab's slip only -- a real payslip's rows wrap normally and keep their
-   content-driven column widths (verified unchanged in the Calculation Breakdown modal). */
-
-/* The note line: clipped with an ellipsis (the full text is on the element's own `title`, set by the
-   caller) so a long note can never push the row's own height around. The payee line beside it is
-   `.payslip-line-tag` now -- one class for every tag under a line in a slip (tiny-L5). */
-/* Remove button: OUT of normal flow, anchored to the left edge of the amount cell, so showing and
-   hiding it never shifts the amount by a single pixel -- the same technique the comment list's own
-   row actions use (see `.comment-item-actions`). Hidden until the row is hovered or something inside
-   it has keyboard focus. */
-/* 2026-09-16, D2: the row's actions moved from a hover-revealed 20px ghost inside the cell to the
-   shared 32px round buttons (§7) at the END of the row, shown always. An affordance that has to be
-   hovered to be discovered is not one -- the same conclusion §6 already reached for the comment
-   list -- and these rows now carry 2 actions, not 1.
-   The cell is a flex row (the wrapper `<div>`, never the `<td>` itself -- §7: display:flex on a cell
-   kills its table-cell behaviour and its colspan with it), with the figure keeping the space it
-   needs and the buttons pinned to the right edge. */
-.manual-line-amount-wrap {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--sp-2);
-}
-/* The figure clips rather than pushing the buttons out of the column: the slip's own table is
-   `table-layout: fixed`, so this cell's width is decided by the table, not by its content. The full
-   value is never a surprise -- it is the row that was just typed in. */
-.manual-line-amount {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-.manual-line-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--sp-1);
-    flex: none;
-}
-/* A row that cannot carry actions (a legacy line with no id of its own) still reserves their width,
-   so the figures above and below it stay in one column. 2 buttons + the gap between them. */
-.manual-line-actions-empty {
-    width: calc(32px * 2 + var(--sp-1));
-}
-/* 2026-09-17, R1 follow-up: no pointer cursor and no hover surface -- the row is not a target any
-   more, its pencil is. A row that looks pressable but is not is worse than one that never claimed to
-   be (the buttons are visible at rest, so nothing has to be discovered by hovering anyway). */
 
 /* Run Information / Employee Breakdown as two visually distinct sub-sections within the Details
    tab (per explicit request) -- deliberately lighter than .card-surface (no shadow, thinner
@@ -9954,10 +9682,20 @@ html, body {
 .lo-table th.lo-amount-col {
     width: 130px;
 }
-/* One circle plus the cell's own padding -- 2026-09-18, tiny-L6a: the row carries a single control
-   now (the pencil), so the column is exactly as wide as that and no wider. */
+/* Wide enough for the WIDEST row this column can carry -- 2 circles plus the gap between them plus
+   the cell's own padding (2026-09-18, 4a-2: a hand-added row has a pencil AND a bin, a calculated one
+   has the pencil alone). Sizing it for the narrow case squeezed the pair on every manual row. */
 .lo-table th.lo-action-col {
-    width: 56px;
+    width: 96px;
+}
+/* A circle stays a circle whatever the row: the flex parent may not shrink it, and the table may not
+   stretch it. Scoped to this table -- the shared `.btn-icon` token itself is untouched. */
+.lo-table .lo-actions .btn-icon {
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
 }
 /* The figure fills its cell so `text-align: right` from `td.num` puts it on the column's own right
    edge; the buttons sit in their own cell, which is what keeps the two from pushing each other. */
@@ -10020,17 +9758,42 @@ html, body {
 .lo-row-off .payslip-line-tag {
     color: var(--c-text-faint);
 }
-/* 2026-09-18, 4a-1: the slip's 3 summary figures, below BOTH blocks of money (the calculated table
-   and the hand-added card) -- see lineOverrideTotalsHtmlRd(). One row gap under the card, no more. */
-.lo-totals-block .lo-total-row {
-    display: flex;
-    justify-content: space-between;
-    gap: var(--sp-3);
+/* 2026-09-18, 4a-2: the slip's 3 summary figures are the table's own last rows again (4a-1 parked
+   them in a block under it, while a second block of money still sat in between) -- see
+   lineOverrideTotalsHtmlRd(). A top rule per row instead of a flex band: they sit in the same grid as
+   the figures they total, so the label and the number already line up on the table's own columns. */
+.lo-table > tbody > tr.lo-total-row > td {
     border-top: 1px solid var(--c-border);
-    padding: var(--sp-2) 0;
+    padding-top: var(--sp-2);
+    padding-bottom: var(--sp-2);
     font-weight: 600;
 }
-.lo-totals-block .lo-total-row-net { border-top-width: 2px; font-size: var(--fs-md); }
+/* The figure ends on the table's own right edge, the same x every other figure in the modal ends on
+   -- it spans whatever columns follow the label rather than stopping at the money column. */
+.lo-table > tbody > tr.lo-total-row > td.lo-total-amount {
+    text-align: right;
+}
+.lo-table > tbody > tr.lo-total-row-net > td {
+    border-top-width: 2px;
+    font-size: var(--fs-md);
+}
+/* The group heading and its own "add a line" link on one line: the name from the left edge, the link
+   on the same right edge every figure in the table ends on. */
+.lo-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+}
+.lo-add-line-btn,
+.lo-add-line-btn:hover,
+.lo-add-line-btn:focus {
+    --bs-btn-color: var(--c-primary);
+    --bs-btn-hover-color: var(--c-primary-hover);
+    --bs-btn-padding-x: 0;
+    text-decoration: none;
+    font-size: var(--fs-sm);
+}
 .lo-amount-excluded {
     font-size: var(--fs-sm);
     color: var(--c-text-muted);

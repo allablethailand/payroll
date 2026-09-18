@@ -5,15 +5,13 @@ Format: Title / 1-2 line detail / Source (which batch).
 
 ---
 
-## 4a-2: manual line เข้าตาราง + tab filter + ลบ payslipViewHtml
+## 4a-2b: tab filter "รายละเอียด / รายการที่แก้ไข (n)" ในสลิปหน้าดู
 
-4a-1 รวม renderer สลิปดู/สลิปแก้แล้ว เหลือ: ย้าย manual line จากการ์ด `.ml-mount` เข้าเป็นแถวในตาราง (+ แถว
-"เพิ่มรายการ"), tab filter "รายละเอียด / รายการที่แก้ไข (n)", แล้วจึงลบ `payslipViewHtml()`/`payslipNetSummaryHtml()`
-(app.js + แถวใน CLAUDE.md §Shared components) กับ CSS `.payslip-view*` ~245 บรรทัด — **ต้องเก็บ `.payslip-line-tag`
-กับ `.payslip-line-note` ไว้** ทั้ง 2 คลาสอยู่ในบล็อกนั้นแต่ตารางใช้อยู่จริง
-แล้วย้ายยอดรวม 3 แถว (`lineOverrideTotalsHtmlRd()` + `.lo-totals-block`) กลับเข้าเป็นแถวท้ายตาราง
-แถว skipped ให้เหลือ badge เหตุผลตัวเดียว ตัด badge/tag ที่ซ้ำความหมายกันออก
-Source: ก้อน 4a-1 (2026-09-18)
+4a-2a เสร็จแล้ว (manual line เป็นแถวในตาราง, ยอดรวมกลับเข้าท้ายตาราง, ลบ `payslipViewHtml()` + การ์ด `.ml-mount`,
+แถว skipped ไม่ render)
+เหลือ: tab 2 ตัวเหนือตารางในโหมดดู, n = แถวที่ `override_action` ไม่ว่าง + แถว manual, filter = re-render โดยไม่ render
+แถวที่ไม่เข้าเงื่อนไข (กลุ่มว่างไม่ render, ยอดรวมยังแสดง), n=0 → ไม่มี tab, โหมดแก้ไม่มี tab
+Source: ก้อน 4a-2a (2026-09-18)
 
 ---
 
@@ -637,6 +635,10 @@ undo what existed before the test started.
 `ORDER BY d.run_id DESC LIMIT 1` = run ที่ใหม่ที่สุดใน DB เสมอ ระหว่างรอบนี้จึงไปเจอ fixture ของ `tests/ui/mksession.php`
 ที่ยังไม่ cleanup แล้ว assertion "another employee on the same run is unaffected" ได้ adjustment_count=2 แทน 0
 (fixture ใส่ line override + manual line ให้ emp 28) หลัง `--cleanup` ผ่านทันที แก้แบบเดียวกัน: สร้าง run ของตัวเอง หรือ assert เป็น delta
+
+ซ้ำอีกรอบ 2026-09-18 (4a-2a): `tests/payroll_calc_warnings_test.php` fail ใน `run_all --compare` — ยืนยันแล้วว่า
+fail เหมือนกันบน HEAD สะอาด = dev-DB drift ไม่ใช่ regression — **ตัวที่ 3 ของ baseline คือไฟล์นี้เสมอ**
+(คู่กับ `import_test` / `transaction_data_sync_test`) ไม่ต้องสอบซ้ำทุกรอบ
 
 **Source:** Phase Design Round 3 item 3c-1, page-loader work — full test-suite run turned these up,
 explicit instruction to log rather than fix now (2026-09-14).

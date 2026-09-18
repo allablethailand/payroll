@@ -1,9 +1,8 @@
 # Working rules (always apply)
 
 ## Git
-- Never run git commit, git add, git stash, git checkout, or git reset.
-- ถ้าต้องเทียบ test บน HEAD ให้ใช้ `git worktree add ../payroll-head HEAD` รันในนั้นแล้ว `git worktree remove`
-  — ห้าม stash แม้จะสำรองไฟล์ไว้ก็ตาม
+- Never run git commit, git add, git stash, git checkout, git reset, git worktree, git branch, or git tag.
+- ต้องการเทียบกับ HEAD สะอาด → **หยุดแล้วรายงานให้ผู้ใช้ทำเอง** ห้ามสร้าง worktree/branch เอง
 - Edit files, then stop and report: files changed + `git status` + `git diff --stat`.
 - The developer reviews and commits manually.
 - `.git/COMMIT_MSG_NEXT` must describe the ENTIRE uncommitted diff (`git diff HEAD`), not just the
@@ -160,7 +159,6 @@ PHP 8.x, MySQL 8.x, Bootstrap 5, jQuery, SweetAlert2, CSS (custom, ไม่ใ�
 | `isFormDirty()` / `confirmIfDirtyThen()` | app.js (มีแล้ว) | ผูก dirty-check เองทีละ modal — ไม่สร้าง `guardDirtyModal()` ใหม่ |
 | `showConfirm()` (ขยายรับ object form) / `showSuccess` / `showError` | app.js/alert.js (มีแล้ว) | Swal.fire ตรง — ไม่สร้าง `confirmAction()` ใหม่ |
 | `resetModalTabs()` | app.js (มีแล้ว) | strip class เอง |
-| `payslipViewHtml()` | app.js | modal คำนวณแบบตาราง (PHP twin `payslip-view.php` ถูกลบแล้ว 2026-09-16 — `docs/decisions/remove-payslip-view-php-twin.md`) |
 | `payee-destination.php` + `initPayeeDestination()` | partials + app.js | payee picker ที่เขียนเองทีละที่ |
 
 เพิ่ม component ใหม่ต้องเสนอชื่อ + API + ที่ใช้ ≥ 2 จุด ก่อนเขียน — ดูรายละเอียดเต็ม (tokens, สี, ปุ่ม, badge, tabs/stepper/filter bar, ตาราง, ตัวเลข, modal/ฟอร์ม, feedback, lint, กระบวนการ 4 รอบ) ใน `docs/design/rules.md`

@@ -91,18 +91,19 @@ const extracted = [
     fn(detailSource, 'payeeDescriptorTextRd'),
     fn(detailSource, 'lineInstallmentTextRd'),
     fn(detailSource, 'payeeDescriptorHtmlRd'),
-    // The 3 real call sites, so what is compared below is what each of them really renders.
+    // The real call sites, so what is compared below is what each of them really renders.
+    // 2026-09-18, 4a-2: a hand-added line is no longer a surface of its own -- it is a ROW of the
+    // slip, mapped into one by manualLineToTableRowRd(), so the 3rd renderer is gone and what used to
+    // be "do the 3 agree?" is now "does the one renderer treat both kinds of row the same way?".
     fn(detailSource, 'lineOverrideTagHtmlRd'),
     fn(detailSource, 'lineOverrideRowHtml'),
-    fn(detailSource, 'manualLineTagHtml'),
-    fn(detailSource, 'manualLineRowActionsHtml'),
-    fn(detailSource, 'manualLineListItemHtml'),
+    fn(detailSource, 'manualLineToTableRowRd'),
     fn(detailSource, 'recurringDestPayeeSummary'),
     `module.exports = {
         payeeDescriptorTextRd, payeeDescriptorHtmlRd, lineInstallmentTextRd,
         LINE_TAG_SEP_RD, PAYEE_MASK_SHORT_RD,
         payeeDescriptorShortMaskRd, payeeDescriptorDropAccountNameRd,
-        lineOverrideRowHtml, manualLineListItemHtml, recurringDestPayeeSummary,
+        lineOverrideRowHtml, manualLineToTableRowRd, recurringDestPayeeSummary,
         setLang: (l, d) => { currentLang = l; langData = d; },
     };`,
 ].join('\n');
@@ -250,14 +251,17 @@ const dropName = (label) => label.replace(' (Trandar)', '');
         tagLineOf(api.lineOverrideRowHtml({ code: 'X', name_th: 'ก', name_en: 'A', current_amount: 1, payee: null, installment: { n: 3, total: 6 } }, 0, {}, false, 'view'))
             === api.lineInstallmentTextRd({ n: 3, total: 6 }));
 
-    console.log(`\n=== [${lang}] THE POINT: the 3 surfaces agree, byte for byte ===`);
+    console.log(`\n=== [${lang}] THE POINT: the surfaces agree, byte for byte ===`);
     Object.entries(KINDS).forEach(([kind, payee]) => {
         const fromSlip = payeeLineOf(api.lineOverrideRowHtml(
             { code: 'DED', name_th: 'รายการหัก', name_en: 'Deduction', current_amount: 1000, payee: payee }, 0, {}, false, 'view'));
-        const fromManual = payeeLineOf(api.manualLineListItemHtml(
-            { id: 1, item_type: 'deduction', item_name_th: 'รายการหัก', item_name_en: 'Deduction', item_code: 'DED', amount: 1000, payee: payee }, true));
+        // The same renderer, fed a hand-added line through its mapper -- the row a user really
+        // sees in the 2 manual groups of that very table.
+        const fromManual = payeeLineOf(api.lineOverrideRowHtml(api.manualLineToTableRowRd(
+            { id: 1, item_type: 'deduction', item_name_th: 'รายการหัก', item_name_en: 'Deduction', item_code: 'DED', amount: 1000, payee: payee }
+        ), 0, {}, false, 'view'));
         const fromCard = api.recurringDestPayeeSummary(payee);
-        check(`[${lang}] ${kind}: read-only slip === hand-added line === recurring card (the payee half)`,
+        check(`[${lang}] ${kind}: calculated row === hand-added row === recurring card (the payee half)`,
             fromSlip === fromManual && fromManual === fromCard && fromCard.length > 0,
             `slip=${JSON.stringify(fromSlip)} manual=${JSON.stringify(fromManual)} card=${JSON.stringify(fromCard)}`);
     });
@@ -291,8 +295,8 @@ check('no surface opens the destination half with an arrow any more',
     detailSource.indexOf('LINE_TAG_PAYEE_PREFIX_RD') === -1
     && api.payeeDescriptorHtmlRd(COMPANY_PAYEE, { variant: 'tag' }).indexOf('→') === -1);
 
-console.log('\n=== the 3 call sites really call the one renderer (no branch left behind) ===');
-['manualLineListItemHtml', 'lineOverrideRowHtml'].forEach((name) => {
+console.log('\n=== the call sites really call the one renderer (no branch left behind) ===');
+['lineOverrideRowHtml'].forEach((name) => {
     const src = fn(detailSource, name);
     check(`${name}() renders its payee through payeeDescriptorHtmlRd()`, src.indexOf('payeeDescriptorHtmlRd(') !== -1);
     check(`${name}() no longer branches on payee_type itself`, src.indexOf('payee_type ===') === -1, src.indexOf('payee_type ==='));

@@ -1774,7 +1774,7 @@ input เสมอไม่ว่าจะอยู่ฝั่งไหน):
 - **รายชื่อขนาดใน `.form-compact` ต้องเขียนชัดๆ ไม่พึ่งการสืบทอด** — หลายอย่างในฟอร์มตั้งขนาดเอง
   (`.small`/`<small>`, `.form-control`, `.btn` และ**ธีม select2-bootstrap-5 ที่ตั้ง `.select2-selection` ไว้ `1rem`** — สาเหตุที่ select
   เคยดูขนาดไม่เท่า input ข้างๆ ทั้งที่ `__rendered` ถูกแล้ว) — style.css โหลดหลังธีม rule specificity เท่ากันจึงชนะ
-- **component ที่มี scale ของตัวเอง (เช่นสลิป `payslipViewHtml()`) อยู่นอก scale นี้** — reset กลับเป็นขนาด body
+- **component ที่มี scale ของตัวเอง (เช่นสลิป) อยู่นอก scale นี้** — reset กลับเป็นขนาด body
   ที่ขอบของมัน เพราะมันต้องเหมือนกันกับที่อื่นที่ component เดียวกันถูก render
   — **ภายใน `.form-compact` ปิด gutter แนวตั้งของ `.row` (`--bs-gutter-y: 0`) แล้วใช้ `row-gap`** — gutter ดึงกล่องแถวขึ้น
   แล้วดันคอลัมน์ลง มาร์จิ้นที่ตั้งจึงไม่เท่าระยะที่เห็นจริง (บั๊กจริง 2026-09-15: margin 12px → เห็น 18px) — demo ใน `docs/design/components.php`
@@ -1837,31 +1837,27 @@ page-local block มา 2 รอบก่อนหน้า (callout ก่อ�
   component นี้
 
 **สลิป / รายละเอียดการคำนวณ** (modal รายละเอียดการคำนวณ)
-- `payslipViewHtml()` (app.js) แบบสลิป 2 คอลัมน์ (รายได้ | รายหัก) + สรุปล่าง (รวมรายได้/รวมหัก/สุทธิ) ตัวเลข `.num` — ตัวเดียวทั้งแอป (PHP twin `payslip-view.php` ถูกลบแล้ว 2026-09-16)
-- **ระยะขอบซ้าย-ขวาภายในสลิปมีค่าเดียว: `--payslip-inset` (= `--sp-3`) ประกาศบน `.payslip-view`** — ใช้กับ
-  `.payslip-col-title`, `.payslip-row td:first-child`/`:last-child`, `.payslip-subgroup-label`,
-  `.payslip-col-total`, `.payslip-summary-row-net` **ทุกจุดต้องอ้างตัวแปรนี้ ห้ามใส่ค่าตรงๆ**
-- **`payslipViewHtml()` รับ label override 5 ตัว (optional): `earningTitle`/`deductionTitle`/`earningTotalLabel`/
-  `deductionTotalLabel`/`netLabel`** — ให้หน้าอื่นที่เนื้อหาเป็น "รายการสองคอลัมน์ + ยอดรวมท้าย" แบบเดียวกับสลิป ใช้ component
-  เดียวกันได้โดยไม่ต้อง copy มาร์กอัพ (§0.4) — caller ส่งข้อความที่ resolve แล้ว (ไม่ใช่ key) — ไม่ส่งก็ได้คำเดิมของสลิปทุกคำ
-  — ตัวอย่างจริง: block "รายการที่เพิ่มเอง" ใน modal รายละเอียดการคำนวณ (หัวคอลัมน์ + `showTotals:false`)
-  — `netLabel` ไม่มี caller จริงตอนนี้ (caller เดิมคือ tab "รายการจ่าย" ที่ถูกลบ 2026-09-17)
-- **`.payslip-line-table` เป็น `table-layout: fixed` (คอลัมน์ตัวเลข 38%) ที่ตัว component เอง** — บรรทัด
-  ellipsis (`white-space: nowrap`) ในสลิปต้องมีความกว้างที่ไม่ได้มาจากเนื้อหาไว้ให้ clip ไม่งั้นดันคอลัมน์ล้นทับคอลัมน์
-  ข้างๆ (บั๊กจริง 2026-09-15) — `.payslip-col` เองมี `min-width: 0` แล้วเป็นเงื่อนไขจำเป็นของ grid
+- **สลิปดูกับสลิปแก้เป็นตารางเดียวกัน** (`renderLineOverrideTableRd()`, payroll/detail.js) — `mode: 'view'` ตัดสินแค่ว่า
+  คอลัมน์ไหนถูก render บ้าง ห้ามใช้ `d-none` ซ่อน · ทุกแถวของสลิป **รวมรายการที่เพิ่มเอง** อยู่ในตารางนี้ แบ่งด้วยหัวกลุ่ม
+  (`.lo-group`) ห้ามสร้างการ์ด/ตารางที่ 2 ให้รายการชนิดใดชนิดหนึ่ง — รายการที่เพิ่มเองแปลงเข้า row shape เดียวกันก่อน
+  (`manualLineToTableRowRd()`) แล้วเข้า row builder ตัวเดียวกัน
+- **ยอดรวม (รวมรายได้/รวมหัก/สุทธิ) เป็น 3 `<tr>` ท้ายตาราง** ทั้ง 2 โหมด ไม่ใช่บล็อกข้างนอก — ทุกตัวเลขมาจากแถว
+  `payroll_run_details` ตรงๆ ห้ามบวกเองฝั่ง client
+- **กลุ่มที่เพิ่มรายการได้ = ลิงก์ข้อความ (`.btn-link`) ใน "แถวหัวกลุ่ม" ชิดขวา** 1 ตัว/กลุ่ม ไม่ใช่ปุ่มทึบและไม่ใช่แถวแยก
+  (action ที่ซ้ำหลายตัว §4/§0.2) — หัวกลุ่มยังเป็น 1 `<tr>` colspan เต็ม ใช้ flex ข้างในเซลล์ ห้าม `display:flex` ที่ `<td>`
+  — โหมดดูไม่ render ลิงก์ · กลุ่มที่ยังว่างในโหมดแก้ยัง render หัวกลุ่มไว้ เพราะลิงก์บนหัวคือทางเข้าเดียวที่เหลือ
+- **แถวที่ไม่มีผลต่อยอดรวม ไม่ render เลย** — รายการที่พนักงานคนนี้ไม่ได้เข้าร่วม/ได้รับยกเว้น/ถูกปิด ไม่ใช่แถวของสลิป
+  (ทั้ง 2 โหมด) — ห้ามแสดงเป็นแถวจาง แถวซ่อนหลัง toggle หรือแถวที่มี badge บอกเหตุผล: แถวคือทรัพยากรที่แพงที่สุดของสลิป
+  ยกเว้นแถวที่มี override รายคนอยู่ ต้องแสดงเสมอ (ไม่งั้น override ของมันเข้าไม่ถึง)
+- **1 แถว = badge เดียวต่อ 1 ความหมาย** ห้ามพ่วง badge ที่อธิบายเรื่องเดิมซ้ำอีกชั้น
 - **1 แถว = ชื่อก่อน แล้วค่อย badge แหล่งที่มา** (`.payslip-line-head` > `.payslip-line-name` + `statusBadgeHtml()`
   tone neutral + outline ไม่มีไอคอน) ชื่อทุกแถวจึงเริ่มคอลัมน์เดียวกัน — หมายเหตุเป็นบรรทัดที่ 2
-  (`.payslip-line-note`, `--fs-xs`/`--c-text-muted`, บรรทัดเดียว + `title` เต็ม) — `.payslip-row td` เป็น
-  `vertical-align: top` ตัวเลขจึงอยู่บรรทัดเดียวกับชื่อเสมอ
-- **tag ใต้บรรทัดในสลิป (ปลายทาง/งวด/ยกเว้น) ใช้ `.payslip-line-tag` ตัวเดียว** (`--fs-xs`/`--c-text-muted`,
+  (`.payslip-line-note`, `--fs-xs`/`--c-text-muted`, บรรทัดเดียว + `title` เต็ม)
+- **tag ใต้บรรทัดในสลิป (ปลายทาง/งวด/ยกเว้น/หมายเหตุ) ใช้ `.payslip-line-tag` ตัวเดียว** (`--fs-xs`/`--c-text-muted`,
   `margin-top: --sp-1`) — ห้ามใช้ `.small` ของ Bootstrap (ขนาดขึ้นกับ parent จึงไม่เท่ากันระหว่างสลิปดู/สลิปแก้)
   ทุก tag ในสลิปเดียวกันต้องขนาดเท่ากัน — สีอื่นเพิ่มเป็น modifier (`.payslip-line-tag-warn`) ไม่ทับ `font-size`
   — แถวที่ถูกปิด (`.lo-row-off`) tag ยังอยู่ แต่จางเป็น `--c-text-faint` พร้อมชื่อ ไม่ซ่อน
-- **เยื้องแถว (`--sp-3`) ใช้เฉพาะคอลัมน์ที่มีหัวกลุ่มย่อยจริง** — `payslipViewHtml()` ใส่คลาส
-  `.payslip-line-table-grouped` ให้ตารางเฉพาะตอนที่ render หัวกลุ่ม คอลัมน์ที่ไม่มีหัวกลุ่มห้ามเยื้อง
-- **แถบรวม (`.payslip-col-total`) ต้องเต็มความกว้างคอลัมน์เสมอ — inset อยู่ที่เนื้อหา ห้ามหดตัวแถบเข้า** (ไม่งั้น 2 แถบ
-  ซ้าย-ขวาจะไหลเข้าหากันในช่อง `--sp-4` ระหว่างคอลัมน์) — ที่มา/ตัวเลขที่วัดได้:
-  `docs/decisions/2026-09-15-payslip-inset-and-filter-search.md`
+- **ลำดับ tag ต่อแถวตายตัว**: ปลายทาง → ยกเว้น → สูตร → หมายเหตุ — เหมือนกันทุกชนิดแถว
 
 **emp-header-card — เสร็จแล้ว รอบ 2 item 6c** (หัวการ์ดพนักงาน ใช้เป็นบล็อกแรกของทุก modal ที่เปิดจากแถว
 พนักงาน — quick-view, รายละเอียดคำนวณ, comment, verify, ผูกบัญชีธนาคาร ฯลฯ)
@@ -2005,7 +2001,6 @@ page-local block มา 2 รอบก่อนหน้า (callout ก่อ�
 | `isFormDirty()` / `confirmIfDirtyThen()` (ขยายรับ `promptOptions`, item 7b — เสร็จแล้ว) / `refreshDirtyGuard()` (ใหม่, item 7b) / `data-dirty-guard` modal marker (ใหม่, item 7b — opt-in, redesign ของกลไกที่เคยถูกสั่งปิดทั้งระบบไป 2026-09-09, ยังไม่มีหน้าจริงใช้ รอรอบ 4) | app.js (มีแล้ว, Platform Hardening Phase 1) | ผูก dirty-check เองทีละ modal — **ไม่สร้าง `guardDirtyModal()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §9) |
 | `showConfirm()` (ขยายรับ object form + `cancelText`, item 7b — เสร็จแล้ว; + `tone` 3 ทาง 2026-09-13 decision-set follow-up, `danger:true` ยังใช้ได้เป็น shorthand) / `showSuccess` (เปลี่ยนเป็น toast default, item 7b) / `showError` (ไม่เปลี่ยน) | app.js/alert.js (มีแล้ว) | Swal.fire ตรง — **ไม่สร้าง `confirmAction()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §10) |
 | `resetModalTabs()` | app.js (มีแล้ว) | strip class เอง |
-| `payslipViewHtml()` | app.js | modal คำนวณแบบตาราง (PHP twin `payslip-view.php` ถูกลบแล้ว 2026-09-16 — `docs/decisions/remove-payslip-view-php-twin.md`) |
 | `payee-destination.php` + `initPayeeDestination()`/`payeeDestinationType()`/`setPayeeDestination()` (ใหม่ 2026-09-16 — ปลายทางของรายการหัก 3 แบบ + คำถามย่อย "บันทึกเป็นรายการโอนเข้าบัญชีบริษัทหรือไม่", `$payee_slot` = sub-form ของผู้เรียกเอง, `$payee_allow_no_record=false` สำหรับ editor ที่ไม่มีค่า "ไม่มี payee"; การแปลง UI → `payee_type` อยู่ที่ `payeeDestinationType()` ที่เดียว) | `app/views/partials/` + `app.js` | payee picker ที่เขียนเองทีละที่ (4 จุด) |
 | `.block-busy` (ใหม่ 2026-09-17 — CSS class ล้วน, ประกาศคู่กับ `.lo-table-busy` เดิมในกฎเดียว: block ที่กำลังยิง write ของตัวเองอยู่ ทึบลงและปุ่มข้างในถูก `disabled` จริง จนกว่าจะจบ) | `style.css` | แต่ละ block คิดวิธีบอก "กำลังบันทึก" ของตัวเอง |
 | `.scroll-thin` (ใหม่, notification "ซอฟต์ลง" follow-up 2026-09-13 — CSS utility class ล้วนๆ ไม่มี JS, scrollbar บาง 6px โปร่ง) | `style.css` | scrollbar เริ่มต้นหนาของ browser บน dropdown/panel ที่ scroll — ใช้กับ `.notif-list` แล้ว, ตัวไหนใน dropdown/panel ที่ scroll ต่อไปในระบบให้เรียกซ้ำ ไม่เขียน scrollbar CSS เองใหม่ |

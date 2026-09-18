@@ -1500,11 +1500,11 @@
         </div>
     </div>
 
-    <!-- Breakdown Modal: per-employee itemized view for one payroll_run_details row, rendered via
-         the shared payslip-view component (app/views/partials/payslip-view.php +
-         payslipViewHtml(), app.js) -- 2-column Earnings | Deductions + an optional Statutory block
-         + a bottom Gross/Total Deductions/Net Pay summary, so it's unambiguous which line is income
-         and which is a deduction (the main table only shows totals).
+    <!-- Breakdown Modal: per-employee itemized view for one payroll_run_details row. 2026-09-18,
+         4a-1/4a-2: ONE table (renderLineOverrideTableRd(), payroll/detail.js) in both modes -- every
+         line grouped by what it is (base salary / income / deductions / statutory / the 2 hand-added
+         groups), then Gross/Total Deductions/Net Pay as its last 3 rows. `mode: 'view'` decides only
+         which columns exist at all. See docs/decisions/2026-09-18-slip-single-place.md.
          2026-09-14, Round 3 item 3c-2: header reduced to title + × only (§9 "Header = ชื่อ + ×
          เท่านั้น") -- #breakdownEmployeeName was already removed (2026-09-11, employee name lives in
          the header card below instead); the icon and the pinned Net-Pay footer are now also gone --

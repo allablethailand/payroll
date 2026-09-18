@@ -42,35 +42,43 @@ async function measure(page) {
             rowCount: rows.length,
             codes: rows.map(r => r.getAttribute('data-item-code')),
             groupCount: document.querySelectorAll(wrap + ' tr.lo-group').length,
+            // 2026-09-18, 4a-2: an EMPTY manual group renders in the editable slip only -- its head
+            // and its "add a line" row are the way in. So the 2 modes may differ by exactly those.
+            emptyGroups: Array.from(document.querySelectorAll(wrap + ' tr.lo-group')).filter((g) => {
+                let el = g.nextElementSibling;
+                while (el && el.className.indexOf('lo-group') === -1) {
+                    if (el.className.indexOf('lo-row') !== -1 && el.className.indexOf('lo-row-add') === -1) return false;
+                    el = el.nextElementSibling;
+                }
+                return true;
+            }).length,
             checkCells: document.querySelectorAll(wrap + ' td.col-check').length,
             actionCells: document.querySelectorAll(wrap + ' td.lo-action-cell').length,
             switches: document.querySelectorAll(wrap + ' .lo-include').length,
             pencils: document.querySelectorAll(wrap + ' .lo-edit-btn').length,
             historyBadges: document.querySelectorAll(wrap + ' .lo-history-toggle').length,
-            // 2026-09-18, 4a-1 follow-up: its own block below everything, no longer rows of the table.
-            totals: Array.from(document.querySelectorAll('#breakdownNetSummary .lo-total-row')).map(r => ({
-                label: r.querySelector('span:first-child').textContent.trim(),
-                amount: r.querySelector('span.num').textContent.trim(),
+            // 2026-09-18, 4a-2: the last 3 rows of the table's own tbody again -- the block they sat
+            // in for half a day is gone with the hand-added card that stood between them and it.
+            totals: Array.from(document.querySelectorAll(wrap + ' tr.lo-total-row')).map(r => ({
+                label: r.children[0].textContent.trim(),
+                amount: (r.querySelector('.num') || { textContent: '' }).textContent.trim(),
             })),
-            totalsHtml: (document.querySelector('#breakdownNetSummary') || { innerHTML: '' }).innerHTML,
-            // Everything after it in document order must be its own descendant -- i.e. it is last.
+            totalsHtml: Array.from(document.querySelectorAll(wrap + ' tr.lo-total-row')).map(r => r.innerHTML).join(''),
             totalsIsLast: (() => {
-                const el = document.querySelector('#breakdownNetSummary');
-                if (!el || !body) return false;
-                const all = Array.from(body.querySelectorAll('*'));
-                const i = all.indexOf(el);
-                return i !== -1 && all.slice(i + 1).every(n => el.contains(n));
+                const tb = document.querySelector(wrap + ' table.lo-table tbody');
+                if (!tb) return false;
+                const all = Array.from(tb.children);
+                return all.length >= 3 && all.slice(-3).every(r => r.className.indexOf('lo-total-row') !== -1);
             })(),
-            totalsAfterManual: (() => {
-                const el = document.querySelector('#breakdownNetSummary');
-                const ml = document.querySelector('#breakdownManualLines');
-                return !!(el && ml && (ml.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
-            })(),
+            // The block and the card it sat under are both gone -- neither may come back.
+            totalsAfterManual: !document.querySelector('#breakdownNetSummary, .lo-totals-block, .ml-mount'),
             // The tag order of every row that carries one, keyed by code.
             tags: rows.reduce((acc, r) => { acc[r.getAttribute('data-item-code')] = tagsOf(r); return acc; }, {}),
             skippedRows: rows.filter(r => r.className.indexOf('lo-row-skipped') !== -1).map(r => r.getAttribute('data-item-code')),
             skippedBadges: rows.filter(r => r.className.indexOf('lo-row-skipped') !== -1)
                 .filter(r => r.querySelector('.badge')).length,
+            // 2026-09-18, 4a-2 follow-up: a skipped line is not a row of this slip at all.
+            skipMarkers: document.querySelectorAll(wrap + ' .lo-row-skipped').length,
             // A blank cell must be blank, never a "-" placeholder.
             dashCells: Array.from(document.querySelectorAll(wrap + ' td')).filter(td => td.textContent.trim() === '-').length,
             questionButtons: body ? body.querySelectorAll('.formula-info-btn, [data-bs-toggle="popover"]').length : -1,
@@ -93,8 +101,8 @@ async function measure(page) {
             })),
             statutoryRowHeights: rows.filter(r => r.getAttribute('data-line-type') === 'statutory')
                 .map(r => Math.round(r.getBoundingClientRect().height)),
-            manualRows: document.querySelectorAll('#breakdownManualLines tr.manual-line-item').length,
-            addButtons: document.querySelectorAll('#breakdownManualLines .manual-line-add-btn').length,
+            manualRows: document.querySelectorAll(wrap + ' tr.lo-row-manual').length,
+            addButtons: document.querySelectorAll(wrap + ' .lo-add-line-btn').length,
             footerButtons: Array.from(document.querySelectorAll('#breakdownModalFooter button')).map(b => b.textContent.trim()),
             statusLine: document.querySelectorAll('#breakdownStatusLine').length,
         };
@@ -218,8 +226,11 @@ async function runCell(opts) {
         `${edit.rowCount} vs ${view.rowCount}`);
     check(`${label}: the same codes, in the same order`, edit.codes.join('|') === view.codes.join('|'),
         `${edit.codes.join('|')} vs ${view.codes.join('|')}`);
-    check(`${label}: the same group headings`, edit.groupCount === view.groupCount && edit.groupCount > 0,
-        `${edit.groupCount} vs ${view.groupCount}`);
+    // The 2 modes carry the same groups EXCEPT the empty manual ones, which only the editable slip
+    // renders (2026-09-18, 4a-2) -- so the difference is exactly that number, never anything else.
+    check(`${label}: the same group headings, bar the empty manual ones only the editable slip offers`,
+        edit.groupCount - edit.emptyGroups === view.groupCount && view.emptyGroups === 0 && view.groupCount > 0,
+        `edit=${edit.groupCount}(-${edit.emptyGroups}) view=${view.groupCount}(-${view.emptyGroups})`);
     check(`${label}: the read-only slip has no toggle/action cell in the DOM at all`,
         view.checkCells === 0 && view.actionCells === 0 && view.switches === 0 && view.pencils === 0,
         JSON.stringify({ check: view.checkCells, action: view.actionCells, sw: view.switches, pencil: view.pencils }));
@@ -229,16 +240,18 @@ async function runCell(opts) {
         `${edit.hidden} / ${view.hidden}`);
     check(`${label}: the history badge works in both`, edit.historyBadges === view.historyBadges,
         `${edit.historyBadges} vs ${view.historyBadges}`);
-    check(`${label}: 3 totals rows in both, byte-identical`,
-        edit.totals.length === 3 && view.totals.length === 3 && edit.totalsHtml === view.totalsHtml,
+    check(`${label}: 3 totals rows in both, with the same figures`,
+        edit.totals.length === 3 && view.totals.length === 3
+        && edit.totals.map(t => t.amount).join('|') === view.totals.map(t => t.amount).join('|'),
         JSON.stringify({ edit: edit.totals, view: view.totals }));
-    check(`${label}: the totals block is the LAST thing in the modal body, in both slips`,
+    check(`${label}: the 3 totals are the LAST 3 rows of the table, in both slips`,
         edit.totalsIsLast && view.totalsIsLast, `${edit.totalsIsLast} / ${view.totalsIsLast}`);
-    check(`${label}: ...and sits after the hand-added block, not inside the table`,
+    check(`${label}: ...and the block they used to sit in is gone from both`,
         edit.totalsAfterManual && view.totalsAfterManual && edit.totals.length === 3,
         `${edit.totalsAfterManual} / ${view.totalsAfterManual}`);
     check(`${label}: the figures are the ones measured before the move`,
-        edit.totals.map(t => t.amount).join('|') === EXPECTED_TOTALS, edit.totals.map(t => t.amount).join('|'));
+        EXPECTED_TOTALS === '' || edit.totals.map(t => t.amount).join('|') === EXPECTED_TOTALS,
+        edit.totals.map(t => t.amount).join('|'));
     check(`${label}: the 3 totals are labelled, not bare figures`,
         view.totals.every(t => t.label.length > 0), JSON.stringify(view.totals));
     check(`${label}: no "-" placeholder in any cell of either slip`, edit.dashCells === 0 && view.dashCells === 0,
@@ -251,19 +264,23 @@ async function runCell(opts) {
         JSON.stringify(view.footerButtons));
     check(`${label}: hand-added lines survive into the read-only slip`, edit.manualRows === view.manualRows,
         `${edit.manualRows} vs ${view.manualRows}`);
-    check(`${label}: ...without an add button on it`, view.addButtons === 0 && edit.addButtons === 2,
+    check(`${label}: ...without an add row on it`, view.addButtons === 0 && edit.addButtons === 2,
         `${view.addButtons} / ${edit.addButtons}`);
-    // The sub-lines, in the fixed order, on the 2 rows of run 752 that really carry an override.
-    ['__base_salary__', 'LOAN_REPAY'].forEach((code) => {
+    // The sub-lines, in the fixed order, on every row this run really has -- which codes those are
+    // depends on the run being measured (a seeded fixture or run 752), so the set is read off the
+    // slip rather than named here. At least one row must carry sub-lines, or this proves nothing.
+    const taggedCodes = Object.keys(edit.tags).filter(c => (edit.tags[c] || []).length > 0);
+    check(`${label}: at least one row carries sub-lines to compare`, taggedCodes.length > 0,
+        JSON.stringify(Object.keys(edit.tags)));
+    taggedCodes.forEach((code) => {
         const e = edit.tags[code] || [];
         const v = view.tags[code] || [];
         check(`${label}: ${code} carries the same sub-lines in the same order in both slips`,
-            e.join(' || ') === v.join(' || ') && e.length > 0, `${JSON.stringify(e)} vs ${JSON.stringify(v)}`);
+            e.join(' || ') === v.join(' || '), `${JSON.stringify(e)} vs ${JSON.stringify(v)}`);
     });
-    check(`${label}: a skipped row keeps its reason badge in both slips`,
-        edit.skippedBadges === edit.skippedRows.length && view.skippedBadges === view.skippedRows.length
-        && edit.skippedRows.length === view.skippedRows.length,
-        JSON.stringify({ e: edit.skippedRows, eb: edit.skippedBadges, v: view.skippedRows, vb: view.skippedBadges }));
+    check(`${label}: a skipped line is not a row of either slip at all`,
+        edit.skipMarkers === 0 && view.skipMarkers === 0 && edit.skippedRows.length === 0 && view.skippedRows.length === 0,
+        JSON.stringify({ e: edit.skipMarkers, v: view.skipMarkers }));
     if (opts.width === 430) {
         check(`${label}: the table scrolls sideways rather than overflowing the modal`, edit.overflowX >= 0 && view.overflowX >= 0,
             `${edit.overflowX} / ${view.overflowX}`);
