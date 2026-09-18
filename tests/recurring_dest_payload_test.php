@@ -205,14 +205,17 @@ if (!$runRow || $employeeId <= 0 || $payeeEmployeeId <= 0 || $bankAccountId <= 0
         if ($destRow !== null) {
             $destId = (int)$destRow['template']['destination_id'];
             checkTrue('the destination id came back', $destId > 0);
-            $expectedLabel = PaymentDestinationModel::optionLabel(
-                'TEST ปลายทาง (rolled back)',
-                $db->query("SELECT bank_name_th FROM `master_banks` WHERE id = {$bankId}")->fetchColumn() ?: null,
-                $db->query("SELECT bank_name_en FROM `master_banks` WHERE id = {$bankId}")->fetchColumn() ?: null
-            );
+            // 2026-09-18, tiny-L5: one label per language now -- the bank's own English name where
+            // `master_banks` has one. The destination's own name has no English twin and never changes.
+            $bankTh = $db->query("SELECT bank_name_th FROM `master_banks` WHERE id = {$bankId}")->fetchColumn() ?: null;
+            $bankEn = $db->query("SELECT bank_name_en FROM `master_banks` WHERE id = {$bankId}")->fetchColumn() ?: null;
+            $expectedLabel = PaymentDestinationModel::optionLabel('TEST ปลายทาง (rolled back)', $bankTh ?? $bankEn);
+            $expectedLabelEn = PaymentDestinationModel::optionLabel('TEST ปลายทาง (rolled back)', $bankEn ?? $bankTh);
             check('destination_label_th is the endpoint own composition', $destRow['template']['destination_label_th'], $expectedLabel);
-            check('destination_label_en is the SAME string (the endpoint serves one label for both)',
-                $destRow['template']['destination_label_en'], $expectedLabel);
+            check('destination_label_en takes the bank name in English, from that same endpoint',
+                $destRow['template']['destination_label_en'], $expectedLabelEn);
+            checkTrue('...which really is a different string here (this bank has an English name on file)',
+                $bankEn === null || $expectedLabelEn !== $expectedLabel);
             check('destination_is_saved reports the ad-hoc row as 0 (the editor needs to know)',
                 $destRow['template']['destination_is_saved'], 0);
             check('destination_bank_branch', $destRow['template']['destination_bank_branch'], 'TEST branch');

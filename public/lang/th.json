@@ -1950,6 +1950,7 @@
     "attendance_data_field_leave_days": "ลาไม่รับเงินเดือน (วัน)",
     "confirm_reset_attendance_data_message": "ต้องการยกเลิกการแก้ไขทั้งหมด และคืนค่าทุกรายการกลับเป็นค่าที่ซิงค์มาหรือไม่?",
     "payee_employee_label": "พนักงานผู้รับโอน",
+    "payslip_line_installment": "งวด {n}/{total}",
     "payee_transfer_tag": "จ่ายให้",
     "payee_employee_no_bank_account": "พนักงานคนนี้ยังไม่มีบัญชีธนาคาร",
     "payee_employee_select_required": "กรุณาเลือกพนักงานผู้รับโอน",

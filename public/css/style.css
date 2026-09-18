@@ -5805,6 +5805,17 @@ button.badge {
     text-overflow: ellipsis;
     white-space: nowrap;
 }
+/* Every tag under a line in a slip -- destination, instalment, exemption -- is one size and one
+   colour (2026-09-18, tiny-L5). Bootstrap's `.small` is relative to whatever it sits in, so the
+   same tag came out a different size in the slip and in the editable table. */
+.payslip-line-tag {
+    margin-top: var(--sp-1);
+    font-size: var(--fs-xs);
+    color: var(--c-text-muted);
+}
+.payslip-line-tag-warn {
+    color: var(--c-warning);
+}
 .payslip-col-total {
     display: flex;
     justify-content: space-between;
@@ -7842,19 +7853,9 @@ html, body {
    clip against. Scoped to THIS tab's slip only -- a real payslip's rows wrap normally and keep their
    content-driven column widths (verified unchanged in the Calculation Breakdown modal). */
 
-/* Note + payee lines: one line each, clipped with an ellipsis (the full text is on the element's own
-   `title`, set by the caller) so a long note can never push the row's own height around. */
-.manual-line-payee {
-    font-size: var(--fs-xs);
-    color: var(--c-text-muted);
-    margin-top: var(--sp-1);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.manual-line-payee-warn {
-    color: var(--c-warning);
-}
+/* The note line: clipped with an ellipsis (the full text is on the element's own `title`, set by the
+   caller) so a long note can never push the row's own height around. The payee line beside it is
+   `.payslip-line-tag` now -- one class for every tag under a line in a slip (tiny-L5). */
 /* Remove button: OUT of normal flow, anchored to the left edge of the amount cell, so showing and
    hiding it never shifts the amount by a single pixel -- the same technique the comment list's own
    row actions use (see `.comment-item-actions`). Hidden until the row is hovered or something inside
@@ -10066,6 +10067,11 @@ input.lo-amount-edit {
     color: var(--c-text-faint);
 }
 .lo-row-off td.col-money {
+    color: var(--c-text-faint);
+}
+/* An excluded row keeps its tag -- where the money WOULD have gone is still the answer to "why is
+   this row here?" -- and fades with the name above it rather than staying brighter than it. */
+.lo-row-off .payslip-line-tag {
     color: var(--c-text-faint);
 }
 .lo-amount-excluded {

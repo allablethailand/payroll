@@ -1950,6 +1950,7 @@
     "attendance_data_field_leave_days": "Unpaid Leave (days)",
     "confirm_reset_attendance_data_message": "Discard all corrections and revert every field back to the synced value?",
     "payee_employee_label": "Payee Employee (transfer to)",
+    "payslip_line_installment": "Installment {n}/{total}",
     "payee_transfer_tag": "Paid to",
     "payee_employee_no_bank_account": "This employee has no bank account on file yet",
     "payee_employee_select_required": "Please select the payee employee.",

@@ -1124,3 +1124,25 @@ lang `manual_line_mode_*`/`mode_desc_*` ซึ่ง 6 key นั้นเหล
 (`pinnedOption`+`stripCodePrefix`) แล้วลบ key/CSS ที่เหลือได้ · **ทำรวมกับข้อ `.form-compact` ของ ก้อน 4**
 
 **Source:** R1b (2026-09-17)
+
+---
+
+## แถวที่ถูก exclude เสียปลายทาง/เลขงวดไปทั้งคู่ (ไม่ใช่เรื่อง CSS)
+
+`syncDeductionLinesForEmployee()` สร้างแถวของ line ที่ถูก exclude จาก `payroll_run_line_overrides` +
+catalog เท่านั้น (line หายจาก breakdown JSON ไปแล้ว) → `payee`/`installment` เป็น null ทั้งคู่ tag จึงไม่ render
+เลย ไม่ใช่ "จางลง" · ถ้าต้องการให้ยังบอกปลายทางได้ ต้องดึงจาก PED assignment เพิ่ม (lookup batch ใหม่ในลูป
+fallback) — เป็นการตัดสินใจเชิงพฤติกรรม ไม่ใช่ style จึงไม่ทำในรอบนี้ · `.lo-row-off .payslip-line-tag` ที่เพิ่มไว้
+ยังจำเป็นจริงสำหรับแถวที่ปิดจาก Run Settings (ยังอยู่ใน breakdown จึงยังมี tag)
+
+**Source:** tiny-L5 (2026-09-18)
+
+---
+
+## harness.js default baseUrl ไม่ตรงกับ BASE_URL ของ install นี้
+
+`tests/ui/harness.js` default เป็น `http://localhost/payroll` แต่ `.env` ของเครื่องนี้คือ
+`http://localhost:8080/payroll` (พอร์ต 80 เป็น Apache/PHP 5.6 ตัวอื่น ตอบ 500 ทุก route) · ทุกรอบต้องส่ง
+`UI_TEST_BASE_URL` เอง ไม่งั้นได้ timeout ที่ไม่บอกสาเหตุ · ให้อ่าน BASE_URL จาก `.env` เป็น default แทน
+
+**Source:** tiny-L5 (2026-09-18)

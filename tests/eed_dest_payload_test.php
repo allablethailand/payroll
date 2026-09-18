@@ -262,15 +262,18 @@ if (!$runRow || $employeeId <= 0 || $payeeEmployeeId <= 0 || $bankAccountId <= 0
         $externalRow = $byCode['TESTEED3'] ?? null;
         if ($externalRow !== null) {
             $destId = (int)$externalRow['destination']['destination_id'];
-            $expectedLabel = PaymentDestinationModel::optionLabel(
-                'TEST ปลายทาง EED (rolled back)',
-                $db->query("SELECT bank_name_th FROM `master_banks` WHERE id = {$bankId}")->fetchColumn() ?: null,
-                $db->query("SELECT bank_name_en FROM `master_banks` WHERE id = {$bankId}")->fetchColumn() ?: null
-            );
+            // 2026-09-18, tiny-L5: one label per language now -- the bank's own English name where
+            // `master_banks` has one. The destination's own name has no English twin and never changes.
+            $bankTh = $db->query("SELECT bank_name_th FROM `master_banks` WHERE id = {$bankId}")->fetchColumn() ?: null;
+            $bankEn = $db->query("SELECT bank_name_en FROM `master_banks` WHERE id = {$bankId}")->fetchColumn() ?: null;
+            $expectedLabel = PaymentDestinationModel::optionLabel('TEST ปลายทาง EED (rolled back)', $bankTh ?? $bankEn);
+            $expectedLabelEn = PaymentDestinationModel::optionLabel('TEST ปลายทาง EED (rolled back)', $bankEn ?? $bankTh);
             check('destination_label_th is the endpoint\'s own composition',
                 $externalRow['destination']['destination_label_th'], $expectedLabel);
-            check('destination_label_en is the SAME string (the endpoint serves one label for both)',
-                $externalRow['destination']['destination_label_en'], $expectedLabel);
+            check('destination_label_en takes the bank name in English, from that same endpoint',
+                $externalRow['destination']['destination_label_en'], $expectedLabelEn);
+            checkTrue('...which really is a different string here (this bank has an English name on file)',
+                $bankEn === null || $expectedLabelEn !== $expectedLabel);
             check('the ad-hoc destination reports is_saved = 0',
                 $externalRow['destination']['destination_is_saved'], 0);
             check('the account number is masked by the shared primitive, never sent whole',

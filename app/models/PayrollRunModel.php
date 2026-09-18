@@ -483,7 +483,7 @@ class PayrollRunModel {
             foreach (['earning_breakdown', 'deduction_breakdown'] as $field) {
                 foreach ($row[$field] as $i => $line) {
                     if (is_array($line)) {
-                        $row[$field][$i] = $this->enrichLinePayee($line, $payeeLookup);
+                        $row[$field][$i] = $this->enrichLineInstallment($this->enrichLinePayee($line, $payeeLookup), $payeeLookup);
                     }
                 }
             }
@@ -5832,7 +5832,7 @@ class PayrollRunModel {
                     $row['bank_account_key_version'] !== null ? (int)$row['bank_account_key_version'] : null
                 ))
                 : null;
-            return $this->enrichLinePayee([
+            return $this->enrichLineInstallment($this->enrichLinePayee([
                 'id' => (int)$row['id'],
                 // 2026-09-16, D2: the catalog item's own id, so the edit form can put the line's item
                 // back INTO its picker (a select2-remote has no options of its own to match on -- see
@@ -5897,7 +5897,7 @@ class PayrollRunModel {
                 'created_by_name_th' => $row['created_by_name_th'],
                 'created_by_name_en' => $row['created_by_name_en'],
                 'created_at' => $row['created_at'],
-            ], $payeeLookup);
+            ], $payeeLookup), $payeeLookup);
         }, $rows);
     }
 
@@ -6429,15 +6429,20 @@ class PayrollRunModel {
             // each gluing their own is exactly the divergence tiny-L2 removed). Composed by the SAME
             // public composer the company-account picker's own options endpoint uses -- not a 4th
             // spelling invented here.
+            // 2026-09-18, tiny-L5: the account NAME is deliberately NOT passed (null) -- the one
+            // difference from a company account's own label. This label never stands alone: it
+            // follows "จ่ายให้ {that same person}" in the same sentence, so the composer's trailing
+            // "(owner)" was printing the payee's name a second time, 3 words after the first.
             'payee_employee_account_label_th' => ($payee !== null && !empty($payee['has_bank_account']))
-                ? PayrollCycleModel::bankAccountOptionLabel($payee['bank_name_th'] ?? null, $payee['account_no_masked'] ?? null, $payee['account_name'] ?? null)
+                ? PayrollCycleModel::bankAccountOptionLabel($payee['bank_name_th'] ?? null, $payee['account_no_masked'] ?? null, null)
                 : null,
             'payee_employee_account_label_en' => ($payee !== null && !empty($payee['has_bank_account']))
-                ? PayrollCycleModel::bankAccountOptionLabel($payee['bank_name_en'] ?? null, $payee['account_no_masked'] ?? null, $payee['account_name'] ?? null)
+                ? PayrollCycleModel::bankAccountOptionLabel($payee['bank_name_en'] ?? null, $payee['account_no_masked'] ?? null, null)
                 : null,
             'destination_id' => $destId,
-            // The endpoint serves ONE label for both languages (its bank name is Thai-preferred);
-            // mirroring that exactly is the point -- see PaymentDestinationModel::optionLabel().
+            // Whatever that endpoint serves per language, mirrored exactly -- since tiny-L5 the two
+            // differ in the bank's name (the destination's own name has no English twin to differ
+            // in). See PaymentDestinationModel::optionLabel().
             'destination_label_th' => $dest['text_th'] ?? null,
             'destination_label_en' => $dest['text_en'] ?? null,
             'destination_account_name' => $dest['account_name'] ?? null,
@@ -6473,6 +6478,7 @@ class PayrollRunModel {
         $payeeIds = [];
         $destIds = [];
         $bankIds = [];
+        $installmentIds = [];
         foreach ($lineGroups as $lines) {
             if (!is_array($lines)) {
                 continue;
@@ -6484,10 +6490,11 @@ class PayrollRunModel {
                 if (!empty($line['payee_employee_id'])) { $payeeIds[] = (int)$line['payee_employee_id']; }
                 if (!empty($line['destination_id'])) { $destIds[] = (int)$line['destination_id']; }
                 if (!empty($line['bank_account_id'])) { $bankIds[] = (int)$line['bank_account_id']; }
+                if (!empty($line['installment_id'])) { $installmentIds[] = (int)$line['installment_id']; }
             }
         }
-        if (!$payeeIds && !$destIds && !$bankIds) {
-            return ['payees' => [], 'destinations' => [], 'banks' => []];
+        if (!$payeeIds && !$destIds && !$bankIds && !$installmentIds) {
+            return ['payees' => [], 'destinations' => [], 'banks' => [], 'installments' => []];
         }
         require_once __DIR__ . '/PaymentDestinationModel.php';
         require_once __DIR__ . '/PayrollCycleModel.php';
@@ -6495,7 +6502,39 @@ class PayrollRunModel {
             'payees' => $payeeIds ? (new EmployeeModel($this->db))->optionRowsByIds($compId, $payeeIds) : [],
             'destinations' => $destIds ? (new PaymentDestinationModel($this->db))->optionRowsByIds($compId, $destIds) : [],
             'banks' => $bankIds ? (new PayrollCycleModel($this->db))->bankAccountOptionRowsByIds($compId, $bankIds) : [],
+            'installments' => $installmentIds ? $this->installmentRowsByIds($compId, $installmentIds) : [],
         ];
+    }
+
+    /**
+     * 2026-09-18, tiny-L5: "which instalment, out of how many" for a SET of instalment ids, in one
+     * query -- the same id-set shape the 3 payee lookups above have, and for the same reason: a
+     * persisted line carries only the instalment's id, and the 2 numbers a reader needs sit in 2
+     * different tables (the instalment's own position; the plan's length, on its assignment). It is
+     * the SAME pair earningDeductionDestinationsForEmployee() already reads to decide
+     * is_installment_plan -- resolved once per request here instead of once per line.
+     * Company-scoped through the assignment's own employee, like every other lookup here.
+     */
+    private function installmentRowsByIds(int $compId, array $ids): array {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn($id) => $id > 0)));
+        if (!$ids) {
+            return [];
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare("SELECT i.id, i.installment_no, eed.total_installments
+                FROM `employee_earning_deduction_installments` i
+                JOIN `employee_earning_deductions` eed ON eed.id = i.assignment_id AND eed.deleted_at IS NULL
+                JOIN `employees` e ON e.id = eed.employee_id AND e.comp_id = ?
+                WHERE i.id IN ({$in})");
+        $stmt->execute(array_merge([$compId], $ids));
+        $byId = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $byId[(int)$r['id']] = [
+                'installment_no' => (int)$r['installment_no'],
+                'total_installments' => (int)$r['total_installments'],
+            ];
+        }
+        return $byId;
     }
 
     /**
@@ -6524,6 +6563,29 @@ class PayrollRunModel {
             $lookup['destinations'] ?? [],
             $lookup['banks'] ?? []
         );
+        return $row;
+    }
+
+    /**
+     * 2026-09-18, tiny-L5: adds `installment` -- {n, total} -- to one persisted line that came out
+     * of an instalment plan, so "งวด 2/12" can be shown beside the line without any surface counting
+     * instalments for itself. Paired with enrichLinePayee() rather than folded into it: they answer
+     * 2 different questions about the same row, and a line can carry either, both or neither.
+     *
+     * null in all 4 of the cases that are not a plan: no instalment_id at all (a manual line, base
+     * salary, a statutory item), an id whose row is gone (its assignment was deleted), a one-off
+     * assignment (total = 1 -- "งวด 1/1" is noise on every ordinary deduction, not information),
+     * and a lookup that was never given one.
+     *
+     * $lookup MUST come from payeeLookupForLines() -- no query is made here, by the same rule.
+     */
+    public function enrichLineInstallment(array $row, array $lookup = []): array {
+        $row['installment'] = null;
+        $id = !empty($row['installment_id']) ? (int)$row['installment_id'] : 0;
+        $found = $id > 0 ? ($lookup['installments'][$id] ?? null) : null;
+        if ($found !== null && $found['total_installments'] > 1) {
+            $row['installment'] = ['n' => $found['installment_no'], 'total' => $found['total_installments']];
+        }
         return $row;
     }
 
@@ -6931,7 +6993,7 @@ class PayrollRunModel {
         // describe its destination differently. One lookup for this employee's whole response.
         $payeeLookup = $this->payeeLookupForLines($compId, [$rows]);
         foreach ($rows as &$row) {
-            $row = $this->enrichLinePayee($row, $payeeLookup);
+            $row = $this->enrichLineInstallment($this->enrichLinePayee($row, $payeeLookup), $payeeLookup);
         }
         unset($row);
 

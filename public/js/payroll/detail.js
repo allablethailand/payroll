@@ -2298,7 +2298,15 @@ function formulaButtonRd(line) {
    nothing is composed out of bank + number + name here (rules.md §5/§6, the same rule tiny-L2
    applied on the PHP side). The employee's code is stripped off their name for display. */
 const PAYEE_DESCRIPTOR_SEP_RD = ' • ';
-const PAYEE_DESCRIPTOR_ICONS_RD = { employee: 'fa-arrow-right-arrow-left', company: 'fa-building', other_person: 'fa-building-columns', not_disbursed: 'fa-ban' };
+/* 2026-09-18, tiny-L5: the line's own quiet second row now answers 2 questions, not 1 -- "which
+   instalment of how many" and "where does it go" -- so the 2 halves need a separator BETWEEN them
+   that is not the one used INSIDE the payee half (which is already ' • '), and the destination half
+   needs something marking it as a destination. Punctuation, not words: both are the same in every
+   language, and neither is translatable content (§0.5). The per-payee-kind icons this line used to
+   open with are gone with them -- 4 icons named the payee kind that the text right after them names
+   in full, and the arrow says the one thing the text does not. */
+const LINE_TAG_SEP_RD = ' · ';
+const LINE_TAG_PAYEE_PREFIX_RD = '→ ';
 // A company payee with no account chosen is the one state that is not just informational -- the
 // money has nowhere to go and somebody has to fix it, so both variants say so in the warning colour.
 function payeeDescriptorNeedsReviewRd(payee) {
@@ -2341,18 +2349,29 @@ function payeeDescriptorTextRd(payee) {
     if (payee.missing) parts.push(langData['payee_dest_missing'] || 'Destination record no longer exists');
     return parts.join(PAYEE_DESCRIPTOR_SEP_RD);
 }
-/* `variant`: 'tag' = the quiet line under a slip row (the same `.small.text-muted` the statutory
-   rows' own sub-lines use), 'inline' = inside a hand-added line's own cell (`.manual-line-payee`).
-   A payee of null renders nothing at all -- a line that routes nowhere has nothing to say here. */
+/* The line's quiet second row, ONE shape for all 3 places a line is drawn (the read-only slip, the
+   editable slip's own table, the hand-added block): "งวด 2/12 · → {payee}", either half on its own when
+   only one is known, and nothing at all when neither is -- a line that is not part of a plan and
+   routes nowhere has nothing to say here, and an empty tag under it would still take a row's height.
+   `opts.installment` is PayrollRunModel::enrichLineInstallment()'s {n, total} (null unless the line
+   really is one instalment of several); `variant` is kept for the one wrapper that exists ('tag'),
+   so a second one has a name to be added under rather than a second function. */
+function lineInstallmentTextRd(installment) {
+    if (!installment || !installment.total) return '';
+    return (langData['payslip_line_installment'] || 'Installment {n}/{total}')
+        .replace('{n}', String(installment.n))
+        .replace('{total}', String(installment.total));
+}
 function payeeDescriptorHtmlRd(payee, opts) {
-    const text = payeeDescriptorTextRd(payee);
-    if (!text) return '';
-    const needsReview = payeeDescriptorNeedsReviewRd(payee);
-    if ((opts && opts.variant) === 'inline') {
-        return `<div class="manual-line-payee${needsReview ? ' manual-line-payee-warn' : ''}">${escapeHtml(text)}</div>`;
-    }
-    const icon = needsReview ? 'fa-triangle-exclamation' : (PAYEE_DESCRIPTOR_ICONS_RD[payee.payee_type] || 'fa-arrow-right-arrow-left');
-    return `<div class="small ${needsReview ? 'text-warning' : 'text-muted'}"><i class="fa-solid ${icon} me-1"></i>${escapeHtml(text)}</div>`;
+    const payeeText = payeeDescriptorTextRd(payee);
+    const parts = [];
+    const installmentText = lineInstallmentTextRd(opts && opts.installment);
+    if (installmentText) parts.push(installmentText);
+    if (payeeText) parts.push(LINE_TAG_PAYEE_PREFIX_RD + payeeText);
+    if (!parts.length) return '';
+    // The warning state belongs to the payee half, and only exists when there IS one.
+    const needsReview = !!payeeText && payeeDescriptorNeedsReviewRd(payee);
+    return `<div class="payslip-line-tag${needsReview ? ' payslip-line-tag-warn' : ''}">${escapeHtml(parts.join(LINE_TAG_SEP_RD))}</div>`;
 }
 /* ---------- Breakdown modal (section 2/3's table doesn't itemize -- it only shows totals): per-
    employee itemized view split into clearly-labeled Earnings / Deductions (Items) / Deductions
@@ -2371,7 +2390,7 @@ function breakdownLineRowsRd(lines, moneyColorCls) {
         // the generic `commentHtml` above (which shows the raw technical `note` string) -- this is a
         // dedicated, human-readable remark keyed off `is_exempted`/`exempted_amount`.
         const exemptedHtml = line.is_exempted
-            ? `<div class="small text-warning-emphasis mt-1"><i class="fa-solid fa-user-shield me-1"></i>${(langData['attendance_deduction_exempted_remark'] || 'Exempted from this deduction -- would have been {amount}').replace('{amount}', fmtNum(line.exempted_amount))}</div>`
+            ? `<div class="payslip-line-tag text-warning-emphasis"><i class="fa-solid fa-user-shield me-1"></i>${(langData['attendance_deduction_exempted_remark'] || 'Exempted from this deduction -- would have been {amount}').replace('{amount}', fmtNum(line.exempted_amount))}</div>`
             : '';
         // Transfer-to-payee (2026-08-21): a 'transfer_in' earning line gets its own badge (not the
         // generic "Custom" one, even though it's technically is_custom too) so it reads distinctly
@@ -2409,7 +2428,7 @@ function breakdownLineRowsRd(lines, moneyColorCls) {
         // employee_no with no account at all -- the persisted breakdown JSON carried no resolved
         // name/account, so it had nothing better to show. getDetails() now enriches every line with
         // the same descriptor the other 2 surfaces read, so the account comes with it.
-        const payeeHtml = payeeDescriptorHtmlRd(line.payee, { variant: 'tag' });
+        const payeeHtml = payeeDescriptorHtmlRd(line.payee, { variant: 'tag', installment: line.installment });
         const exemptBadge = line.is_exempted ? `<span class="badge bg-warning-subtle text-warning-emphasis ms-1">${langData['attendance_deduction_exempted_badge'] || 'Exempted'}</span>` : '';
         return `<tr class="payslip-row${line.is_exempted ? ' text-muted' : ''}">
             <td>
@@ -4546,7 +4565,10 @@ function manualLineListItemHtml(line, canEdit) {
     // 2026-09-18, tiny-L4: the same one renderer the slip's own lines use -- this block used to name
     // the same 4 payee kinds in its own words (and its own account field per kind), so the identical
     // row read differently here and in the read-only slip beside it.
-    const payeeHtml = payeeDescriptorHtmlRd(line.payee, { variant: 'inline' });
+    // 2026-09-18, tiny-L5: and the same WRAPPER too. `.manual-line-payee` was a second class saying
+    // what `.payslip-line-tag` says, on a row sitting in the same slip layout. A hand-added line is
+    // never part of an instalment plan, so this one only ever has the payee half.
+    const payeeHtml = payeeDescriptorHtmlRd(line.payee, { variant: 'tag', installment: line.installment });
     const editable = !!canEdit && !!line.id;
     // A legacy row inside an otherwise editable block says why it has no buttons, on the row itself
     // -- an empty slot with no explanation reads as a rendering glitch.
@@ -4940,6 +4962,7 @@ function lineOverrideRowHtml(line, idx, group, runDisabled) {
         </div></td>
         <td class="lo-name-cell tbl-sticky-col tbl-sticky-col-edge-left">
             <span class="lo-name" title="${escapeAttr(name)} (${escapeAttr(line.code)})">${escapeHtml(name)}</span>${skipBadge}${statutoryBadge}
+            ${payeeDescriptorHtmlRd(line.payee, { variant: 'tag', installment: line.installment })}
             ${lineOverrideOccurrencesHtml(line.occurrences)}
         </td>
         <td class="num col-money lo-computed-cell">${lineOverrideComputedCellHtml(line)}</td>

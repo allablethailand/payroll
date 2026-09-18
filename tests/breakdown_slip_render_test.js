@@ -91,7 +91,9 @@ const langData = {
     payee_type_not_disbursed: 'หักแต่ไม่มีเงินสดเคลื่อนไหว (Write-off)',
     payee_bank_account_needs_review: 'บัญชีบริษัท -- ยังไม่ระบุบัญชี ต้องตรวจสอบ',
     payee_employee_no_bank_account: 'พนักงานคนนี้ยังไม่มีบัญชีธนาคาร',
-    payee_dest_missing: 'ปลายทางนี้ถูกลบไปแล้ว'
+    payee_dest_missing: 'ปลายทางนี้ถูกลบไปแล้ว',
+    // 2026-09-18, tiny-L5: the other half of the same sub-line
+    payslip_line_installment: 'งวด {n}/{total}'
 };
 let calls = { formula: 0, badge: 0 };
 function formulaButtonRd() { calls.formula++; return '<!--formula-->'; }
@@ -109,12 +111,14 @@ const extracted = [
     // source (and from app.js for the code-prefix strip it leans on) like everything else here.
     extractFunctionSource(appSource, 'splitOptionCodePrefix', 'app.js'),
     extractConst(detailSource, 'PAYEE_DESCRIPTOR_SEP_RD', 'detail.js'),
-    extractConst(detailSource, 'PAYEE_DESCRIPTOR_ICONS_RD', 'detail.js'),
+    extractConst(detailSource, 'LINE_TAG_SEP_RD', 'detail.js'),
+    extractConst(detailSource, 'LINE_TAG_PAYEE_PREFIX_RD', 'detail.js'),
     extractFunctionSource(detailSource, 'rowOptionLabelRd', 'detail.js'),
     extractFunctionSource(detailSource, 'payeeNameFromLabelRd', 'detail.js'),
     extractFunctionSource(detailSource, 'manualLinePayeeNameRd', 'detail.js'),
     extractFunctionSource(detailSource, 'payeeDescriptorNeedsReviewRd', 'detail.js'),
     extractFunctionSource(detailSource, 'payeeDescriptorTextRd', 'detail.js'),
+    extractFunctionSource(detailSource, 'lineInstallmentTextRd', 'detail.js'),
     extractFunctionSource(detailSource, 'payeeDescriptorHtmlRd', 'detail.js'),
     extractFunctionSource(detailSource, 'breakdownLineRowsRd', 'detail.js'),
     extractFunctionSource(detailSource, 'statutoryRowsRd', 'detail.js'),
@@ -124,13 +128,13 @@ const extracted = [
     extractFunctionSource(detailSource, 'manualLineTagHtml', 'detail.js'),
     extractFunctionSource(detailSource, 'manualLineRowActionsHtml', 'detail.js'),
     extractFunctionSource(detailSource, 'manualLineListItemHtml', 'detail.js'),
-    'module.exports = { breakdownViewSlipHtml, manualLineAddButtonHtml, manualLineListItemHtml, payslipViewHtml, payslipNetSummaryHtml, getCalls: () => calls, resetCalls };'
+    'module.exports = { breakdownViewSlipHtml, manualLineAddButtonHtml, manualLineListItemHtml, payslipViewHtml, payslipNetSummaryHtml, payeeDescriptorHtmlRd, getCalls: () => calls, resetCalls };'
 ].join('\n');
 
 const Module = require('module');
 const m = new Module(detailJsPath);
 m._compile(extracted, detailJsPath);
-const { breakdownViewSlipHtml, manualLineAddButtonHtml, manualLineListItemHtml, payslipViewHtml, payslipNetSummaryHtml, getCalls, resetCalls } = m.exports;
+const { breakdownViewSlipHtml, manualLineAddButtonHtml, manualLineListItemHtml, payslipViewHtml, payslipNetSummaryHtml, payeeDescriptorHtmlRd, getCalls, resetCalls } = m.exports;
 
 let passed = 0;
 let failed = 0;
@@ -160,6 +164,9 @@ const FIXTURE_ROW = {
           // 2026-09-18, tiny-L4: what getDetails() now enriches every line with. The 4 raw
           // columns stay (they are what the descriptor was built FROM), and the renderer reads
           // only this.
+          // 2026-09-18, tiny-L5: and what enrichLineInstallment() adds beside it -- this line is
+          // the 2nd of a 12-instalment plan, so the golden below pins the combined sub-line.
+          installment: { n: 2, total: 12 },
           payee: { payee_type: 'company', missing: false, bank_account_id: 4,
               bank_account_label_th: 'ธนาคารกรุงศรีอยุธยา • ••••••••5566 (Trandar)',
               bank_account_label_en: 'Bank of Ayudhya (Krungsri) • ••••••••5566 (Trandar)' } }
@@ -177,6 +184,11 @@ const viewHtml = breakdownViewSlipHtml(FIXTURE_ROW);
 
 // The fixture. Regenerating it by hand after an intentional change is the point: it forces the
 // change to be looked at, rather than a diff nobody sees.
+// 2026-09-18, tiny-L5 -- ONE line of it changed, deliberately: the routed deduction's sub-line. It
+// was `.small.text-muted` + a per-payee-kind icon; it is now `.payslip-line-tag` (one size for every
+// tag in a slip, which Bootstrap's parent-relative `.small` could not give) and it carries the
+// instalment the line is part of in front of the destination. The icons went with it -- each named
+// the payee kind that the words right after it already named in full.
 const VIEW_FIXTURE = `<div class="payslip-view">
         <div class="payslip-columns">
             <div class="payslip-col">
@@ -211,7 +223,7 @@ const VIEW_FIXTURE = `<div class="payslip-view">
             </tr><tr class="payslip-subgroup-row"><td colspan="2" class="payslip-subgroup-label">รายการเพิ่มเติม</td></tr><tr class="payslip-row">
             <td>
                 <div class="payslip-line-head"><span class="payslip-line-name" title="UNIFORM_DEDUCT">หักค่าเครื่องแบบ</span><!--formula--></div>
-                <div class="small text-muted"><i class="fa-solid fa-building me-1"></i>หักเข้าบริษัท • ธนาคารกรุงศรีอยุธยา • ••••••••5566 (Trandar)</div></td>
+                <div class="payslip-line-tag">งวด 2/12 · → หักเข้าบริษัท • ธนาคารกรุงศรีอยุธยา • ••••••••5566 (Trandar)</div></td>
             <td class="text-end num money-deduction">550.00</td>
         </tr></tbody>
                 </table>
@@ -348,6 +360,52 @@ const styleCss = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'st
 check('and the row no longer advertises itself as pressable',
     /\.manual-line-item-editable\s*\{[^}]*cursor:\s*pointer/.test(styleCss) === false
     && /\.manual-line-item-editable:hover/.test(styleCss) === false);
+
+console.log('\n=== the sub-line under a line: งวด n/m · → where it goes (2026-09-18, tiny-L5) ===');
+
+const SUB_PAYEE = { payee_type: 'other_person', missing: false, destination_id: 268,
+    destination_label_th: 'กรมบังคับคดี (ธนาคารซีไอเอ็มบีไทย)',
+    destination_label_en: 'กรมบังคับคดี (CIMB Thai Bank)' };
+const subBoth = payeeDescriptorHtmlRd(SUB_PAYEE, { variant: 'tag', installment: { n: 2, total: 12 } });
+check('both halves: the instalment, the separator, then the destination behind an arrow',
+    subBoth === '<div class="payslip-line-tag">งวด 2/12 · → โอนให้บุคคล/หน่วยงานภายนอก • กรมบังคับคดี (ธนาคารซีไอเอ็มบีไทย)</div>');
+check('payee only: no separator and no empty half in front of it',
+    payeeDescriptorHtmlRd(SUB_PAYEE, { variant: 'tag', installment: null })
+    === '<div class="payslip-line-tag">→ โอนให้บุคคล/หน่วยงานภายนอก • กรมบังคับคดี (ธนาคารซีไอเอ็มบีไทย)</div>');
+check('instalment only: the arrow belongs to the destination half, so it goes with it',
+    payeeDescriptorHtmlRd(null, { variant: 'tag', installment: { n: 2, total: 12 } })
+    === '<div class="payslip-line-tag">งวด 2/12</div>');
+check('neither (a payee_type of null -- STUDENT_LOAN): nothing at all, not an empty row',
+    payeeDescriptorHtmlRd(null, { variant: 'tag', installment: null }) === '');
+check('...and a descriptor that resolved to nothing sayable is the same answer',
+    payeeDescriptorHtmlRd({ payee_type: null }, { variant: 'tag' }) === '');
+check('a one-off assignment never reaches the tag as "งวด 1/1" -- the server sends null, and null renders nothing',
+    payeeDescriptorHtmlRd(null, { variant: 'tag', installment: null }) === '');
+check('the company-account-with-no-account case still carries its warning modifier, not its own font size',
+    payeeDescriptorHtmlRd({ payee_type: 'company', missing: false }, { variant: 'tag' })
+    === '<div class="payslip-line-tag payslip-line-tag-warn">→ บัญชีบริษัท -- ยังไม่ระบุบัญชี ต้องตรวจสอบ</div>');
+check('every tag under a slip line is the one class, never Bootstrap .small (whose size follows its parent)',
+    subBoth.indexOf('class="small') === -1 && subBoth.indexOf('payslip-line-tag') !== -1);
+
+// The 3 places that sub-line is drawn. Two are rendered right here; the editable table's own row
+// builder needs half this file's module to run, so it is asserted at the source (same technique the
+// handler assertions below/above use).
+check("1/3 the read-only slip passes the line's own instalment, not just its payee",
+    viewHtml.indexOf('<div class="payslip-line-tag">งวด 2/12 · → หักเข้าบริษัท • ธนาคารกรุงศรีอยุธยา') !== -1);
+const rowWithPayee = manualLineListItemHtml(Object.assign({}, MANUAL_LINE, {
+    payee: { payee_type: 'not_disbursed', missing: false },
+}), true);
+check('2/3 a hand-added line uses the SAME wrapper now (.manual-line-payee is gone)',
+    rowWithPayee.indexOf('<div class="payslip-line-tag">→ หักแต่ไม่มีเงินสดเคลื่อนไหว (Write-off)</div>') !== -1
+    && rowWithPayee.indexOf('manual-line-payee') === -1);
+check('3/3 the editable table draws it under the name, beside the occurrences it already had',
+    /\$\{payeeDescriptorHtmlRd\(line\.payee, \{ variant: 'tag', installment: line\.installment \}\)\}\s*\n\s*\$\{lineOverrideOccurrencesHtml\(line\.occurrences\)\}/
+        .test(extractFunctionSource(detailSource, 'lineOverrideRowHtml', 'detail.js')));
+check('a switched-off row keeps its tag and fades it with the name -- it is not hidden',
+    /\.lo-row-off \.payslip-line-tag\s*\{\s*color:\s*var\(--c-text-faint\)/.test(styleCss)
+    && /\.payslip-line-tag\s*\{[^}]*font-size:\s*var\(--fs-xs\)/.test(styleCss));
+check('the retired second class is gone from the stylesheet too, not just unused',
+    /^\.manual-line-payee\s*\{/m.test(styleCss) === false);
 
 console.log('\n' + '-'.repeat(50));
 console.log(`Passed: ${passed}, Failed: ${failed}`);

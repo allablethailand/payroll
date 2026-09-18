@@ -42,20 +42,31 @@ class PaymentDestinationModel {
      * shows the identical text to the option the user would have picked by hand -- the same row
      * reading two different ways in the same field is the bug this round is fixing (tiny-M's own
      * docblock on PayrollCycleModel::bankAccountOptionLabel() says the same for company accounts).
-     * The bank name is Thai-preferred for BOTH languages because that is what this endpoint has
-     * always served: one label, not two.
+     *
+     * 2026-09-18, tiny-L5: the bank name is now the caller's to pick, and optionItem() picks a
+     * different one per language. It used to be Thai for BOTH -- `master_banks` carries a real
+     * English name for every one of its rows, so an English reader was shown a Thai bank name for
+     * no reason other than this composer taking both and using one. The destination's OWN name
+     * (`payment_destinations.account_name`) stays as stored in every language: that column has no
+     * English twin, and translating it here would be inventing one.
      */
-    public static function optionLabel(?string $accountName, ?string $bankNameTh, ?string $bankNameEn): string {
-        $bankName = $bankNameTh ?? $bankNameEn ?? '';
+    public static function optionLabel(?string $accountName, ?string $bankName): string {
+        $bankName = (string)($bankName ?? '');
         return (string)$accountName . ($bankName !== '' ? " ({$bankName})" : '');
     }
 
     public static function optionItem(array $r): array {
-        $label = self::optionLabel($r['account_name'] ?? null, $r['bank_name_th'] ?? null, $r['bank_name_en'] ?? null);
+        // Empty counts as absent here, not as "a bank with no name": a blank column would otherwise
+        // drop the bank from that language's label entirely instead of falling back to the other.
+        $nonEmpty = static fn($v) => ($v === null || $v === '') ? null : (string)$v;
+        $bankTh = $nonEmpty($r['bank_name_th'] ?? null);
+        $bankEn = $nonEmpty($r['bank_name_en'] ?? null);
         return [
             'id' => (int)$r['id'],
-            'text_th' => $label,
-            'text_en' => $label,
+            // Each language takes its own bank name, and falls back to the other one rather than to
+            // a bankless label: a name in the wrong language still names the bank.
+            'text_th' => self::optionLabel($r['account_name'] ?? null, $bankTh ?? $bankEn),
+            'text_en' => self::optionLabel($r['account_name'] ?? null, $bankEn ?? $bankTh),
             'account_name' => $r['account_name'],
             'bank_name_th' => $r['bank_name_th'],
             'bank_name_en' => $r['bank_name_en'],

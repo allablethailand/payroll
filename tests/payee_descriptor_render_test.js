@@ -13,6 +13,11 @@
  * Same real-source-extraction technique as tests/breakdown_slip_render_test.js (detail.js cannot be
  * require()'d -- it is full of top-level jQuery/DOM calls that assume a browser).
  *
+ * 2026-09-18, tiny-L5: the same sub-line now also carries "งวด n/m" in front of the destination, and
+ * the 3 surfaces above became 2 wrappers + 1 (the recurring card renders the payee TEXT inside its
+ * own sentence, with no tag around it) -- so what is compared for byte-equality is the payee HALF of
+ * the line, which is the half all 3 really share.
+ *
  * Scope: markup and text only. Colour/spacing/430px are verified against the live app with
  * Playwright in the same round -- a string test cannot see those.
  */
@@ -65,12 +70,14 @@ const extracted = [
     fn(formatSource, 'fmtNum'),
     fn(appSource, 'splitOptionCodePrefix'),
     lineDecl(detailSource, 'PAYEE_DESCRIPTOR_SEP_RD'),
-    lineDecl(detailSource, 'PAYEE_DESCRIPTOR_ICONS_RD'),
+    lineDecl(detailSource, 'LINE_TAG_SEP_RD'),
+    lineDecl(detailSource, 'LINE_TAG_PAYEE_PREFIX_RD'),
     fn(detailSource, 'rowOptionLabelRd'),
     fn(detailSource, 'payeeNameFromLabelRd'),
     fn(detailSource, 'manualLinePayeeNameRd'),
     fn(detailSource, 'payeeDescriptorNeedsReviewRd'),
     fn(detailSource, 'payeeDescriptorTextRd'),
+    fn(detailSource, 'lineInstallmentTextRd'),
     fn(detailSource, 'payeeDescriptorHtmlRd'),
     // The 3 real call sites, so what is compared below is what each of them really renders.
     fn(detailSource, 'breakdownLineRowsRd'),
@@ -79,7 +86,8 @@ const extracted = [
     fn(detailSource, 'manualLineListItemHtml'),
     fn(detailSource, 'recurringDestPayeeSummary'),
     `module.exports = {
-        payeeDescriptorTextRd, payeeDescriptorHtmlRd,
+        payeeDescriptorTextRd, payeeDescriptorHtmlRd, lineInstallmentTextRd,
+        LINE_TAG_SEP_RD, LINE_TAG_PAYEE_PREFIX_RD,
         breakdownLineRowsRd, manualLineListItemHtml, recurringDestPayeeSummary,
         setLang: (l, d) => { currentLang = l; langData = d; },
     };`,
@@ -105,10 +113,17 @@ function check(label, cond, extra) {
 function innerText(html) {
     return html.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
 }
-// The payee line only: the last <div> of a rendered row's name cell.
-function payeeLineOf(rowHtml) {
-    const matches = rowHtml.match(/<div class="(?:small [a-z-]+|manual-line-payee[^"]*)"[^>]*>[\s\S]*?<\/div>/g);
+// The sub-line only: the last `.payslip-line-tag` of a rendered row's name cell.
+function tagLineOf(rowHtml) {
+    const matches = rowHtml.match(/<div class="payslip-line-tag[^"]*"[^>]*>[\s\S]*?<\/div>/g);
     return matches ? innerText(matches[matches.length - 1]) : '';
+}
+// ...and its payee HALF: what the recurring-destination card renders as plain text inside its own
+// sentence, with no instalment in front of it and no arrow marking it as a destination.
+function payeeLineOf(rowHtml) {
+    const text = tagLineOf(rowHtml);
+    const at = text.indexOf(api.LINE_TAG_PAYEE_PREFIX_RD);
+    return at === -1 ? '' : text.slice(at + api.LINE_TAG_PAYEE_PREFIX_RD.length);
 }
 
 const EMPLOYEE_PAYEE = {
@@ -127,7 +142,9 @@ const COMPANY_PAYEE = {
 const EXTERNAL_PAYEE = {
     payee_type: 'other_person', missing: false, destination_id: 268,
     destination_label_th: 'กรมบังคับคดี (ธนาคารซีไอเอ็มบีไทย)',
-    destination_label_en: 'กรมบังคับคดี (ธนาคารซีไอเอ็มบีไทย)',
+    // 2026-09-18, tiny-L5: the bank's own English name -- the destination's own name has no
+    // English twin in `payment_destinations`, so only the half in brackets changes.
+    destination_label_en: 'กรมบังคับคดี (CIMB Thai Bank)',
 };
 const NOT_DISBURSED_PAYEE = { payee_type: 'not_disbursed', missing: false };
 const COMPANY_NO_ACCOUNT = { payee_type: 'company', missing: false, bank_account_id: null };
@@ -168,35 +185,48 @@ const KINDS = {
             L['payee_type_not_disbursed'], L['payee_bank_account_needs_review'],
             L['payee_employee_no_bank_account'], L['payee_dest_missing']].every((v) => typeof v === 'string' && v.length > 0));
 
-    console.log(`\n=== [${lang}] the 2 variants: same text, different wrapper ===`);
+    console.log(`\n=== [${lang}] ONE wrapper, and the instalment half in front of it ===`);
     Object.entries(KINDS).forEach(([kind, payee]) => {
         const tag = api.payeeDescriptorHtmlRd(payee, { variant: 'tag' });
-        const inline = api.payeeDescriptorHtmlRd(payee, { variant: 'inline' });
-        check(`[${lang}] ${kind}: both variants read out the same words`,
-            innerText(tag) === innerText(inline) && innerText(tag) === api.payeeDescriptorTextRd(payee),
-            `${innerText(tag)} / ${innerText(inline)}`);
-        check(`[${lang}] ${kind}: 'tag' is the quiet sub-line with an icon`,
-            /^<div class="small text-(muted|warning)"><i class="fa-solid fa-[a-z-]+ me-1"><\/i>/.test(tag), tag);
-        check(`[${lang}] ${kind}: 'inline' is the hand-added-line class, no icon of its own`,
-            inline.startsWith('<div class="manual-line-payee') && inline.indexOf('<i ') === -1, inline);
+        check(`[${lang}] ${kind}: the tag is the arrow plus exactly the text builder's words`,
+            innerText(tag) === api.LINE_TAG_PAYEE_PREFIX_RD + api.payeeDescriptorTextRd(payee), innerText(tag));
+        check(`[${lang}] ${kind}: in the one class every tag under a slip line uses, with no size of its own`,
+            /^<div class="payslip-line-tag( payslip-line-tag-warn)?">/.test(tag) && tag.indexOf('class="small') === -1, tag);
+        const withInstallment = api.payeeDescriptorHtmlRd(payee, { variant: 'tag', installment: { n: 2, total: 12 } });
+        check(`[${lang}] ${kind}: with an instalment, that half comes FIRST and the arrow stays with the payee`,
+            innerText(withInstallment)
+                === api.lineInstallmentTextRd({ n: 2, total: 12 }) + api.LINE_TAG_SEP_RD + api.LINE_TAG_PAYEE_PREFIX_RD + api.payeeDescriptorTextRd(payee),
+            innerText(withInstallment));
     });
-    check(`[${lang}] only the unspecified company account turns the warning colour on, in BOTH variants`,
-        api.payeeDescriptorHtmlRd(COMPANY_NO_ACCOUNT, { variant: 'tag' }).indexOf('text-warning') !== -1
-        && api.payeeDescriptorHtmlRd(COMPANY_NO_ACCOUNT, { variant: 'inline' }).indexOf('manual-line-payee-warn') !== -1
-        && api.payeeDescriptorHtmlRd(COMPANY_PAYEE, { variant: 'tag' }).indexOf('text-warning') === -1
-        && api.payeeDescriptorHtmlRd(COMPANY_PAYEE, { variant: 'inline' }).indexOf('-warn') === -1);
+    check(`[${lang}] the instalment half reads out of the lang file, never a hardcoded word`,
+        api.lineInstallmentTextRd({ n: 2, total: 12 })
+            === L['payslip_line_installment'].replace('{n}', '2').replace('{total}', '12')
+        && typeof L['payslip_line_installment'] === 'string' && L['payslip_line_installment'].length > 0);
+    check(`[${lang}] an instalment with no payee at all is the whole line, arrow and all left off`,
+        innerText(api.payeeDescriptorHtmlRd(null, { variant: 'tag', installment: { n: 2, total: 12 } }))
+            === api.lineInstallmentTextRd({ n: 2, total: 12 }));
+    check(`[${lang}] a one-off assignment sends null, and null adds nothing (never "งวด 1/1")`,
+        api.payeeDescriptorHtmlRd(COMPANY_PAYEE, { variant: 'tag', installment: null })
+            === api.payeeDescriptorHtmlRd(COMPANY_PAYEE, { variant: 'tag' })
+        && api.lineInstallmentTextRd(null) === '');
+    check(`[${lang}] only the unspecified company account turns the warning colour on`,
+        api.payeeDescriptorHtmlRd(COMPANY_NO_ACCOUNT, { variant: 'tag' }).indexOf('payslip-line-tag-warn') !== -1
+        && api.payeeDescriptorHtmlRd(COMPANY_PAYEE, { variant: 'tag' }).indexOf('-warn') === -1);
     check(`[${lang}] the default variant is 'tag' (no opts at all)`,
         api.payeeDescriptorHtmlRd(COMPANY_PAYEE) === api.payeeDescriptorHtmlRd(COMPANY_PAYEE, { variant: 'tag' }));
 
     console.log(`\n=== [${lang}] a line routed nowhere renders NOTHING (2.4) ===`);
     [null, undefined, {}, { payee_type: null }, { payee_type: '' }].forEach((p, i) => {
         check(`[${lang}] case ${i + 1}: no element at all, not an empty div`,
-            api.payeeDescriptorHtmlRd(p, { variant: 'tag' }) === '' && api.payeeDescriptorHtmlRd(p, { variant: 'inline' }) === '',
+            api.payeeDescriptorHtmlRd(p, { variant: 'tag' }) === '',
             JSON.stringify(api.payeeDescriptorHtmlRd(p, { variant: 'tag' })));
     });
-    check(`[${lang}] a slip row with no payee grows no second line under its name`,
-        api.breakdownLineRowsRd([{ code: 'X', name_th: 'ก', name_en: 'A', amount: 1, payee: null }], 'money-deduction')
-            .indexOf('class="small text-') === -1);
+    check(`[${lang}] a slip row with neither half (STUDENT_LOAN: payee_type null, no plan) grows no second line`,
+        api.breakdownLineRowsRd([{ code: 'STUDENT_LOAN', name_th: 'ก', name_en: 'A', amount: 1, payee: null, installment: null }], 'money-deduction')
+            .indexOf('payslip-line-tag') === -1);
+    check(`[${lang}] ...but a line that is only an instalment of a plan still gets one`,
+        tagLineOf(api.breakdownLineRowsRd([{ code: 'X', name_th: 'ก', name_en: 'A', amount: 1, payee: null, installment: { n: 3, total: 6 } }], 'money-deduction'))
+            === api.lineInstallmentTextRd({ n: 3, total: 6 }));
 
     console.log(`\n=== [${lang}] THE POINT: the 3 surfaces agree, byte for byte ===`);
     Object.entries(KINDS).forEach(([kind, payee]) => {
@@ -205,7 +235,7 @@ const KINDS = {
         const fromManual = payeeLineOf(api.manualLineListItemHtml(
             { id: 1, item_type: 'deduction', item_name_th: 'รายการหัก', item_name_en: 'Deduction', item_code: 'DED', amount: 1000, payee: payee }, true));
         const fromCard = api.recurringDestPayeeSummary(payee);
-        check(`[${lang}] ${kind}: read-only slip === hand-added line === recurring card`,
+        check(`[${lang}] ${kind}: read-only slip === hand-added line === recurring card (the payee half)`,
             fromSlip === fromManual && fromManual === fromCard && fromCard.length > 0,
             `slip=${JSON.stringify(fromSlip)} manual=${JSON.stringify(fromManual)} card=${JSON.stringify(fromCard)}`);
     });
@@ -215,11 +245,17 @@ const KINDS = {
 });
 
 console.log('\n=== the 3 call sites really call the one renderer (no branch left behind) ===');
-['breakdownLineRowsRd', 'manualLineListItemHtml'].forEach((name) => {
+['breakdownLineRowsRd', 'manualLineListItemHtml', 'lineOverrideRowHtml'].forEach((name) => {
     const src = fn(detailSource, name);
     check(`${name}() renders its payee through payeeDescriptorHtmlRd()`, src.indexOf('payeeDescriptorHtmlRd(') !== -1);
     check(`${name}() no longer branches on payee_type itself`, src.indexOf('payee_type ===') === -1, src.indexOf('payee_type ==='));
+    // 2026-09-18, tiny-L5: all 3 pass the line's own instalment as well -- a caller that forgets it
+    // silently drops the "งวด n/m" half for every line it draws, and nothing else would say so.
+    check(`${name}() passes the line's own instalment to it, not just its payee`,
+        src.indexOf("{ variant: 'tag', installment: line.installment }") !== -1);
 });
+check('the retired "inline" variant has no callers left anywhere in detail.js',
+    detailSource.indexOf("variant: 'inline'") === -1);
 const cardSrc = fn(detailSource, 'recurringDestPayeeSummary');
 check('recurringDestPayeeSummary() is a wrapper over the same text builder', cardSrc.indexOf('payeeDescriptorTextRd(') !== -1);
 check('...and keeps only the one default that is genuinely its own', cardSrc.indexOf('payee_type ===') === -1);
