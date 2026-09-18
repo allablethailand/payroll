@@ -90,6 +90,22 @@ if (in_array('--cleanup', array_slice($argv, 1), true)) {
             WHERE r.comp_id = :comp_id AND r.run_name LIKE 'UI test run (delete me)%' AND r.status = 'deleted'");
         $strays->execute([':comp_id' => COMP_ID]);
         $result['stray_manual_lines_removed'] = $strays->rowCount();
+
+        // 2026-09-18, tiny-L4: the override row this tool creates next to the manual line, and the
+        // history row that override wrote, outlive delete() for exactly the same reason the manual
+        // line did -- neither table is one it clears, and the run is only SOFT-deleted. Same 3 guards
+        // as above, so neither statement can ever reach a run this tool did not create, and the
+        // current run plus this tool's own earlier ones are swept in one pass each.
+        foreach ([
+            'line_overrides' => 'payroll_run_line_overrides',
+            'line_override_history' => 'payroll_run_line_override_history',
+        ] as $label => $table) {
+            $sweep = $pdo->prepare("DELETE t FROM `{$table}` t
+                JOIN `payroll_runs` r ON r.id = t.run_id
+                WHERE r.comp_id = :comp_id AND r.run_name LIKE 'UI test run (delete me)%' AND r.status = 'deleted'");
+            $sweep->execute([':comp_id' => COMP_ID]);
+            $result[$label . '_removed'] = $sweep->rowCount();
+        }
     } else {
         $result['run_deleted'] = false;
         $result['run_skipped_reason'] = $runId > 0 ? "run {$runId} is not one of ours (name: '{$name}')" : 'no run id recorded';
@@ -100,9 +116,27 @@ if (in_array('--cleanup', array_slice($argv, 1), true)) {
     $result['session_deleted'] = ($sid !== '' && is_file($sessionFile)) ? unlink($sessionFile) : false;
     $result['session_still_present'] = ($sid !== '') && is_file($sessionFile);
 
+    // 2026-09-18, tiny-L4: ONE roll-up of "is any row this tool created still in the DB". The
+    // per-table counters above each answer only for their own table, and having to read 4 numbers to
+    // decide one thing is exactly how the override row below went unnoticed for as long as it did.
+    // This is the number a round reports, and the one the exit code is taken from.
+    $overridesLeft = $runId > 0
+        ? (int)$pdo->query("SELECT COUNT(*) FROM `payroll_run_line_overrides` WHERE run_id = " . $runId)->fetchColumn()
+        : 0;
+    $historyLeft = $runId > 0
+        ? (int)$pdo->query("SELECT COUNT(*) FROM `payroll_run_line_override_history` WHERE run_id = " . $runId)->fetchColumn()
+        : 0;
+    $result['line_overrides_left'] = $overridesLeft;
+    $result['line_override_history_left'] = $historyLeft;
+    $result['fixture_still_present'] = !empty($result['run_still_present'])
+        || (int)($result['run_detail_rows_left'] ?? 0) > 0
+        || (int)($result['manual_lines_left'] ?? 0) > 0
+        || $overridesLeft > 0
+        || $historyLeft > 0;
+
     unlink(STATE_FILE);
     echo json_encode($result, JSON_UNESCAPED_UNICODE) . "\n";
-    exit(empty($result['run_still_present']) && empty($result['session_still_present']) ? 0 : 1);
+    exit(empty($result['fixture_still_present']) && empty($result['session_still_present']) ? 0 : 1);
 }
 
 // A run with NO cycle_id is an off-cycle run, and recalculate() then only pulls in employees
