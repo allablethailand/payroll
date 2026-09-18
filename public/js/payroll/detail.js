@@ -4843,10 +4843,9 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
             body += lineOverrideRowHtml(line, idx++, group, runDisabled, mode);
         });
     });
-    body += lineOverrideTotalsHtmlRd(breakdownRowRd, mode);
-    // The 3 totals below are read off `breakdownRowRd` (the server's own row), never summed from the
-    // rows above them -- so the filtered table still ends on this employee's FULL pay, which is the
-    // only figure that is true.
+    // The 3 totals are read off `breakdownRowRd` (the server's own row), never summed from the rows
+    // above them -- so the filtered table still ends on this employee's FULL pay, which is the only
+    // figure that is true. They are appended AFTER the scroller closes (see their own builder).
     $wrap.html(lineOverrideTabsHtmlRd(changedCount) + `<div class="table-responsive"><table class="table align-middle lo-table mb-0">
         <thead>
             <tr>
@@ -4856,7 +4855,7 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
             </tr>
         </thead>
         <tbody>${body}</tbody>
-    </table></div>`);
+    </table></div>` + lineOverrideTotalsHtmlRd(breakdownRowRd));
     // 2026-09-17, R1 follow-up: the shared scroller wiring (sticky-table-columns.js) -- it is what
     // keeps `.tbl-scrolled-x` in sync with scrollLeft, which is what the frozen columns' own right
     // edge shadow is keyed off (§7). Re-run per render: this markup, wrapper included, is rebuilt
@@ -4876,30 +4875,28 @@ $(document).on('click', '.lo-mount .lo-tabs .nav-link', function () {
     lineOverrideViewFilterRd = filter;
     renderLineOverrideTableRd(lineOverrideRowsRd, lineOverrideRunSettingsRd, lineOverrideHostRd.mode);
 });
-/* The slip's own 3 summary figures -- the bottom line of every row above them. 4a-1 parked them in a
-   block of their own under the table, because a second block of money (the hand-added card) sat
-   between the table and them; 2026-09-18, 4a-2 put that money INTO the table, so they are the
-   table's own last rows again, which is what they read as.
-   One renderer, one shape in both modes: `mode` only decides how many cells the label and the tail
-   span, because 'view' renders 2 columns fewer. All 3 figures come from the SAME row
-   `api/payroll-run.get` returns -- nothing is added up on the client. */
-function lineOverrideTotalsHtmlRd(row, mode) {
+/* The slip's own 3 summary figures. 4a-1 parked them in a block under the table, 4a-2 made them the
+   table's own last rows, and 2026-09-19 (tiny-4b-fix1 v2) put them back in a block -- deliberately,
+   and for a reason neither of those rounds had measured: below `sm` the table is a horizontal
+   SCROLLER, and a row of it is 530px wide inside a 394px host. Whatever cells such a row is built
+   from, its figures live in that scrolled content and slide out of view with it; the colspan version
+   also pinned to nothing at all, so its labels ran off the left edge on every drag (measured: the
+   full 120px of a 120px drag). A total is not a line of the slip -- it is the slip's bottom line --
+   so it belongs OUTSIDE the scroller, where it always shows the whole of itself.
+   One shape in both modes: nothing here depends on how many columns the table has, which is the
+   whole point. The label sits on `--payslip-inset`, the same x the group headings start on; the
+   figure ends on it, the same x the "add a line" links end on. */
+function lineOverrideTotalsHtmlRd(row) {
     if (!row) return '';
-    const isView = mode === 'view';
     const totals = [
         { label: langData['payslip_total_earnings'] || 'Total Income', amount: row.gross_amount, cls: 'money-gross', rowCls: '' },
         { label: langData['payslip_total_deductions'] || 'Total Deductions', amount: row.total_deduction_amount, cls: 'money-deduction', rowCls: '' },
-        { label: langData['table_net_pay'] || 'Net Pay', amount: row.net_amount, cls: 'money-net', rowCls: ' lo-total-row-net' },
+        { label: langData['table_net_pay'] || 'Net Pay', amount: row.net_amount, cls: 'money-net', rowCls: ' lo-totals-row-net' },
     ];
-    // 2 cells: the label from the left edge, the figure in the LAST one so it ends on the table's own
-    // right edge in both modes. (It sat in the money column with empty cells after it, which left the
-    // 3 totals short of the edge every other figure in the modal ends on.)
-    const headSpan = isView ? 1 : 2;
-    const tailSpan = isView ? 2 : 3;
-    return totals.map(t => `<tr class="lo-total-row${t.rowCls}">
-            <td colspan="${headSpan}">${escapeHtml(t.label)}</td>
-            <td class="num lo-total-amount" colspan="${tailSpan}"><span class="num ${t.cls}">${fmtNum(t.amount)}</span></td>
-        </tr>`).join('');
+    return `<div class="lo-totals">` + totals.map(t => `<div class="lo-totals-row${t.rowCls}">
+            <span class="lo-totals-label">${escapeHtml(t.label)}</span>
+            <span class="num ${t.cls}">${fmtNum(t.amount)}</span>
+        </div>`).join('') + `</div>`;
 }
 // Picking a value out of a row's own history is a write like any other in this tab: it confirms,
 // then sends.

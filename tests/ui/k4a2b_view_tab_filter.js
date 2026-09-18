@@ -100,13 +100,15 @@ async function measure(page) {
                 }
                 return true;
             }).length,
-            totals: Array.from(document.querySelectorAll(wrap + ' tr.lo-total-row'))
+            totals: Array.from(document.querySelectorAll(wrap + ' .lo-totals-row'))
                 .map(r => (r.querySelector('.num') || { textContent: '' }).textContent.trim()),
+            // 2026-09-19, tiny-4b-fix1 v2: the totals are a block of their own AFTER the scroller --
+            // "last" is now about the host, not about the table body.
             totalsIsLast: (() => {
-                const tb = table ? table.querySelector('tbody') : null;
-                if (!tb) return false;
-                const all = Array.from(tb.children);
-                return all.length >= 3 && all.slice(-3).every(r => r.className.indexOf('lo-total-row') !== -1);
+                const host = document.querySelector(wrap);
+                const block = document.querySelector(wrap + ' .lo-totals');
+                return !!block && !!host && host.lastElementChild === block
+                    && !block.closest('.table-responsive');
             })(),
             hidden: document.querySelectorAll(wrap + ' .d-none').length,
             stickyLeft2: table ? table.style.getPropertyValue('--lo-sticky-left-2') : '',

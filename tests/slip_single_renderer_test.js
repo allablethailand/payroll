@@ -189,42 +189,56 @@ check('...and the editable one renders both', edit.indexOf('manual-line-edit-btn
     && edit.indexOf('manual-line-remove-btn') !== -1);
 
 console.log('');
-console.log('=== (ง) the 3 totals: the last rows of the table itself, same figures in both modes ===');
+console.log('=== (ง) the 3 totals: a block under the table, outside its scroller, same in both modes ===');
 const ROW = { gross_amount: 30000, total_deduction_amount: 4500, net_amount: 25500 };
 const totalsEdit = api.lineOverrideTotalsHtmlRd(ROW, 'edit');
 const totalsView = api.lineOverrideTotalsHtmlRd(ROW, 'view');
 const figuresOf = (html) => (html.match(/>([\d,]+\.\d\d)</g) || []).join('|');
-check('3 rows in each mode', (totalsEdit.match(/class="lo-total-row/g) || []).length === 3
-    && (totalsView.match(/class="lo-total-row/g) || []).length === 3);
-check('they are table rows, not a block beside the table',
-    totalsEdit.trim().indexOf('<tr class="lo-total-row') === 0 && totalsEdit.indexOf('<div') === -1);
+check('3 rows in each mode', (totalsEdit.match(/class="lo-totals-row/g) || []).length === 3
+    && (totalsView.match(/class="lo-totals-row/g) || []).length === 3);
+// 2026-09-19, tiny-4b-fix1 v2: NOT rows of the table. Below `sm` that table is a horizontal scroller
+// 136px wider than its host, so a row of it -- whatever cells it is built from -- carries its figures
+// out of view with every drag, and the colspan version pinned to nothing at all.
+check('they are a block of their own, with no table markup in them',
+    totalsEdit.trim().indexOf('<div class="lo-totals">') === 0
+    && totalsEdit.indexOf('<tr') === -1 && totalsEdit.indexOf('<td') === -1, totalsEdit);
 check('the 3 figures, in order, identical in both modes',
     figuresOf(totalsEdit) === '>30,000.00<|>4,500.00<|>25,500.00<' && figuresOf(totalsView) === figuresOf(totalsEdit),
     figuresOf(totalsEdit));
 check('the 3 labels, from langData', ['payslip_total_earnings', 'payslip_total_deductions', 'table_net_pay']
     .every(k => totalsEdit.indexOf(LANG[k]) !== -1));
-// The only thing `mode` may decide: how many cells the label and the empty tail span, because the
-// read-only slip renders 2 columns fewer. Every figure and every label is the same in both.
-check('mode only changes the colspans', totalsEdit.replace(/colspan="\d"/g, 'colspan') === totalsView.replace(/colspan="\d"/g, 'colspan'));
-check('every totals row is 2 cells: a label and a figure', (totalsEdit.match(/<td/g) || []).length === 6
-    && (totalsView.match(/<td/g) || []).length === 6, totalsEdit);
-// The figure is in the LAST cell of the row and spans every column after the label, so it ends on
-// the table's own right edge rather than stopping at the money column with empty cells behind it.
-check('the figure sits in the last cell, spanning to the right edge (edit: 2 + 3 of 5)',
-    totalsEdit.indexOf('colspan="2"') !== -1 && totalsEdit.indexOf('lo-total-amount" colspan="3"') !== -1, totalsEdit);
-check('...and in the read-only slip too (1 + 2 of 3)',
-    totalsView.indexOf('colspan="1"') !== -1 && totalsView.indexOf('lo-total-amount" colspan="2"') !== -1, totalsView);
-check('nothing follows the figure: it IS the row\'s last cell',
-    /lo-total-amount[\s\S]*?<\/td>\s*<\/tr>/.test(totalsEdit) && /lo-total-amount[\s\S]*?<\/td>\s*<\/tr>/.test(totalsView));
+// Nothing here depends on how many columns the table has, which is the whole point of the move: the
+// 2 modes now render byte-identical totals.
+check('both modes render exactly the same block', totalsEdit === totalsView, totalsEdit);
+check('every row is 2 spans: a label and a figure', (totalsEdit.match(/<span/g) || []).length === 6
+    && (totalsView.match(/<span/g) || []).length === 6, totalsEdit);
+check('the label comes first and carries no money tone of its own',
+    (totalsEdit.match(/<span class="lo-totals-label">/g) || []).length === 3
+    && /<span class="lo-totals-label">[^<]+<\/span>/.test(totalsEdit), totalsEdit);
+check('the figure keeps the 3 money tones the rows it replaced had',
+    totalsEdit.indexOf('num money-gross') !== -1 && totalsEdit.indexOf('num money-deduction') !== -1
+    && totalsEdit.indexOf('num money-net') !== -1, totalsEdit);
+check('nothing follows the figure inside a row',
+    (totalsEdit.match(/<span class="num [^"]+">[^<]*<\/span>\s*<\/div>/g) || []).length === 3, totalsEdit);
+check('only the net row is marked, and it is the last one',
+    (totalsEdit.match(/lo-totals-row-net/g) || []).length === 1
+    && totalsEdit.lastIndexOf('lo-totals-row-net') > totalsEdit.indexOf('money-deduction'), totalsEdit);
 check('nothing is added up on the client -- every figure comes off the run detail row',
-    fn(detailSource, 'lineOverrideTotalsHtmlRd').indexOf('+') === -1);
+    (() => {
+        const src = fn(detailSource, 'lineOverrideTotalsHtmlRd');
+        // The only `+` left in this builder joins strings; none of it touches a figure.
+        return !/amount\s*\+|\+\s*row\./.test(src)
+            && ['row.gross_amount', 'row.total_deduction_amount', 'row.net_amount'].every(f => src.indexOf(f) !== -1);
+    })(), fn(detailSource, 'lineOverrideTotalsHtmlRd'));
 check('a modal opened before its row is known renders no totals rather than zeroes',
     api.lineOverrideTotalsHtmlRd(null, 'edit') === '');
-// Where they sit: the LAST thing the table's own body builder appends, in both modes, and in no
-// block outside it -- 4a-1's `.lo-totals-block` under the table is gone with the card it sat under.
-check('the table body ends with them', tableSrc.indexOf('body += lineOverrideTotalsHtmlRd(breakdownRowRd, mode);') !== -1);
-check('...and they are appended after every group, not inside one',
-    tableSrc.indexOf('body += lineOverrideTotalsHtmlRd') > tableSrc.indexOf('LINE_OVERRIDE_GROUPS_RD.forEach'));
+// Where they sit: appended to the host AFTER the scroller closes, so they are never inside an element
+// that scrolls sideways -- and never in the table body, which is what put them inside it.
+check('the block is appended after the scroller closes',
+    tableSrc.indexOf('</table></div>` + lineOverrideTotalsHtmlRd(breakdownRowRd)') !== -1
+    && tableSrc.indexOf('body += lineOverrideTotalsHtmlRd') === -1, tableSrc);
+check('...and it is the last thing the host is given',
+    tableSrc.indexOf('lineOverrideTotalsHtmlRd(breakdownRowRd)') > tableSrc.indexOf('LINE_OVERRIDE_GROUPS_RD.forEach'));
 ['renderBreakdownEditableBodyRd', 'renderBreakdownViewBodyRd'].forEach((name) => {
     const src = fn(detailSource, name);
     check(`${name}() mounts the table and nothing else`,
@@ -466,7 +480,7 @@ check('the filter is applied where the rows of a group are chosen',
 check('a group left empty by the filter renders no heading either -- same early return as before',
     tableSrc.indexOf('if (!groupLines.length && !manualOpen) return;') !== -1);
 check('the 3 totals still come off the run row, so a filtered table still ends on the full pay',
-    tableSrc.indexOf('body += lineOverrideTotalsHtmlRd(breakdownRowRd, mode);') !== -1
+    tableSrc.indexOf('lineOverrideTotalsHtmlRd(breakdownRowRd)') !== -1
     && tableSrc.indexOf('lineOverrideTotalsHtmlRd(groupLines') === -1);
 // Switching tabs may not cost a request: both tabs are views of one payload that is already here.
 const tabHandler = detailSource.slice(detailSource.indexOf("$(document).on('click', '.lo-mount .lo-tabs .nav-link'"));

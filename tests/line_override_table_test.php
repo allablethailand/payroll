@@ -472,9 +472,12 @@ checkTrue('the changed-row predicate is one function', strpos($js, 'function lin
     && strpos($js, "return !!line.override_action || line.line_type === 'manual_line' || statutoryExemptionChangedRd(line);") !== false);
 checkTrue('the tab row is only built for the read-only slip', strpos($js, 'const changedCount = isView') !== false);
 checkTrue('an empty count renders no tab row at all', strpos($js, "if (!changedCount) return '';") !== false);
+// 2026-09-19, tiny-4b-fix1 v2: the totals are appended to the HOST after the scroller closes, not
+// into the table body -- but they still come off the run's own row, which is what makes a filtered
+// table end on the full pay.
 checkTrue('the filter narrows the rows, not the totals',
     strpos($js, '&& (!changedOnly || lineOverrideIsChangedRd(l)));') !== false
-    && strpos($js, 'body += lineOverrideTotalsHtmlRd(breakdownRowRd, mode);') !== false);
+    && strpos($js, '</table></div>` + lineOverrideTotalsHtmlRd(breakdownRowRd));') !== false);
 checkTrue('the tab state is reset per host, so it never survives into the next employee slip',
     strpos($js, "    lineOverrideViewFilterRd = 'all';\n") !== false
     && strpos($js, "    lineOverrideExemptionRd = null;\n}") !== false);

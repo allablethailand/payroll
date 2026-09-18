@@ -9740,24 +9740,33 @@ html, body {
 .lo-row-off .payslip-line-tag {
     color: var(--c-text-faint);
 }
-/* 2026-09-18, 4a-2: the slip's 3 summary figures are the table's own last rows again (4a-1 parked
-   them in a block under it, while a second block of money still sat in between) -- see
-   lineOverrideTotalsHtmlRd(). A top rule per row instead of a flex band: they sit in the same grid as
-   the figures they total, so the label and the number already line up on the table's own columns. */
-.lo-table > tbody > tr.lo-total-row > td {
+/* 2026-09-19, tiny-4b-fix1 v2: the slip's 3 summary figures, in a block of their own UNDER the
+   table and OUTSIDE its scroller -- see lineOverrideTotalsHtmlRd() for why a `<tr>` could not work
+   below `sm`. Its own inset matches the table's (`--payslip-inset`), so the label starts on the x the
+   group headings start on and the figure ends on the x their links end on, at every width. Every
+   other value here -- the 2 border weights, the padding, the weight, the 2 sizes -- is what the rows
+   it replaced computed to, measured before the move. */
+.lo-totals {
+    padding: 0 var(--payslip-inset, var(--sp-3));
+}
+.lo-totals-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-3);
     border-top: 1px solid var(--c-border);
-    padding-top: var(--sp-2);
-    padding-bottom: var(--sp-2);
+    padding: var(--sp-2) 0;
+    font-size: var(--fs-xs);
     font-weight: 600;
 }
-/* The figure ends on the table's own right edge, the same x every other figure in the modal ends on
-   -- it spans whatever columns follow the label rather than stopping at the money column. */
-.lo-table > tbody > tr.lo-total-row > td.lo-total-amount {
-    text-align: right;
-}
-.lo-table > tbody > tr.lo-total-row-net > td {
+.lo-totals-row-net {
     border-top-width: 2px;
     font-size: var(--fs-md);
+}
+/* The label may not wrap or push the figure off its own x -- it is 3 fixed words, and the figure is
+   the thing this block exists to show. */
+.lo-totals-label {
+    white-space: nowrap;
 }
 /* The group heading and its own "add a line" link on one line: the name from the left edge, the link
    on the same right edge every figure in the table ends on. */

@@ -3,7 +3,7 @@
  *
  * Run:  UI_BASE_URL=http://localhost:8080/payroll npx -p playwright node tests/ui/k4b_close_batch4.js <PHPSESSID> <runToken> <employeeId>
  *
- * 10 cells, each one its own context:
+ * 12 cells, each one its own context:
  *   1  the read-only slip's [ยกเลิกการยืนยัน] -- 1 request, and the SAME modal becomes the editable one
  *   2  a run past draft (1015, locked, read-only): [ปิด] alone, no remove button, no ⋮
  *   3  the TH_SSO switch = the tri-state -- 1 request carrying BOTH fields, tag, row still there
@@ -14,6 +14,8 @@
  *   8  430 dark, th then en: every word from langData, and the neutral tone from the theme
  *   9  the history dropdown's "ค่าที่ระบบคำนวณ" row is pressable again -- editable slip only
  *  10  the system groups' own head link: where it is, when it is there, and what it sends
+ *  11  430, both modes: the totals block does not move with the table's own horizontal scroll
+ *  12  1400 / 768, both modes: where the block's 2 edges sit, and that its type did not change
  *
  * Writes: only employee 28's verify flag and tax/SSO answer, on the mksession fixture run, plus
  * one other fixture employee's verify flag -- each put back inside the cell that set it. Run 1015 is
@@ -760,10 +762,193 @@ async function cell10() {
     await closeAll();
 }
 
+/* ---- the 3 totals: a block under the table, outside its scroller (2026-09-19, tiny-4b-fix1 v2) ---
+   Measured AFTER the modal body has really been scrolled to the bottom -- a block that has never been
+   laid out on screen still reports a box, and it is not the one the user sees.
+   The 3 computed styles below are what the retired `<tr>` rows computed to, measured on 20bc55e3
+   before the move: they are what "the figures do not change, only where they live" has to mean. */
+const TOTALS_STYLE_BEFORE = [
+    { fs: '12px', fw: '600', color: 'rgb(6, 118, 71)' },
+    { fs: '12px', fw: '600', color: 'rgb(217, 45, 32)' },
+    { fs: '15.9996px', fw: '600', color: 'rgb(31, 35, 40)' },
+];
+const TOTALS_BORDER_BEFORE = ['1px solid rgb(229, 231, 235)', '1px solid rgb(229, 231, 235)', '2px solid rgb(229, 231, 235)'];
+
+async function measureTotalsBlock(page, scrollLeft) {
+    return page.evaluate((args) => {
+        const { wrap, sl } = args;
+        const body = document.querySelector('#runDetailBreakdownModal .modal-body');
+        if (body) body.scrollTop = body.scrollHeight;
+        const scroller = document.querySelector(wrap + ' .table-responsive');
+        if (scroller) scroller.scrollLeft = sl;
+        const box = (el) => {
+            if (!el) return null;
+            const b = el.getBoundingClientRect();
+            return { l: +b.left.toFixed(2), r: +b.right.toFixed(2), w: +b.width.toFixed(2) };
+        };
+        const textBox = (el) => {
+            if (!el) return null;
+            const rg = document.createRange();
+            rg.selectNodeContents(el);
+            const b = rg.getBoundingClientRect();
+            return b.width ? { l: +b.left.toFixed(2), r: +b.right.toFixed(2) } : null;
+        };
+        const host = document.querySelector(wrap);
+        const block = document.querySelector(wrap + ' .lo-totals');
+        const rows = Array.from(document.querySelectorAll(wrap + ' .lo-totals-row'));
+        const cs = getComputedStyle(document.documentElement);
+        const inset = parseFloat(cs.getPropertyValue('--payslip-inset') || cs.getPropertyValue('--sp-3') || '12');
+        return {
+            scrollLeft: scroller ? scroller.scrollLeft : null,
+            scrollable: scroller ? scroller.scrollWidth - scroller.clientWidth : null,
+            bodyScrolledToEnd: body ? (body.scrollHeight - body.clientHeight - body.scrollTop) <= 2 : null,
+            hostBox: box(host),
+            blockBox: box(block),
+            blockIsLastChild: !!block && !!host && host.lastElementChild === block,
+            blockInsideScroller: !!block && !!block.closest('.table-responsive'),
+            blockOverflows: block ? block.scrollWidth - block.clientWidth : null,
+            inset: inset,
+            groupHeadTextL: (textBox(document.querySelector(wrap + ' tr.lo-group .lo-span-sticky')) || {}).l,
+            addLinkR: (box(document.querySelector(wrap + ' .lo-add-line-btn')) || {}).r,
+            rowCount: rows.length,
+            rows: rows.map((r) => {
+                const label = r.querySelector('.lo-totals-label');
+                const num = r.querySelector('.num');
+                const ncs = num ? getComputedStyle(num) : null;
+                const rcs = getComputedStyle(r);
+                return {
+                    label: label ? label.textContent.trim() : null,
+                    labelL: (textBox(label) || {}).l,
+                    // 2 lines would make the block taller than the 1-line row it replaced.
+                    labelWrapped: label ? label.getBoundingClientRect().height > parseFloat(rcs.fontSize) * 1.8 : null,
+                    numR: (box(num) || {}).r,
+                    style: ncs ? { fs: ncs.fontSize, fw: ncs.fontWeight, color: ncs.color } : null,
+                    border: rcs.borderTopWidth + ' ' + rcs.borderTopStyle + ' ' + rcs.borderTopColor,
+                };
+            }),
+        };
+    }, { wrap: WRAP, sl: scrollLeft });
+}
+
+async function cell11() {
+    console.log('\n=== 11. 430 -- the totals block ignores the table\'s own horizontal scroll ===');
+    for (const mode of ['edit', 'view']) {
+        const ctx = await openContext({ sessionId, width: 430, height: 932, colorScheme: 'light' });
+        const { page, report } = ctx;
+        await gotoRun(ctx, runToken, 'th');
+        if (mode === 'view') {
+            const seed = await setVerified(page, employeeId, true);
+            check(`11/${mode}: seeded verified`, seed && seed.status === true, JSON.stringify(seed));
+            await reload(page, 'th');
+        }
+        await openSlip(page, employeeId);
+        const at0 = await measureTotalsBlock(page, 0);
+        await page.waitForTimeout(250);
+        const at120 = await measureTotalsBlock(page, 120);
+        console.log(`  ${mode}: host=${JSON.stringify(at0.hostBox)} block=${JSON.stringify(at0.blockBox)}`
+            + ` scrollable=${at0.scrollable} scrollLeft ${at0.scrollLeft}->${at120.scrollLeft} bodyAtEnd=${at0.bodyScrolledToEnd}`);
+        console.log(`    numR ${JSON.stringify(at0.rows.map(r => r.numR))} -> ${JSON.stringify(at120.rows.map(r => r.numR))}`
+            + ` labelL ${JSON.stringify(at0.rows.map(r => r.labelL))} -> ${JSON.stringify(at120.rows.map(r => r.labelL))}`);
+        // The read-only slip is 2 columns narrower, so 120px is past its own end -- what has to be
+        // true is that the table really moved as far as it can, not that it moved a fixed number.
+        check(`11/${mode}: the drag really moved the table`,
+            at0.scrollable > 0 && at120.scrollLeft === Math.min(120, at0.scrollable),
+            `${at0.scrollable} / ${at120.scrollLeft}`);
+        check(`11/${mode}: the modal body was really scrolled to its end`, at0.bodyScrolledToEnd === true);
+        check(`11/${mode}: the block is the host's last child and not inside the scroller`,
+            at0.blockIsLastChild === true && at0.blockInsideScroller === false,
+            `${at0.blockIsLastChild}/${at0.blockInsideScroller}`);
+        check(`11/${mode}: it is exactly as wide as the host, and scrolls nowhere itself`,
+            at0.blockBox.w === at0.hostBox.w && at0.blockOverflows === 0,
+            `${at0.blockBox.w}/${at0.hostBox.w} overflow=${at0.blockOverflows}`);
+        check(`11/${mode}: the block's own box does not move with the drag`,
+            at0.blockBox.l === at120.blockBox.l && at0.blockBox.r === at120.blockBox.r,
+            `${JSON.stringify(at0.blockBox)} -> ${JSON.stringify(at120.blockBox)}`);
+        check(`11/${mode}: all 3 figures and labels stay exactly where they were`,
+            at0.rows.every((r, i) => r.numR === at120.rows[i].numR && r.labelL === at120.rows[i].labelL),
+            `${JSON.stringify(at0.rows.map(r => [r.labelL, r.numR]))} -> ${JSON.stringify(at120.rows.map(r => [r.labelL, r.numR]))}`);
+        check(`11/${mode}: no label wraps in th`, at0.rows.every(r => r.labelWrapped === false),
+            JSON.stringify(at0.rows.map(r => [r.label, r.labelWrapped])));
+        await page.evaluate(() => { if (typeof changeLanguage === 'function') changeLanguage('en'); });
+        await page.waitForTimeout(800);
+        const en = await measureTotalsBlock(page, 0);
+        console.log(`    en: ${JSON.stringify(en.rows.map(r => [r.label, r.labelWrapped, r.numR]))}`);
+        check(`11/${mode}: no label wraps in en either`, en.rows.every(r => r.labelWrapped === false),
+            JSON.stringify(en.rows.map(r => [r.label, r.labelWrapped])));
+        check(`11/${mode}: ...and the block still fits the host`, en.blockOverflows === 0 && en.blockBox.w === en.hostBox.w,
+            `${en.blockBox.w}/${en.hostBox.w} overflow=${en.blockOverflows}`);
+        await closeSlip(page);
+        if (mode === 'view') {
+            const back = await setVerified(page, employeeId, false);
+            check(`11/${mode}: verify flag restored`, back && back.status === true, JSON.stringify(back));
+        }
+        const r = report();
+        console.log(`    blocked: prefs=${r.blockedPreferenceSaves} recalc=${r.blockedRecalculates} pageErrors=${r.pageErrors.length}`);
+        await closeAll();
+    }
+}
+
+async function cell12() {
+    console.log('\n=== 12. 1400 / 768 -- the block\'s 2 edges, and the figures\' own type ===');
+    for (const vp of [{ w: 1400, h: 950 }, { w: 768, h: 950 }]) {
+        for (const mode of ['edit', 'view']) {
+            const ctx = await openContext({ sessionId, width: vp.w, height: vp.h, colorScheme: 'light' });
+            const { page, report } = ctx;
+            await gotoRun(ctx, runToken, 'th');
+            if (mode === 'view') {
+                const seed = await setVerified(page, employeeId, true);
+                check(`12/${vp.w} ${mode}: seeded verified`, seed && seed.status === true, JSON.stringify(seed));
+                await reload(page, 'th');
+            }
+            await openSlip(page, employeeId);
+            const m = await measureTotalsBlock(page, 0);
+            const insetLeft = +(m.hostBox.l + m.inset).toFixed(2);
+            const insetRight = +(m.hostBox.r - m.inset).toFixed(2);
+            console.log(`  ${vp.w} ${mode}: host=${JSON.stringify(m.hostBox)} inset=${m.inset} scrollable=${m.scrollable}`);
+            console.log(`    labelL ${JSON.stringify(m.rows.map(r => r.labelL))} (groupHead ${m.groupHeadTextL}, inset ${insetLeft})`
+                + ` numR ${JSON.stringify(m.rows.map(r => r.numR))} (addLink ${m.addLinkR}, inset ${insetRight})`);
+            check(`12/${vp.w} ${mode}: 3 rows, in a block outside the scroller`,
+                m.rowCount === 3 && m.blockInsideScroller === false, `${m.rowCount}/${m.blockInsideScroller}`);
+            check(`12/${vp.w} ${mode}: every label starts on --payslip-inset`,
+                m.rows.every(r => r.labelL === insetLeft), JSON.stringify([insetLeft, m.rows.map(r => r.labelL)]));
+            check(`12/${vp.w} ${mode}: every figure ends on --payslip-inset`,
+                m.rows.every(r => r.numR === insetRight), JSON.stringify([insetRight, m.rows.map(r => r.numR)]));
+            if (mode === 'edit') {
+                // The group heading and its link are INSIDE the scroller, so they only share these 2 x
+                // values where the table does not overflow it -- which is the case at 1400, not at 768.
+                check(`12/${vp.w} ${mode}: the label starts on the group heading's own text`,
+                    m.rows.every(r => r.labelL === m.groupHeadTextL), `${m.groupHeadTextL} vs ${JSON.stringify(m.rows.map(r => r.labelL))}`);
+                if (m.scrollable === 0) {
+                    check(`12/${vp.w} ${mode}: ...and the figure ends on the "add a line" link`,
+                        m.rows.every(r => r.numR === m.addLinkR), `${m.addLinkR} vs ${JSON.stringify(m.rows.map(r => r.numR))}`);
+                } else {
+                    console.log(`    (the table overflows its scroller by ${m.scrollable}px here, so the link sits that far outside the host -- inset is the rule, the link only coincides with it when it does not)`);
+                    check(`12/${vp.w} ${mode}: the link is outside the host by exactly that overflow`,
+                        Math.abs((m.addLinkR - insetRight) - m.scrollable) <= 0.5, `${m.addLinkR - insetRight} vs ${m.scrollable}`);
+                }
+            }
+            check(`12/${vp.w} ${mode}: the 3 figures keep the type they had as table rows`,
+                m.rows.every((r, i) => r.style.fs === TOTALS_STYLE_BEFORE[i].fs && r.style.fw === TOTALS_STYLE_BEFORE[i].fw
+                    && r.style.color === TOTALS_STYLE_BEFORE[i].color),
+                JSON.stringify(m.rows.map(r => r.style)));
+            check(`12/${vp.w} ${mode}: ...and the same 2 rule weights above them`,
+                m.rows.every((r, i) => r.border === TOTALS_BORDER_BEFORE[i]), JSON.stringify(m.rows.map(r => r.border)));
+            await closeSlip(page);
+            if (mode === 'view') {
+                const back = await setVerified(page, employeeId, false);
+                check(`12/${vp.w} ${mode}: verify flag restored`, back && back.status === true, JSON.stringify(back));
+            }
+            const r = report();
+            console.log(`    blocked: prefs=${r.blockedPreferenceSaves} recalc=${r.blockedRecalculates} pageErrors=${r.pageErrors.length}`);
+            await closeAll();
+        }
+    }
+}
+
 // A re-run after a fix does not have to pay for the 6 cells it did not touch:
 //   ONLY_CELLS=7,8 npx -p playwright node tests/ui/k4b_close_batch4.js ...
 // Absent = every cell, which is what a full round is.
-const CELLS = [cell1, cell2, cell3, cell4, cell5, cell6, cell7, cell8, cell9, cell10];
+const CELLS = [cell1, cell2, cell3, cell4, cell5, cell6, cell7, cell8, cell9, cell10, cell11, cell12];
 const only = String(process.env.ONLY_CELLS || '').split(',').map(v => v.trim()).filter(Boolean).map(Number);
 
 (async () => {

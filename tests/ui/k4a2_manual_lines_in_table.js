@@ -45,7 +45,8 @@ async function measure(page) {
         const table = document.querySelector(wrap + ' table.lo-table');
         const tbody = table ? table.querySelector('tbody') : null;
         const allTr = tbody ? Array.from(tbody.children) : [];
-        const totalTr = allTr.filter(r => r.className.indexOf('lo-total-row') !== -1);
+        // 2026-09-19, tiny-4b-fix1 v2: no longer rows of the table -- a block after the scroller.
+        const totalTr = Array.from(document.querySelectorAll(wrap + ' .lo-totals-row'));
         const scroller = document.querySelector(wrap + ' .table-responsive');
         const body = document.querySelector('#breakdownModalBody');
         const textOf = (r) => (r.querySelector('.lo-name') || { textContent: '' }).textContent.trim();

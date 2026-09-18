@@ -59,16 +59,18 @@ async function measure(page) {
             historyBadges: document.querySelectorAll(wrap + ' .lo-history-toggle').length,
             // 2026-09-18, 4a-2: the last 3 rows of the table's own tbody again -- the block they sat
             // in for half a day is gone with the hand-added card that stood between them and it.
-            totals: Array.from(document.querySelectorAll(wrap + ' tr.lo-total-row')).map(r => ({
+            totals: Array.from(document.querySelectorAll(wrap + ' .lo-totals-row')).map(r => ({
                 label: r.children[0].textContent.trim(),
                 amount: (r.querySelector('.num') || { textContent: '' }).textContent.trim(),
             })),
-            totalsHtml: Array.from(document.querySelectorAll(wrap + ' tr.lo-total-row')).map(r => r.innerHTML).join(''),
+            totalsHtml: Array.from(document.querySelectorAll(wrap + ' .lo-totals-row')).map(r => r.innerHTML).join(''),
+            // 2026-09-19, tiny-4b-fix1 v2: the totals are a block of their own AFTER the scroller --
+            // "last" is now about the host, not about the table body.
             totalsIsLast: (() => {
-                const tb = document.querySelector(wrap + ' table.lo-table tbody');
-                if (!tb) return false;
-                const all = Array.from(tb.children);
-                return all.length >= 3 && all.slice(-3).every(r => r.className.indexOf('lo-total-row') !== -1);
+                const host = document.querySelector(wrap);
+                const block = document.querySelector(wrap + ' .lo-totals');
+                return !!block && !!host && host.lastElementChild === block
+                    && !block.closest('.table-responsive');
             })(),
             // The block and the card it sat under are both gone -- neither may come back.
             totalsAfterManual: !document.querySelector('#breakdownNetSummary, .lo-totals-block, .ml-mount'),
