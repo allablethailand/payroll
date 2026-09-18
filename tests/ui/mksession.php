@@ -9,6 +9,7 @@
  *
  * Usage:
  *   php tests/ui/mksession.php              create -- prints one line of JSON
+ *   php tests/ui/mksession.php --with-recurring   ...and give that run a recurring deduction to drive
  *   php tests/ui/mksession.php --cleanup    delete what the last create made
  *
  * Guards (all 3, every run): CLI only, BASE_URL must be a loopback host, and the run it deletes
@@ -44,6 +45,43 @@ if (!in_array($host, ['localhost', '127.0.0.1', '::1'], true)) {
 const STATE_FILE = __DIR__ . '/.last-session.json';
 const COMP_ID = 1;
 const ADMIN_EMPLOYEE_ID = 28;
+// The catalog item --with-recurring creates. Every sweep below is bounded by (COMP_ID, this code)
+// rather than by an id read back from anywhere, so it can only ever reach rows this tool wrote.
+const RECURRING_ITEM_CODE = 'TINYL6TMP';
+
+/**
+ * Hard-deletes the --with-recurring fixture: the recurring deduction rows first, then the catalog
+ * item they point at (that order is the FK's, not a preference). HARD, unlike the run itself: a
+ * soft-deleted catalog row keeps its item_code reserved -- this app's deleted_at-composite-unique
+ * caveat -- so a soft delete here would make the NEXT --with-recurring fail its duplicate check.
+ * Called by --cleanup always, and by create before it inserts, so a session that died before its
+ * cleanup cannot block the next one.
+ */
+function sweepRecurringFixture(PDO $pdo): array {
+    $stmtIds = $pdo->prepare("SELECT id FROM `payroll_earning_deduction_types` WHERE comp_id = :comp_id AND item_code = :code");
+    $stmtIds->execute([':comp_id' => COMP_ID, ':code' => RECURRING_ITEM_CODE]);
+    $typeIds = array_map('intval', $stmtIds->fetchAll(PDO::FETCH_COLUMN));
+    $out = ['recurring_deductions_removed' => 0, 'deduction_types_removed' => 0, 'recurring_fixture_left' => 0];
+    if (!$typeIds) {
+        return $out;
+    }
+    $in = implode(',', $typeIds);
+    // The fixture's own audit trail goes while its ids still exist -- otherwise every
+    // --with-recurring session leaves one more orphan audit_logs row in the shared dev DB, exactly
+    // the way the line-override history rows above used to.
+    $pdo->prepare("DELETE al FROM `audit_logs` al
+        JOIN `employee_recurring_deductions` erd ON erd.id = al.record_id
+        WHERE al.table_name = 'employee_recurring_deductions' AND erd.ped_type_id IN ({$in})")->execute();
+    $delRec = $pdo->prepare("DELETE FROM `employee_recurring_deductions` WHERE ped_type_id IN ({$in})");
+    $delRec->execute();
+    $delType = $pdo->prepare("DELETE FROM `payroll_earning_deduction_types` WHERE id IN ({$in})");
+    $delType->execute();
+    $out['recurring_deductions_removed'] = $delRec->rowCount();
+    $out['deduction_types_removed'] = $delType->rowCount();
+    $stmtIds->execute([':comp_id' => COMP_ID, ':code' => RECURRING_ITEM_CODE]);
+    $out['recurring_fixture_left'] = count($stmtIds->fetchAll(PDO::FETCH_COLUMN));
+    return $out;
+}
 
 $pdo = Database::getInstance()->pdo;
 $model = new PayrollRunModel();
@@ -111,6 +149,11 @@ if (in_array('--cleanup', array_slice($argv, 1), true)) {
         $result['run_skipped_reason'] = $runId > 0 ? "run {$runId} is not one of ours (name: '{$name}')" : 'no run id recorded';
     }
 
+    // Independent of the run above: the fixture is found by its own item_code, so it is swept even
+    // when the recorded run turned out not to be ours, and even when the session that made it never
+    // reached its own cleanup.
+    $result += sweepRecurringFixture($pdo);
+
     // The session file, by the id this tool generated -- it never reads or lists anyone else's.
     $sessionFile = rtrim((string)session_save_path(), '/\\') . DIRECTORY_SEPARATOR . 'sess_' . $sid;
     $result['session_deleted'] = ($sid !== '' && is_file($sessionFile)) ? unlink($sessionFile) : false;
@@ -132,7 +175,8 @@ if (in_array('--cleanup', array_slice($argv, 1), true)) {
         || (int)($result['run_detail_rows_left'] ?? 0) > 0
         || (int)($result['manual_lines_left'] ?? 0) > 0
         || $overridesLeft > 0
-        || $historyLeft > 0;
+        || $historyLeft > 0
+        || (int)($result['recurring_fixture_left'] ?? 0) > 0;
 
     unlink(STATE_FILE);
     echo json_encode($result, JSON_UNESCAPED_UNICODE) . "\n";
@@ -170,6 +214,47 @@ if (!$employeeId) {
     fwrite(STDERR, "the new run has no employees -- nothing to drive\n");
     exit(1);
 }
+// --with-recurring: a recurring deduction on this run's own employee, so a round can drive the
+// recurring line's form (amount, then destination) against a real line instead of a run that has
+// none. Its own catalog item, not one of the company's -- see sweepRecurringFixture().
+if (in_array('--with-recurring', array_slice($argv, 1), true)) {
+    $bankAccountId = (int)$pdo->query("SELECT id FROM `bank_accounts` WHERE comp_id = " . COMP_ID . " AND status = 'active' AND deleted_at IS NULL ORDER BY id LIMIT 1")->fetchColumn();
+    if (!$bankAccountId) {
+        fwrite(STDERR, "--with-recurring needs one active bank account for company " . COMP_ID . " (payee_type = company)\n");
+        exit(1);
+    }
+    sweepRecurringFixture($pdo);
+    $typeRes = (new PayrollEarningDeductionTypeModel())->save(COMP_ID, [
+        'item_code'            => RECURRING_ITEM_CODE,
+        'item_name_th'         => 'รายการหักทดสอบ UI (ลบได้)',
+        'item_name_en'         => 'UI test deduction (delete me)',
+        'item_type'            => 'deduction',
+        'calculation_method'   => 'fixed_amount',
+        'fixed_amount'         => 500,
+        'tax_deduction_impact' => 'after_tax',
+    ], ADMIN_EMPLOYEE_ID);
+    if (empty($typeRes['status'])) {
+        fwrite(STDERR, 'deduction type create failed: ' . ($typeRes['message'] ?? '?') . "\n");
+        exit(1);
+    }
+    $recRes = (new EmployeeRecurringDeductionModel())->save($employeeId, COMP_ID, [
+        'ped_type_id'     => (int)$typeRes['id'],
+        'amount'          => 500,
+        'effective_date'  => date('Y-m-01'),
+        'payee_type'      => 'company',
+        'bank_account_id' => $bankAccountId,
+    ], ADMIN_EMPLOYEE_ID);
+    if (empty($recRes['status'])) {
+        fwrite(STDERR, 'recurring deduction create failed: ' . ($recRes['message'] ?? '?') . "\n");
+        exit(1);
+    }
+    $recurringFixture = ['ped_type_id' => (int)$typeRes['id'], 'recurring_deduction_id' => (int)$recRes['id']];
+    // recalculate() is what turns an employee_recurring_deductions row into a line of this run
+    // (PayrollRunModel reads activeForPeriod() there), and it already ran above, before this row
+    // existed. Without this second pass the fixture is in the DB and absent from the screen.
+    $model->recalculate($runId, COMP_ID, ADMIN_EMPLOYEE_ID, true);
+}
+
 // One hand-added line and one overridden line, so the row's count badge is non-zero and
 // "คืนค่าระบบทั้งหมด" has a row to act on.
 $model->addManualLine($runId, COMP_ID, $employeeId, null, 1234.50, ADMIN_EMPLOYEE_ID, true, null, 'UI test bonus', 'earning');
@@ -187,6 +272,6 @@ $state = [
     'token'       => IdCodec::encode($runId),
     'employee_id' => $employeeId,
     'session_id'  => $sid,
-];
+] + ($recurringFixture ?? []);
 file_put_contents(STATE_FILE, json_encode($state, JSON_UNESCAPED_UNICODE) . "\n");
 echo json_encode($state, JSON_UNESCAPED_UNICODE) . "\n";
