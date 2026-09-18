@@ -86,14 +86,23 @@ const openBrowsers = [];
 /**
  * @param {object} opts
  * @param {string} opts.sessionId   PHPSESSID printed by mksession.php
- * @param {string} [opts.baseUrl]   defaults to http://localhost/payroll
+ * @param {string} [opts.baseUrl]   defaults to process.env.UI_BASE_URL -- there is no built-in default
  * @param {number} [opts.width]     viewport width  (1400 desktop / 430 phone, this project's 2 sizes)
  * @param {number} [opts.height]
  * @param {'light'|'dark'} [opts.colorScheme]  the OS-level preference, for the media-query path
  */
 async function openContext(opts) {
     const o = opts || {};
-    const baseUrl = (o.baseUrl || process.env.UI_TEST_BASE_URL || 'http://localhost/payroll').replace(/\/$/, '');
+    // No built-in default, on purpose (2026-09-18, tiny-L6b). It used to fall back to
+    // http://localhost/payroll, which on this machine is a DIFFERENT Apache/PHP that answers 500 on
+    // every route -- so a round that forgot the variable did not fail, it hung, and the timeout named
+    // neither the URL nor the reason. A missing setting is a setup mistake and says so immediately.
+    const baseUrl = (o.baseUrl || process.env.UI_BASE_URL || '').replace(/\/$/, '');
+    if (!baseUrl) {
+        throw new Error('UI_BASE_URL is not set. It is this install\'s own BASE_URL (see .env), e.g.\n'
+            + '  UI_BASE_URL=http://localhost:8080/payroll npx -p playwright node tests/ui/<script>.js\n'
+            + 'or pass it per context: openContext({ baseUrl: "http://localhost:8080/payroll", ... }).');
+    }
     const { chromium } = resolvePlaywright();
     const browser = await chromium.launch({ headless: o.headless !== false });
     openBrowsers.push(browser);

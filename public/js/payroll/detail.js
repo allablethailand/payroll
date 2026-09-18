@@ -2304,9 +2304,33 @@ const PAYEE_DESCRIPTOR_SEP_RD = ' • ';
    needs something marking it as a destination. Punctuation, not words: both are the same in every
    language, and neither is translatable content (§0.5). The per-payee-kind icons this line used to
    open with are gone with them -- 4 icons named the payee kind that the text right after them names
-   in full, and the arrow says the one thing the text does not. */
+   in full.
+   2026-09-18, tiny-L6b (B4): the '→ ' that used to open the destination half went the same way as
+   those icons, for the same reason -- every payee kind this line can name already begins with a word
+   that says where the money is going ("โอนให้", "เก็บไว้ที่บริษัท", "โอนออกให้บุคคล/องค์กรภายนอก"), so the
+   arrow was a second, wordless copy of a sentence that had just been written out. */
 const LINE_TAG_SEP_RD = ' · ';
-const LINE_TAG_PAYEE_PREFIX_RD = '→ ';
+/* 2026-09-18, tiny-L6b (B4): the picker's own label, shortened for a SUB-LINE. Both of these earn
+   their room in a dropdown -- where the reader is choosing between accounts -- and not under a
+   figure, where the line is competing with the number above it for the eye (rules.md §0.1/§0.3):
+     - the mask's real length says nothing. Only the last 4 digits identify the account, and a run of
+       10 dots vs 6 reads as "a longer number", which is not a fact anyone needs here. One length,
+       always, so two accounts on two rows line up instead of looking different.
+     - the trailing "(account name)" on a company account repeats the company whose line this is.
+   Applied INSIDE the shared builder, so all 3 surfaces shorten identically or none do. */
+const PAYEE_MASK_SHORT_RD = '••••';
+function payeeDescriptorShortMaskRd(label) {
+    // Only a run of dots that RUNS INTO the digits it is hiding. The label's own separator is the
+    // very same '•' character (bankAccountOptionLabel(): "bank • masked (name)"), so a plain /•+/
+    // rewrites that separator as a 4-dot mask too and every label grows a second one -- caught by
+    // this round's own golden, which is why the lookahead is here and not a comment saying "careful".
+    return String(label || '').replace(/•+(?=\d)/g, PAYEE_MASK_SHORT_RD);
+}
+function payeeDescriptorDropAccountNameRd(label) {
+    // Only a parenthetical that ENDS the label, and only when it closes what it opened -- an account
+    // name with brackets of its own inside it must not take the real tail off with it.
+    return String(label || '').replace(/\s*\([^()]*\)$/, '');
+}
 // A company payee with no account chosen is the one state that is not just informational -- the
 // money has nowhere to go and somebody has to fix it, so both variants say so in the warning colour.
 function payeeDescriptorNeedsReviewRd(payee) {
@@ -2319,7 +2343,7 @@ function payeeDescriptorTextRd(payee) {
         // manualLinePayeeNameRd() owns the whole fallback ladder (label by language -> code off the
         // name -> employee_no -> #id), which is why it is reused here rather than restated.
         parts.push(`${langData['payee_transfer_tag'] || 'Paid to'} ${manualLinePayeeNameRd(payee)}`);
-        const account = rowOptionLabelRd(payee.payee_employee_account_label_th, payee.payee_employee_account_label_en, '');
+        const account = payeeDescriptorShortMaskRd(rowOptionLabelRd(payee.payee_employee_account_label_th, payee.payee_employee_account_label_en, ''));
         if (account) {
             parts.push(account);
         } else if (payee.payee_employee_has_bank_account === false) {
@@ -2328,7 +2352,7 @@ function payeeDescriptorTextRd(payee) {
             parts.push(langData['payee_employee_no_bank_account'] || 'This employee has no bank account on file yet');
         }
     } else if (payee.payee_type === 'company') {
-        const bankLabel = rowOptionLabelRd(payee.bank_account_label_th, payee.bank_account_label_en, '');
+        const bankLabel = payeeDescriptorDropAccountNameRd(payeeDescriptorShortMaskRd(rowOptionLabelRd(payee.bank_account_label_th, payee.bank_account_label_en, '')));
         if (bankLabel) {
             parts.push(langData['payee_dest_retained'] || 'Retained by company');
             parts.push(bankLabel);
@@ -2337,7 +2361,7 @@ function payeeDescriptorTextRd(payee) {
         }
     } else if (payee.payee_type === 'other_person') {
         parts.push(langData['payee_dest_external'] || 'Transfer to an external person or organization');
-        const destLabel = rowOptionLabelRd(payee.destination_label_th, payee.destination_label_en, '');
+        const destLabel = payeeDescriptorShortMaskRd(rowOptionLabelRd(payee.destination_label_th, payee.destination_label_en, ''));
         if (destLabel) parts.push(destLabel);
     } else if (payee.payee_type === 'not_disbursed') {
         parts.push(langData['payee_type_not_disbursed'] || 'Deducted, No Cash Movement (Write-off)');
@@ -2367,7 +2391,7 @@ function payeeDescriptorHtmlRd(payee, opts) {
     const parts = [];
     const installmentText = lineInstallmentTextRd(opts && opts.installment);
     if (installmentText) parts.push(installmentText);
-    if (payeeText) parts.push(LINE_TAG_PAYEE_PREFIX_RD + payeeText);
+    if (payeeText) parts.push(payeeText);
     if (!parts.length) return '';
     // The warning state belongs to the payee half, and only exists when there IS one.
     const needsReview = !!payeeText && payeeDescriptorNeedsReviewRd(payee);
@@ -2639,19 +2663,28 @@ function renderBreakdownStatusLineRd(row) {
 // Disabled (reason in its own tooltip) rather than hidden when this employee's figures are frozen --
 // the column head then reads the same as always and names what has to happen first, instead of
 // quietly missing a control that was there a moment ago.
+// 2026-09-18, tiny-L6b (B5): a worded button, not a circled +. A + is an affordance for a row's own
+// controls, where the row beside it says what is being added; on a column HEAD the only thing naming
+// what it adds was a tooltip, which is not a label (rules.md §7's own conclusion about hover-only
+// affordances). It carries the same word the form's own submit button carries -- `add_line`, one key
+// for one action all the way through the flow (§0.5) -- and no icon, because the word is the label
+// (§4). Outline, not solid: this repeats once per column, and the slip's solid orange belongs to the
+// one main action of the view (§4's "action ที่ซ้ำหลายตัว" row, §0.2).
 function manualLineAddButtonHtml(itemType, canEdit) {
     const labelKey = itemType === 'deduction' ? 'manual_line_add_deduction' : 'manual_line_add_earning';
-    const label = canEdit
+    const title = canEdit
         ? (langData[labelKey] || (itemType === 'deduction' ? 'Add a deduction item' : 'Add an income item'))
         : (langData['manual_line_add_locked'] || 'Items can only be added while the run is a draft and this employee is not verified');
-    return `<button type="button" class="btn-icon manual-line-add-btn" data-item-type="${escapeAttr(itemType)}"${canEdit ? '' : ' disabled'} title="${escapeAttr(label)}"><i class="fa-solid fa-plus"></i></button>`;
+    const label = langData['add_line'] || 'Add Line';
+    return `<button type="button" class="btn btn-outline-primary manual-line-add-btn" data-item-type="${escapeAttr(itemType)}"${canEdit ? '' : ' disabled'} title="${escapeAttr(title)}">${escapeHtml(label)}</button>`;
 }
 // Section 2: the lines somebody added by hand, in the slip's own 2-column layout so they read as the
 // same kind of thing as the calculated ones above. Rows come from manualLineListItemHtml(). No
 // totals here: the one figure that matters is the run's own net pay, which section 3 carries.
 // An empty column of the block, as a row of its own table so it sits in the same grid the real rows
 // do (§7: nothing gets `display` set on a cell). The shared empty state's `inline` variant -- no
-// icon, no button: what to do next is the + already in this column's own title.
+// icon, no button: what to do next is the button already in this column's own head, and it names
+// itself, so this line points at it by that name rather than repeating the action a second time.
 function manualLineEmptyColumnHtml() {
     const text = langData['manual_line_empty_hint'] || 'No items yet -- press + to add one';
     return `<tr class="payslip-row manual-line-empty-row"><td colspan="2">${emptyStateHtml({ inline: true, text: text })}</td></tr>`;
@@ -4850,17 +4883,19 @@ function lineOverrideHistoryMenuHtml(history) {
     html += `<li class="lo-history-foot"><button type="button" class="dropdown-item lo-history-view-all">${escapeHtml(tpl.replace('{n}', String(edits.length)))}</button></li>`;
     return html;
 }
-// 2026-09-17, R1: the figure the system calculated, as a column of its own -- the same number the
-// history dropdown has always shown as its head row, out where it can be compared with the live one
-// without opening anything. It comes from 2 places because that is where it really lives:
+// 2026-09-17, R1: the figure the system calculated -- the same number the history dropdown has
+// always shown as its head row, out where it can be compared with the live one without opening
+// anything. It comes from 2 places because that is where it really lives:
 //   - no override on this row  -> the live figure IS the calculated one (nothing has replaced it)
 //   - an override              -> `original_value` of this line's history (the value the FIRST
 //                                 recorded edit replaced), which is exactly what the dropdown's own
 //                                 head row reads
-// An override made before this run's history was ever recorded has neither (the breakdown JSON
-// keeps only the overridden amount, never the engine's own) -- that row shows "-" and says why in
-// its title rather than printing a number nothing backs up. Measured on the dev DB while building
-// this: 0 rows of that kind (1 override, all of it with history).
+// 2026-09-18, tiny-L6b (B3): the second of those is a STAND-IN for the engine's figure, not the
+// figure itself -- the breakdown JSON keeps only the amount after an override, so a row whose
+// override predates its history has an older OVERRIDE sitting in `original_value` and this would
+// print it as if the system had calculated it ("ค่าระบบ x หลอก", BACKLOG). Such a row now says
+// nothing at all -- no dash, no title, no hint in the form -- rather than a number nothing backs up.
+// This is the INTERIM answer; the real one is a persisted engine amount (BACKLOG, tiny-C).
 // 2026-09-17, R1 follow-up: a group that names a side (base salary/income = green, deduction/
 // statutory = red) decides for its rows. The "other" group cannot: a row lands there precisely
 // because its item_code has no catalog row left to say which side it is (a retired item), so its own
@@ -4874,16 +4909,24 @@ function lineOverrideMoneyClassRd(line, group) {
 }
 function lineOverrideComputedTextRd(line) {
     if (!line.override_action) return lineOverrideHistoryValueRd(line.current_amount);
-    const history = lineOverrideHistoryFor(line);
+    // Both halves of "is there a recorded history for this line": the run's period has to be inside
+    // the window the feature has existed for at all, AND this particular line has to have a row in
+    // it (byKey only ever holds lines that do). Either one missing means no trustworthy figure.
+    const history = lineOverrideHistoryRd.historyAvailable ? lineOverrideHistoryFor(line) : null;
     const original = history ? history.original_value : null;
     return (original === null || original === undefined) ? '' : lineOverrideHistoryValueRd(original);
 }
-function lineOverrideComputedCellHtml(line) {
+// 2026-09-18, tiny-L6b (B3): no longer a column of its own. A fixed 120px that is blank on every row
+// except the handful carrying an override -- in a table that already scrolls sideways on a phone --
+// spends width on nothing (rules.md §0.3). As a sub-line it appears only where it has something to
+// say, directly under the figure it is there to be compared with, in the same quiet `.payslip-line-tag`
+// the row's payee/installment line already uses (§11, tiny-L5).
+function lineOverrideComputedTagHtml(line) {
+    if (!line.override_action) return '';
     const text = lineOverrideComputedTextRd(line);
-    if (text === '') {
-        return `<span class="lo-computed-unknown" title="${escapeAttr(langData['line_override_computed_unknown'] || 'The calculated value was not recorded for this item')}">-</span>`;
-    }
-    return `<span class="lo-computed-value">${escapeHtml(text)}</span>`;
+    if (text === '') return '';
+    const tpl = langData['line_override_computed_inline'] || 'System: {amount}';
+    return `<div class="payslip-line-tag">${escapeHtml(tpl.replace('{amount}', text))}</div>`;
 }
 function lineOverrideHistoryCellHtml(line) {
     const history = lineOverrideHistoryFor(line);
@@ -4960,8 +5003,7 @@ function lineOverrideRowHtml(line, idx, group, runDisabled) {
             ${payeeDescriptorHtmlRd(line.payee, { variant: 'tag', installment: line.installment })}
             ${lineOverrideOccurrencesHtml(line.occurrences)}
         </td>
-        <td class="num col-money lo-computed-cell">${lineOverrideComputedCellHtml(line)}</td>
-        <td class="num col-money lo-amount-cell"><div class="lo-amount-view">${amountCell}</div></td>
+        <td class="num col-money lo-amount-cell"><div class="lo-amount-view">${amountCell}</div>${lineOverrideComputedTagHtml(line)}</td>
         <td class="lo-action-cell"><div class="lo-actions">${pencil}</div></td>
         <td class="lo-history-cell">${included ? lineOverrideHistoryCellHtml(line) : ''}</td>
     </tr>`;
@@ -5009,7 +5051,7 @@ function renderLineOverrideTableRd(lines, runSettings) {
         // A group whose every row is hidden has nothing to label -- the heading goes with them, and
         // comes back with them (same `.lo-group-skipped` class the toggle flips).
         const allSkipped = groupLines.every(lineOverrideIsSkippedRd);
-        body += `<tr class="lo-group${allSkipped ? ' lo-group-skipped d-none' : ''}"><td colspan="6"><span class="lo-span-sticky">${escapeHtml(langData[group.key] || group.fallback)}</span></td></tr>`;
+        body += `<tr class="lo-group${allSkipped ? ' lo-group-skipped d-none' : ''}"><td colspan="5"><span class="lo-span-sticky">${escapeHtml(langData[group.key] || group.fallback)}</span></td></tr>`;
         groupLines.forEach(function (line) {
             if (lineOverrideIsSkippedRd(line)) hiddenCount++;
             // Disabled only where the run-level exclusion is genuinely in charge: a personal override
@@ -5024,7 +5066,6 @@ function renderLineOverrideTableRd(lines, runSettings) {
             <tr>
                 <th class="col-check tbl-sticky-col">${escapeHtml(langData['line_override_col_include'] || 'Include')}</th>
                 <th class="lo-name-col tbl-sticky-col tbl-sticky-col-edge-left">${escapeHtml(langData['line_override_col_item'] || 'Item')}</th>
-                <th class="num col-money lo-computed-col">${escapeHtml(langData['line_override_col_computed'] || 'Calculated')}</th>
                 <th class="num col-money lo-amount-col">${escapeHtml(langData['line_override_col_amount'] || 'Amount')}</th>
                 <th class="lo-action-col"><span class="visually-hidden">${escapeHtml(langData['action'] || 'Action')}</span></th>
                 <th class="lo-history-col">${escapeHtml(langData['line_override_col_history'] || 'History')}</th>
@@ -5050,7 +5091,7 @@ function lineOverrideHiddenRowHtml(hiddenCount) {
     // WHY those rows are hidden is a footnote to this one button, not something the tab's own hint
     // has to carry for every reader who has no hidden rows at all -- so it rides on the button.
     const why = langData['line_override_hidden_why'] || '';
-    return `<tr class="lo-hidden-row" id="lineOverrideHiddenRow"><td colspan="6">
+    return `<tr class="lo-hidden-row" id="lineOverrideHiddenRow"><td colspan="5">
         <span class="lo-span-sticky"><button type="button" class="btn btn-link lo-hidden-toggle" id="btnToggleHiddenLineOverrides"
             data-shown="0" data-count="${hiddenCount}" title="${escapeAttr(why)}">${escapeHtml(text)} <i class="fa-solid fa-chevron-down"></i></button></span>
     </td></tr>`;

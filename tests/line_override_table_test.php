@@ -365,14 +365,24 @@ checkTrue('the amount column carries the figure and its pencil', strpos($rowHtml
 checkTrue('an off row shows no figure and no controls', strpos($rowHtml, 'const editable = included && !runDisabled;') !== false
     && strpos($rowHtml, "line_override_excluded_amount") !== false
     && strpos($rowHtml, 'const amountCell = included') !== false);
-// The calculated figure is a column of its own now, right-aligned like the live one beside it.
-checkTrue('the calculated figure has its own money column', strpos($rowHtml, 'lo-computed-cell') !== false
-    && strpos($rowHtml, 'num col-money lo-computed-cell') !== false);
+// 2026-09-18, tiny-L6b (B3): NOT a column of its own any more -- a sub-line of the amount cell, so
+// the table carries one money column and the figure sits under the one it is compared with. The
+// markup-level assertions live in tests/line_override_row_render_test.js; what is checked here is
+// that nothing of the old column survived in the row builder.
+checkTrue('the calculated figure is a sub-line of the amount cell, not a column',
+    strpos($rowHtml, 'lo-computed-cell') === false
+    && strpos($rowHtml, 'lineOverrideComputedTagHtml(line)') !== false
+    && substr_count($rowHtml, 'col-money') === 1);
 // It comes from the row when nothing has overridden it, and from this line's own history when
 // something has -- the same `original_value` the dropdown's head shows.
 checkTrue('the calculated figure has one resolver, with both sources', strpos($js, 'function lineOverrideComputedTextRd(line) {') !== false
     && strpos($js, 'if (!line.override_action) return lineOverrideHistoryValueRd(line.current_amount);') !== false
     && strpos($js, 'const original = history ? history.original_value : null;') !== false);
+// 2026-09-18, tiny-L6b (B3): ...and it answers only where the answer is real. `original_value` is a
+// stand-in for the engine's figure, not the figure itself, so a row with no recorded history says
+// nothing rather than printing an older override as if the system had calculated it (BACKLOG).
+checkTrue('...and it refuses to answer without a recorded history',
+    strpos($js, 'const history = lineOverrideHistoryRd.historyAvailable ? lineOverrideHistoryFor(line) : null;') !== false);
 // 2026-09-18, tiny-L6a: "back to the calculated value" is no longer a second round button in the
 // row -- it is the form's own left slot, where both figures are on screen together. So the row
 // carries exactly one control, and the action still exists, just not here.

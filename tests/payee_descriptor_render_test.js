@@ -71,10 +71,12 @@ const extracted = [
     fn(appSource, 'splitOptionCodePrefix'),
     lineDecl(detailSource, 'PAYEE_DESCRIPTOR_SEP_RD'),
     lineDecl(detailSource, 'LINE_TAG_SEP_RD'),
-    lineDecl(detailSource, 'LINE_TAG_PAYEE_PREFIX_RD'),
+    lineDecl(detailSource, 'PAYEE_MASK_SHORT_RD'),
     fn(detailSource, 'rowOptionLabelRd'),
     fn(detailSource, 'payeeNameFromLabelRd'),
     fn(detailSource, 'manualLinePayeeNameRd'),
+    fn(detailSource, 'payeeDescriptorShortMaskRd'),
+    fn(detailSource, 'payeeDescriptorDropAccountNameRd'),
     fn(detailSource, 'payeeDescriptorNeedsReviewRd'),
     fn(detailSource, 'payeeDescriptorTextRd'),
     fn(detailSource, 'lineInstallmentTextRd'),
@@ -87,7 +89,8 @@ const extracted = [
     fn(detailSource, 'recurringDestPayeeSummary'),
     `module.exports = {
         payeeDescriptorTextRd, payeeDescriptorHtmlRd, lineInstallmentTextRd,
-        LINE_TAG_SEP_RD, LINE_TAG_PAYEE_PREFIX_RD,
+        LINE_TAG_SEP_RD, PAYEE_MASK_SHORT_RD,
+        payeeDescriptorShortMaskRd, payeeDescriptorDropAccountNameRd,
         breakdownLineRowsRd, manualLineListItemHtml, recurringDestPayeeSummary,
         setLang: (l, d) => { currentLang = l; langData = d; },
     };`,
@@ -119,11 +122,14 @@ function tagLineOf(rowHtml) {
     return matches ? innerText(matches[matches.length - 1]) : '';
 }
 // ...and its payee HALF: what the recurring-destination card renders as plain text inside its own
-// sentence, with no instalment in front of it and no arrow marking it as a destination.
+// sentence, with no instalment in front of it.
+// 2026-09-18, tiny-L6b (B4): the '→ ' that used to mark where the payee half started is gone, so the
+// separator BETWEEN the halves is what says where one ends -- and a line with no instalment at all
+// is payee from end to end.
 function payeeLineOf(rowHtml) {
     const text = tagLineOf(rowHtml);
-    const at = text.indexOf(api.LINE_TAG_PAYEE_PREFIX_RD);
-    return at === -1 ? '' : text.slice(at + api.LINE_TAG_PAYEE_PREFIX_RD.length);
+    const at = text.indexOf(api.LINE_TAG_SEP_RD);
+    return at === -1 ? text : text.slice(at + api.LINE_TAG_SEP_RD.length);
 }
 
 const EMPLOYEE_PAYEE = {
@@ -131,13 +137,13 @@ const EMPLOYEE_PAYEE = {
     payee_employee_label_th: 'CEO - กฤษดา สาธุกิจชัย',
     payee_employee_label_en: 'CEO - Kridsada Satukijchai',
     payee_employee_has_bank_account: true,
-    payee_employee_account_label_th: 'ธนาคารทหารไทยธนชาต • XXXXXX1155 (Kridsada Satukijchai)',
-    payee_employee_account_label_en: 'TMBThanachart Bank • XXXXXX1155 (Kridsada Satukijchai)',
+    payee_employee_account_label_th: 'ธนาคารทหารไทยธนชาต • ••••••1155 (Kridsada Satukijchai)',
+    payee_employee_account_label_en: 'TMBThanachart Bank • ••••••1155 (Kridsada Satukijchai)',
 };
 const COMPANY_PAYEE = {
     payee_type: 'company', missing: false, bank_account_id: 4,
-    bank_account_label_th: 'ธนาคารกรุงศรีอยุธยา • XXXXXX5566 (Trandar)',
-    bank_account_label_en: 'Bank of Ayudhya (Krungsri) • XXXXXX5566 (Trandar)',
+    bank_account_label_th: 'ธนาคารกรุงศรีอยุธยา • ••••••5566 (Trandar)',
+    bank_account_label_en: 'Bank of Ayudhya (Krungsri) • ••••••5566 (Trandar)',
 };
 const EXTERNAL_PAYEE = {
     payee_type: 'other_person', missing: false, destination_id: 268,
@@ -152,6 +158,11 @@ const KINDS = {
     employee: EMPLOYEE_PAYEE, company: COMPANY_PAYEE, other_person: EXTERNAL_PAYEE,
     not_disbursed: NOT_DISBURSED_PAYEE, 'company (no account)': COMPANY_NO_ACCOUNT,
 };
+// 2026-09-18, tiny-L6b (B4): the expected shortening, spelled out against THESE fixtures rather than
+// borrowed from the source -- a test that builds its expectation by calling the function under test
+// agrees with it whatever either of them does.
+const shortMask = (label) => label.replace('••••••', '••••');
+const dropName = (label) => label.replace(' (Trandar)', '');
 
 ['th', 'en'].forEach((lang) => {
     const L = LANG[lang];
@@ -160,13 +171,13 @@ const KINDS = {
     console.log(`\n=== [${lang}] the text says the kind AND the account ===`);
     check(`[${lang}] employee: verb, name with the code stripped, then the account it is paid into`,
         api.payeeDescriptorTextRd(EMPLOYEE_PAYEE)
-            === `${L['payee_transfer_tag']} ${lang === 'th' ? 'กฤษดา สาธุกิจชัย' : 'Kridsada Satukijchai'} • ${EMPLOYEE_PAYEE['payee_employee_account_label_' + lang]}`,
+            === `${L['payee_transfer_tag']} ${lang === 'th' ? 'กฤษดา สาธุกิจชัย' : 'Kridsada Satukijchai'} • ${shortMask(EMPLOYEE_PAYEE['payee_employee_account_label_' + lang])}`,
         api.payeeDescriptorTextRd(EMPLOYEE_PAYEE));
     check(`[${lang}] company: says retained, then WHICH account`,
-        api.payeeDescriptorTextRd(COMPANY_PAYEE) === `${L['payee_dest_retained']} • ${COMPANY_PAYEE['bank_account_label_' + lang]}`,
+        api.payeeDescriptorTextRd(COMPANY_PAYEE) === `${L['payee_dest_retained']} • ${dropName(shortMask(COMPANY_PAYEE['bank_account_label_' + lang]))}`,
         api.payeeDescriptorTextRd(COMPANY_PAYEE));
     check(`[${lang}] other_person: says external, then which destination`,
-        api.payeeDescriptorTextRd(EXTERNAL_PAYEE) === `${L['payee_dest_external']} • ${EXTERNAL_PAYEE['destination_label_' + lang]}`,
+        api.payeeDescriptorTextRd(EXTERNAL_PAYEE) === `${L['payee_dest_external']} • ${shortMask(EXTERNAL_PAYEE['destination_label_' + lang])}`,
         api.payeeDescriptorTextRd(EXTERNAL_PAYEE));
     check(`[${lang}] not_disbursed: one label, nothing to append`,
         api.payeeDescriptorTextRd(NOT_DISBURSED_PAYEE) === L['payee_type_not_disbursed'],
@@ -188,21 +199,21 @@ const KINDS = {
     console.log(`\n=== [${lang}] ONE wrapper, and the instalment half in front of it ===`);
     Object.entries(KINDS).forEach(([kind, payee]) => {
         const tag = api.payeeDescriptorHtmlRd(payee, { variant: 'tag' });
-        check(`[${lang}] ${kind}: the tag is the arrow plus exactly the text builder's words`,
-            innerText(tag) === api.LINE_TAG_PAYEE_PREFIX_RD + api.payeeDescriptorTextRd(payee), innerText(tag));
+        check(`[${lang}] ${kind}: the tag is exactly the text builder's words, with nothing added in front`,
+            innerText(tag) === api.payeeDescriptorTextRd(payee), innerText(tag));
         check(`[${lang}] ${kind}: in the one class every tag under a slip line uses, with no size of its own`,
             /^<div class="payslip-line-tag( payslip-line-tag-warn)?">/.test(tag) && tag.indexOf('class="small') === -1, tag);
         const withInstallment = api.payeeDescriptorHtmlRd(payee, { variant: 'tag', installment: { n: 2, total: 12 } });
-        check(`[${lang}] ${kind}: with an instalment, that half comes FIRST and the arrow stays with the payee`,
+        check(`[${lang}] ${kind}: with an instalment, that half comes FIRST`,
             innerText(withInstallment)
-                === api.lineInstallmentTextRd({ n: 2, total: 12 }) + api.LINE_TAG_SEP_RD + api.LINE_TAG_PAYEE_PREFIX_RD + api.payeeDescriptorTextRd(payee),
+                === api.lineInstallmentTextRd({ n: 2, total: 12 }) + api.LINE_TAG_SEP_RD + api.payeeDescriptorTextRd(payee),
             innerText(withInstallment));
     });
     check(`[${lang}] the instalment half reads out of the lang file, never a hardcoded word`,
         api.lineInstallmentTextRd({ n: 2, total: 12 })
             === L['payslip_line_installment'].replace('{n}', '2').replace('{total}', '12')
         && typeof L['payslip_line_installment'] === 'string' && L['payslip_line_installment'].length > 0);
-    check(`[${lang}] an instalment with no payee at all is the whole line, arrow and all left off`,
+    check(`[${lang}] an instalment with no payee at all is the whole line, separator and all left off`,
         innerText(api.payeeDescriptorHtmlRd(null, { variant: 'tag', installment: { n: 2, total: 12 } }))
             === api.lineInstallmentTextRd({ n: 2, total: 12 }));
     check(`[${lang}] a one-off assignment sends null, and null adds nothing (never "งวด 1/1")`,
@@ -243,6 +254,31 @@ const KINDS = {
         payeeLineOf(api.breakdownLineRowsRd([{ code: 'D', name_th: 'x', name_en: 'x', amount: 1, payee: EMPLOYEE_PAYEE }], 'money-deduction')).indexOf('CEO -') === -1
         && api.recurringDestPayeeSummary(EMPLOYEE_PAYEE).indexOf('CEO -') === -1);
 });
+
+console.log('');
+console.log('=== tiny-L6b (B4): shortened for a sub-line, in the ONE builder ===');
+api.setLang('th', LANG.th);
+check('the mask is one length whatever the account number was',
+    api.payeeDescriptorShortMaskRd('x • ••••••••••1155') === 'x • ••••1155',
+    api.payeeDescriptorShortMaskRd('x • ••••••••••1155'));
+check('...and a number too short to have been masked at all is left alone',
+    api.payeeDescriptorShortMaskRd('x • 1155') === 'x • 1155');
+check('the shortened mask is the declared constant, not a literal typed twice',
+    api.payeeDescriptorShortMaskRd('••••••1155') === api.PAYEE_MASK_SHORT_RD + '1155');
+check('the account-name parenthetical comes off the END only',
+    api.payeeDescriptorDropAccountNameRd('x • ••••1155 (Trandar)') === 'x • ••••1155');
+check('...and a label not parenthesised at the end keeps every character',
+    api.payeeDescriptorDropAccountNameRd('กรมบังคับคดี (ธนาคารซีไอเอ็มบีไทย) สาขา 2')
+        === 'กรมบังคับคดี (ธนาคารซีไอเอ็มบีไทย) สาขา 2');
+check('an external destination keeps its own bracketed bank -- only a COMPANY account drops one',
+    api.payeeDescriptorTextRd(EXTERNAL_PAYEE).indexOf('(ธนาคารซีไอเอ็มบีไทย)') !== -1,
+    api.payeeDescriptorTextRd(EXTERNAL_PAYEE));
+check('the company line no longer repeats the company it is already about',
+    api.payeeDescriptorTextRd(COMPANY_PAYEE).indexOf('(Trandar)') === -1,
+    api.payeeDescriptorTextRd(COMPANY_PAYEE));
+check('no surface opens the destination half with an arrow any more',
+    detailSource.indexOf('LINE_TAG_PAYEE_PREFIX_RD') === -1
+    && api.payeeDescriptorHtmlRd(COMPANY_PAYEE, { variant: 'tag' }).indexOf('→') === -1);
 
 console.log('\n=== the 3 call sites really call the one renderer (no branch left behind) ===');
 ['breakdownLineRowsRd', 'manualLineListItemHtml', 'lineOverrideRowHtml'].forEach((name) => {

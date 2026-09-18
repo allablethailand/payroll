@@ -158,6 +158,9 @@ const extracted = stubs + '\n'
     // descriptor renderer now, so what this file really exercises is that renderer -- pulled in
     // from the real source like everything else here, never restated.
     + lineDecl(detailSource, 'PAYEE_DESCRIPTOR_SEP_RD') + '\n'
+    + lineDecl(detailSource, 'PAYEE_MASK_SHORT_RD') + '\n'
+    + fn(detailSource, 'payeeDescriptorShortMaskRd') + '\n'
+    + fn(detailSource, 'payeeDescriptorDropAccountNameRd') + '\n'
     + fn(detailSource, 'payeeDescriptorTextRd') + '\n'
     + fn(detailSource, 'recurringDestPayeeSummary') + '\n'
     + fn(detailSource, 'recurringDestRowHtml') + '\n'
@@ -306,7 +309,10 @@ check('the two groups are separate containers, not one merged list',
     recHtml.indexOf('eed-dest-row') === -1 && eedHtml.indexOf('data-recurring-id') === -1);
 
 console.log('\n=== (b) every destination kind reads back through the shared summary ===');
-check('a company-account row names WHICH account', eedHtml.indexOf('ธนาคารกรุงศรีอยุธยา • XXXXXX5566 (Trandar)') !== -1);
+// 2026-09-18, tiny-L6b (B4): a company account's trailing "(account name)" is dropped -- it
+// repeats the company whose line it already is.
+check('a company-account row names WHICH account, without repeating the company',
+    eedHtml.indexOf('ธนาคารกรุงศรีอยุธยา • XXXXXX5566') !== -1 && eedHtml.indexOf('(Trandar)') === -1);
 check('an employee-payee row names the payee', eedHtml.indexOf('กฤษดา สาธุกิจชัย') !== -1);
 check('an external row names the destination', eedHtml.indexOf('กรมบังคับคดี (ธนาคารซีไอเอ็มบีไทย)') !== -1);
 check('a multi-installment row says which installment this run pays',
@@ -376,7 +382,7 @@ api.setLangData(LANG_EN);
 api.refreshEedDestLanguageRd();
 const eedEn = api.el(EED_LIST).html;
 check('the item names switch language', eedEn.indexOf('Uniform Deduction') !== -1 && eedEn.indexOf('หักค่าเครื่องแบบ') === -1);
-check('the destination labels switch too', eedEn.indexOf('Bank of Ayudhya • XXXXXX5566 (Trandar)') !== -1);
+check('the destination labels switch too', eedEn.indexOf('Bank of Ayudhya • XXXXXX5566') !== -1);
 check('the group heading and its link switch',
     eedEn.indexOf(LANG_EN.eed_dest_group_title) !== -1 && eedEn.indexOf(LANG_EN.eed_dest_open_employee) !== -1);
 check('the installment line switches', eedEn.indexOf('Installment 1/2') !== -1);

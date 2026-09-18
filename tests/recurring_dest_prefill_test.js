@@ -154,6 +154,9 @@ const extracted = stubs + '\n'
     // 2026-09-18, tiny-L4: the 4 per-kind spellings moved out of recurringDestPayeeSummary() into
     // the one renderer every payee surface reads -- extracted from the real source, not restated.
     + lineDeclSrc(detailSource, 'PAYEE_DESCRIPTOR_SEP_RD') + '\n'
+    + lineDeclSrc(detailSource, 'PAYEE_MASK_SHORT_RD') + '\n'
+    + fn(detailSource, 'payeeDescriptorShortMaskRd') + '\n'
+    + fn(detailSource, 'payeeDescriptorDropAccountNameRd') + '\n'
     + fn(detailSource, 'payeeDescriptorTextRd') + '\n'
     + fn(detailSource, 'recurringDestPayeeSummary') + '\n'
     + decl(detailSource, 'ADJUSTMENT_TAB_CONFIG_RD') + '\n'
@@ -418,7 +421,8 @@ check('list: and both halves follow the language',
     api.recurringDestPayeeSummary(EMPLOYEE_ROW));
 api.setLang('th');
 check('list: a company payee names the account with the picker own label',
-    api.recurringDestPayeeSummary(COMPANY_ROW) === `Retained by company • ${COMPANY_ROW.bank_account_label_th}`,
+    // tiny-L6b (B4): the picker's label minus its trailing account-name parenthetical.
+    api.recurringDestPayeeSummary(COMPANY_ROW) === `Retained by company • ${COMPANY_ROW.bank_account_label_th.replace(' (Trandar)', '')}`,
     api.recurringDestPayeeSummary(COMPANY_ROW));
 check('list: an external payee says it is external AND which destination',
     api.recurringDestPayeeSummary(EXTERNAL_ROW) === `Transfer to an external person or organization • ${EXTERNAL_ROW.destination_label_th}`,

@@ -1139,25 +1139,31 @@ fallback) — เป็นการตัดสินใจเชิงพฤต
 
 ---
 
-## harness.js default baseUrl ไม่ตรงกับ BASE_URL ของ install นี้
-
-`tests/ui/harness.js` default เป็น `http://localhost/payroll` แต่ `.env` ของเครื่องนี้คือ
-`http://localhost:8080/payroll` (พอร์ต 80 เป็น Apache/PHP 5.6 ตัวอื่น ตอบ 500 ทุก route) · ทุกรอบต้องส่ง
-`UI_TEST_BASE_URL` เอง ไม่งั้นได้ timeout ที่ไม่บอกสาเหตุ · ให้อ่าน BASE_URL จาก `.env` เป็น default แทน
-
-**Source:** tiny-L5 (2026-09-18)
-
----
-
 ## "ค่าระบบ x" หลอกได้ถ้า override แรกของแถวนั้นไม่มี history
 
 `lineOverrideComputedTextRd()` อ่าน `original_value` ของ **edit แรกที่ถูกบันทึก** ไม่ใช่ค่าที่ engine คำนวณจริง ·
 ถ้าแถวนั้นมี override อยู่ก่อนที่จะมี history (เช่น fixture ของ `tests/ui/mksession.php` ที่ insert ตรง) ค่าที่แสดงจะเป็น
 ยอด override เก่า ไม่ใช่ค่าคำนวณ — กด "ใช้ค่าที่ระบบคำนวณ" แล้วได้คนละตัวกับที่บอกไว้ (วัดจริงตอน L6a: hint 28,500.00 → คืนจริงได้ 0.00)
 · เป็นของเดิมมาตั้งแต่ R1 ไม่ใช่ regression ของ L6a · แก้จริงต้องมีค่า engine จริงเก็บไว้ (breakdown JSON เก็บเฉพาะยอดหลัง override)
-— เกี่ยวกับ B3 ของ L6b โดยตรง ตัดสินพร้อมกัน
 
-**Source:** tiny-L6a (2026-09-18) — เจอตอนวัด Playwright
+**L6b (B3) แก้แบบ interim แล้ว ยังไม่ปิด** — แถวที่ไม่มี history จะ**ไม่แสดงบรรทัด `ระบบ: x` เลย** (ไม่ใช่ `-` ไม่ใช่
+ตัวเลขมั่ว) และ hint ในฟอร์มใช้เงื่อนไขเดียวกันผ่าน `lineOverrideComputedTextRd()` ตัวเดิมตัวเดียว · แปลว่า "ไม่หลอก" แล้ว
+แต่แถวที่**มี** history ก็ยังโชว์ `original_value` ซึ่งเป็นตัวแทนของค่า engine ไม่ใช่ค่า engine จริง — ปิดจริงต้องทำ tiny-C
+
+**tiny-C (ก้อนถัดไป) — persist `computed_amount`** เพิ่มคีย์ใหม่อย่างเดียว ไม่แตะตัวเลขที่คำนวณอยู่แล้ว:
+1. `PayrollRunModel::recalculate()` เก็บยอดก่อนทับ 3 จุด — `:4034` (earning/deduction), `:4058` (base salary),
+   `:4527` (statutory) ~2 บรรทัด/จุด
+2. `syncDeductionLinesForEmployee()` ส่งผ่านออกมาทั้ง 4 row shape (base salary / earning-deduction / statutory /
+   exclude fallback) ~8–10 บรรทัด
+3. `detail.js` `lineOverrideComputedTextRd()` อ่าน `line.computed_amount` ก่อน แล้วค่อย fallback history เดิม ~3 บรรทัด
+4. `tests/line_override_row_render_test.js` + `tests/line_override_table_test.php` เพิ่ม assertion ~20 บรรทัด
+
+รวม ~40–60 บรรทัด · **ข้อควรระวัง**: base salary ไม่ได้อยู่ใน breakdown JSON ใดเลย (`payroll_run_details.base_salary_amount`
+เป็นคอลัมน์เดี่ยว) ค่า engine ของมันจึงไม่มีที่เก็บ ต้องเลือกระหว่างคอลัมน์ใหม่ (= DDL + migration) กับยัดเป็น entry
+สังเคราะห์ใน breakdown — **ตัดสินข้อนี้ก่อนเริ่ม tiny-C** · และค่าจะถูกต้องเฉพาะ run ที่ recalculate หลังแก้แล้วเท่านั้น
+run เก่าจะยังไม่มีคีย์นี้ ต้องคง fallback history ไว้ ห้ามถอด
+
+**Source:** tiny-L6a (2026-09-18) — เจอตอนวัด Playwright · interim ลงใน tiny-L6b (2026-09-18)
 
 ---
 
@@ -1169,4 +1175,10 @@ L6a เปิด `data-dirty-guard` ให้ฟอร์มนี้ — baseli
 "มีข้อมูลที่ยังไม่ได้บันทึก" ทั้งที่ผู้ใช้ไม่ได้แตะอะไร · วัดใน L6a ยังไม่เจอ (run ทดสอบไม่มีแถว recurring/ped) · ทางแก้คือ §9 ข้อ 4:
 เรียก `refreshDirtyGuard()` อีกครั้งเมื่อ 2 เส้นทางนั้นลงจริง — ต้องมีตัวนับ request ที่ค้างอยู่ก่อน ไม่ใช่ setTimeout
 
-**Source:** tiny-L6a (2026-09-18)
+**L6b วัดแล้วด้วย fixture จริง — ไม่เกิด** (2026-09-18): `mksession.php --with-recurring` ทำแถว recurring ที่
+payee เป็น company บน run ทดสอบ (คือเงื่อนไขที่ L6a ขาดไป) · เปิดฟอร์ม รอ 2.5 วินาทีให้ async default ลงครบ ปิดโดยไม่แตะอะไร
+→ **ไม่ถาม** ทั้ง 4 cell (1400/430 × light/dark) · จึงยังไม่ได้แก้ — อยู่ใน backlog ต่อเพราะเส้นทาง async
+ทั้งสองมีจริงในโค้ด แต่ fixture ที่มีอยู่ยังไม่ได้ทำให้มันลงทีหลัง baseline จริง (กรณีที่จะทำได้น่าจะเป็น payee ที่ยัง
+ไม่มีบัญชีบริษัท — `applyDefaultCompanyBankAccount()` ถึงจะมีอะไรให้เติมจริง) · วัดซ้ำตอนสร้าง fixture แบบนั้นได้
+
+**Source:** tiny-L6a (2026-09-18) · วัดไม่เจอใน tiny-L6b (2026-09-18)

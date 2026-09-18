@@ -5768,7 +5768,8 @@ button.badge {
 /* 2026-09-16: a column title that carries an action (the Calculation Breakdown modal's own
    add-an-item button) -- the title becomes the flex row, the button sits at the column's right edge
    on the same `--payslip-inset` every other part of the slip uses, so it lines up with the amounts
-   below it. `.btn-icon` (§7) keeps its own 32px; nothing here sets a second size. */
+   below it. 2026-09-18, tiny-L6b: that action is a worded `.btn-outline-primary` now rather than a
+   circled `.btn-icon`, and it still brings its own height from §4 -- nothing here sets a size. */
 .payslip-col-title-with-action {
     display: flex;
     align-items: center;
@@ -9988,14 +9989,13 @@ html, body {
 .lo-table {
     table-layout: fixed;
     width: 100%;
-    /* 78 + 140 (name) + 120 + 130 + 56 + 86 */
-    min-width: 610px;
+    /* 2026-09-18, tiny-L6b: 5 columns, not 6 -- the calculated figure is a sub-line of the amount
+       cell now, so the 120px column it used to hold is gone and the table needs 120px less before
+       it has to scroll. 78 + 140 (name) + 130 + 56 + 86 */
+    min-width: 490px;
 }
 .lo-table th.col-check {
     width: 78px;
-}
-.lo-table th.lo-computed-col {
-    width: 120px;
 }
 .lo-table th.lo-amount-col {
     width: 130px;
@@ -10091,16 +10091,12 @@ html, body {
     font-size: var(--fs-xs);
     margin-left: var(--sp-1);
 }
-/* 2026-09-17, R1: the calculated figure is the baseline the live one is a departure from -- it is
-   context, so it is quiet (no money colour of its own, muted) and lets the amount column stay the
-   one being read. "-" is a row whose calculated value was never recorded; its title says so. */
-.lo-computed-cell {
-    color: var(--c-text-muted);
-}
-.lo-computed-unknown {
-    color: var(--c-text-faint);
-    cursor: help;
-}
+/* 2026-09-17, R1 / 2026-09-18, tiny-L6b: the calculated figure is the baseline the live one is a
+   departure from -- context, so it stays quiet and lets the amount stay the one being read. It is a
+   sub-line of the amount cell now and wears `.payslip-line-tag` (already exactly that: muted,
+   --fs-xs, no money colour), so the 2 rules that used to style its own column are gone with it. A
+   row whose calculated value was never recorded prints no sub-line at all -- there is no "-" state
+   left to style, because a dash was still a claim that a figure existed somewhere. */
 /* 2026-09-17, R1 follow-up: below `sm` the dialog is narrower than this table, so the 2 columns that
    say WHICH row you are reading (the switch and the item name) stay put while the figures scroll
    under them. Only `position` lives here -- the opaque background per table section and the

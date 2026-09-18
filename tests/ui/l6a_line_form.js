@@ -2,7 +2,7 @@
  * tiny-L6a measurement: the pencil on any row of the Calculation Breakdown modal opens ONE form,
  * and the cell editor it replaced is gone.
  *
- * Run:  UI_TEST_BASE_URL=http://localhost:8080/payroll npx -p playwright node tests/ui/l6a_line_form.js <PHPSESSID> <runToken>
+ * Run:  UI_BASE_URL=http://localhost:8080/payroll npx -p playwright node tests/ui/l6a_line_form.js <PHPSESSID> <runToken>
  *
  * 2 cells (a logic/form round, per CLAUDE.md's context rules): 1400 th light, 430 th dark.
  * Everything it writes goes to the throwaway run tests/ui/mksession.php made -- never run 752.

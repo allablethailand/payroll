@@ -19,6 +19,11 @@ exit code ไม่ใช่ 0) · run ที่ค้างอยู่ทำ�
 แต่ละรอบเขียนสคริปต์ของตัวเองทิ้ง ๆ อยู่แล้ว ปัญหาคือ **กฎที่ต้องใช้กับทุกสคริปต์ไม่มีที่อยู่** — harness.js คือที่อยู่นั้น
 (`openContext()` คืน `page` + `report()`; resolve Playwright จาก npx cache เพราะไม่ได้อยู่ใน `package.json`)
 
+**URL ต้องมาจาก env `UI_BASE_URL` เท่านั้น ไม่มี default** (2026-09-18, tiny-L6b) — `UI_BASE_URL=http://localhost:8080/payroll`
+= `BASE_URL` ของ install นี้ใน `.env` · พอร์ต 80 เป็น Apache/PHP 5.6 คนละตัว ตอบ 500 ทุก route ถ้าปล่อยให้ default
+ไปที่นั่น รอบจะไม่ fail แต่ค้างจนหมดเวลา แล้ว timeout ไม่บอกทั้ง URL และสาเหตุ · ไม่ตั้ง = `openContext()` throw
+พร้อมบอกวิธีตั้ง ตั้งแต่ request แรก (ชื่อเดิม `UI_TEST_BASE_URL` เปลี่ยนแล้ว)
+
 **บล็อก 2 request เสมอ (abort) นับจำนวนไว้ และรอบต้องรายงานตัวเลขนั้น**
 
 1. `api/user-preference.save` — รอบหนึ่งวัด th/en + light/dark ทุกครั้ง แปลว่าจบรอบแล้วจะทิ้ง `ui_language`/`ui_theme`
