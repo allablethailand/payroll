@@ -66,6 +66,9 @@ const extracted = [
     constDecl(detailSource, 'LINE_OVERRIDE_SKIP_NOTES_RD'),
     fn(detailSource, 'lineOverrideSkipEnumRd'),
     fn(detailSource, 'lineOverrideIsSkippedRd'),
+    fn(detailSource, 'lineOverrideIsChangedRd'),
+    "let lineOverrideViewFilterRd = 'all';",
+    fn(detailSource, 'lineOverrideTabsHtmlRd'),
     fn(detailSource, 'lineOverrideHistoryFor'),
     fn(detailSource, 'lineOverrideHistoryValueRd'),
     fn(detailSource, 'lineOverrideMoneyClassRd'),
@@ -87,7 +90,9 @@ const extracted = [
     fn(detailSource, 'lineOverrideHistoryMenuHtml'),
     `module.exports = {
         lineOverrideRowHtml, lineOverrideAddLinkHtmlRd, manualLineToTableRowRd, lineOverrideIsSkippedRd, lineOverrideTotalsHtmlRd, lineOverrideHistoryTimelineItemsRd, lineOverrideHistoryMenuHtml,
+        lineOverrideIsChangedRd, lineOverrideTabsHtmlRd,
         setLang: (d) => { langData = d; },
+        setFilter: (f) => { lineOverrideViewFilterRd = f; },
     };`,
 ].join('\n');
 
@@ -224,13 +229,16 @@ console.log('=== (จ) a skipped line is not a row of either slip ===');
 // 2026-09-18, 4a-2 follow-up: the row builder never sees one -- the TABLE builder drops it, so what
 // is asserted here is the gate itself plus the predicate it calls.
 check('the table builder drops a skipped line before it can become a row',
-    tableSrc.indexOf('&& !lineOverrideIsSkippedRd(l));') !== -1, tableSrc);
+    tableSrc.indexOf('&& !lineOverrideIsSkippedRd(l)') !== -1, tableSrc);
 // It is part of `groupLines`, which BOTH modes compute -- no `isView` anywhere in that statement.
+// (2026-09-18, 4a-2b: measured from `const groupLines =`, not from the first mention of the
+// predicate in the file -- the tab count above it calls the same one.)
 check('...in both modes -- the gate is not behind an `isView` branch', (function () {
     const i = tableSrc.indexOf('const groupLines =');
-    const j = tableSrc.indexOf(';', tableSrc.indexOf('!lineOverrideIsSkippedRd(l)'));
-    return i !== -1 && j > i && tableSrc.slice(i, j).indexOf('isView') === -1;
-})(), tableSrc.slice(tableSrc.indexOf('const groupLines ='), tableSrc.indexOf('const groupLines =') + 200));
+    const j = tableSrc.indexOf(';', i);
+    return i !== -1 && j > i && tableSrc.slice(i, j).indexOf('isView') === -1
+        && tableSrc.slice(i, j).indexOf('!lineOverrideIsSkippedRd(l)') !== -1;
+})(), tableSrc.slice(tableSrc.indexOf('const groupLines ='), tableSrc.indexOf('const groupLines =') + 260));
 check('the row builder carries no skipped branch left over',
     ['skipBadge', 'lo-row-skipped', 'payroll_statutory_skip', 'lineOverrideSkipEnumRd(line)']
         .every(needle => fn(detailSource, 'lineOverrideRowHtml').indexOf(needle) === -1));
@@ -386,6 +394,74 @@ check('there is no second slip renderer left in the file',
 check('the table renderer takes the mode as its last parameter, defaulting to the editable one',
     detailSource.indexOf('function renderLineOverrideTableRd(lines, runSettings, mode)') !== -1
     && fn(detailSource, 'renderLineOverrideTableRd').indexOf("mode = mode || 'edit';") !== -1);
+
+console.log('');
+console.log('=== (ฉ) the read-only slip: 2 tabs: a filter over rows that are already here (4a-2b) ===');
+// The predicate both the count and the filter use -- one definition, so the number on the tab and
+// the rows behind it cannot disagree.
+check('an overridden row counts as changed', api.lineOverrideIsChangedRd({ override_action: 'override_amount' }) === true);
+check('...an excluded one too -- excluding IS a change', api.lineOverrideIsChangedRd({ override_action: 'exclude' }) === true);
+check('...and a hand-added one, which replaced nothing but is not calculated either',
+    api.lineOverrideIsChangedRd(MANUAL_EARNING) === true);
+check('an untouched calculated row does not', api.lineOverrideIsChangedRd(LINES[5].line) === false);
+// A skipped row is not a row of this slip at all, so it cannot be counted as a changed one -- but a
+// skipped row somebody HAS overridden renders, and therefore counts.
+const countOfRows = (rows) => rows.filter(l => !api.lineOverrideIsSkippedRd(l) && api.lineOverrideIsChangedRd(l)).length;
+// 4 of the 7 rendered rows: the overridden one, the excluded one and the 2 hand-added ones. The
+// not-enrolled row is neither rendered nor counted.
+check('the count is taken over the rows that really render',
+    countOfRows(LINES.map(l => l.line)) === 4 && RENDERED.length === 7,
+    `${countOfRows(LINES.map(l => l.line))} of ${RENDERED.length}`);
+check('...and a skipped row that carries an override is one of them',
+    countOfRows([Object.assign({}, LINES[4].line, { override_action: 'exclude' })]) === 1);
+
+api.setFilter('all');
+const tabs = api.lineOverrideTabsHtmlRd(2);
+check('nothing changed -> no tab row at all, rather than one that is hidden or disabled',
+    api.lineOverrideTabsHtmlRd(0) === '' && api.lineOverrideTabsHtmlRd(0).indexOf('d-none') === -1);
+check('it is the app own nav-tabs, marked for this table', tabs.indexOf('<ul class="nav nav-tabs lo-tabs" role="tablist">') === 0);
+check('2 tabs, and they are buttons', (tabs.match(/<button/g) || []).length === 2 && (tabs.match(/<li class="nav-item"/g) || []).length === 2);
+check('no data-bs-toggle: the click is handled here, not by the Bootstrap tab plugin',
+    tabs.indexOf('data-bs-toggle') === -1 && tabs.indexOf('data-bs-target') === -1);
+check('both labels come from langData', tabs.indexOf(LANG['line_override_tab_all']) !== -1
+    && tabs.indexOf(LANG['line_override_tab_changed']) !== -1, tabs);
+check('the count is a grey number in brackets, never a coloured badge',
+    tabs.indexOf('<span class="text-muted">(2)</span>') !== -1 && tabs.indexOf('badge') === -1, tabs);
+check('the first tab is the open one by default', tabs.indexOf('class="nav-link active" type="button" role="tab" data-lo-filter="all"') !== -1, tabs);
+api.setFilter('changed');
+const tabsChanged = api.lineOverrideTabsHtmlRd(2);
+check('...and the open one follows the state, not the position',
+    tabsChanged.indexOf('class="nav-link active" type="button" role="tab" data-lo-filter="changed"') !== -1
+    && tabsChanged.indexOf('data-lo-filter="all"') !== -1
+    && tabsChanged.indexOf('class="nav-link active" type="button" role="tab" data-lo-filter="all"') === -1, tabsChanged);
+api.setFilter('all');
+
+// Where the table builder puts it, and what it does with the filter.
+check('the tab row renders ABOVE the table, in the same one write',
+    tableSrc.indexOf('$wrap.html(lineOverrideTabsHtmlRd(changedCount) + `<div class="table-responsive">') !== -1, tableSrc);
+check('the editable slip never counts and never renders a tab row',
+    tableSrc.indexOf('const changedCount = isView') !== -1
+    && tableSrc.indexOf(': 0;') !== -1, tableSrc);
+check('the filter is applied where the rows of a group are chosen',
+    tableSrc.indexOf('&& (!changedOnly || lineOverrideIsChangedRd(l)));') !== -1, tableSrc);
+check('a group left empty by the filter renders no heading either -- same early return as before',
+    tableSrc.indexOf('if (!groupLines.length && !manualOpen) return;') !== -1);
+check('the 3 totals still come off the run row, so a filtered table still ends on the full pay',
+    tableSrc.indexOf('body += lineOverrideTotalsHtmlRd(breakdownRowRd, mode);') !== -1
+    && tableSrc.indexOf('lineOverrideTotalsHtmlRd(groupLines') === -1);
+// Switching tabs may not cost a request: both tabs are views of one payload that is already here.
+const tabHandler = detailSource.slice(detailSource.indexOf("$(document).on('click', '.lo-mount .lo-tabs .nav-link'"));
+const tabHandlerBody = tabHandler.slice(0, tabHandler.indexOf('});') + 3);
+check('clicking a tab redraws from the rows the table already holds',
+    tabHandlerBody.indexOf('renderLineOverrideTableRd(lineOverrideRowsRd, lineOverrideRunSettingsRd, lineOverrideHostRd.mode);') !== -1, tabHandlerBody);
+check('...and fetches nothing', ['$.ajax', '$.get', 'loadSyncLineOverridesRd', 'fetch(']
+    .every(needle => tabHandlerBody.indexOf(needle) === -1), tabHandlerBody);
+check('clicking the tab that is already open does nothing at all',
+    tabHandlerBody.indexOf('if (!filter || filter === lineOverrideViewFilterRd) return;') !== -1);
+check('the filter is reset per open, so it never survives into the next employee slip',
+    fn(detailSource, 'setLineOverrideHostRd').indexOf("lineOverrideViewFilterRd = 'all';") !== -1);
+check('nothing persists it', ['localStorage', 'sessionStorage'].every(n => tabHandlerBody.indexOf(n) === -1)
+    && detailSource.indexOf('lineOverrideViewFilterRd') !== -1);
 
 console.log('');
 console.log('-'.repeat(50));

@@ -5,16 +5,6 @@ Format: Title / 1-2 line detail / Source (which batch).
 
 ---
 
-## 4a-2b: tab filter "รายละเอียด / รายการที่แก้ไข (n)" ในสลิปหน้าดู
-
-4a-2a เสร็จแล้ว (manual line เป็นแถวในตาราง, ยอดรวมกลับเข้าท้ายตาราง, ลบ `payslipViewHtml()` + การ์ด `.ml-mount`,
-แถว skipped ไม่ render)
-เหลือ: tab 2 ตัวเหนือตารางในโหมดดู, n = แถวที่ `override_action` ไม่ว่าง + แถว manual, filter = re-render โดยไม่ render
-แถวที่ไม่เข้าเงื่อนไข (กลุ่มว่างไม่ render, ยอดรวมยังแสดง), n=0 → ไม่มี tab, โหมดแก้ไม่มี tab
-Source: ก้อน 4a-2a (2026-09-18)
-
----
-
 ## langReady-gating not applied to 7 files (bind-only ready handlers, no initial langData render)
 
 Batch 2 item 0's original list (re-grepped 2026-09-10) was actually 29 files, not 28 as counted

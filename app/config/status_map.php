@@ -195,17 +195,6 @@ return [
         'statutory' => ['label_key' => 'sync_line_statutory_badge', 'tone' => 'neutral'],
     ],
 
-    // 2026-09-16, same table: WHY a statutory line was skipped for this employee. The table hides
-    // these rows by default (they are a consequence of a setting made elsewhere, not something to
-    // adjust here) -- when the user asks to see them, this is the badge that says which setting.
-    // Only the 3 "skipped by configuration" notes are listed: a note that means "something is not
-    // set up" (no_rate_configured/...) is never hidden and never badged away as normal.
-    'payroll_statutory_skip' => [
-        'employee_not_enrolled_sso' => ['label_key' => 'statutory_skip_sso', 'tone' => 'neutral'],
-        'employee_not_enrolled_pvd' => ['label_key' => 'statutory_skip_pvd', 'tone' => 'neutral'],
-        'employee_tax_exempt' => ['label_key' => 'statutory_skip_tax_exempt', 'tone' => 'neutral'],
-        'disabled' => ['label_key' => 'statutory_skip_disabled', 'tone' => 'neutral'],
-    ],
 
     'payment_method' => [
         'transfer' => ['label_key' => 'table_payment_bank', 'tone' => 'neutral'],

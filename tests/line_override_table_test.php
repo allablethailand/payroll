@@ -384,7 +384,7 @@ checkTrue('an off row shows no figure and no controls', strpos($rowHtml, 'const 
     && strpos($rowHtml, "line_override_excluded_amount") !== false
     && strpos($rowHtml, 'const amountCell = included') !== false);
 checkTrue('a skipped line never reaches the row builder at all',
-    strpos($js, '&& !lineOverrideIsSkippedRd(l));') !== false
+    strpos($js, '&& !lineOverrideIsSkippedRd(l)') !== false
     && strpos($rowHtml, 'lo-row-skipped') === false && strpos($rowHtml, 'skipBadge') === false
     && strpos($rowHtml, 'lineOverrideSkipEnumRd(') === false
     && strpos($js, 'payroll_statutory_skip') === false);
@@ -452,6 +452,28 @@ checkTrue('line_override_hint is gone', !array_key_exists('line_override_hint', 
 checkTrue('the use-this-value confirm says it saves immediately',
     strpos((string)$thLang['line_override_confirm_use_value_message'], 'บันทึกทันที') !== false
     && strpos((string)$enLang['line_override_confirm_use_value_message'], 'saved immediately') !== false);
+
+echo "\n=== 13. the read-only slip's 2 tabs (4a-2b) ===\n";
+// The reason badge on a skipped row is gone with the row itself (4a-2): its status_map context and
+// all 4 of its labels went in this round, so nothing may reference them again.
+foreach (['statutory_skip_sso', 'statutory_skip_pvd', 'statutory_skip_tax_exempt', 'statutory_skip_disabled'] as $key) {
+    checkTrue("{$key} is gone from both lang files", !array_key_exists($key, $thLang) && !array_key_exists($key, $enLang));
+}
+checkTrue('the payroll_statutory_skip context is gone with them',
+    !array_key_exists('payroll_statutory_skip', require __DIR__ . '/../app/config/status_map.php'));
+foreach (['line_override_tab_all', 'line_override_tab_changed'] as $key) {
+    checkTrue("{$key} is in both lang files", !empty($thLang[$key]) && !empty($enLang[$key]));
+}
+// The count is decided by one predicate, and it is the SAME one the filter uses.
+checkTrue('the changed-row predicate is one function', strpos($js, 'function lineOverrideIsChangedRd(line) {') !== false
+    && strpos($js, "return !!line.override_action || line.line_type === 'manual_line';") !== false);
+checkTrue('the tab row is only built for the read-only slip', strpos($js, 'const changedCount = isView') !== false);
+checkTrue('an empty count renders no tab row at all', strpos($js, "if (!changedCount) return '';") !== false);
+checkTrue('the filter narrows the rows, not the totals',
+    strpos($js, '&& (!changedOnly || lineOverrideIsChangedRd(l)));') !== false
+    && strpos($js, 'body += lineOverrideTotalsHtmlRd(breakdownRowRd, mode);') !== false);
+checkTrue('the tab state is reset per host, so it never survives into the next employee slip',
+    strpos($js, "lineOverrideViewFilterRd = 'all';\n}") !== false);
 
 echo "\n--------------------------------------------------\n";
 echo "Passed: {$passes}, Failed: {$failures}\n";

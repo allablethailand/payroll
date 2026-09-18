@@ -71,14 +71,17 @@ check('loadStatusMap() context keys match status_map.php required directly', arr
 // never updated THIS list, so this assertion has been failing on every commit since -- confirmed by
 // running the suite against a clean HEAD (git stash) before adding it here, not assumed.
 // 2026-09-16: 'payroll_line_type' added -- the Adjustments modal's own "ปรับตัวเลข" table badges its
-// statutory rows through it (replacing a hand-written blue badge, §3) -- and 'payroll_statutory_skip'
-// for the reason badge on a statutory row that employee is not enrolled in.
+// statutory rows through it (replacing a hand-written blue badge, §3).
+// 2026-09-18, 4a-2b: 'payroll_statutory_skip' REMOVED with its context. It badged the reason a
+// statutory row was skipped for this employee; since 4a-2 such a row is not rendered at all (it
+// contributes nothing to any of the 3 totals), so the context, its 4 labels and this entry all went
+// together rather than being left behind as dead config.
 $expectedContexts = [
     'run_state', 'payroll_process_tab', 'approval_status', 'payslip_request_status',
     'employment_certificate_request_status', 'employee_status', 'employment_status',
     'document_delivery_status', 'sync_batch_status', 'payroll_calc_status', 'eed_status',
     'eed_installment_status', 'remittance_status', 'attendance_status',
-    'recurring_earning_status', 'payroll_line_type', 'payroll_statutory_skip', 'payment_method',
+    'recurring_earning_status', 'payroll_line_type', 'payment_method',
     'verify_status', 'employee_comment_tag', 'manual_line_mode', 'data_source',
 ];
 sort($expectedContexts);

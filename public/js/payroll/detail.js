@@ -2510,8 +2510,6 @@ function renderBreakdownViewBodyRd(row) {
         <section class="breakdown-edit-section">
             <div id="breakdownLineOverrideWrap" class="lo-mount"></div>
         </section>
-        <section class="breakdown-edit-section">
-        </section>
     </div>`);
     setLineOverrideHostRd('#breakdownLineOverrideWrap', row.employee_id, null, 'view');
     // A hand-added line is NOT in the sync-lines payload (it is filtered out server-side -- an
@@ -4458,8 +4456,17 @@ function lineOverrideSkipEnumRd(line) {
 function lineOverrideIsSkippedRd(line) {
     return !line.override_action && !!lineOverrideSkipEnumRd(line);
 }
+// 2026-09-18, 4a-2b: "somebody changed this row" -- an override of any kind (including an exclude),
+// or a line that was not calculated at all but added by hand. The read-only slip's second tab shows
+// exactly these, and its count is the same predicate, so there is one definition of both.
+function lineOverrideIsChangedRd(line) {
+    return !!line.override_action || line.line_type === 'manual_line';
+}
 let lineOverrideRowsRd = [];
 let lineOverrideRunSettingsRd = null;
+// Which of the read-only slip's 2 tabs is open. Client state only, reset per open (see
+// setLineOverrideHostRd) -- a filter that survived a reopen would hide rows nobody asked to hide.
+let lineOverrideViewFilterRd = 'all';
 /* 2026-09-16, D1: this table had TWO mount points -- the Adjustments modal's "ปรับตัวเลข" tab and the
    Calculation Breakdown modal's editable layout -- and exactly ONE implementation. `lineOverrideHostRd`
    is the whole of the difference between them: where to render, whose lines to fetch, and what else to
@@ -4481,6 +4488,7 @@ function setLineOverrideHostRd(mount, employeeId, onSaved, mode) {
         $(lineOverrideHostRd.mount).empty();
     }
     lineOverrideHostRd = { mount: mount, employeeId: employeeId, onSaved: onSaved || null, mode: mode || 'edit' };
+    lineOverrideViewFilterRd = 'all';
 }
 // Edit history for THIS employee, keyed 'line_type|item_code' -- fetched once alongside the table's
 // own data (loadSyncLineOverridesRd) because the table has to know at RENDER time which rows even
@@ -4804,6 +4812,22 @@ function lineOverridePublishStickyOffsetRd($wrap) {
         new ResizeObserver(publish).observe(scroller);
     }
 }
+/* 2026-09-18, 4a-2b: the read-only slip's own 2 tabs, above the table (rules.md §9). They filter the
+   table that is already on screen -- no request, no second payload, no `d-none` row left in the DOM.
+   The count is a grey number in brackets, never a coloured badge (§6): it says how much there is,
+   not that something needs doing. With nothing changed there is nothing to switch between, so the
+   row is not rendered at all rather than rendered and disabled. */
+function lineOverrideTabsHtmlRd(changedCount) {
+    if (!changedCount) return '';
+    const tabHtml = function (filter, key, fallback, suffix) {
+        const active = lineOverrideViewFilterRd === filter ? ' active' : '';
+        return `<li class="nav-item" role="presentation"><button class="nav-link${active}" type="button" role="tab" data-lo-filter="${filter}">${escapeHtml(langData[key] || fallback)}${suffix}</button></li>`;
+    };
+    return `<ul class="nav nav-tabs lo-tabs" role="tablist">`
+        + tabHtml('all', 'line_override_tab_all', 'Details', '')
+        + tabHtml('changed', 'line_override_tab_changed', 'Changed items', ` <span class="text-muted">(${changedCount})</span>`)
+        + '</ul>';
+}
 function renderLineOverrideTableRd(lines, runSettings, mode) {
     mode = mode || 'edit';
     const isView = mode === 'view';
@@ -4822,6 +4846,12 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
         return;
     }
     const runExcluded = new Set((runSettings && runSettings.excluded_item_codes) || []);
+    // Counted over the rows that really render (a skipped one is not a row of this slip at all), so
+    // the number on the tab and the rows behind it can never disagree.
+    const changedCount = isView
+        ? lineOverrideRowsRd.filter(l => !lineOverrideIsSkippedRd(l) && lineOverrideIsChangedRd(l)).length
+        : 0;
+    const changedOnly = changedCount > 0 && lineOverrideViewFilterRd === 'changed';
     const colCount = isView ? 3 : 5;
     let idx = 0;
     let body = '';
@@ -4832,7 +4862,8 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
         // slip's scarcest resource -- a row -- on an item that is not part of this pay.) A personal
         // override still wins: lineOverrideIsSkippedRd() lets such a row through.
         const groupLines = lineOverrideRowsRd.filter(l => (l.item_type || 'other') === group.type
-            && !lineOverrideIsSkippedRd(l));
+            && !lineOverrideIsSkippedRd(l)
+            && (!changedOnly || lineOverrideIsChangedRd(l)));
         // 2026-09-18, 4a-2: an EMPTY manual group still renders in the editable slip -- its head and
         // its "add a line" row are where adding the first one starts, and a group that appears only
         // once something is already in it can never be the way in. The read-only slip has nothing to
@@ -4851,7 +4882,10 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
         });
     });
     body += lineOverrideTotalsHtmlRd(breakdownRowRd, mode);
-    $wrap.html(`<div class="table-responsive"><table class="table align-middle lo-table mb-0">
+    // The 3 totals below are read off `breakdownRowRd` (the server's own row), never summed from the
+    // rows above them -- so the filtered table still ends on this employee's FULL pay, which is the
+    // only figure that is true.
+    $wrap.html(lineOverrideTabsHtmlRd(changedCount) + `<div class="table-responsive"><table class="table align-middle lo-table mb-0">
         <thead>
             <tr>
                 ${isView ? '' : `<th class="col-check tbl-sticky-col">${escapeHtml(langData['line_override_col_include'] || 'Include')}</th>`}<th class="lo-name-col tbl-sticky-col tbl-sticky-col-edge-left">${escapeHtml(langData['line_override_col_item'] || 'Item')}</th>
@@ -4871,6 +4905,15 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
     // this table's menus are action menus, the row's own click handler above does the work.
     if (typeof initBadgeDropdown === 'function') initBadgeDropdown($wrap);
 }
+// Switching tabs draws the SAME rows again through the SAME renderer, from what the table already
+// holds -- the identical call refreshBreakdownNetSummaryRd() makes. Nothing is fetched: both tabs
+// are views of one payload that is already here.
+$(document).on('click', '.lo-mount .lo-tabs .nav-link', function () {
+    const filter = $(this).data('lo-filter');
+    if (!filter || filter === lineOverrideViewFilterRd) return;
+    lineOverrideViewFilterRd = filter;
+    renderLineOverrideTableRd(lineOverrideRowsRd, lineOverrideRunSettingsRd, lineOverrideHostRd.mode);
+});
 /* The slip's own 3 summary figures -- the bottom line of every row above them. 4a-1 parked them in a
    block of their own under the table, because a second block of money (the hand-added card) sat
    between the table and them; 2026-09-18, 4a-2 put that money INTO the table, so they are the

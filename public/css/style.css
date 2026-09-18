@@ -9640,6 +9640,19 @@ html, body {
    makes sense over ~10 rows the user has to read as one list), §8 for the money columns, §9 for the
    form scale (the pane carries `.form-compact`, so everything inside is already `--fs-sm`).
    ============================================================================ */
+/* 2026-09-18, 4a-2b: the read-only slip's own tab row, above the table (rules.md §9). Shape, colour
+   and underline are the app's global `.nav-tabs` (nothing overridden here). The ONLY thing this adds
+   is where the row starts: a tab's own text has to land on the same x as the column title under it,
+   and a `.nav-link` already carries `--bs-nav-link-padding-x` of its own, so the row is indented by
+   what is left of the table's inset after that padding -- which keeps the underline symmetric around
+   the label (indenting the first link instead would not). `max()` because the two are on different
+   scales: the inset is px, the padding is `rem`, so at the Large font-size setting the difference
+   goes negative and 0 is the right answer there. */
+.lo-tabs {
+    padding-left: max(0px, calc(var(--payslip-inset, var(--sp-3)) - var(--bs-nav-link-padding-x)));
+    margin-bottom: var(--sp-2);
+}
+
 /* The group heading is deliberately one step smaller than the rows it labels. Same specificity as
    the `.form-compact ... > td` rule far above (2 classes + 3 elements each), so what decides is
    source order -- this block is later in the file, which is why it wins. */
