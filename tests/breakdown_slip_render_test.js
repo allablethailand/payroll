@@ -82,7 +82,16 @@ const langData = {
     manual_line_add_locked: 'เพิ่มรายการได้เฉพาะรอบที่เป็นฉบับร่าง และพนักงานที่ยังไม่ถูกยืนยัน',
     manual_line_form_edit_title: 'แก้ไขรายการ',
     manual_line_legacy_locked: 'รายการนี้บันทึกไว้ก่อนที่หน้านี้จะแก้ไขได้ แก้หรือลบจากที่นี่ไม่ได้',
-    action_remove: 'ลบออก'
+    action_remove: 'ลบออก',
+    // 2026-09-18, tiny-L4: the payee descriptor's own wording, same keys the real th.json has
+    payee_transfer_tag: 'จ่ายให้',
+    payee_dest_retained: 'หักเข้าบริษัท',
+    payee_dest_external: 'โอนให้บุคคล/หน่วยงานภายนอก',
+    payee_dest_employee: 'โอนให้พนักงานคนอื่น',
+    payee_type_not_disbursed: 'หักแต่ไม่มีเงินสดเคลื่อนไหว (Write-off)',
+    payee_bank_account_needs_review: 'บัญชีบริษัท -- ยังไม่ระบุบัญชี ต้องตรวจสอบ',
+    payee_employee_no_bank_account: 'พนักงานคนนี้ยังไม่มีบัญชีธนาคาร',
+    payee_dest_missing: 'ปลายทางนี้ถูกลบไปแล้ว'
 };
 let calls = { formula: 0, badge: 0 };
 function formulaButtonRd() { calls.formula++; return '<!--formula-->'; }
@@ -95,6 +104,18 @@ const extracted = [
     extractFunctionSource(appSource, 'payslipNetSummaryHtml', 'app.js'),
     extractFunctionSource(appSource, 'payslipViewHtml', 'app.js'),
     extractConst(detailSource, 'STATUTORY_NOT_ENTITLED_NOTES_RD', 'detail.js'),
+    // 2026-09-18, tiny-L4: the slip's payee line is rendered by the shared descriptor helper
+    // now, so the pinned output below includes whatever IT produces -- pulled from the real
+    // source (and from app.js for the code-prefix strip it leans on) like everything else here.
+    extractFunctionSource(appSource, 'splitOptionCodePrefix', 'app.js'),
+    extractConst(detailSource, 'PAYEE_DESCRIPTOR_SEP_RD', 'detail.js'),
+    extractConst(detailSource, 'PAYEE_DESCRIPTOR_ICONS_RD', 'detail.js'),
+    extractFunctionSource(detailSource, 'rowOptionLabelRd', 'detail.js'),
+    extractFunctionSource(detailSource, 'payeeNameFromLabelRd', 'detail.js'),
+    extractFunctionSource(detailSource, 'manualLinePayeeNameRd', 'detail.js'),
+    extractFunctionSource(detailSource, 'payeeDescriptorNeedsReviewRd', 'detail.js'),
+    extractFunctionSource(detailSource, 'payeeDescriptorTextRd', 'detail.js'),
+    extractFunctionSource(detailSource, 'payeeDescriptorHtmlRd', 'detail.js'),
     extractFunctionSource(detailSource, 'breakdownLineRowsRd', 'detail.js'),
     extractFunctionSource(detailSource, 'statutoryRowsRd', 'detail.js'),
     extractFunctionSource(detailSource, 'payslipEmptyRowRd', 'detail.js'),
@@ -135,7 +156,13 @@ const FIXTURE_ROW = {
         { source: 'manual_line', manual_line_id: 146, code: 'BONUS', name_th: 'โบนัส', name_en: 'Bonus', amount: 2000, note: null, is_custom: false, is_other: false }
     ],
     deduction_breakdown: [
-        { source: 'manual_line', manual_line_id: 147, code: 'UNIFORM_DEDUCT', name_th: 'หักค่าเครื่องแบบ', name_en: 'Uniform Deduction', amount: 550, note: null, is_custom: false, is_other: false, payee_type: 'company', bank_account_id: 4 }
+        { source: 'manual_line', manual_line_id: 147, code: 'UNIFORM_DEDUCT', name_th: 'หักค่าเครื่องแบบ', name_en: 'Uniform Deduction', amount: 550, note: null, is_custom: false, is_other: false, payee_type: 'company', bank_account_id: 4,
+          // 2026-09-18, tiny-L4: what getDetails() now enriches every line with. The 4 raw
+          // columns stay (they are what the descriptor was built FROM), and the renderer reads
+          // only this.
+          payee: { payee_type: 'company', missing: false, bank_account_id: 4,
+              bank_account_label_th: 'ธนาคารกรุงศรีอยุธยา • ••••••••5566 (Trandar)',
+              bank_account_label_en: 'Bank of Ayudhya (Krungsri) • ••••••••5566 (Trandar)' } }
     ],
     statutory_breakdown: [
         { code: 'TH_SSO', name_th: 'ประกันสังคม', name_en: 'Social Security (SSO)', employee_amount: 750, employer_amount: 750, note: null },
@@ -184,7 +211,7 @@ const VIEW_FIXTURE = `<div class="payslip-view">
             </tr><tr class="payslip-subgroup-row"><td colspan="2" class="payslip-subgroup-label">รายการเพิ่มเติม</td></tr><tr class="payslip-row">
             <td>
                 <div class="payslip-line-head"><span class="payslip-line-name" title="UNIFORM_DEDUCT">หักค่าเครื่องแบบ</span><!--formula--></div>
-                <div class="small text-muted"><i class="fa-solid fa-building me-1"></i>Retained by company</div></td>
+                <div class="small text-muted"><i class="fa-solid fa-building me-1"></i>หักเข้าบริษัท • ธนาคารกรุงศรีอยุธยา • ••••••••5566 (Trandar)</div></td>
             <td class="text-end num money-deduction">550.00</td>
         </tr></tbody>
                 </table>

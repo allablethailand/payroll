@@ -1958,6 +1958,7 @@
     "payee_dest_employee": "โอนให้พนักงานคนอื่น",
     "payee_dest_employee_short": "โอนให้พนักงาน",
     "payee_dest_external": "โอนให้บุคคล/หน่วยงานภายนอก",
+    "payee_dest_missing": "ปลายทางนี้ถูกลบไปแล้ว",
     "payee_dest_external_short": "โอนให้ภายนอก",
     "payee_dest_desc_retained": "หักจากเงินเดือนพนักงาน เงินอยู่กับบริษัท ไม่มีเงินโอนออก เช่น หักคืนเงินเบิกล่วงหน้า ค่าปรับ",
     "payee_dest_desc_employee": "ผู้รับจะได้เป็นรายได้ในรอบเดียวกันและถูกคิดภาษี",

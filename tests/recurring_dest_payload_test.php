@@ -49,7 +49,11 @@ echo "=== 1. the 3 private label compositions are gone, the 3 shared builders ar
 $modelSrc = file_get_contents(__DIR__ . '/../app/models/PayrollRunModel.php');
 $start = strpos($modelSrc, 'public function recurringDeductionDestinationsForEmployee(');
 checkTrue('recurringDeductionDestinationsForEmployee() exists', $start !== false);
-$body = substr($modelSrc, $start, strpos($modelSrc, 'public function recurringDeductionDestinationOverrideSave(') - $start);
+// 2026-09-18, tiny-L4: bounded by the descriptor builder that follows this method, not by the
+// next PUBLIC one -- the helpers between them (payeeLookupForLines()/enrichLinePayee()) call
+// the same builder for the slip's own lines, and counting THEIR calls as this method's is how
+// the "one method, not two blocks" assertion below started reading 3.
+$body = substr($modelSrc, $start, strpos($modelSrc, 'private function payeeDestinationDescriptor(') - $start);
 
 foreach ([
     'the payee employee label' => "(new EmployeeModel(\$this->db))->optionRowsByIds(",

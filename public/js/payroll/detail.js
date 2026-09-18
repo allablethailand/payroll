@@ -2285,6 +2285,75 @@ function formulaButtonRd(line) {
     // mouse pass, fighting the click-outside/Esc/✕ close affordances this same instruction asked for.
     return `<button type="button" class="btn-icon-ghost formula-info-btn" data-bs-toggle="popover" data-bs-trigger="click" data-bs-html="true" data-bs-placement="top" data-bs-title="${langData['formula_popover_title'] || 'How this was calculated'}" data-bs-content="${contentAttr}"><i class="fa-solid fa-circle-question"></i></button>`;
 }
+/* ---------- Payee descriptor, one renderer (2026-09-18, tiny-L4) ----------
+   `payee` is PayrollRunModel::enrichLinePayee()'s descriptor -- the SAME shape the recurring-
+   destination card's template/override already carry. Three surfaces used to answer "where does this
+   money go?" with three different strings for the same row: the read-only slip printed a bare
+   employee_no with no account at all, the hand-added-lines block printed the name plus whichever
+   account field its own query happened to join, and the recurring card printed the picker's label
+   with no verb in front. The text is built ONCE here so the same payee reads identically wherever it
+   appears; only the wrapper differs, and that is what `variant` names.
+
+   Every label inside comes from the descriptor, which took it from that row's own picker builder --
+   nothing is composed out of bank + number + name here (rules.md §5/§6, the same rule tiny-L2
+   applied on the PHP side). The employee's code is stripped off their name for display. */
+const PAYEE_DESCRIPTOR_SEP_RD = ' • ';
+const PAYEE_DESCRIPTOR_ICONS_RD = { employee: 'fa-arrow-right-arrow-left', company: 'fa-building', other_person: 'fa-building-columns', not_disbursed: 'fa-ban' };
+// A company payee with no account chosen is the one state that is not just informational -- the
+// money has nowhere to go and somebody has to fix it, so both variants say so in the warning colour.
+function payeeDescriptorNeedsReviewRd(payee) {
+    return !!payee && payee.payee_type === 'company' && !payee.bank_account_id;
+}
+function payeeDescriptorTextRd(payee) {
+    if (!payee || !payee.payee_type) return '';
+    const parts = [];
+    if (payee.payee_type === 'employee') {
+        // manualLinePayeeNameRd() owns the whole fallback ladder (label by language -> code off the
+        // name -> employee_no -> #id), which is why it is reused here rather than restated.
+        parts.push(`${langData['payee_transfer_tag'] || 'Paid to'} ${manualLinePayeeNameRd(payee)}`);
+        const account = rowOptionLabelRd(payee.payee_employee_account_label_th, payee.payee_employee_account_label_en, '');
+        if (account) {
+            parts.push(account);
+        } else if (payee.payee_employee_has_bank_account === false) {
+            // Not the same as "not loaded": the descriptor says outright that this person has no
+            // account on file, which is the reason the line above has no account after it.
+            parts.push(langData['payee_employee_no_bank_account'] || 'This employee has no bank account on file yet');
+        }
+    } else if (payee.payee_type === 'company') {
+        const bankLabel = rowOptionLabelRd(payee.bank_account_label_th, payee.bank_account_label_en, '');
+        if (bankLabel) {
+            parts.push(langData['payee_dest_retained'] || 'Retained by company');
+            parts.push(bankLabel);
+        } else {
+            parts.push(langData['payee_bank_account_needs_review'] || 'Company Account -- bank account not specified, needs review');
+        }
+    } else if (payee.payee_type === 'other_person') {
+        parts.push(langData['payee_dest_external'] || 'Transfer to an external person or organization');
+        const destLabel = rowOptionLabelRd(payee.destination_label_th, payee.destination_label_en, '');
+        if (destLabel) parts.push(destLabel);
+    } else if (payee.payee_type === 'not_disbursed') {
+        parts.push(langData['payee_type_not_disbursed'] || 'Deducted, No Cash Movement (Write-off)');
+    } else {
+        return '';
+    }
+    // The row it pointed at is gone (soft-deleted). Said out loud rather than shown as a blank where
+    // an account should be -- a persisted line is history and stays readable after its master row is.
+    if (payee.missing) parts.push(langData['payee_dest_missing'] || 'Destination record no longer exists');
+    return parts.join(PAYEE_DESCRIPTOR_SEP_RD);
+}
+/* `variant`: 'tag' = the quiet line under a slip row (the same `.small.text-muted` the statutory
+   rows' own sub-lines use), 'inline' = inside a hand-added line's own cell (`.manual-line-payee`).
+   A payee of null renders nothing at all -- a line that routes nowhere has nothing to say here. */
+function payeeDescriptorHtmlRd(payee, opts) {
+    const text = payeeDescriptorTextRd(payee);
+    if (!text) return '';
+    const needsReview = payeeDescriptorNeedsReviewRd(payee);
+    if ((opts && opts.variant) === 'inline') {
+        return `<div class="manual-line-payee${needsReview ? ' manual-line-payee-warn' : ''}">${escapeHtml(text)}</div>`;
+    }
+    const icon = needsReview ? 'fa-triangle-exclamation' : (PAYEE_DESCRIPTOR_ICONS_RD[payee.payee_type] || 'fa-arrow-right-arrow-left');
+    return `<div class="small ${needsReview ? 'text-warning' : 'text-muted'}"><i class="fa-solid ${icon} me-1"></i>${escapeHtml(text)}</div>`;
+}
 /* ---------- Breakdown modal (section 2/3's table doesn't itemize -- it only shows totals): per-
    employee itemized view split into clearly-labeled Earnings / Deductions (Items) / Deductions
    (Statutory) sections, so which line is income vs. a deduction is never ambiguous. ---------- */
@@ -2335,32 +2404,12 @@ function breakdownLineRowsRd(lines, moneyColorCls) {
         } else {
             nameTitleAttr = ` title="${escapeAttr(line.code || '-')}"`;
         }
-        // 2026-08-31, same-day follow-up: payee_type widened to 'company'/'not_disbursed' too --
-        // same branching as manualLineListItemHtml()'s own payeeHtml.
-        let payeeHtml = '';
-        if (line.payee_type === 'employee' && line.payee_employee_id) {
-            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
-        } else if (!line.payee_type && line.payee_employee_id) {
-            // Backward-compat: a row saved before payee_type existed only ever meant 'employee'.
-            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(line.payee_employee_no || ('#' + line.payee_employee_id))}</div>`;
-        } else if (line.payee_type === 'company') {
-            // 2026-09-10, Batch 3B item 3: this line shape has no resolved bank_account_name (that
-            // JOIN only exists in dedicated per-table listing queries, not the persisted breakdown
-            // JSON itself, same limitation this branch's own 'other_person' comment already notes
-            // for destination_account_name) -- shows a warning instead of a silent generic label
-            // whenever bank_account_id is genuinely unspecified.
-            payeeHtml = line.bank_account_id
-                ? `<div class="small text-muted"><i class="fa-solid fa-building me-1"></i>${langData['payee_dest_retained'] || 'Retained by company'}</div>`
-                : `<div class="small text-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['payee_bank_account_needs_review'] || 'Company Account -- bank account not specified, needs review'}</div>`;
-        } else if (line.payee_type === 'other_person') {
-            // 2026-09-02, Deduction Destination & Third-Party Remittance -- this line shape has no
-            // resolved destination_account_name (that LEFT JOIN only exists in
-            // manualLinesForEmployee()'s own dedicated query, not the persisted breakdown JSON), so
-            // a generic label is shown here, same "no specific detail" treatment 'company' already gets.
-            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-building-columns me-1"></i>${langData['payee_dest_external'] || 'Transfer to an external person or organization'}</div>`;
-        } else if (line.payee_type === 'not_disbursed') {
-            payeeHtml = `<div class="small text-muted"><i class="fa-solid fa-ban me-1"></i>${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
-        }
+        // 2026-09-18, tiny-L4: one renderer, one string (payeeDescriptorHtmlRd()). This branch used
+        // to re-derive the label from the raw payee_* columns and, for a transfer, print the payee's
+        // employee_no with no account at all -- the persisted breakdown JSON carried no resolved
+        // name/account, so it had nothing better to show. getDetails() now enriches every line with
+        // the same descriptor the other 2 surfaces read, so the account comes with it.
+        const payeeHtml = payeeDescriptorHtmlRd(line.payee, { variant: 'tag' });
         const exemptBadge = line.is_exempted ? `<span class="badge bg-warning-subtle text-warning-emphasis ms-1">${langData['attendance_deduction_exempted_badge'] || 'Exempted'}</span>` : '';
         return `<tr class="payslip-row${line.is_exempted ? ' text-muted' : ''}">
             <td>
@@ -4494,25 +4543,10 @@ function manualLineListItemHtml(line, canEdit) {
     const noteHtml = line.note
         ? `<div class="payslip-line-note" title="${escapeAttr(line.note)}">${escapeHtml(line.note)}</div>`
         : '';
-    // 2026-08-31, same-day follow-up: payee_type widened to 'company'/'not_disbursed' too (was
-    // 'employee' transfer only) -- same branching as Employee Detail's own eedItemNameCell().
-    let payeeHtml = '';
-    if (line.payee_type === 'employee' && line.payee_employee_id) {
-        // 2026-09-17, tiny-M round 3: the person's NAME, in the language on screen -- the row used to
-        // print the bare employee_no, which is the same internal code §5/§6 keeps out of a label.
-        // Same read-side strip the picker itself uses, so the two never disagree on what to show.
-        payeeHtml = `<div class="manual-line-payee">${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(manualLinePayeeNameRd(line))}</div>`;
-    } else if (line.payee_type === 'company') {
-        // 2026-09-10, Batch 3B item 3: manualLinesForEmployee() joins bank_account_name for this
-        // exact display -- the real account, or a "needs review" warning when unspecified.
-        payeeHtml = line.bank_account_id
-            ? `<div class="manual-line-payee">${langData['payee_dest_retained'] || 'Retained by company'} - ${escapeHtml(line.bank_account_name || '')}</div>`
-            : `<div class="manual-line-payee manual-line-payee-warn">${langData['payee_bank_account_needs_review'] || 'Company Account -- bank account not specified, needs review'}</div>`;
-    } else if (line.payee_type === 'other_person') {
-        payeeHtml = `<div class="manual-line-payee">${escapeHtml(line.destination_account_name || (langData['payee_dest_external'] || 'Transfer to an external person or organization'))}</div>`;
-    } else if (line.payee_type === 'not_disbursed') {
-        payeeHtml = `<div class="manual-line-payee">${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
-    }
+    // 2026-09-18, tiny-L4: the same one renderer the slip's own lines use -- this block used to name
+    // the same 4 payee kinds in its own words (and its own account field per kind), so the identical
+    // row read differently here and in the read-only slip beside it.
+    const payeeHtml = payeeDescriptorHtmlRd(line.payee, { variant: 'inline' });
     const editable = !!canEdit && !!line.id;
     // A legacy row inside an otherwise editable block says why it has no buttons, on the row itself
     // -- an empty slot with no explanation reads as a rendering glitch.
@@ -5557,26 +5591,14 @@ function refreshEedDestLanguageRd() {
    that row's own picker would show (the code is taken off the employee's name the same way the
    picker takes it off, rules.md §5/§6), so the list line, the editor and the dropdown can no longer
    spell the same account 3 ways. */
+/* 2026-09-18, tiny-L4: down to a wrapper. The 4 per-kind spellings that used to live here are now
+   payeeDescriptorTextRd()'s, shared with the slip's own 2 renderers, so the card, the slip and the
+   editable slip can no longer describe one payee three ways. Kept (rather than deleted) because this
+   card asks a question the other 2 do not: a recurring TEMPLATE with no payee_type at all means
+   "stays with the company", where a slip line with no payee means "nothing to say". That one default
+   is the whole of what is left. */
 function recurringDestPayeeSummary(p) {
-    if (!p || !p.payee_type) return langData['payee_dest_retained'] || 'Retained by company';
-    if (p.payee_type === 'employee') {
-        return payeeNameFromLabelRd(p.payee_employee_label_th, p.payee_employee_label_en, '')
-            || (langData['payee_dest_employee'] || 'Transfer to another employee');
-    }
-    // 2026-09-10, Batch 3B item 3: shows WHICH company bank account now, instead of the generic
-    // "Company Account" label every 'company' row used to get regardless of which account was
-    // chosen -- falls back to an explicit "not specified" wording (never a silent blank) when
-    // bank_account_id is genuinely unspecified (legacy data, or before this column existed).
-    if (p.payee_type === 'company') {
-        const bankLabel = rowOptionLabelRd(p.bank_account_label_th, p.bank_account_label_en, '');
-        return bankLabel ? `${langData['payee_dest_retained'] || 'Retained by company'} - ${bankLabel}` : (langData['payee_type_company_unspecified'] || 'Company Account (not specified)');
-    }
-    if (p.payee_type === 'other_person') {
-        return rowOptionLabelRd(p.destination_label_th, p.destination_label_en, '')
-            || (langData['payee_dest_external'] || 'Transfer to an external person or organization');
-    }
-    if (p.payee_type === 'not_disbursed') return langData['payee_type_not_disbursed'] || 'Not Disbursed';
-    return p.payee_type;
+    return payeeDescriptorTextRd(p) || (langData['payee_dest_retained'] || 'Retained by company');
 }
 function recurringDestRowHtml(row) {
     const name = (currentLang === 'th' ? row.item_name_th : row.item_name_en) || row.item_code;

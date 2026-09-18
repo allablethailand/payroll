@@ -42,6 +42,12 @@ function fn(text, name) {
     if (idx === -1) throw new Error(`${name}() not found -- renamed/removed?`);
     return sliceBalanced(text, idx, `${name}()`);
 }
+// A one-line `const NAME = ...;` -- fn()'s brace scan has nothing to balance in a string constant.
+function lineDeclSrc(text, name) {
+    const m = text.match(new RegExp(`^const ${name} = .*;$`, 'm'));
+    if (!m) throw new Error(`${name} not found -- renamed/removed?`);
+    return m[0];
+}
 function decl(text, name) {
     const idx = text.indexOf(`const ${name} = {`);
     if (idx === -1) throw new Error(`${name} not found -- renamed/removed?`);
@@ -110,6 +116,10 @@ const langData = {
     payee_dest_external: 'Transfer to an external person or organization',
     payee_type_company_unspecified: 'Company Account (not specified)',
     payee_type_not_disbursed: 'Not Disbursed',
+    // 2026-09-18, tiny-L4: recurringDestPayeeSummary() reads the shared descriptor's wording now
+    payee_transfer_tag: 'Paid to',
+    payee_bank_account_needs_review: 'Company Account -- bank account not specified, needs review',
+    payee_dest_missing: 'This destination record no longer exists',
 };
 const BASE_URL = '';
 // $.post is only reached by applyFirstSavedDestinationDefault(); the canned reply is set per test.
@@ -140,6 +150,11 @@ const extracted = stubs + '\n'
     + fn(detailSource, 'recurringDestSaveBlockedRd') + '\n'
     + fn(detailSource, 'applyRecurringDestRowPinsRd') + '\n'
     + fn(detailSource, 'clearRecurringDestRowPinsRd') + '\n'
+    + fn(detailSource, 'manualLinePayeeNameRd') + '\n'
+    // 2026-09-18, tiny-L4: the 4 per-kind spellings moved out of recurringDestPayeeSummary() into
+    // the one renderer every payee surface reads -- extracted from the real source, not restated.
+    + lineDeclSrc(detailSource, 'PAYEE_DESCRIPTOR_SEP_RD') + '\n'
+    + fn(detailSource, 'payeeDescriptorTextRd') + '\n'
     + fn(detailSource, 'recurringDestPayeeSummary') + '\n'
     + decl(detailSource, 'ADJUSTMENT_TAB_CONFIG_RD') + '\n'
     + fn(detailSource, 'refreshAdjustmentSaveButtonState') + '\n'
@@ -196,6 +211,10 @@ const EMPLOYEE_ROW = {
     payee_employee_bank_branch: 'สีลม',
     payee_employee_account_no_masked: 'XXXXXX4321',
     payee_employee_has_bank_account: true,
+    // 2026-09-18, tiny-L4: the payout account as ONE label, composed by PayrollCycleModel's own
+    // composer inside payeeDestinationDescriptor() -- never glued together on this side.
+    payee_employee_account_label_th: 'ธนาคารกสิกรไทย • XXXXXX4321 (กฤษดา สาธุกิจชัย)',
+    payee_employee_account_label_en: 'Kasikornbank • XXXXXX4321 (กฤษดา สาธุกิจชัย)',
 };
 const COMPANY_ROW = {
     payee_type: 'company',
@@ -383,27 +402,39 @@ check('the 3 summary boxes are emptied too',
 check('the 3 fields are emptied with them', api.el(EMP_SELECT).value === '' && api.el(BANK_SELECT).value === '' && api.el(DEST_SELECT).value === '');
 
 /* ================================================================ */
-console.log('\n=== (g) the LIST line under the card shows the same label as the picker ===');
+console.log('\n=== (g) the LIST line under the card names the payee the SAME way every other surface does ===');
 
+/* 2026-09-18, tiny-L4: these used to pin 4 wordings only this card used. The card reads
+   payeeDescriptorTextRd() now -- the one string the read-only slip and the hand-added lines also
+   show -- so what is pinned here is that shared string, and that the ACCOUNT comes with it: a
+   destination named without its account cannot be checked against a bank file. */
 api.setLang('th');
-check('list: an employee payee shows the NAME alone, with the code stripped exactly as the picker strips it',
-    api.recurringDestPayeeSummary(EMPLOYEE_ROW) === 'กฤษดา สาธุกิจชัย', api.recurringDestPayeeSummary(EMPLOYEE_ROW));
+check('list: an employee payee shows the name with its code stripped, and the account it is paid into',
+    api.recurringDestPayeeSummary(EMPLOYEE_ROW) === 'Paid to กฤษดา สาธุกิจชัย • ธนาคารกสิกรไทย • XXXXXX4321 (กฤษดา สาธุกิจชัย)',
+    api.recurringDestPayeeSummary(EMPLOYEE_ROW));
 api.setLang('en');
-check('list: and follows the language', api.recurringDestPayeeSummary(EMPLOYEE_ROW) === 'Kritsada Satukitchai', api.recurringDestPayeeSummary(EMPLOYEE_ROW));
+check('list: and both halves follow the language',
+    api.recurringDestPayeeSummary(EMPLOYEE_ROW) === 'Paid to Kritsada Satukitchai • Kasikornbank • XXXXXX4321 (กฤษดา สาธุกิจชัย)',
+    api.recurringDestPayeeSummary(EMPLOYEE_ROW));
 api.setLang('th');
 check('list: a company payee names the account with the picker own label',
-    api.recurringDestPayeeSummary(COMPANY_ROW) === `Retained by company - ${COMPANY_ROW.bank_account_label_th}`,
+    api.recurringDestPayeeSummary(COMPANY_ROW) === `Retained by company • ${COMPANY_ROW.bank_account_label_th}`,
     api.recurringDestPayeeSummary(COMPANY_ROW));
-check('list: an external payee shows the endpoint own label',
-    api.recurringDestPayeeSummary(EXTERNAL_ROW) === EXTERNAL_ROW.destination_label_th);
-check('list: a company payee with no account chosen says so, never a silent blank',
-    api.recurringDestPayeeSummary({ payee_type: 'company' }) === 'Company Account (not specified)');
-check('list: no payee type at all reads as retained by the company',
+check('list: an external payee says it is external AND which destination',
+    api.recurringDestPayeeSummary(EXTERNAL_ROW) === `Transfer to an external person or organization • ${EXTERNAL_ROW.destination_label_th}`,
+    api.recurringDestPayeeSummary(EXTERNAL_ROW));
+check('list: a company payee with no account chosen reads as the review warning, never a silent blank',
+    api.recurringDestPayeeSummary({ payee_type: 'company' }) === 'Company Account -- bank account not specified, needs review',
+    api.recurringDestPayeeSummary({ payee_type: 'company' }));
+check('list: no payee type at all still reads as retained by the company (this card own default)',
     api.recurringDestPayeeSummary({}) === 'Retained by company');
 check('list: not_disbursed is unchanged', api.recurringDestPayeeSummary({ payee_type: 'not_disbursed' }) === 'Not Disbursed');
-check('list: an employee payee with no label falls back to the generic wording, never to a blank',
-    api.recurringDestPayeeSummary({ payee_type: 'employee', payee_employee_id: 7 }) === 'Transfer to another employee');
-
+check('list: an employee payee with no label at all falls back down the same ladder the slip rows use',
+    api.recurringDestPayeeSummary({ payee_type: 'employee', payee_employee_id: 7 }) === 'Paid to #7',
+    api.recurringDestPayeeSummary({ payee_type: 'employee', payee_employee_id: 7 }));
+check('list: a payee whose record is gone says so instead of trailing off after the name',
+    api.recurringDestPayeeSummary({ payee_type: 'employee', payee_employee_id: 7, payee_employee_no: 'EM007', missing: true })
+        === 'Paid to EM007 • This destination record no longer exists');
 /* ================================================================ */
 console.log('\n=== wiring: the real handler calls the real helpers ===');
 

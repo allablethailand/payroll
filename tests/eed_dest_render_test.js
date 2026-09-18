@@ -50,6 +50,13 @@ function decl(text, name) {
     if (idx === -1) throw new Error(`${name} not found -- renamed/removed?`);
     return sliceBalanced(text, idx, name) + ';';
 }
+// A one-line `const NAME = ...;` -- sliceBalanced() needs a brace to balance, and a string
+// constant has none. Same rule as every other extractor here: read from the real file.
+function lineDecl(text, name) {
+    const m = text.match(new RegExp(`^const ${name} = .*;$`, 'm'));
+    if (!m) throw new Error(`${name} not found -- renamed/removed?`);
+    return m[0];
+}
 
 /* ---------- a selector-keyed fake DOM, just enough for these functions ----------
    Containment is modelled the way this tab is actually built: each id owns its own html, and
@@ -146,6 +153,12 @@ const extracted = stubs + '\n'
     + fn(appSource, 'splitOptionCodePrefix') + '\n'
     + fn(detailSource, 'rowOptionLabelRd') + '\n'
     + fn(detailSource, 'payeeNameFromLabelRd') + '\n'
+    + fn(detailSource, 'manualLinePayeeNameRd') + '\n'
+    // 2026-09-18, tiny-L4: recurringDestPayeeSummary() is a thin wrapper over the shared
+    // descriptor renderer now, so what this file really exercises is that renderer -- pulled in
+    // from the real source like everything else here, never restated.
+    + lineDecl(detailSource, 'PAYEE_DESCRIPTOR_SEP_RD') + '\n'
+    + fn(detailSource, 'payeeDescriptorTextRd') + '\n'
     + fn(detailSource, 'recurringDestPayeeSummary') + '\n'
     + fn(detailSource, 'recurringDestRowHtml') + '\n'
     + fn(detailSource, 'eedDestRowHtml') + '\n'

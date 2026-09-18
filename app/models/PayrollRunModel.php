@@ -466,6 +466,29 @@ class PayrollRunModel {
             unset($row['base_salary_override_action'], $row['run_excludes_base_salary']);
             $row['total_days'] = $totalDaysByEmployee[(int)$row['employee_id']] ?? null;
         }
+        unset($row);
+        // 2026-09-18, tiny-L4: every earning/deduction line gains the ONE payee descriptor
+        // (enrichLinePayee()), so the read-only slip stops re-branching on the 4 raw payee columns
+        // and stops printing a bare employee_no where a name + account belongs. Enrichment only --
+        // the persisted JSON itself is never rewritten. Statutory lines are skipped: they have no
+        // payee concept at all. ONE lookup for the whole run (payeeLookupForLines()), built from
+        // every line of every employee at once, so this page's query count does not grow with it.
+        $allLineGroups = [];
+        foreach ($rows as $row) {
+            $allLineGroups[] = $row['earning_breakdown'];
+            $allLineGroups[] = $row['deduction_breakdown'];
+        }
+        $payeeLookup = $this->payeeLookupForLines($compId, $allLineGroups);
+        foreach ($rows as &$row) {
+            foreach (['earning_breakdown', 'deduction_breakdown'] as $field) {
+                foreach ($row[$field] as $i => $line) {
+                    if (is_array($line)) {
+                        $row[$field][$i] = $this->enrichLinePayee($line, $payeeLookup);
+                    }
+                }
+            }
+        }
+        unset($row);
         return $rows;
     }
 
@@ -5795,7 +5818,12 @@ class PayrollRunModel {
             $compId,
             array_map(static fn(array $r) => (int)($r['payee_employee_id'] ?? 0), $rows)
         );
-        return array_map(function (array $row) use ($payeeOptions): array {
+        // 2026-09-18, tiny-L4: this endpoint's rows are rendered by the SAME client helper the slip's
+        // own lines are, so they carry the same `payee` descriptor -- built here rather than glued
+        // together again in JS out of the 10 flat fields below (which stay, untouched: the edit form
+        // prefills its 3 pickers from them). One lookup per request, alongside $payeeOptions above.
+        $payeeLookup = $this->payeeLookupForLines($compId, [$rows]);
+        return array_map(function (array $row) use ($payeeOptions, $payeeLookup): array {
             $resolved = $this->resolveManualLineRow($row);
             $payeeOption = $payeeOptions[(int)($row['payee_employee_id'] ?? 0)] ?? null;
             $bankAccountMasked = $row['bank_account_id'] !== null
@@ -5804,7 +5832,7 @@ class PayrollRunModel {
                     $row['bank_account_key_version'] !== null ? (int)$row['bank_account_key_version'] : null
                 ))
                 : null;
-            return [
+            return $this->enrichLinePayee([
                 'id' => (int)$row['id'],
                 // 2026-09-16, D2: the catalog item's own id, so the edit form can put the line's item
                 // back INTO its picker (a select2-remote has no options of its own to match on -- see
@@ -5869,7 +5897,7 @@ class PayrollRunModel {
                 'created_by_name_th' => $row['created_by_name_th'],
                 'created_by_name_en' => $row['created_by_name_en'],
                 'created_at' => $row['created_at'],
-            ];
+            ], $payeeLookup);
         }, $rows);
     }
 
@@ -6361,7 +6389,8 @@ class PayrollRunModel {
      * composed here. Account numbers are masked at those methods, so no plaintext reaches this array.
      *
      * @param array $src a row carrying payee_type/payee_employee_id/destination_id/bank_account_id
-     *                   (a recurring-deduction template row, or one of this run's override rows)
+     *                   (a recurring-deduction template row, one of this run's override rows, or --
+     *                   since tiny-L4 -- one persisted *_breakdown line, via enrichLinePayee())
      */
     private function payeeDestinationDescriptor(array $src, array $payeeRows, array $destRows, array $bankRows): array {
         $payeeId = !empty($src['payee_employee_id']) ? (int)$src['payee_employee_id'] : null;
@@ -6370,9 +6399,22 @@ class PayrollRunModel {
         $payee = $payeeId !== null ? ($payeeRows[$payeeId] ?? null) : null;
         $dest = $destId !== null ? ($destRows[$destId] ?? null) : null;
         $bank = $bankId !== null ? ($bankRows[$bankId] ?? null) : null;
+        // 2026-09-18, tiny-L4: an id that IS set but resolves to nothing means the row it points at
+        // is gone (soft-deleted employee/destination/bank account). Reported as a flag rather than
+        // thrown: a persisted breakdown line is history, and history has to stay describable after
+        // its master row is retired -- the reader shows the type it can still name plus "record not
+        // found" instead of a blank where an account used to be.
+        $missing = ($payeeId !== null && $payee === null)
+            || ($destId !== null && $dest === null)
+            || ($bankId !== null && $bank === null);
         return [
             'payee_type' => $src['payee_type'],
+            'missing' => $missing,
             'payee_employee_id' => $payeeId,
+            // 2026-09-18, tiny-L4: never DISPLAYED (rules.md §5/§6 keep an internal code out of a
+            // label) -- it is the last rung of the reader's own fallback ladder, for a payee whose
+            // employee row is gone and therefore has no label of its own left to show.
+            'payee_employee_no' => $src['payee_employee_no'] ?? null,
             'payee_employee_label_th' => $payee['text_th'] ?? null,
             'payee_employee_label_en' => $payee['text_en'] ?? null,
             'payee_employee_account_name' => $payee['account_name'] ?? null,
@@ -6381,6 +6423,18 @@ class PayrollRunModel {
             'payee_employee_bank_branch' => $payee['bank_branch'] ?? null,
             'payee_employee_account_no_masked' => $payee['account_no_masked'] ?? null,
             'payee_employee_has_bank_account' => $payee !== null ? (bool)$payee['has_bank_account'] : null,
+            // 2026-09-18, tiny-L4: the payee employee's own receiving account as ONE label, so a
+            // reader never has to glue bank + number + name together itself (the other 2 payee kinds
+            // already arrive pre-composed as bank_account_label_*/destination_label_*, and 3 readers
+            // each gluing their own is exactly the divergence tiny-L2 removed). Composed by the SAME
+            // public composer the company-account picker's own options endpoint uses -- not a 4th
+            // spelling invented here.
+            'payee_employee_account_label_th' => ($payee !== null && !empty($payee['has_bank_account']))
+                ? PayrollCycleModel::bankAccountOptionLabel($payee['bank_name_th'] ?? null, $payee['account_no_masked'] ?? null, $payee['account_name'] ?? null)
+                : null,
+            'payee_employee_account_label_en' => ($payee !== null && !empty($payee['has_bank_account']))
+                ? PayrollCycleModel::bankAccountOptionLabel($payee['bank_name_en'] ?? null, $payee['account_no_masked'] ?? null, $payee['account_name'] ?? null)
+                : null,
             'destination_id' => $destId,
             // The endpoint serves ONE label for both languages (its bank name is Thai-preferred);
             // mirroring that exactly is the point -- see PaymentDestinationModel::optionLabel().
@@ -6402,6 +6456,75 @@ class PayrollRunModel {
             'bank_account_branch' => $bank['bank_branch'] ?? null,
             'bank_account_no_masked' => $bank['account_no_masked'] ?? null,
         ];
+    }
+
+    /**
+     * 2026-09-18, tiny-L4: the ONE lookup set every payee-bearing read path shares. Collects the
+     * employee/destination/bank-account ids referenced by however many line arrays it is given and
+     * resolves each kind in a SINGLE query through that kind's own picker builder -- one lookup per
+     * REQUEST, never one per line (which is what a naive per-row descriptor would have cost the
+     * payroll-run detail page: 3 queries x every line x every employee in the run).
+     *
+     * @param array<int,array<int,array>> $lineGroups any number of arrays of rows, each row
+     *        carrying payee_employee_id/destination_id/bank_account_id (absent keys are fine)
+     * @return array{payees:array,destinations:array,banks:array} keyed by id, ready for enrichLinePayee()
+     */
+    public function payeeLookupForLines(int $compId, array $lineGroups): array {
+        $payeeIds = [];
+        $destIds = [];
+        $bankIds = [];
+        foreach ($lineGroups as $lines) {
+            if (!is_array($lines)) {
+                continue;
+            }
+            foreach ($lines as $line) {
+                if (!is_array($line)) {
+                    continue;
+                }
+                if (!empty($line['payee_employee_id'])) { $payeeIds[] = (int)$line['payee_employee_id']; }
+                if (!empty($line['destination_id'])) { $destIds[] = (int)$line['destination_id']; }
+                if (!empty($line['bank_account_id'])) { $bankIds[] = (int)$line['bank_account_id']; }
+            }
+        }
+        if (!$payeeIds && !$destIds && !$bankIds) {
+            return ['payees' => [], 'destinations' => [], 'banks' => []];
+        }
+        require_once __DIR__ . '/PaymentDestinationModel.php';
+        require_once __DIR__ . '/PayrollCycleModel.php';
+        return [
+            'payees' => $payeeIds ? (new EmployeeModel($this->db))->optionRowsByIds($compId, $payeeIds) : [],
+            'destinations' => $destIds ? (new PaymentDestinationModel($this->db))->optionRowsByIds($compId, $destIds) : [],
+            'banks' => $bankIds ? (new PayrollCycleModel($this->db))->bankAccountOptionRowsByIds($compId, $bankIds) : [],
+        ];
+    }
+
+    /**
+     * 2026-09-18, tiny-L4: adds `payee` -- the SAME descriptor shape the recurring-destination card
+     * and the EED destination tab already read (payeeDestinationDescriptor()) -- to one persisted
+     * breakdown/manual line, so every surface that shows "where this money goes" reads one object
+     * built in one place instead of re-branching on the 4 raw columns itself.
+     *
+     * Read-side only: the row's own payee_type/payee_employee_id/destination_id/bank_account_id are
+     * left exactly as they were persisted, and nothing here writes anywhere. A line with no
+     * payee_type at all is not routed anywhere, so its `payee` is null rather than an empty
+     * descriptor -- "nothing to say" and "routed, but to what?" are different answers.
+     *
+     * $lookup MUST come from payeeLookupForLines() (see that method: no query is made here, by
+     * design). The empty default keeps the one-row call shape usable from a test/one-off; every id
+     * then resolves to nothing, which the descriptor reports honestly as missing:true.
+     */
+    public function enrichLinePayee(array $row, array $lookup = []): array {
+        if (empty($row['payee_type'])) {
+            $row['payee'] = null;
+            return $row;
+        }
+        $row['payee'] = $this->payeeDestinationDescriptor(
+            $row,
+            $lookup['payees'] ?? [],
+            $lookup['destinations'] ?? [],
+            $lookup['banks'] ?? []
+        );
+        return $row;
     }
 
     /**
@@ -6604,8 +6727,30 @@ class PayrollRunModel {
             return $row;
         };
 
+        // 2026-09-18, tiny-L4: the read-only provenance every row carries from here on -- WHICH
+        // stored thing produced this line, and where its money is routed. All of it already exists
+        // in the persisted breakdown JSON; this endpoint simply stopped dropping it on the floor.
+        // Keys are ALWAYS present (null when the line has no such origin), the same "the client
+        // never has to special-case a missing key" rule `note`/`override_note` above already follow
+        // -- a caller reading `recurring_id` on a PED line gets null, not undefined.
+        // Deliberately NOT a write surface: nothing downstream may send these back.
+        $attachSource = static function (array $row, array $line): array {
+            $intOrNull = static fn($v) => ($v === null || $v === '') ? null : (int)$v;
+            $row['source'] = $line['source'] ?? null;
+            $row['recurring_id'] = $intOrNull($line['recurring_id'] ?? null);
+            $row['assignment_id'] = $intOrNull($line['assignment_id'] ?? null);
+            $row['installment_id'] = $intOrNull($line['installment_id'] ?? null);
+            $row['manual_line_id'] = $intOrNull($line['manual_line_id'] ?? null);
+            $row['payee_type'] = $line['payee_type'] ?? null;
+            $row['payee_employee_id'] = $intOrNull($line['payee_employee_id'] ?? null);
+            $row['payee_employee_no'] = $line['payee_employee_no'] ?? null;
+            $row['destination_id'] = $intOrNull($line['destination_id'] ?? null);
+            $row['bank_account_id'] = $intOrNull($line['bank_account_id'] ?? null);
+            return $row;
+        };
+
         $seenCodes = [self::BASE_SALARY_OVERRIDE_CODE => true];
-        $rows = [$attachOverride([
+        $rows = [$attachSource($attachOverride([
             'code' => self::BASE_SALARY_OVERRIDE_CODE,
             'name_th' => 'เงินเดือนพื้นฐาน', 'name_en' => 'Base Salary',
             'current_amount' => $detail['base_salary_amount'] !== null ? (float)$detail['base_salary_amount'] : 0.0,
@@ -6622,7 +6767,7 @@ class PayrollRunModel {
             // right endpoint (api/payroll-run.line-override.* vs .statutory-line-override.*)
             // without having to pattern-match item codes client-side.
             'line_type' => 'earning_deduction',
-        ])];
+        ]), [])];
         foreach (['earning_breakdown' => 'earning', 'deduction_breakdown' => 'deduction'] as $col => $itemType) {
             $lines = $detail[$col] !== null ? json_decode((string)$detail[$col], true) : [];
             foreach ((is_array($lines) ? $lines : []) as $line) {
@@ -6644,7 +6789,7 @@ class PayrollRunModel {
                     continue;
                 }
                 $seenCodes[$line['code']] = true;
-                $rows[] = $attachOverride([
+                $rows[] = $attachSource($attachOverride([
                     'code' => $line['code'],
                     'name_th' => $line['name_th'] ?? $line['code'],
                     'name_en' => $line['name_en'] ?? $line['code'],
@@ -6658,7 +6803,7 @@ class PayrollRunModel {
                     // Absent for base salary/manual/attendance-derived (OT/trip/etc) lines, which
                     // never set it -- the occurrence-enrichment step below falls back to 'code' then.
                     'sync_item_code' => $line['sync_item_code'] ?? null,
-                ]);
+                ]), $line);
             }
         }
         // 2026-08-31, same-day follow-up (item 9a): statutory rows, same shape as earning/deduction
@@ -6673,7 +6818,7 @@ class PayrollRunModel {
                 continue;
             }
             $seenCodes[$this->statutoryOverrideCode($line['code'])] = true;
-            $rows[] = $attachStatutoryOverride([
+            $rows[] = $attachSource($attachStatutoryOverride([
                 'code' => $line['code'],
                 'name_th' => $line['name_th'] ?? $line['code'],
                 'name_en' => $line['name_en'] ?? $line['code'],
@@ -6688,7 +6833,7 @@ class PayrollRunModel {
                 // through, read-only, so the Adjustments table can tell those 3 groups apart -- it
                 // hides only the first, and must never hide the second.
                 'note' => $line['note'] ?? null,
-            ]);
+            ]), $line);
         }
         // An 'exclude' override drops its line out of the persisted breakdown entirely (that's the
         // whole point of excluding it), so the loops above never see it -- but the UI still needs to
@@ -6736,7 +6881,7 @@ class PayrollRunModel {
         }
         foreach ($fallbackCodes as $code) {
             $catalog = $catalogTypeByCode[$code] ?? null;
-            $rows[] = $attachOverride([
+            $rows[] = $attachSource($attachOverride([
                 'code' => $code,
                 'name_th' => $catalog['item_name_th'] ?? $code,
                 'name_en' => $catalog['item_name_en'] ?? $code,
@@ -6744,7 +6889,7 @@ class PayrollRunModel {
                 'line_type' => 'earning_deduction',
                 'item_type' => $catalog['item_type'] ?? 'other',
                 'note' => null,
-            ]);
+            ]), []);
         }
 
         // 2026-08-31, same-day follow-up (Origami's `scheduled_item_occurrences[]` proposal, per-
@@ -6780,6 +6925,15 @@ class PayrollRunModel {
             }
             unset($row);
         }
+
+        // 2026-09-18, tiny-L4: the same `payee` descriptor the read-only slip gets, on the editable
+        // table's rows too -- one builder, one shape, so the 2 views of the same line can no longer
+        // describe its destination differently. One lookup for this employee's whole response.
+        $payeeLookup = $this->payeeLookupForLines($compId, [$rows]);
+        foreach ($rows as &$row) {
+            $row = $this->enrichLinePayee($row, $payeeLookup);
+        }
+        unset($row);
 
         return $rows;
     }
