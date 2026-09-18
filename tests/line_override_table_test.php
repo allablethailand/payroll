@@ -102,6 +102,18 @@ try {
         check('earning_breakdown row -> earning', $rows['TEST_EARN']['item_type'] ?? null, 'earning');
         check('deduction_breakdown row -> deduction', $rows['TEST_DEDUCT']['item_type'] ?? null, 'deduction');
         check('the earning row keeps its own amount', $rows['TEST_EARN']['current_amount'] ?? null, 100.0);
+        // 2026-09-18, tiny-C: `computed_amount` is passed through from the breakdown entry, and is
+        // ALWAYS a key -- null (not missing) on a line the engine's own figure is still live on.
+        check('a line with no computed_amount reports null, not a missing key', array_key_exists('computed_amount', $rows['TEST_EARN']) ? $rows['TEST_EARN']['computed_amount'] : 'MISSING', null);
+        $detail->execute([
+            ':earning' => json_encode([['code' => 'TEST_EARN', 'name_th' => 'ทดสอบรายได้', 'name_en' => 'Test earning', 'amount' => 100, 'computed_amount' => 137.5]], JSON_UNESCAPED_UNICODE),
+            ':deduction' => json_encode([['code' => 'TEST_DEDUCT', 'name_th' => 'ทดสอบรายการหัก', 'name_en' => 'Test deduction', 'amount' => 50]], JSON_UNESCAPED_UNICODE),
+            ':run_id' => $runId,
+            ':employee_id' => $employeeId,
+        ]);
+        $rowsWithComputed = $rowsOf();
+        check('a persisted computed_amount reaches the row untouched', $rowsWithComputed['TEST_EARN']['computed_amount'] ?? null, 137.5);
+        check('...and the live amount is still the post-override one', $rowsWithComputed['TEST_EARN']['current_amount'] ?? null, 100.0);
 
         echo "\n=== 3. a row excluded out of every breakdown gets its type from the catalog ===\n";
         // An 'exclude' override drops the line from the breakdown entirely, so this row exists ONLY
@@ -130,6 +142,9 @@ try {
             );
             check('an excluded row still reports its override_action', $rows[$catalogRow['item_code']]['override_action'] ?? null, 'exclude');
             check('an excluded row has no amount to show', $rows[$catalogRow['item_code']]['current_amount'] ?? null, 0.0);
+            // An excluded line is gone from the breakdown, so there is no engine figure to serve
+            // for it either -- null, deliberately, rather than a guess (BACKLOG).
+            check('an excluded row has no engine figure either', array_key_exists('computed_amount', $rows[$catalogRow['item_code']]) ? $rows[$catalogRow['item_code']]['computed_amount'] : 'MISSING', null);
         }
 
         echo "\n=== 4. statutory rows carry the engine's own note, verbatim ===\n";
@@ -381,6 +396,11 @@ checkTrue('the calculated figure has one resolver, with both sources', strpos($j
 // 2026-09-18, tiny-L6b (B3): ...and it answers only where the answer is real. `original_value` is a
 // stand-in for the engine's figure, not the figure itself, so a row with no recorded history says
 // nothing rather than printing an older override as if the system had calculated it (BACKLOG).
+// 2026-09-18, tiny-C: the persisted engine figure is asked FIRST -- the history below is only
+// the fallback for runs last calculated before it existed, and must not be removed.
+checkTrue('the persisted engine figure wins, with the history kept as the fallback',
+    strpos($js, 'if (line.computed_amount !== null && line.computed_amount !== undefined) return lineOverrideHistoryValueRd(line.computed_amount);') !== false
+    && strpos($js, 'const original = history ? history.original_value : null;') !== false);
 checkTrue('...and it refuses to answer without a recorded history',
     strpos($js, 'const history = lineOverrideHistoryRd.historyAvailable ? lineOverrideHistoryFor(line) : null;') !== false);
 // 2026-09-18, tiny-L6a: "back to the calculated value" is no longer a second round button in the

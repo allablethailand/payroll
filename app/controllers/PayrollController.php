@@ -70,7 +70,10 @@ class PayrollController extends Controller {
                             // earning_breakdown/deduction_breakdown lines use 'amount';
                             // statutory_breakdown lines use 'employee_amount'/'employer_amount'
                             // (StatutoryCalculationEngine's own shape) -- mask whichever are present.
-                            foreach (['amount', 'employee_amount', 'employer_amount'] as $amountKey) {
+                            // 2026-09-18, tiny-C: 'computed_amount' (the engine figure an override
+                            // replaced) is a payroll figure like any other -- masking the live one
+                            // while leaving it readable would hand back the number being hidden.
+                            foreach (['amount', 'computed_amount', 'employee_amount', 'employer_amount'] as $amountKey) {
                                 if (array_key_exists($amountKey, $line)) {
                                     $line[$amountKey] = PermissionModel::MASK_VALUE;
                                 }
@@ -176,7 +179,7 @@ class PayrollController extends Controller {
     /** The money on one syncDeductionLinesForEmployee() row; its `occurrences[]` sub-rows carry
      *  their own `amount` and are masked alongside it (an installment breakdown adds up to the very
      *  figure being hidden, so leaving it readable would hand the whole number straight back). */
-    private const ADJUST_LINE_MONEY_KEYS = ['current_amount', 'override_amount'];
+    private const ADJUST_LINE_MONEY_KEYS = ['current_amount', 'override_amount', 'computed_amount'];
 
     private function maskEmployeeAdjustments(array $data, int $compId): array {
         $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), $compId);

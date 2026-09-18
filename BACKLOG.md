@@ -582,6 +582,14 @@ not itself reported or investigated further.
 
 ---
 
+## `migSplitUpDown()` regex `--\s*UP` จับคอมเมนต์ที่ขึ้นต้นด้วย "-- up" ได้
+
+`scripts/migrate.php` แยก UP/DOWN ด้วย `/--\s*UP\s*(.*?)\s*--\s*DOWN\s*(.*)$/is` ซึ่ง case-insensitive และไม่ anchor ต้นบรรทัด
+→ คอมเมนต์อธิบายที่บังเอิญขึ้นบรรทัดใหม่ด้วยคำว่า `-- up (...)` ถูกนับเป็น marker ตัด UP ผิดจุดและ migration ล้ม (เจอจริงตอน tiny-C)
+ควร anchor เป็นบรรทัด marker ตายตัว (`^--\s*UP\s*$` แบบ multiline) ไม่ใช่จับที่ไหนก็ได้ในไฟล์
+
+---
+
 ## `tests/import_test.php` / `tests/transaction_data_sync_test.php` fail when run against a dev DB that already has other sync data in it
 
 Found running the full test suite after Phase Design Round 3 item 3c-1's page-loader work — unrelated
@@ -612,6 +620,11 @@ run added) rather than absolute presence/absence. Both tests already wrap in a t
 rollback (per this project's own `tests/*.php` convention), so the isolation gap is specifically
 "another already-committed session's data, not this test's own" — a rollback at the end doesn't
 undo what existed before the test started.
+
+**ตัวอย่างที่ 3 ของอาการเดียวกัน (2026-09-18, tiny-C)**: `tests/payroll_calc_warnings_test.php` §5 เลือกเป้าหมายด้วย
+`ORDER BY d.run_id DESC LIMIT 1` = run ที่ใหม่ที่สุดใน DB เสมอ ระหว่างรอบนี้จึงไปเจอ fixture ของ `tests/ui/mksession.php`
+ที่ยังไม่ cleanup แล้ว assertion "another employee on the same run is unaffected" ได้ adjustment_count=2 แทน 0
+(fixture ใส่ line override + manual line ให้ emp 28) หลัง `--cleanup` ผ่านทันที แก้แบบเดียวกัน: สร้าง run ของตัวเอง หรือ assert เป็น delta
 
 **Source:** Phase Design Round 3 item 3c-1, page-loader work — full test-suite run turned these up,
 explicit instruction to log rather than fix now (2026-09-14).
@@ -1135,6 +1148,9 @@ catalog เท่านั้น (line หายจาก breakdown JSON ไป�
 fallback) — เป็นการตัดสินใจเชิงพฤติกรรม ไม่ใช่ style จึงไม่ทำในรอบนี้ · `.lo-row-off .payslip-line-tag` ที่เพิ่มไว้
 ยังจำเป็นจริงสำหรับแถวที่ปิดจาก Run Settings (ยังอยู่ใน breakdown จึงยังมี tag)
 
+tiny-C (2026-09-18) เจอฝั่งเดียวกันอีกเรื่อง: แถว exclude ไม่มี entry ใน breakdown จึงไม่มี `computed_amount` ด้วย
+บรรทัด `ระบบ: x` ของแถวพวกนี้จึงยังเงียบ — ถ้าวันไหน persist entry ที่ถูก exclude (amount 0) ค่านี้จะตามมาเองในคราวเดียวกัน
+
 **Source:** tiny-L5 (2026-09-18)
 
 ---
@@ -1150,7 +1166,7 @@ fallback) — เป็นการตัดสินใจเชิงพฤต
 ตัวเลขมั่ว) และ hint ในฟอร์มใช้เงื่อนไขเดียวกันผ่าน `lineOverrideComputedTextRd()` ตัวเดิมตัวเดียว · แปลว่า "ไม่หลอก" แล้ว
 แต่แถวที่**มี** history ก็ยังโชว์ `original_value` ซึ่งเป็นตัวแทนของค่า engine ไม่ใช่ค่า engine จริง — ปิดจริงต้องทำ tiny-C
 
-**tiny-C (ก้อนถัดไป) — persist `computed_amount`** เพิ่มคีย์ใหม่อย่างเดียว ไม่แตะตัวเลขที่คำนวณอยู่แล้ว:
+**tiny-C ทำแล้ว (2026-09-18) — ปิดข้อนี้** `recalculate()` persist ค่า engine ก่อนทับเป็นคีย์ `computed_amount` ใน breakdown JSON (earning/deduction/statutory) + คอลัมน์ใหม่ `payroll_run_details.base_salary_computed_amount` สำหรับเงินเดือนพื้นฐาน (เลือกคอลัมน์ ไม่เอา entry สังเคราะห์ — ดู `docs/decisions/2026-09-18-tiny-c-computed-amount.md`) · `lineOverrideComputedTextRd()` อ่านคีย์นี้ก่อน fallback history เดิมยังอยู่ครบสำหรับ run เก่า · เหลือเฉพาะแถว exclude (ดูข้อด้านบน) สิ่งที่ทำจริงคือ:
 1. `PayrollRunModel::recalculate()` เก็บยอดก่อนทับ 3 จุด — `:4034` (earning/deduction), `:4058` (base salary),
    `:4527` (statutory) ~2 บรรทัด/จุด
 2. `syncDeductionLinesForEmployee()` ส่งผ่านออกมาทั้ง 4 row shape (base salary / earning-deduction / statutory /

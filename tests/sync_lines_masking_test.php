@@ -85,7 +85,7 @@ $controller = (new ReflectionClass('PayrollController'))->newInstanceWithoutCons
 $masked = $masker->invoke($controller, [
     [
         'code' => 'OT', 'name_th' => 'ล่วงเวลา', 'name_en' => 'Overtime',
-        'current_amount' => 5000.0, 'override_amount' => 4500.0, 'override_action' => 'override',
+        'current_amount' => 5000.0, 'override_amount' => 4500.0, 'computed_amount' => 5312.5, 'override_action' => 'override',
         'override_note' => 'ปรับตามใบรับรอง', 'line_type' => 'earning_deduction', 'item_type' => 'earning', 'note' => null,
         'occurrences' => [
             ['occurrence_code' => 'INST1', 'installment_no' => 1, 'amount' => 2500.0, 'applied_at' => '2026-09-01'],
@@ -94,17 +94,21 @@ $masked = $masker->invoke($controller, [
     ],
     [
         'code' => 'TH_SSO', 'name_th' => 'ประกันสังคม', 'name_en' => 'Social Security',
-        'current_amount' => 0.0, 'override_amount' => null, 'override_action' => null, 'override_note' => null,
+        'current_amount' => 0.0, 'override_amount' => null, 'computed_amount' => null, 'override_action' => null, 'override_note' => null,
         'line_type' => 'statutory', 'item_type' => 'statutory', 'note' => 'employee_not_enrolled',
     ],
 ]);
 check('current_amount is masked', $masked[0]['current_amount'], PermissionModel::MASK_VALUE);
 check('override_amount is masked', $masked[0]['override_amount'], PermissionModel::MASK_VALUE);
+// 2026-09-18, tiny-C: the engine figure an override replaced is a payroll figure like any other --
+// leaving it readable while the live one is hidden would hand back most of the number being hidden.
+check('computed_amount is masked', $masked[0]['computed_amount'], PermissionModel::MASK_VALUE);
 check('every occurrence amount is masked too (installments add up to the very figure being hidden)',
     [$masked[0]['occurrences'][0]['amount'], $masked[0]['occurrences'][1]['amount']],
     [PermissionModel::MASK_VALUE, PermissionModel::MASK_VALUE]);
 check('a zero amount is still masked (0.00 is a real figure, not "no value")', $masked[1]['current_amount'], PermissionModel::MASK_VALUE);
 check('a null override_amount stays null -- masking it would invent an override nobody made', $masked[1]['override_amount'], null);
+check('a null computed_amount stays null, for the same reason', $masked[1]['computed_amount'], null);
 // Everything that is NOT a figure has to survive, or the table becomes unreadable rather than
 // merely figure-free -- and the engine's reason note is precisely what tells a user why a line is 0.
 check('item code survives', $masked[0]['code'], 'OT');

@@ -154,6 +154,26 @@ Object.keys(LANG).forEach((lang) => {
     api.setHistory(Object.assign(historyWith(1500), { historyAvailable: false }));
     check(`[${lang}] run predating the history feature: no sub-line`,
         api.lineOverrideComputedTagHtml(overridden) === '');
+
+    // 2026-09-18, tiny-C: the persisted engine figure. It is the real answer, so it is used even
+    // where the history has nothing at all -- and it WINS over the history where both exist, because
+    // `original_value` is only ever a stand-in for it.
+    const withComputed = line({ override_action: 'override_amount', current_amount: 1200, computed_amount: 1750 });
+    const computedExpected = LANG[lang]['line_override_computed_inline'].replace('{amount}', '1,750.00');
+    api.setHistory(NO_HISTORY);
+    check(`[${lang}] persisted computed_amount, no history: sub-line reads "${computedExpected}"`,
+        api.lineOverrideComputedTagHtml(withComputed).indexOf(computedExpected) !== -1, api.lineOverrideComputedTagHtml(withComputed));
+    api.setHistory(historyWith(1500));
+    check(`[${lang}] persisted computed_amount beats the history stand-in`,
+        api.lineOverrideComputedTagHtml(withComputed).indexOf(computedExpected) !== -1
+        && api.lineOverrideComputedTagHtml(withComputed).indexOf(expected) === -1);
+    // A run last calculated before tiny-C has no key at all -- the fallback must still be there.
+    check(`[${lang}] computed_amount null: falls back to the history, not to silence`,
+        api.lineOverrideComputedTagHtml(line({ override_action: 'override_amount', current_amount: 1200, computed_amount: null })).indexOf(expected) !== -1);
+    // computed_amount = 0 is a real figure (a line the engine really computed to zero), not "absent".
+    check(`[${lang}] computed_amount 0 is a figure, not a missing value`,
+        api.lineOverrideComputedTagHtml(line({ override_action: 'override_amount', current_amount: 1200, computed_amount: 0 }))
+            .indexOf(LANG[lang]['line_override_computed_inline'].replace('{amount}', '0.00')) !== -1);
 });
 
 console.log('\n=== the table agrees with its own rows ===');

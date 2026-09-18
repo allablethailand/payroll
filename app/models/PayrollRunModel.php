@@ -3303,10 +3303,10 @@ class PayrollRunModel {
             $this->db->prepare("DELETE FROM `payroll_run_details` WHERE run_id = :id")->execute([':id' => $id]);
 
             $insStmt = $this->db->prepare("INSERT INTO `payroll_run_details`
-                (run_id, employee_id, base_salary_amount, prorate_days, prorate_total_days,
+                (run_id, employee_id, base_salary_amount, base_salary_computed_amount, prorate_days, prorate_total_days,
                  earning_breakdown, deduction_breakdown, statutory_breakdown,
                  gross_amount, taxable_gross_amount, total_deduction_amount, net_amount, employer_cost_amount, calc_status, calc_errors, data_source)
-                VALUES (:run_id, :employee_id, :base_salary_amount, :prorate_days, :prorate_total_days,
+                VALUES (:run_id, :employee_id, :base_salary_amount, :base_salary_computed_amount, :prorate_days, :prorate_total_days,
                  :earning_breakdown, :deduction_breakdown, :statutory_breakdown,
                  :gross_amount, :taxable_gross_amount, :total_deduction_amount, :net_amount, :employer_cost_amount, :calc_status, :calc_errors, :data_source)");
 
@@ -4031,6 +4031,11 @@ class PayrollRunModel {
                             continue;
                         }
                         if ($override !== null && $override['action'] === 'override_amount') {
+                            // 2026-09-18, tiny-C: the engine's own figure, kept on the line it is
+                            // being replaced on, so the Adjustments table can show what the system
+                            // calculated next to what it was changed to. Only written where an
+                            // override really replaced something -- absent means "nothing to compare".
+                            $line['computed_amount'] = (float)($line['amount'] ?? 0);
                             $line['amount'] = (float)$override['override_amount'];
                             $overrideNote = $override['note'] ? " (override: {$override['note']})" : ' (manually overridden)';
                             $line['note'] = trim(($line['note'] ?? '') . $overrideNote);
@@ -4052,9 +4057,13 @@ class PayrollRunModel {
                 // action) always wins over the run-level default below; with no override at all,
                 // the run-level default zeroes it for everyone.
                 $baseSalaryOverride = $overridesByEmployeeAndCode[$employeeId][self::BASE_SALARY_OVERRIDE_CODE] ?? null;
+                // 2026-09-18, tiny-C: base salary is the one figure with no breakdown entry to carry
+                // a `computed_amount` on -- it goes to its own column instead (see that migration).
+                $baseSalaryComputed = null;
                 if ($baseSalaryOverride !== null && $baseSalaryOverride['action'] === 'exclude') {
                     $effectiveBase = 0.0;
                 } elseif ($baseSalaryOverride !== null && $baseSalaryOverride['action'] === 'override_amount') {
+                    $baseSalaryComputed = $effectiveBase;
                     $effectiveBase = (float)$baseSalaryOverride['override_amount'];
                 } elseif ($baseSalaryOverride === null && in_array(strtoupper(self::BASE_SALARY_OVERRIDE_CODE), $runItemExclusionCodesUpper, true)) {
                     $effectiveBase = 0.0;
@@ -4063,6 +4072,7 @@ class PayrollRunModel {
                 $perEmployeeData[$employeeId] = [
                     'emp' => $emp,
                     'effectiveBase' => $effectiveBase,
+                    'baseSalaryComputed' => $baseSalaryComputed,
                     'prorateDays' => $prorateDays,
                     'prorateTotalDays' => $prorateTotalDays,
                     'earningLines' => $earningLines,
@@ -4141,6 +4151,7 @@ class PayrollRunModel {
                     $insStmt->execute([
                         ':run_id' => $id, ':employee_id' => $employeeId,
                         ':base_salary_amount' => $preserved['base_salary_amount'],
+                        ':base_salary_computed_amount' => $preserved['base_salary_computed_amount'] ?? null,
                         ':prorate_days' => $preserved['prorate_days'],
                         ':prorate_total_days' => $preserved['prorate_total_days'],
                         ':earning_breakdown' => $preserved['earning_breakdown'],
@@ -4166,6 +4177,7 @@ class PayrollRunModel {
 
                 $pdata = $perEmployeeData[$employeeId];
                 $effectiveBase = $pdata['effectiveBase'];
+                $baseSalaryComputed = $pdata['baseSalaryComputed'] ?? null; // ?? null: a verified-preserved row never sets it
                 $prorateDays = $pdata['prorateDays'];
                 $prorateTotalDays = $pdata['prorateTotalDays'];
                 $earningLines = array_merge($pdata['earningLines'], $transferCreditsByPayee[$employeeId] ?? []);
@@ -4523,6 +4535,9 @@ class PayrollRunModel {
                             $statutoryResult['items'][$sIdx]['employee_amount'] = 0.0;
                             $statutoryResult['items'][$sIdx]['note'] = 'manually_excluded';
                         } else {
+                            // 2026-09-18, tiny-C: same `computed_amount` the earning/deduction lines
+                            // carry, on the key statutory lines keep their money in.
+                            $statutoryResult['items'][$sIdx]['computed_amount'] = (float)($sItemForOverride['employee_amount'] ?? 0);
                             $statutoryResult['items'][$sIdx]['employee_amount'] = (float)$statutoryOverride['override_amount'];
                             $statutoryResult['items'][$sIdx]['note'] = 'manually_overridden';
                         }
@@ -4624,6 +4639,7 @@ class PayrollRunModel {
                     ':run_id' => $id,
                     ':employee_id' => $employeeId,
                     ':base_salary_amount' => $effectiveBase,
+                    ':base_salary_computed_amount' => $baseSalaryComputed,
                     ':prorate_days' => $prorateDays,
                     ':prorate_total_days' => $prorateTotalDays,
                     ':earning_breakdown' => json_encode($earningLines, JSON_UNESCAPED_UNICODE),
@@ -6751,7 +6767,7 @@ class PayrollRunModel {
         if (!$run) {
             return [];
         }
-        $stmtDetail = $this->db->prepare("SELECT base_salary_amount, earning_breakdown, deduction_breakdown, statutory_breakdown
+        $stmtDetail = $this->db->prepare("SELECT base_salary_amount, base_salary_computed_amount, earning_breakdown, deduction_breakdown, statutory_breakdown
             FROM `payroll_run_details` WHERE run_id = :run_id AND employee_id = :employee_id");
         $stmtDetail->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
         $detail = $stmtDetail->fetch(PDO::FETCH_ASSOC);
@@ -6816,6 +6832,11 @@ class PayrollRunModel {
             'code' => self::BASE_SALARY_OVERRIDE_CODE,
             'name_th' => 'เงินเดือนพื้นฐาน', 'name_en' => 'Base Salary',
             'current_amount' => $detail['base_salary_amount'] !== null ? (float)$detail['base_salary_amount'] : 0.0,
+            // 2026-09-18, tiny-C: what the engine computed before an override replaced it. ALWAYS
+            // present, null when there is nothing to compare against (no override, or a run last
+            // calculated before this was persisted at all) -- same "the client never has to
+            // special-case a missing key" rule `note`/`override_note` follow.
+            'computed_amount' => ($detail['base_salary_computed_amount'] ?? null) !== null ? (float)$detail['base_salary_computed_amount'] : null,
             // 2026-09-16: `item_type` is a READ-ONLY grouping hint for the Adjustments modal's own
             // single table (base_salary / earning / deduction / statutory / other). It is derived
             // here, never stored: for these rows it is simply WHICH breakdown column the row came
@@ -6856,6 +6877,7 @@ class PayrollRunModel {
                     'name_th' => $line['name_th'] ?? $line['code'],
                     'name_en' => $line['name_en'] ?? $line['code'],
                     'current_amount' => isset($line['amount']) ? (float)$line['amount'] : 0.0,
+                    'computed_amount' => isset($line['computed_amount']) ? (float)$line['computed_amount'] : null,
                     'line_type' => 'earning_deduction',
                     'item_type' => $itemType,
                     'note' => null,
@@ -6885,6 +6907,7 @@ class PayrollRunModel {
                 'name_th' => $line['name_th'] ?? $line['code'],
                 'name_en' => $line['name_en'] ?? $line['code'],
                 'current_amount' => isset($line['employee_amount']) ? (float)$line['employee_amount'] : 0.0,
+                'computed_amount' => isset($line['computed_amount']) ? (float)$line['computed_amount'] : null,
                 'line_type' => 'statutory',
                 'item_type' => 'statutory',
                 // 2026-09-16: StatutoryCalculationEngine writes WHY a line came out at 0 into the
@@ -6948,6 +6971,9 @@ class PayrollRunModel {
                 'name_th' => $catalog['item_name_th'] ?? $code,
                 'name_en' => $catalog['item_name_en'] ?? $code,
                 'current_amount' => 0.0,
+                // An excluded line is dropped from the breakdown entirely, so there is no persisted
+                // engine figure for it -- deliberately left unanswered rather than guessed (BACKLOG).
+                'computed_amount' => null,
                 'line_type' => 'earning_deduction',
                 'item_type' => $catalog['item_type'] ?? 'other',
                 'note' => null,

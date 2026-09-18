@@ -444,12 +444,20 @@ try {
     // computed deduction line. Reuses $pulledRunId/$employeeFullId's already-computed LATE_DEDUCT
     // (31.25) and LEAVE_NO_PAY_DEDUCT (3000) lines from the section just above. ----------
     echo "=== Line overrides: override_amount on a sync-computed deduction line ===\n";
+    // 2026-09-18, tiny-C: captured BEFORE the override so `computed_amount` is checked against the
+    // figure the engine really produced, not against a number written into this test by hand.
+    $beforeOverrideDetails = $runModel->getDetails($pulledRunId, $compId);
+    $lateLineBeforeOverride = current(array_filter($beforeOverrideDetails[0]['deduction_breakdown'], fn($l) => $l['code'] === 'LATE_DEDUCT'));
+    $lateEngineAmount = (float)($lateLineBeforeOverride['amount'] ?? 0);
+    checkTrue('fixture: LATE_DEDUCT has an engine-computed amount before any override', $lateEngineAmount > 0);
+    check('a line with no override carries no computed_amount at all', array_key_exists('computed_amount', $lateLineBeforeOverride ?: []), false);
     $overrideRes = $runModel->lineOverrideSave($pulledRunId, $compId, $employeeFullId, 'LATE_DEDUCT', 'override_amount', 10.00, 'HR waived most of it', $adminUserId, true);
     checkTrue('lineOverrideSave() override_amount succeeds' . (empty($overrideRes['status']) ? " ({$overrideRes['message']})" : ''), $overrideRes['status']);
     $afterOverrideDetails = $runModel->getDetails($pulledRunId, $compId);
     $lateLineAfterOverride = current(array_filter($afterOverrideDetails[0]['deduction_breakdown'], fn($l) => $l['code'] === 'LATE_DEDUCT'));
     check('LATE_DEDUCT amount is now the overridden 10.00, not the computed 31.25', (float)($lateLineAfterOverride['amount'] ?? null), 10.0);
     checkTrue('overridden line note mentions the override', strpos($lateLineAfterOverride['note'] ?? '', 'override') !== false);
+    check('computed_amount keeps the engine figure the override replaced', (float)($lateLineAfterOverride['computed_amount'] ?? -1), $lateEngineAmount);
 
     echo "=== Line overrides: exclude a sync-computed deduction line entirely ===\n";
     $excludeRes = $runModel->lineOverrideSave($pulledRunId, $compId, $employeeFullId, 'LEAVE_NO_PAY_DEDUCT', 'exclude', null, null, $adminUserId, true);
@@ -469,6 +477,9 @@ try {
     check('UI-facing current_amount reflects the OVERRIDDEN 10.00 (current, post-override figure now, not the raw pre-override 31.25)', (float)($lateUiLine['current_amount'] ?? null), 10.0);
     check('UI-facing override_action reflects the active override', $lateUiLine['override_action'] ?? null, 'override_amount');
     check('UI-facing override_amount reflects the active override', (float)($lateUiLine['override_amount'] ?? null), 10.0);
+    check('UI-facing computed_amount is the engine figure the override replaced', (float)($lateUiLine['computed_amount'] ?? -1), $lateEngineAmount);
+    $baseUiLine = current(array_filter($syncLinesForUi, fn($l) => $l['code'] === PayrollRunModel::BASE_SALARY_OVERRIDE_CODE));
+    check('a row with no override of its own reports computed_amount as null, never absent', array_key_exists('computed_amount', $baseUiLine ?: []) ? $baseUiLine['computed_amount'] : 'MISSING', null);
     $leaveUiLine = current(array_filter($syncLinesForUi, fn($l) => $l['code'] === 'LEAVE_NO_PAY_DEDUCT'));
     checkTrue('excluded line is still listed for the UI (so it can be un-excluded), even though it has dropped out of the persisted breakdown entirely', $leaveUiLine !== false);
     check('excluded line reports override_action=exclude', $leaveUiLine['override_action'] ?? null, 'exclude');
@@ -547,6 +558,7 @@ try {
     $ssoLineAfterOverride = current(array_filter($ssoRowAfterOverride['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'));
     check('TH_SSO employee_amount is now exactly the overridden 123.45', (float)$ssoLineAfterOverride['employee_amount'], 123.45);
     check('note marks this as manually_overridden', $ssoLineAfterOverride['note'], 'manually_overridden');
+    check('the statutory line keeps the engine figure as computed_amount', (float)($ssoLineAfterOverride['computed_amount'] ?? -1), $ssoOriginalAmount);
     $pvdLineUnaffected = current(array_filter($ssoRowAfterOverride['statutory_breakdown'], fn($l) => $l['code'] === 'TH_PVD'));
     checkTrue('a DIFFERENT statutory item (TH_PVD) is completely untouched by the TH_SSO-specific override', $pvdLineUnaffected !== false && $pvdLineUnaffected['note'] !== 'manually_overridden');
 
@@ -555,6 +567,31 @@ try {
     checkTrue('syncDeductionLinesForEmployee() (Adjust Amounts modal) lists the TH_SSO statutory row', $ssoAdjustLine !== false);
     check('the listed row shows the active override action', $ssoAdjustLine['override_action'] ?? null, 'override_amount');
     check('the listed row shows the override amount', (float)($ssoAdjustLine['override_amount'] ?? -1), 123.45);
+    check('the listed statutory row carries the engine figure too', (float)($ssoAdjustLine['computed_amount'] ?? -1), $ssoOriginalAmount);
+
+    // 2026-09-18, tiny-C: base salary is the one overridable figure with no breakdown entry to hang
+    // `computed_amount` on -- it gets its own nullable column, and this is what proves the column is
+    // actually threaded through recalculate() and back out to the Adjustments row.
+    echo "=== Base salary override: the pre-override figure lands in base_salary_computed_amount ===\n";
+    $baseDetailStmt = $pdo->prepare("SELECT base_salary_amount, base_salary_computed_amount FROM `payroll_run_details` WHERE run_id = ? AND employee_id = ?");
+    $baseDetailStmt->execute([$pulledRunId, $employeeFullId]);
+    $baseBefore = $baseDetailStmt->fetch(PDO::FETCH_ASSOC);
+    $baseEngineAmount = (float)$baseBefore['base_salary_amount'];
+    check('no base-salary override yet -> the computed column stays NULL', $baseBefore['base_salary_computed_amount'], null);
+    $baseOverrideRes = $runModel->lineOverrideSave($pulledRunId, $compId, $employeeFullId, PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, 'override_amount', 777.00, 'tiny-C base salary', $adminUserId, true);
+    checkTrue('lineOverrideSave() on base salary succeeds' . (empty($baseOverrideRes['status']) ? " ({$baseOverrideRes['message']})" : ''), $baseOverrideRes['status']);
+    $baseDetailStmt->execute([$pulledRunId, $employeeFullId]);
+    $baseAfter = $baseDetailStmt->fetch(PDO::FETCH_ASSOC);
+    check('base_salary_amount is the overridden 777.00', (float)$baseAfter['base_salary_amount'], 777.0);
+    check('base_salary_computed_amount is the engine figure it replaced', (float)$baseAfter['base_salary_computed_amount'], $baseEngineAmount);
+    $baseAdjustLines = $runModel->syncDeductionLinesForEmployee($compId, $pulledRunId, $employeeFullId);
+    $baseAdjustRow = current(array_filter($baseAdjustLines, fn($l) => $l['code'] === PayrollRunModel::BASE_SALARY_OVERRIDE_CODE));
+    check('the Adjustments base-salary row serves that same figure as computed_amount', (float)($baseAdjustRow['computed_amount'] ?? -1), $baseEngineAmount);
+    $runModel->lineOverrideRemove($pulledRunId, $compId, $employeeFullId, PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, $adminUserId, true);
+    $baseDetailStmt->execute([$pulledRunId, $employeeFullId]);
+    $baseReset = $baseDetailStmt->fetch(PDO::FETCH_ASSOC);
+    check('removing the override clears the computed column back to NULL', $baseReset['base_salary_computed_amount'], null);
+    check('...and restores the engine figure as the real one', (float)$baseReset['base_salary_amount'], $baseEngineAmount);
 
     $statutoryExcludeRes = $runModel->statutoryLineOverrideSave($pulledRunId, $compId, $employeeFullId, 'TH_SSO', 'exclude', null, null, $adminUserId, true);
     checkTrue('statutoryLineOverrideSave(exclude) succeeds', $statutoryExcludeRes['status']);

@@ -4890,12 +4890,16 @@ function lineOverrideHistoryMenuHtml(history) {
 //   - an override              -> `original_value` of this line's history (the value the FIRST
 //                                 recorded edit replaced), which is exactly what the dropdown's own
 //                                 head row reads
-// 2026-09-18, tiny-L6b (B3): the second of those is a STAND-IN for the engine's figure, not the
-// figure itself -- the breakdown JSON keeps only the amount after an override, so a row whose
-// override predates its history has an older OVERRIDE sitting in `original_value` and this would
-// print it as if the system had calculated it ("ค่าระบบ x หลอก", BACKLOG). Such a row now says
-// nothing at all -- no dash, no title, no hint in the form -- rather than a number nothing backs up.
-// This is the INTERIM answer; the real one is a persisted engine amount (BACKLOG, tiny-C).
+// 2026-09-18, tiny-C: a THIRD source now comes first -- `computed_amount`, the engine's own figure
+// persisted by recalculate() at the moment the override replaced it. That is the real answer to the
+// stand-in problem tiny-L6b (B3) documented below, so it is asked first and the history is only
+// consulted when it has nothing (a run last calculated before this was persisted).
+// 2026-09-18, tiny-L6b (B3): `original_value` is a STAND-IN for the engine's figure, not the figure
+// itself -- the breakdown JSON kept only the amount after an override, so a row whose override
+// predates its history has an older OVERRIDE sitting in `original_value` and this would print it as
+// if the system had calculated it ("ค่าระบบ x หลอก"). Kept as the fallback for exactly those older
+// runs; a row with neither still says nothing at all -- no dash, no title, no hint in the form --
+// rather than a number nothing backs up (an excluded line is still one of those: BACKLOG).
 // 2026-09-17, R1 follow-up: a group that names a side (base salary/income = green, deduction/
 // statutory = red) decides for its rows. The "other" group cannot: a row lands there precisely
 // because its item_code has no catalog row left to say which side it is (a retired item), so its own
@@ -4909,6 +4913,7 @@ function lineOverrideMoneyClassRd(line, group) {
 }
 function lineOverrideComputedTextRd(line) {
     if (!line.override_action) return lineOverrideHistoryValueRd(line.current_amount);
+    if (line.computed_amount !== null && line.computed_amount !== undefined) return lineOverrideHistoryValueRd(line.computed_amount);
     // Both halves of "is there a recorded history for this line": the run's period has to be inside
     // the window the feature has existed for at all, AND this particular line has to have a row in
     // it (byKey only ever holds lines that do). Either one missing means no trustworthy figure.
