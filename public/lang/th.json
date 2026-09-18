@@ -1997,6 +1997,8 @@
     "line_override_col_history": "ประวัติ",
     "line_override_col_computed": "ค่าที่ระบบคำนวณ",
     "line_override_computed_unknown": "ไม่ได้บันทึกค่าที่ระบบคำนวณของรายการนี้ไว้",
+    "line_form_computed_hint": "ค่าระบบ {amount}",
+    "line_form_payee_open_employee": "แก้ที่หน้าพนักงาน",
     "line_override_use_computed": "ใช้ค่าที่ระบบคำนวณ",
     "line_override_excluded_amount": "ไม่นำมาคำนวณ",
     "line_override_history_badge": "แก้ไข {n}",

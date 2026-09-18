@@ -1146,3 +1146,27 @@ fallback) — เป็นการตัดสินใจเชิงพฤต
 `UI_TEST_BASE_URL` เอง ไม่งั้นได้ timeout ที่ไม่บอกสาเหตุ · ให้อ่าน BASE_URL จาก `.env` เป็น default แทน
 
 **Source:** tiny-L5 (2026-09-18)
+
+---
+
+## "ค่าระบบ x" หลอกได้ถ้า override แรกของแถวนั้นไม่มี history
+
+`lineOverrideComputedTextRd()` อ่าน `original_value` ของ **edit แรกที่ถูกบันทึก** ไม่ใช่ค่าที่ engine คำนวณจริง ·
+ถ้าแถวนั้นมี override อยู่ก่อนที่จะมี history (เช่น fixture ของ `tests/ui/mksession.php` ที่ insert ตรง) ค่าที่แสดงจะเป็น
+ยอด override เก่า ไม่ใช่ค่าคำนวณ — กด "ใช้ค่าที่ระบบคำนวณ" แล้วได้คนละตัวกับที่บอกไว้ (วัดจริงตอน L6a: hint 28,500.00 → คืนจริงได้ 0.00)
+· เป็นของเดิมมาตั้งแต่ R1 ไม่ใช่ regression ของ L6a · แก้จริงต้องมีค่า engine จริงเก็บไว้ (breakdown JSON เก็บเฉพาะยอดหลัง override)
+— เกี่ยวกับ B3 ของ L6b โดยตรง ตัดสินพร้อมกัน
+
+**Source:** tiny-L6a (2026-09-18) — เจอตอนวัด Playwright
+
+---
+
+## dirty-guard ของ #manualLineFormModal: default ที่มาแบบ async อาจทำให้ฟอร์ม dirty ตั้งแต่เปิด
+
+L6a เปิด `data-dirty-guard` ให้ฟอร์มนี้ — baseline ถ่ายตอน `shown.bs.modal` ซึ่งหลัง prefill เสมอ (prefill รันก่อน `.show()`)
+แต่มี 2 เส้นทางที่ลงทีหลังจากนั้นได้: `applyDefaultCompanyBankAccount()` (เติมบัญชีบริษัท default ให้แถวที่ payee เป็น company
+แต่ยังไม่มีบัญชี) กับ `refreshManualLineSavedDestinationsRd()` (อาจพลิก radio saved/new) — ทั้งคู่ทำให้ปิดฟอร์มแล้วโดนถาม
+"มีข้อมูลที่ยังไม่ได้บันทึก" ทั้งที่ผู้ใช้ไม่ได้แตะอะไร · วัดใน L6a ยังไม่เจอ (run ทดสอบไม่มีแถว recurring/ped) · ทางแก้คือ §9 ข้อ 4:
+เรียก `refreshDirtyGuard()` อีกครั้งเมื่อ 2 เส้นทางนั้นลงจริง — ต้องมีตัวนับ request ที่ค้างอยู่ก่อน ไม่ใช่ setTimeout
+
+**Source:** tiny-L6a (2026-09-18)

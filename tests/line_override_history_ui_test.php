@@ -62,8 +62,13 @@ checkTrue('the foot is its own element', strpos($menuBody, 'class="lo-history-fo
 // thing. Same [value | meta] skeleton, nothing to press.
 checkTrue('the head is not pressable', strpos($menuBody, 'lo-history-item-static') !== false
     && strpos($menuBody, "itemClass: 'lo-history-computed'") === false);
-checkTrue('the row button is what drops the override now', strpos($js, "\$(document).on('click', '.lo-mount .lo-use-system-btn'") !== false
-    && strpos($js, "lineOverrideConfirmApplyHistoryValueRd(\$(this).closest('tr.lo-row').data('item-code'), '', true);") !== false);
+// 2026-09-18, tiny-L6a: the row's own round "use the calculated value" button is gone -- the action
+// lives in the left slot of the form that row's pencil opens, where both figures are on screen at
+// once. Same confirm, same send: only the control that triggers it moved.
+checkTrue('the form\'s left-slot button is what drops the override now',
+    strpos($js, "\$(document).on('click', '#btnLineFormUseComputed', function () {") !== false
+    && strpos($js, "lineOverrideConfirmApplyHistoryValueRd(ctx.overrideLine.code, '', true, lineFormCloseRd);") !== false
+    && strpos($js, 'lo-use-system-btn') === false);
 checkTrue('picking it means "drop the override", not "save this figure"',
     strpos($js, "\$(this).hasClass('lo-history-computed')") !== false);
 checkTrue('the modal\'s calculated row means the same thing', strpos($js, "\$(this).attr('data-computed') === '1'") !== false);
@@ -178,13 +183,13 @@ checkTrue('it collects only rows that carry an override', strpos($restoreBody, "
 checkTrue('it skips rows the run itself turned off', strpos($restoreBody, "\$row.find('.lo-include').is(':disabled')") !== false);
 checkTrue('it asks first, with the count', strpos($restoreBody, "replace('{n}', String(rows.length))") !== false
     && strpos($restoreBody, "tone: 'warning'") !== false);
-checkTrue('nothing is sent from the collector itself', strpos($restoreBody, 'lineOverrideSaveUrlRd') === false);
+checkTrue('nothing is sent from the collector itself', strpos($restoreBody, 'lineOverrideEndpointRd') === false);
 checkTrue('the sending happens only on yes', strpos($restoreBody, 'onYes: function () { runRestoreAllComputedRd(rows); }') !== false);
 // One request per row, in order: each one recalculates the whole run internally, so two in flight
 // would race each other.
 $runStart = (int)strpos($js, 'function runRestoreAllComputedRd(');
 $runBody = substr($js, $runStart, 1800);
-checkTrue('it sends one .remove per row, sequentially', strpos($runBody, "lineOverrideSaveUrlRd(\$row, 'remove')") !== false
+checkTrue('it sends one .remove per row, sequentially', strpos($runBody, "lineOverrideEndpointRd(\$row.data('line-type'), 'remove')") !== false
     && strpos($runBody, 'runSequentialAjaxRd(calls,') !== false);
 checkTrue('it reports progress while it runs', strpos($runBody, 'lineOverrideProgressRd(i + 1, total)') !== false);
 checkTrue('it reloads the table and the run at the end', strpos($runBody, 'loadSyncLineOverridesRd();') !== false

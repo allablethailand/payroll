@@ -3501,7 +3501,11 @@ function syncPayeeDestination(prefix) {
     // is swapped on every change, long after the sweep last ran (rules.md §6's own note on
     // JS-built markup) -- the attribute is still set so a live language switch repaints it too.
     $(`#${prefix}PayeeDestDesc`).text(getLangValue(desc.key) || desc.fallback).attr('data-i18n', desc.key);
-    $(`#${prefix}PayeeRecordWrap`).toggleClass('d-none', dest !== 'company_retained');
+    // `allowNoRecord: false` means this caller's backend has no "no payee at all" value, so the
+    // sub-question has no second answer to offer -- hidden outright rather than shown with one
+    // choice. (A partial rendered with $payee_allow_no_record = false has no wrap at all; a SHARED
+    // form whose caller changes per open does, which is why the hiding has to happen here too.)
+    $(`#${prefix}PayeeRecordWrap`).toggleClass('d-none', opts.allowNoRecord === false || dest !== 'company_retained');
     $(`#${prefix}PayeeRecordDesc`).toggleClass('d-none', payeeType !== 'company');
     if (opts.employeeWrap) $(opts.employeeWrap).toggleClass('d-none', dest !== 'employee');
     if (opts.companyWrap) $(opts.companyWrap).toggleClass('d-none', payeeType !== 'company');

@@ -1997,6 +1997,8 @@
     "line_override_col_history": "History",
     "line_override_col_computed": "Calculated",
     "line_override_computed_unknown": "The calculated value was not recorded for this item",
+    "line_form_computed_hint": "Calculated {amount}",
+    "line_form_payee_open_employee": "Change it on the employee's own page",
     "line_override_use_computed": "Use the calculated value",
     "line_override_excluded_amount": "Not calculated",
     "line_override_history_badge": "{n} edit(s)",

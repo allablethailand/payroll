@@ -255,44 +255,52 @@ $js = file_get_contents(__DIR__ . '/../public/js/payroll/detail.js');
 // There is exactly ONE write path, and every entry point goes through it.
 checkTrue('one sender for the whole tab', substr_count($js, 'function lineOverrideSendRd(') === 1);
 foreach ([
-    'the pencil editor' => "lineOverrideSendRd(\$row, plan, \$row.find('.lo-edit-save'))",
     'the switch' => "lineOverrideSendRd(\$row, included ? { action: 'remove' } : { action: 'exclude' })",
     'history -> a recorded value' => "lineOverrideSendRd(\$row, { action: 'override_amount', amount: parsed })",
     'history -> the calculated value' => "lineOverrideSendRd(\$row, { action: 'remove' })",
 ] as $label => $call) {
     checkTrue("{$label} sends through it", strpos($js, $call) !== false);
 }
-// ...and the staged machinery is gone, not merely unused.
+// ...and the staged machinery is gone, not merely unused. 2026-09-18, tiny-L6a adds the inline
+// cell editor to that list: the pencil opens the line's own form now, which has its own write path
+// (submitLineOverrideFormRd) through the same lineOverrideRequestRd() this sender uses.
 foreach (['lineOverrideRowPlanRd', 'saveLineOverrideTableRd', 'data-force-remove', 'data-typed-amount',
-          'data-from-history', 'lo-new-amount', 'lo-input-dirty'] as $dead) {
+          'data-from-history', 'lo-new-amount', 'lo-input-dirty',
+          'lineOverrideOpenEditorRd', 'lineOverrideCloseEditorRd', 'lineOverrideEditPlanRd',
+          'lo-edit-input', 'lo-amount-edit', 'lo-edit-save', 'lo-edit-cancel', 'lo-use-system-btn'] as $dead) {
     checkTrue("no trace of `{$dead}` is left", strpos($js, $dead) === false);
 }
 
-echo "\n=== 8. the pencil editor ===\n";
-$editStart = (int)strpos($js, 'function lineOverrideEditPlanRd(');
-$edit = substr($js, $editStart, (int)strpos($js, 'function lineOverrideRefreshEditButtonRd(') - $editStart);
-// Saving the figure that is already there writes nothing and means nothing.
-checkTrue('an unchanged value produces no plan', strpos($edit, 'Math.abs(parsed - current) < 0.005') !== false);
-checkTrue('an empty value produces no plan', strpos($edit, "if (raw === '') return null;") !== false);
-checkTrue('a negative or unparseable value produces no plan', strpos($edit, 'isNaN(parsed) || parsed < 0') !== false);
-// ...and "no plan" is what disables the button AND what makes Enter a no-op -- one source, not two.
-checkTrue('the Save button follows that same plan', strpos($js, "\$row.find('.lo-edit-save').prop('disabled', !lineOverrideEditPlanRd(\$row));") !== false);
-checkTrue('Enter follows it too', strpos($js, "if (plan) lineOverrideSendRd(\$row, plan, \$row.find('.lo-edit-save'));") !== false);
-checkTrue('Esc closes without sending', strpos($js, "if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); lineOverrideCloseEditorRd(); return; }") !== false);
-// Bootstrap's modal keydown listener sits on the modal ELEMENT, so an event that reaches `document`
-// has already passed through it -- this one handler is therefore delegated from inside the modal,
-// which is what makes its stopPropagation() mean anything (Esc closed the whole modal otherwise).
-$keyStart = (int)strpos($js, "on('keydown', '.lo-edit-input'");
-// 2026-09-17, D3: #breakdownModalBody is the static node the table's only remaining mount renders
-// into (the "ปรับตัวเลข" pane it used to hang off is gone) -- it still has to be an ancestor INSIDE
-// the modal, and still has to be static, because `.lo-mount` itself is re-created on every open.
-checkTrue('the key handler is delegated from inside the modal',
-    strpos($js, "\$('#breakdownModalBody').on('keydown', '.lo-edit-input'") !== false);
-checkTrue('and neither key reaches the modal behind it', substr_count(substr($js, $keyStart, 700), 'e.stopPropagation();') === 2);
-// Two half-finished edits on one table is a state nobody can read off the screen.
-checkTrue('opening an editor closes any other', strpos($js, "function lineOverrideOpenEditorRd(\$row) {
-    lineOverrideCloseEditorRd();") !== false);
-checkTrue('the field opens focused and selected', strpos($js, "\$input.trigger('focus').trigger('select');") !== false);
+echo "\n=== 8. the pencil opens the line's own form ===\n";
+// 2026-09-18, tiny-L6a: the cell no longer becomes an editor. It could only ever hold the amount,
+// so a line's note and its destination had no way in from the row they belong to -- the pencil now
+// opens the SAME modal form a hand-added line is edited in (rules.md 9). What that form does with
+// each kind of line is pinned down in tests/line_form_sections_test.js; what THIS file asserts is
+// that the row hands it over correctly and keeps nothing of the old editor.
+checkTrue('the pencil opens the form, nothing else',
+    strpos($js, "\$(document).on('click', '.lo-mount .lo-edit-btn', function () {\n    openLineOverrideFormRd(\$(this).closest('tr.lo-row'));") !== false);
+// The row is a KEY, not the data: the line itself is looked up in what the table was rendered from,
+// so the form fills in from the payload rather than from text scraped off the screen.
+checkTrue('the line is looked up by code AND type, never by code alone',
+    strpos($js, 'function lineOverrideLineByRowRd($row) {') !== false
+    && strpos($js, "String(l.code) === code && (l.line_type || 'earning_deduction') === lineType") !== false);
+checkTrue('an excluded row has no amount to edit, so it does not open',
+    strpos($js, "if (!\$row.length || \$row.hasClass('lo-row-off')) return;") !== false);
+// One reload path, shared by the row's own controls and by the form -- one override moves every
+// other figure with it, so neither may patch a row locally.
+checkTrue('both write paths reload through one function',
+    strpos($js, 'function lineOverrideAfterWriteRd() {') !== false
+    && substr_count($js, 'lineOverrideAfterWriteRd()') >= 3);
+// The endpoint pair is picked from the line TYPE now, not from a row -- the form sends for a line it
+// holds as data and has no row to read.
+checkTrue('the endpoint is chosen by line type', strpos($js, 'function lineOverrideEndpointRd(lineType, action) {') !== false
+    && strpos($js, "return (lineType || 'earning_deduction') === 'statutory'") !== false);
+checkTrue('one request builder for both senders', strpos($js, 'function lineOverrideRequestRd(lineType, payload, action, done) {') !== false
+    && strpos($js, 'function lineOverridePayloadRd(itemCode, plan) {') !== false);
+// The note column has always existed on the override table and the endpoint has always accepted it;
+// tiny-L6a is the first sender. It rides on the same payload builder, so it cannot reach one path only.
+checkTrue('a note rides along with the amount when the caller has one',
+    strpos($js, "if (plan.note !== undefined) { payload.note = plan.note; }") !== false);
 
 echo "\n=== 9. the switch asks, both ways ===\n";
 // 2026-09-16: bound on `.lo-mount`, the class BOTH hosts of this table carry, not on tab 3's own id
@@ -323,11 +331,11 @@ checkTrue('an already-disabled control stays disabled afterwards', strpos($busy,
 // that are about to be replaced -- so it is released where the fresh rows land, not where the
 // request came back. (Found by measuring: the table stayed dimmed forever without this.)
 checkTrue('the lock is released when the new rows render', strpos($js, "\$wrap.removeClass('lo-table-busy');") !== false);
-checkTrue('a failure unlocks and keeps the typed value', strpos($js, 'function lineOverrideSendFailedRd(') !== false
-    && strpos($js, 'lineOverrideCloseEditorRd();\n    setLineOverrideTableBusyRd(false);') === false);
+checkTrue('a failure unlocks and leaves the table as the user left it',
+    strpos($js, 'function lineOverrideSendFailedRd(') !== false);
 // One override changes what the statutory lines calculate to, so the whole table (and the run's own
 // totals) is reloaded, never patched row-locally.
-checkTrue('success reloads the table and the run', strpos($js, "loadSyncLineOverridesRd();\n            loadRunDetail();") !== false);
+checkTrue('success reloads the table and the run', strpos($js, "function lineOverrideAfterWriteRd() {\n    loadSyncLineOverridesRd();\n    loadRunDetail();") !== false);
 
 echo "\n=== 11. no Save button, and restore-all sits with the table ===\n";
 // 2026-09-17, D3: this table has no Save step at all -- every action writes when it is confirmed --
@@ -341,7 +349,7 @@ checkTrue('restore-all is enabled only when a row really carries an override',
     strpos($js, "function refreshBreakdownFooterStateRd() {") !== false
     && strpos($js, "\$btn.prop('disabled', overrideRowCount === 0);") !== false);
 checkTrue('restore-all confirms with a count before sending', strpos($js, 'line_override_confirm_restore_all_message') !== false);
-checkTrue('and sends one .remove per row, in order', strpos($js, "url: lineOverrideSaveUrlRd(\$row, 'remove')") !== false
+checkTrue('and sends one .remove per row, in order', strpos($js, "url: lineOverrideEndpointRd(\$row.data('line-type'), 'remove')") !== false
     && strpos($js, 'runSequentialAjaxRd(calls,') !== false);
 
 echo "\n=== 12. the row, and what it says ===\n";
@@ -365,11 +373,18 @@ checkTrue('the calculated figure has its own money column', strpos($rowHtml, 'lo
 checkTrue('the calculated figure has one resolver, with both sources', strpos($js, 'function lineOverrideComputedTextRd(line) {') !== false
     && strpos($js, 'if (!line.override_action) return lineOverrideHistoryValueRd(line.current_amount);') !== false
     && strpos($js, 'const original = history ? history.original_value : null;') !== false);
-// "Back to the calculated value" only exists where the 2 figures actually disagree.
-checkTrue('the use-calculated button is conditional on a real difference',
-    strpos($rowHtml, "computedText !== '' && computedText !== amountText") !== false
-    && strpos($rowHtml, 'lo-use-system-btn') !== false);
-checkTrue('the row carries its own current figure for the editor', strpos($rowHtml, 'data-amount="${escapeAttr(fmtNum(line.current_amount))}"') !== false);
+// 2026-09-18, tiny-L6a: "back to the calculated value" is no longer a second round button in the
+// row -- it is the form's own left slot, where both figures are on screen together. So the row
+// carries exactly one control, and the action still exists, just not here.
+checkTrue('the row carries one action button, the pencil',
+    strpos($rowHtml, '<div class="lo-actions">${pencil}</div>') !== false
+    && strpos($rowHtml, 'lo-use-system-btn') === false);
+checkTrue('the action moved to the form footer, it was not dropped',
+    strpos($js, "{ id: 'btnLineFormUseComputed', key: 'line_override_use_computed'") !== false
+    && strpos($js, "\$(document).on('click', '#btnLineFormUseComputed', function () {") !== false);
+checkTrue('and it still goes through the one confirm the history menu uses',
+    strpos($js, "lineOverrideConfirmApplyHistoryValueRd(ctx.overrideLine.code, '', true, lineFormCloseRd);") !== false);
+checkTrue('the row carries its own current figure for the form', strpos($rowHtml, 'data-amount="${escapeAttr(fmtNum(line.current_amount))}"') !== false);
 
 $thLang = json_decode(file_get_contents(__DIR__ . '/../public/lang/th.json'), true);
 $enLang = json_decode(file_get_contents(__DIR__ . '/../public/lang/en.json'), true);

@@ -1879,7 +1879,14 @@
          Footer is built by modalFooterButtonsHtml() on each open (detail.js) -- the primary
          button's LABEL differs between adding and editing, which is a build-time difference, not
          a `disabled`/`d-none` one. -->
-    <div class="modal fade" id="manualLineFormModal" data-footer="form" data-bs-backdrop="static" tabindex="-1" aria-labelledby="manualLineFormModalLabel" aria-hidden="true">
+    <!-- 2026-09-18, tiny-L6a: this is now the ONE form for editing any line of a run, not just a
+         hand-added one -- the pencil on a calculated row opens it too, and the sections it shows are
+         decided per open from the line's own `source` (rules.md §9, "ฟอร์มเดียวกันที่เปิดได้จาก 2 ที่
+         ขึ้นไป = modal ซ้อน 1 ตัว มาร์กอัปชุดเดียว"). Every field keeps its id, so every handler that
+         already read them keeps working. `data-dirty-guard` opts it into app.js's own generic
+         close-while-dirty confirm (§9): the form is fully prefilled BEFORE .show(), so the baseline
+         that handler takes at `shown.bs.modal` is the real one. -->
+    <div class="modal fade" id="manualLineFormModal" data-footer="form" data-dirty-guard data-dirty-guard-tone="warning" data-bs-backdrop="static" tabindex="-1" aria-labelledby="manualLineFormModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
@@ -1910,16 +1917,24 @@
                              on every search, see its own docblock) -- the same wiring #eedModal's own
                              catalog picker uses. Its label no longer swaps per type: the modal title
                              ("Add additional pay"/"Add deduction") already says which side this is. -->
-                        <div class="col-lg-8">
+                        <!-- 2026-09-18, tiny-L6a: hidden for a calculated line -- which item it is
+                             was answered by the row whose pencil was pressed, and the header says so.
+                             The amount column then takes the whole row rather than sitting as a
+                             third of one with nothing beside it. -->
+                        <div class="col-lg-8" id="manualLineItemCol">
                             <label class="form-label" for="manualLineItemSelect" data-i18n="manual_line_item_label">Item</label>
                             <select class="form-select select2-remote" id="manualLineItemSelect" data-api="/api/employee.earning-deduction.options" data-type="earning"></select>
                         </div>
-                        <div class="col-lg-4">
+                        <div class="col-lg-4" id="manualLineAmountCol">
                             <label class="form-label" for="manualLineAmount" data-i18n="modal_amount">Amount</label>
                             <!-- 8: money-input + initMoneyInputs() (comma/2-decimal on blur, raw
                                  value mirrored to data-raw-value) instead of a bare number
                                  field -- read back through parseMoneyInput() in detail.js. -->
                             <input type="text" class="form-control money-input" id="manualLineAmount" inputmode="decimal" placeholder="0.00">
+                            <!-- The figure the engine itself produced, as context under the field
+                                 that replaces it (rules.md §9: ค่าระบบเป็น context, ค่าจริงคือตัวที่อ่าน).
+                                 Absent entirely when this line has no recorded calculated value. -->
+                            <p class="manual-line-field-hint d-none" id="manualLineComputedHint"></p>
                         </div>
                     </div>
                     <!-- Only reachable by picking the pinned "Other" option above, and full-width on
@@ -2020,6 +2035,16 @@
                         $payee_prefix = 'manualLine';
                         include __DIR__ . '/../partials/payee-destination.php';
                         ?>
+                    </div>
+                    <!-- 2026-09-18, tiny-L6a: a standing per-installment assignment's destination
+                         belongs to the assignment itself and is changed on Employee Detail, not per
+                         run -- there is no per-run override table for it. So it is stated here, in
+                         the same descriptor every other surface uses, with the link to where it CAN
+                         be changed, instead of a control that would not write anywhere. -->
+                    <div class="manual-line-payee-block d-none" id="manualLinePayeeReadonly">
+                        <label class="form-label payee-dest-label" data-i18n="payee_type_label">Send deducted amount to</label>
+                        <p class="payee-dest-desc" id="manualLinePayeeReadonlyText"></p>
+                        <a href="#" target="_blank" rel="noopener" id="manualLinePayeeReadonlyLink" class="btn btn-link p-0" data-i18n="line_form_payee_open_employee">Change it on the employee's own page</a>
                     </div>
                     </div>
                 </div>

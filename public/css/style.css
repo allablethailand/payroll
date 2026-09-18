@@ -9970,11 +9970,10 @@ html, body {
     padding-top: var(--sp-1);
     padding-bottom: var(--sp-1);
 }
-/* The amount cell holds either the figure + its pencil, or the editor that replaces them in place.
-   Both are right-aligned like any money column; the pencil only appears next to a figure that can
-   actually be edited (an off row renders none at all). */
-.lo-amount-view,
-.lo-amount-edit {
+/* The amount cell holds the figure, right-aligned like any money column. (2026-09-18, tiny-L6a: it
+   no longer turns into an editor in place -- the pencil in the column beside it opens the line's
+   own form, which is the only surface that can hold the line's note and destination as well.) */
+.lo-amount-view {
     display: flex;
     align-items: center;
     justify-content: flex-end;
@@ -9989,8 +9988,8 @@ html, body {
 .lo-table {
     table-layout: fixed;
     width: 100%;
-    /* 78 + 140 (name) + 120 + 130 + 92 + 86 */
-    min-width: 646px;
+    /* 78 + 140 (name) + 120 + 130 + 56 + 86 */
+    min-width: 610px;
 }
 .lo-table th.col-check {
     width: 78px;
@@ -10001,10 +10000,10 @@ html, body {
 .lo-table th.lo-amount-col {
     width: 130px;
 }
-/* Exactly 2 circles + the gap between them, plus the cell's own padding -- the column is as wide as
-   its fullest state (use-calculated + pencil, or save + cancel while editing) and no wider. */
+/* One circle plus the cell's own padding -- 2026-09-18, tiny-L6a: the row carries a single control
+   now (the pencil), so the column is exactly as wide as that and no wider. */
 .lo-table th.lo-action-col {
-    width: 92px;
+    width: 56px;
 }
 /* The figure fills its cell so `text-align: right` from `td.num` puts it on the column's own right
    edge; the buttons sit in their own cell, which is what keeps the two from pushing each other. */
@@ -10016,13 +10015,6 @@ html, body {
     align-items: center;
     justify-content: flex-end;
     gap: var(--sp-2);
-}
-/* The editor replaces the figure in place: same cell, same right edge, same width -- so the numbers
-   do not jump between reading and editing. */
-input.lo-amount-edit {
-    width: 100%;
-    max-width: none;
-    text-align: right;
 }
 /* 2026-09-17, R1 follow-up: the table and the 3 summary rows under it share ONE left/right inset --
    the same `--payslip-inset` the slip already uses for exactly this (its column titles, its rows and
@@ -10321,15 +10313,6 @@ th.lo-history-col {
     .lo-table .lo-name {
         white-space: normal;
         word-break: break-word;
-    }
-    /* The editor is 3 controls in a money column -- at this width it wraps under the figure rather
-       than forcing the table sideways. */
-    .lo-amount-edit {
-        flex-wrap: wrap;
-        row-gap: var(--sp-1);
-    }
-    .lo-amount-edit .lo-edit-input {
-        max-width: 84px;
     }
     /* No hover on a touch screen, so the pencil cannot hide behind one. */
     .lo-amount-view .btn-icon {

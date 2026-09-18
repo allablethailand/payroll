@@ -4825,10 +4825,10 @@ function lineOverrideHistoryMenuHtml(history) {
     const computedText = lineOverrideHistoryValueRd(history.original_value);
     const currentBadge = countBadgeHtml(0, { label: langData['line_override_history_current'] || 'Current' });
     // 2026-09-17, R1: the head is REFERENCE, not a choice -- it is the figure every row below is a
-    // departure from, and the row itself now carries a button for going back to it (the round
-    // `.lo-use-system-btn`). A menu row that does the same thing as a button 2 columns away is a
-    // second way to do one thing; this one keeps the same [value | what it is] skeleton as the rows
-    // under it, without being pressable.
+    // departure from, and going back to it is an action the row's own form carries (its left-slot
+    // "ใช้ค่าที่ระบบคำนวณ", 2026-09-18 tiny-L6a). A menu row that does the same thing as a control one
+    // click away is a second way to do one thing; this one keeps the same [value | what it is]
+    // skeleton as the rows under it, without being pressable.
     let html = `<li class="lo-history-head"><div class="lo-history-item lo-history-item-static">
         <span class="lo-history-value num">${escapeHtml(computedText)}</span>
         <span class="lo-history-meta">${escapeHtml(langData['line_override_history_computed'] || 'Calculated value')}</span>
@@ -4937,14 +4937,9 @@ function lineOverrideRowHtml(line, idx, group, runDisabled) {
     const pencil = editable
         ? `<button type="button" class="btn btn-icon lo-edit-btn" title="${escapeAttr(langData['line_override_edit_amount'] || 'Edit amount')}" aria-label="${escapeAttr(langData['line_override_edit_amount'] || 'Edit amount')}"><i class="fa-solid fa-pen"></i></button>`
         : '';
-    // "Back to what the system calculated", right where the 2 figures disagree -- it only exists on a
-    // row where they DO disagree, and it sends exactly what the history dropdown's calculated row
-    // sends (drop the override), through the same confirm.
-    const amountText = lineOverrideHistoryValueRd(line.current_amount);
-    const computedText = lineOverrideComputedTextRd(line);
-    const useSystem = (editable && computedText !== '' && computedText !== amountText)
-        ? `<button type="button" class="btn btn-icon lo-use-system-btn" title="${escapeAttr(langData['line_override_use_computed'] || 'Use the calculated value')}" aria-label="${escapeAttr(langData['line_override_use_computed'] || 'Use the calculated value')}"><i class="fa-solid fa-rotate-left"></i></button>`
-        : '';
+    // 2026-09-18, tiny-L6a: "back to what the system calculated" is no longer a second round button
+    // in this row -- it is the form's own left-slot action (rules.md §9), where the 2 figures it
+    // chooses between are both on screen. One row therefore carries one control: the pencil.
     // 2026-09-17, R1 follow-up: the buttons are their OWN column now. A figure and the controls that
     // act on it were sharing a cell, which meant the figure's right edge was wherever the buttons
     // left it -- so it never lined up with the column head above it, and it moved again when the
@@ -4967,7 +4962,7 @@ function lineOverrideRowHtml(line, idx, group, runDisabled) {
         </td>
         <td class="num col-money lo-computed-cell">${lineOverrideComputedCellHtml(line)}</td>
         <td class="num col-money lo-amount-cell"><div class="lo-amount-view">${amountCell}</div></td>
-        <td class="lo-action-cell"><div class="lo-actions">${useSystem}${pencil}</div></td>
+        <td class="lo-action-cell"><div class="lo-actions">${pencil}</div></td>
         <td class="lo-history-cell">${included ? lineOverrideHistoryCellHtml(line) : ''}</td>
     </tr>`;
 }
@@ -5037,7 +5032,6 @@ function renderLineOverrideTableRd(lines, runSettings) {
         </thead>
         <tbody>${body}${lineOverrideHiddenRowHtml(hiddenCount)}</tbody>
     </table></div>`);
-    lineOverrideEditingCodeRd = null;
     // 2026-09-17, R1 follow-up: the shared scroller wiring (sticky-table-columns.js) -- it is what
     // keeps `.tbl-scrolled-x` in sync with scrollLeft, which is what the frozen columns' own right
     // edge shadow is keyed off (§7). Re-run per render: this markup, wrapper included, is rebuilt
@@ -5079,12 +5073,6 @@ $(document).on('click', '.lo-mount .lo-hidden-toggle', function () {
 $(document).on('click', '.lo-mount .lo-history-item', function () {
     lineOverrideConfirmApplyHistoryValueRd($(this).closest('tr.lo-row').data('item-code'), $(this).attr('data-value') || '',
         $(this).hasClass('lo-history-computed'));
-});
-// 2026-09-17, R1: the row's own "back to the calculated value" button -- the SAME confirm and the
-// SAME send the dropdown's calculated row used to do (`asComputed` = drop the override), reached
-// without opening a menu first.
-$(document).on('click', '.lo-mount .lo-use-system-btn', function () {
-    lineOverrideConfirmApplyHistoryValueRd($(this).closest('tr.lo-row').data('item-code'), '', true);
 });
 /* ---------- "ประวัติการแก้ไข" modal (stacked on top of the modal holding the table) -- the full chain for
    ONE line: every past value with when/who/note, and the same "use this value" action the dropdown
@@ -5278,14 +5266,25 @@ function runSequentialAjaxRd(calls, onDone) {
         runSequentialAjaxRd(calls, onDone);
     });
 }
-/* One row, one request, sent the moment the user says yes. A statutory row goes to its own endpoint,
-   which wraps the item_code itself -- never wrapped here. */
-function lineOverrideSaveUrlRd($row, action) {
-    const statutory = ($row.data('line-type') || 'earning_deduction') === 'statutory';
+/* One row, one request. A statutory row goes to its own endpoint, which wraps the item_code itself
+   -- never wrapped here. Takes the line TYPE rather than the row, because 2026-09-18's tiny-L6a form
+   sends for a line it holds as data, with no row of its own to read. */
+function lineOverrideEndpointRd(lineType, action) {
     const verb = action === 'remove' ? 'remove' : 'save';
-    return statutory
+    return (lineType || 'earning_deduction') === 'statutory'
         ? `${BASE_URL}/api/payroll-run.statutory-line-override.${verb}`
         : `${BASE_URL}/api/payroll-run.line-override.${verb}`;
+}
+// The write itself, with no opinion about what happens next: `done(ok, message)`. Both callers (the
+// row's own switch/restore-all, and the line form) need the same request and disagree only about
+// where a refusal is shown -- a toast for the first, a callout inside the form for the second.
+function lineOverrideRequestRd(lineType, payload, action, done) {
+    $.ajax({
+        url: lineOverrideEndpointRd(lineType, action),
+        method: 'POST', contentType: 'application/json', dataType: 'json', data: JSON.stringify(payload),
+        success: function (res) { done(!!res.status, res.message); },
+        error: function () { done(false, null); },
+    });
 }
 // Whole-TABLE lock for the duration of one write: every save recalculates the run internally, so a
 // second action started before the first comes back would race it. The rest of the modal stays
@@ -5306,31 +5305,33 @@ function setLineOverrideTableBusyRd(busy) {
     });
     $('#btnRestoreAllComputedLineOverrides').prop('disabled', busy);
 }
-// The one write path for this tab: switch, pencil, and both "use this value" entry points all end
-// here. `$busyBtn` is the control that should carry the spinner (the row's own Save, when there is
-// one) -- everything else just locks.
+// The write path for the row's OWN controls: the include switch and both "use this value" entry
+// points. `$busyBtn` is the control that should carry the spinner -- everything else just locks.
+// (The form has its own path: it may send 2 requests in order, and shows a refusal in its callout
+// rather than a toast -- but through the same lineOverrideRequestRd() below.)
+// `plan.note` rides along when the caller has one: the column has always been there and the
+// endpoint has always accepted it (2026-09-18, tiny-L6a -- the form is the first sender).
 function lineOverrideSendRd($row, plan, $busyBtn) {
     if (!$row || !$row.length || !plan) return;
-    const payload = { id: PAYROLL_RUN_ID, employee_id: lineOverrideEmployeeIdRd(), item_code: $row.data('item-code') };
-    if (plan.action === 'override_amount') { payload.action = 'override_amount'; payload.override_amount = plan.amount; }
-    if (plan.action === 'exclude') { payload.action = 'exclude'; }
     setLineOverrideTableBusyRd(true);
     if ($busyBtn && $busyBtn.length) setButtonLoading($busyBtn, true);
-    $.ajax({
-        url: lineOverrideSaveUrlRd($row, plan.action),
-        method: 'POST', contentType: 'application/json', dataType: 'json', data: JSON.stringify(payload),
-        success: function (res) {
-            if (!res.status) { lineOverrideSendFailedRd($row, $busyBtn, res.message); return; }
+    lineOverrideRequestRd($row.data('line-type'),
+        lineOverridePayloadRd($row.data('item-code'), plan), plan.action, function (ok, message) {
+            if (!ok) { lineOverrideSendFailedRd($row, $busyBtn, message); return; }
             showSuccess(langData['line_override_saved'] || 'Saved.');
             // A full reload, not a local patch: one override changes what the statutory lines
             // calculate to, so every row's amount (and the run's own totals) can move. The host's
             // own hook is what refreshes anything OUTSIDE this table that moved with it.
-            loadSyncLineOverridesRd();
-            loadRunDetail();
-            if (lineOverrideHostRd.onSaved) lineOverrideHostRd.onSaved();
-        },
-        error: function () { lineOverrideSendFailedRd($row, $busyBtn); },
-    });
+            lineOverrideAfterWriteRd();
+        });
+}
+// One body for both senders, so an added field cannot reach only one of them.
+function lineOverridePayloadRd(itemCode, plan) {
+    const payload = { id: PAYROLL_RUN_ID, employee_id: lineOverrideEmployeeIdRd(), item_code: itemCode };
+    if (plan.action === 'override_amount') { payload.action = 'override_amount'; payload.override_amount = plan.amount; }
+    if (plan.action === 'exclude') { payload.action = 'exclude'; }
+    if (plan.note !== undefined) { payload.note = plan.note; }
+    return payload;
 }
 // A failed write leaves the table exactly as the user left it -- including whatever they typed --
 // so they can fix the value and try again rather than start over.
@@ -5340,97 +5341,42 @@ function lineOverrideSendFailedRd($row, $busyBtn, message) {
     showError(message || langData['save_failed'] || 'Could not save.');
 }
 
-/* ---- inline edit of one amount ---------------------------------------------------------------
-   The cell becomes the editor: the figure is replaced in place by an input carrying that same
-   figure, plus Save and a ghost ✗. One row at a time -- opening a second closes the first, because
-   two half-finished edits on one table is a state nobody can read off the screen. */
-let lineOverrideEditingCodeRd = null;
-function lineOverrideCloseEditorRd() {
-    const $wrap = lineOverrideMountRd();
-    $wrap.find('tr.lo-row').each(function () {
-        const $row = $(this);
-        if (!$row.find('.lo-amount-edit').length) return;
-        $row.find('.lo-amount-edit').remove();
-        $row.find('.lo-amount-view, .lo-actions').removeClass('d-none');
-        $row.removeClass('lo-row-editing');
+/* ---- the pencil: one row -> the one line form (2026-09-18, tiny-L6a) -------------------------
+   The cell used to become the editor (an input in place of the figure plus 2 round buttons). That
+   surface could only ever hold the amount, so everything else about a line -- its note, and where
+   its money goes -- had no way in from the row it belongs to. It is replaced by the SAME modal form
+   a hand-added line is edited in (rules.md §9: one form, one markup, opened from more than one
+   place), which is also the only surface that can carry those other 2 fields. */
+function lineOverrideLineByRowRd($row) {
+    const code = String($row.data('item-code'));
+    const lineType = String($row.data('line-type') || 'earning_deduction');
+    // Both halves of the key: a statutory row and an earning/deduction row may carry the same bare
+    // code, and they route to different endpoints.
+    return lineOverrideRowsRd.find(function (l) {
+        return String(l.code) === code && (l.line_type || 'earning_deduction') === lineType;
+    }) || null;
+}
+// Everything the table (and what sits around it) has to re-read once a write lands -- the same set
+// lineOverrideSendRd() refreshes, so the form and the row's own actions agree on what "saved" means.
+function lineOverrideAfterWriteRd() {
+    loadSyncLineOverridesRd();
+    loadRunDetail();
+    if (lineOverrideHostRd.onSaved) lineOverrideHostRd.onSaved();
+}
+function openLineOverrideFormRd($row) {
+    if (!$row.length || $row.hasClass('lo-row-off')) return;
+    const line = lineOverrideLineByRowRd($row);
+    if (!line) return;
+    openManualLineFormRd({
+        kind: 'override',
+        overrideLine: line,
+        employeeId: lineOverrideEmployeeIdRd(),
+        mount: lineOverrideHostRd.mount,
+        onSaved: lineOverrideAfterWriteRd,
     });
-    lineOverrideEditingCodeRd = null;
-}
-// 2026-09-17, R1 follow-up: the editor stays INSIDE the 2 cells the figure and its buttons already
-// occupy -- the input fills the amount cell (so the figure it replaces keeps the same right edge)
-// and the 2 controls take the action cell's place. Nothing is inserted that could widen a column,
-// which is what used to make the whole table shift the moment a pencil was pressed.
-function lineOverrideOpenEditorRd($row) {
-    lineOverrideCloseEditorRd();
-    const $cell = $row.find('.lo-amount-cell');
-    const current = String($row.data('amount') || '');
-    $row.addClass('lo-row-editing');
-    $cell.find('.lo-amount-view').addClass('d-none');
-    $row.find('.lo-actions').addClass('d-none');
-    // 2026-09-17, R1: both controls are the same 32px circle as every other icon button in this
-    // modal (§7) -- a text "Save" button beside 2 round ones was the only control here with a shape
-    // of its own. Icon-only, so each carries its name for screen readers through `aria-label`.
-    const saveLabel = escapeAttr(langData['save'] || 'Save');
-    const cancelLabel = escapeAttr(langData['cancel'] || 'Cancel');
-    $cell.append(`<input type="text" inputmode="decimal" class="form-control money-input lo-edit-input lo-amount-edit" value="${escapeAttr(current)}">`);
-    $row.find('.lo-action-cell').append(`<div class="lo-actions lo-amount-edit">
-        <button type="button" class="btn btn-icon lo-edit-save" title="${saveLabel}" aria-label="${saveLabel}" disabled><i class="fa-solid fa-check"></i></button>
-        <button type="button" class="btn btn-icon lo-edit-cancel" title="${cancelLabel}" aria-label="${cancelLabel}"><i class="fa-solid fa-xmark"></i></button>
-    </div>`);
-    const $input = $row.find('.lo-edit-input');
-    if (typeof initMoneyInputs === 'function') initMoneyInputs($cell);
-    lineOverrideEditingCodeRd = String($row.data('item-code'));
-    $input.trigger('focus').trigger('select');
-}
-// Saving the figure that is already there writes nothing and means nothing -- so the button says so
-// by being disabled, and Enter does nothing either.
-function lineOverrideEditPlanRd($row) {
-    const $input = $row.find('.lo-edit-input');
-    if (!$input.length) return null;
-    const raw = String($input.val() || '').trim();
-    if (raw === '') return null;
-    const parsed = typeof parseMoneyInput === 'function' ? parseMoneyInput(raw) : parseFloat(raw);
-    if (isNaN(parsed) || parsed < 0) return null;
-    const current = typeof parseMoneyInput === 'function'
-        ? parseMoneyInput(String($row.data('amount') || ''))
-        : parseFloat(String($row.data('amount') || ''));
-    if (!isNaN(current) && Math.abs(parsed - current) < 0.005) return null;
-    return { action: 'override_amount', amount: parsed };
-}
-function lineOverrideRefreshEditButtonRd($row) {
-    $row.find('.lo-edit-save').prop('disabled', !lineOverrideEditPlanRd($row));
 }
 $(document).on('click', '.lo-mount .lo-edit-btn', function () {
-    lineOverrideOpenEditorRd($(this).closest('tr.lo-row'));
-});
-$(document).on('click', '.lo-mount .lo-edit-cancel', lineOverrideCloseEditorRd);
-$(document).on('input change', '.lo-mount .lo-edit-input', function () {
-    lineOverrideRefreshEditButtonRd($(this).closest('tr.lo-row'));
-});
-// Bound INSIDE the modal, not on `document` like every other handler in this file. Bootstrap's own
-// modal keydown listener sits on the modal element itself, so an event that reaches `document` has
-// already passed through it -- stopPropagation() there is too late, and Esc closed the whole
-// modal instead of just this editor (caught in a screenshot; the measurement only checked that the
-// editor had closed, which it had). Delegating from a node BELOW the modal runs first, which is what
-// makes stopPropagation() mean anything here.
-// 2026-09-17, D3: bound to #breakdownModalBody -- the static node the table's only remaining mount
-// renders into -- instead of the deleted "ปรับตัวเลข" pane. It had to be a static ancestor either
-// way: `.lo-mount` itself is re-created on every open.
-$(function () {
-    $('#breakdownModalBody').on('keydown', '.lo-edit-input', function (e) {
-        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); lineOverrideCloseEditorRd(); return; }
-        if (e.key !== 'Enter') return;
-        e.preventDefault();
-        e.stopPropagation();
-        const $row = $(this).closest('tr.lo-row');
-        const plan = lineOverrideEditPlanRd($row);
-        if (plan) lineOverrideSendRd($row, plan, $row.find('.lo-edit-save'));
-    });
-});
-$(document).on('click', '.lo-mount .lo-edit-save', function () {
-    const $row = $(this).closest('tr.lo-row');
-    const plan = lineOverrideEditPlanRd($row);
-    if (plan) lineOverrideSendRd($row, plan, $(this));
+    openLineOverrideFormRd($(this).closest('tr.lo-row'));
 });
 
 function lineOverrideProgressRd(i, n) {
@@ -5472,14 +5418,13 @@ function runRestoreAllComputedRd(rows) {
     const total = rows.length;
     let saved = 0;
     let failedName = null;
-    lineOverrideCloseEditorRd();
     setLineOverrideTableBusyRd(true);
     lineOverrideProgressRd(1, total);
     const calls = rows.map(function ($row, i) {
         return function (next) {
             lineOverrideProgressRd(i + 1, total);
             $.ajax({
-                url: lineOverrideSaveUrlRd($row, 'remove'),
+                url: lineOverrideEndpointRd($row.data('line-type'), 'remove'),
                 method: 'POST', contentType: 'application/json', dataType: 'json',
                 data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: lineOverrideEmployeeIdRd(), item_code: $row.data('item-code') }),
                 success: function (res) {
@@ -5921,33 +5866,39 @@ $(document).on('click', '.btn-recurring-dest-reset', function () {
 // partials/payee-destination.php. What stays here is only what is genuinely this tab's own: which
 // fields to clear, and which defaults to fetch, when the choice changes.
 let manualLineDestHasSavedRd = null; // null = not looked up yet this modal session
+/* 2026-09-18, tiny-L6a: named, because this form is now opened for more than one kind of line and
+   ONE of its options differs per open -- `allowNoRecord` is false while it edits a recurring
+   deduction's per-run destination, whose endpoint has no "no payee at all" value to store. Everything
+   else about the picker is the same whoever opened it, so it is declared once and re-registered with
+   that one override (openManualLineFormRd()); initPayeeDestination() is re-callable by design. */
+const MANUAL_LINE_PAYEE_OPTS_RD = {
+    employeeWrap: '#manualLinePayeeWrapper',
+    companyWrap: '#manualLineCompanyAccountWrapper',
+    externalWrap: '#manualLineDestinationWrapper',
+    onChange: function (payeeType, dest) {
+        if (dest !== 'employee') {
+            $('#manualLinePayeeEmployee').val(null).trigger('change');
+            renderManualLinePayeeEmployeeDetailRd(null);
+        }
+        // 2026-09-10, Batch 3B item 3: the account is mandatory once the line is recorded against
+        // one, so the company's own default account is pre-selected rather than left empty.
+        if (payeeType !== 'company') {
+            $('#manualLineBankAccount').val(null).trigger('change');
+            $('#manualLineBankAccountDetail').empty();
+        } else {
+            applyDefaultCompanyBankAccount('#manualLineBankAccount', '#manualLineBankAccountDetail');
+        }
+        // 2026-09-02, Deduction Destination & Third-Party Remittance.
+        if (dest !== 'external') {
+            clearManualLineDestinationFieldsRd();
+        } else {
+            refreshManualLineSavedDestinationsRd();
+        }
+        refreshManualLineAddStateRd();
+    },
+};
 $(function () {
-    initPayeeDestination('manualLine', {
-        employeeWrap: '#manualLinePayeeWrapper',
-        companyWrap: '#manualLineCompanyAccountWrapper',
-        externalWrap: '#manualLineDestinationWrapper',
-        onChange: function (payeeType, dest) {
-            if (dest !== 'employee') {
-                $('#manualLinePayeeEmployee').val(null).trigger('change');
-                renderManualLinePayeeEmployeeDetailRd(null);
-            }
-            // 2026-09-10, Batch 3B item 3: the account is mandatory once the line is recorded against
-            // one, so the company's own default account is pre-selected rather than left empty.
-            if (payeeType !== 'company') {
-                $('#manualLineBankAccount').val(null).trigger('change');
-                $('#manualLineBankAccountDetail').empty();
-            } else {
-                applyDefaultCompanyBankAccount('#manualLineBankAccount', '#manualLineBankAccountDetail');
-            }
-            // 2026-09-02, Deduction Destination & Third-Party Remittance.
-            if (dest !== 'external') {
-                clearManualLineDestinationFieldsRd();
-            } else {
-                refreshManualLineSavedDestinationsRd();
-            }
-            refreshManualLineAddStateRd();
-        },
-    });
+    initPayeeDestination('manualLine', MANUAL_LINE_PAYEE_OPTS_RD);
 });
 function setManualLinePayeeTypeRd(type) {
     setPayeeDestination('manualLine', type);
@@ -6300,8 +6251,14 @@ function manualLineHasItemRd() {
 function refreshManualLineAddStateRd() {
     const amount = manualLineAmountValueRd();
     const blocked = manualLinePayeeEmployeeBlockedRd && payeeDestinationType('manualLine') === 'employee';
+    // A calculated line has no item half to fill in (the row said which item it is), and 0 is a
+    // legitimate override of one -- so its only requirement is that the field holds a real, non-
+    // negative number. An empty field reads back as null and fails that, same as it always did.
+    const ready = lineFormIsOverrideRd()
+        ? (amount !== null && amount >= 0)
+        : (manualLineHasItemRd() && amount > 0);
     $('#btnSaveManualLine')
-        .prop('disabled', blocked || !(manualLineHasItemRd() && amount > 0))
+        .prop('disabled', blocked || !ready)
         .attr('title', blocked ? (langData['payee_employee_no_bank_account'] || 'This employee has no bank account on file yet') : null);
 }
 function resetManualLineFormRd() {
@@ -6579,8 +6536,9 @@ function manualLineFormPayloadRd() {
     // modal -- only read when the wrapper is actually visible (a deduction), same shape either
     // catalog or custom mode uses now (unified, was split per-branch above before this follow-up).
     if (!$('#manualLinePayeeTypeWrapper').hasClass('d-none')) {
-        // The UI's own 3 destinations map onto `payee_type` here, one place, right before submit.
-        const payeeType = payeeDestinationType('manualLine');
+        const choice = manualLinePayeeChoiceRd();
+        if (!choice.ok) return choice;
+        const payeeType = choice.payeeType;
         if (payeeType !== 'none') {
             payload.payee_type = payeeType;
             // include_in_cash_summary is deliberately NOT sent: the checkbox is gone from this form
@@ -6588,39 +6546,67 @@ function manualLineFormPayloadRd() {
             // the model keep the column's own default rather than storing an opted-out 0.
         }
         if (payeeType === 'employee') {
-            payload.payee_employee_id = $('#manualLinePayeeEmployee').val() || undefined;
+            payload.payee_employee_id = choice.payeeEmployeeId || undefined;
         } else if (payeeType === 'company') {
-            // 2026-09-10, Batch 3B item 3: level-2, mandatory -- PayrollRunModel::addManualLine()
-            // itself rejects a missing value, this is just the payload wiring.
-            payload.bank_account_id = $('#manualLineBankAccount').val() || undefined;
+            payload.bank_account_id = choice.bankAccountId || undefined;
         }
         // 2026-09-02, Deduction Destination & Third-Party Remittance -- either an existing saved
         // destination_id, or the new-account fields (validated/created server-side by
         // PaymentDestinationModel::resolveOrCreate(), see addManualLine()'s own docblock).
         if (payeeType === 'other_person') {
-            const useSavedDestination = !$('#manualLineDestSavedFields').hasClass('d-none');
-            const savedDestinationId = useSavedDestination ? $('#manualLineDestinationSelect').val() : '';
-            if (useSavedDestination) {
-                if (!savedDestinationId) {
-                    return { ok: false, message: langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.' };
-                }
-                payload.destination = { destination_id: savedDestinationId };
-            } else {
-                const accountName = $('#manualLineDestAccountName').val().trim();
-                const accountNo = $('#manualLineDestAccountNo').val().trim();
-                const bankId = $('#manualLineDestBank').val();
-                if (!accountName || !accountNo || !bankId) {
-                    return { ok: false, message: langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.' };
-                }
-                payload.destination = {
-                    account_name: accountName, account_no: accountNo, bank_id: bankId,
-                    bank_branch: $('#manualLineDestBankBranch').val().trim() || undefined,
-                    is_saved: $('#manualLineDestSaveForReuse').is(':checked'),
-                };
-            }
+            payload.destination = choice.destination;
         }
     }
     return { ok: true, payload: payload };
+}
+/* The payee half of what the form holds, read ONCE for both write paths (2026-09-18, tiny-L6a).
+   A manual line and a recurring deduction's per-run destination take the same 4 facts and differ
+   only in how they are spelled on the wire -- the manual endpoint nests the external account under
+   `destination`, the recurring one takes those same fields flat (see
+   PayrollRunModel::recurringDeductionDestinationOverrideSave(), which hands $data straight to
+   PaymentDestinationModel::resolveOrCreate()). Reading them twice is what would let the 2 forms
+   drift apart, so the reading is here and only the shaping is per endpoint.
+   RETURNS a refusal instead of showing one, same contract as manualLineFormPayloadRd() itself. */
+function manualLinePayeeChoiceRd() {
+    const payeeType = payeeDestinationType('manualLine');
+    const choice = { ok: true, payeeType: payeeType, payeeEmployeeId: null, bankAccountId: null, destination: null };
+    if (payeeType === 'employee') {
+        choice.payeeEmployeeId = $('#manualLinePayeeEmployee').val() || null;
+        if (!choice.payeeEmployeeId) {
+            return { ok: false, message: langData['payee_employee_select_required'] || 'Please select the payee employee.' };
+        }
+        // A transfer to an employee is paid into THAT employee's own account, so one with none on
+        // file has nowhere for this money to land -- the same client-side stop the Save button's own
+        // disabled state already shows, said in words for the path that reaches here anyway.
+        if (manualLinePayeeEmployeeBlockedRd) {
+            return { ok: false, message: langData['payee_employee_no_bank_account'] || 'This employee has no bank account on file yet' };
+        }
+    } else if (payeeType === 'company') {
+        // 2026-09-10, Batch 3B item 3: level-2, mandatory -- both models reject a missing value.
+        choice.bankAccountId = $('#manualLineBankAccount').val() || null;
+        if (!choice.bankAccountId) {
+            return { ok: false, message: langData['bank_account_select_required'] || 'Please select a bank account.' };
+        }
+    } else if (payeeType === 'other_person') {
+        const useSavedDestination = !$('#manualLineDestSavedFields').hasClass('d-none');
+        const savedDestinationId = useSavedDestination ? $('#manualLineDestinationSelect').val() : '';
+        const refused = { ok: false, message: langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.' };
+        if (useSavedDestination) {
+            if (!savedDestinationId) return refused;
+            choice.destination = { destination_id: savedDestinationId };
+        } else {
+            const accountName = $('#manualLineDestAccountName').val().trim();
+            const accountNo = $('#manualLineDestAccountNo').val().trim();
+            const bankId = $('#manualLineDestBank').val();
+            if (!accountName || !accountNo || !bankId) return refused;
+            choice.destination = {
+                account_name: accountName, account_no: accountNo, bank_id: bankId,
+                bank_branch: $('#manualLineDestBankBranch').val().trim() || undefined,
+                is_saved: $('#manualLineDestSaveForReuse').is(':checked'),
+            };
+        }
+    }
+    return choice;
 }
 
 /* ---------- The add/edit form (#manualLineFormModal) -- one form, two hosts (2026-09-16, D2) -------
@@ -6692,34 +6678,123 @@ function setManualLineTypeRd(itemType) {
     $('#manualLineCustomType').val(type);
     applyManualLineItemTypeRd(type);
 }
+/* ---------- which sections this form shows, per open (2026-09-18, tiny-L6a) ---------------------
+   One form, 4 kinds of line, and what may be edited differs per kind because the STORE behind each
+   one does. Nothing is disabled: a section the line has no editable store for is simply not part of
+   the form for that open (rules.md §0.3 -- a control that cannot do anything is not information).
+     manual (payroll_run_manual_lines)  -> item, amount, note, destination (deductions only)
+     recurring_deduction                -> amount, note, destination for THIS RUN (its own override)
+     ped  (employee_earning_deductions) -> amount, note; destination stated read-only + where to
+                                           change it, because it belongs to the assignment not the run
+     everything else (base salary, statutory, recurring_earning, transfer_in, sync-derived)
+                                        -> amount, note
+   `payee` is a 3-way answer, not a boolean, which is exactly why it is not a `disabled` flag. */
+function lineFormIsOverrideRd() {
+    return !!manualLineFormCtxRd && manualLineFormCtxRd.kind === 'override';
+}
+function lineFormSectionsRd(ctx) {
+    if (!ctx || ctx.kind !== 'override') {
+        // The manual form as it always was: the deduction/earning split still decides the payee
+        // block (syncManualLineTypeDependentsRd), so this says "editable" and lets that decide.
+        return { item: true, computed: false, payee: 'edit', useComputed: false };
+    }
+    const line = ctx.overrideLine || {};
+    const source = line.source || '';
+    let payee = 'none';
+    if (source === 'recurring_deduction') {
+        payee = 'edit';
+    } else if (source === 'ped' && line.payee && line.payee.payee_type) {
+        payee = 'readonly';
+    }
+    return { item: false, computed: true, payee: payee, useComputed: !!line.override_action };
+}
+function applyLineFormSectionsRd(sections, ctx) {
+    $('#manualLineItemCol').toggleClass('d-none', !sections.item);
+    // The amount field takes the whole row once the item picker beside it is gone.
+    $('#manualLineAmountCol').toggleClass('col-lg-4', sections.item).toggleClass('col-lg-12', !sections.item);
+    if (!sections.item) $('#manualLineCustomFields').addClass('d-none');
+    $('#manualLinePayeeTypeWrapper').toggleClass('d-none', sections.payee !== 'edit');
+    $('#manualLinePayeeReadonly').toggleClass('d-none', sections.payee !== 'readonly');
+    if (sections.payee === 'readonly') {
+        renderLineFormPayeeReadonlyRd(ctx);
+    }
+}
+// The destination this line already routes to, in the same words every other surface uses for it,
+// plus the page where it can actually be changed.
+function renderLineFormPayeeReadonlyRd(ctx) {
+    const line = (ctx && ctx.overrideLine) || {};
+    $('#manualLinePayeeReadonlyText').text(payeeDescriptorTextRd(line.payee));
+    $('#manualLinePayeeReadonlyLink').attr('href', `${BASE_URL}/employees/${ctx.employeeId}`);
+}
+// The calculated figure, under the field that replaces it. Absent -- not blank -- for a line whose
+// own calculated value was never recorded (see lineOverrideComputedTextRd()).
+function renderLineFormComputedHintRd(ctx) {
+    const $hint = $('#manualLineComputedHint');
+    const text = (ctx && ctx.kind === 'override') ? lineOverrideComputedTextRd(ctx.overrideLine) : '';
+    if (!text) { $hint.text('').addClass('d-none'); return; }
+    $hint.text((langData['line_form_computed_hint'] || 'Calculated {amount}').replace('{amount}', text))
+        .removeClass('d-none');
+}
 function openManualLineFormRd(ctx) {
     manualLineFormCtxRd = ctx;
-    const isEdit = !!ctx.line;
+    const isOverride = ctx.kind === 'override';
+    const isEdit = isOverride || !!ctx.line;
     manualLineFormErrorRd('');
+    const sections = lineFormSectionsRd(ctx);
+    // Before the reset: it walks the payee path, and that path has to already know whether this open
+    // offers the "record it against a company account?" sub-question at all (the recurring
+    // destination endpoint has no "no payee" value to store -- see its own model method).
+    initPayeeDestination('manualLine', $.extend({}, MANUAL_LINE_PAYEE_OPTS_RD, {
+        allowNoRecord: !(isOverride && sections.payee === 'edit'),
+    }));
     resetManualLineFormRd();
-    // 2026-09-17, R1: 4 titles, not 2 -- with the type control gone the header is the only thing
-    // left that can say which column this line belongs to, so it says both that and which job is
-    // being done ("เพิ่มเงินเพิ่ม"/"แก้ไขเงินหัก"). The type comes from the row when editing and from the
-    // pressed column head when adding -- the same 2 sources setManualLineTypeRd() reads.
-    const isDeduction = (isEdit ? ctx.line.item_type : ctx.itemType) === 'deduction';
-    const titleKey = (isEdit ? 'manual_line_form_edit_' : 'manual_line_form_add_') + (isDeduction ? 'deduction' : 'earning');
-    $('#manualLineFormModalLabel')
-        .attr('data-i18n', titleKey)
-        .text(langData[titleKey] || (isEdit ? 'Edit Item' : 'Add Item'));
+    applyLineFormSectionsRd(sections, ctx);
+    lineFormApplyTitleRd(ctx, isEdit);
     // Built per open, not toggled: the primary button's LABEL is the difference between adding and
     // saving an edit, and modalFooterButtonsHtml() (§9/§11) is what keeps the pair from drifting on
-    // size/class. [เพิ่มรายการ|บันทึก] left, [ปิด] right -- §4's order.
+    // size/class. Primary left, [ปิด] right -- §4's order. The LEFT slot exists only on a line that
+    // really carries an override to drop (§9's "enable = มีของให้ทำจริง").
     $('#manualLineFormFooter').html(modalFooterButtonsHtml({
+        left: sections.useComputed
+            ? { id: 'btnLineFormUseComputed', key: 'line_override_use_computed', fallback: 'Use the calculated value' }
+            : null,
         primary: { id: 'btnSaveManualLine', key: isEdit ? 'save' : 'add_line', fallback: isEdit ? 'Save' : 'Add Line' },
         secondary: { key: 'close', fallback: 'Close', dismiss: true },
     }));
-    if (isEdit) {
+    if (isOverride) {
+        prefillLineOverrideFormRd(ctx.overrideLine);
+    } else if (ctx.line) {
         prefillManualLineFormRd(ctx.line);
     } else {
         setManualLineTypeRd(ctx.itemType);
     }
+    renderLineFormComputedHintRd(ctx);
     refreshManualLineAddStateRd();
     new bootstrap.Modal(document.getElementById('manualLineFormModal')).show();
+}
+/* The header. 2026-09-17, R1 gave the manual form 4 titles because the type control was gone and the
+   header was the only thing left that could say which column a NEW line belongs to. That is still
+   true for adding; for an existing line of any kind the header says WHICH LINE this is, which the 4
+   generic titles never did (2026-09-18, tiny-L6a -- rules.md §9, header = ชื่อ + ×).
+   `data-i18n` is removed along with it, or the next language sweep would paint the key back over
+   the item's own name. */
+function lineFormApplyTitleRd(ctx, isEdit) {
+    const $label = $('#manualLineFormModalLabel');
+    const name = lineFormItemNameRd(ctx);
+    if (isEdit && name) {
+        $label.removeAttr('data-i18n').text(name);
+        return;
+    }
+    const isDeduction = (ctx.line ? ctx.line.item_type : ctx.itemType) === 'deduction';
+    const titleKey = (isEdit ? 'manual_line_form_edit_' : 'manual_line_form_add_') + (isDeduction ? 'deduction' : 'earning');
+    $label.attr('data-i18n', titleKey).text(langData[titleKey] || (isEdit ? 'Edit Item' : 'Add Item'));
+}
+function lineFormItemNameRd(ctx) {
+    const line = ctx.kind === 'override' ? ctx.overrideLine : ctx.line;
+    if (!line) return '';
+    const th = line.name_th !== undefined ? line.name_th : line.item_name_th;
+    const en = line.name_en !== undefined ? line.name_en : line.item_name_en;
+    return rowOptionLabelRd(th, en, line.code || line.item_code || '');
 }
 // Every field of an existing line, back into the form it was created with. The catalog picker is a
 // select2-remote (no options in the markup at all), so its current value has to be appended as a
@@ -6769,11 +6844,172 @@ function prefillManualLineFormRd(line) {
         applyManualLineRowDestinationRd();
     }
 }
+/* A calculated line, into the same fields a hand-added one uses (2026-09-18, tiny-L6a).
+   The amount is what the run really pays today (already through any override); the note is the
+   OVERRIDE's own note, which is the only note this line can carry -- an engine note (`line.note`,
+   statutory "why is this 0") is not something the user wrote and must not come back as their text.
+   The payee pickers are filled from `line.payee`, the descriptor every read path already builds:
+   it carries exactly the field names payeeRowPinnedOptionsRd() reads, so nothing is re-composed. */
+function prefillLineOverrideFormRd(line) {
+    const payee = line.payee || null;
+    const pins = payeeRowPinnedOptionsRd(payee || {});
+    manualLineRowPayeeEmployeeRd = pins.payeeEmployee;
+    manualLineRowBankAccountRd = pins.bankAccount;
+    manualLineRowDestinationRd = pins.destination;
+    // The hidden type still drives the catalog filter and nothing else here -- there is no picker
+    // for it to filter, but every reader of it keeps reading the same id it always did.
+    $('#manualLineCustomType').val(line.item_type === 'earning' ? 'earning' : 'deduction');
+    $('#manualLineAmount').val(fmtNum(line.current_amount)).attr('data-raw-value', line.current_amount);
+    $('#manualLineComment').val(line.override_note || '').trigger('input');
+    if (!$('#manualLinePayeeTypeWrapper').hasClass('d-none')) {
+        setPayeeDestination('manualLine', (payee && payee.payee_type) || 'none');
+        if (payee && payee.payee_type === 'employee' && payee.payee_employee_id) {
+            applyManualLineRowPayeeEmployeeRd();
+        } else if (payee && payee.payee_type === 'company' && payee.bank_account_id) {
+            applyManualLineRowBankAccountRd();
+        } else if (payee && payee.payee_type === 'other_person' && payee.destination_id) {
+            applyManualLineRowDestinationRd();
+        }
+    }
+}
+/* ---------- saving a calculated line (2026-09-18, tiny-L6a) -------------------------------------
+   Up to TWO writes, because the amount and the destination of a recurring deduction live in two
+   different tables with two different keys: the amount is an override keyed by (run, employee,
+   item_code) and the destination is an override keyed by (run, recurring_id). Only what really
+   changed is sent, so the ordinary "just fix the number" case is still one request.
+   ORDER, and why: amount first. Both endpoints recalculate() the whole run internally, so they must
+   never overlap (runSequentialAjaxRd's own rule) -- and the destination call is the one with a side
+   effect OUTSIDE the run (an external payee may create a payment_destinations row through
+   PaymentDestinationModel::resolveOrCreate()). Running it second means a refusal on the simpler
+   write leaves nothing behind at all.
+   If the second one fails, the first one has landed: the table is reloaded so the saved amount is
+   visible behind the form, the refusal is shown in the form, and the dirty baseline is re-taken --
+   otherwise closing would ask about changes that were saved. */
+function lineOverrideFormPlanRd(ctx) {
+    const line = ctx.overrideLine;
+    const amount = manualLineAmountValueRd();
+    if (amount === null || amount < 0) {
+        return { ok: false, message: langData['required_star_message'] || 'Please fill all fields marked with *' };
+    }
+    const note = $('#manualLineComment').val().trim();
+    const plan = { ok: true, amount: amount, note: note, sendAmount: false, payee: null };
+    const currentAmount = Number(line.current_amount);
+    const amountMoved = isNaN(currentAmount) || Math.abs(amount - currentAmount) >= 0.005;
+    plan.sendAmount = amountMoved || note !== (line.override_note || '');
+    if (!$('#manualLinePayeeTypeWrapper').hasClass('d-none')) {
+        const choice = manualLinePayeeChoiceRd();
+        if (!choice.ok) return choice;
+        if (lineOverridePayeeChangedRd(line, choice)) plan.payee = choice;
+    }
+    return plan;
+}
+// Did the destination really move? A re-send of the same destination would write an identical
+// override row and recalculate the run for nothing -- and, for an ad-hoc external account, create a
+// SECOND payment_destinations row saying the same thing.
+function lineOverridePayeeChangedRd(line, choice) {
+    const payee = line.payee || {};
+    const before = payee.payee_type || 'none';
+    if (choice.payeeType !== before) return true;
+    if (choice.payeeType === 'employee') return String(choice.payeeEmployeeId || '') !== String(payee.payee_employee_id || '');
+    if (choice.payeeType === 'company') return String(choice.bankAccountId || '') !== String(payee.bank_account_id || '');
+    if (choice.payeeType === 'other_person') {
+        const dest = choice.destination || {};
+        // A newly typed account is always a change; a picked saved one only when it is a different id.
+        return !dest.destination_id || String(dest.destination_id) !== String(payee.destination_id || '');
+    }
+    return false;
+}
+// The recurring endpoint takes the external account's fields FLAT, where the manual-line one nests
+// them under `destination` -- the only difference between the two, and the reason this shaper exists
+// rather than a second reader of the form.
+function recurringDestOverridePayloadRd(recurringId, choice, note) {
+    const payload = { id: PAYROLL_RUN_ID, recurring_id: recurringId, payee_type: choice.payeeType, note: note };
+    if (choice.payeeType === 'employee') payload.payee_employee_id = choice.payeeEmployeeId;
+    if (choice.payeeType === 'company') payload.bank_account_id = choice.bankAccountId;
+    if (choice.payeeType === 'other_person') $.extend(payload, choice.destination);
+    return payload;
+}
+function submitLineOverrideFormRd($btn, ctx) {
+    const line = ctx.overrideLine;
+    const plan = lineOverrideFormPlanRd(ctx);
+    if (!plan.ok) {
+        manualLineFormErrorRd(plan.message);
+        return;
+    }
+    if (!plan.sendAmount && !plan.payee) {
+        // Nothing to write. Closing is the honest outcome -- a "saved" toast for a request that was
+        // never sent would say something that did not happen.
+        lineFormCloseRd();
+        return;
+    }
+    let failMessage = null;
+    let failed = false;
+    const calls = [];
+    if (plan.sendAmount) {
+        calls.push(function (next) {
+            lineOverrideRequestRd(line.line_type,
+                lineOverridePayloadRd(line.code, { action: 'override_amount', amount: plan.amount, note: plan.note }),
+                'save',
+                function (ok, message) { if (!ok) { failed = true; failMessage = message; } next(ok); });
+        });
+    }
+    if (plan.payee) {
+        calls.push(function (next) {
+            $.ajax({
+                url: `${BASE_URL}/api/payroll-run.recurring-deduction-destination-override.save`,
+                method: 'POST', contentType: 'application/json', dataType: 'json',
+                data: JSON.stringify(recurringDestOverridePayloadRd(line.recurring_id, plan.payee, plan.note)),
+                success: function (res) { if (!res.status) { failed = true; failMessage = res.message; } next(!!res.status); },
+                error: function () { failed = true; next(false); },
+            });
+        });
+    }
+    manualLineFormErrorRd('');
+    setButtonLoading($btn, true);
+    setLineOverrideTableBusyRd(true);
+    runSequentialAjaxRd(calls, function () {
+        setButtonLoading($btn, false);
+        // Reloaded either way: on success because one override moves every other figure with it, and
+        // on a half-done failure because what DID save has to be visible behind the form.
+        lineOverrideAfterWriteRd();
+        if (failed) {
+            manualLineFormErrorRd(failMessage || langData['save_failed'] || 'Could not save.');
+            // The form stays open on the values that were refused -- so the baseline it is compared
+            // against has to become those values, or the close guard would ask again about the half
+            // that already landed.
+            refreshDirtyGuard('#manualLineFormModal');
+            return;
+        }
+        showSuccess(langData['line_override_saved'] || 'Saved.');
+        lineFormCloseRd();
+    });
+}
+// Closing from code, past the dirty guard: the reason for closing is that there is nothing unsaved
+// left (or that the user confirmed dropping the override), which is exactly what that guard asks.
+function lineFormCloseRd() {
+    const el = document.getElementById('manualLineFormModal');
+    const inst = bootstrap.Modal.getInstance(el);
+    if (!inst) return;
+    $(el).data('dirtyGuardBypass', true);
+    inst.hide();
+}
+// The footer's left slot: drop this line's override and go back to what the engine calculated. Same
+// confirm, same request as the history menu's own calculated row -- reached from the form because
+// that is where both figures are on screen together.
+$(document).on('click', '#btnLineFormUseComputed', function () {
+    const ctx = manualLineFormCtxRd;
+    if (!ctx || ctx.kind !== 'override') return;
+    lineOverrideConfirmApplyHistoryValueRd(ctx.overrideLine.code, '', true, lineFormCloseRd);
+});
 // Adding and editing differ in 2 places only: the endpoint, and one extra id in the body. Everything
 // else -- validation, the busy lock, what happens after -- is deliberately one path.
 function submitManualLineFormRd($btn) {
     const ctx = manualLineFormCtxRd;
     if (!ctx) return;
+    if (ctx.kind === 'override') {
+        submitLineOverrideFormRd($btn, ctx);
+        return;
+    }
     const built = manualLineFormPayloadRd();
     if (!built.ok) {
         manualLineFormErrorRd(built.message);
@@ -6802,8 +7038,8 @@ function submitManualLineFormRd($btn) {
             if (payload.destination && payload.destination.is_saved) {
                 manualLineDestHasSavedRd = null; // this write just created the first/next saved one
             }
-            const inst = bootstrap.Modal.getInstance(document.getElementById('manualLineFormModal'));
-            if (inst) inst.hide();
+            // Past the dirty guard: what it asks about was just written (§9's "หลัง save สำเร็จ").
+            lineFormCloseRd();
             ctx.onSaved();
         },
         error: function () {
