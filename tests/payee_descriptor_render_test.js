@@ -73,6 +73,13 @@ function lineOverrideHistoryCellHtml() { return ''; }
 function lineOverrideExemptTextRd() { return ''; }
 function formulaTagTextRd() { return ''; }
 function lineOverrideNoteTextRd() { return ''; }
+// 2026-09-18, 4b: the row builder asks these of every line now (they answer only for TH_PIT/TH_SSO).
+// Stubbed to the "not a tri-state row" answer -- this file is about the payee sub-line, and the
+// tri-state row's own rendering has its own coverage.
+function statutoryExemptionFieldRd() { return null; }
+function statutoryExemptionEffectiveRd() { return 'yes'; }
+function statutoryExemptionChangedRd() { return false; }
+function statutoryExemptionTagHtmlRd() { return ''; }
 `;
 
 const extracted = [

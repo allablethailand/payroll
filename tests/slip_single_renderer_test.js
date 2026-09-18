@@ -78,6 +78,16 @@ const extracted = [
     fn(detailSource, 'formulaTagTextRd'),
     fn(detailSource, 'lineOverrideExemptTextRd'),
     fn(detailSource, 'lineOverrideNoteTextRd'),
+    // 2026-09-18, 4b: the tri-state the TH_PIT/TH_SSO rows carry -- real, not stubbed, so what the
+    // row builder does with it here is what it does in the page.
+    constDecl(detailSource, 'STATUTORY_EXEMPTION_FIELD_RD'),
+    'let lineOverrideExemptionRd = null;',
+    fn(detailSource, 'statutoryExemptionFieldRd'),
+    fn(detailSource, 'statutoryExemptionStateRd'),
+    fn(detailSource, 'statutoryExemptionInheritRd'),
+    fn(detailSource, 'statutoryExemptionEffectiveRd'),
+    fn(detailSource, 'statutoryExemptionChangedRd'),
+    fn(detailSource, 'statutoryExemptionTagHtmlRd'),
     fn(detailSource, 'lineOverrideRowHtml'),
     fn(detailSource, 'lineOverrideAddLinkHtmlRd'),
     fn(detailSource, 'manualLineToTableRowRd'),
@@ -89,6 +99,7 @@ const extracted = [
     fn(detailSource, 'lineOverrideHistoryMetaRd'),
     fn(detailSource, 'lineOverrideHistoryMenuHtml'),
     `module.exports = {
+        setExemption: (e) => { lineOverrideExemptionRd = e; },
         lineOverrideRowHtml, lineOverrideAddLinkHtmlRd, manualLineToTableRowRd, lineOverrideIsSkippedRd, lineOverrideTotalsHtmlRd, lineOverrideHistoryTimelineItemsRd, lineOverrideHistoryMenuHtml,
         lineOverrideIsChangedRd, lineOverrideTabsHtmlRd,
         setLang: (d) => { langData = d; },
@@ -229,7 +240,10 @@ console.log('=== (จ) a skipped line is not a row of either slip ===');
 // 2026-09-18, 4a-2 follow-up: the row builder never sees one -- the TABLE builder drops it, so what
 // is asserted here is the gate itself plus the predicate it calls.
 check('the table builder drops a skipped line before it can become a row',
-    tableSrc.indexOf('&& !lineOverrideIsSkippedRd(l)') !== -1, tableSrc);
+    tableSrc.indexOf('&& !lineOverrideIsSkippedRd(l, mode)') !== -1, tableSrc);
+// 2026-09-18, 4b: `mode` is passed THROUGH to the predicate (the 2 tri-state rows answer it
+// differently per slip -- see lineOverrideIsSkippedRd()); the gate itself is still one statement both
+// modes run.
 // It is part of `groupLines`, which BOTH modes compute -- no `isView` anywhere in that statement.
 // (2026-09-18, 4a-2b: measured from `const groupLines =`, not from the first mention of the
 // predicate in the file -- the tab count above it calls the same one.)
@@ -237,7 +251,7 @@ check('...in both modes -- the gate is not behind an `isView` branch', (function
     const i = tableSrc.indexOf('const groupLines =');
     const j = tableSrc.indexOf(';', i);
     return i !== -1 && j > i && tableSrc.slice(i, j).indexOf('isView') === -1
-        && tableSrc.slice(i, j).indexOf('!lineOverrideIsSkippedRd(l)') !== -1;
+        && tableSrc.slice(i, j).indexOf('!lineOverrideIsSkippedRd(l, mode)') !== -1;
 })(), tableSrc.slice(tableSrc.indexOf('const groupLines ='), tableSrc.indexOf('const groupLines =') + 260));
 check('the row builder carries no skipped branch left over',
     ['skipBadge', 'lo-row-skipped', 'payroll_statutory_skip', 'lineOverrideSkipEnumRd(line)']
@@ -367,8 +381,13 @@ const countOf = (html, needle) => (html.split(needle).length - 1);
 check('the read-only dropdown has exactly one button: the one that opens the full history',
     countOf(menuView, '<button') === 1 && menuView.indexOf('lo-history-view-all') !== -1,
     String(countOf(menuView, '<button')));
-check('...and the editable one has one per entry, plus that same foot',
-    countOf(menuEdit, '<button') === HISTORY.edits.length + 1, String(countOf(menuEdit, '<button')));
+// 2026-09-19: +1 for the calculated-value head, which is pressable again in this slip only.
+check('...and the editable one has one per entry, plus the calculated head and that same foot',
+    countOf(menuEdit, '<button') === HISTORY.edits.length + 2, String(countOf(menuEdit, '<button')));
+check('the calculated head is the pressable one only in the editable slip',
+    countOf(menuEdit, 'lo-history-computed') === 1 && countOf(menuView, 'lo-history-computed') === 1
+    && menuEdit.indexOf('lo-history-computed lo-history-item-static') === -1,
+    `${countOf(menuEdit, 'lo-history-computed')}/${countOf(menuView, 'lo-history-computed')}`);
 check('the read-only entries carry no handler hook and no disabled control',
     menuView.indexOf('dropdown-item lo-history-item ') === -1 && menuView.indexOf('disabled') === -1
     && menuView.indexOf('data-value=') === -1, menuView);

@@ -47,6 +47,12 @@ function fn(text, name) {
 
 // Only what is NOT under test. fmtNum/escapeHtml need real implementations (every assertion reads
 // their output); the decorations that belong to other rounds render as inert markers.
+function constDeclLocal(text, name) {
+    const m = text.match(new RegExp(`^const ${name} = .*;$`, 'm'));
+    if (!m) throw new Error(`${name} not found -- renamed/removed?`);
+    return m[0];
+}
+
 const stubs = `
 function escapeHtml(str) { if (str === null || str === undefined) return ''; return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 function escapeAttr(str) { return escapeHtml(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
@@ -77,8 +83,19 @@ const extracted = [
     fn(detailSource, 'formulaTagTextRd'),
     fn(detailSource, 'lineOverrideExemptTextRd'),
     fn(detailSource, 'lineOverrideNoteTextRd'),
+    // 2026-09-18, 4b: the tri-state the TH_PIT/TH_SSO rows carry -- real, not stubbed, so what the
+    // row builder does with it here is what it does in the page.
+    constDeclLocal(detailSource, 'STATUTORY_EXEMPTION_FIELD_RD'),
+    'let lineOverrideExemptionRd = null;',
+    fn(detailSource, 'statutoryExemptionFieldRd'),
+    fn(detailSource, 'statutoryExemptionStateRd'),
+    fn(detailSource, 'statutoryExemptionInheritRd'),
+    fn(detailSource, 'statutoryExemptionEffectiveRd'),
+    fn(detailSource, 'statutoryExemptionChangedRd'),
+    fn(detailSource, 'statutoryExemptionTagHtmlRd'),
     fn(detailSource, 'lineOverrideRowHtml'),
     `module.exports = {
+        setExemption: (e) => { lineOverrideExemptionRd = e; },
         lineOverrideComputedTextRd, lineOverrideComputedTagHtml, lineOverrideRowHtml,
         formulaTagTextRd, lineOverrideExemptTextRd, lineOverrideNoteTextRd,
         setLang: (l, d) => { currentLang = l; langData = d; },

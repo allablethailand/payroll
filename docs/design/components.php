@@ -1069,7 +1069,7 @@ $cpStats = [
             </div>
         </div>
         <div>
-            <div class="small text-muted mb-1">> 2 action -- ⋮ วงกลมเดียวกัน</div>
+            <div class="small text-muted mb-1">> 3 action -- ⋮ วงกลมเดียวกัน</div>
             <div class="dropdown">
                 <button type="button" class="btn btn-icon dropdown-toggle" data-bs-toggle="dropdown" title="เพิ่มเติม"><i class="fa-solid fa-ellipsis-vertical"></i></button>
                 <ul class="dropdown-menu dropdown-menu-end">

@@ -272,10 +272,13 @@ checkTrue('one sender for the whole tab', substr_count($js, 'function lineOverri
 foreach ([
     'the switch' => "lineOverrideSendRd(\$row, included ? { action: 'remove' } : { action: 'exclude' })",
     'history -> a recorded value' => "lineOverrideSendRd(\$row, { action: 'override_amount', amount: parsed })",
-    'history -> the calculated value' => "lineOverrideSendRd(\$row, { action: 'remove' })",
 ] as $label => $call) {
     checkTrue("{$label} sends through it", strpos($js, $call) !== false);
 }
+// 2026-09-18, 4b: "back to what the system decided" is its own function now -- on TH_PIT/TH_SSO it
+// is 2 stored things (the tri-state answer AND any amount override), which one plan cannot express.
+checkTrue('the calculated value goes through the row restore', strpos($js, 'function lineOverrideRestoreRowRd($row) {') !== false
+    && strpos($js, "if (asComputed) {\n                lineOverrideRestoreRowRd(\$row);") !== false);
 // ...and the staged machinery is gone, not merely unused. 2026-09-18, tiny-L6a adds the inline
 // cell editor to that list: the pencil opens the line's own form now, which has its own write path
 // (submitLineOverrideFormRd) through the same lineOverrideRequestRd() this sender uses.
@@ -321,7 +324,7 @@ echo "\n=== 9. the switch asks, both ways ===\n";
 // 2026-09-16: bound on `.lo-mount`, the class BOTH hosts of this table carry, not on tab 3's own id
 // -- see setLineOverrideHostRd()'s docblock for why the table has 2 mount points and one handler set.
 $swStart = (int)strpos($js, "on('change', '.lo-mount .lo-include'");
-$sw = substr($js, $swStart, 1400);
+$sw = substr($js, $swStart, 2600);
 checkTrue('turning it OFF asks in the warning tone', strpos($sw, "line_override_confirm_exclude_message") !== false);
 checkTrue('turning it ON asks too', strpos($sw, "line_override_confirm_include_message") !== false);
 checkTrue('the tone differs by direction', strpos($sw, "tone: included ? 'info' : 'warning'") !== false);
@@ -356,7 +359,7 @@ echo "\n=== 11. no Save button, and restore-all sits with the table ===\n";
 // 2026-09-17, D3: this table has no Save step at all -- every action writes when it is confirmed --
 // and its only host is a modal whose footer is [restore all] ... [Close], with no Save to disable.
 checkTrue('the Breakdown modal footer has no Save button', strpos($js, "function renderBreakdownFooterRd(canEdit) {") !== false
-    && strpos($js, "left: canEdit ? { id: 'btnRestoreAllComputedLineOverrides'") !== false
+    && strpos($js, "? { id: 'btnRestoreAllComputedLineOverrides'") !== false
     && strpos($js, "secondary: { key: 'close', fallback: 'Close', dismiss: true },\n    }));\n    refreshBreakdownFooterStateRd();") !== false);
 // Restore-all is the one thing that touches rows the user never opened, so it is also the one thing
 // that is disabled until there is really something to restore.
@@ -384,7 +387,7 @@ checkTrue('an off row shows no figure and no controls', strpos($rowHtml, 'const 
     && strpos($rowHtml, "line_override_excluded_amount") !== false
     && strpos($rowHtml, 'const amountCell = included') !== false);
 checkTrue('a skipped line never reaches the row builder at all',
-    strpos($js, '&& !lineOverrideIsSkippedRd(l)') !== false
+    strpos($js, '&& !lineOverrideIsSkippedRd(l, mode)') !== false
     && strpos($rowHtml, 'lo-row-skipped') === false && strpos($rowHtml, 'skipBadge') === false
     && strpos($rowHtml, 'lineOverrideSkipEnumRd(') === false
     && strpos($js, 'payroll_statutory_skip') === false);
@@ -466,14 +469,15 @@ foreach (['line_override_tab_all', 'line_override_tab_changed'] as $key) {
 }
 // The count is decided by one predicate, and it is the SAME one the filter uses.
 checkTrue('the changed-row predicate is one function', strpos($js, 'function lineOverrideIsChangedRd(line) {') !== false
-    && strpos($js, "return !!line.override_action || line.line_type === 'manual_line';") !== false);
+    && strpos($js, "return !!line.override_action || line.line_type === 'manual_line' || statutoryExemptionChangedRd(line);") !== false);
 checkTrue('the tab row is only built for the read-only slip', strpos($js, 'const changedCount = isView') !== false);
 checkTrue('an empty count renders no tab row at all', strpos($js, "if (!changedCount) return '';") !== false);
 checkTrue('the filter narrows the rows, not the totals',
     strpos($js, '&& (!changedOnly || lineOverrideIsChangedRd(l)));') !== false
     && strpos($js, 'body += lineOverrideTotalsHtmlRd(breakdownRowRd, mode);') !== false);
 checkTrue('the tab state is reset per host, so it never survives into the next employee slip',
-    strpos($js, "lineOverrideViewFilterRd = 'all';\n}") !== false);
+    strpos($js, "    lineOverrideViewFilterRd = 'all';\n") !== false
+    && strpos($js, "    lineOverrideExemptionRd = null;\n}") !== false);
 
 echo "\n--------------------------------------------------\n";
 echo "Passed: {$passes}, Failed: {$failures}\n";

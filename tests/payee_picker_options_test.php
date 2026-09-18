@@ -67,9 +67,12 @@ $htmlNoQuestion = renderPayeePartial($root, 'demo2', false, '');
 check('$payee_allow_no_record=false renders no sub-question at all', strpos($htmlNoQuestion, 'PayeeRecord') !== false, false);
 check('...but still renders the same 3 destinations', substr_count($htmlNoQuestion, 'name="demo2_payee_dest"'), 3);
 
-// ---------------------------------------------------------------- 2. all 4 call sites use it
+// ---------------------------------------------------------------- 2. all 3 call sites use it
+// 2026-09-18, 4b: 'recurringDest' is gone with the tab it was the picker for -- a recurring
+// deduction's per-run destination is changed on the slip row's own form now, which is the
+// 'manualLine' picker below. The other 3 call sites are unchanged.
 $views = [
-    'app/views/payroll/detail.php' => ['manualLine', 'recurringDest'],
+    'app/views/payroll/detail.php' => ['manualLine'],
     'app/views/layout/modals.php' => ['eed', 'erd'],
 ];
 foreach ($views as $file => $prefixes) {

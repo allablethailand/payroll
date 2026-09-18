@@ -162,7 +162,7 @@ function departmentNameRd(row) {
     return (currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || row.department_name_en || '-';
 }
 // 2026-09-11, Batch 3C item 8 -- generalized out of 4 identical copies of this exact expression
-// (.btn-view-breakdown/.btn-view-emp-adjustments/.btn-raw-sync-data/.btn-manage-manual-lines' own
+// (.btn-view-breakdown/.btn-comment-employee/.btn-remove-manual-employee/.btn-raw-sync-data' own
 // click handlers, each independently re-deriving "find this employee's row in the currently-loaded
 // table data") rather than adding a 5th copy for .btn-comment-employee -- per this project's own
 // "generalize, don't mirror-copy" convention.
@@ -1899,35 +1899,6 @@ $(document).on('submit', '#runMarkPaidForm', function (e) {
     }, langData['save_success']);
 });
 
-// "Items" (manage per-employee earning/deduction adjustment lines): available on ANY draft run
-// now (2026-08-19, explicit request) -- not just an Incentive/Other Payment run. For incentive
-// these lines are the only source of pay; for any other run they're an additive one-off adjustment
-// on top of the normal calculation (see PayrollRunModel::recalculate()'s manual-lines block, added
-// to the non-incentive branch alongside standing PED assignments/attendance bonus).
-// 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "row action: โชว์ 3 ปุ่มวงกลม [ดูรายละเอียด
-// การคำนวณ] [ความคิดเห็น (count)] [ปรับรายการ] + ⋮ สำหรับที่เหลือ" -- was a dropdown-item; now its own
-// standalone .btn-circle-action circle (one of the row's 3, draft-only so effectively 2 outside draft
-// -- §7 revised to "≤3 ปุ่ม + ⋮", not always exactly 3). Click handler (.btn-manage-manual-lines)
-// unchanged.
-// 2026-09-17, D3: the count badge is NOT on this button any more -- it moved to the slip button
-// (viewBreakdownButtonRd) because that is now where the adjustments it counts are made. The icon is
-// `fa-sliders` (settings), matching what this modal is called now ("ตั้งค่ารายบุคคล"): with the
-// "รายการจ่าย"/"ปรับตัวเลข" tabs gone it holds per-employee SETTINGS for this run, not its figures.
-function manageItemsButtonRd(row) {
-    if (!currentRun || currentRun.state !== 'draft') {
-        return '';
-    }
-    return `<button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-manual-lines" data-employee-id="${row.employee_id}" title="${langData['action_manage_items'] || 'Per-employee settings'}"><i class="fa-solid fa-sliders"></i></button>`;
-}
-// Raw Sync Data viewer (2026-08-21, explicit request: "ถ้าเป็นการ Sync ข้อมูลมาจาก Origami...เพิ่มปุ่ม
-// ดูข้อมูลดิบได้") -- only for a row that actually came from the sync payload; a manually-added
-// employee on the same sync-based run (row.data_source='manual') has no sync row to show.
-function rawSyncDataButtonRd(row) {
-    if (!currentRun || !currentRun.sync_process_id || row.data_source !== 'sync') {
-        return '';
-    }
-    return `<li><button type="button" class="dropdown-item btn-raw-sync-data" data-employee-id="${row.employee_id}"><i class="fa-solid fa-file-code text-secondary me-2"></i>${langData['action_raw_sync_data'] || 'Raw Sync Data'}</button></li>`;
-}
 // Remove-from-run action, calculation table -- available for EVERY row on any draft run
 // (2026-08-21, explicit request: "พนักงานทุกคน สามารถลบข้อมูลออกจากรอบได้ ต่อให้ Sync มาจาก Origami
 // เองก็ตาม" -- ALL employees, including a genuinely-synced row). PayrollRunModel::removeManualEmployee()
@@ -1943,7 +1914,13 @@ function removeEmployeeButtonRd(row) {
     // 2026-08-28, explicit request: "ปรับ icon ให้เป็นรูปถังขยะ" -- trash-can, matching the delete-
     // button icon convention already used everywhere else in this app (Employee List, DataTables
     // row actions, etc.) instead of the previous user-minus icon.
-    return `<li><button type="button" class="dropdown-item text-danger btn-remove-manual-employee" data-employee-id="${row.employee_id}"><i class="fa-solid fa-trash-can me-2"></i>${langData['action_remove'] || 'Remove'}</button></li>`;
+    // 2026-09-18, 4b: one of the row's 3 circles, not a ⋮ item -- this table has 3 actions left and
+    // §7's "≤3 ปุ่ม + ⋮" therefore has nothing to fold. NO tone class: §5 gives red to STATUS, not to an
+    // action, and §7 keeps every row-action icon neutral anyway -- a `.text-danger` here would have
+    // been markup that says one thing while the page renders another. The trash glyph and the confirm
+    // are what say this is destructive.
+    const label = langData['action_remove'] || 'Remove';
+    return `<button type="button" class="btn btn-link btn-circle-action btn-remove-manual-employee" data-employee-id="${row.employee_id}" title="${escapeAttr(label)}" aria-label="${escapeAttr(label)}"><i class="fa-solid fa-trash-can"></i></button>`;
 }
 // Breakdown button always shows (any state) -- it's read-only, unlike the other buttons which only
 // make sense while draft. Grouped into one Bootstrap button-group -- same
@@ -1958,7 +1935,7 @@ function removeEmployeeButtonRd(row) {
 // 2026-08-31, explicit follow-up: "ตัดปุ่ม Lock ออกไปเลยครับ ให้เหลือแค่ Verify ถ้า Verify แล้ว จะไม่คำนวณ
 // อีกต่อไป" -- Lock removed entirely; Verify itself now carries the "freeze from recalculation,
 // refuse further edits" behavior Lock used to have (see PayrollRunModel::isEmployeeVerifiedForRun()).
-// Available on any draft run only (same gating as manageItemsButtonRd()/removeEmployeeButtonRd());
+// Available on any draft run only (same gating as removeEmployeeButtonRd());
 // the button's own current-state is read back off `data-*` by the click handler (.btn-verify-
 // employee) so a toggle click always flips whatever the row is CURRENTLY showing, not a stale value
 // captured at render time. Read-only when the run isn't draft -- shows a plain badge instead.
@@ -1975,7 +1952,7 @@ function verifyMenuItemRd(row, currentlyVerified) {
         : (langData['action_verify'] || 'Verify');
     return `<li><button type="button" class="dropdown-item btn-verify-employee" data-employee-id="${row.employee_id}" data-employee-name="${escapeAttr(employeeDisplayNameRd(row))}" data-verified="${currentlyVerified ? 'true' : 'false'}">${escapeHtml(label)}</button></li>`;
 }
-// Available on any draft run only (same gating as manageItemsButtonRd()/removeEmployeeButtonRd()); the
+// Available on any draft run only (same gating as removeEmployeeButtonRd()); the
 // button's own current-state is read back off `data-*` by the click handler (.btn-verify-employee) so
 // a toggle click always flips whatever the row is CURRENTLY showing, not a stale value captured at
 // render time. Read-only when the run isn't draft -- shows a plain badge instead.
@@ -2081,38 +2058,15 @@ function viewBreakdownButtonRd(row) {
         ${countBadge}
     </div>`;
 }
-// §7, revised this round: "≤ 3 ปุ่ม + ⋮" (was "≤2 ปุ่ม inline, >2 พับเป็น ⋮ ทั้งหมด") -- the 3 circles
-// above (View Breakdown/Comments/ตั้งค่ารายบุคคล, "≤3" since the settings circle is draft-only so a
-// non-draft row shows only 2) always stay inline; everything else (Raw Sync Data, conditional;
-// Remove, draft-only) collapses into the ⋮ menu. Unverify is NOT part of this menu anymore -- see
-// the Verify column's own badge dropdown instead (verifyLockButtonsRd()).
-// 2026-09-16: the read-only "รายการที่ปรับ" viewer (empAdjustmentsModal) used to be reachable only
-// through the Employee Code cell's own "ปรับแล้ว N" button, which that instruction removed -- moved
-// here so it is still reachable on a non-draft run too, where there is no editing surface at all.
-// Same .btn-view-emp-adjustments class, same delegated handler.
-function viewAdjustmentsMenuItemRd(row) {
-    if (Number(row.adjustment_count || 0) <= 0) {
-        return '';
-    }
-    // ไอคอนเป็น child ตัวแรกของ .dropdown-item ตาม rules.md §6 (CSS กลางบังคับกว้าง 16px จัดกลาง ให้
-    // ข้อความทุกแถวในเมนูเดียวกันเริ่มที่ x เดียวกัน) -- glyph เดียวกับหัว modal ที่มันเปิด (§0.5)
-    return `<li><button type="button" class="dropdown-item btn-view-emp-adjustments" data-employee-id="${row.employee_id}"><i class="fa-solid fa-pen-to-square text-secondary me-2"></i>${escapeHtml(langData['emp_adjustments_modal_title'] || 'Adjusted Items')}</button></li>`;
-}
+/* 2026-09-18, 4b: 3 circles, no ⋮. The menu held 3 entries and each one left with what it opened:
+   the per-employee settings modal and the read-only "รายการที่ปรับ" viewer are both gone (the slip is
+   where an adjustment is made AND read now), and Raw Sync Data moves to the attendance tab (BACKLOG).
+   What is left -- slip / comments / remove -- is exactly §7's "≤3 ปุ่ม", so there is nothing to fold
+   and a ⋮ holding one item is a second click in front of one action. Remove is draft-only and simply
+   absent otherwise; a non-draft row shows 2. */
 function runDetailActionsRd(row) {
-    const circles = [viewBreakdownButtonRd(row), commentButtonRd(row), manageItemsButtonRd(row)].filter(Boolean).join('');
-    const menuItems = [viewAdjustmentsMenuItemRd(row), rawSyncDataButtonRd(row)].filter(Boolean);
-    const removeItem = removeEmployeeButtonRd(row);
-    // 2026-09-10, explicit request: Remove sits at the bottom with a divider above it, only when
-    // there's actually something above it to divide from.
-    const divider = (menuItems.length && removeItem) ? '<li><hr class="dropdown-divider"></li>' : '';
-    const items = menuItems.join('') + divider + removeItem;
-    const menu = items
-        ? `<div class="dropdown">
-            <button type="button" class="btn btn-link btn-circle-action text-secondary dropdown-toggle" data-bs-toggle="dropdown" title="${langData['action_more'] || 'More'}"><i class="fa-solid fa-ellipsis-vertical"></i></button>
-            <ul class="dropdown-menu dropdown-menu-end">${items}</ul>
-        </div>`
-        : '';
-    return `<div class="d-flex gap-1 align-items-center justify-content-center flex-nowrap">${circles}${menu}</div>`;
+    const circles = [viewBreakdownButtonRd(row), commentButtonRd(row), removeEmployeeButtonRd(row)].filter(Boolean).join('');
+    return `<div class="d-flex gap-1 align-items-center justify-content-center flex-nowrap">${circles}</div>`;
 }
 
 /* ---------- Formula popover (2026-08-29, explicit request: "ถ้าส่วนไหนที่เป็นสูตรการคำนวณให้มีปุ่มกดดูได้
@@ -2423,14 +2377,64 @@ function renderBreakdownModal(row) {
 // LEFT slot: "คืนค่าระบบทั้งหมด" (the one action that is neither the way out nor a save, since
 // every edit in this modal already writes immediately) plus the sequential-restore progress line,
 // both kept away from [ปิด] on the right. Same id/handler/keys it had in the settings modal.
+// 2026-09-18, 4b: the read-only slip's own LEFT slot. A row is read-only for 2 different reasons and
+// only one of them can be undone from here: a VERIFIED row on a DRAFT run is read-only because
+// somebody froze it, and unfreezing it is what turns this slip back into the editable one. A run past
+// draft is read-only because of where the RUN is, which no button in this modal can change -- so that
+// case still gets [ปิด] alone. Same endpoint/confirm wording as the Verify column's own toggle.
+function breakdownCanUnverifyRd() {
+    return !!breakdownRowRd && !!currentRun && currentRun.state === 'draft' && !!breakdownRowRd.is_verified;
+}
 function renderBreakdownFooterRd(canEdit) {
+    const canUnverify = !canEdit && breakdownCanUnverifyRd();
     $('#breakdownModalFooter').html(modalFooterButtonsHtml({
-        left: canEdit ? { id: 'btnRestoreAllComputedLineOverrides', key: 'line_override_restore_all_computed', fallback: 'Restore all calculated values' } : null,
+        left: canEdit
+            ? { id: 'btnRestoreAllComputedLineOverrides', key: 'line_override_restore_all_computed', fallback: 'Restore all calculated values' }
+            : (canUnverify ? { id: 'btnBreakdownUnverify', key: 'action_unverify', fallback: 'Unverify' } : null),
         leftHtml: canEdit ? '<span class="text-muted" id="lineOverrideSaveProgress"></span>' : '',
         secondary: { key: 'close', fallback: 'Close', dismiss: true },
     }));
     refreshBreakdownFooterStateRd();
 }
+// A refusal belongs where the action was taken: this modal stays open on it, so the message goes in
+// the modal's own callout strip (the same one the row's blocking/warning notes use) rather than a
+// toast behind it. Cleared by the next renderBreakdownModal().
+function breakdownCalloutErrorRd(message) {
+    $('#breakdownCalcNotes').html(calloutHtml(escapeHtml(message || langData['save_failed'] || 'Could not save.'), 'danger'));
+}
+// Re-renders IN PLACE -- the modal is never hidden and shown again. renderBreakdownModal() rebuilds
+// every part of it (header card, notes, footer, body) from the row it is handed, and the row's own
+// is_verified is the single thing that decides which body and which footer that is.
+$(document).on('click', '#btnBreakdownUnverify', function () {
+    if (!breakdownRowRd) return;
+    const $btn = $(this);
+    const employeeId = breakdownRowRd.employee_id;
+    const name = employeeDisplayNameRd(breakdownRowRd);
+    Swal.fire({
+        icon: 'info',
+        title: (langData['confirm_unverify_employee_title'] || 'Unverify {name}').replace('{name}', name),
+        text: langData['confirm_unverify_employee_message'] || 'This employee will resume normal recalculation and can be edited again.',
+        showCancelButton: true,
+        confirmButtonText: langData['action_unverify'] || 'Unverify',
+        cancelButtonText: langData['cancel'] || 'Cancel',
+    }).then(function (result) {
+        if (!result.isConfirmed) return;
+        setButtonLoading($btn, true);
+        $.ajax({
+            url: `${BASE_URL}/api/payroll-run.employee-verify.save`,
+            method: 'POST', contentType: 'application/json', dataType: 'json',
+            data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: employeeId, verified: false }),
+            success: function (res) {
+                setButtonLoading($btn, false);
+                if (!res.status) { breakdownCalloutErrorRd(res.message); return; }
+                breakdownRowRd.is_verified = false;
+                renderBreakdownModal(breakdownRowRd);
+                loadRunDetail();
+            },
+            error: function () { setButtonLoading($btn, false); breakdownCalloutErrorRd(null); },
+        });
+    });
+});
 // Enabled only when there is something to restore: at least one row really carries an override. That
 // is a different question from "has anything been typed", which is why it counts rows rather than
 // reading a dirty flag.
@@ -2438,7 +2442,10 @@ function refreshBreakdownFooterStateRd() {
     const $btn = $('#btnRestoreAllComputedLineOverrides');
     if (!$btn.length) return;
     const overrideRowCount = lineOverrideMountRd().find('.lo-row').filter(function () {
-        return !!($(this).data('orig-action') || '') && !$(this).find('.lo-include').is(':disabled');
+        const $row = $(this);
+        if ($row.find('.lo-include').is(':disabled')) return false;
+        // A tri-state row counts on its own answer, not on an override row it may not have.
+        return !!($row.data('orig-action') || '') || !!$row.attr('data-exemption-changed');
     }).length;
     $btn.prop('disabled', overrideRowCount === 0);
 }
@@ -2448,7 +2455,7 @@ function refreshBreakdownFooterStateRd() {
    busy lock -- see its own section further down) and the hand-added lines. 2026-09-17, D3: this is
    the only place either one lives now; the 2 tabs they were built in are gone. Everything else is
    read-only and renders exactly the slip it always did. ---------- */
-// The gate: manageItemsButtonRd()'s own condition (draft run) plus this row's verify lock. Both are
+// The gate: a draft run, plus this row's verify lock. Both are
 // real server-side rules, not styling -- lineOverrideSave() refuses a non-draft run AND a verified
 // employee (isEmployeeVerifiedForRun()), so showing the controls in either case would only produce
 // errors the user cannot act on.
@@ -2524,84 +2531,6 @@ $(document).on('click', '.btn-view-breakdown', function () {
     if (!rowData) return;
     renderBreakdownModal(rowData);
     new bootstrap.Modal(document.getElementById('runDetailBreakdownModal')).show();
-});
-
-/* ---------- Employee Adjustments viewer (2026-09-10, Batch 3A item 5, explicit request: replace
-   the fa-sliders icon with a "ปรับแล้ว N" badge + view-only modal listing item/old value/new
-   value/who/when) -- sourced entirely from PayrollRunModel::employeeAdjustments() (overrides via
-   the same table getDetails()'s own line_override_count counts, enriched with the real edit-chain
-   history when one exists; ad-hoc added items via manualLinesForEmployee()) -- no new table, no
-   editing here (Manage Items/Sync Line Overrides above remain the only editing surface). ---------- */
-function empAdjustmentLineTypeLabelRd(lineType) {
-    if (lineType === 'statutory') return langData['sync_line_statutory_badge'] || 'Statutory';
-    return langData['breakdown_earnings'] || 'Earning/Deduction';
-}
-function empAdjustmentOverrideRowHtml(item, historyStartDate) {
-    const edits = item.edits || [];
-    const lastEdit = edits.length ? edits[edits.length - 1] : null;
-    const who = lastEdit
-        ? ((currentLang === 'th' ? lastEdit.changed_by_name_th : lastEdit.changed_by_name_en) || lastEdit.changed_by_name_th || lastEdit.changed_by_name_en || '')
-        : ((currentLang === 'th' ? item.fallback_changed_by_name_th : item.fallback_changed_by_name_en) || item.fallback_changed_by_name_th || item.fallback_changed_by_name_en || '');
-    const when = lastEdit ? lastEdit.changed_at : item.fallback_changed_at;
-    const newValueDisplay = item.action === 'exclude'
-        ? `<span class="text-danger">${langData['sync_line_override_excluded_badge'] || 'Excluded'}</span>`
-        : fmtNum(item.current_value);
-    const noHistoryNote = !item.history_available
-        ? `<div class="small text-muted mt-1"><i class="fa-solid fa-circle-info me-1"></i>${(langData['emp_adjustments_no_history'] || 'No detailed edit history available (tracking started {date}).').replace('{date}', historyStartDate ? formatDisplayDate(historyStartDate) : '')}</div>`
-        : '';
-    return `<div class="border rounded-3 p-2 mb-2">
-        <div><code class="fw-bold text-dark">${escapeHtml(item.item_code)}</code>
-            <span class="badge bg-info-subtle text-info ms-1">${escapeHtml(empAdjustmentLineTypeLabelRd(item.line_type))}</span></div>
-        <div class="row small mt-2 gx-2">
-            <div class="col-4"><span class="text-muted">${langData['run_audit_original'] || 'Original'}:</span> ${item.original_value !== null ? fmtNum(item.original_value) : '-'}</div>
-            <div class="col-4"><span class="text-muted">${langData['run_audit_current'] || 'Current'}:</span> ${newValueDisplay}</div>
-            <div class="col-4"><span class="text-muted">${langData['downloaded_by'] || 'By'}:</span> ${who ? escapeHtml(who) : '-'}</div>
-        </div>
-        <div class="small text-muted mt-1">${when ? formatDisplayDateTime(when) : ''}</div>
-        ${item.note ? `<div class="small text-muted mt-1"><i class="fa-solid fa-note-sticky me-1"></i>${escapeHtml(item.note)}</div>` : ''}
-        ${noHistoryNote}
-    </div>`;
-}
-function empAdjustmentManualLineRowHtml(item) {
-    const name = (currentLang === 'th' ? item.item_name_th : item.item_name_en) || item.item_name_th || item.item_name_en || item.custom_item_name || item.item_code;
-    const who = (currentLang === 'th' ? item.created_by_name_th : item.created_by_name_en) || item.created_by_name_th || item.created_by_name_en || '';
-    return `<div class="border rounded-3 p-2 mb-2">
-        <div><span class="badge bg-success-subtle text-success me-1">${langData['emp_adjustments_added_badge'] || 'Added'}</span>${escapeHtml(name || '')}</div>
-        <div class="row small mt-2 gx-2">
-            <div class="col-4"><span class="text-muted">${langData['run_audit_current'] || 'Current'}:</span> ${fmtNum(item.amount)}</div>
-            <div class="col-4"><span class="text-muted">${langData['downloaded_by'] || 'By'}:</span> ${who ? escapeHtml(who) : '-'}</div>
-            <div class="col-4">${item.created_at ? formatDisplayDateTime(item.created_at) : ''}</div>
-        </div>
-        ${item.note ? `<div class="small text-muted mt-1"><i class="fa-solid fa-note-sticky me-1"></i>${escapeHtml(item.note)}</div>` : ''}
-    </div>`;
-}
-function loadEmpAdjustmentsModal(employeeId) {
-    const emptyHtml = `<div class="text-center text-muted small py-2">${langData['emp_adjustments_empty'] || 'None.'}</div>`;
-    $('#empAdjustmentsOverrideList, #empAdjustmentsManualLineList').html(emptyHtml);
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-run.employee-adjustments`,
-        method: 'GET',
-        data: { run_id: PAYROLL_RUN_ID, employee_id: employeeId },
-        dataType: 'json',
-        success: function (res) {
-            if (!res.status) { showWarning(res.message || langData['load_failed'] || 'Failed to load data.'); return; }
-            const overrides = res.data.overrides || [];
-            const manualLines = res.data.manual_lines || [];
-            const historyStartDate = res.data.history_feature_start_date || null;
-            $('#empAdjustmentsOverrideList').html(overrides.length ? overrides.map(item => empAdjustmentOverrideRowHtml(item, historyStartDate)).join('') : emptyHtml);
-            $('#empAdjustmentsManualLineList').html(manualLines.length ? manualLines.map(empAdjustmentManualLineRowHtml).join('') : emptyHtml);
-        },
-        error: function () { showWarning(langData['load_failed'] || 'An error occurred while loading data.'); }
-    });
-}
-$(document).on('click', '.btn-view-emp-adjustments', function () {
-    const employeeId = $(this).data('employee-id');
-    const rowData = runDetailRowByEmployeeId(employeeId);
-    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
-    // name in the modal-header (#empAdjustmentsEmployeeName removed from the view).
-    $('#empAdjustmentsHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
-    loadEmpAdjustmentsModal(employeeId);
-    new bootstrap.Modal(document.getElementById('empAdjustmentsModal')).show();
 });
 
 /* ---------- Raw Sync Data viewer (2026-08-21, explicit request: "ดูข้อมูลดิบได้...เพื่อทำการ Recheck
@@ -3059,8 +2988,8 @@ function initRunDetailTable(details) {
             // own Code column and a separate plain Name column right after it.
             // 2026-09-16, explicit instruction ("คอลัมน์รหัสพนักงาน = รหัสอย่างเดียว"): the 2 extra
             // markers this cell used to carry are gone from it -- the "Adjusted N" button (its count
-            // is now the count badge on the row's own Items circle, manageItemsButtonRd(), and the
-            // viewer it opened moved to the row's ⋮ menu so it stays reachable on a non-draft run)
+            // is now the count badge on the row's own slip circle, viewBreakdownButtonRd(), and the
+            // viewer it opened is gone entirely: the slip itself reads those adjustments, 2026-09-18 4b)
             // and the blue fa-file-invoice-dollar tax/SSO-override icon (§3 kills blue outright, and
             // a tax/SSO override is one of the adjustments the same count now covers).
             { data: 'employee_no', orderable: false, render: (d) => `<span class="fw-semibold">${escapeHtml(d)}</span>` },
@@ -3328,7 +3257,7 @@ function initRunDetailTable(details) {
    experience at a glance -- clicking through to View Details/formula popovers/comments still all
    work exactly as before, only the MUTATING affordances (checkboxes, bulk bar) disappear. Verify/
    Lock buttons and Manage Items/Remove already individually gate on currentRun.state !== 'draft'
-   elsewhere in this file (verifyLockButtonsRd(), manageItemsButtonRd(), removeEmployeeButtonRd()) --
+   elsewhere in this file (verifyLockButtonsRd(), removeEmployeeButtonRd()) --
    this just adds the section-level visual cue on top of those existing per-control gates. */
 // 2026-09-09, real bug avoided (found while wiring up the explicit request "ตาราง Employee ใน Tab
 // Employee ให้เป็น Datatable ครับ", which turned on real pagination -- see initRunDetailTable()'s own
@@ -4296,114 +4225,6 @@ $(document).on('change', '#chkAutoRecalculate', function () {
         }
     });
 });
-/* ---------- Manage Payment Items modal: per-employee earning/deduction lines, add one at a time,
-   remove any individually. Split into two panels (Earnings/Deductions, same visual language as
-   section 2's item-selection panels) with running subtotals + a net-adjustment total, rather than
-   one flat mixed table -- makes it immediately obvious what's earning vs. deduction and what the
-   combined effect is, without needing to close the modal and check the outer table. ---------- */
-let manageLinesEmployeeId = null;
-
-/* ---------- Attendance Data (from Sync) (2026-08-21, explicit request: "ต้องการแก้ตัวเลขดิบที่ Sync
-   มา ไม่ใช่แค่ยอดเงิน") -- corrects the RAW numbers Origami sent (not the resulting deduction/earning
-   amount -- that is the line-override table, which lives in the Calculation Breakdown modal), shown
-   only on a sync-based run. One combined form/Save for all 7 fields (not per-field) since they represent one
-   conceptual "corrected timesheet" record, matching payroll_run_sync_item_overrides' one-row-per-
-   employee shape. ---------- */
-const ATTENDANCE_DATA_FIELDS_RD = [
-    { key: 'ot_req_working_day_hrs', labelKey: 'attendance_data_field_ot_weekday', fallback: 'OT (Weekday, hours)', step: 0.01 },
-    { key: 'ot_req_weekend_hrs', labelKey: 'attendance_data_field_ot_weekend', fallback: 'OT (Weekend, hours)', step: 0.01 },
-    { key: 'ot_req_holiday_hrs', labelKey: 'attendance_data_field_ot_holiday', fallback: 'OT (Holiday, hours)', step: 0.01 },
-    { key: 'trip_allowance', labelKey: 'attendance_data_field_trip_allowance', fallback: 'Trip Allowance', step: 0.01 },
-    { key: 'late_mins', labelKey: 'attendance_data_field_late_mins', fallback: 'Late (minutes)', step: 1 },
-    { key: 'absent_days', labelKey: 'attendance_data_field_absent_days', fallback: 'Absent (days)', step: 0.5 },
-    { key: 'leave_without_pay_days', labelKey: 'attendance_data_field_leave_days', fallback: 'Unpaid Leave (days)', step: 0.5 }
-];
-function attendanceDataRowHtml(field, synced, override) {
-    const hasOverride = override !== null && override !== undefined;
-    const effective = hasOverride ? override : (synced !== null && synced !== undefined ? synced : '');
-    const label = langData[field.labelKey] || field.fallback;
-    const syncedDisplay = (synced !== null && synced !== undefined) ? fmtNum(synced) : '-';
-    const badge = hasOverride ? ` <span class="badge bg-warning-subtle text-warning">${langData['sync_line_override_overridden_badge'] || 'Overridden'}</span>` : '';
-    // 2026-09-14, Round 3 item 4 batch 1/4, real gap found via Playwright while verifying the new
-    // per-tab dirty-guard: this input had no `id`/`name` at all (only relied on its own
-    // .attendance-data-input class, read by data-field on the <tr> instead) -- snapshotFormState()
-    // (app.js) silently skips any input with neither, so Tab 2 could never register as dirty. Adding
-    // a stable id (does not affect #btnSaveAttendanceData's own read logic, which still reads by
-    // class/data-field, unchanged) is what makes the dirty-guard able to see this tab at all.
-    return `<tr data-field="${field.key}">
-        <td>${label}${badge}</td>
-        <td class="text-end text-muted">${syncedDisplay}</td>
-        <td><input type="number" id="attendanceDataInput_${field.key}" step="${field.step}" min="0" class="form-control form-control-sm attendance-data-input" value="${effective}"></td>
-    </tr>`;
-}
-function loadAttendanceDataRd() {
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-run.attendance-data-for-employee`,
-        method: 'GET',
-        data: { run_id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId },
-        dataType: 'json',
-        success: function (res) {
-            if (!res.status) return;
-            const synced = res.data.synced || {};
-            const override = res.data.override || {};
-            $('#attendanceDataRows').html(ATTENDANCE_DATA_FIELDS_RD.map(f => attendanceDataRowHtml(f, synced[f.key], override[f.key])).join(''));
-            // 2026-09-14, Round 3 item 4 batch 1/4: this tab's own data just landed (or was just
-            // re-saved) -- re-baseline its dirty-guard against what's actually on the server now.
-            refreshAdjustmentTabDirtyGuard('manageLinesAttendancePane');
-            refreshAdjustmentSaveButtonState();
-        }
-    });
-}
-$(document).on('click', '#btnSaveAttendanceData', function () {
-    const fields = {};
-    $('#attendanceDataRows tr').each(function () {
-        const field = $(this).data('field');
-        const val = $(this).find('.attendance-data-input').val();
-        fields[field] = (val === '' || val === null) ? null : parseFloat(val);
-    });
-    const $btn = $(this);
-    setButtonLoading($btn, true);
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-run.attendance-override.save`,
-        method: 'POST', contentType: 'application/json', dataType: 'json',
-        data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId, fields: fields }),
-        success: function (res) {
-            setButtonLoading($btn, false);
-            if (res.status) {
-                showSuccess(res.message || langData['save_success'] || 'Saved successfully.');
-                loadAttendanceDataRd();
-                loadRunDetail();
-            } else {
-                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
-            }
-        },
-        error: function () {
-            setButtonLoading($btn, false);
-            showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
-        }
-    });
-});
-$(document).on('click', '#btnResetAttendanceData', function () {
-    const title = langData['attendance_data_reset_all'] || 'Reset All to Synced';
-    const msg = langData['confirm_reset_attendance_data_message'] || 'Discard all corrections and revert every field back to the synced value?';
-    showConfirm(title, msg, function () {
-        $.ajax({
-            url: `${BASE_URL}/api/payroll-run.attendance-override.remove`,
-            method: 'POST', contentType: 'application/json', dataType: 'json',
-            data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId }),
-            success: function (res) {
-                if (res.status) {
-                    loadAttendanceDataRd();
-                    loadRunDetail();
-                } else {
-                    showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
-                }
-            },
-            error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving the data.'); }
-        });
-    });
-});
-
 /* ---------- The line-override table -- ONE table (2026-09-16, batch 3/4, rules.md 7/8/9; it was the
    "ปรับตัวเลข" tab's own until D3 left it with a single host, the Calculation Breakdown modal).
    Every row is a line this employee's own last calculation actually produced (base salary +
@@ -4440,9 +4261,67 @@ const LINE_OVERRIDE_GROUPS_RD = [
 // (hiding those buries a real problem), and manually_overridden/manually_excluded mean someone has
 // already acted on this very row.
 const LINE_OVERRIDE_SKIP_NOTES_RD = ['employee_not_enrolled', 'employee_tax_exempt', 'disabled'];
+/* ---- TH_PIT / TH_SSO are a 3-state question, not a 2-state one (2026-09-18, 4b) --------------
+   Neither row carries an exclusion any more: tiny-E closed that write, because an exclusion row only
+   ever zeroed the EMPLOYEE half and left the employer contribution computing in full, so it never
+   meant "do not tax / do not send SSO for this person". What does mean that is
+   payroll_run_employee_exemptions' own tri-state, which reaches the engine's $employeeFlags -- so the
+   switch on these 2 rows writes THAT endpoint, and the row's own restore writes its third value,
+   'inherit', which no switch position can express. Every other statutory code is unchanged. */
+const STATUTORY_EXEMPTION_FIELD_RD = { TH_PIT: 'tax', TH_SSO: 'sso' };
+/* The server's last word on this employee, re-read with the table (loadSyncLineOverridesRd) --
+   including the 2 read-only `*_inherit_effective` keys: what 'inherit' really resolves to for THIS
+   employee on THIS run (the run default, else their own permanent flag). That answer is NOT derivable
+   from the lines -- an override replaces the very note the flag would have produced -- which is why
+   it is carried in the response rather than inferred here. */
+let lineOverrideExemptionRd = null;
+function statutoryExemptionFieldRd(line) {
+    if (!line || (line.line_type || 'earning_deduction') !== 'statutory') return null;
+    return STATUTORY_EXEMPTION_FIELD_RD[String(line.code || '').toUpperCase()] || null;
+}
+function statutoryExemptionStateRd(field) {
+    if (!field || !lineOverrideExemptionRd) return 'inherit';
+    return lineOverrideExemptionRd[field + '_calculate_override'] || 'inherit';
+}
+function statutoryExemptionInheritRd(field) {
+    if (!field || !lineOverrideExemptionRd) return 'yes';
+    return lineOverrideExemptionRd[field + '_inherit_effective'] === 'no' ? 'no' : 'yes';
+}
+// What is in force right now: the stored answer when there is one, otherwise what inherit gives.
+function statutoryExemptionEffectiveRd(field) {
+    const state = statutoryExemptionStateRd(field);
+    return state === 'inherit' ? statutoryExemptionInheritRd(field) : state;
+}
+// "Somebody answered this row themselves" -- the same question lineOverrideIsChangedRd() asks of
+// every other row, for the one kind of change that is not stored as an override at all.
+function statutoryExemptionChangedRd(line) {
+    const field = statutoryExemptionFieldRd(line);
+    return !!field && statutoryExemptionStateRd(field) !== 'inherit';
+}
+// Both fields, always: the endpoint takes the pair and writes the row as a pair, so sending only the
+// one that moved would silently reset the other to 'inherit'. `changes` is what this write really
+// says -- {tax:...} / {sso:...} for one row, both for "restore everything" -- and whatever it leaves
+// out is sent back at the value the server already holds.
+function statutoryExemptionRequestRd(changes, done) {
+    const payload = {
+        id: PAYROLL_RUN_ID,
+        employee_id: lineOverrideEmployeeIdRd(),
+        tax_calculate_override: changes.tax || statutoryExemptionStateRd('tax'),
+        sso_calculate_override: changes.sso || statutoryExemptionStateRd('sso'),
+    };
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.save-employee-exemption`,
+        method: 'POST', contentType: 'application/json', dataType: 'json', data: JSON.stringify(payload),
+        success: function (res) { done(!!res.status, res.message); },
+        error: function () { done(false, null); },
+    });
+}
 // 'employee_not_enrolled' does not say WHICH enrolment, so the badge is resolved per item code --
 // the 2 codes that can produce it are the 2 in StatutoryCalculationEngine's own ITEM_ENROLLMENT_FLAG.
 function lineOverrideSkipEnumRd(line) {
+    // The 2 tri-state rows never carry one: their participation is a control ON the row now, so a
+    // badge saying why they were left out would be explaining a state the row itself can change.
+    if (statutoryExemptionFieldRd(line)) return null;
     if (line.note === 'employee_not_enrolled') {
         if (line.code === 'TH_SSO') return 'employee_not_enrolled_sso';
         if (line.code === 'TH_PVD') return 'employee_not_enrolled_pvd';
@@ -4453,14 +4332,23 @@ function lineOverrideSkipEnumRd(line) {
 // Hidden only when the user has not already acted on the row: a personal override wins over the
 // enrolment setting (recalculate() applies it regardless of the note), so such a row must stay
 // visible or its own override would be unreachable.
-function lineOverrideIsSkippedRd(line) {
+function lineOverrideIsSkippedRd(line, mode) {
+    // The 2 tri-state rows are the exception, in both directions. In the editable slip the row is the
+    // ONLY way to set that answer to "yes", so it is always rendered -- at 0, and when the engine says
+    // this employee is not enrolled at all, which is precisely when it is needed. The read-only slip
+    // has nothing to set, so it shows the row only when it says something: a figure, or an answer
+    // somebody chose.
+    if (statutoryExemptionFieldRd(line)) {
+        if (mode !== 'view') return false;
+        return Number(line.current_amount || 0) === 0 && !line.override_action && !statutoryExemptionChangedRd(line);
+    }
     return !line.override_action && !!lineOverrideSkipEnumRd(line);
 }
 // 2026-09-18, 4a-2b: "somebody changed this row" -- an override of any kind (including an exclude),
 // or a line that was not calculated at all but added by hand. The read-only slip's second tab shows
 // exactly these, and its count is the same predicate, so there is one definition of both.
 function lineOverrideIsChangedRd(line) {
-    return !!line.override_action || line.line_type === 'manual_line';
+    return !!line.override_action || line.line_type === 'manual_line' || statutoryExemptionChangedRd(line);
 }
 let lineOverrideRowsRd = [];
 let lineOverrideRunSettingsRd = null;
@@ -4481,7 +4369,7 @@ function lineOverrideMountRd() {
     return $(lineOverrideHostRd.mount);
 }
 function lineOverrideEmployeeIdRd() {
-    return lineOverrideHostRd.employeeId !== null ? lineOverrideHostRd.employeeId : manageLinesEmployeeId;
+    return lineOverrideHostRd.employeeId;
 }
 function setLineOverrideHostRd(mount, employeeId, onSaved, mode) {
     if (lineOverrideHostRd.mount !== mount) {
@@ -4489,6 +4377,9 @@ function setLineOverrideHostRd(mount, employeeId, onSaved, mode) {
     }
     lineOverrideHostRd = { mount: mount, employeeId: employeeId, onSaved: onSaved || null, mode: mode || 'edit' };
     lineOverrideViewFilterRd = 'all';
+    // Dropped with the host: it is one employee's answer, and a render triggered before the new
+    // employee's fetch lands must not read the previous one's.
+    lineOverrideExemptionRd = null;
 }
 // Edit history for THIS employee, keyed 'line_type|item_code' -- fetched once alongside the table's
 // own data (loadSyncLineOverridesRd) because the table has to know at RENDER time which rows even
@@ -4553,15 +4444,19 @@ function lineOverrideHistoryMenuHtml(history, readOnly) {
     const currentText = lineOverrideHistoryValueRd(history.current_value);
     const computedText = lineOverrideHistoryValueRd(history.original_value);
     const currentBadge = countBadgeHtml(0, { label: langData['line_override_history_current'] || 'Current' });
-    // 2026-09-17, R1: the head is REFERENCE, not a choice -- it is the figure every row below is a
-    // departure from, and going back to it is an action the row's own form carries (its left-slot
-    // "ใช้ค่าที่ระบบคำนวณ", 2026-09-18 tiny-L6a). A menu row that does the same thing as a control one
-    // click away is a second way to do one thing; this one keeps the same [value | what it is]
-    // skeleton as the rows under it, without being pressable.
-    let html = `<li class="lo-history-head"><div class="lo-history-item lo-history-item-static">
-        <span class="lo-history-value num">${escapeHtml(computedText)}</span>
-        <span class="lo-history-meta">${escapeHtml(langData['line_override_history_computed'] || 'Calculated value')}</span>
-    </div></li>`;
+    /* 2026-09-19, reported for real: this row was the ONLY way back to the calculated figure that a
+       user could see from the table, and R1 made it static on the reasoning that the row's own form
+       carries the same action in its left slot -- which is true but is 2 clicks away behind a pencil,
+       and `lo-history-computed` (what the click handler keys "restore" off) was left with no producer
+       at all, so `asComputed` could never be true from this menu again. Pressable again in the
+       EDITABLE slip; the read-only one still renders it as the fact it is there (readOnly), which is
+       the same branch every entry below it takes. */
+    let html = lineOverrideHistoryItemHtml(
+        computedText,
+        escapeHtml(langData['line_override_history_computed'] || 'Calculated value'),
+        false,
+        { readOnly: readOnly, liClass: 'lo-history-head', itemClass: 'lo-history-computed' }
+    );
     const edits = (history.edits || []).slice().reverse();
     const currentIdx = lineOverrideHistoryCurrentIndexRd(edits, currentText);
     edits.forEach(function (edit, i) {
@@ -4671,6 +4566,18 @@ function lineOverrideComputedTagHtml(line) {
     const tpl = langData['line_override_computed_inline'] || 'System: {amount}';
     return `<div class="payslip-line-tag">${escapeHtml(tpl.replace('{amount}', text))}</div>`;
 }
+// 2026-09-18, 4b: the same tag, for the answer the 2 tri-state rows carry instead of a figure. It
+// prints a WORD ("ระบบ: คำนวณ"), not an amount: what was replaced on this row is a yes/no, and the
+// figure that answer produced is already in the cell above it. Same template, same position, so a row
+// that carries both an amount override and an answer prints both, in the order they were made.
+function statutoryExemptionTagHtmlRd(line) {
+    const field = statutoryExemptionFieldRd(line);
+    if (!field || statutoryExemptionStateRd(field) === 'inherit') return '';
+    const inherits = statutoryExemptionInheritRd(field);
+    const label = langData['calc_override_' + inherits] || (inherits === 'yes' ? 'Calculate' : "Don't Calculate");
+    const tpl = langData['line_override_computed_inline'] || 'System: {amount}';
+    return `<div class="payslip-line-tag">${escapeHtml(tpl.replace('{amount}', label))}</div>`;
+}
 function lineOverrideHistoryCellHtml(line, mode) {
     const history = lineOverrideHistoryFor(line);
     const editCount = history && history.edits ? history.edits.length : 0;
@@ -4705,6 +4612,10 @@ function lineOverrideOccurrencesHtml(occurrences) {
 function lineOverrideRowHtml(line, idx, group, runDisabled, mode) {
     const isView = mode === 'view';
     const name = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || line.code;
+    // Set on TH_PIT/TH_SSO only: which half of payroll_run_employee_exemptions this row's switch
+    // writes. Every reader of the row (the change handler, restore, the footer count) asks the row
+    // for it rather than re-testing the code.
+    const exemptionField = statutoryExemptionFieldRd(line);
     const origAction = line.override_action || '';
     const included = runDisabled ? false : origAction !== 'exclude';
     // 2026-09-18, 4a-2 follow-up: a skipped row never reaches here -- renderLineOverrideTableRd()
@@ -4758,10 +4669,16 @@ function lineOverrideRowHtml(line, idx, group, runDisabled, mode) {
     // A manual row keeps the cell and leaves it empty: there is no calculated value behind it to put
     // back, so a switch there would offer an action that means nothing -- and dropping the cell
     // would take the row out of the grid every other row is in.
+    // On a tri-state row the switch does not mean "include this line", it means "does this person get
+    // taxed / sent to SSO on this run" -- so it shows what is IN FORCE (the stored answer, or what
+    // inherit gives when there is none), never the line's own include state.
+    const switchOn = exemptionField ? statutoryExemptionEffectiveRd(exemptionField) === 'yes' : included;
     const checkCell = isView ? '' : `<td class="col-check tbl-sticky-col">${isManual ? ''
-        : `<div class="form-check form-switch mb-0"><input class="form-check-input lo-include" type="checkbox" role="switch" id="loInc${idx}" ${included ? 'checked' : ''}${runDisabledAttr}></div>`}</td>`;
+        : `<div class="form-check form-switch mb-0"><input class="form-check-input lo-include" type="checkbox" role="switch" id="loInc${idx}" ${switchOn ? 'checked' : ''}${runDisabledAttr}></div>`}</td>`;
     const actionCell = isView ? '' : `<td class="lo-action-cell"><div class="lo-actions">${isManual ? manualActions : pencil}</div></td>`;
     return `<tr class="lo-row${included ? '' : ' lo-row-off'}${isManual ? ' lo-row-manual' : ''}" data-item-code="${escapeAttr(line.code)}" data-line-type="${escapeAttr(line.line_type || 'earning_deduction')}"
+        data-group-type="${escapeAttr(group.type || '')}"
+        data-exemption-field="${escapeAttr(exemptionField || '')}" data-exemption-changed="${statutoryExemptionChangedRd(line) ? '1' : ''}"
         data-orig-action="${escapeAttr(origAction)}" data-item-name="${escapeAttr(name)}" data-amount="${escapeAttr(fmtNum(line.current_amount))}"${title}>
         ${checkCell}<td class="lo-name-cell tbl-sticky-col tbl-sticky-col-edge-left">
             <span class="lo-name" title="${escapeAttr(name)} (${escapeAttr(line.code)})">${escapeHtml(name)}</span>${sourceBadge}${statutoryBadge}
@@ -4771,7 +4688,7 @@ function lineOverrideRowHtml(line, idx, group, runDisabled, mode) {
             ${lineOverrideTagHtmlRd(lineOverrideNoteTextRd(line))}
             ${lineOverrideOccurrencesHtml(line.occurrences)}
         </td>
-        <td class="num col-money lo-amount-cell"><div class="lo-amount-view">${amountCell}</div>${lineOverrideComputedTagHtml(line)}</td>
+        <td class="num col-money lo-amount-cell"><div class="lo-amount-view">${amountCell}</div>${lineOverrideComputedTagHtml(line)}${statutoryExemptionTagHtmlRd(line)}</td>
         ${actionCell}<td class="lo-history-cell">${(included && !isManual) ? lineOverrideHistoryCellHtml(line, mode) : ''}</td>
     </tr>`;
 }
@@ -4788,6 +4705,47 @@ function lineOverrideAddLinkHtmlRd(group) {
     const label = langData['add_line'] || 'Add Line';
     return `<button type="button" class="btn btn-link lo-add-line-btn" data-item-type="${escapeAttr(group.manualType)}" title="${escapeAttr(title)}">${escapeHtml(label)}</button>`;
 }
+/* 2026-09-19, explicit request: the system groups get the link their head was missing. Same slot,
+   same shape and the same CSS as the manual groups' "เพิ่มรายการ" (rules.md §9 -- one link per group
+   head, never both: a manual group has nothing calculated to put back, a system group has nothing to
+   add). Rendered ONLY when the group really holds something to restore -- a link that is there but
+   does nothing is not information (§0.3), which is why this is absence, not `disabled`.
+   `group-name` rides along so the confirm can name the group in the words the head shows. */
+function lineOverrideGroupRestoreLinkHtmlRd(group, groupName) {
+    const label = langData['line_override_group_restore'] || 'Restore calculated values';
+    return `<button type="button" class="btn btn-link lo-group-restore-btn" data-group-type="${escapeAttr(group.type)}" data-group-name="${escapeAttr(groupName)}" title="${escapeAttr(label)}">${escapeHtml(label)}</button>`;
+}
+// "Is there anything in this group to put back" -- the SAME predicate the footer's own button counts
+// with, asked of one group's lines instead of every row on screen.
+function lineOverrideLineIsRestorableRd(line) {
+    return !!line.override_action || statutoryExemptionChangedRd(line);
+}
+// One group, the same write path [คืนค่าระบบทั้งหมด] takes: one .remove per overridden row in
+// order, plus ONE exemption write when a tri-state answer in this group is not 'inherit' (both
+// TH_PIT and TH_SSO live in the statutory group, and that endpoint writes the pair).
+function lineOverrideGroupRestoreRd($btn) {
+    const groupType = String($btn.data('group-type') || '');
+    const groupName = String($btn.data('group-name') || '');
+    const rows = [];
+    let resetExemption = false;
+    lineOverrideMountRd().find('.lo-row[data-group-type="' + groupType + '"]').each(function () {
+        const $row = $(this);
+        if ($row.find('.lo-include').is(':disabled')) return;
+        if ($row.attr('data-exemption-changed')) resetExemption = true;
+        if ($row.data('orig-action') || '') rows.push($row);
+    });
+    if (!rows.length && !resetExemption) return;
+    const tpl = langData['confirm_group_restore_message'] || 'Every changed item in "{group}" goes back to its calculated value. Continue?';
+    showConfirm({
+        title: langData['confirm_group_restore_title'] || 'Restore this group',
+        message: tpl.replace('{group}', groupName),
+        tone: 'warning',
+        onYes: function () { runRestoreAllComputedRd(rows, resetExemption); },
+    });
+}
+$(document).on('click', '.lo-mount .lo-group-restore-btn', function () {
+    lineOverrideGroupRestoreRd($(this));
+});
 // 2026-09-17, R1 follow-up: the pinned 2nd column starts where the 1st one really ENDS. Its
 // declared width is 78px, but what a sticky `left` has to match is the rendered border-box -- borders
 // and sub-pixel rounding are not in the declaration, and being off by a fraction is exactly what
@@ -4849,7 +4807,7 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
     // Counted over the rows that really render (a skipped one is not a row of this slip at all), so
     // the number on the tab and the rows behind it can never disagree.
     const changedCount = isView
-        ? lineOverrideRowsRd.filter(l => !lineOverrideIsSkippedRd(l) && lineOverrideIsChangedRd(l)).length
+        ? lineOverrideRowsRd.filter(l => !lineOverrideIsSkippedRd(l, mode) && lineOverrideIsChangedRd(l)).length
         : 0;
     const changedOnly = changedCount > 0 && lineOverrideViewFilterRd === 'changed';
     const colCount = isView ? 3 : 5;
@@ -4862,7 +4820,7 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
         // slip's scarcest resource -- a row -- on an item that is not part of this pay.) A personal
         // override still wins: lineOverrideIsSkippedRd() lets such a row through.
         const groupLines = lineOverrideRowsRd.filter(l => (l.item_type || 'other') === group.type
-            && !lineOverrideIsSkippedRd(l)
+            && !lineOverrideIsSkippedRd(l, mode)
             && (!changedOnly || lineOverrideIsChangedRd(l)));
         // 2026-09-18, 4a-2: an EMPTY manual group still renders in the editable slip -- its head and
         // its "add a line" row are where adding the first one starts, and a group that appears only
@@ -4870,9 +4828,13 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
         // offer there, so an empty one is simply absent, like any other empty group.
         const manualOpen = !!group.manualType && !isView;
         if (!groupLines.length && !manualOpen) return;
+        // 2026-09-19: the system groups' own head link. Editable slip only, and only when this group
+        // really holds something to put back.
+        const groupName = langData[group.key] || group.fallback;
+        const groupRestorable = !group.manualType && !isView && groupLines.some(lineOverrideLineIsRestorableRd);
         // Still ONE row with one full-width cell -- the flex sits INSIDE the cell, never on the `<td>`
         // itself (rules.md §7: display:flex on a cell kills its table-cell behaviour and its colspan).
-        body += `<tr class="lo-group"><td colspan="${colCount}"><div class="lo-group-head"><span class="lo-span-sticky">${escapeHtml(langData[group.key] || group.fallback)}</span>${manualOpen ? lineOverrideAddLinkHtmlRd(group) : ''}</div></td></tr>`;
+        body += `<tr class="lo-group"><td colspan="${colCount}"><div class="lo-group-head"><span class="lo-span-sticky">${escapeHtml(groupName)}</span>${manualOpen ? lineOverrideAddLinkHtmlRd(group) : ''}${groupRestorable ? lineOverrideGroupRestoreLinkHtmlRd(group, groupName) : ''}</div></td></tr>`;
         groupLines.forEach(function (line) {
             // Disabled only where the run-level exclusion is genuinely in charge: a personal override
             // of any kind already wins over it (PayrollRunModel::recalculate()'s own resolution), so
@@ -5044,9 +5006,10 @@ function lineOverrideConfirmApplyHistoryValueRd(itemCode, value, asComputed, onA
         cancelText: langData['cancel'] || 'Cancel',
         onYes: function () {
             if (typeof onApplied === 'function') onApplied();
-            // The calculated-value row means "drop the override", not "save this number as one".
+            // The calculated-value row means "drop what somebody put here", not "save this number as
+            // one" -- which on a tri-state row is 2 stored things, not 1 (lineOverrideRestoreRowRd).
             if (asComputed) {
-                lineOverrideSendRd($row, { action: 'remove' });
+                lineOverrideRestoreRowRd($row);
             } else {
                 const parsed = typeof parseMoneyInput === 'function' ? parseMoneyInput(value) : parseFloat(value);
                 if (isNaN(parsed)) return;
@@ -5135,21 +5098,12 @@ function loadSyncLineOverridesRd() {
                 lineOverrideHistoryRd.byKey[line.line_type + '|' + line.item_code] = line;
             });
             const manual = (manualRes && manualRes.status && manualRes.data) ? manualRes.data : [];
+            // Same response, second half (PayrollController::syncLinesForEmployee) -- the TH_PIT/TH_SSO
+            // rows are rendered from it, so it is set BEFORE the table draws, never after.
+            lineOverrideExemptionRd = res.exemption || null;
             renderLineOverrideTableRd((res.data || []).concat(manual.map(manualLineToTableRowRd)), res.run_settings, lineOverrideHostRd.mode);
             refreshBreakdownFooterStateRd();
         });
-    });
-}
-// The "Tax & SSO" tab's own half of that same response. Its dirty-guard baseline is re-taken here,
-// once the radios really hold what the server says -- a baseline from `shown.bs.modal` would be the
-// pre-load DOM (see ADJUSTMENT_TAB_CONFIG_RD's own docblock).
-function loadEmployeeExemptionRd() {
-    fetchSyncLinesForEmployeeRd(manageLinesEmployeeId, function (res) {
-        const ex = res.exemption || { tax_calculate_override: 'inherit', sso_calculate_override: 'inherit' };
-        $(`#empCalcTaxGroup input[value="${ex.tax_calculate_override || 'inherit'}"]`).prop('checked', true);
-        $(`#empCalcSsoGroup input[value="${ex.sso_calculate_override || 'inherit'}"]`).prop('checked', true);
-        refreshAdjustmentTabDirtyGuard('manageLinesCalcPane');
-        refreshAdjustmentSaveButtonState();
     });
 }
 function lineOverrideRowByCodeRd(itemCode) {
@@ -5163,6 +5117,22 @@ $(document).on('change', '.lo-mount .lo-include', function () {
     const included = this.checked;
     const name = String($row.data('item-name') || $row.data('item-code'));
     const snapBack = function () { $row.find('.lo-include').prop('checked', !included); };
+    // 2026-09-18, 4b: the same control, a different question and a different endpoint on the 2
+    // tri-state rows -- and its own confirm, because "leave this item out of the run" is not what is
+    // being asked there (line_override_confirm_exclude_* would state something untrue).
+    const exemptionField = String($row.data('exemption-field') || '');
+    if (exemptionField) {
+        const stateLabel = langData['calc_override_' + (included ? 'yes' : 'no')] || (included ? 'Calculate' : 'Do not calculate');
+        showConfirm({
+            title: langData['statutory_toggle_confirm_title'] || 'Change how this item is calculated',
+            message: (langData['statutory_toggle_confirm_message'] || 'Set {item} to "{state}" for this employee in this run?')
+                .replace('{item}', name).replace('{state}', stateLabel),
+            tone: included ? 'info' : 'warning',
+            onYes: function () { statutoryExemptionSendRd($row, exemptionField, included ? 'yes' : 'no'); },
+            onNo: snapBack,
+        });
+        return;
+    }
     const tpl = included
         ? (langData['line_override_confirm_include_message'] || 'Include {item} in this run again?')
         : (langData['line_override_confirm_exclude_message'] || 'Leave {item} out of this run?');
@@ -5216,7 +5186,7 @@ function lineOverrideRequestRd(lineType, payload, action, done) {
 function setLineOverrideTableBusyRd(busy) {
     const $wrap = lineOverrideMountRd();
     $wrap.toggleClass('lo-table-busy', busy);
-    $wrap.find('.lo-include, .lo-edit-btn, .lo-history-toggle').each(function () {
+    $wrap.find('.lo-include, .lo-edit-btn, .lo-history-toggle, .lo-group-restore-btn, .lo-add-line-btn').each(function () {
         const $el = $(this);
         if (busy) {
             if ($el.is(':disabled')) $el.attr('data-was-disabled', '1');
@@ -5248,6 +5218,64 @@ function lineOverrideSendRd($row, plan, $busyBtn) {
             // own hook is what refreshes anything OUTSIDE this table that moved with it.
             lineOverrideAfterWriteRd();
         });
+}
+// The tri-state write, with the SAME lock/refresh contract as lineOverrideSendRd() above -- the
+// endpoint recalculates the run internally exactly as the override endpoints do, so a second action
+// started before it returns would race it.
+function statutoryExemptionSendRd($row, field, value, $busyBtn) {
+    const changes = {};
+    changes[field] = value;
+    setLineOverrideTableBusyRd(true);
+    if ($busyBtn && $busyBtn.length) setButtonLoading($busyBtn, true);
+    statutoryExemptionRequestRd(changes, function (ok, message) {
+        if (!ok) { lineOverrideSendFailedRd($row, $busyBtn, message); return; }
+        showSuccess(langData['line_override_saved'] || 'Saved.');
+        lineOverrideAfterWriteRd();
+    });
+}
+/* "Back to what the system decided", for ONE row. On an ordinary row that is dropping its override,
+   which is what it has always been. On a tri-state row it is dropping the answer somebody chose --
+   back to 'inherit', the value no switch position can express -- and, if the same row also carries an
+   amount override, that too: both are "what somebody put here instead". Sent in order, never in
+   parallel: each write recalculates the whole run inside itself. */
+function lineOverrideRestoreRowRd($row) {
+    const field = String($row.data('exemption-field') || '');
+    const resetExemption = !!field && statutoryExemptionStateRd(field) !== 'inherit';
+    const dropOverride = !!($row.data('orig-action') || '');
+    if (!resetExemption && !dropOverride) return;
+    let failMessage = null;
+    const calls = [];
+    if (resetExemption) {
+        const changes = {};
+        changes[field] = 'inherit';
+        calls.push(function (next) {
+            statutoryExemptionRequestRd(changes, function (ok, message) {
+                if (!ok) { failMessage = message || ''; }
+                next(ok);
+            });
+        });
+    }
+    if (dropOverride) {
+        calls.push(function (next) {
+            lineOverrideRequestRd($row.data('line-type'), lineOverridePayloadRd($row.data('item-code'), { action: 'remove' }), 'remove',
+                function (ok, message) {
+                    if (!ok) { failMessage = message || ''; }
+                    next(ok);
+                });
+        });
+    }
+    setLineOverrideTableBusyRd(true);
+    runSequentialAjaxRd(calls, function () {
+        setLineOverrideTableBusyRd(false);
+        if (failMessage !== null) {
+            showError(failMessage || langData['save_failed'] || 'Could not save.');
+        } else {
+            showSuccess(langData['line_override_saved'] || 'Saved.');
+        }
+        // Either way: on a 2-call restore the first one may have landed, so the table has to show
+        // what the server really holds now.
+        lineOverrideAfterWriteRd();
+    });
 }
 // One body for both senders, so an added field cannot reach only one of them.
 function lineOverridePayloadRd(itemCode, plan) {
@@ -5329,17 +5357,23 @@ function restoreAllComputedLineOverridesRd() {
         if ($row.find('.lo-include').is(':disabled') || !($row.data('orig-action') || '')) return;
         rows.push($row);
     });
-    if (!rows.length) return;
+    // 2026-09-18, 4b: "every override this employee carries" includes the tri-state answers, which are
+    // not override rows and so are not in `rows` at all. They reset as ONE extra request (the endpoint
+    // takes and writes the pair), added only when there is really something to reset -- and counted as
+    // one item, because one request is what it costs and one line of progress is what it shows.
+    const resetExemption = statutoryExemptionStateRd('tax') !== 'inherit' || statutoryExemptionStateRd('sso') !== 'inherit';
+    const total = rows.length + (resetExemption ? 1 : 0);
+    if (!total) return;
     const tpl = langData['line_override_confirm_restore_all_message'] || '{n} item(s) will go back to their calculated value. Continue?';
     showConfirm({
         title: langData['line_override_confirm_restore_all_title'] || 'Restore calculated values',
-        message: tpl.replace('{n}', String(rows.length)),
+        message: tpl.replace('{n}', String(total)),
         tone: 'warning',
-        onYes: function () { runRestoreAllComputedRd(rows); },
+        onYes: function () { runRestoreAllComputedRd(rows, resetExemption); },
     });
 }
-function runRestoreAllComputedRd(rows) {
-    const total = rows.length;
+function runRestoreAllComputedRd(rows, resetExemption) {
+    const total = rows.length + (resetExemption ? 1 : 0);
     let saved = 0;
     let failedName = null;
     setLineOverrideTableBusyRd(true);
@@ -5360,6 +5394,17 @@ function runRestoreAllComputedRd(rows) {
             });
         };
     });
+    if (resetExemption) {
+        // Last, and as a pair: both halves go back to 'inherit' in the one write the endpoint takes.
+        calls.push(function (next) {
+            lineOverrideProgressRd(total, total);
+            statutoryExemptionRequestRd({ tax: 'inherit', sso: 'inherit' }, function (ok) {
+                if (ok) { saved++; next(true); return; }
+                failedName = langData['run_exemption_title'] || 'Tax / SSO';
+                next(false);
+            });
+        });
+    }
     runSequentialAjaxRd(calls, function () {
         setLineOverrideTableBusyRd(false);
         $('#lineOverrideSaveProgress').text('');
@@ -5378,106 +5423,6 @@ function runRestoreAllComputedRd(rows) {
     });
 }
 $(document).on('click', '#btnRestoreAllComputedLineOverrides', restoreAllComputedLineOverridesRd);
-$(document).on('click', '#btnSaveEmpCalcOverride', function () {
-    const $btn = $(this);
-    setButtonLoading($btn, true);
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-run.save-employee-exemption`,
-        method: 'POST',
-        contentType: 'application/json',
-        dataType: 'json',
-        data: JSON.stringify({
-            id: PAYROLL_RUN_ID,
-            employee_id: manageLinesEmployeeId,
-            tax_calculate_override: $('#empCalcTaxGroup input:checked').val() || 'inherit',
-            sso_calculate_override: $('#empCalcSsoGroup input:checked').val() || 'inherit',
-        }),
-        success: function (res) {
-            setButtonLoading($btn, false);
-            if (res.status) {
-                showSuccess(langData['save_success'] || 'Saved successfully.');
-                loadRunDetail();
-                // 2026-09-14, Round 3 item 4 batch 1/4: unlike the other 3 batch-save tabs, nothing
-                // else here reloads this pane's own radios afterward -- re-baseline explicitly so the
-                // footer Save button goes back to disabled.
-                refreshAdjustmentTabDirtyGuard('manageLinesCalcPane');
-                refreshAdjustmentSaveButtonState();
-            } else {
-                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
-            }
-        },
-        error: function () { setButtonLoading($btn, false); showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
-    });
-});
-$(document).on('change', '.sync-line-exclude-check', function () {
-    $(this).closest('.sync-line-controls').find('.sync-line-amount-input').prop('disabled', this.checked);
-});
-/* ---------- Recurring Deduction Destination override (2026-09-02, Deduction Destination &
-   Third-Party Remittance, Phase 6) -- per-run override of which account a recurring deduction
-   (Employee Detail's own "Recurring Deductions" section) is routed to, without ever touching that
-   employee's own saved template. One shared editor card (#recurringDestEditorCard) reused across
-   every row -- avoids initializing a fresh Select2 instance per row, same reasoning
-   payroll-run.line-override's own per-row plain-input approach already established for this exact
-   modal, just extended to a shared rich sub-form since a payee needs an employee/bank picker, not
-   just a number. ---------- */
-let recurringDestRows = [];
-/* 2026-09-18, tiny-L3 -- the READ-ONLY half of this tab: the per-installment assignments
-   (employee_earning_deductions -- Employee Detail's own Payment Items section) that this run routes
-   somewhere. Reported for real: an employee whose deduction destinations all live in that table saw
-   an empty tab here, because this tab only ever read recurring deductions.
-   Deliberately controlless: an EED destination belongs to the assignment, not to a run, so there is
-   nothing to override here and nothing in this markup is focusable or dirty-able -- the dirty guard's
-   scope (#recurringDestEditorCard, see ADJUSTMENT_TAB_CONFIG_RD) never reaches it. */
-let eedDestRows = [];
-function eedDestRowHtml(row) {
-    const name = (currentLang === 'th' ? row.item_name_th : row.item_name_en) || row.item_code;
-    const dest = recurringDestPayeeSummary(row.destination);
-    // A plan of several installments says which one this run pays; a single-installment assignment
-    // has no sequence worth showing.
-    const installment = row.is_installment_plan
-        ? (langData['eed_dest_installment'] || 'Installment {no}/{total}')
-            .replace('{no}', row.installment_no).replace('{total}', row.total_installments)
-        : '';
-    return `<div class="eed-dest-row" data-assignment-id="${row.assignment_id}">
-        <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
-            <div>
-                <div class="fw-bold text-dark">${escapeHtml(name)}</div>
-                <div class="small">${escapeHtml(langData['recurring_dest_effective'] || 'Currently routed to')}: <strong>${escapeHtml(dest)}</strong></div>
-            </div>
-            <div class="small text-muted text-end">
-                <div class="num">${fmtNum(row.amount)}</div>
-                ${installment ? `<div>${escapeHtml(installment)}</div>` : ''}
-            </div>
-        </div>
-    </div>`;
-}
-function eedDestGroupHtml(rows) {
-    if (!rows.length) return '';
-    // §6/rules.md: markup JS builds itself reads langData directly -- a data-i18n sweep has already
-    // run by the time this is inserted and would never come back to it.
-    const url = rows[0].employee_detail_url || '';
-    const link = url
-        ? ` <a href="${escapeAttr(url)}" target="_blank" rel="noopener">${escapeHtml(langData['eed_dest_open_employee'] || 'Open Employee Detail')}</a>`
-        : '';
-    return `<div class="small text-muted mt-3 mb-2">${escapeHtml(langData['eed_dest_group_title'] || 'Destinations set on Employee Detail')}${link}</div>
-        ${rows.map(eedDestRowHtml).join('')}`;
-}
-// Both groups come out of ONE response, so this is also the one place that decides whether the tab
-// is genuinely empty -- the inline empty line belongs to the tab, not to the editable list, and must
-// not appear while the read-only group has rows.
-function renderRecurringDestListsRd() {
-    $('#recurringDestOverrideList').html(recurringDestRows.length
-        ? recurringDestRows.map(recurringDestRowHtml).join('')
-        : (eedDestRows.length ? '' : `<div class="text-center text-muted small py-2">${escapeHtml(langData['recurring_dest_empty'] || 'No recurring deductions active for this employee in this pay period.')}</div>`));
-    $('#eedDestList').html(eedDestGroupHtml(eedDestRows));
-}
-// Language switch: re-render the READ-ONLY group only, from the rows already in hand. Re-running the
-// loader would fire a second request and re-init the editor card's 3 Select2s underneath the user
-// (applyLanguage() already re-inits them once, which is exactly the pattern these rows must not add
-// to) -- and the editable list is left alone for the same reason.
-function refreshEedDestLanguageRd() {
-    $('#eedDestList').html(eedDestGroupHtml(eedDestRows));
-}
 /* `p` is a payee descriptor -- PayrollRunModel::payeeDestinationDescriptor(), the same shape for a
    template default and for this run's override. 2026-09-17, tiny-L2: every label it reads is the one
    that row's own picker would show (the code is taken off the employee's name the same way the
@@ -5492,294 +5437,6 @@ function refreshEedDestLanguageRd() {
 function recurringDestPayeeSummary(p) {
     return payeeDescriptorTextRd(p) || (langData['payee_dest_retained'] || 'Retained by company');
 }
-function recurringDestRowHtml(row) {
-    const name = (currentLang === 'th' ? row.item_name_th : row.item_name_en) || row.item_code;
-    const templateLabel = recurringDestPayeeSummary(row.template);
-    const isOverridden = !!row.override;
-    const effectiveLabel = isOverridden ? recurringDestPayeeSummary(row.override) : templateLabel;
-    return `<div class="border rounded-3 p-2 mb-2" data-recurring-id="${row.recurring_id}">
-        <div class="d-flex justify-content-between align-items-start flex-wrap gap-1">
-            <div>
-                <div class="fw-bold text-dark">${escapeHtml(name)}</div>
-                <div class="small text-muted">${langData['recurring_dest_template_default'] || 'Template default'}: ${escapeHtml(templateLabel)}</div>
-                <div class="small">${langData['recurring_dest_effective'] || 'Currently routed to'}: <strong>${escapeHtml(effectiveLabel)}</strong>${isOverridden ? ` <span class="badge bg-warning-subtle text-warning">${langData['recurring_dest_overridden_badge'] || 'Overridden for this run'}</span>` : ''}</div>
-            </div>
-            <div class="btn-group btn-group-sm">
-                <button type="button" class="btn btn-outline-primary btn-recurring-dest-edit" data-recurring-id="${row.recurring_id}">${isOverridden ? (langData['recurring_dest_change'] || 'Change Override') : (langData['recurring_dest_override'] || 'Override for this run')}</button>
-                ${isOverridden ? `<button type="button" class="btn btn-outline-secondary btn-recurring-dest-reset" data-recurring-id="${row.recurring_id}">${langData['recurring_dest_reset'] || 'Reset to template'}</button>` : ''}
-            </div>
-        </div>
-    </div>`;
-}
-function loadRecurringDeductionDestinationsRd() {
-    $('#recurringDestEditorCard').addClass('d-none');
-    // The card is being hidden for a DIFFERENT employee's list -- whatever row it was open on has
-    // nothing to do with the rows about to arrive, so its pinned options go with it.
-    clearRecurringDestRowPinsRd();
-    refreshAdjustmentSaveButtonState();
-    $.getJSON(`${BASE_URL}/api/payroll-run.recurring-deduction-destinations-for-employee`, { run_id: PAYROLL_RUN_ID, employee_id: manageLinesEmployeeId }, function (res) {
-        if (!res.status) return;
-        recurringDestRows = res.data || [];
-        // 2026-09-18, tiny-L3: same response, second (read-only) list -- see renderRecurringDestListsRd().
-        eedDestRows = res.eed_rows || [];
-        renderRecurringDestListsRd();
-        // 2026-09-14, Round 3 item 4 batch 1/4: the editor card is hidden right above -- baseline it
-        // empty so a stale open-card snapshot from a previous employee never lingers.
-        refreshAdjustmentTabDirtyGuard('manageLinesRecurringDestPane');
-    });
-}
-// Same shared picker as the add/edit line form, minus the sub-question: an override always names a
-// real payee (removing it is what Reset does), so "retained by company" means 'company' outright --
-// see the partial's own $payee_allow_no_record.
-$(function () {
-    initPayeeDestination('recurringDest', {
-        allowNoRecord: false,
-        employeeWrap: '#recurringDestEmployeeWrapper',
-        companyWrap: '#recurringDestCompanyAccountWrapper',
-        externalWrap: '#recurringDestDestinationWrapper',
-        onChange: function (payeeType, dest) {
-            if (dest !== 'employee') {
-                $('#recurringDestPayeeEmployeeSelect').val(null).trigger('change');
-            }
-            // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- mandatory, same as the
-            // other 3 payee-routing editors in this app.
-            if (payeeType !== 'company') {
-                $('#recurringDestBankAccountSelect').val(null).trigger('change');
-            }
-            if (dest !== 'external') {
-                $('#recurringDestDestinationSelect').val(null).trigger('change');
-                $('#recurringDestAccountName, #recurringDestAccountNo, #recurringDestBankBranch').val('');
-                $('#recurringDestBank').val(null).trigger('change');
-                $('#recurringDestSaveForReuse').prop('checked', false);
-                $('#recurringDestDestinationNewFields').removeClass('d-none');
-            } else {
-                // Manual Entry / Platform UX review Phase 7 -- see applyFirstSavedDestinationDefault()'s
-                // own docblock in app.js.
-                applyFirstSavedDestinationDefault('#recurringDestDestinationSelect', '#recurringDestDestinationNewFields');
-            }
-        },
-    });
-});
-function setRecurringDestPayeeType(type) {
-    setPayeeDestination('recurringDest', type);
-}
-/* 2026-09-17, tiny-L2 -- the destination the ROW this card was opened on already points at, in all 3
-   of its pickers. Same 3 faults the add/edit line form had (tiny-M, see payeeRowPinnedOptionsRd()'s
-   own docblock), same answer: the row's own option is PINNED through initSelect2 instead of being
-   hand-built with `new Option`, so (a) it survives applyLanguage()'s re-init, (b) an ad-hoc
-   (is_saved = 0) destination -- which payment-destination.options never returns -- can still be
-   cleared and chosen again, and (c) the summary box under the picker is filled by prefill itself,
-   which programmatic selection never does via select2:select. */
-let recurringDestRowPinsRd = { payeeEmployee: null, bankAccount: null, destination: null };
-let recurringDestPayeeEmployeeBlockedRd = false;
-function renderRecurringDestPayeeEmployeeDetailRd(data) {
-    // Same 3-state renderer the line form uses -- including "this employee has no bank account on
-    // file", which for this card blocks its Save exactly as it blocks the line form's Add.
-    recurringDestPayeeEmployeeBlockedRd = renderPayeeEmployeeDetailRd('#recurringDestPayeeEmployeeDetail', data);
-    refreshAdjustmentSaveButtonState();
-}
-// True while the card is open on a payee who has nowhere for the money to land. Read by the footer's
-// own Save button state and by the payload builder's refusal -- the editor's own Save is `d-none`
-// (the footer dispatches to it), so disabling that button alone would stop nothing.
-function recurringDestSaveBlockedRd() {
-    return recurringDestPayeeEmployeeBlockedRd
-        && payeeDestinationType('recurringDest') === 'employee'
-        && !$('#recurringDestEditorCard').hasClass('d-none');
-}
-// Puts the row's own 3 options back and describes each underneath. Called LAST when the card opens,
-// after setRecurringDestPayeeType() -- whose onChange fires applyFirstSavedDestinationDefault(), and
-// that lookup must never be the thing that decides what is in a field the row already filled (it
-// re-checks the field before applying, so either arrival order now ends the same way).
-function applyRecurringDestRowPinsRd() {
-    if (pinRowOptionRd('#recurringDestPayeeEmployeeSelect', recurringDestRowPinsRd.payeeEmployee)) {
-        renderRecurringDestPayeeEmployeeDetailRd(recurringDestRowPinsRd.payeeEmployee.data);
-    }
-    if (pinRowOptionRd('#recurringDestBankAccountSelect', recurringDestRowPinsRd.bankAccount)) {
-        renderPayeeAccountDetailRd('#recurringDestBankAccountDetail', recurringDestRowPinsRd.bankAccount.data);
-    }
-    if (pinRowOptionRd('#recurringDestDestinationSelect', recurringDestRowPinsRd.destination)) {
-        renderPayeeAccountDetailRd('#recurringDestDestinationDetail', recurringDestRowPinsRd.destination.data);
-        $('#recurringDestDestinationNewFields').addClass('d-none');
-    }
-}
-// Dropped when the card moves to another row (or closes), so one row's destination can never be
-// offered as if it belonged to the next.
-function clearRecurringDestRowPinsRd() {
-    const SELECTORS = {
-        payeeEmployee: '#recurringDestPayeeEmployeeSelect',
-        bankAccount: '#recurringDestBankAccountSelect',
-        destination: '#recurringDestDestinationSelect',
-    };
-    Object.keys(SELECTORS).forEach(function (key) {
-        if (!recurringDestRowPinsRd[key]) return;
-        recurringDestRowPinsRd[key] = null;
-        unpinRowOptionRd(SELECTORS[key]);
-    });
-    renderRecurringDestPayeeEmployeeDetailRd(null);
-    renderPayeeAccountDetailRd('#recurringDestBankAccountDetail', null);
-    renderPayeeAccountDetailRd('#recurringDestDestinationDetail', null);
-}
-$(document).on('select2:select', '#recurringDestPayeeEmployeeSelect', function (e) {
-    renderRecurringDestPayeeEmployeeDetailRd(e.params.data || {});
-});
-$(document).on('select2:clear', '#recurringDestPayeeEmployeeSelect', function () {
-    renderRecurringDestPayeeEmployeeDetailRd(null);
-});
-$(document).on('select2:select', '#recurringDestBankAccountSelect', function (e) {
-    renderPayeeAccountDetailRd('#recurringDestBankAccountDetail', e.params.data);
-});
-$(document).on('select2:clear', '#recurringDestBankAccountSelect', function () {
-    renderPayeeAccountDetailRd('#recurringDestBankAccountDetail', null);
-});
-$(document).on('select2:select', '#recurringDestDestinationSelect', function (e) {
-    $('#recurringDestDestinationNewFields').addClass('d-none');
-    renderPayeeAccountDetailRd('#recurringDestDestinationDetail', e.params.data);
-});
-// Clearing empties the summary and brings the account fields back, but KEEPS the row's own option
-// pinned, so the destination this override already had can be chosen again (same rule as the line
-// form's own picker).
-$(document).on('select2:clear', '#recurringDestDestinationSelect', function () {
-    $('#recurringDestDestinationNewFields').removeClass('d-none');
-    renderPayeeAccountDetailRd('#recurringDestDestinationDetail', null);
-});
-$(document).on('click', '.btn-recurring-dest-edit', function () {
-    const recurringId = $(this).data('recurring-id');
-    const row = recurringDestRows.find(r => r.recurring_id === recurringId);
-    if (!row) return;
-    $('#recurringDestEditorRecurringId').val(recurringId);
-    const name = (currentLang === 'th' ? row.item_name_th : row.item_name_en) || row.item_code;
-    $('#recurringDestEditorItemName').text(name);
-    // Whatever the row this card was last opened on left pinned is not about this row.
-    clearRecurringDestRowPinsRd();
-    // An override can never be 'none'/null (that's what Reset achieves) -- if the template itself
-    // had no payee at all, default the editor to Company as a neutral starting point, not a guess
-    // at what the admin actually wants.
-    const current = row.override || $.extend({}, row.template, { payee_type: row.template.payee_type || 'company' });
-    // FIRST, before the payee choice below: its onChange can reach
-    // applyFirstSavedDestinationDefault() straight away, and that path has to be looking at a card
-    // that already knows what this row holds (same ordering rule as prefillManualLineFormRd()).
-    recurringDestRowPinsRd = payeeRowPinnedOptionsRd(current);
-    // A value this picker cannot show (a legacy 'not_disbursed', or no payee at all) opens on
-    // "retained by company", which for this editor means 'company' -- see setPayeeDestination().
-    setRecurringDestPayeeType(current.payee_type);
-    // LAST, always: the row's own values win over anything the choice above set off.
-    applyRecurringDestRowPinsRd();
-    // A refusal left over from the row this card was last opened on is not about this row.
-    recurringDestFormErrorRd('');
-    $('#recurringDestEditorCard').removeClass('d-none');
-    // 2026-09-14, Round 3 item 4 batch 1/4: baseline the editor against what it was just populated
-    // with (this row's current override/template values), not an empty pre-open state.
-    refreshAdjustmentTabDirtyGuard('manageLinesRecurringDestPane');
-    refreshAdjustmentSaveButtonState();
-});
-// Closing the editor is not just hiding it: the tab's own dirty baseline was taken against the row
-// this card was opened on (see .btn-recurring-dest-edit above), so leaving that baseline behind
-// leaves the tab holding values nobody is going to save.
-function closeRecurringDestEditorRd() {
-    $('#recurringDestEditorCard').addClass('d-none');
-    clearRecurringDestRowPinsRd();
-    recurringDestFormErrorRd('');
-    refreshAdjustmentTabDirtyGuard('manageLinesRecurringDestPane');
-    refreshAdjustmentSaveButtonState();
-}
-$(document).on('click', '#btnCancelRecurringDestEdit', closeRecurringDestEditorRd);
-// RETURNS the refusal instead of showing one, exactly like manualLineFormPayloadRd() below: the
-// caller is what knows the message belongs inside the card (§9), not in a dialog on top of the
-// values it is about. Every refusal leaves the card open and fires nothing.
-function recurringDestFormPayloadRd() {
-    const recurringId = $('#recurringDestEditorRecurringId').val();
-    const payeeType = payeeDestinationType('recurringDest');
-    const payload = { id: PAYROLL_RUN_ID, recurring_id: recurringId, payee_type: payeeType };
-    if (payeeType === 'employee') {
-        const payeeEmployeeId = $('#recurringDestPayeeEmployeeSelect').val();
-        if (!payeeEmployeeId) {
-            return { ok: false, message: langData['payee_employee_select_required'] || 'Please select the payee employee.' };
-        }
-        // 2026-09-17, tiny-L2: a transfer to an employee is paid into THAT employee's own account, so
-        // one with none on file has nowhere for this money to land. The server accepts such a row
-        // today (it only checks the employee exists), so this is the client-side stop -- the same one
-        // the add/edit line form makes, and the reason the footer's Save is disabled while it holds.
-        if (recurringDestPayeeEmployeeBlockedRd) {
-            return { ok: false, message: langData['payee_employee_no_bank_account'] || 'This employee has no bank account on file yet' };
-        }
-        payload.payee_employee_id = payeeEmployeeId;
-    } else if (payeeType === 'company') {
-        // 2026-09-10, Batch 3B item 3: level-2, mandatory -- PayrollRunModel::
-        // recurringDeductionDestinationOverrideSave() itself rejects a missing value.
-        const bankAccountId = $('#recurringDestBankAccountSelect').val();
-        if (!bankAccountId) {
-            return { ok: false, message: langData['bank_account_select_required'] || 'Please select a bank account.' };
-        }
-        payload.bank_account_id = bankAccountId;
-    } else if (payeeType === 'other_person') {
-        const savedDestinationId = $('#recurringDestDestinationSelect').val();
-        if (savedDestinationId) {
-            payload.destination_id = savedDestinationId;
-        } else {
-            const accountName = $('#recurringDestAccountName').val().trim();
-            const accountNo = $('#recurringDestAccountNo').val().trim();
-            const bankId = $('#recurringDestBank').val();
-            if (!accountName || !accountNo || !bankId) {
-                return { ok: false, message: langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.' };
-            }
-            payload.account_name = accountName;
-            payload.account_no = accountNo;
-            payload.bank_id = bankId;
-            payload.bank_branch = $('#recurringDestBankBranch').val().trim() || undefined;
-            payload.is_saved = $('#recurringDestSaveForReuse').is(':checked');
-        }
-    }
-    return { ok: true, payload: payload };
-}
-$(document).on('click', '#btnSaveRecurringDestOverride', function () {
-    // 2026-09-17, tiny-L, real bug: 2 of these 3 refusals used to `return { ok: false, ... }` from
-    // this click handler -- a value jQuery throws away -- so an override with no employee/account
-    // chosen did nothing at all, with no message anywhere. The third one showed a centre-screen
-    // dialog over the field it was about, which §9 rules out too. All 3 are one callout now.
-    const built = recurringDestFormPayloadRd();
-    if (!built.ok) {
-        recurringDestFormErrorRd(built.message);
-        return;
-    }
-    const payload = built.payload;
-    recurringDestFormErrorRd('');
-    const $btn = $(this);
-    setButtonLoading($btn, true);
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-run.recurring-deduction-destination-override.save`, method: 'POST',
-        contentType: 'application/json', dataType: 'json', data: JSON.stringify(payload),
-        success: function (res) {
-            setButtonLoading($btn, false);
-            // A server refusal is the same kind of refusal as the 3 above: it belongs in the card,
-            // on the values that were refused, and the card stays open (§9).
-            if (!res.status) { recurringDestFormErrorRd(res.message || langData['save_failed'] || 'An error occurred.'); return; }
-            closeRecurringDestEditorRd();
-            loadRecurringDeductionDestinationsRd();
-            loadRunDetail();
-        },
-        error: function () { setButtonLoading($btn, false); recurringDestFormErrorRd(langData['save_failed'] || 'An error occurred while saving.'); }
-    });
-});
-$(document).on('click', '.btn-recurring-dest-reset', function () {
-    const recurringId = $(this).data('recurring-id');
-    showConfirm(
-        langData['recurring_dest_reset'] || 'Reset to template',
-        langData['confirm_recurring_dest_reset_message'] || "Revert this recurring deduction back to its own template default for this run?",
-        function () {
-            $.ajax({
-                url: `${BASE_URL}/api/payroll-run.recurring-deduction-destination-override.remove`, method: 'POST',
-                contentType: 'application/json', dataType: 'json', data: JSON.stringify({ id: PAYROLL_RUN_ID, recurring_id: recurringId }),
-                success: function (res) {
-                    if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred.'); return; }
-                    loadRecurringDeductionDestinationsRd();
-                    loadRunDetail();
-                },
-                error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
-            });
-        }
-    );
-});
-
 // Live preview under the Add form once an item is picked -- tells the admin whether it's about to
 // land in the Earnings or Deductions panel before they commit, since the dropdown mixes both types
 // together (unlike section 2's per-type panels/modal). item_type rides along on the select2 option
@@ -6233,202 +5890,6 @@ $(document).on('keydown', '#manualLineAmount', function (e) {
     if (!$('#btnSaveManualLine').prop('disabled')) $('#btnSaveManualLine').trigger('click');
 });
 
-/* ---------- #manageLinesModal ("ตั้งค่ารายบุคคล") shell: footer dispatcher + per-tab dirty-guard
-   (2026-09-14, Round 3 item 4 batch 1/4, explicit instruction, §9/§6) ----------
-   Reuses the SAME primitives the generic `.modal[data-dirty-guard]` mechanism (app.js, §9) is built
-   on -- snapshotFormState()/isFormDirty()/showConfirm()/refreshDirtyGuard(), and the identical
-   bypass-flag pattern that stops a confirmed "discard" from re-entering its own handler -- but NOT
-   that generic delegated handler itself, deliberately: it snapshots/compares the WHOLE `.modal` once
-   at `shown.bs.modal`, which is wrong for this modal on two counts -- (a) `shown.bs.modal` fires
-   before this modal's parallel async tab loads land (openManageLinesModal's own click handler
-   below), so a whole-modal baseline would be the pre-load (mostly empty) DOM, making freshly-arrived
-   server data look "dirty" the instant it renders; (b) each tab has its own distinct save target --
-   one whole-modal flag can't express "only Attendance Data has unsaved input". Each tab's own
-   baseline is instead captured once THAT tab's own data has actually landed (each loadXRd()'s own
-   success callback below calls refreshAdjustmentTabDirtyGuard()), scoped to that tab's own
-   save-relevant container, not the whole modal.
-   `scope` is deliberately narrower than the whole pane for Recurring Destination
-   (#recurringDestEditorCard only, and only actionable while it's open -- `activeOnly` -- matching
-   exactly what #btnSaveRecurringDestOverride itself submits).
-   2026-09-17, D3: down to the 3 tabs that are per-employee SETTINGS. The 2 that edited figures
-   ("รายการจ่าย"/"ปรับตัวเลข") are gone, and with them the only `immediate` entries and the only
-   `restoreAllFn`/`saveFn` -- every entry left owns a real (hidden) save button again, so the
-   dispatcher is back to one shape. */
-const ADJUSTMENT_TAB_CONFIG_RD = {
-    manageLinesAttendancePane: { scope: '#manageLinesAttendancePane', saveSelector: '#btnSaveAttendanceData' },
-    // `blockedFn` (2026-09-17, tiny-L2): a tab can be dirty and still have nothing valid to save --
-    // here, a payee employee with no bank account on file. The footer button is the only visible Save
-    // (each tab's own is `d-none`), so this is where such a state has to show up.
-    manageLinesRecurringDestPane: {
-        scope: '#recurringDestEditorCard', saveSelector: '#btnSaveRecurringDestOverride', activeOnly: true,
-        blockedFn: recurringDestSaveBlockedRd, blockedKey: 'payee_employee_no_bank_account',
-        blockedFallback: 'This employee has no bank account on file yet',
-    },
-    manageLinesCalcPane: { scope: '#manageLinesCalcPane', saveSelector: '#btnSaveEmpCalcOverride' },
-};
-function adjustmentActiveTabConfig() {
-    const paneId = $('#manageLinesModal .tab-pane.active').attr('id');
-    return ADJUSTMENT_TAB_CONFIG_RD[paneId] || null;
-}
-// Call once a tab's own data has actually finished loading (or right after its own save succeeds/its
-// form is reset) -- re-captures that tab's baseline so it's compared against what's really on the
-// server now, not stale pre-load/pre-save state.
-function refreshAdjustmentTabDirtyGuard(paneId) {
-    const cfg = ADJUSTMENT_TAB_CONFIG_RD[paneId];
-    if (cfg) refreshDirtyGuard(cfg.scope);
-}
-function adjustmentTabIsDirty(cfg) {
-    if (!cfg) return false;
-    const $scope = $(cfg.scope);
-    // 2026-09-17, tiny-L, real bug: an `activeOnly` scope that is CLOSED has nothing to save, so it
-    // cannot be dirty either -- refreshAdjustmentSaveButtonState()/saveActiveAdjustmentTab() both
-    // checked this already, this one did not, and it is the one the 2 guards ask. Result: open the
-    // recurring-destination editor, type, press Cancel (which only hides the card), and both the
-    // tab-switch and the modal-close guard kept asking about changes the user had just abandoned.
-    if (cfg.activeOnly && $scope.hasClass('d-none')) return false;
-    return isFormDirty($scope, $scope.data('dirtyGuardBaseline'));
-}
-// Footer's single Save button: disabled unless the active tab is actually dirty (Recurring
-// Destination only while its inline editor card is open).
-// 2026-09-17, D3: the hide-when-there-is-no-target branch and the left-slot branch both went with
-// the 2 removed tabs -- every remaining tab has a save target, and the one left-slot button there
-// ever was (the line-override table's "คืนค่าระบบทั้งหมด") lives in the Breakdown modal's own
-// footer now, see refreshBreakdownFooterStateRd().
-function refreshAdjustmentSaveButtonState() {
-    const cfg = adjustmentActiveTabConfig();
-    const $btn = $('#btnSaveActiveAdjustmentTab');
-    if (!$btn.length) return;
-    $btn.attr('title', null);
-    if (!cfg || (cfg.activeOnly && $(cfg.scope).hasClass('d-none'))) {
-        $btn.prop('disabled', true);
-        return;
-    }
-    if (cfg.blockedFn && cfg.blockedFn()) {
-        $btn.prop('disabled', true).attr('title', langData[cfg.blockedKey] || cfg.blockedFallback || null);
-        return;
-    }
-    $btn.prop('disabled', !adjustmentTabIsDirty(cfg));
-}
-// Dispatcher (explicit instruction: map tab -> its EXISTING handler by triggering that handler's own
-// button, never re-implement the save call itself) -- the footer's #btnSaveActiveAdjustmentTab is the
-// one real caller. Each target button still exists in the DOM (hidden via `d-none`, not removed --
-// see detail.php's own comment on each one) specifically so this keeps working unchanged.
-function saveActiveAdjustmentTab() {
-    const cfg = adjustmentActiveTabConfig();
-    if (!cfg) return;
-    if (cfg.activeOnly && $(cfg.scope).hasClass('d-none')) return;
-    // A disabled button still fires its handlers through .trigger('click'), so the block is checked
-    // here too -- the tab's own form says why (recurringDestFormPayloadRd() refuses as well).
-    if (cfg.blockedFn && cfg.blockedFn()) return;
-    $(cfg.saveSelector).trigger('click');
-}
-$(document).on('click', '#btnSaveActiveAdjustmentTab', saveActiveAdjustmentTab);
-$(document).on('input change', '#manageLinesModal input, #manageLinesModal select, #manageLinesModal textarea', function () {
-    refreshAdjustmentSaveButtonState();
-});
-$(document).on('shown.bs.tab', '#manageLinesModal [data-bs-toggle="tab"]', function () {
-    refreshAdjustmentSaveButtonState();
-});
-
-// Tab-switch-while-dirty guard -- explicit instruction: hook `show.bs.tab` in the CAPTURE phase (a
-// plain native addEventListener, not jQuery delegation) so this intercepts before any other
-// bubble-phase handler can assume the switch already happened. Bootstrap 5's Tab.show() dispatches
-// `show.bs.tab` on the INCOMING trigger (e.target) with `relatedTarget` = the OUTGOING (currently
-// active) trigger, synchronously, before actually swapping panes -- e.preventDefault() here reliably
-// cancels the switch (confirmed from Bootstrap's own source: it checks
-// `showEvent.defaultPrevented` right after dispatching, same contract already relied on for
-// `hide.bs.modal` above in app.js).
-let adjustmentTabSwitchBypassPaneId = null;
-document.addEventListener('show.bs.tab', function (e) {
-    if (!e.target || !e.target.closest || !e.target.closest('#manageLinesModal')) return;
-    const outgoingBtn = e.relatedTarget;
-    if (!outgoingBtn) return; // first tab shown on modal open -- nothing to leave dirty yet
-    const outgoingPaneId = (outgoingBtn.getAttribute('data-bs-target') || '').replace('#', '');
-    // Set right before this SAME switch is re-invoked programmatically after a confirmed "switch
-    // without saving" below -- without this guard, that 2nd show.bs.tab would just re-enter this
-    // handler and prompt a second time, forever (identical shape to app.js's own dirtyGuardBypass).
-    if (adjustmentTabSwitchBypassPaneId === outgoingPaneId) {
-        adjustmentTabSwitchBypassPaneId = null;
-        return;
-    }
-    const cfg = ADJUSTMENT_TAB_CONFIG_RD[outgoingPaneId];
-    if (!adjustmentTabIsDirty(cfg)) return;
-    e.preventDefault();
-    const targetBtn = e.target;
-    showConfirm({
-        title: langData['confirm_modal_dirty_title'] || 'You have unsaved changes',
-        message: langData['confirm_discard_changes_message'] || "You have changes that haven't been saved yet. If you continue, they will be lost.",
-        confirmText: langData['action_switch_tab_without_saving'] || 'Switch tab without saving',
-        cancelText: langData['action_back_to_editing'] || 'Back to editing',
-        tone: 'warning',
-        onYes: function () {
-            adjustmentTabSwitchBypassPaneId = outgoingPaneId;
-            bootstrap.Tab.getOrCreateInstance(targetBtn).show();
-        },
-    });
-}, true);
-
-// Modal-close-while-dirty guard -- same shape as app.js's own generic `.modal[data-dirty-guard]`
-// handler (bypass flag included), bound directly to #manageLinesModal instead of that generic
-// delegated one because the dirty check here must be scoped to whichever tab is ACTIVE at the moment
-// of close, not the whole modal (see this block's own docblock above for why).
-let adjustmentModalCloseBypass = false;
-$(document).on('hide.bs.modal', '#manageLinesModal', function (e) {
-    if (adjustmentModalCloseBypass) {
-        adjustmentModalCloseBypass = false;
-        return;
-    }
-    const cfg = adjustmentActiveTabConfig();
-    if (!adjustmentTabIsDirty(cfg)) return;
-    e.preventDefault();
-    showConfirm({
-        title: langData['confirm_modal_dirty_title'] || 'You have unsaved changes',
-        message: langData['confirm_discard_changes_message'] || "You have changes that haven't been saved yet. If you continue, they will be lost.",
-        confirmText: langData['action_close_without_saving'] || 'Close without saving',
-        cancelText: langData['action_back_to_editing'] || 'Back to editing',
-        tone: 'warning',
-        onYes: function () {
-            adjustmentModalCloseBypass = true;
-            const inst = bootstrap.Modal.getInstance(document.getElementById('manageLinesModal'));
-            if (inst) inst.hide();
-        },
-    });
-});
-
-$(document).on('click', '.btn-manage-manual-lines', function () {
-    // Clear every tab's leftover dirty-guard baseline from whatever employee/tab this modal was last
-    // open on -- without this, the forced "always reopen on the first tab" switch a few lines below
-    // would compare a NEW employee's not-yet-loaded DOM against a STALE baseline from the previous
-    // one, which could spuriously show the tab-switch-dirty confirm the instant this modal reopens.
-    Object.keys(ADJUSTMENT_TAB_CONFIG_RD).forEach(function (paneId) {
-        $(ADJUSTMENT_TAB_CONFIG_RD[paneId].scope).removeData('dirtyGuardBaseline');
-    });
-    manageLinesEmployeeId = $(this).data('employee-id');
-    const rowData = runDetailRowByEmployeeId(manageLinesEmployeeId);
-    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
-    // name in the modal-header (#manageLinesEmployeeName removed from the view).
-    $('#manageLinesHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
-    // 2026-09-14, Round 3 item 4 batch 1/4: footer = modalFooterButtonsHtml() -> [Save][Close outline]
-    // (§9/§4), same pattern #employeeCommentModal's own footer already established -- rebuilt fresh on
-    // every open (constant shape, no readOnly branching needed here unlike Comments' own footer).
-    // 2026-09-17, D3: no left slot any more -- the one button that ever used it went to
-    // #runDetailBreakdownModal's footer with the table it acts on.
-    $('#manageLinesModalFooter').html(modalFooterButtonsHtml({
-        primary: { id: 'btnSaveActiveAdjustmentTab', key: 'save', fallback: 'Save' },
-        secondary: { key: 'close', fallback: 'Close', dismiss: true },
-    }));
-    // Always reopen on the first tab -- a stale tab left active from a previous employee would
-    // otherwise show up front-and-center unexpectedly.
-    bootstrap.Tab.getOrCreateInstance(document.getElementById('manageLinesAttendanceTab')).show();
-    refreshAdjustmentSaveButtonState();
-    loadAttendanceDataRd();
-    // Reset the "Tax & SSO" tab to a neutral state before the fresh fetch below lands, so a stale
-    // previous employee's radios never flash for even a moment.
-    $('#empCalcTaxInherit, #empCalcSsoInherit').prop('checked', true);
-    loadEmployeeExemptionRd();
-    loadRecurringDeductionDestinationsRd();
-    new bootstrap.Modal(document.getElementById('manageLinesModal')).show();
-});
 // The payload for one manual line out of whatever the form currently holds -- ONE builder for both
 // endpoints, because add-manual-line and update-manual-line take exactly the same field set (see
 // PayrollController::manualLinePayload()'s own docblock on why the two must never drift apart).
@@ -6578,9 +6039,6 @@ function formCalloutErrorRd(boxSelector, message) {
 function manualLineFormErrorRd(message) {
     formCalloutErrorRd('#manualLineFormError', message);
 }
-function recurringDestFormErrorRd(message) {
-    formCalloutErrorRd('#recurringDestEditorError', message);
-}
 // The type is never a choice in this form: it comes from the column head that was pressed, or from
 // the row being edited. The control still shows it, read-only, so the form says which column the
 // line belongs to.
@@ -6621,7 +6079,9 @@ function lineFormSectionsRd(ctx) {
     } else if (source === 'ped' && line.payee && line.payee.payee_type) {
         payee = 'readonly';
     }
-    return { item: false, computed: true, payee: payee, useComputed: !!line.override_action };
+    // 2026-09-18, 4b: also for a tri-state row whose answer is not 'inherit' but whose amount was
+    // never overridden -- this button is the ONLY way back to 'inherit', so it has to be there.
+    return { item: false, computed: true, payee: payee, useComputed: !!line.override_action || statutoryExemptionChangedRd(line) };
 }
 function applyLineFormSectionsRd(sections, ctx) {
     $('#manualLineItemCol').toggleClass('d-none', !sections.item);
@@ -7565,9 +7025,6 @@ function refreshPayrollDetailLanguage() {
     // it -- without this, switching language could leave columns visibly misaligned until the next
     // resize/redraw for an unrelated reason.
     if (tb_run_detail) tb_run_detail.columns.adjust();
-    // 2026-09-18, tiny-L3: the Recurring Deduction Destination tab's read-only rows are JS-built
-    // from a payload that carries both languages, so no data-i18n sweep ever reaches them.
-    refreshEedDestLanguageRd();
 }
 // 2026-09-13, §1 follow-up: activateTabFromHash() itself moved to app.js (shared with employee/list.js
 // and employee/detail.js's own near-identical versions -- see that function's own docblock) -- the

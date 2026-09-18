@@ -55,13 +55,19 @@ checkTrue('the foot reports the real edit count', strpos($menuBody, 'String(edit
 checkTrue('the foot is always rendered (no count threshold)', strpos($menuBody, 'if (edits.length >') === false);
 
 echo "\n=== 2. head / list / foot ===\n";
-checkTrue('the head is its own element', strpos($menuBody, 'class="lo-history-head"') !== false);
+checkTrue('the head is its own element', strpos($menuBody, "liClass: 'lo-history-head'") !== false);
 checkTrue('the foot is its own element', strpos($menuBody, 'class="lo-history-foot"') !== false);
-// 2026-09-17, R1: the head is REFERENCE, not a choice -- going back to the calculated figure is the
-// row's own round button now, so a menu row doing the same thing would be a second way to do one
-// thing. Same [value | meta] skeleton, nothing to press.
-checkTrue('the head is not pressable', strpos($menuBody, 'lo-history-item-static') !== false
-    && strpos($menuBody, "itemClass: 'lo-history-computed'") === false);
+// 2026-09-19, reported for real: R1 made the head static on the reasoning that the row's own form
+// carries the same action -- which is 2 clicks away behind a pencil, and it left `lo-history-computed`
+// (what the click handler keys "restore" off) with no producer at all. Pressable again in the
+// EDITABLE slip, through the SAME builder every entry below it uses, so the read-only slip still
+// renders it as the fact it is there.
+checkTrue('the head goes through the shared item builder', strpos($menuBody, 'lineOverrideHistoryItemHtml(') !== false
+    && strpos($menuBody, "itemClass: 'lo-history-computed'") !== false
+    && strpos($menuBody, 'readOnly: readOnly') !== false);
+checkTrue('...and that builder is what decides pressable vs static',
+    strpos($js, 'if (options.readOnly) {') !== false
+    && strpos($js, 'lo-history-item lo-history-item-static') !== false);
 // 2026-09-18, tiny-L6a: the row's own round "use the calculated value" button is gone -- the action
 // lives in the left slot of the form that row's pencil opens, where both figures are on screen at
 // once. Same confirm, same send: only the control that triggers it moved.
@@ -179,8 +185,10 @@ checkTrue('the message names the value and the item', strpos($confirmBody, "repl
 checkTrue('the write happens only inside onYes', strpos($confirmBody, 'onYes: function () {') < strpos($confirmBody, 'lineOverrideSendRd('));
 checkTrue('and the history modal closes with it', strpos($confirmBody, 'onApplied') !== false);
 // The calculated-value row means "drop the override", not "save this number as one".
+// 2026-09-18, 4b: through lineOverrideRestoreRowRd(), which drops BOTH stored things a TH_PIT/
+// TH_SSO row can carry (the tri-state answer and an amount override) -- one plan cannot say that.
 checkTrue('the calculated row removes instead of overriding',
-    strpos($confirmBody, "if (asComputed) {\n                lineOverrideSendRd(\$row, { action: 'remove' });") !== false);
+    strpos($confirmBody, "if (asComputed) {\n                lineOverrideRestoreRowRd(\$row);") !== false);
 // Asking again at save time is impossible now -- there is no save step to ask at.
 checkTrue('no save-time revert confirm is left', strpos($js, 'line_override_confirm_revert_message') === false);
 $thKeys = json_decode(file_get_contents(__DIR__ . '/../public/lang/th.json'), true);
@@ -194,14 +202,17 @@ $restoreStart = (int)strpos($js, 'function restoreAllComputedLineOverridesRd(');
 $restoreBody = substr($js, $restoreStart, (int)strpos($js, 'function runRestoreAllComputedRd(') - $restoreStart);
 checkTrue('it collects only rows that carry an override', strpos($restoreBody, "!(\$row.data('orig-action') || '')") !== false);
 checkTrue('it skips rows the run itself turned off', strpos($restoreBody, "\$row.find('.lo-include').is(':disabled')") !== false);
-checkTrue('it asks first, with the count', strpos($restoreBody, "replace('{n}', String(rows.length))") !== false
+// The count includes the tri-state answers, which are not override rows -- one extra request, one
+// extra item (2026-09-18, 4b).
+checkTrue('it asks first, with the count', strpos($restoreBody, "replace('{n}', String(total))") !== false
+    && strpos($restoreBody, "const total = rows.length + (resetExemption ? 1 : 0);") !== false
     && strpos($restoreBody, "tone: 'warning'") !== false);
 checkTrue('nothing is sent from the collector itself', strpos($restoreBody, 'lineOverrideEndpointRd') === false);
-checkTrue('the sending happens only on yes', strpos($restoreBody, 'onYes: function () { runRestoreAllComputedRd(rows); }') !== false);
+checkTrue('the sending happens only on yes', strpos($restoreBody, 'onYes: function () { runRestoreAllComputedRd(rows, resetExemption); }') !== false);
 // One request per row, in order: each one recalculates the whole run internally, so two in flight
 // would race each other.
 $runStart = (int)strpos($js, 'function runRestoreAllComputedRd(');
-$runBody = substr($js, $runStart, 1800);
+$runBody = substr($js, $runStart, 2600);
 checkTrue('it sends one .remove per row, sequentially', strpos($runBody, "lineOverrideEndpointRd(\$row.data('line-type'), 'remove')") !== false
     && strpos($runBody, 'runSequentialAjaxRd(calls,') !== false);
 checkTrue('it reports progress while it runs', strpos($runBody, 'lineOverrideProgressRd(i + 1, total)') !== false);
@@ -209,7 +220,7 @@ checkTrue('it reloads the table and the run at the end', strpos($runBody, 'loadS
     && strpos($runBody, 'loadRunDetail();') !== false);
 // It is the footer's left-slot button, and the only one there -- 2026-09-17 (D3) in the Calculation
 // Breakdown modal's own footer, beside the table it acts on, and only for a row that can be edited.
-checkTrue('it is the footer\'s left-slot button', strpos($js, "left: canEdit ? { id: 'btnRestoreAllComputedLineOverrides'") !== false);
+checkTrue('it is the footer\'s left-slot button', strpos($js, "? { id: 'btnRestoreAllComputedLineOverrides'") !== false);
 checkTrue('no "cancel edits" button is left anywhere', strpos($js, 'btnCancelLineOverrideEdits') === false);
 checkTrue('and its i18n key is gone with it', !array_key_exists('line_override_cancel_edits', json_decode(file_get_contents(__DIR__ . '/../public/lang/th.json'), true)));
 

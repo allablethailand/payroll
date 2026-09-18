@@ -1219,3 +1219,57 @@ tiny-E ปิดทางเขียน `action='exclude'` บน `TH_PIT`/`TH_
 (ยังเปิดไว้ให้ทำได้) ก่อน ไม่ใช่ DELETE ตรง เพราะต้องมี history + recalculate ตาม
 
 **Source:** tiny-E (2026-09-18)
+
+---
+
+## แก้เลขดิบข้อมูลเข้างาน (attendance override) — ยังไม่มีทางเข้าใน UI
+
+4b ลบแท็บ "ข้อมูลเข้างาน" (modal ตั้งค่ารายบุคคล) ทิ้งทั้งก้อน · endpoint ยังอยู่ครบ
+(`api/payroll-run.attendance-override.save`/`.remove`, `PayrollRunModel::attendanceOverrideSave/Remove`)
+· ตั้งใจพาไป Batch 5: ตัดสินว่าจะเปิดทางเข้าใหม่ที่ tab ข้อมูลเข้างานของหน้ารอบ หรือลบ raw override ทิ้งทั้งสาย
+
+**Source:** 4b (2026-09-18)
+
+---
+
+## ปลายทางเฉพาะรอบของ recurring deduction + EED — ยังไม่มีทางเข้าใน UI
+
+4b ลบแท็บ "ปลายทางรายการหักประจำ" ทิ้ง (ทั้งการ์ดแก้ไขและรายการ EED read-only) · ปลายทางของแถวที่แก้ได้
+เปลี่ยนผ่าน "ดินสอ" บนสลิปแทนแล้ว (`lineOverrideFormPlanRd`'s payee branch) · endpoint
+`api/payroll-run.recurring-deduction-destination-override.save/.remove` ยังอยู่ครบและยังถูกเรียกจากฟอร์มนั้น
+· รวมตัดสินใน Batch 5 พร้อมข้อบน
+
+**Source:** 4b (2026-09-18)
+
+---
+
+## Raw Sync Data — ปุ่มเปิดถูกลบ modal ยังอยู่
+
+4b ตัด ⋮ ของตารางพนักงานทิ้ง ปุ่ม "ดูข้อมูลดิบ" จึงหายไปด้วย · `#rawSyncDataModal` +
+`renderRawSyncDataModal()` + handler `.btn-raw-sync-data` ยังอยู่ครบ ไม่มีที่ใด render ปุ่มนั้นแล้ว
+· 3e: เปิดจาก tab "ข้อมูลเข้างาน" ของหน้ารอบแทน (ที่เดียวกับข้อ attendance override ข้างบน)
+
+**Source:** 4b (2026-09-18)
+
+---
+
+## ลบสาย employeeAdjustments (dead หลัง 4b)
+
+4b ลบ `#empAdjustmentsModal` + JS + lang ทิ้ง (สลิปอ่านรายการที่แก้ได้เองแล้วผ่าน tab "รายการที่แก้ไข")
+· ที่ยังเหลือและไม่มีผู้เรียก: route `api/payroll-run.employee-adjustments`,
+`PayrollController::employeeAdjustments()`, `PayrollRunModel::employeeAdjustments()` ·
+คงไว้ก่อนเพราะเป็น PHP ล้วนและอยู่นอกขอบเขต 4b (ห้ามแตะ PHP) — ลบพร้อมกันในรอบที่แตะ controller อยู่แล้ว
+
+**Source:** 4b (2026-09-18)
+
+---
+
+## ชุด H — ประวัติการแก้ไขของ manual line (เพิ่ม/แก้/ลบ) ต้อง migration
+
+`payroll_run_manual_lines` **ไม่มีตารางประวัติค่าเดิม/ค่าใหม่ต่อแถว** เทียบกับ `payroll_run_line_overrides` ที่มี
+`payroll_run_line_override_history` — ที่มีตอนนี้คือ `payroll_run_audit_logs` ระดับรอบเท่านั้น
+(`add_manual_line`/`update_manual_line`/`remove_manual_line` เป็นข้อความสรุป ไม่ query ต่อแถวได้) · แถวที่เพิ่มเอง
+จึงไม่มี badge "แก้ไข n" ในสลิป (`lineOverrideRowHtml` ข้าม history cell เมื่อ `isManual`) · ทำเมื่อไหร่ต้องมี
+migration ตารางใหม่ + เขียนจาก 3 method นั้น ไม่ใช่งาน UI ล้วน
+
+**Source:** 4b รอบแก้เพิ่ม 2 (2026-09-19)

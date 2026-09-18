@@ -974,9 +974,13 @@ try {
     checkTrue('before exemption: employee has a real (nonzero) SSO deduction on the sync-based run', $ssoBeforeExemption > 0);
 
     $defaultExemption = $runModel->getEmployeeExemption($pulledRunId, $compId, $employeeFullId);
+    // 2026-09-18, 4b: 2 read-only keys more -- what 'inherit' really resolves to here (run default,
+    // else the employee's own flag). This employee is enrolled and not tax-exempt, and the run has no
+    // calc default of its own, so both answer 'yes'.
     check('getEmployeeExemption() returns "inherit" defaults before anything is saved', $defaultExemption, [
         'tax_calculate_override' => 'inherit', 'sso_calculate_override' => 'inherit',
-        'exempt_tax' => false, 'exempt_sso' => false, 'note' => null,
+        'exempt_tax' => false, 'exempt_sso' => false,
+        'tax_inherit_effective' => 'yes', 'sso_inherit_effective' => 'yes', 'note' => null,
     ]);
 
     // 2026-08-29: exempt_tax=true/exempt_sso=true (booleans) widened to a bidirectional tri-state
@@ -991,9 +995,11 @@ try {
     check('after exempt_tax=true: TH_PIT is zeroed and flagged employee_tax_exempt (same engine note as the permanent tax_exempt flag)', [(float)($pitAfterExemption['employee_amount'] ?? -1), $pitAfterExemption['note'] ?? null], [0.0, 'employee_tax_exempt']);
 
     $savedExemption = $runModel->getEmployeeExemption($pulledRunId, $compId, $employeeFullId);
+    // The 2 derived keys answer what INHERIT would give, which the override does not change.
     check('getEmployeeExemption() reflects the saved row', $savedExemption, [
         'tax_calculate_override' => 'no', 'sso_calculate_override' => 'no',
-        'exempt_tax' => true, 'exempt_sso' => true, 'note' => 'requested by employee',
+        'exempt_tax' => true, 'exempt_sso' => true,
+        'tax_inherit_effective' => 'yes', 'sso_inherit_effective' => 'yes', 'note' => 'requested by employee',
     ]);
 
     $exemptionClearRes = $runModel->saveEmployeeExemption($pulledRunId, $compId, $employeeFullId, 'inherit', 'inherit', null, $adminUserId, true);

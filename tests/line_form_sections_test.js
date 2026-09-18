@@ -157,6 +157,16 @@ const extracted = [
     fn(detailSource, 'manualLineAmountValueRd'),
     fn(detailSource, 'manualLinePayeeChoiceRd'),
     fn(detailSource, 'lineFormIsOverrideRd'),
+    // 2026-09-18, 4b: the tri-state the TH_PIT/TH_SSO rows carry -- real, not stubbed, so what the
+    // form's own left slot ('back to inherit') depends on it, so it is real here too.
+    lineDecl(detailSource, 'STATUTORY_EXEMPTION_FIELD_RD'),
+    'let lineOverrideExemptionRd = null;',
+    fn(detailSource, 'statutoryExemptionFieldRd'),
+    fn(detailSource, 'statutoryExemptionStateRd'),
+    fn(detailSource, 'statutoryExemptionInheritRd'),
+    fn(detailSource, 'statutoryExemptionEffectiveRd'),
+    fn(detailSource, 'statutoryExemptionChangedRd'),
+    fn(detailSource, 'statutoryExemptionTagHtmlRd'),
     fn(detailSource, 'lineFormSectionsRd'),
     fn(detailSource, 'lineFormItemNameRd'),
     fn(detailSource, 'renderLineFormPayeeReadonlyRd'),
@@ -167,6 +177,7 @@ const extracted = [
     fn(detailSource, 'recurringDestOverridePayloadRd'),
     fn(detailSource, 'submitLineOverrideFormRd'),
     `module.exports = {
+        setExemption: (e) => { lineOverrideExemptionRd = e; },
         el, reset,
         sent: () => SENT, ajax: () => AJAX, events: () => EVENTS, disabled: () => DISABLED,
         setOverrideReply: (r) => { overrideReply = r; },

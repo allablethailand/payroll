@@ -7269,37 +7269,6 @@ html, body {
         padding: 2rem 2rem;
     }
 }
-/* 2026-09-14, Round 3 item 4 batch 1/4 -- #manageLinesModal's own 5-tab "Manage Payment Items"
-   (Adjustments) modal adopts the same §6 rule ("tab-content ไม่มี card ครอบ") #runDetailTabsContent
-   established above: the border/rounded-bottom/p-3 "card" that used to wrap all 5 panes together is
-   retired (detail.php's own tab-content div dropped those utility classes at the same time). Only the
-   --sp-4 gap from the tab bar remains here. Each pane below gets the old card's own padding back
-   directly (temporary, per-pane, same stopgap technique as #run-details-pane etc. above) since none of
-   their own internal content has been re-laid-out for a card-less width in this batch (shell only --
-   §13, tab CONTENT itself is explicitly out of scope this round). */
-#manageLinesTabContent {
-    margin-top: var(--sp-4);
-}
-/* 2026-09-15, Round 3 item 4 batch 2/4 -- the batch-1 stopgap gave every pane the retired card's own
-   padding on ALL 4 sides, which left each pane's content inset 16px from the tab bar and the employee
-   header card above it (measured: card/tabs at x=312, content at x=328). Horizontal padding removed:
-   the content column now shares ONE left/right edge with the header card and the tab row, which is
-   what makes the whole modal read as a single column. Vertical padding stays -- it is the gap from
-   the tab bar, not an inset.
-   Scoped to this modal's own panes, exactly as before -- no other modal/page is affected (this
-   selector list is the only place the stopgap ever existed; #runDetailTabsContent's own panes have
-   their own separate rule further up, deliberately untouched here). */
-#manageLinesAttendancePane,
-#manageLinesRecurringDestPane,
-#manageLinesCalcPane {
-    padding: var(--sp-4) 0;
-}
-/* Employee header card -> tab row: `--sp-5`, the same "distinct block below a distinct block" step
-   this app uses between a page header and what follows it. The card itself carries no bottom margin
-   (it is a full-bleed surface with its own bottom border), so the distance lives here. */
-#manageLinesModal .nav-tabs {
-    margin-top: var(--sp-5);
-}
 /* 2026-09-16, D2: the add/edit line form is a modal of its own (#manualLineFormModal) instead of a
    block sitting inside a tab, so it has no surface of its own any more -- the modal IS the surface,
    and a tinted panel inside a modal body is the "card ซ้อน card" §9 rules out. Only the spacing
@@ -9798,9 +9767,15 @@ html, body {
     justify-content: space-between;
     gap: var(--sp-3);
 }
+/* 2026-09-19: the group head's own link, in both of its meanings -- "เพิ่มรายการ" on a manual group,
+   "คืนค่าระบบ" on a system one. ONE declaration block, so the two can never sit at different
+   insets on heads of the same table (rules.md §9). */
 .lo-add-line-btn,
 .lo-add-line-btn:hover,
-.lo-add-line-btn:focus {
+.lo-add-line-btn:focus,
+.lo-group-restore-btn,
+.lo-group-restore-btn:hover,
+.lo-group-restore-btn:focus {
     --bs-btn-color: var(--c-primary);
     --bs-btn-hover-color: var(--c-primary-hover);
     --bs-btn-padding-x: 0;
@@ -12383,17 +12358,3 @@ div.dt-processing {
     border-radius: 10px;
     margin-bottom: .75rem;
 }
-
-/* 2026-09-18, tiny-L3 -- the read-only half of the Recurring Deduction Destination tab: one row per
-   employee_earning_deductions assignment this run routes somewhere. Nothing here is editable (the
-   destination belongs to the assignment, edited on Employee Detail), so the row is a plain surface,
-   not a card: tokens only (§1), neutral (§3), no tone anywhere. Kept as a class rather than
-   `bg-light`/`bg-opacity-*` utilities so both themes get a real token value. */
-.eed-dest-row {
-    background: var(--c-bg-subtle);
-    border: 1px solid var(--c-border);
-    border-radius: var(--radius);
-    padding: var(--sp-2) var(--sp-3);
-    margin-bottom: var(--sp-2);
-}
-.eed-dest-row:last-child { margin-bottom: 0; }

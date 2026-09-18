@@ -7355,6 +7355,13 @@ class PayrollRunModel {
      * (2026-08-29_13_payroll_run_calc_exclusions.sql) for the backfill. Both the old derived
      * boolean keys AND the new tri-state keys are returned so nothing else reading the old shape
      * breaks.
+     *
+     * 2026-09-18, 4b: 2 read-only keys more -- `tax_inherit_effective`/`sso_inherit_effective`, what
+     * 'inherit' really resolves to for THIS employee on THIS run (run default, else the employee's
+     * own permanent flag -- the same precedence recalculate() applies, minus the override itself).
+     * The slip's own TH_PIT/TH_SSO switch has to show the effective answer while the stored value is
+     * 'inherit', and has to name it in the "System: ..." tag while it is not, and neither is
+     * derivable from the lines: an override replaces the note the flag would have produced.
      */
     public function getEmployeeExemption(int $runId, int $compId, int $employeeId): array {
         $stmt = $this->db->prepare("SELECT tax_calculate_override, sso_calculate_override, note FROM `payroll_run_employee_exemptions`
@@ -7363,11 +7370,24 @@ class PayrollRunModel {
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         $taxOverride = $row['tax_calculate_override'] ?? 'inherit';
         $ssoOverride = $row['sso_calculate_override'] ?? 'inherit';
+
+        $stmtDefaults = $this->db->prepare("SELECT tax_calculate_default, sso_calculate_default FROM `payroll_run_calc_settings` WHERE run_id = :run_id");
+        $stmtDefaults->execute([':run_id' => $runId]);
+        $defaults = $stmtDefaults->fetch(PDO::FETCH_ASSOC) ?: [];
+        $taxDefault = $defaults['tax_calculate_default'] ?? 'use_employee_setting';
+        $ssoDefault = $defaults['sso_calculate_default'] ?? 'use_employee_setting';
+        $stmtFlags = $this->db->prepare("SELECT tax_exempt, sso_enrolled FROM `employees` WHERE id = :id AND comp_id = :comp_id");
+        $stmtFlags->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $flags = $stmtFlags->fetch(PDO::FETCH_ASSOC) ?: [];
+
         return [
             'tax_calculate_override' => $taxOverride,
             'sso_calculate_override' => $ssoOverride,
             'exempt_tax' => $taxOverride === 'no',
             'exempt_sso' => $ssoOverride === 'no',
+            // 'tax_exempt' is the negative of "calculate tax", 'sso_enrolled' the positive of "send SSO".
+            'tax_inherit_effective' => in_array($taxDefault, ['yes', 'no'], true) ? $taxDefault : (empty($flags['tax_exempt']) ? 'yes' : 'no'),
+            'sso_inherit_effective' => in_array($ssoDefault, ['yes', 'no'], true) ? $ssoDefault : (empty($flags['sso_enrolled']) ? 'no' : 'yes'),
             'note' => $row['note'] ?? null,
         ];
     }
