@@ -582,11 +582,38 @@ not itself reported or investigated further.
 
 ---
 
-## `migSplitUpDown()` regex `--\s*UP` จับคอมเมนต์ที่ขึ้นต้นด้วย "-- up" ได้
+## `migSplitUpDown()` regex ไม่ anchor ต้นบรรทัด จับคอมเมนต์เป็น marker ได้
 
-`scripts/migrate.php` แยก UP/DOWN ด้วย `/--\s*UP\s*(.*?)\s*--\s*DOWN\s*(.*)$/is` ซึ่ง case-insensitive และไม่ anchor ต้นบรรทัด
-→ คอมเมนต์อธิบายที่บังเอิญขึ้นบรรทัดใหม่ด้วยคำว่า `-- up (...)` ถูกนับเป็น marker ตัด UP ผิดจุดและ migration ล้ม (เจอจริงตอน tiny-C)
+`scripts/migrate.php` แยก UP/DOWN ด้วย `/--\s*UP\s*(.*?)\s*--\s*DOWN\s*(.*)$/is` — **มี flag `i` อยู่แล้ว
+case-insensitive ไม่ใช่ปัญหา ปัญหาคือไม่ anchor ต้นบรรทัดอย่างเดียว** จึงจับที่ไหนก็ได้ในไฟล์
+→ คอมเมนต์ที่ขึ้นต้นด้วย `-- Update...` / `-- Upgrade...` ก่อนถึง marker จริง ถูกนับเป็น marker ตัด UP ผิดจุด
+และ migration ล้ม (เจอจริงตอน tiny-C) เช่นเดียวกับ `-- down...` ใดๆ ใน body ของ UP ที่ตัด UP ทิ้งกลางคัน
 ควร anchor เป็นบรรทัด marker ตายตัว (`^--\s*UP\s*$` แบบ multiline) ไม่ใช่จับที่ไหนก็ได้ในไฟล์
+
+**2026-09-19 (H-backend): เลือกไม่แก้ regex** เพราะการ anchor กระทบไฟล์ migration ทุกไฟล์ที่ `up` จะรันต่อจากนี้
+— ไฟล์ที่เขียน marker แบบมีข้อความต่อท้ายบรรทัดเดียวกันจะกลายเป็น "ไม่มี marker" แล้วทั้งไฟล์ถูกถือเป็น UP
+รวม DOWN ด้วย = ซ้ำรอย incident เดิมที่ DOWN drop ทับ UP ต้อง audit ครบทุกไฟล์ + มี baseline ของตัวเองก่อน
+ระหว่างนี้ migration ใหม่เขียนตาม 3 กฎ: ห้ามมี `--` ตามด้วยคำขึ้นต้น up/down นอก marker, ห้าม comment ต่อท้ายบรรทัด
+(`migStripLineComments()` ตัดเฉพาะบรรทัดที่ขึ้นต้นด้วย `--`), ห้ามมี `;` ใน string `COMMENT '...'`
+
+---
+
+## history ของปลายทาง/ชื่อ manual line (2026-09-19, H-backend)
+
+`recordManualLineHistory()` บันทึก from→to ของ **ยอดเงิน** เท่านั้น — การแก้ที่ไม่ขยับยอด (เปลี่ยนชื่อรายการ,
+เปลี่ยนผู้รับ/บัญชีปลายทาง, สลับ payee_type) ถูก `historyIsNoOp()` ตัดทิ้งไปเงียบๆ ทั้งที่เป็นการเปลี่ยนแปลงจริง
+ที่กระทบว่าเงินไปไหน ถ้าจะเก็บต้องตัดสินก่อนว่า 1 การกดที่เปลี่ยนหลาย field = 1 แถว (ต้องมีคอลัมน์ field)
+หรือหลายแถว — ยังไม่ทำ เพราะ H-ui ยังไม่ได้ออกแบบว่าตารางประวัติจะแสดงแถวที่ไม่ใช่ตัวเลขอย่างไร
+
+---
+
+## `runAuditList()` / `lineOverrideAuditDiff()` นับเฉพาะ `source_type='override'` (2026-09-19, H-backend)
+
+ตาราง `payroll_run_line_override_history` เก็บ 3 แหล่งแล้ว (override / manual_line / exemption) แต่ทั้ง
+badge "N edit(s)" ในคอลัมน์ประวัติ และ `edit_count` ของรายงาน Payroll Run Audit ยังกรองเฉพาะ `override`
+เพื่อให้ตัวเลขที่ผู้ใช้เห็นไม่ขยับจากรอบที่ไม่ได้แตะ UI เลย — **H-ui ต้องตัดสินว่า badge/รายงานควรนับรวม
+manual line กับ exemption ด้วยหรือไม่** ถ้าควร ให้ถอด `source_type='override'` ออกจาก 2 จุดนั้นพร้อมกัน
+(`PayrollRunModel::runAuditList()` และ `lineOverrideAuditDiff()`) ไม่ใช่ทีละจุด
 
 ---
 

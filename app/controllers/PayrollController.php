@@ -271,6 +271,43 @@ class PayrollController extends Controller {
         $this->json(['status' => true, 'data' => $this->maskEmployeeAdjustments($data, (int)$compId)]);
     }
 
+    /**
+     * 2026-09-19, H-backend: the trail for ONE line, newest first -- the same table lineOverrideHistory()
+     * above reads, asked the other way round. That one stays exactly as it is (grouped, oldest-first,
+     * overrides only) because the Adjustments table's History column is built on that shape; this one
+     * also serves the 2 writers that shape has never carried, the hand-added lines and the tri-state
+     * tax/SSO answer.
+     *
+     * Addressed by (line_type, item_code), or by (source_type=manual_line, source_id) for a row whose
+     * item_code is not unique on its own. Masking goes through maskMonetaryKeys() -- the same rule its
+     * siblings use, applied to this shape's own money keys; old_text/new_text are words, not figures,
+     * and stay readable for the same reason action/who/when do.
+     */
+    private const LINE_HISTORY_MONEY_KEYS = ['old_value', 'new_value'];
+
+    public function lineHistory() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = intval($_GET['run_id'] ?? 0);
+        $employeeId = intval($_GET['employee_id'] ?? 0);
+        if (!$compId || $runId <= 0 || $employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $rows = $this->model->lineHistoryRows(
+            $runId, (int)$compId, $employeeId,
+            isset($_GET['line_type']) ? (string)$_GET['line_type'] : null,
+            isset($_GET['item_code']) ? (string)$_GET['item_code'] : null,
+            isset($_GET['source_type']) ? (string)$_GET['source_type'] : null,
+            isset($_GET['source_id']) ? (int)$_GET['source_id'] : null
+        );
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), (int)$compId);
+        if (!$visibility['full']) {
+            $rows = array_map(fn(array $row): array => $this->maskMonetaryKeys($row, self::LINE_HISTORY_MONEY_KEYS), $rows);
+        }
+        $this->json(['status' => true, 'data' => ['rows' => $rows]]);
+    }
+
     public function index() {
         $this->view('payroll/index');
     }

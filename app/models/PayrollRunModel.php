@@ -716,7 +716,7 @@ class PayrollRunModel {
                     sp.run_kind AS sync_run_kind, sp.process_subject AS sync_process_subject,
                     submitter.name_th AS submitted_by_name_th, submitter.name_en AS submitted_by_name_en,
                     r.submitted_at, r.approved_at, r.paid_at,
-                    (SELECT COUNT(*) FROM `payroll_run_line_override_history` WHERE run_id = r.id) AS edit_count
+                    (SELECT COUNT(*) FROM `payroll_run_line_override_history` WHERE run_id = r.id AND source_type = 'override') AS edit_count
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 LEFT JOIN `payroll_sync_processes` sp ON sp.id = r.sync_process_id
@@ -765,7 +765,12 @@ class PayrollRunModel {
         }
         $historyAvailable = (string)$run['period_start_date'] >= self::LINE_OVERRIDE_HISTORY_FEATURE_START_DATE;
 
-        $where = "WHERE h.run_id = :run_id";
+        // 2026-09-19, H-backend: this method answers "what was OVERRIDDEN on this line", which is a
+        // narrower question than what the table now holds. Hand-added lines and the tri-state answer
+        // have their own endpoint (lineHistoryRows()); letting them in here would change both the
+        // Payroll Run Audit report's row list and the Adjustments column's edit count, from a round
+        // that deliberately does not touch the UI.
+        $where = "WHERE h.run_id = :run_id AND h.source_type = 'override'";
         $params = [':run_id' => $runId];
         if ($employeeId !== null) {
             $where .= " AND h.employee_id = :employee_id";
@@ -821,6 +826,72 @@ class PayrollRunModel {
         unset($g);
 
         return ['history_available' => $historyAvailable, 'lines' => array_values($groups)];
+    }
+
+    /**
+     * 2026-09-19, H-backend: the per-LINE trail, newest first -- one flat list of what happened to
+     * one thing, as opposed to lineOverrideAuditDiff() above, which groups a whole run (or a whole
+     * employee) into ORIGINAL -> edits -> CURRENT chains and only ever looks at overrides. Both read
+     * the same table; neither can answer the other's question, which is why this is a second method
+     * and not a widened first one -- that endpoint's shape and ordering are relied on as they are.
+     *
+     * Addressed either by the line (`line_type` + `item_code`, which is how an override or the
+     * tri-state answer is identified) or by the row (`source_type='manual_line'` + `source_id`,
+     * because two manual lines on one employee can share an item_code). A caller that gives neither
+     * gets everything recorded for that employee on that run, which is what the full-history view
+     * would want.
+     */
+    public function lineHistoryRows(int $runId, int $compId, int $employeeId, ?string $lineType = null, ?string $itemCode = null, ?string $sourceType = null, ?int $sourceId = null): array {
+        if (!$this->get($runId, $compId)) {
+            return [];
+        }
+        $where = "WHERE h.run_id = :run_id AND h.employee_id = :employee_id";
+        $params = [':run_id' => $runId, ':employee_id' => $employeeId];
+        if ($sourceType !== null && $sourceType !== '') {
+            $where .= " AND h.source_type = :source_type";
+            $params[':source_type'] = $sourceType;
+        }
+        if ($sourceId !== null && $sourceId > 0) {
+            $where .= " AND h.source_id = :source_id";
+            $params[':source_id'] = $sourceId;
+        }
+        if ($lineType !== null && $lineType !== '') {
+            $where .= " AND h.line_type = :line_type";
+            $params[':line_type'] = $lineType;
+        }
+        if ($itemCode !== null && $itemCode !== '') {
+            $where .= " AND h.item_code = :item_code";
+            $params[':item_code'] = $itemCode;
+        }
+        // LEFT JOIN, not JOIN: changed_by has no foreign key of its own, and a name that cannot be
+        // resolved must not drop the entry it belongs to.
+        $stmt = $this->db->prepare("SELECT h.id, h.action, h.source_type, h.source_id, h.line_type, h.item_code,
+                h.old_value, h.old_value_text, h.new_value, h.new_value_text, h.note, h.changed_by, h.changed_at,
+                u.name_th AS changed_by_name_th, u.name_en AS changed_by_name_en
+            FROM `payroll_run_line_override_history` h
+            LEFT JOIN `employees` u ON u.id = h.changed_by
+            {$where}
+            ORDER BY h.id DESC");
+        $stmt->execute($params);
+        return array_map(static function (array $r): array {
+            return [
+                'id' => (int)$r['id'],
+                'action' => $r['action'],
+                'source_type' => $r['source_type'],
+                'source_id' => $r['source_id'] !== null ? (int)$r['source_id'] : null,
+                'line_type' => $r['line_type'],
+                'item_code' => $r['item_code'],
+                'old_value' => $r['old_value'] !== null ? (float)$r['old_value'] : null,
+                'new_value' => $r['new_value'] !== null ? (float)$r['new_value'] : null,
+                'old_text' => $r['old_value_text'],
+                'new_text' => $r['new_value_text'],
+                'note' => $r['note'],
+                'changed_by' => (int)$r['changed_by'],
+                'changed_by_name_th' => $r['changed_by_name_th'],
+                'changed_by_name_en' => $r['changed_by_name_en'],
+                'changed_at' => $r['changed_at'],
+            ];
+        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
     }
 
     /* ==================== EMPLOYEE VERIFY / COMMENTS (2026-08-29, Lock retired 2026-08-31) ====================
@@ -5115,6 +5186,29 @@ class PayrollRunModel {
         ];
     }
 
+    /**
+     * 2026-09-19, H-backend: the history row for a hand-added line. Until today add/edit/remove wrote
+     * only a free-text payroll_run_audit_logs note, which cannot be read back as a from/to pair --
+     * and `edit` never recorded the old amount at all, so "what was this before" had no answer.
+     * That note stays exactly as it was; this is written alongside it, not instead of it.
+     *
+     * `source_id` is the payroll_run_manual_lines PK, which is the row's real identity: two manual
+     * lines on one employee can share one item_code (recalculate()'s own breakdown carries
+     * `manual_line_id` for the same reason). `item_code` is what resolveManualLineRow() resolves --
+     * the exact key the slip and the Adjustments table already address this row by, including the
+     * 'CUSTOM:' / OTHER_INCOME / OTHER_DEDUCTION forms -- so a history row can be matched to a
+     * visible line without a second mapping.
+     *
+     * An edit that leaves the amount alone (a renamed label, a re-pointed destination) records
+     * nothing: historyIsNoOp() sees the same figure on both sides. That is a known gap, listed in
+     * BACKLOG.md as "history ปลายทาง/ชื่อ manual line" rather than half-solved here.
+     */
+    private function recordManualLineHistory(int $runId, int $employeeId, int $lineId, array $row, string $action, ?float $oldAmount, ?float $newAmount, int $userId): void {
+        $resolved = $this->resolveManualLineRow($row);
+        $this->recordLineOverrideHistory($runId, $employeeId, 'earning_deduction', (string)$resolved['code'], $action,
+            $oldAmount, $newAmount, $userId, $row['note'] ?? null, 'manual_line', $lineId);
+    }
+
     /** The ':column' => value map PDO wants, out of resolveManualLineInput()'s column => value
      *  fields plus whatever the caller binds on top (INSERT and UPDATE bind different extras). */
     private function manualLineParams(array $fields, array $extra): array {
@@ -5293,6 +5387,7 @@ class PayrollRunModel {
                 (run_id, employee_id, ped_type_id, custom_item_name, custom_item_type, is_other, amount, note, payee_employee_id, payee_type, destination_id, bank_account_id, include_in_cash_summary, created_by)
             VALUES (:run_id, :employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :is_other, :amount, :note, :payee_employee_id, :payee_type, :destination_id, :bank_account_id, :include_in_cash_summary, :created_by)")
             ->execute($this->manualLineParams($fields, [':run_id' => $id, ':employee_id' => $employeeId, ':created_by' => $userId]));
+        $newLineId = (int)$this->db->lastInsertId();
 
         // 2026-08-21, explicit request ("ต้องเก็บ Log ว่าใครแก้ไขข้อมูลอะไรไปเมื่อไหร่") -- addManualLine()/
         // removeManualLine() were the only mutating PayrollRunModel methods with no audit trail at
@@ -5301,6 +5396,7 @@ class PayrollRunModel {
         // free-text `note`, same as recalculate()'s own "N employee(s) calculated" note.
         $this->logAudit($id, 'draft', 'draft', 'add_manual_line', $userId,
             "Employee {$resolved['employee_no']}: added \"{$resolved['item_label']}\" amount " . number_format($fields['amount'], 2) . ($fields['note'] ? " (note: {$fields['note']})" : ''));
+        $this->recordManualLineHistory($id, $employeeId, $newLineId, $fields + ['item_code' => $resolved['item_label']], 'add', null, (float)$fields['amount'], $userId);
 
         return $this->recalculate($id, $compId, $userId, $isAdmin);
     }
@@ -5324,10 +5420,14 @@ class PayrollRunModel {
         if ($err !== null) {
             return ['status' => false, 'message' => $err];
         }
-        $stmtLine = $this->db->prepare("SELECT id FROM `payroll_run_manual_lines`
+        // 2026-09-19, H-backend: `amount` joins the existence check rather than getting a SELECT of
+        // its own -- the history row's "from" is the figure this UPDATE is about to overwrite, and
+        // after it runs there is nowhere left to read it.
+        $stmtLine = $this->db->prepare("SELECT id, amount FROM `payroll_run_manual_lines`
             WHERE id = :line_id AND run_id = :run_id AND employee_id = :employee_id");
         $stmtLine->execute([':line_id' => $lineId, ':run_id' => $id, ':employee_id' => $employeeId]);
-        if (!$stmtLine->fetch()) {
+        $beforeLine = $stmtLine->fetch(PDO::FETCH_ASSOC);
+        if (!$beforeLine) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
         $resolved = $this->resolveManualLineInput($compId, $employeeId, $pedTypeId, $amount, $userId, $note, $customItemName, $customItemType, $payeeEmployeeId, $payeeType, $includeInCashSummary, $destinationData, $isOther, $bankAccountId);
@@ -5346,6 +5446,7 @@ class PayrollRunModel {
 
         $this->logAudit($id, 'draft', 'draft', 'update_manual_line', $userId,
             "Employee {$resolved['employee_no']}: updated \"{$resolved['item_label']}\" amount " . number_format($fields['amount'], 2) . ($fields['note'] ? " (note: {$fields['note']})" : ''));
+        $this->recordManualLineHistory($id, $employeeId, $lineId, $fields + ['item_code' => $resolved['item_label']], 'edit', (float)$beforeLine['amount'], (float)$fields['amount'], $userId);
 
         return $this->recalculate($id, $compId, $userId, $isAdmin);
     }
@@ -5772,7 +5873,8 @@ class PayrollRunModel {
         // Fetched BEFORE the delete (2026-08-21, explicit request: audit log needs to say what was
         // removed, which is no longer readable once the row is gone) -- same reasoning as
         // addManualLine()'s new logAudit() call just above this method.
-        $stmtLine = $this->db->prepare("SELECT pml.employee_id, pml.amount, pml.custom_item_name, pt.item_code, e.employee_no
+        $stmtLine = $this->db->prepare("SELECT pml.employee_id, pml.amount, pml.note, pml.custom_item_name, pml.ped_type_id,
+                pml.custom_item_type, pml.is_other, pt.item_code, e.employee_no
             FROM `payroll_run_manual_lines` pml
             LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
             JOIN `employees` e ON e.id = pml.employee_id
@@ -5793,6 +5895,7 @@ class PayrollRunModel {
         $itemLabel = $lineInfo['item_code'] ?? $lineInfo['custom_item_name'];
         $this->logAudit($id, 'draft', 'draft', 'remove_manual_line', $userId,
             "Employee {$lineInfo['employee_no']}: removed \"{$itemLabel}\" amount " . number_format((float)$lineInfo['amount'], 2));
+        $this->recordManualLineHistory($id, (int)$lineInfo['employee_id'], $lineId, $lineInfo, 'delete', (float)$lineInfo['amount'], null, $userId);
 
         return $this->recalculate($id, $compId, $userId, $isAdmin);
     }
@@ -6080,17 +6183,57 @@ class PayrollRunModel {
      * item_code, or one of ATTENDANCE_OVERRIDE_FIELDS for attendance) -- NEVER the
      * statutoryOverrideCode()-wrapped sentinel, which exists only to keep the OVERRIDE table's own
      * key space collision-free and has no reason to leak into a human-facing report.
+     *
+     * 2026-09-19, H-backend: $sourceType/$sourceId widen this to the 2 other writers that had no
+     * before/after record at all (the tri-state exemption answer, and hand-added manual lines);
+     * $oldText/$newText carry a non-numeric pair ('inherit'/'yes'/'no') in place of the decimals.
+     * A row uses one pair or the other, never both.
+     *
+     * The 2 suppression rules live HERE, not in each caller: attendanceOverrideSave()/
+     * attendanceOverrideRemove() already had both inline (a diff-tolerance skip and a
+     * "nothing was overridden" skip) while every other writer had neither, so one line could be
+     * recorded as edited-to-the-same-value and another could not. Generalized rather than copied,
+     * which also means a future writer gets them by existing.
      */
-    private function recordLineOverrideHistory(int $runId, int $employeeId, string $lineType, string $itemCode, string $action, ?float $oldValue, ?float $newValue, int $userId, ?string $note = null): void {
+    private const HISTORY_VALUE_EPSILON = 0.005;
+
+    /** 'nothing was there' is only a reason to skip on an action that undoes something. */
+    private const HISTORY_REVERT_ACTIONS = ['restore', 'delete'];
+
+    private function recordLineOverrideHistory(int $runId, int $employeeId, string $lineType, string $itemCode, string $action, ?float $oldValue, ?float $newValue, int $userId, ?string $note = null, string $sourceType = 'override', ?int $sourceId = null, ?string $oldText = null, ?string $newText = null): void {
+        if ($this->historyIsNoOp($action, $oldValue, $newValue, $oldText, $newText)) {
+            return;
+        }
+        // varchar(100), and a custom manual line's code is 'CUSTOM:' + a varchar(150) label.
+        $itemCode = mb_substr($itemCode, 0, 100);
         $this->db->prepare("INSERT INTO `payroll_run_line_override_history`
-                (run_id, employee_id, line_type, item_code, action, old_value, new_value, note, changed_by)
-            VALUES (:run_id, :employee_id, :line_type, :item_code, :action, :old_value, :new_value, :note, :changed_by)")
+                (run_id, employee_id, line_type, source_type, source_id, item_code, action, old_value, old_value_text, new_value, new_value_text, note, changed_by)
+            VALUES (:run_id, :employee_id, :line_type, :source_type, :source_id, :item_code, :action, :old_value, :old_text, :new_value, :new_text, :note, :changed_by)")
             ->execute([
                 ':run_id' => $runId, ':employee_id' => $employeeId, ':line_type' => $lineType,
+                ':source_type' => $sourceType, ':source_id' => $sourceId,
                 ':item_code' => $itemCode, ':action' => $action,
-                ':old_value' => $oldValue, ':new_value' => $newValue,
+                ':old_value' => $oldValue, ':old_text' => $oldText,
+                ':new_value' => $newValue, ':new_text' => $newText,
                 ':note' => $note, ':changed_by' => $userId,
             ]);
+    }
+
+    /** True when this edit changed nothing worth a history row: the same figure (or the same word)
+     *  on both sides, or an undo of something that was never there in the first place. One side
+     *  null and the other not IS a change -- that is how a first override, and a revert back to the
+     *  computed figure, both look. */
+    private function historyIsNoOp(string $action, ?float $oldValue, ?float $newValue, ?string $oldText, ?string $newText): bool {
+        if ($oldValue === null && $newValue === null && $oldText === null && $newText === null) {
+            return true;
+        }
+        if ($oldValue !== null && $newValue !== null && abs($oldValue - $newValue) < self::HISTORY_VALUE_EPSILON) {
+            return true;
+        }
+        if ($oldText !== null && $newText !== null && $oldText === $newText) {
+            return true;
+        }
+        return in_array($action, self::HISTORY_REVERT_ACTIONS, true) && $oldValue === null && $oldText === null;
     }
 
     public function lineOverrideSave(int $runId, int $compId, int $employeeId, string $itemCode, string $action, ?float $overrideAmount, ?string $note, int $userId, bool $isAdmin, string $historyLineType = 'earning_deduction', ?string $historyItemCode = null): array {
@@ -7100,12 +7243,11 @@ class PayrollRunModel {
             // report with no-op noise). $values[$field]===null means "this call leaves the field
             // following synced/import data" -- same reading as recorded 'restore', consistent with
             // attendanceOverrideRemove()'s own action value below.
+            // 2026-09-19, H-backend: the "unchanged, skip" test that used to sit inline here is now
+            // historyIsNoOp(), which every writer goes through -- same rule, one copy.
             foreach (self::ATTENDANCE_OVERRIDE_FIELDS as $field) {
                 $oldFieldValue = $existingRow && $existingRow[$field] !== null ? (float)$existingRow[$field] : null;
                 $newFieldValue = $values[$field];
-                if ($oldFieldValue === $newFieldValue || ($oldFieldValue !== null && $newFieldValue !== null && abs($oldFieldValue - $newFieldValue) < 0.005)) {
-                    continue; // unchanged, nothing to record
-                }
                 $this->recordLineOverrideHistory($runId, $employeeId, 'attendance', $field,
                     $newFieldValue !== null ? 'override' : 'restore', $oldFieldValue, $newFieldValue, $userId, $note);
             }
@@ -7150,6 +7292,8 @@ class PayrollRunModel {
 
         // One 'restore' row per field that genuinely HAD an override (skip fields that were never
         // touched) -- new_value is the real synced/import figure it reverted to, not a guess.
+        // 2026-09-19, H-backend: historyIsNoOp() would refuse an empty revert anyway, but this stays
+        // -- it is what keeps $existingRow[$field] from being read off `false` and cast to 0.00.
         $syncedAfter = $this->attendanceDataForEmployee($compId, $runId, $employeeId)['synced'] ?? [];
         foreach (self::ATTENDANCE_OVERRIDE_FIELDS as $field) {
             if (!$existingRow || $existingRow[$field] === null) {
@@ -7364,6 +7508,13 @@ class PayrollRunModel {
         $own = !$this->db->inTransaction();
         try {
             if ($own) { $this->db->beginTransaction(); }
+            // 2026-09-19, H-backend: read BEFORE the write -- this is the only place the answer this
+            // call is replacing still exists, and both branches below destroy it. Absent row means
+            // both halves are at their default, which is exactly what 'inherit' says.
+            $stmtBefore = $this->db->prepare("SELECT tax_calculate_override, sso_calculate_override FROM `payroll_run_employee_exemptions`
+                WHERE run_id = :run_id AND employee_id = :employee_id");
+            $stmtBefore->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+            $before = $stmtBefore->fetch(PDO::FETCH_ASSOC) ?: [];
             if ($taxCalculateOverride === 'inherit' && $ssoCalculateOverride === 'inherit') {
                 $this->db->prepare("DELETE FROM `payroll_run_employee_exemptions` WHERE run_id = :run_id AND employee_id = :employee_id")
                     ->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
@@ -7389,6 +7540,20 @@ class PayrollRunModel {
                 $summary = implode(', ', $summaryParts);
                 $this->logAudit($runId, 'draft', 'draft', 'employee_exemption_save', $userId,
                     "Employee {$employeeNo}: {$summary} for this run." . ($note ? " (note: {$note})" : ''));
+            }
+            // 2026-09-19, H-backend: until today this surface wrote nothing but the free-text audit
+            // note above, so "who turned this person's SSO off, and what was it before" had no
+            // structured answer anywhere. One row per HALF that actually moved (the panel always
+            // submits both), keyed by the bare statutory code the rest of this table already uses --
+            // never the statutoryOverrideCode() sentinel, which belongs to the override table alone.
+            $halves = array_combine(self::TRI_STATE_STATUTORY_CODES, [
+                ['column' => 'tax_calculate_override', 'new' => $taxCalculateOverride],
+                ['column' => 'sso_calculate_override', 'new' => $ssoCalculateOverride],
+            ]);
+            foreach ($halves as $code => $half) {
+                $this->recordLineOverrideHistory($runId, $employeeId, 'statutory', $code, 'exemption_change',
+                    null, null, $userId, $note, 'exemption', null,
+                    (string)($before[$half['column']] ?? 'inherit'), $half['new']);
             }
             if ($own) { $this->db->commit(); }
         } catch (PDOException $e) {
