@@ -7,7 +7,7 @@
  * instead of being written out 4 times (rules.md §0.4).
  *
  * Three destinations -- what happens to the money, not who the payee record points at:
- *   company_retained -> `payee_type` NULL ("no record") or 'company' ("record")
+ *   company_retained -> `payee_type` NULL (no company account chosen) or 'company' (one chosen)
  *   employee         -> `payee_type` 'employee'
  *   external         -> `payee_type` 'other_person'
  * The UI value is mapped to `payee_type` on the client right before submit (payeeDestinationType(),
@@ -20,11 +20,10 @@
  *                          the callout under the destination choice they belong to
  *   $payee_allow_no_record (optional, default true) false for an editor whose backend has no "no
  *                          payee at all" value (the per-run override) -- "หักเข้าบริษัท" then always
- *                          means 'company' and the sub-question is not rendered at all
+ *                          means 'company' and the company-account picker may not be left empty
  *   $payee_label_class     (optional) extra classes for the field label
  */
 $p = $payee_prefix;
-$allowNoRecord = isset($payee_allow_no_record) ? (bool)$payee_allow_no_record : true;
 $labelClass = $payee_label_class ?? '';
 ?>
 <label class="form-label payee-dest-label <?=htmlspecialchars($labelClass)?>" data-i18n="payee_type_label">Send deducted amount to</label>
@@ -41,17 +40,5 @@ $labelClass = $payee_label_class ?? '';
 </div>
 <p class="payee-dest-desc" id="<?=$p?>PayeeDestDesc"></p>
 <div class="payee-dest-subform" id="<?=$p?>PayeeSubform">
-<?php if ($allowNoRecord): ?>
-    <div class="d-none" id="<?=$p?>PayeeRecordWrap">
-        <label class="form-label payee-dest-label" data-i18n="payee_record_label">Record as a transfer into a company account?</label>
-        <div class="segmented" id="<?=$p?>PayeeRecord">
-            <input type="radio" name="<?=$p?>_payee_record" id="<?=$p?>PayeeRecordNo" value="no" checked>
-            <label for="<?=$p?>PayeeRecordNo" data-i18n="payee_record_no">No record</label>
-            <input type="radio" name="<?=$p?>_payee_record" id="<?=$p?>PayeeRecordYes" value="yes">
-            <label for="<?=$p?>PayeeRecordYes" data-i18n="payee_record_yes">Record</label>
-        </div>
-        <p class="payee-dest-desc d-none" id="<?=$p?>PayeeRecordDesc" data-i18n="payee_record_desc">Use when it should appear in the remittance report with an audit trail to a specific account</p>
-    </div>
-<?php endif; ?>
 <?=$payee_slot?>
 </div>

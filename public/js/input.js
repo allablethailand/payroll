@@ -437,7 +437,12 @@ function initSelect2(selector, options = {}) {
                 },
                 placeholder: {
                     id: '',
-                    text: langData['select_option'] || 'Select an option'
+                    // 2026-09-19, 4c: `data-placeholder-key` -- the empty state of a picker whose
+                    // emptiness MEANS something ("ไม่บันทึก" on the company-account pickers, where no
+                    // account chosen is itself the answer, not a missing one), so that answer is
+                    // written where the user reads it instead of a generic "เลือก...". Read off the
+                    // element so the generic `.select2-remote` re-init (applyLanguage) keeps it.
+                    text: ($this.data('placeholderKey') ? getLangValue($this.data('placeholderKey')) : null) || langData['select_option'] || 'Select an option'
                 },
                 minimumInputLength: 0
             };

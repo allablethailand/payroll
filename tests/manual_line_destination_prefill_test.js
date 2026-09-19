@@ -25,6 +25,9 @@ const detailJsPath = path.join(__dirname, '..', 'public', 'js', 'payroll', 'deta
 const appJsPath = path.join(__dirname, '..', 'public', 'js', 'app.js');
 const inputJsPath = path.join(__dirname, '..', 'public', 'js', 'input.js');
 const detailSource = fs.readFileSync(detailJsPath, 'utf8');
+// 2026-09-19, 4c: the payee-descriptor renderer moved out of payroll/detail.js into its own
+// shared file (Employee Detail reuses it). Only the path this suite reads it from changed.
+const payeeSource = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'payee-descriptor.js'), 'utf8');
 const appSource = fs.readFileSync(appJsPath, 'utf8');
 const inputSource = fs.readFileSync(inputJsPath, 'utf8');
 
@@ -109,11 +112,11 @@ const extracted = stubs + '\n'
     + fn(appSource, 'payeeDetailFromOption') + '\n'
     + fn(appSource, 'applyDefaultCompanyBankAccount') + '\n'
     + fn(detailSource, 'setManualLineDestModeRd') + '\n'
-    + fn(detailSource, 'pinRowOptionRd') + '\n'
-    + fn(detailSource, 'unpinRowOptionRd') + '\n'
-    + fn(detailSource, 'rowOptionLabelRd') + '\n'
-    + fn(detailSource, 'renderPayeeAccountDetailRd') + '\n'
-    + fn(detailSource, 'renderPayeeEmployeeDetailRd') + '\n'
+    + fn(payeeSource, 'pinRowOptionRd') + '\n'
+    + fn(payeeSource, 'unpinRowOptionRd') + '\n'
+    + fn(payeeSource, 'rowOptionLabelRd') + '\n'
+    + fn(payeeSource, 'renderPayeeAccountDetailRd') + '\n'
+    + fn(payeeSource, 'renderPayeeEmployeeDetailRd') + '\n'
     + fn(detailSource, 'renderManualLineBankAccountDetailRd') + '\n'
     + fn(detailSource, 'renderManualLinePayeeEmployeeDetailRd') + '\n'
     + fn(detailSource, 'applyManualLineRowPayeeEmployeeRd') + '\n'
@@ -392,10 +395,10 @@ check('no client-side matcher was added -- searching stays server-side (R1b rule
     detailStripped.indexOf('matcher:') === -1);
 
 // the slip row shows the name, by language, and falls back rather than going blank
-const nameFnSrc = fn(detailSource, 'payeeNameFromLabelRd') + '\n' + fn(detailSource, 'manualLinePayeeNameRd');
+const nameFnSrc = fn(payeeSource, 'payeeNameFromLabelRd') + '\n' + fn(payeeSource, 'manualLinePayeeNameRd');
 const nameApi = new Function('currentLang', 'splitOptionCodePrefix', 'rowOptionLabelRd',
     nameFnSrc + '; return manualLinePayeeNameRd;');
-const rowLabelFn = new Function('currentLang', fn(detailSource, 'rowOptionLabelRd') + '; return rowOptionLabelRd;');
+const rowLabelFn = new Function('currentLang', fn(payeeSource, 'rowOptionLabelRd') + '; return rowOptionLabelRd;');
 const nameTh = nameApi('th', splitOptionCodePrefix, rowLabelFn('th'));
 const nameEn = nameApi('en', splitOptionCodePrefix, rowLabelFn('en'));
 const LINE_WITH_LABELS = { payee_employee_id: 499, payee_employee_no: 'CEO', payee_employee_label_th: 'CEO - กฤษดา สาธุกิจชัย', payee_employee_label_en: 'CEO - Kritsada Satukitchai' };
@@ -417,7 +420,7 @@ check('prefill sets the row destination BEFORE it touches the payee choice',
     prefillSrc.indexOf('manualLineRowDestinationRd =') < prefillSrc.indexOf("setPayeeDestination('manualLine'"));
 // 2026-09-17, tiny-L2: the 3 pinned options are built by one shared function now (the recurring
 // deduction destination card reads the same field names), so this is where the payload is read.
-const pinBuilderSrc = stripComments(fn(detailSource, 'payeeRowPinnedOptionsRd'));
+const pinBuilderSrc = stripComments(fn(payeeSource, 'payeeRowPinnedOptionsRd'));
 check('the pinned-option builder reads the masked number from the payload, never a raw one',
     pinBuilderSrc.indexOf('row.destination_account_no_masked') !== -1 && pinBuilderSrc.indexOf('row.destination_account_no') === pinBuilderSrc.indexOf('row.destination_account_no_masked'));
 check('the availability step no longer forces a mode while a row destination is pinned',

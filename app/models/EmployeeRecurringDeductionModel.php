@@ -83,7 +83,16 @@ class EmployeeRecurringDeductionModel {
             WHERE erd.id = :id AND e.comp_id = :comp_id AND erd.deleted_at IS NULL");
         $stmt->execute([':id' => $id, ':comp_id' => $compId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row ?: null;
+        if (!$row) {
+            return null;
+        }
+        // 2026-09-19, 4c round 2: `payee` here too, not only in list(). This is what the EDIT form
+        // reads, and without it that form had to invent its own label for the payee it was
+        // reopening -- which is exactly how the same employee came to read "CEO" in one place and
+        // "CEO - กฤษดา สาธุกิจชัย" in another. Read-only and additive: one more key on the row,
+        // from the same trait, nothing else changed.
+        $rows = $this->attachPayeeDescriptor([$row], $compId);
+        return $rows[0];
     }
 
     public function save(int $employeeId, int $compId, array $data, int $userId, ?string $ip = null, ?string $userAgent = null): array {

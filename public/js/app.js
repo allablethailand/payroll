@@ -3441,23 +3441,39 @@ $(function () {
 
    UI value -> `payee_type` sent to the server (mapped on the client, right before submit -- the
    enum, the 4 write paths and every read path are untouched):
-     company_retained + "No record"  -> (key omitted)   = payee_type NULL
-     company_retained + "Record"     -> 'company'       + bank_account_id
-     employee                        -> 'employee'      + payee_employee_id
-     external                        -> 'other_person'  + destination
+     company_retained, no account chosen -> (key omitted)  = payee_type NULL
+     company_retained, account chosen    -> 'company'      + bank_account_id
+     employee                            -> 'employee'     + payee_employee_id
+     external                            -> 'other_person' + destination
+   2026-09-19, 4c: "No record / Record" used to be a segmented sub-question of its own, answered
+   ABOVE the account picker it decided the fate of -- two controls for one fact, and the only way to
+   tell them apart was to read both. The picker IS the answer now: empty means no record, and its own
+   placeholder says so (`data-placeholder-key`, input.js).
    A row stored with the retired 'not_disbursed' (or anything else this control cannot show) opens
    on "retained + no record", which is what it always computed as anyway -- see
    docs/decisions/2026-09-16-payee-three-destinations.md.
 
    `options`: { allowNoRecord (default true -- false for an editor whose backend has no "no payee"
-   value at all), employeeWrap/companyWrap/externalWrap (selectors this control shows and hides),
-   onChange(payeeType, dest) (the caller's own clearing/prefilling, run after every change) }. */
+   value at all, i.e. one whose account picker may not be left empty), companyAccount (the company
+   bank-account <select> whose emptiness decides NULL vs 'company'), employeeWrap/companyWrap/
+   externalWrap (selectors this control shows and hides), onChange(payeeType, dest) (the caller's own
+   clearing/prefilling, run after every change) }. */
+// 2026-09-19, 4c: no entry for `company_retained` any more -- its help line restated the segment's
+// own label and the account picker right under it, three ways of saying one thing (§0.3).
 const PAYEE_DEST_DESC = {
-    company_retained: { key: 'payee_dest_desc_retained', fallback: "Deducted from the employee's pay and kept by the company, nothing is paid out — e.g. advance recovery, penalties" },
     employee: { key: 'payee_dest_desc_employee', fallback: 'The recipient receives it as taxable income in the same run' },
     external: { key: 'payee_dest_desc_external', fallback: 'e.g. Legal Execution Dept., co-op, court-ordered creditors — destination account required' },
 };
 const PAYEE_DEST_REGISTRY = {};
+/* 2026-09-19, 4c fix: REAL infinite recursion, reproduced and measured (21+ nested calls before the
+   stack blew, every frame entering through this file's own delegated `change` handler below).
+   syncPayeeDestination() calls the caller's onChange, and every caller's onChange clears the fields
+   of the branch that was just left -- including the company-account <select>, which since 4c is
+   itself bound to `change` -> syncPayeeDestination. Clearing it therefore called the thing that had
+   just called the clear. Guarded here, in the one function all 3 callers route through, rather than
+   in each onChange: a nested call has nothing to add anyway, since the outer one is mid-flight and
+   will finish with the very state the nested one would have read. */
+const PAYEE_DEST_SYNCING = {};
 function initPayeeDestination(prefix, options) {
     const opts = $.extend({ allowNoRecord: true }, options || {});
     const first = !PAYEE_DEST_REGISTRY[prefix];
@@ -3465,9 +3481,16 @@ function initPayeeDestination(prefix, options) {
     if (first) {
         // Delegated + bound once per prefix: these controls live inside modals that re-render their
         // own contents, and a direct binding would be lost on the first re-render.
-        $(document).on('change', `#${prefix}PayeeDest input[type="radio"], #${prefix}PayeeRecord input[type="radio"]`, function () {
+        $(document).on('change', `#${prefix}PayeeDest input[type="radio"]`, function () {
             syncPayeeDestination(prefix);
         });
+        // The company-account picker is now part of the ANSWER, not just a field under it: choosing
+        // or clearing it flips payee_type between 'company' and NULL, so it has to re-sync too.
+        if (opts.companyAccount) {
+            $(document).on('change', opts.companyAccount, function () {
+                syncPayeeDestination(prefix);
+            });
+        }
     }
     syncPayeeDestination(prefix);
 }
@@ -3477,7 +3500,7 @@ function payeeDestinationChoice(prefix) {
 function payeeDestinationRecords(prefix) {
     const opts = PAYEE_DEST_REGISTRY[prefix] || {};
     if (opts.allowNoRecord === false) return true;
-    return ($(`#${prefix}PayeeRecord input[type="radio"]:checked`).val() || 'no') === 'yes';
+    return !!(opts.companyAccount && $(opts.companyAccount).val());
 }
 // The one place the UI's own vocabulary becomes the column's.
 function payeeDestinationType(prefix) {
@@ -3489,26 +3512,35 @@ function payeeDestinationType(prefix) {
 function setPayeeDestination(prefix, payeeType) {
     const dest = payeeType === 'employee' ? 'employee' : (payeeType === 'other_person' ? 'external' : 'company_retained');
     $(`#${prefix}PayeeDest input[type="radio"][value="${dest}"]`).prop('checked', true);
-    $(`#${prefix}PayeeRecord input[type="radio"][value="${payeeType === 'company' ? 'yes' : 'no'}"]`).prop('checked', true);
+    // Nothing to set for 'company' vs NULL: the account picker itself carries that, and the caller
+    // fills it (or leaves it empty) right after this.
     syncPayeeDestination(prefix);
 }
 function syncPayeeDestination(prefix) {
+    if (PAYEE_DEST_SYNCING[prefix]) return;
+    PAYEE_DEST_SYNCING[prefix] = true;
+    try {
+        syncPayeeDestinationInner(prefix);
+    } finally {
+        PAYEE_DEST_SYNCING[prefix] = false;
+    }
+}
+function syncPayeeDestinationInner(prefix) {
     const opts = PAYEE_DEST_REGISTRY[prefix] || {};
     const dest = payeeDestinationChoice(prefix);
     const payeeType = payeeDestinationType(prefix);
-    const desc = PAYEE_DEST_DESC[dest] || PAYEE_DEST_DESC.company_retained;
+    const desc = PAYEE_DEST_DESC[dest] || null;
     // Read straight out of langData here rather than leaving a `data-i18n` for the sweep: this text
     // is swapped on every change, long after the sweep last ran (rules.md §6's own note on
     // JS-built markup) -- the attribute is still set so a live language switch repaints it too.
-    $(`#${prefix}PayeeDestDesc`).text(getLangValue(desc.key) || desc.fallback).attr('data-i18n', desc.key);
-    // `allowNoRecord: false` means this caller's backend has no "no payee at all" value, so the
-    // sub-question has no second answer to offer -- hidden outright rather than shown with one
-    // choice. (A partial rendered with $payee_allow_no_record = false has no wrap at all; a SHARED
-    // form whose caller changes per open does, which is why the hiding has to happen here too.)
-    $(`#${prefix}PayeeRecordWrap`).toggleClass('d-none', opts.allowNoRecord === false || dest !== 'company_retained');
-    $(`#${prefix}PayeeRecordDesc`).toggleClass('d-none', payeeType !== 'company');
+    $(`#${prefix}PayeeDestDesc`)
+        .text(desc ? (getLangValue(desc.key) || desc.fallback) : '')
+        .attr('data-i18n', desc ? desc.key : null);
     if (opts.employeeWrap) $(opts.employeeWrap).toggleClass('d-none', dest !== 'employee');
-    if (opts.companyWrap) $(opts.companyWrap).toggleClass('d-none', payeeType !== 'company');
+    // Follows the SEGMENT, not the resolved payee_type: the picker has to be on screen while it is
+    // still empty -- being empty is how the user says "no record", and a control that appears only
+    // once it is filled can never be filled.
+    if (opts.companyWrap) $(opts.companyWrap).toggleClass('d-none', dest !== 'company_retained');
     if (opts.externalWrap) $(opts.externalWrap).toggleClass('d-none', dest !== 'external');
     // The callout always has something in it now (the sub-question itself, when nothing else), so
     // unlike the previous 4-choice version there is no "empty indented box" case to hide.
@@ -4811,6 +4843,12 @@ function _refreshAllDataTablesLanguageInner() {
             sSearchPlaceholder: lang.searchPlaceholder,
             sLengthMenu: lang.lengthMenu,
             sZeroRecords: lang.zeroRecords,
+            // 2026-09-19, 4c: genuinely missing here (getTableLang() has returned `emptyTable` since
+            // 2026-09-11, this refresh never copied it). langData is fetched async, so every table
+            // built before that fetch resolves took DataTables' own English "No data available in
+            // table" and, unlike every other string in this list, never got it replaced -- which is
+            // what an empty table on a Thai page has been reading in English ever since.
+            sEmptyTable: lang.emptyTable,
             sInfo: lang.info,
             sInfoEmpty: lang.infoEmpty,
             sInfoFiltered: lang.infoFiltered,

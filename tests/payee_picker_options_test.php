@@ -59,13 +59,22 @@ check('short labels are their own lang keys', substr_count($html, 'data-i18n="pa
 check('the helper line under the control is rendered empty for JS to fill', strpos($html, '<p class="payee-dest-desc" id="demoPayeeDestDesc"></p>') !== false, true);
 check('the callout wraps the sub-forms', strpos($html, 'class="payee-dest-subform" id="demoPayeeSubform"') !== false, true);
 check("the caller's own slot is inside that callout", strpos($html, 'demoSlotMarker') > strpos($html, 'demoPayeeSubform'), true);
-preg_match_all('/name="demo_payee_record" id="[^"]+" value="([^"]+)"/', $html, $mr);
-check('the sub-question offers exactly No record / Record', implode(',', $mr[1] ?? []), 'no,yes');
-check('"No record" is the default answer', substr_count($html, 'value="no" checked'), 1);
+// 2026-09-19, 4c: the "No record / Record" sub-question is gone from the partial for good. The
+// company-account picker under the segment IS that answer now -- empty means no record, and its own
+// placeholder says so (`data-placeholder-key="payee_record_no"` on each caller's account <select>).
+// Two controls for one fact was the whole reason to collapse it.
+check('the record sub-question is gone from the partial', strpos($html, 'PayeeRecord') !== false, false);
+check('...so is its radio group', strpos($html, 'demo_payee_record') !== false, false);
 
 $htmlNoQuestion = renderPayeePartial($root, 'demo2', false, '');
-check('$payee_allow_no_record=false renders no sub-question at all', strpos($htmlNoQuestion, 'PayeeRecord') !== false, false);
-check('...but still renders the same 3 destinations', substr_count($htmlNoQuestion, 'name="demo2_payee_dest"'), 3);
+check('$payee_allow_no_record=false renders no sub-question either', strpos($htmlNoQuestion, 'PayeeRecord') !== false, false);
+check('...and still renders the same 3 destinations', substr_count($htmlNoQuestion, 'name="demo2_payee_dest"'), 3);
+
+// The placeholder that carries the retired "ไม่บันทึก" answer, on all 3 company-account pickers.
+foreach ([['app/views/layout/modals.php', 2], ['app/views/payroll/detail.php', 1]] as [$file, $n]) {
+    check("{$file} says what an empty company account means",
+        substr_count((string)file_get_contents($root . '/' . $file), 'data-placeholder-key="payee_record_no"'), $n);
+}
 
 // ---------------------------------------------------------------- 2. all 3 call sites use it
 // 2026-09-18, 4b: 'recurringDest' is gone with the tab it was the picker for -- a recurring
@@ -93,17 +102,20 @@ $uiKeys = [
     'payee_type_label',
     'payee_dest_retained', 'payee_dest_employee', 'payee_dest_external',
     'payee_dest_employee_short', 'payee_dest_external_short',
-    'payee_dest_desc_retained', 'payee_dest_desc_employee', 'payee_dest_desc_external',
-    'payee_record_label', 'payee_record_no', 'payee_record_yes', 'payee_record_desc',
+    'payee_dest_desc_employee', 'payee_dest_desc_external',
+    'payee_record_no',
 ];
 foreach ($uiKeys as $key) {
     check("{$key} exists in th.json", array_key_exists($key, $th) && trim((string)$th[$key]) !== '', true);
     check("{$key} exists in en.json", array_key_exists($key, $en) && trim((string)$en[$key]) !== '', true);
 }
 // Retired with the flat list: one label per payee_type value, plus their helper lines.
+// 2026-09-19, 4c: the sub-question's own 3 keys, plus the "retained" helper line -- which restated
+// the segment label above it and the account picker below it.
 foreach (['payee_type_none', 'payee_type_employee', 'payee_type_company', 'payee_type_other_person',
           'payee_desc_none', 'payee_desc_employee', 'payee_desc_company', 'payee_desc_other_person',
-          'payee_desc_not_disbursed'] as $gone) {
+          'payee_desc_not_disbursed',
+          'payee_record_label', 'payee_record_yes', 'payee_record_desc', 'payee_dest_desc_retained'] as $gone) {
     check("{$gone} is gone from both language files", array_key_exists($gone, $th) || array_key_exists($gone, $en), false);
 }
 // Kept on purpose: list views still tag a row that was saved with the retired value.

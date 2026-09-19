@@ -34,6 +34,9 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const detailJsPath = path.join(root, 'public', 'js', 'payroll', 'detail.js');
 const detailSource = fs.readFileSync(detailJsPath, 'utf8');
+// 2026-09-19, 4c: the payee-descriptor renderer moved out of payroll/detail.js into its own
+// shared file (Employee Detail reuses it). Only the path this suite reads it from changed.
+const payeeSource = fs.readFileSync(path.join(root, 'public', 'js', 'payee-descriptor.js'), 'utf8');
 const appSource = fs.readFileSync(path.join(root, 'public', 'js', 'app.js'), 'utf8');
 const formatSource = fs.readFileSync(path.join(root, 'public', 'js', 'format-helpers.js'), 'utf8');
 const LANG_TH = JSON.parse(fs.readFileSync(path.join(root, 'public', 'lang', 'th.json'), 'utf8'));
@@ -61,6 +64,12 @@ function lineDecl(text, name) {
 
 /* ---------- a selector-keyed fake DOM, just enough for these functions ---------- */
 const stubs = `
+// 2026-09-19, 4c: the read-only payee link reads the subject employee's employee_no out of the
+// run-detail table (the /employees/ route matches employee_no, not the internal id).
+let RUN_DETAIL_ROW = { employee_id: 28, employee_no: 'EM009' };
+function runDetailRowByEmployeeId(id) {
+    return (RUN_DETAIL_ROW && Number(RUN_DETAIL_ROW.employee_id) === Number(id)) ? RUN_DETAIL_ROW : null;
+}
 const DOM = {};
 const DISABLED = [];
 function el(sel) {
@@ -122,7 +131,9 @@ let manualLineRowPayeeEmployeeRd = null;
 let manualLineRowBankAccountRd = null;
 let manualLineRowDestinationRd = null;
 let lineOverrideHistoryRd = { byKey: {}, historyAvailable: true, startDate: null };
-const PAYEE_DEST_REGISTRY = { manualLine: { allowNoRecord: true } };
+// 2026-09-19, 4c: the company-account picker IS the "record it?" answer now, so the registry has
+// to name it -- payeeDestinationRecords() reads that select instead of a radio pair.
+const PAYEE_DEST_REGISTRY = { manualLine: { allowNoRecord: true, companyAccount: '#manualLineBankAccount' } };
 function reset() {
     Object.keys(DOM).forEach((k) => delete DOM[k]);
     SENT.length = 0; AJAX.length = 0; EVENTS.length = 0; DISABLED.length = 0;
@@ -140,14 +151,14 @@ const extracted = [
     fn(appSource, 'payeeDestinationChoice'),
     fn(appSource, 'payeeDestinationRecords'),
     fn(appSource, 'payeeDestinationType'),
-    lineDecl(detailSource, 'PAYEE_DESCRIPTOR_SEP_RD'),
-    lineDecl(detailSource, 'PAYEE_MASK_SHORT_RD'),
-    fn(detailSource, 'rowOptionLabelRd'),
-    fn(detailSource, 'payeeNameFromLabelRd'),
-    fn(detailSource, 'manualLinePayeeNameRd'),
-    fn(detailSource, 'payeeDescriptorShortMaskRd'),
-    fn(detailSource, 'payeeDescriptorDropAccountNameRd'),
-    fn(detailSource, 'payeeDescriptorTextRd'),
+    lineDecl(payeeSource, 'PAYEE_DESCRIPTOR_SEP_RD'),
+    lineDecl(payeeSource, 'PAYEE_MASK_SHORT_RD'),
+    fn(payeeSource, 'rowOptionLabelRd'),
+    fn(payeeSource, 'payeeNameFromLabelRd'),
+    fn(payeeSource, 'manualLinePayeeNameRd'),
+    fn(payeeSource, 'payeeDescriptorShortMaskRd'),
+    fn(payeeSource, 'payeeDescriptorDropAccountNameRd'),
+    fn(payeeSource, 'payeeDescriptorTextRd'),
     fn(detailSource, 'lineOverrideHistoryFor'),
     fn(detailSource, 'lineOverrideHistoryValueRd'),
     fn(detailSource, 'lineOverrideComputedTextRd'),
@@ -280,8 +291,8 @@ check('the amount field takes the whole row once the item picker is gone',
     api.el('#manualLineAmountCol').classes.has('col-lg-12') && !api.el('#manualLineAmountCol').classes.has('col-lg-4'));
 api.reset();
 api.applyLineFormSectionsRd(api.lineFormSectionsRd(ov(PED_LINE)), ov(PED_LINE));
-check("a ped line's read-only destination links to the employee's own page",
-    api.el('#manualLinePayeeReadonlyLink').attrs.href === '/employees/28',
+check("a ped line's read-only destination links to the employee's own page, by employee_no and tab",
+    api.el('#manualLinePayeeReadonlyLink').attrs.href === '/employees/EM009#earningDeduction-tab',
     api.el('#manualLinePayeeReadonlyLink').attrs.href);
 check("and states the destination in the shared descriptor's own words",
     api.el('#manualLinePayeeReadonlyText').text.indexOf('กรมบังคับคดี') !== -1,
@@ -338,7 +349,6 @@ console.log('\n=== 6. a recurring deduction: amount and destination are 2 differ
 // The payee picker, set to "an external person" with a saved destination chosen.
 function prepPayee(dest, savedId) {
     api.el('#manualLinePayeeDest input[type="radio"]:checked').value = dest;
-    api.el('#manualLinePayeeRecord input[type="radio"]:checked').value = 'yes';
     if (savedId !== undefined) api.el('#manualLineDestinationSelect').value = savedId;
 }
 prepAmount('1,500.00');

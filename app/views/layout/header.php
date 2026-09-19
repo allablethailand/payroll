@@ -285,6 +285,10 @@ if ($compIdForOrigamiFlags > 0 && $navUserId > 0) {
 </head>
 <body>
 <script src="<?=BASE_URL?>/node_modules/jquery/dist/jquery.min.js"></script>
+<!-- 2026-09-19, 4c: the one payee-descriptor renderer, shared by the payroll slip and Employee
+     Detail's own permanent forms/tables (see the file's own docblock). Before app.js on purpose:
+     nothing in it runs at load, it only has to be DEFINED before any page script calls it. -->
+<script src="<?=asset('public/js/payee-descriptor.js')?>"></script>
 <script src="<?=asset('public/js/app.js')?>"></script>
 <script src="<?=asset('public/js/alert.js')?>"></script>
 <!-- 2026-09-04, Backlog Phase 11, T065 -- escapeHtml()/escapeAttr()/fmtNum(), replacing ~30

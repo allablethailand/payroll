@@ -2262,3 +2262,18 @@ rejected=danger/need_info=warning): draft/pending_approval/approved/paid → `pr
 Demo จริงใน `docs/design/components.php` ("Callout (§15)"): 5 tone ผ่าน partial จริง (ไม่ใช่ mockup) ข้อความ
 ดึงมาจาก i18n string จริงของ Payroll Detail (`next_step_draft`/`_locked`/`_need_info`/`_rejected`/
 `_cancelled`) เพื่อยืนยันคู่ tone/ข้อความจริงที่ใช้บนหน้าจริง
+
+## 16. หน้าพนักงาน — ฟอร์มถาวรของพนักงาน (4c, 2026-09-19)
+
+รายการ "ถาวร" ของพนักงาน (Income/Deduction assignments, Recurring Deductions) คือของชิ้นเดียวกับที่ไปโผล่บนสลิป หน้านี้จึงห้ามพูดเรื่องเดียวกันด้วยคำ/คอนโทรลของตัวเอง:
+
+- **Picker ต้องเป็นตัวเดียวกับสลิป** — รายการใช้ `initSelect2(..., { stripCodePrefix: true, pinnedOption })` (ตัวเลือกปักท้าย `manual_line_item_custom_option` = "ระบุชื่อเอง"), ปลายทางใช้ `partials/payee-destination.php` + `initPayeeDestination()` — ห้ามเขียน picker ของหน้าตัวเองขึ้นใหม่
+- **ห้ามมี control ให้ "เลือกโหมด" ก่อนกรอก** — ถ้าโหมดต่างกันแค่ค่าที่ส่ง ให้เป็นตัวเลือกใน picker นั้นเอง หรือ checkbox 1 ตัวใต้ฟิลด์ที่มันควบคุมจริง (เช่น `is_other` = "รวมเป็นยอดอื่นๆ ในรายงาน")
+- **ห้ามมี toggle เปิด/ปิดหน้าฟิลด์ตัวเลขที่ไม่มี enum จริงรองรับ** — ช่องว่าง = ไม่มีค่านั้น (เช่น `fee_percent` ของ recurring deduction) · มี toggle ได้เฉพาะเมื่อมันเขียนคอลัมน์ enum จริง (เช่น `interest_type` ของ #eedModal)
+- **คำถามที่มีคำตอบอยู่ในฟิลด์อื่นแล้ว ห้ามถามซ้ำ** — บัญชีบริษัทว่าง = ไม่บันทึก (`payee_type` NULL), เลือกแล้ว = `'company'`; ความหมายของ "ว่าง" เขียนที่ placeholder ของ picker นั้น (`data-placeholder-key`) ไม่ใช่ segmented ก้อนที่สอง
+- **ฟิลด์ที่ผูกกับ event ของ picker กลาง ห้ามเคลียร์ด้วย `.trigger('change')` เมื่อมันว่างอยู่แล้ว** — `syncPayeeDestination()` มี guard (`PAYEE_DEST_SYNCING`) แต่ caller ก็ต้องไม่ยิง event ที่ไม่มีอะไรเปลี่ยน (เคยทำ stack แตกจริง)
+- **เปิดแถวเก่ามาแก้ ต้องได้ของเดิมกลับมาครบ** — label ของ picker มาจาก endpoint เดียวกับที่ picker นั้นใช้ (`pinRowOptionRd()` + `payeeRowPinnedOptionsRd()`) **ห้าม `new Option` ที่ประกอบข้อความเอง** · ใต้ทุก picker ที่ชี้ไปบัญชี ต้องมีการ์ดสรุปบัญชี (`renderPayeeEmployeeDetailRd()`/`renderPayeeAccountDetailRd()`) ทั้งตอนผู้ใช้เลือกเองและตอน prefill — เคลียร์ใน reset
+- **code ค้นได้ ไม่แสดง** (§5/§6) — คอลัมน์ที่มี code อยู่เบื้องหลังใช้ `render: {display, sort, filter}` โดย `filter` คืนชื่อ + code ส่วน `display` คืนแค่ชื่อ
+- **ปลายทางในตารางใช้ descriptor กลาง** — `payeeDescriptorHtmlRd()` (`public/js/payee-descriptor.js`) ไม่มีไอคอนต่อชนิดผู้รับ ไม่เขียนสตริงเอง
+- **เหนือทุกตารางรายการถาวร: กล่องสรุปเทียบ "วันนี้"** — ยังไม่เริ่ม / ระงับ / จบแล้ว, นับจากชุดเต็มที่ตอบกลับมา (ไม่ใช่หน้าที่แสดงหรือหลังกรอง), text-muted ไม่มีสี — **ห้ามใช้คำว่า "รอบนี้"**: หน้านี้ไม่มีงวดจ่าย จึงตอบไม่ได้ว่ารายการอยู่ในรอบไหน
+- **ลิงก์เข้าหน้านี้จากที่อื่น** = `{BASE_URL}/employees/{employee_no}#<tab-button-id>` เสมอ (route match ด้วย `employee_no` ไม่ใช่ id; hash เปิดแท็บที่ของชิ้นนั้นอยู่จริง)

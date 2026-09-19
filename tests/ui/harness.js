@@ -115,6 +115,12 @@ async function openContext(opts) {
 
     let blockedPreferenceSaves = 0;
     let blockedRecalculates = 0;
+    // 2026-09-19, 4c: `blockPaths` -- any OTHER write this round must never make, named per round
+    // rather than hard-coded here, because which endpoint is "the dangerous one" is a property of the
+    // page being measured, not of the harness. Counted and reported exactly like the 2 fixed ones, so
+    // a round says "0 blocked" and means it, instead of not knowing.
+    let blockedWrites = 0;
+    const blockedWritePaths = [];
     // Aborted, not fulfilled with a fake 200: the page's own handler is fire-and-forget (app.js does
     // not read the reply), so an abort is indistinguishable from a slow network to the UI, and it
     // cannot be mistaken for a write that succeeded.
@@ -125,6 +131,13 @@ async function openContext(opts) {
     if (o.allowRecalculate !== true) {
         await context.route('**' + RECALCULATE_PATH + '*', (route) => {
             blockedRecalculates++;
+            return route.abort();
+        });
+    }
+    for (const p of (o.blockPaths || [])) {
+        await context.route('**' + p + '*', (route) => {
+            blockedWrites++;
+            blockedWritePaths.push(p);
             return route.abort();
         });
     }
@@ -163,7 +176,7 @@ async function openContext(opts) {
         baseUrl,
         url: (suffix) => baseUrl + suffix,
         report: () => {
-            let budget = blockedPreferenceSaves + blockedRecalculates;
+            let budget = blockedPreferenceSaves + blockedRecalculates + blockedWrites;
             const real = [];
             let suppressed = 0;
             for (const text of consoleErrors) {
@@ -177,6 +190,8 @@ async function openContext(opts) {
             return {
                 blockedPreferenceSaves,
                 blockedRecalculates,
+                blockedWrites,
+                blockedWritePaths: blockedWritePaths.slice(),
                 consoleErrors: real,
                 pageErrors: pageErrors.slice(),
                 suppressedAbortNoise: suppressed,

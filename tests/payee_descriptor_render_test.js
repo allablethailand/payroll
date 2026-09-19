@@ -27,6 +27,9 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const detailJsPath = path.join(root, 'public', 'js', 'payroll', 'detail.js');
 const detailSource = fs.readFileSync(detailJsPath, 'utf8');
+// 2026-09-19, 4c: the payee-descriptor renderer moved out of payroll/detail.js into its own
+// shared file (Employee Detail reuses it). Only the path this suite reads it from changed.
+const payeeSource = fs.readFileSync(path.join(root, 'public', 'js', 'payee-descriptor.js'), 'utf8');
 const appSource = fs.readFileSync(path.join(root, 'public', 'js', 'app.js'), 'utf8');
 const formatSource = fs.readFileSync(path.join(root, 'public', 'js', 'format-helpers.js'), 'utf8');
 const LANG = {
@@ -86,18 +89,18 @@ const extracted = [
     stubs,
     fn(formatSource, 'fmtNum'),
     fn(appSource, 'splitOptionCodePrefix'),
-    lineDecl(detailSource, 'PAYEE_DESCRIPTOR_SEP_RD'),
-    lineDecl(detailSource, 'LINE_TAG_SEP_RD'),
-    lineDecl(detailSource, 'PAYEE_MASK_SHORT_RD'),
-    fn(detailSource, 'rowOptionLabelRd'),
-    fn(detailSource, 'payeeNameFromLabelRd'),
-    fn(detailSource, 'manualLinePayeeNameRd'),
-    fn(detailSource, 'payeeDescriptorShortMaskRd'),
-    fn(detailSource, 'payeeDescriptorDropAccountNameRd'),
-    fn(detailSource, 'payeeDescriptorNeedsReviewRd'),
-    fn(detailSource, 'payeeDescriptorTextRd'),
-    fn(detailSource, 'lineInstallmentTextRd'),
-    fn(detailSource, 'payeeDescriptorHtmlRd'),
+    lineDecl(payeeSource, 'PAYEE_DESCRIPTOR_SEP_RD'),
+    lineDecl(payeeSource, 'LINE_TAG_SEP_RD'),
+    lineDecl(payeeSource, 'PAYEE_MASK_SHORT_RD'),
+    fn(payeeSource, 'rowOptionLabelRd'),
+    fn(payeeSource, 'payeeNameFromLabelRd'),
+    fn(payeeSource, 'manualLinePayeeNameRd'),
+    fn(payeeSource, 'payeeDescriptorShortMaskRd'),
+    fn(payeeSource, 'payeeDescriptorDropAccountNameRd'),
+    fn(payeeSource, 'payeeDescriptorNeedsReviewRd'),
+    fn(payeeSource, 'payeeDescriptorTextRd'),
+    fn(payeeSource, 'lineInstallmentTextRd'),
+    fn(payeeSource, 'payeeDescriptorHtmlRd'),
     // The real call sites, so what is compared below is what each of them really renders.
     // 2026-09-18, 4a-2: a hand-added line is no longer a surface of its own -- it is a ROW of the
     // slip, mapped into one by manualLineToTableRowRd(), so the 3rd renderer is gone and what used to

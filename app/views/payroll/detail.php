@@ -1691,7 +1691,7 @@
                             <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company'. -->
                             <div class="d-none" id="manualLineCompanyAccountWrapper">
                                 <label class="form-label" for="manualLineBankAccount" data-i18n="payee_bank_account_label">Company Bank Account</label>
-                                <select class="form-select select2-remote" id="manualLineBankAccount" data-api="/api/payroll-cycle.bank-account.options"></select>
+                                <select class="form-select select2-remote" id="manualLineBankAccount" data-api="/api/payroll-cycle.bank-account.options" data-placeholder-key="payee_record_no"></select>
                                 <div id="manualLineBankAccountDetail"></div>
                             </div>
                             <!-- 2026-09-02, Deduction Destination and Third-Party Remittance.
