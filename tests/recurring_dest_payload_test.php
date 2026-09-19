@@ -53,7 +53,9 @@ checkTrue('recurringDeductionDestinationsForEmployee() exists', $start !== false
 // next PUBLIC one -- the helpers between them (payeeLookupForLines()/enrichLinePayee()) call
 // the same builder for the slip's own lines, and counting THEIR calls as this method's is how
 // the "one method, not two blocks" assertion below started reading 3.
-$body = substr($modelSrc, $start, strpos($modelSrc, 'private function payeeDestinationDescriptor(') - $start);
+// 2026-09-19, tiny-F: the descriptor moved to PayeeDescriptorTrait, so the bound is the next method
+// still IN this file -- which is also the next one after this method, for the reason stated above.
+$body = substr($modelSrc, $start, strpos($modelSrc, 'public function payeeLookupForLines(') - $start);
 
 foreach ([
     'the payee employee label' => "(new EmployeeModel(\$this->db))->optionRowsByIds(",
@@ -72,9 +74,10 @@ checkTrue('no bare-account_name company label lookup left',
     strpos($body, "SELECT id, account_name FROM `bank_accounts`") === false);
 checkTrue('template and override are built by ONE method, not two blocks',
     substr_count($body, '$this->payeeDestinationDescriptor(') === 2);
-$descStart = strpos($modelSrc, 'private function payeeDestinationDescriptor(');
+$traitSrc = file_get_contents(__DIR__ . '/../app/models/PayeeDescriptorTrait.php');
+$descStart = strpos($traitSrc, 'protected function payeeDestinationDescriptor(');
 checkTrue('payeeDestinationDescriptor() exists', $descStart !== false);
-$descBody = substr($modelSrc, $descStart, 3000);
+$descBody = substr($traitSrc, $descStart, 3000);
 check('the descriptor never returns a raw account number under any key',
     preg_match("/'(destination|bank)_account_no'\s*=>/", $descBody), 0);
 checkTrue('it never decrypts anything itself (the builders it reads already masked)',

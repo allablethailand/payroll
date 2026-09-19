@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/EmployeeModel.php';
+require_once __DIR__ . '/PayeeDescriptorTrait.php';
 require_once __DIR__ . '/../services/StatutoryCalculationEngine.php';
 require_once __DIR__ . '/../services/ThPitCalculator.php';
 require_once __DIR__ . '/../services/SyncPayResolver.php';
@@ -37,6 +38,8 @@ require_once __DIR__ . '/PvdEmployerRateLadderModel.php';
  * state and never need a permission check.
  */
 class PayrollRunModel {
+    use PayeeDescriptorTrait;
+
     private PDO $db;
     private StatutoryCalculationEngine $engine;
     private ThPitCalculator $thPitCalculator;
@@ -6313,6 +6316,12 @@ class PayrollRunModel {
         $destRows = (new PaymentDestinationModel($this->db))->optionRowsByIds($compId, $destIds);
         $bankRows = (new PayrollCycleModel($this->db))->bankAccountOptionRowsByIds($compId, $bankAccountIds);
 
+        // 2026-09-19, tiny-F: the detail route takes employee_no, not employees.id -- the link this
+        // method built pointed at a route parameter of the wrong kind and 404'd on arrival.
+        $noStmt = $this->db->prepare("SELECT employee_no FROM `employees` WHERE id = :id AND comp_id = :comp_id");
+        $noStmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $employeeNo = $noStmt->fetchColumn();
+
         $result = [];
         $seen = [];
         foreach ($rows as $r) {
@@ -6342,7 +6351,7 @@ class PayrollRunModel {
                 // summary helper reads both.
                 'destination' => $this->payeeDestinationDescriptor($r, $payeeRows, $destRows, $bankRows),
                 'readonly' => true,
-                'employee_detail_url' => BASE_URL . '/employees/' . $employeeId,
+                'employee_detail_url' => $employeeNo !== false ? BASE_URL . '/employees/' . rawurlencode((string)$employeeNo) : null,
             ];
         }
         return $result;
@@ -6413,88 +6422,6 @@ class PayrollRunModel {
             ];
         }
         return $result;
-    }
-
-    /**
-     * "Where this money goes", read-only, in the one shape every payee form on this page reads --
-     * the SAME field names manualLinesForEmployee() returns per line, so one client-side helper
-     * builds the pinned option + account summary for both. Every label and every account field comes
-     * from that picker's own options endpoint (via each model's optionRowsByIds()); nothing is
-     * composed here. Account numbers are masked at those methods, so no plaintext reaches this array.
-     *
-     * @param array $src a row carrying payee_type/payee_employee_id/destination_id/bank_account_id
-     *                   (a recurring-deduction template row, one of this run's override rows, or --
-     *                   since tiny-L4 -- one persisted *_breakdown line, via enrichLinePayee())
-     */
-    private function payeeDestinationDescriptor(array $src, array $payeeRows, array $destRows, array $bankRows): array {
-        $payeeId = !empty($src['payee_employee_id']) ? (int)$src['payee_employee_id'] : null;
-        $destId = !empty($src['destination_id']) ? (int)$src['destination_id'] : null;
-        $bankId = !empty($src['bank_account_id']) ? (int)$src['bank_account_id'] : null;
-        $payee = $payeeId !== null ? ($payeeRows[$payeeId] ?? null) : null;
-        $dest = $destId !== null ? ($destRows[$destId] ?? null) : null;
-        $bank = $bankId !== null ? ($bankRows[$bankId] ?? null) : null;
-        // 2026-09-18, tiny-L4: an id that IS set but resolves to nothing means the row it points at
-        // is gone (soft-deleted employee/destination/bank account). Reported as a flag rather than
-        // thrown: a persisted breakdown line is history, and history has to stay describable after
-        // its master row is retired -- the reader shows the type it can still name plus "record not
-        // found" instead of a blank where an account used to be.
-        $missing = ($payeeId !== null && $payee === null)
-            || ($destId !== null && $dest === null)
-            || ($bankId !== null && $bank === null);
-        return [
-            'payee_type' => $src['payee_type'],
-            'missing' => $missing,
-            'payee_employee_id' => $payeeId,
-            // 2026-09-18, tiny-L4: never DISPLAYED (rules.md §5/§6 keep an internal code out of a
-            // label) -- it is the last rung of the reader's own fallback ladder, for a payee whose
-            // employee row is gone and therefore has no label of its own left to show.
-            'payee_employee_no' => $src['payee_employee_no'] ?? null,
-            'payee_employee_label_th' => $payee['text_th'] ?? null,
-            'payee_employee_label_en' => $payee['text_en'] ?? null,
-            'payee_employee_account_name' => $payee['account_name'] ?? null,
-            'payee_employee_bank_name_th' => $payee['bank_name_th'] ?? null,
-            'payee_employee_bank_name_en' => $payee['bank_name_en'] ?? null,
-            'payee_employee_bank_branch' => $payee['bank_branch'] ?? null,
-            'payee_employee_account_no_masked' => $payee['account_no_masked'] ?? null,
-            'payee_employee_has_bank_account' => $payee !== null ? (bool)$payee['has_bank_account'] : null,
-            // 2026-09-18, tiny-L4: the payee employee's own receiving account as ONE label, so a
-            // reader never has to glue bank + number + name together itself (the other 2 payee kinds
-            // already arrive pre-composed as bank_account_label_*/destination_label_*, and 3 readers
-            // each gluing their own is exactly the divergence tiny-L2 removed). Composed by the SAME
-            // public composer the company-account picker's own options endpoint uses -- not a 4th
-            // spelling invented here.
-            // 2026-09-18, tiny-L5: the account NAME is deliberately NOT passed (null) -- the one
-            // difference from a company account's own label. This label never stands alone: it
-            // follows "จ่ายให้ {that same person}" in the same sentence, so the composer's trailing
-            // "(owner)" was printing the payee's name a second time, 3 words after the first.
-            'payee_employee_account_label_th' => ($payee !== null && !empty($payee['has_bank_account']))
-                ? PayrollCycleModel::bankAccountOptionLabel($payee['bank_name_th'] ?? null, $payee['account_no_masked'] ?? null, null)
-                : null,
-            'payee_employee_account_label_en' => ($payee !== null && !empty($payee['has_bank_account']))
-                ? PayrollCycleModel::bankAccountOptionLabel($payee['bank_name_en'] ?? null, $payee['account_no_masked'] ?? null, null)
-                : null,
-            'destination_id' => $destId,
-            // Whatever that endpoint serves per language, mirrored exactly -- since tiny-L5 the two
-            // differ in the bank's name (the destination's own name has no English twin to differ
-            // in). See PaymentDestinationModel::optionLabel().
-            'destination_label_th' => $dest['text_th'] ?? null,
-            'destination_label_en' => $dest['text_en'] ?? null,
-            'destination_account_name' => $dest['account_name'] ?? null,
-            'destination_bank_name_th' => $dest['bank_name_th'] ?? null,
-            'destination_bank_name_en' => $dest['bank_name_en'] ?? null,
-            'destination_bank_branch' => $dest['bank_branch'] ?? null,
-            'destination_account_no_masked' => $dest['account_no_masked'] ?? null,
-            // A row may point at an ad-hoc destination the saved-only picker can never offer back.
-            'destination_is_saved' => $dest !== null ? (int)$dest['is_saved'] : null,
-            'bank_account_id' => $bankId,
-            'bank_account_label_th' => $bank['text_th'] ?? null,
-            'bank_account_label_en' => $bank['text_en'] ?? null,
-            'bank_account_name' => $bank['account_name'] ?? null,
-            'bank_account_bank_name_th' => $bank['bank_name_th'] ?? null,
-            'bank_account_bank_name_en' => $bank['bank_name_en'] ?? null,
-            'bank_account_branch' => $bank['bank_branch'] ?? null,
-            'bank_account_no_masked' => $bank['account_no_masked'] ?? null,
-        ];
     }
 
     /**

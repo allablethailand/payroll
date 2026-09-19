@@ -122,6 +122,7 @@ $compId = 1;
 $runRow = $db->query("SELECT id, period_start_date, period_end_date FROM `payroll_runs`
     WHERE comp_id = {$compId} AND deleted_at IS NULL AND state <> 'draft' ORDER BY id DESC LIMIT 1")->fetch(PDO::FETCH_ASSOC);
 $employeeId = (int)$db->query("SELECT id FROM `employees` WHERE comp_id = {$compId} AND deleted_at IS NULL ORDER BY id LIMIT 1")->fetchColumn();
+$employeeNo = (string)$db->query("SELECT employee_no FROM `employees` WHERE id = {$employeeId}")->fetchColumn();
 $payeeEmployeeId = (int)$db->query("SELECT id FROM `employees` WHERE comp_id = {$compId} AND deleted_at IS NULL AND id != {$employeeId} ORDER BY id LIMIT 1")->fetchColumn();
 $bankAccountId = (int)$db->query("SELECT id FROM `bank_accounts` WHERE comp_id = {$compId} AND deleted_at IS NULL AND status = 'active' ORDER BY id LIMIT 1")->fetchColumn();
 $bankId = (int)$db->query("SELECT id FROM `master_banks` WHERE is_active = 1 ORDER BY id LIMIT 1")->fetchColumn();
@@ -226,8 +227,10 @@ if (!$runRow || $employeeId <= 0 || $payeeEmployeeId <= 0 || $bankAccountId <= 0
         $companyRow = $byCode['TESTEED1'] ?? null;
         if ($companyRow !== null) {
             check('readonly is stated outright', $companyRow['readonly'], true);
+            // 2026-09-19, tiny-F: employees/{id} is the DETAIL ROUTE's employee_no parameter, not
+            // employees.id -- this assertion asserted the wrong one of the two until now.
             check('it points at the employee whose setting owns it',
-                $companyRow['employee_detail_url'], BASE_URL . '/employees/' . $employeeId);
+                $companyRow['employee_detail_url'], BASE_URL . '/employees/' . $employeeNo);
             check('the catalog item\'s calculation_method rides along', $companyRow['calculation_method'], 'manual_entry');
             check('a multi-installment assignment says so', $companyRow['is_installment_plan'], true);
             check('...and reports the EARLIEST STILL-PENDING installment, not the first ever',

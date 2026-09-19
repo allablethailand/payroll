@@ -14,7 +14,10 @@ declare(strict_types=1);
  * re-explained here.
  */
 require_once __DIR__ . '/AuditLogModel.php';
+require_once __DIR__ . '/PayeeDescriptorTrait.php';
 class EmployeeRecurringDeductionModel {
+    use PayeeDescriptorTrait;
+
     private PDO $db;
     private AuditLogModel $auditLog;
 
@@ -60,7 +63,9 @@ class EmployeeRecurringDeductionModel {
                 && $row['suspended_from'] <= $today && $row['suspended_to'] >= $today;
         }
         unset($row);
-        return $rows;
+        // 2026-09-19, tiny-F: see EmployeeEarningDeductionModel::list()'s own note -- same descriptor,
+        // same trait, one lookup for the whole list.
+        return $this->attachPayeeDescriptor($rows, $compId);
     }
 
     public function get(int $id, int $compId): ?array {

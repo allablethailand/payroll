@@ -1,7 +1,10 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/AuditLogModel.php';
+require_once __DIR__ . '/PayeeDescriptorTrait.php';
 class EmployeeEarningDeductionModel {
+    use PayeeDescriptorTrait;
+
     private $db;
     private AuditLogModel $auditLog;
     public function __construct() {
@@ -53,7 +56,10 @@ class EmployeeEarningDeductionModel {
         $sql .= " ORDER BY eed.effective_date DESC, eed.id DESC";
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // 2026-09-19, tiny-F: `payee` -- the same descriptor the run's own destination tabs read,
+        // from the same trait, so this list and that tab can never drift into 2 spellings of the
+        // same account. Additive: every column this method already returned is untouched.
+        return $this->attachPayeeDescriptor($stmt->fetchAll(PDO::FETCH_ASSOC), $compId);
     }
 
     public function get(int $id, int $compId): ?array {
