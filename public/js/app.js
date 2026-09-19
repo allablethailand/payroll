@@ -1780,17 +1780,9 @@ function badgeDropdownHtml(config) {
             hiddenInputHtml = `<input type="hidden" name="${escapeAttr(config.name)}" id="${escapeAttr(config.name)}" value="${escapeAttr(currentValue)}">`;
         }
     }
-    // 2026-09-17, R1: `fixedStrategy` marks a menu that opens from inside a scroll container
-    // (`.table-responsive`), which would otherwise clip it -- absolute positioning cannot escape an
-    // ancestor's `overflow`. The marker is read by initBadgeDropdown() below, which builds the
-    // Dropdown instance with Popper's `fixed` strategy.
-    // NOT `data-bs-strategy`: that is a Tooltip/Popover option -- Bootstrap's Dropdown has no
-    // `strategy` config, so the attribute is ignored outright (measured: the menu stayed
-    // `position: absolute`). `popperConfig` is the only way in, and it has to reach the instance.
-    const strategyAttr = config.fixedStrategy ? ' data-lo-fixed-strategy="1"' : '';
     return `<div class="dropdown d-inline-block badge-dropdown" data-badge-dropdown>
         ${hiddenInputHtml}
-        <button type="button"${idAttr} class="badge badge-${tone}${outlineCls} dropdown-toggle badge-dropdown-toggle${toggleClass}" data-badge="status" data-bs-toggle="dropdown"${strategyAttr} aria-expanded="false"${i18nAttr}>${escapeHtml(label)}</button>
+        <button type="button"${idAttr} class="badge badge-${tone}${outlineCls} dropdown-toggle badge-dropdown-toggle${toggleClass}" data-badge="status" data-bs-toggle="dropdown" aria-expanded="false"${i18nAttr}>${escapeHtml(label)}</button>
         <ul class="dropdown-menu">${menuHtml}</ul>
     </div>`;
 }
@@ -1817,45 +1809,6 @@ function initBadgeDropdown(scope, options) {
     const $scope = $(scope);
     if (!$scope.length || $scope.data('badgeDropdownInitialized')) return;
     $scope.data('badgeDropdownInitialized', true);
-    // 2026-09-17, R1: a toggle marked by badgeDropdownHtml()'s `fixedStrategy` gets its own Dropdown
-    // instance built here with Popper's fixed strategy -- the data API's own instance has no way to
-    // carry it. Built per render (the table re-renders its rows, and a stale instance would point at
-    // a detached element), which `getOrCreateInstance` on a fresh node makes cheap.
-    // The width cap is measured, not guessed: the dialog can be any width, and it changes with the
-    // viewport -- so it is re-read each time a menu opens rather than baked in when it is built.
-    $scope.on('show.bs.dropdown', '.badge-dropdown-toggle[data-lo-fixed-strategy]', function () {
-        const content = this.closest('.modal-content');
-        const menu = this.parentElement.querySelector('.dropdown-menu');
-        if (!content || !menu) return;
-        const inset = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sp-3'), 10) || 12;
-        menu.style.setProperty('--lo-menu-max-w', (content.getBoundingClientRect().width - inset * 2) + 'px');
-    });
-    $scope.find('.badge-dropdown-toggle[data-lo-fixed-strategy]').each(function () {
-        if (typeof bootstrap === 'undefined' || !bootstrap.Dropdown) return;
-        const toggle = this;
-        bootstrap.Dropdown.getOrCreateInstance(toggle, {
-            // Right edge on the badge's own right edge, so a menu wider than its toggle grows INWARD
-            // (to the left) instead of off the side of the dialog.
-            display: 'dynamic',
-            popperConfig: (defaultConfig) => {
-                // The modal's content box is the frame this menu has to stay inside -- without an
-                // explicit boundary the fixed strategy treats the VIEWPORT as the limit, which is
-                // how the menu ended up hanging over the edge of the dialog.
-                const boundary = toggle.closest('.modal-content') || undefined;
-                const inset = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sp-3'), 10) || 12;
-                return Object.assign({}, defaultConfig, {
-                    strategy: 'fixed',
-                    placement: 'bottom-end',
-                    modifiers: (defaultConfig.modifiers || []).concat([
-                        { name: 'preventOverflow', options: { boundary: boundary, padding: inset, altAxis: true } },
-                        // Up when there is no room below: the alternative is a menu that keeps its
-                        // placement and gets cut by the bottom of the dialog.
-                        { name: 'flip', options: { boundary: boundary, padding: inset, fallbackPlacements: ['top-end'] } },
-                    ]),
-                });
-            },
-        });
-    });
     $scope.on('click', '.badge-dropdown-item', function () {
         const $item = $(this);
         const $dropdown = $item.closest('[data-badge-dropdown]');

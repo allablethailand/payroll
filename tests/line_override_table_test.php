@@ -271,14 +271,24 @@ $js = file_get_contents(__DIR__ . '/../public/js/payroll/detail.js');
 checkTrue('one sender for the whole tab', substr_count($js, 'function lineOverrideSendRd(') === 1);
 foreach ([
     'the switch' => "lineOverrideSendRd(\$row, included ? { action: 'remove' } : { action: 'exclude' })",
-    'history -> a recorded value' => "lineOverrideSendRd(\$row, { action: 'override_amount', amount: parsed })",
+    'history -> a recorded value' => "lineOverrideSendRd(plan.\$row, { action: 'override_amount', amount: amount })",
 ] as $label => $call) {
     checkTrue("{$label} sends through it", strpos($js, $call) !== false);
 }
-// 2026-09-18, 4b: "back to what the system decided" is its own function now -- on TH_PIT/TH_SSO it
-// is 2 stored things (the tri-state answer AND any amount override), which one plan cannot express.
-checkTrue('the calculated value goes through the row restore', strpos($js, 'function lineOverrideRestoreRowRd($row) {') !== false
-    && strpos($js, "if (asComputed) {\n                lineOverrideRestoreRowRd(\$row);") !== false);
+/* 2026-09-19, H-ui: one pick, and what it writes is decided by what the ENTRY is, in one dispatcher.
+   The 2-stored-things case (a TH_PIT/TH_SSO row carrying both an amount override and a chosen
+   answer) is no longer one action either: the history table pins a calculated row PER KIND, so each
+   is put back on its own, from the row that shows it. */
+checkTrue('the calculated figure drops the override, never saves itself as one',
+    strpos($js, 'function lineOverrideApplyHistoryValueRd(plan) {') !== false
+    && strpos($js, "if (plan.isComputed) {\n        lineOverrideSendRd(plan.\$row, { action: 'remove' });") !== false);
+checkTrue('an answer goes to the tri-state endpoint, for that field alone',
+    strpos($js, "if (plan.kind === 'text') {\n        statutoryExemptionSendRd(plan.\$row, statutoryExemptionFieldRd(line), plan.value);") !== false);
+checkTrue('a hand-added line is rewritten through its own endpoint, amount only',
+    strpos($js, 'manualLineAmountOnlyUpdateRd(line, amount);') !== false
+    && strpos($js, 'api/payroll-run.update-manual-line') !== false);
+// The row that carried both is gone with the single "put it all back" action it existed for.
+checkTrue('and no row-level restore is left behind unused', strpos($js, 'lineOverrideRestoreRowRd') === false);
 // ...and the staged machinery is gone, not merely unused. 2026-09-18, tiny-L6a adds the inline
 // cell editor to that list: the pencil opens the line's own form now, which has its own write path
 // (submitLineOverrideFormRd) through the same lineOverrideRequestRd() this sender uses.
@@ -399,11 +409,12 @@ checkTrue('the calculated figure is a sub-line of the amount cell, not a column'
     strpos($rowHtml, 'lo-computed-cell') === false
     && strpos($rowHtml, 'lineOverrideComputedTagHtml(line)') !== false
     && substr_count($rowHtml, 'col-money') === 1);
-// It comes from the row when nothing has overridden it, and from this line's own history when
-// something has -- the same `original_value` the dropdown's head shows.
+// It comes from the row when nothing has overridden it, and from this line's own recorded history
+// when something has -- 2026-09-19, H-ui: `old_value` of the OLDEST amount entry, which is the same
+// number the grouped endpoint used to hand over as `original_value`.
 checkTrue('the calculated figure has one resolver, with both sources', strpos($js, 'function lineOverrideComputedTextRd(line) {') !== false
     && strpos($js, 'if (!line.override_action) return lineOverrideHistoryValueRd(line.current_amount);') !== false
-    && strpos($js, 'const original = history ? history.original_value : null;') !== false);
+    && strpos($js, 'const original = amounts.length ? amounts[amounts.length - 1].old_value : null;') !== false);
 // 2026-09-18, tiny-L6b (B3): ...and it answers only where the answer is real. `original_value` is a
 // stand-in for the engine's figure, not the figure itself, so a row with no recorded history says
 // nothing rather than printing an older override as if the system had calculated it (BACKLOG).
@@ -411,9 +422,13 @@ checkTrue('the calculated figure has one resolver, with both sources', strpos($j
 // the fallback for runs last calculated before it existed, and must not be removed.
 checkTrue('the persisted engine figure wins, with the history kept as the fallback',
     strpos($js, 'if (line.computed_amount !== null && line.computed_amount !== undefined) return lineOverrideHistoryValueRd(line.computed_amount);') !== false
-    && strpos($js, 'const original = history ? history.original_value : null;') !== false);
+    && strpos($js, 'const original = amounts.length ? amounts[amounts.length - 1].old_value : null;') !== false);
 checkTrue('...and it refuses to answer without a recorded history',
-    strpos($js, 'const history = lineOverrideHistoryRd.historyAvailable ? lineOverrideHistoryFor(line) : null;') !== false);
+    strpos($js, 'const rows = lineOverrideHistoryRd.historyAvailable ? lineOverrideHistoryFor(line) : [];') !== false);
+// The OLDEST amount entry, not "the oldest that happens to carry a figure": skipping a null would
+// hand back a LATER override's old_value as if the engine had produced it.
+checkTrue('...and it never skips a null to reach an older figure',
+    strpos($js, "const amounts = rows.filter(r => lineOverrideHistoryRowKindRd(r) === 'amount');") !== false);
 // 2026-09-18, tiny-L6a: "back to the calculated value" is no longer a second round button in the
 // row -- it is the form's own left slot, where both figures are on screen together. So the row
 // carries exactly one control, and the action still exists, just not here.
@@ -425,11 +440,16 @@ checkTrue('the row carries one action button, the pencil',
 checkTrue('a hand-added row carries its own 2 instead, addressed by line id',
     strpos($rowHtml, 'manual-line-edit-btn" data-line-id="${escapeAttr(line.manual_line_id)}"') !== false
     && strpos($rowHtml, 'manual-line-remove-btn" data-line-id="${escapeAttr(line.manual_line_id)}"') !== false);
-checkTrue('the action moved to the form footer, it was not dropped',
-    strpos($js, "{ id: 'btnLineFormUseComputed', key: 'line_override_use_computed'") !== false
-    && strpos($js, "\$(document).on('click', '#btnLineFormUseComputed', function () {") !== false);
-checkTrue('and it still goes through the one confirm the history menu uses',
-    strpos($js, "lineOverrideConfirmApplyHistoryValueRd(ctx.overrideLine.code, '', true, lineFormCloseRd);") !== false);
+// 2026-09-19, H-ui: the footer's left slot went with the dropdown that shared its action. Both
+// existed to offer ONE thing -- "back to the calculated value" -- and that is now the top row of
+// this line's own history table, beside every other value it has ever held.
+checkTrue('the form footer no longer carries a second way back', strpos($js, 'btnLineFormUseComputed') === false
+    && strpos($js, 'line_override_use_computed') === false);
+$thLangEarly = json_decode(file_get_contents(__DIR__ . '/../public/lang/th.json'), true);
+$enLangEarly = json_decode(file_get_contents(__DIR__ . '/../public/lang/en.json'), true);
+checkTrue('...and its copy is gone from both language files',
+    !array_key_exists('line_override_use_computed', $thLangEarly)
+    && !array_key_exists('line_override_use_computed', $enLangEarly));
 checkTrue('the row carries its own current figure for the form', strpos($rowHtml, 'data-amount="${escapeAttr(fmtNum(line.current_amount))}"') !== false);
 
 $thLang = json_decode(file_get_contents(__DIR__ . '/../public/lang/th.json'), true);

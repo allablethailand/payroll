@@ -265,9 +265,13 @@ cases.forEach(function ([label, ctx, want]) {
 });
 check('ped with no destination of its own falls back to no payee section',
     api.lineFormSectionsRd(ov(Object.assign({}, PED_LINE, { payee: null }))).payee === 'none');
-check('the left-slot "use the calculated value" exists only on a line that carries an override',
-    api.lineFormSectionsRd(ov(BASE_LINE)).useComputed === false
-    && api.lineFormSectionsRd(ov(Object.assign({}, BASE_LINE, { override_action: 'override_amount' }))).useComputed === true);
+// 2026-09-19, H-ui: the left slot is GONE, on every kind of line. "Back to what the system
+// calculated" is the top row of that line's own history table now -- one way back, not a second one
+// behind a pencil, and the only one that can also put back a value that is neither the current nor
+// the calculated figure.
+check('no line asks for a left-slot "use the calculated value" any more',
+    [BASE_LINE, PED_LINE, RECURRING_LINE, Object.assign({}, BASE_LINE, { override_action: 'override_amount' })]
+        .every(l => api.lineFormSectionsRd(ov(l)).useComputed === undefined));
 
 console.log('\n=== 2. a section that may not be edited is ABSENT, never disabled ===');
 [['base salary', ov(BASE_LINE)], ['ped', ov(PED_LINE)], ['recurring deduction', ov(RECURRING_LINE)],

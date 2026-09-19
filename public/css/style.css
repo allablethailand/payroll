@@ -9878,149 +9878,208 @@ th.lo-history-col {
     width: 86px;
     white-space: nowrap;
 }
+/* 2026-09-19, H-ui: the badge is a disclosure BUTTON now, not a dropdown toggle -- the whole history
+   opens as a table under the row. countBadgeHtml() still draws the badge inside it, so the button
+   itself has to disappear completely: a browser's own button chrome around a pill is 2 shapes where
+   the reader is meant to see one thing. */
 .lo-history-toggle {
     cursor: pointer;
-}
-/* Fixed width, so the menu does not resize itself around whatever the longest name or figure in it
-   happens to be -- it opens the same size on every row. Three parts: a sticky head (the calculated
-   figure), the edits scrolling at about 5 rows, and a sticky foot into the full-history modal. The
-   menu itself is the scroll container -- `position: sticky` on the two ends is what keeps them
-   in place, so the menu drops its own padding (padding above a sticky head shows through it). */
-.lo-history-cell .dropdown-menu {
-    --lo-history-row-h: 34px;
-    /* 2026-09-17, R1: opened with Popper's fixed strategy (see badgeDropdownHtml()'s `fixedStrategy`)
-       so `.table-responsive`'s own `overflow` cannot clip it -- which only works if it also outranks
-       the modal it is inside, the same level §1's scale gives every other overlay-in-a-modal
-       (`.popover`, select2). */
-    z-index: var(--z-modal-overlay);
-    width: 320px;
-    /* 2026-09-17, R1 follow-up: never wider than the dialog it opens inside, minus the inset on both
-       sides -- the viewport-based cap it had let the menu be wider than the modal on a narrow screen,
-       which no amount of repositioning can fix. `--modal-inner-w` is set by the JS that opens it. */
-    max-width: min(calc(100vw - var(--sp-4)), var(--lo-menu-max-w, 100vw));
     padding: 0;
-    /* 5 rows of list between the two sticky ends (the head is --fs-xs, the foot one more row). */
-    max-height: calc(var(--lo-history-row-h) * 6 + 22px);
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    border: 0;
+    background: none;
+    line-height: 1;
 }
-.lo-history-head,
-.lo-history-foot {
+/* The opened history: one full-width row directly under the line it belongs to, the same colspan
+   shape the group headings use. Its panel PINS to the left edge of the scroller and takes the
+   visible width -- below `sm` this table is wider than its host, and whatever a full-width cell
+   holds otherwise slides out of view with the drag (the measured failure that moved the 3 totals
+   out of the table in the first place). The width comes from
+   lineOverridePublishStickyOffsetRd(). */
+/* The selector carries the table too, on purpose: this row's ONE cell is both `:first-child` and
+   `:last-child`, so the slip's own edge-inset rules above out-specify a plain `.lo-history-row > td`
+   and put ~14px of padding back on each side. That padding is the panel's sticky room, and losing it
+   is why the panel came unpinned for the last 12px of a drag (measured at 430px). The inset the
+   panel needs is its own, applied to the panel.
+   2026-09-19: the CELL keeps the table's own surface. The panel used to paint `--c-bg-subtle` here,
+   which is the very token the group headings above it use -- so an opened panel and the heading it
+   sat under read as one block. What separates the panel now is its own surface plus a border, which
+   is what a box inside a table is, and the row around it stays part of the table. */
+.lo-table > tbody > tr.lo-history-row > td {
+    padding: 0 0 var(--sp-2);
+    background: transparent;
+}
+.lo-history-panel {
     position: sticky;
-    z-index: 1;
-    font-size: var(--fs-xs);
-}
-/* 2026-09-17, R1: the head is REFERENCE now, not a choice -- going back to the calculated value is
-   the row's own round button, 2 columns away. Same [value | meta] skeleton as the rows below it so
-   the figures still line up, but nothing to press: no hover, no pointer. */
-.lo-history-head {
-    top: 0;
-    background: var(--c-bg-subtle);
-    border-bottom: 1px solid var(--c-border);
-}
-.lo-history-item-static {
-    padding: var(--sp-1) var(--sp-3);
-    color: var(--c-text-muted);
-}
-.lo-history-foot {
-    bottom: 0;
+    left: 0;
+    display: inline-block;
+    width: calc(var(--lo-history-panel-w, 100%) - var(--lo-history-indent, 0px));
+    max-width: 100%;
+    /* Starts where the ITEM NAME above it starts, not at the edge of the table: the panel belongs
+       to one line, and lining its first column up with that line's own name says so. The offset is
+       measured (lineOverridePublishPanelWidthRd) because it is a different column in each mode. */
+    margin-left: var(--lo-history-indent, 0px);
+    /* No padding of its own top or bottom: the title bar inside it carries the first, and the list
+       below it ends on its own last row. Only the side inset is the panel's. */
+    padding: 0 var(--sp-2);
     background: var(--c-bg);
-    border-top: 1px solid var(--c-border);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    /* Overflowing content still counts towards the SCROLLER's scrollWidth even when it cannot widen
+       the layout -- which is how an opened panel was adding 40px of horizontal scroll to the slip at
+       430px (measured). Everything in here is sized to the panel, so there is nothing legitimate to
+       clip; this only stops a nowrap cell from lengthening the drag. */
+    overflow: hidden;
 }
-/* Not a row of data -- a way into the full history, so it reads as one thing spanning the menu's
-   width rather than a value/meta pair like the rows above it (2026-09-17, R1: centred, was right).
-   Aligned with `justify-content`, not `text-align`: every item in this menu is already a flex box
-   (`.badge-dropdown .dropdown-item` above), which makes text-align inert on it. */
-.lo-history-foot .lo-history-view-all {
-    justify-content: center;
+/* Layer (a): what the SYSTEM said for this line, and the way out. Outside the list's own scroll box
+   on purpose -- it is the baseline every entry below is a departure from, and a baseline that
+   scrolls out of view is not one. A tri-state line prints 2 of them; a hand-added line prints none
+   and leaves this side empty rather than saying something untrue about it. */
+.lo-history-titlebar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    /* Left inset = the list's own first-cell padding, so the label starts on the "when" column's x.
+       Right inset = the same, PLUS whatever width the list's scrollbar took, so the [x] keeps the
+       exact x of the buttons below it (published by lineOverridePublishHistoryHeightRd). */
+    padding: var(--sp-2) calc(var(--sp-1) + var(--lo-history-sbw, 0px)) var(--sp-2) var(--sp-1);
+    background: var(--c-bg);
+}
+.lo-history-computed {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    min-width: 0;
+}
+.lo-history-computed-line {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
     font-size: var(--fs-sm);
 }
-/* One menu row = ONE line: the value on the left (it is what is being chosen between), what explains
-   it on the right. Same skeleton for all 3 kinds of row -- calculated value, an edit, the current
-   one -- so the values line up in a column and can be compared by eye. */
-.lo-history-item {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--sp-2);
-}
-.lo-history-item .lo-history-value {
-    flex: 0 0 auto;
-}
-.lo-history-meta {
+.lo-history-computed-label {
     font-size: var(--fs-xs);
     color: var(--c-text-muted);
-    flex: 1 1 auto;
-    text-align: right;
-    overflow: hidden;
-    text-overflow: ellipsis;
+}
+/* Layer (c): the edits, and only they. A 38-entry chain that pushed the slip's own table to several
+   screens is not a list, it is a wall -- the cap is measured per panel (title bar + column titles +
+   5 entries, see lineOverridePublishHistoryHeightRd). */
+.lo-history-scroll {
+    overflow-x: hidden;
+    overflow-y: auto;
+    max-height: var(--lo-history-max-h, none);
+    overscroll-behavior: contain;
+}
+/* The column titles stay put while the entries scroll under them -- in a list that can be 38 long,
+   a head that scrolls away leaves 4 unlabelled columns. Opaque (it has rows passing under it) and on
+   the PANEL's own surface, never a muted band: what makes these titles quiet is the muted text, and
+   a second muted thing behind it would make the head read as a heading of its own. Never Bootstrap's
+   `bg-light` either, which is light-only. */
+.lo-history-table > thead > tr > th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--c-bg);
+}
+
+/* Quiet on purpose: a nested table INSIDE a row of another one carries no surface of its own beyond
+   the panel's, and its column titles are --fs-xs muted like every other secondary line of the slip. */
+.lo-history-table {
+    --bs-table-bg: transparent;
+    margin-bottom: 0;
+    /* Fixed, like the table it opens inside: the panel is exactly as wide as the VISIBLE scroller,
+       so a long note or a long name here may not push past it and hand the slip a second, wider
+       scroll of its own (measured at 430px). */
+    table-layout: fixed;
+    width: 100%;
+}
+.lo-history-table td.lo-history-change {
+    word-break: break-word;
+}
+.lo-history-table > thead > tr > th {
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    color: var(--c-text-muted);
     white-space: nowrap;
 }
-.lo-history-item,
-.lo-history-view-all {
-    min-height: var(--lo-history-row-h);
+.lo-history-table > tbody > tr > td {
+    font-size: var(--fs-sm);
+    vertical-align: top;
 }
-.lo-history-view-all {
+.lo-history-table th.lo-history-when,
+.lo-history-table td.lo-history-when {
+    width: 140px;
+    white-space: nowrap;
+}
+.lo-history-table th.lo-history-who,
+.lo-history-table td.lo-history-who {
+    width: 140px;
+}
+.lo-history-table th.lo-history-use-cell,
+.lo-history-table td.lo-history-use-cell {
+    /* Wide enough for the widest thing this column holds, which is the head's [Close] rather than
+       the entries' own button -- the head's title is for screen readers only there. */
+    width: 132px;
+    text-align: right;
+    white-space: nowrap;
+}
+/* A no-op entry: still an entry, still a button so the column keeps one shape, but there is nothing
+   for it to do -- its figure is the one the line already holds. */
+.lo-history-table .lo-history-use:disabled {
+    opacity: .5;
+}
+/* The value already in force carries a word where the button would be: there is nothing to do on
+   that row, and --fs-xs muted is what every other "this is just a fact" line of the slip wears. */
+.lo-history-current {
+    font-size: var(--fs-xs);
     color: var(--c-text-muted);
 }
-/* An entry with no date of its own (the calculated value, pinned to the top of the history modal)
-   produces an empty day header -- there is no day to announce. */
+@media (max-width: 575.98px) {
+    /* 394px of visible width for 4 columns: the 2 fixed text columns give up their widths and wrap,
+       the button column keeps enough for its own label, and the padding comes down to the same
+       --sp-1 the table around it uses at this size. */
+    .lo-history-table th.lo-history-when,
+    .lo-history-table td.lo-history-when,
+    .lo-history-table th.lo-history-who,
+    .lo-history-table td.lo-history-who {
+        width: auto;
+    }
+    .lo-history-table td.lo-history-when {
+        white-space: normal;
+    }
+    .lo-history-table th.lo-history-use-cell,
+    .lo-history-table td.lo-history-use-cell {
+        width: 92px;
+        white-space: normal;
+    }
+    /* The baseline's own line wraps at this width rather than squeezing the [x] out of place. */
+    .lo-history-computed-line {
+        flex-wrap: wrap;
+    }
+    .lo-history-table > thead > tr > th,
+    .lo-history-table > tbody > tr > td {
+        padding-left: var(--sp-1);
+        padding-right: var(--sp-1);
+    }
+    .lo-history-panel {
+        padding-left: var(--sp-2);
+        padding-right: var(--sp-2);
+    }
+}
+/* An entry with no date of its own produces an empty day header in the shared timeline component --
+   there is no day to announce. */
 .timeline-day-header:empty {
     display: none;
 }
 .timeline-action {
     margin-top: var(--sp-1);
 }
-/* Scoped to the line-override history modal, not the timeline component itself: here each entry IS a
-   value you can choose, so its button belongs on the value's own line, right-aligned, where the eye
-   already is. `display: contents` on the action wrapper lets its 2 children (the button/badge and
-   the note) land in different cells of the entry's grid instead of stacking under it. The dot stays
-   absolutely positioned, so it is not a grid item. */
-.lo-history-timeline .timeline-item {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    column-gap: var(--sp-3);
-    align-items: center;
-}
-.lo-history-timeline .timeline-head {
-    grid-column: 1 / -1;
-    grid-row: 1;
-}
-.lo-history-timeline .timeline-title {
-    grid-column: 1;
-    grid-row: 2;
-    font-weight: 600;
-}
-.lo-history-timeline .timeline-detail {
-    grid-column: 1;
-    grid-row: 3;
-}
-.lo-history-timeline .timeline-action {
-    display: contents;
-}
-.lo-history-timeline .lo-history-use,
-.lo-history-timeline .timeline-action > .badge {
-    grid-column: 2;
-    grid-row: 2 / span 2;
-    justify-self: end;
-    align-self: center;
-    margin-top: 0;
-}
-.lo-history-timeline .lo-history-note {
-    grid-column: 1;
-    grid-row: 4;
-}
+/* What somebody typed when they made the change: a second fact ABOUT the entry, so it sits under it
+   in the entry's own cell rather than in a column most entries would leave empty. */
 .lo-history-note {
     font-size: var(--fs-xs);
     color: var(--c-text-muted);
     margin-top: 2px;
-}
-.lo-history-footnote {
-    font-size: var(--fs-xs);
-    color: var(--c-text-faint);
-    padding: var(--sp-1) var(--sp-3);
-    border-top: 1px solid var(--c-border);
-    margin-top: var(--sp-1);
 }
 @media (max-width: 575.98px) {
     /* The item name is the only cell that can give ground -- everything else is a control or a

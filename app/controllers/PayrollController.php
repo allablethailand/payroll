@@ -305,7 +305,16 @@ class PayrollController extends Controller {
         if (!$visibility['full']) {
             $rows = array_map(fn(array $row): array => $this->maskMonetaryKeys($row, self::LINE_HISTORY_MONEY_KEYS), $rows);
         }
-        $this->json(['status' => true, 'data' => ['rows' => $rows]]);
+        // 2026-09-19, H-ui: the slip reads its History column from THIS endpoint now, so the 2 facts
+        // it used to get from lineOverrideHistory() ride along -- read-only, additive, and derived
+        // exactly as that sibling derives them (PayrollRunModel::lineOverrideAuditDiff()).
+        $run = $this->model->get($runId, (int)$compId);
+        $this->json(['status' => true, 'data' => [
+            'rows' => $rows,
+            'history_available' => $rows !== []
+                || ($run && (string)$run['period_start_date'] >= PayrollRunModel::LINE_OVERRIDE_HISTORY_FEATURE_START_DATE),
+            'history_start_date' => PayrollRunModel::LINE_OVERRIDE_HISTORY_FEATURE_START_DATE,
+        ]]);
     }
 
     public function index() {

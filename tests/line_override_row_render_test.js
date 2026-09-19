@@ -67,6 +67,8 @@ function buildFormulaStepsRd(formula) { return formula ? '<li class="mb-1">A × 
 function explainLineNoteRd(note) { return note === 'known_note' ? '<div class="small">คำอธิบาย</div>' : null; }
 function lineOverrideOccurrencesHtml() { return ''; }
 function lineOverrideHistoryCellHtml() { return ''; }
+// 2026-09-19, H-ui: the read-only slip's own "somebody touched this" tag -- its own round.
+function lineOverrideChangeTagTextRd() { return ''; }
 function lineOverrideSkipEnumRd() { return null; }
 function lineOverrideIsSkippedRd() { return false; }
 `;
@@ -74,6 +76,8 @@ function lineOverrideIsSkippedRd() { return false; }
 const extracted = [
     stubs,
     fn(formatSource, 'fmtNum'),
+    fn(detailSource, 'lineOverrideHistoryKeyRd'),
+    fn(detailSource, 'lineOverrideHistoryRowKindRd'),
     fn(detailSource, 'lineOverrideHistoryFor'),
     fn(detailSource, 'lineOverrideHistoryValueRd'),
     fn(detailSource, 'lineOverrideMoneyClassRd'),
@@ -125,10 +129,18 @@ const line = (over) => Object.assign({
     code: 'LOAN', name_th: 'เงินกู้', name_en: 'Loan', item_type: 'deduction',
     line_type: 'earning_deduction', current_amount: 1200, override_action: null,
 }, over || {});
-// byKey is keyed the way the real loader keys it, and only ever holds lines that really have a
-// history row -- which is exactly what "this figure can be trusted" means here.
+// byKey is keyed the way the real loader keys it, and holds the RAW rows of that key, newest
+// first (2026-09-19, H-ui) -- so the stand-in for the engine's figure is `old_value` of the LAST
+// entry, the oldest one, which is what the grouped endpoint used to hand over as `original_value`.
 const historyWith = (originalValue) => ({
-    byKey: { 'earning_deduction|LOAN': { item_code: 'LOAN', line_type: 'earning_deduction', original_value: originalValue, edits: [{}] } },
+    byKey: {
+        'earning_deduction|LOAN': [
+            { source_type: 'override', line_type: 'earning_deduction', item_code: 'LOAN', source_id: null,
+              old_value: 9999, new_value: 1200, old_text: null, new_text: null },
+            { source_type: 'override', line_type: 'earning_deduction', item_code: 'LOAN', source_id: null,
+              old_value: originalValue, new_value: 9999, old_text: null, new_text: null },
+        ],
+    },
     historyAvailable: true,
     startDate: null,
 });

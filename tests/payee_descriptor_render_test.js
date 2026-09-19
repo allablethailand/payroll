@@ -73,6 +73,7 @@ function lineOverrideMoneyClassRd() { return 'money-deduction'; }
 function lineOverrideComputedTagHtml() { return ''; }
 function lineOverrideOccurrencesHtml() { return ''; }
 function lineOverrideHistoryCellHtml() { return ''; }
+function lineOverrideChangeTagTextRd() { return ''; }
 function lineOverrideExemptTextRd() { return ''; }
 function formulaTagTextRd() { return ''; }
 function lineOverrideNoteTextRd() { return ''; }

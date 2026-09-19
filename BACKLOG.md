@@ -1332,3 +1332,22 @@ migration ตารางใหม่ + เขียนจาก 3 method นั
 brand orange + ตัวอักษรขาว ต่ำกว่า WCAG AA (4.5:1) ทั้งธีมสว่างและมืด — วัดจริงใน k4c cell 4 · เป็น token
 ระดับ brand (`--c-primary`) ไม่ใช่ของหน้าใดหน้าหนึ่ง แก้ = เปลี่ยนสีปุ่มหลักทั้งระบบ ต้องถามก่อน
 **Source:** 4c (2026-09-19)
+
+**(ฉ) "จำนวนการแก้" มี 2 นิยามที่ไม่ตรงกันโดยตั้งใจ**
+badge "แก้ไข n" ต่อบรรทัดในสลิปนับทั้ง 3 source (`override`/`manual_line`/`exemption`) ผ่าน
+`api/payroll-run.line-history` · แต่ `edit_count` ระดับรอบ (`PayrollRunModel::list()`) และ
+`lineOverrideAuditDiff()` ยังกรอง `source_type='override'` อย่างเดียว เพราะรายงาน Payroll Run Audit
+ผูกกับ shape นั้น · ถ้าจะให้ตรงกันต้องตัดสินก่อนว่ารายงานควรนับอะไร แล้วแก้ทั้ง 2 จุดพร้อมกัน
+**Source:** H-ui (2026-09-19)
+
+**(ช) Timeline component เหลือ consumer = 0**
+`renderTimeline()` (app.js) + `app/views/partials/timeline.php` + option `groupByDay` +
+`.timeline-day-header` (style.css) + key `timeline_day_count` — caller สุดท้ายคือ modal ประวัติที่ถูก
+ถอดออกใน H-ui · **เก็บไว้เป็น shared component ตาม §11 ไม่ลบในรอบ design** ถ้ารอบหน้าไม่มีที่ใช้จริง
+ให้ตัดสินว่าจะลบทั้งชุดหรือไม่
+**Source:** H-ui (2026-09-19)
+
+**(ซ) `runSequentialAjaxRd()` ประกาศซ้ำ 2 ครั้งใน payroll/detail.js**
+body เหมือนกันทุกไบต์ (ตอนนี้ ~บรรทัด 5043 และ ~5185) — ไม่ error เพราะเป็น function declaration
+ตัวหลังทับตัวแรก แต่เป็น dead code ที่รอ drift · H-ui ไม่แตะตามกฎ "ห้ามย้าย/จัดลำดับฟังก์ชันที่ไม่ได้ลบ"
+**Source:** H-ui (2026-09-19)

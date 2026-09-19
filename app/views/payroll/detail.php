@@ -1232,30 +1232,6 @@
          #btnEditRun's own click handler (detail.js) now populates that ONE shared modal directly --
          see app.js's "Payroll Run form (shared Create/Edit)" section. -->
 
-    <!-- Edit-history modal for ONE line of the line-override table (#runDetailBreakdownModal's own
-         "จากระบบ" block) -- opened from that row's own history badge when there are more edits than
-         the 5 the dropdown shows, and the only place the full chain is readable (each edit's
-         from/to, its note, and its own "use this value" action). Stacked ON TOP of the modal that
-         holds the table: no special handling needed
-         here, app.js's own generic shown/hidden.bs.modal handlers already re-apply the scroll lock
-         and bump the z-index of whichever modal is not the first one open. Body + title are filled
-         by openLineOverrideHistoryModalRd() (detail.js); the footer is the plain [Close]
-         `data-footer="view"` injects. -->
-    <div class="modal fade" id="lineOverrideHistoryModal" data-footer="view" tabindex="-1" aria-labelledby="lineOverrideHistoryModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable modal-fullscreen-sm-down">
-            <div class="modal-content border-0 shadow">
-                <div class="modal-header">
-                    <h5 class="modal-title text-secondary mb-0" id="lineOverrideHistoryModalLabel"></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="lineOverrideHistoryModalBody"></div>
-                    <div class="lo-history-footnote text-muted d-none" id="lineOverrideHistoryModalNote"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Breakdown Modal: per-employee itemized view for one payroll_run_details row. 2026-09-18,
          4a-1/4a-2: ONE table (renderLineOverrideTableRd(), payroll/detail.js) in both modes -- every
          line grouped by what it is (base salary / income / deductions / statutory / the 2 hand-added

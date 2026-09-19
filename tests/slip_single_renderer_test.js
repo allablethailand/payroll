@@ -54,8 +54,7 @@ function lineOverrideOccurrencesHtml() { return ''; }
 function lineOverrideHistoryCellHtml() { return '<!--history-->'; }
 function buildFormulaStepsRd() { return null; }
 function explainLineNoteRd(note) { return note ? '<div>' + note + '</div>' : null; }
-function countBadgeHtml() { return '<!--current-->'; }
-function lineOverrideHistoryWhoRd() { return 'ผู้ใช้'; }
+function countBadgeHtml() { return '<!--count-->'; }
 function formatDisplayDateTime(v) { return String(v); }
 function formatDisplayDate(v) { return String(v); }
 `;
@@ -69,6 +68,7 @@ const extracted = [
     fn(detailSource, 'lineOverrideIsChangedRd'),
     "let lineOverrideViewFilterRd = 'all';",
     fn(detailSource, 'lineOverrideTabsHtmlRd'),
+    fn(detailSource, 'lineOverrideHistoryKeyRd'),
     fn(detailSource, 'lineOverrideHistoryFor'),
     fn(detailSource, 'lineOverrideHistoryValueRd'),
     fn(detailSource, 'lineOverrideMoneyClassRd'),
@@ -92,17 +92,22 @@ const extracted = [
     fn(detailSource, 'lineOverrideAddLinkHtmlRd'),
     fn(detailSource, 'manualLineToTableRowRd'),
     fn(detailSource, 'lineOverrideTotalsHtmlRd'),
-    fn(detailSource, 'lineOverrideHistoryCurrentIndexRd'),
-    fn(detailSource, 'lineOverrideHistoryTimelineItemsRd'),
-    fn(detailSource, 'lineOverrideHistoryItemHtml'),
-    fn(detailSource, 'lineOverrideHistoryWhenRd'),
-    fn(detailSource, 'lineOverrideHistoryMetaRd'),
-    fn(detailSource, 'lineOverrideHistoryMenuHtml'),
+    fn(detailSource, 'lineOverrideChangeTagTextRd'),
+    fn(detailSource, 'lineOverrideHistoryRowKindRd'),
+    fn(detailSource, 'lineOverrideHistoryTextRd'),
+    fn(detailSource, 'lineOverrideHistorySideRd'),
+    fn(detailSource, 'lineOverrideHistoryComputedRowsRd'),
+    fn(detailSource, 'lineOverrideHistorySameValueRd'),
+    fn(detailSource, 'lineOverrideHistoryUseCellHtml'),
+    fn(detailSource, 'lineOverrideHistoryTitlebarHtmlRd'),
+    fn(detailSource, 'lineOverrideHistoryTableHtmlRd'),
     `module.exports = {
         setExemption: (e) => { lineOverrideExemptionRd = e; },
-        lineOverrideRowHtml, lineOverrideAddLinkHtmlRd, manualLineToTableRowRd, lineOverrideIsSkippedRd, lineOverrideTotalsHtmlRd, lineOverrideHistoryTimelineItemsRd, lineOverrideHistoryMenuHtml,
+        lineOverrideRowHtml, lineOverrideAddLinkHtmlRd, manualLineToTableRowRd, lineOverrideIsSkippedRd, lineOverrideTotalsHtmlRd,
+        lineOverrideHistoryTableHtmlRd, lineOverrideHistoryTitlebarHtmlRd, lineOverrideHistoryFor, lineOverrideChangeTagTextRd, lineOverrideHistorySameValueRd,
         lineOverrideIsChangedRd, lineOverrideTabsHtmlRd,
         setLang: (d) => { langData = d; },
+        setHistory: (h) => { lineOverrideHistoryRd = h; },
         setFilter: (f) => { lineOverrideViewFilterRd = f; },
     };`,
 ].join('\n');
@@ -166,11 +171,16 @@ check('...the same codes, in the same order', codesOf(edit).join('|') === codesO
 
 console.log('');
 console.log('=== (ข) strip the 2 columns view does not render, and the rest is byte-identical ===');
-// The 2 hidden columns, and nothing else -- 2026-09-18, 4a-2 follow-up removed the one documented
-// exception (a skipped row's reason badge), because a skipped row is no longer rendered at all.
+// The 2 hidden columns, plus ONE documented exception (2026-09-19, H-ui): the read-only slip marks
+// the lines somebody touched with a tag, because it is the only slip that has nothing else saying
+// so -- the editable one already carries the switch, the pencil and the "System: x" sub-line on
+// those same rows, and a 4th way of saying it there would be noise (rules.md 0.3). It is a TAG, not
+// a column, so the rule this assertion guards -- the 2 modes differ by columns -- still holds.
 const strip = (html) => html
     .replace(/<td class="col-check tbl-sticky-col">[\s\S]*?<\/td>/g, '')
     .replace(/<td class="lo-action-cell">[\s\S]*?<\/td>/g, '')
+    .replace(new RegExp('<div class="payslip-line-tag">(' + LANG['line_override_row_tag_edited']
+        + '|' + LANG['line_override_row_tag_added'] + ')</div>', 'g'), '')
     .replace(/\s+/g, ' ').trim();
 check('every remaining cell of every row matches, character for character', strip(edit) === strip(view),
     strip(edit) === strip(view) ? '' : `\n  edit: ${strip(edit).slice(0, 400)}\n  view: ${strip(view).slice(0, 400)}`);
@@ -297,8 +307,10 @@ check('it carries the 2 actions, addressed by the line id, not by item code',
     && manualEdit.indexOf('manual-line-remove-btn" data-line-id="91"') !== -1, manualEdit);
 check('...and never the override pencil, which would write against a code 2 lines may share',
     manualEdit.indexOf('lo-edit-btn') === -1);
-check('its history cell is empty: an override history is not a thing it can have',
-    manualEdit.indexOf('<td class="lo-history-cell"></td>') !== -1);
+// 2026-09-19, H-ui: it has a history cell like every other row -- a hand-added line HAS had an
+// amount trail since H-backend, and the cell decides for itself whether there is a badge to draw.
+check('its history cell goes through the same builder every other row uses',
+    manualEdit.indexOf('<td class="lo-history-cell"><!--history--></td>') !== -1, manualEdit);
 check('the read-only slip renders the same row with neither action column nor buttons',
     manualView.indexOf('lo-action-cell') === -1 && manualView.indexOf('manual-line-remove-btn') === -1);
 check('its figure takes the money colour of the group it is in',
@@ -364,56 +376,165 @@ check('the 2 manual groups sit after statutory and before "other"', (function ()
 })());
 
 console.log('');
-console.log('=== the history modal inherits the slip it was opened from ===');
-// Same chain for one line: 2 real edits + the calculated value pinned on top.
-const HISTORY = {
-    current_value: 1500, original_value: 2000,
-    edits: [
-        { changed_at: '2026-09-17 10:00:00', old_value: 2000, new_value: 1800, note: null },
-        { changed_at: '2026-09-17 11:00:00', old_value: 1800, new_value: 1500, note: 'ตกลงแล้ว' },
-    ],
-};
-const itemsEdit = api.lineOverrideHistoryTimelineItemsRd(HISTORY, true);
-const itemsView = api.lineOverrideHistoryTimelineItemsRd(HISTORY, false);
-const useBtns = (items) => items.filter(i => (i.actionHtml || '').indexOf('lo-history-use') !== -1).length;
-check('the read-only slip renders NO "use this value" button at all', useBtns(itemsView) === 0,
-    JSON.stringify(itemsView.map(i => i.actionHtml)));
-check('...not even on the pinned "calculated value" row', (itemsView[0].actionHtml || '').indexOf('lo-history-use') === -1,
-    itemsView[0].actionHtml);
-check('...and none of them is merely disabled or hidden', itemsView.every(i => (i.actionHtml || '').indexOf('disabled') === -1
-    && (i.actionHtml || '').indexOf('d-none') === -1));
-check('the editable slip renders one per row that is not the current value',
-    useBtns(itemsEdit) === itemsEdit.length - 1, `${useBtns(itemsEdit)} of ${itemsEdit.length}`);
-check('both slips list the same entries -- only the action differs',
-    itemsEdit.length === itemsView.length && itemsEdit.map(i => i.title).join('|') === itemsView.map(i => i.title).join('|'));
-check('the "current" badge survives in both', (itemsEdit.concat(itemsView)).filter(i => (i.actionHtml || '').indexOf('<!--current-->') !== -1).length === 2);
-// The dropdown behind the badge, same question: in the read-only slip an entry is a fact, not a
-// control -- so it is not a button at all, rather than a button that happens to be disabled.
-const menuEdit = api.lineOverrideHistoryMenuHtml(HISTORY, false);
-const menuView = api.lineOverrideHistoryMenuHtml(HISTORY, true);
+console.log('=== the history table inherits the slip it was opened from (2026-09-19, H-ui) ===');
+// One line, 2 real edits, newest first -- exactly the order api/payroll-run.line-history returns.
+const HIST_LINE = { code: 'LOAN', line_type: 'earning_deduction', current_amount: 1500,
+    override_action: 'override_amount', computed_amount: 2000 };
+const histRow = (over) => Object.assign({ source_type: 'override', line_type: 'earning_deduction',
+    item_code: 'LOAN', source_id: null, old_text: null, new_text: null, note: null,
+    changed_by_name_th: 'ผู้ใช้', changed_by_name_en: 'User' }, over);
+const HIST_ROWS = [
+    histRow({ changed_at: '2026-09-17 11:00:00', old_value: 1800, new_value: 1500, note: 'ตกลงแล้ว' }),
+    histRow({ changed_at: '2026-09-17 10:00:00', old_value: 2000, new_value: 1800 }),
+];
 const countOf = (html, needle) => (html.split(needle).length - 1);
-check('the read-only dropdown has exactly one button: the one that opens the full history',
-    countOf(menuView, '<button') === 1 && menuView.indexOf('lo-history-view-all') !== -1,
-    String(countOf(menuView, '<button')));
-// 2026-09-19: +1 for the calculated-value head, which is pressable again in this slip only.
-check('...and the editable one has one per entry, plus the calculated head and that same foot',
-    countOf(menuEdit, '<button') === HISTORY.edits.length + 2, String(countOf(menuEdit, '<button')));
-check('the calculated head is the pressable one only in the editable slip',
-    countOf(menuEdit, 'lo-history-computed') === 1 && countOf(menuView, 'lo-history-computed') === 1
-    && menuEdit.indexOf('lo-history-computed lo-history-item-static') === -1,
-    `${countOf(menuEdit, 'lo-history-computed')}/${countOf(menuView, 'lo-history-computed')}`);
-check('the read-only entries carry no handler hook and no disabled control',
-    menuView.indexOf('dropdown-item lo-history-item ') === -1 && menuView.indexOf('disabled') === -1
-    && menuView.indexOf('data-value=') === -1, menuView);
-check('both dropdowns list the same rows, with the same values and meta',
-    countOf(menuView, '<li') === countOf(menuEdit, '<li')
-    && countOf(menuView, 'lo-history-value') === countOf(menuEdit, 'lo-history-value')
-    && ['1,800.00', '1,500.00', '2,000.00'].every(v => menuView.indexOf(v) !== -1),
-    `${countOf(menuView, '<li')} vs ${countOf(menuEdit, '<li')}`);
-check('a static entry is ignored by the apply handler, not merely unlikely to be clicked',
-    detailSource.indexOf("if ($(this).hasClass('lo-history-item-static')) return;") !== -1);
-check('the modal asks the slip, not a second opinion',
-    fn(detailSource, 'openLineOverrideHistoryModalRd').indexOf("lineOverrideHostRd.mode !== 'view'") !== -1);
+const tblEdit = api.lineOverrideHistoryTableHtmlRd(HIST_LINE, HIST_ROWS, 'edit');
+const tblView = api.lineOverrideHistoryTableHtmlRd(HIST_LINE, HIST_ROWS, 'view');
+check('one table, not a second surface stacked on the slip', countOf(tblEdit, '<table') === 1
+    && countOf(tblView, '<table') === 1);
+check('the editable slip has 4 column heads, the read-only one 3',
+    countOf(tblEdit, '<th class') === 4 && countOf(tblView, '<th class') === 3,
+    `${countOf(tblEdit, '<th class')}/${countOf(tblView, '<th class')}`);
+check('the read-only slip renders NO "use this value" at all -- not a disabled one, not a hidden one',
+    tblView.indexOf('lo-history-use') === -1 && tblView.indexOf('disabled') === -1
+    && tblView.indexOf('d-none') === -1, tblView);
+check('both slips list the same entries -- only the action column differs',
+    countOf(tblView, '<tr') === countOf(tblEdit, '<tr')
+    && ['1,800.00', '1,500.00', '2,000.00'].every(v => tblView.indexOf(v) !== -1), tblView);
+check('every entry is listed -- the list is never cut to the first N',
+    countOf(api.lineOverrideHistoryTableHtmlRd(HIST_LINE,
+        Array.from({ length: 38 }, (_, i) => histRow({ changed_at: '2026-09-1' + (i % 9) + ' 08:00:00', old_value: i, new_value: i + 1 })),
+        'view'), '<tr') === 38 + 1);
+check('newest first, as the endpoint hands them over',
+    tblEdit.indexOf('11:00:00') < tblEdit.indexOf('10:00:00'));
+// 2026-09-19: the baseline is not an edit and has no time of its own, so it is not a row of the
+// list at all -- as the list's first row it also scrolled away, which is what a baseline must not do.
+check('the calculated value is in the title bar, above the list',
+    tblEdit.indexOf('lo-history-computed-line') !== -1
+    && tblEdit.indexOf('lo-history-computed-line') < tblEdit.indexOf('<table'), tblEdit);
+check('...and no longer a row of the list', countOf(tblEdit, 'lo-history-computed-row') === 0);
+check('...so the first row of the list is a real edit', tblEdit.indexOf('11:00:00') < tblEdit.indexOf('10:00:00')
+    && tblEdit.indexOf('<tbody>') < tblEdit.indexOf('11:00:00'), tblEdit);
+check('one list, one title bar, no second surface',
+    countOf(tblEdit, '<table') === 1 && countOf(tblEdit, 'lo-history-titlebar') === 1);
+check('one button per entry that is not the value in force',
+    countOf(tblEdit, 'lo-history-use"') === 2, String(countOf(tblEdit, 'lo-history-use"')));
+check('...and the one in force carries the word instead, exactly once',
+    countOf(tblEdit, 'lo-history-current') === 1
+    && tblEdit.indexOf(LANG['line_override_history_current']) !== -1, tblEdit);
+check('the button is the small NEUTRAL one -- never this view\'s primary, 38 times over',
+    tblEdit.indexOf('btn btn-sm btn-outline-secondary lo-history-use') !== -1
+    && tblEdit.indexOf('btn-outline-primary') === -1 && tblEdit.indexOf('btn-primary') === -1);
+// 2026-09-19, reported for real (EM009 / LOAN_REPAY): an OLDER entry that repeats the live figure
+// was pressable, and what it sent was an x -> x the server accepted and recorded nothing for. The
+// word "Current" stays on the ONE live entry; the repeats stay buttons, but disabled ones.
+const REPEAT_ROWS = [
+    histRow({ changed_at: '2026-09-17 18:08:00', old_value: 1500, new_value: 4000 }),
+    histRow({ changed_at: '2026-09-17 12:06:00', old_value: 4000, new_value: 4000 }),
+    histRow({ changed_at: '2026-09-17 10:00:00', old_value: 2000, new_value: 1500 }),
+];
+const tblRepeat = api.lineOverrideHistoryTableHtmlRd(
+    Object.assign({}, HIST_LINE, { current_amount: 4000 }), REPEAT_ROWS, 'edit');
+check('only one entry is called the current one, however many repeat its figure',
+    countOf(tblRepeat, 'lo-history-current') === 1, tblRepeat);
+check('...and every repeat of it is a button that cannot be pressed',
+    countOf(tblRepeat, 'data-label="4,000.00" disabled') === 1, tblRepeat);
+check('...while an entry holding a different figure stays pressable',
+    countOf(tblRepeat, 'data-label="1,500.00">') === 1, tblRepeat);
+// Compared on the raw value with a tolerance, not on the formatted string.
+check('a figure that differs only past the 3rd decimal is the same figure',
+    api.lineOverrideHistorySameValueRd('amount', 4000.0001, { current_amount: 4000 }, null) === true
+    && api.lineOverrideHistorySameValueRd('amount', 4000.01, { current_amount: 4000 }, null) === false);
+check('a masked figure is never claimed to be equal to anything',
+    api.lineOverrideHistorySameValueRd('amount', 'XXXX', { current_amount: 4000 }, null) === false);
+// The way out sits in the LAST head cell there is -- which differs by mode, because the editable
+// slip has a 4th column and the read-only one does not.
+check('both slips carry the way out exactly once, with no new copy for it',
+    countOf(tblEdit, 'lo-history-close') === 1 && countOf(tblView, 'lo-history-close') === 1
+    && tblEdit.indexOf(LANG['close']) !== -1 && tblView.indexOf(LANG['close']) !== -1);
+check('...and the editable slip own column title is for screen readers, not repeated text',
+    tblEdit.indexOf('<span class="visually-hidden">' + LANG['line_override_history_use_value'] + '</span>') !== -1, tblEdit);
+check('a note is a second line under the change, not a column of its own',
+    tblEdit.indexOf('<div class="lo-history-note">ตกลงแล้ว</div>') !== -1 && countOf(tblEdit, '<th class') === 4);
+check('the calculated row means "drop the override", which is what data-computed marks',
+    countOf(tblEdit, 'data-computed="1"') === 1 && tblEdit.indexOf('data-kind="amount"') !== -1);
+// The title bar is built on its own and can be asked directly.
+const barEdit = api.lineOverrideHistoryTitlebarHtmlRd(HIST_LINE, HIST_ROWS, false);
+const barView = api.lineOverrideHistoryTitlebarHtmlRd(HIST_LINE, HIST_ROWS, true);
+check('the title bar states the calculated figure, and offers it only where it can be used',
+    barEdit.indexOf('2,000.00') !== -1 && barView.indexOf('2,000.00') !== -1
+    && countOf(barEdit, 'lo-history-use') === 1 && countOf(barView, 'lo-history-use') === 0,
+    barView);
+check('both slips carry the way out, as the 32px neutral circle',
+    countOf(barEdit, 'btn btn-icon lo-history-close') === 1
+    && countOf(barView, 'btn btn-icon lo-history-close') === 1
+    && barEdit.indexOf('fa-xmark') !== -1);
+check('a hand-added line has no baseline at all, and says nothing rather than something untrue',
+    api.lineOverrideHistoryTitlebarHtmlRd(MANUAL_EARNING, [], false)
+        .indexOf('lo-history-computed-line') === -1);
+// Nothing has replaced the calculated figure, so the pinned row IS the value in force -- and no
+// entry below it may claim to be as well.
+check('an untouched line marks the calculated row, and only it, as the value in force',
+    countOf(api.lineOverrideHistoryTableHtmlRd(Object.assign({}, HIST_LINE, { override_action: null, current_amount: 2000 }),
+        HIST_ROWS, 'edit'), 'lo-history-current') === 1);
+
+console.log('');
+console.log('=== the 2 tri-state rows record a WORD, and can carry both trails at once ===');
+api.setExemption({ tax_calculate_override: 'no', tax_inherit_effective: 'yes',
+    sso_calculate_override: 'inherit', sso_inherit_effective: 'yes' });
+const PIT_LINE = { code: 'TH_PIT', line_type: 'statutory', current_amount: 0, override_action: null };
+const tblPit = api.lineOverrideHistoryTableHtmlRd(PIT_LINE, [histRow({ source_type: 'exemption',
+    line_type: 'statutory', item_code: 'TH_PIT', changed_at: '2026-09-18 09:00:00',
+    old_value: null, new_value: null, old_text: 'inherit', new_text: 'no' })], 'edit');
+check('the entry prints the words the rest of the slip says it with, never a figure',
+    tblPit.indexOf(LANG['calc_override_no']) !== -1 && tblPit.indexOf(LANG['calc_override_inherit']) !== -1
+    && tblPit.indexOf('0.00') === -1, tblPit);
+check('its calculated row is what inherit resolves to, and applies that third value',
+    tblPit.indexOf('data-value="inherit"') !== -1 && tblPit.indexOf('data-kind="text"') !== -1, tblPit);
+check('...and no amount row is invented for a line with no amount trail',
+    countOf(tblPit, 'lo-history-computed-line') === 1, tblPit);
+api.setExemption(null);
+
+console.log('');
+console.log('=== a hand-added line has a trail, but never a calculated value ===');
+const tblManual = api.lineOverrideHistoryTableHtmlRd(MANUAL_EARNING, [histRow({ source_type: 'manual_line',
+    item_code: 'BONUS', source_id: 91, changed_at: '2026-09-18 10:00:00', old_value: 4000, new_value: 5000 })], 'edit');
+check('no calculated row: nothing calculated it, and a figure there would be one that never existed',
+    tblManual.indexOf('lo-history-computed-row') === -1, tblManual);
+check('...but its own amount trail is listed, and the live figure is marked',
+    tblManual.indexOf('5,000.00') !== -1 && tblManual.indexOf('4,000.00') !== -1
+    && countOf(tblManual, 'lo-history-current') === 1, tblManual);
+
+console.log('');
+console.log('=== which recorded rows belong to which line ===');
+api.setHistory({ historyAvailable: true, startDate: null, byKey: { 'earning_deduction|BONUS': [
+    { source_type: 'manual_line', source_id: 91, old_value: 1, new_value: 2 },
+    { source_type: 'manual_line', source_id: 92, old_value: 3, new_value: 4 },
+    { source_type: 'override', source_id: null, old_value: 5, new_value: 6 },
+] } });
+check('a hand-added row sees only its OWN entries, by PK -- 2 of them can share one item_code',
+    api.lineOverrideHistoryFor(MANUAL_EARNING).length === 1
+    && api.lineOverrideHistoryFor(MANUAL_EARNING)[0].source_id === 91,
+    JSON.stringify(api.lineOverrideHistoryFor(MANUAL_EARNING)));
+check('...and a calculated row under the same code never sees a hand-added entry',
+    api.lineOverrideHistoryFor({ code: 'BONUS', line_type: 'earning_deduction' }).length === 1);
+api.setHistory({ byKey: {}, historyAvailable: true, startDate: null });
+
+console.log('');
+console.log('=== the read-only slip marks the lines somebody touched (2026-09-19, H-ui) ===');
+check('a hand-added line and an edited one carry DIFFERENT words: they are different facts',
+    api.lineOverrideChangeTagTextRd(MANUAL_EARNING) === LANG['line_override_row_tag_added']
+    && api.lineOverrideChangeTagTextRd({ override_action: 'override_amount' }) === LANG['line_override_row_tag_edited']);
+check('...an excluded line counts as edited, because excluding IS an edit',
+    api.lineOverrideChangeTagTextRd({ override_action: 'exclude' }) === LANG['line_override_row_tag_edited']);
+check('an untouched line carries nothing at all -- no tag, no dash',
+    api.lineOverrideChangeTagTextRd({ code: 'X' }) === '');
+const taggedView = api.lineOverrideRowHtml(MANUAL_EARNING, 5, GROUPS.manual_earning, false, 'view');
+check('the tag is the quiet shared one, in the read-only slip only',
+    taggedView.indexOf('<div class="payslip-line-tag">' + LANG['line_override_row_tag_added'] + '</div>') !== -1
+    && manualEdit.indexOf(LANG['line_override_row_tag_added']) === -1, taggedView);
+check('...and it is the LAST tag of the row, after the note',
+    taggedView.lastIndexOf(LANG['line_override_row_tag_added']) > taggedView.indexOf(LANG['note'] + ': '), taggedView);
 
 console.log('');
 console.log('=== the read-only slip reads the same endpoint, and renders through the same function ===');

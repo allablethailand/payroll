@@ -4272,12 +4272,31 @@ function setLineOverrideHostRd(mount, employeeId, onSaved, mode) {
     // employee's fetch lands must not read the previous one's.
     lineOverrideExemptionRd = null;
 }
-// Edit history for THIS employee, keyed 'line_type|item_code' -- fetched once alongside the table's
-// own data (loadSyncLineOverridesRd) because the table has to know at RENDER time which rows even
-// have a history badge to draw.
+/* Edit history for THIS employee, keyed 'line_type|item_code' exactly as the history table stores it
+   -- fetched once alongside the table's own data (loadSyncLineOverridesRd) because the table has to
+   know at RENDER time which rows even have a history badge to draw.
+   2026-09-19, H-ui: each entry is the raw LIST of that key's rows, newest first, straight off
+   api/payroll-run.line-history -- all 3 kinds of edit, not overrides alone. The grouped oldest-first
+   shape the old endpoint returns only ever fitted the dropdown this replaced. */
 let lineOverrideHistoryRd = { byKey: {}, historyAvailable: true, startDate: null };
+// The raw hand-added lines, by their own PK: a pick out of one's history rewrites the WHOLE row
+// through update-manual-line, and the table's own row shape does not carry every field that takes.
+let manualLineRawByIdRd = {};
+function lineOverrideHistoryKeyRd(lineType, itemCode) {
+    return (lineType || 'earning_deduction') + '|' + itemCode;
+}
+/* A hand-added line is recorded under 'earning_deduction|{resolved code}' (recordManualLineHistory()
+   resolves the same code the slip addresses it by) and is told apart from a calculated line that
+   happens to share that code by source_type + source_id -- two hand-added lines on one employee can
+   share one item_code, which is exactly why the PK is what identifies them. */
 function lineOverrideHistoryFor(line) {
-    return lineOverrideHistoryRd.byKey[(line.line_type || 'earning_deduction') + '|' + line.code] || null;
+    const isManual = (line.line_type || 'earning_deduction') === 'manual_line';
+    const rows = lineOverrideHistoryRd.byKey[lineOverrideHistoryKeyRd(isManual ? 'earning_deduction' : line.line_type, line.code)] || [];
+    return rows.filter(function (row) {
+        return isManual
+            ? row.source_type === 'manual_line' && Number(row.source_id) === Number(line.manual_line_id)
+            : row.source_type !== 'manual_line';
+    });
 }
 // A value as the dropdown shows it: masked values arrive as a string ('XXXX') and must pass through
 // untouched -- fmtNum() on them would print NaN.
@@ -4285,89 +4304,159 @@ function lineOverrideHistoryValueRd(value) {
     if (value === null || value === undefined) return '';
     return typeof value === 'number' ? fmtNum(value) : String(value);
 }
-// Every row is the same 1-line shape: the VALUE on the left (it is what the user is choosing
-// between), whatever explains it on the right. `metaHtml` is caller-built markup, never user input.
-function lineOverrideHistoryItemHtml(valueText, metaHtml, isCurrent, options) {
-    options = options || {};
-    const body = `<span class="lo-history-value num">${escapeHtml(valueText)}</span>
-        <span class="lo-history-meta">${metaHtml}</span>`;
-    // 2026-09-18, 4a-1: opened from the read-only slip, an entry is a FACT, not a choice -- so it is
-    // not a control at all (the same static shape the calculated-value head uses), rather than a button
-    // that happens to be disabled.
-    if (options.readOnly) {
-        return `<li class="${options.liClass || ''}"><div class="lo-history-item lo-history-item-static ${options.itemClass || ''}">${body}</div></li>`;
+/* ---------- one row's history, as a TABLE under the row (2026-09-19, H-ui) --------------------
+   It replaces a 5-row dropdown behind the badge AND the nested modal that dropdown linked to: two
+   surfaces for one list, neither of which could show the 2 kinds of edit H-backend started
+   recording. See docs/decisions/2026-09-19-h-ui-history-table.md.
+   Columns: when | who | from -> to | use this value. The last one is NOT RENDERED in the read-only
+   slip (rules.md 9: the 2 modes differ by leaving a column out, never by disabling one). */
+// An entry carries either a figure or a word -- `new_text` is set only by the tri-state writer.
+function lineOverrideHistoryRowKindRd(row) {
+    return (row.new_text !== null && row.new_text !== undefined && row.new_text !== '') ? 'text' : 'amount';
+}
+// A stored tri-state answer as the word the rest of the slip says it with. Anything unrecognised is
+// printed as it came rather than silently blanked.
+function lineOverrideHistoryTextRd(value) {
+    if (!value) return '';
+    return langData['calc_override_' + value] || String(value);
+}
+function lineOverrideHistorySideRd(row, which) {
+    return lineOverrideHistoryRowKindRd(row) === 'text'
+        ? lineOverrideHistoryTextRd(which === 'from' ? row.old_text : row.new_text)
+        : lineOverrideHistoryValueRd(which === 'from' ? row.old_value : row.new_value);
+}
+/* The fixed "what the system said" rows, pinned above the list: the value the line STARTED at, which
+   is not an edit and has no timestamp to be sorted by. A line can need one of these, both or none:
+     amount -- the engine's own figure, only where this line really has an amount trail; a hand-added
+               line never has one, because nothing calculated it (setting one would print a figure
+               that never existed -- see lineOverrideComputedTextRd()'s own note)
+     text   -- what 'inherit' resolves to for THIS employee on THIS run, for the 2 tri-state rows
+   Absent, never blank: a line with no recorded calculated value prints no row at all. */
+function lineOverrideHistoryComputedRowsRd(line, rows) {
+    const out = [];
+    if ((line.line_type || 'earning_deduction') !== 'manual_line'
+        && rows.some(r => lineOverrideHistoryRowKindRd(r) === 'amount')) {
+        const text = lineOverrideComputedTextRd(line);
+        // Never `isNoop`: "use the calculated value" DROPS the override row, which is a real change
+        // to what is stored even on a line whose override happens to hold the same figure.
+        if (text !== '') out.push({ kind: 'amount', value: text, isCurrent: !line.override_action, isComputed: true });
     }
-    // The value in effect is shown for orientation, not offered as a choice -- picking it would be a
-    // no-op that still marks the row dirty.
-    return `<li class="${options.liClass || ''}"><button type="button" class="dropdown-item lo-history-item ${options.itemClass || ''}" data-value="${escapeAttr(valueText)}"
-        ${isCurrent ? 'disabled' : ''}>
-        ${body}
-    </button></li>`;
-}
-// Short form for the dropdown: dd/mm HH:mm (the year is noise for an edit made inside this run).
-function lineOverrideHistoryWhenRd(edit) {
-    if (!edit.changed_at) return '';
-    const full = formatDisplayDateTime(edit.changed_at);
-    return full.length > 5 && full.indexOf('/') > 0 ? full.replace(/^(\d{2}\/\d{2})\/\d{4}/, '$1') : full;
-}
-function lineOverrideHistoryWhoRd(edit) {
-    return (currentLang === 'th' ? edit.changed_by_name_th : edit.changed_by_name_en)
-        || edit.changed_by_name_th || edit.changed_by_name_en || '';
-}
-function lineOverrideHistoryMetaRd(edit) {
-    return [lineOverrideHistoryWhenRd(edit), lineOverrideHistoryWhoRd(edit)].filter(Boolean).join(' · ');
-}
-// Which entry is the one in effect right now: the NEWEST whose value matches the live figure, not
-// every entry that happens to share it (the same amount can be set, changed, and set again).
-function lineOverrideHistoryCurrentIndexRd(editsNewestFirst, currentText) {
-    if (currentText === '') return -1;
-    for (let i = 0; i < editsNewestFirst.length; i++) {
-        if (lineOverrideHistoryValueRd(editsNewestFirst[i].new_value) === currentText) return i;
+    const field = statutoryExemptionFieldRd(line);
+    if (field && rows.some(r => lineOverrideHistoryRowKindRd(r) === 'text')) {
+        out.push({
+            kind: 'text',
+            value: lineOverrideHistoryTextRd(statutoryExemptionInheritRd(field)),
+            applyValue: 'inherit',
+            isCurrent: statutoryExemptionStateRd(field) === 'inherit',
+            isComputed: true,
+        });
     }
-    return -1;
+    return out;
 }
-// The menu is 3 fixed parts: the calculated figure as a sticky HEAD (it is the baseline every row
-// below is a departure from -- context, not one of the choices), the full list of edits in the
-// middle (all of them, scrolling at about 5 rows -- cutting it at 5 would hide edits with no way to
-// tell that anything was missing), and a sticky FOOT into the modal, which is where the note, the
-// full date and the from→to of each edit live.
-function lineOverrideHistoryMenuHtml(history, readOnly) {
-    const currentText = lineOverrideHistoryValueRd(history.current_value);
-    const computedText = lineOverrideHistoryValueRd(history.original_value);
-    const currentBadge = countBadgeHtml(0, { label: langData['line_override_history_current'] || 'Current' });
-    /* 2026-09-19, reported for real: this row was the ONLY way back to the calculated figure that a
-       user could see from the table, and R1 made it static on the reasoning that the row's own form
-       carries the same action in its left slot -- which is true but is 2 clicks away behind a pencil,
-       and `lo-history-computed` (what the click handler keys "restore" off) was left with no producer
-       at all, so `asComputed` could never be true from this menu again. Pressable again in the
-       EDITABLE slip; the read-only one still renders it as the fact it is there (readOnly), which is
-       the same branch every entry below it takes. */
-    let html = lineOverrideHistoryItemHtml(
-        computedText,
-        escapeHtml(langData['line_override_history_computed'] || 'Calculated value'),
-        false,
-        { readOnly: readOnly, liClass: 'lo-history-head', itemClass: 'lo-history-computed' }
-    );
-    const edits = (history.edits || []).slice().reverse();
-    const currentIdx = lineOverrideHistoryCurrentIndexRd(edits, currentText);
-    edits.forEach(function (edit, i) {
-        const isCurrent = i === currentIdx;
-        // The badge goes IN FRONT of the same meta every other row has -- "which one is live" is an
-        // extra fact about the entry, not a replacement for when it was made and by whom.
-        const meta = escapeHtml(lineOverrideHistoryMetaRd(edit));
-        html += lineOverrideHistoryItemHtml(
-            lineOverrideHistoryValueRd(edit.new_value),
-            isCurrent ? currentBadge + ' ' + meta : meta,
-            isCurrent,
-            // 2026-09-18, 4a-1: in the read-only slip every entry is reference only -- the list and
-            // the full-history modal are the same in both slips, but picking a value out of the menu
-            // is a WRITE, which that slip has no right to offer.
-            { readOnly: readOnly }
-        );
-    });
-    const tpl = langData['line_override_history_view_all'] || 'Full history ({n})';
-    html += `<li class="lo-history-foot"><button type="button" class="dropdown-item lo-history-view-all">${escapeHtml(tpl.replace('{n}', String(edits.length)))}</button></li>`;
-    return html;
+/* "This entry's value is the one the line already holds." Compared on the RAW value, never on the
+   formatted string: money is a float and 4000 vs 4000.0000001 is the same figure to everyone but a
+   string compare. A masked figure ('XXXX') parses to NaN and is never claimed to be equal -- a
+   reader who may not see the amount must not be told what it is by a disabled button. */
+function lineOverrideHistorySameValueRd(kind, rawValue, line, field) {
+    if (kind === 'text') {
+        return !!field && rawValue !== null && rawValue !== undefined && rawValue !== ''
+            && rawValue === statutoryExemptionStateRd(field);
+    }
+    const current = Number(line.current_amount);
+    const value = Number(rawValue);
+    if (isNaN(current) || isNaN(value)) return false;
+    return Math.abs(value - current) < 0.005;
+}
+/* One button, one look, on every row of every history table: a small NEUTRAL button. Not the view's
+   solid orange and not outline-primary either (rules.md 4) -- an action that repeats once per row is
+   not the surface's one main action, and a 38-entry chain would otherwise print it 38 times.
+   The entry whose value is already in force carries the word instead: there is nothing to do there,
+   and a disabled button would still read as "this is where you would do it" (rules.md 0.3). */
+function lineOverrideHistoryUseCellHtml(cell) {
+    if (cell.isCurrent) {
+        return `<span class="lo-history-current">${escapeHtml(langData['line_override_history_current'] || 'Current')}</span>`;
+    }
+    const applyValue = cell.applyValue !== undefined ? cell.applyValue : cell.value;
+    // 2026-09-19, reported for real (EM009 / LOAN_REPAY): an older entry whose figure happens to
+    // equal the one in force was still pressable, and the write it sent was an x -> x no-op the
+    // server accepted and recorded nothing for. The word "Current" belongs to the ONE entry that is
+    // the live one; every other entry that merely repeats its figure stays an entry -- a button, so
+    // the column keeps one shape -- but a button that cannot be pressed.
+    return `<button type="button" class="btn btn-sm btn-outline-secondary lo-history-use"
+        data-kind="${escapeAttr(cell.kind)}" data-value="${escapeAttr(applyValue)}" data-label="${escapeAttr(cell.value)}"`
+        + (cell.isComputed ? ' data-computed="1"' : '') + (cell.isNoop ? ' disabled' : '') + '>'
+        + escapeHtml(langData['line_override_history_use_value'] || 'Use this value') + '</button>';
+}
+/* 2026-09-19: 3 layers, and the first 2 stay put while the third scrolls.
+     (a) the title bar -- what the SYSTEM said for this line, and the way out. It is not an edit and
+         has no time of its own, so it was never a row of the list; as the list's first row it also
+         scrolled away, which is exactly what a baseline must not do.
+     (b) the column titles
+     (c) the edits, and nothing else.
+   A tri-state line can carry 2 baselines (a figure and an answer) and prints both; a hand-added line
+   has none at all, and its left side is simply empty. */
+function lineOverrideHistoryTitlebarHtmlRd(line, rows, isView) {
+    const computed = lineOverrideHistoryComputedRowsRd(line, rows);
+    const lines = computed.map(function (cell) {
+        return `<div class="lo-history-computed-line">
+            <span class="lo-history-computed-label">${escapeHtml(langData['line_override_history_computed'] || 'Calculated value')}</span>
+            <span class="num">${escapeHtml(cell.value)}</span>
+            ${isView ? '' : `<span class="lo-history-computed-action">${lineOverrideHistoryUseCellHtml(cell)}</span>`}
+        </div>`;
+    }).join('');
+    // The app's own 32px neutral circle (rules.md 7), not a worded button: it repeats on every open
+    // and says nothing the icon does not.
+    const closeLabel = escapeAttr(langData['close'] || 'Close');
+    return `<div class="lo-history-titlebar">
+        <div class="lo-history-computed">${lines}</div>
+        <button type="button" class="btn btn-icon lo-history-close" title="${closeLabel}" aria-label="${closeLabel}"><i class="fa-solid fa-xmark"></i></button>
+    </div>`;
+}
+function lineOverrideHistoryTableHtmlRd(line, rows, mode) {
+    const isView = mode === 'view';
+    const field = statutoryExemptionFieldRd(line);
+    // "Which entry is the one in effect" is asked once per KIND: a tri-state row can carry an amount
+    // trail and an answer trail at the same time, and each has its own current value. Resolved
+    // newest-first and only ONCE per kind -- the same figure can be set, changed and set again, and
+    // only the latest of those is the one in force. Every OTHER entry that repeats it is a no-op.
+    const matched = {};
+    const computed = lineOverrideHistoryComputedRowsRd(line, rows);
+    computed.forEach(function (cell) { if (cell.isCurrent) matched[cell.kind] = true; });
+    const useCell = function (cell) {
+        return isView ? '' : `<td class="lo-history-use-cell">${lineOverrideHistoryUseCellHtml(cell)}</td>`;
+    };
+    const body = rows.map(function (row) {
+        const kind = lineOverrideHistoryRowKindRd(row);
+        const to = lineOverrideHistorySideRd(row, 'to');
+        const from = lineOverrideHistorySideRd(row, 'from');
+        const same = lineOverrideHistorySameValueRd(kind, kind === 'text' ? row.new_text : row.new_value, line, field);
+        const isCurrent = same && !matched[kind];
+        if (isCurrent) matched[kind] = true;
+        const change = from === ''
+            ? escapeHtml(to)
+            : escapeHtml((langData['line_override_history_from_to'] || 'from {from} -> {to}')
+                .replace('{from}', from).replace('{to}', to));
+        const who = (currentLang === 'th' ? row.changed_by_name_th : row.changed_by_name_en)
+            || row.changed_by_name_th || row.changed_by_name_en || '';
+        // The note is a second fact ABOUT the change, so it sits under it in the same cell rather
+        // than spending a column of its own on something most entries do not carry.
+        return `<tr>
+            <td class="lo-history-when">${escapeHtml(formatDisplayDateTime(row.changed_at))}</td>
+            <td class="lo-history-who">${escapeHtml(who)}</td>
+            <td class="lo-history-change">${change}${row.note ? `<div class="lo-history-note">${escapeHtml(row.note)}</div>` : ''}</td>
+            ${useCell({ kind: kind, value: to, isCurrent: isCurrent, isNoop: same && !isCurrent })}
+        </tr>`;
+    }).join('');
+    return lineOverrideHistoryTitlebarHtmlRd(line, rows, isView)
+        + `<div class="lo-history-scroll"><table class="table table-sm lo-history-table mb-0">
+        <thead><tr>
+            <th class="lo-history-when">${escapeHtml(langData['time'] || 'Time')}</th>
+            <th class="lo-history-who">${escapeHtml(langData['line_override_history_col_who'] || 'Changed by')}</th>
+            <th class="lo-history-change">${escapeHtml(langData['line_override_history_col_change'] || 'Change')}</th>
+            ${isView ? '' : `<th class="lo-history-use-cell"><span class="visually-hidden">${escapeHtml(langData['line_override_history_use_value'] || 'Use this value')}</span></th>`}
+        </tr></thead>
+        <tbody>${body}</tbody>
+    </table></div>`;
 }
 // 2026-09-17, R1: the figure the system calculated -- the same number the history dropdown has
 // always shown as its head row, out where it can be compared with the live one without opening
@@ -4403,8 +4492,15 @@ function lineOverrideComputedTextRd(line) {
     // Both halves of "is there a recorded history for this line": the run's period has to be inside
     // the window the feature has existed for at all, AND this particular line has to have a row in
     // it (byKey only ever holds lines that do). Either one missing means no trustworthy figure.
-    const history = lineOverrideHistoryRd.historyAvailable ? lineOverrideHistoryFor(line) : null;
-    const original = history ? history.original_value : null;
+    // 2026-09-19, H-ui: read off the rows themselves now -- `old_value` of the OLDEST amount entry,
+    // which is exactly the number the grouped endpoint used to hand over as `original_value`. The
+    // list arrives newest first, so the oldest of it is the last.
+    const rows = lineOverrideHistoryRd.historyAvailable ? lineOverrideHistoryFor(line) : [];
+    const amounts = rows.filter(r => lineOverrideHistoryRowKindRd(r) === 'amount');
+    // The OLDEST amount entry, whatever it holds -- never "the oldest one that happens to carry a
+    // figure". Skipping a null would hand back a LATER override's `old_value` as if the engine had
+    // calculated it, which is the whole bug this fallback is fenced against.
+    const original = amounts.length ? amounts[amounts.length - 1].old_value : null;
     return (original === null || original === undefined) ? '' : lineOverrideHistoryValueRd(original);
 }
 // 2026-09-18, 4a-1: the 3 quiet sub-lines a row can carry, in ONE shape -- `.payslip-line-tag`
@@ -4469,21 +4565,29 @@ function statutoryExemptionTagHtmlRd(line) {
     const tpl = langData['line_override_computed_inline'] || 'System: {amount}';
     return `<div class="payslip-line-tag">${escapeHtml(tpl.replace('{amount}', label))}</div>`;
 }
-function lineOverrideHistoryCellHtml(line, mode) {
-    const history = lineOverrideHistoryFor(line);
-    const editCount = history && history.edits ? history.edits.length : 0;
-    if (!editCount) return '';
-    const label = (langData['line_override_history_badge'] || '{n} edit(s)').replace('{n}', String(editCount));
-    return badgeDropdownHtml({
-        enum: 'edited',
-        label: label,
-        menuHtml: lineOverrideHistoryMenuHtml(history, mode === 'view'),
-        toggleClass: 'lo-history-toggle',
-        // This table scrolls inside `.table-responsive`; an absolutely-positioned menu is clipped by
-        // that container the moment it opens below the last rows. Popper's fixed strategy takes it
-        // out of that clip (§6 -- see badgeDropdownHtml()'s own note).
-        fixedStrategy: true,
-    });
+/* 2026-09-19, H-ui: a plain disclosure toggle -- no caret and no menu behind it, the whole history
+   opens as a table under the row (see the click handler further down). `countBadgeHtml()` still
+   draws the badge itself (rules.md 5: a count with a word in it is that helper's own `label` mode);
+   it sits inside a `<button>` because a disclosure has to be focusable and pressable, which a
+   `<span>` is not.
+   Drawn on EVERY row that has something recorded -- an excluded one and a hand-added one included,
+   because both really do carry edits (excluding a line IS a recorded edit, and a hand-added line has
+   had an amount trail since H-backend). Nothing recorded = no badge: there is nothing to go back to. */
+function lineOverrideHistoryCellHtml(line) {
+    const rows = lineOverrideHistoryFor(line);
+    if (!rows.length) return '';
+    const label = (langData['line_override_history_badge'] || '{n} edit(s)').replace('{n}', String(rows.length));
+    return `<button type="button" class="lo-history-toggle" aria-expanded="false">${countBadgeHtml(rows.length, { label: label })}</button>`;
+}
+// 2026-09-19, H-ui: the read-only slip's own mark for a line somebody touched -- the quiet
+// `.payslip-line-tag` every other sub-line already wears (rules.md 9), last of the fixed order, and
+// a different WORD for the 2 different facts: a line that was added by hand was never calculated at
+// all, which is not the same as a calculated figure somebody replaced.
+function lineOverrideChangeTagTextRd(line) {
+    if ((line.line_type || 'earning_deduction') === 'manual_line') {
+        return langData['line_override_row_tag_added'] || 'Added by hand';
+    }
+    return lineOverrideIsChangedRd(line) ? (langData['line_override_row_tag_edited'] || 'Edited') : '';
 }
 function lineOverrideOccurrencesHtml(occurrences) {
     if (!occurrences || !occurrences.length) return '';
@@ -4568,7 +4672,7 @@ function lineOverrideRowHtml(line, idx, group, runDisabled, mode) {
         : `<div class="form-check form-switch mb-0"><input class="form-check-input lo-include" type="checkbox" role="switch" id="loInc${idx}" ${switchOn ? 'checked' : ''}${runDisabledAttr}></div>`}</td>`;
     const actionCell = isView ? '' : `<td class="lo-action-cell"><div class="lo-actions">${isManual ? manualActions : pencil}</div></td>`;
     return `<tr class="lo-row${included ? '' : ' lo-row-off'}${isManual ? ' lo-row-manual' : ''}" data-item-code="${escapeAttr(line.code)}" data-line-type="${escapeAttr(line.line_type || 'earning_deduction')}"
-        data-group-type="${escapeAttr(group.type || '')}"
+        data-group-type="${escapeAttr(group.type || '')}" data-manual-line-id="${escapeAttr(line.manual_line_id || '')}"
         data-exemption-field="${escapeAttr(exemptionField || '')}" data-exemption-changed="${statutoryExemptionChangedRd(line) ? '1' : ''}"
         data-orig-action="${escapeAttr(origAction)}" data-item-name="${escapeAttr(name)}" data-amount="${escapeAttr(fmtNum(line.current_amount))}"${title}>
         ${checkCell}<td class="lo-name-cell tbl-sticky-col tbl-sticky-col-edge-left">
@@ -4577,10 +4681,11 @@ function lineOverrideRowHtml(line, idx, group, runDisabled, mode) {
             ${lineOverrideTagHtmlRd(lineOverrideExemptTextRd(line))}
             ${lineOverrideTagHtmlRd(formulaTagTextRd(line))}
             ${lineOverrideTagHtmlRd(lineOverrideNoteTextRd(line))}
+            ${isView ? lineOverrideTagHtmlRd(lineOverrideChangeTagTextRd(line)) : ''}
             ${lineOverrideOccurrencesHtml(line.occurrences)}
         </td>
         <td class="num col-money lo-amount-cell"><div class="lo-amount-view">${amountCell}</div>${lineOverrideComputedTagHtml(line)}${statutoryExemptionTagHtmlRd(line)}</td>
-        ${actionCell}<td class="lo-history-cell">${(included && !isManual) ? lineOverrideHistoryCellHtml(line, mode) : ''}</td>
+        ${actionCell}<td class="lo-history-cell">${lineOverrideHistoryCellHtml(line)}</td>
     </tr>`;
 }
 // The way to add the next line, on the head of the group it would be added to -- the heading names
@@ -4644,8 +4749,53 @@ $(document).on('click', '.lo-mount .lo-group-restore-btn', function () {
 // media query decides WHETHER to pin; this only says WHERE).
 // Not dtWatchVisibleWidth(): that one publishes a DataTables scroller's visible width for the empty
 // state, a different value on a different element -- same ResizeObserver shape, nothing to share.
+/* 2026-09-19, H-ui: the width an opened history panel may take. Below `sm` this table is a
+   horizontal SCROLLER wider than its host, so whatever a full-width cell holds slides out of view
+   when it is dragged -- measured for real on the 3 totals (see their own builder). The panel pins at
+   left: 0 and takes the VISIBLE width, so it always shows all of itself.
+   Published from 2 places because the width really does change at 2 moments: when the table is
+   (re)drawn or the scroller resizes, and when a panel OPENS -- a tall one gives the dialog a
+   vertical scrollbar, which takes the scroller's own width down with it. */
+function lineOverridePublishPanelWidthRd(table, scroller) {
+    if (!table || !scroller) return;
+    table.style.setProperty('--lo-history-panel-w', scroller.clientWidth + 'px');
+    // ...and where it starts: the x the ITEM NAME column's own text begins on, which is a different
+    // column in each mode (the editable slip has a toggle column in front of it, the read-only one
+    // does not). Measured off the head, so a width change moves the panel with it.
+    const nameTh = table.querySelector('thead th.lo-name-col');
+    const firstTh = table.querySelector('thead > tr > th');
+    const indent = (nameTh && firstTh)
+        ? Math.max(0, nameTh.getBoundingClientRect().left - firstTh.getBoundingClientRect().left
+            + (parseFloat(getComputedStyle(nameTh).paddingLeft) || 0))
+        : 0;
+    table.style.setProperty('--lo-history-indent', Math.round(indent) + 'px');
+}
+/* How tall an opened panel may be: its title bar, its column titles and 5 entries -- measured off
+   the rows that are really there rather than assumed from a row height, because an entry carrying a
+   note is taller than one that does not. Past that the LIST scrolls (the title bar and the column
+   titles sit outside it), so a 38-entry chain cannot push the slip's own table to 10 screens.
+   The scrollbar that appears when it does cap takes width off the table inside, which is why its
+   width is published too: the title bar sits outside that box and has to step in by the same amount
+   for its [x] to stay on the same x as the buttons below it. */
+function lineOverridePublishHistoryHeightRd($panel) {
+    const panel = $panel.get(0);
+    if (!panel) return;
+    const box = panel.querySelector('.lo-history-scroll');
+    const head = panel.querySelector('thead');
+    const rows = panel.querySelectorAll('tbody > tr');
+    if (!box) return;
+    if (!head || rows.length <= 5) {
+        box.style.removeProperty('--lo-history-max-h');
+    } else {
+        const top = head.getBoundingClientRect().top;
+        const bottom = rows[4].getBoundingClientRect().bottom;
+        box.style.setProperty('--lo-history-max-h', Math.round(bottom - top) + 'px');
+    }
+    panel.style.setProperty('--lo-history-sbw', Math.max(0, box.offsetWidth - box.clientWidth) + 'px');
+}
 function lineOverridePublishStickyOffsetRd($wrap) {
     const table = $wrap.find('table.lo-table').get(0);
+    const scroller = $wrap.get(0);
     if (!table) return;
     const publish = function () {
         // 2026-09-18, 4a-1, real gap found by measurement at 430px: the read-only slip renders no
@@ -4654,9 +4804,9 @@ function lineOverridePublishStickyOffsetRd($wrap) {
         // pinned at all on a phone. With no column in front of it, it starts at 0.
         const firstCell = table.querySelector('thead th.col-check');
         table.style.setProperty('--lo-sticky-left-2', (firstCell ? firstCell.getBoundingClientRect().width : 0) + 'px');
+        lineOverridePublishPanelWidthRd(table, scroller);
     };
     publish();
-    const scroller = $wrap.get(0);
     if (typeof ResizeObserver === 'function' && scroller) {
         new ResizeObserver(publish).observe(scroller);
     }
@@ -4753,9 +4903,6 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
     // every time, so the previous binding went with it.
     if (typeof initTableDragScroll === 'function') initTableDragScroll(lineOverrideHostRd.mount + ' .lo-table');
     lineOverridePublishStickyOffsetRd($wrap.find('.table-responsive').addBack('.table-responsive').first());
-    // Delegated once per scope (the wrapper survives every re-render inside it) -- no onSelect here:
-    // this table's menus are action menus, the row's own click handler above does the work.
-    if (typeof initBadgeDropdown === 'function') initBadgeDropdown($wrap);
 }
 // Switching tabs draws the SAME rows again through the SAME renderer, from what the table already
 // holds -- the identical call refreshBreakdownNetSummaryRd() makes. Nothing is fetched: both tabs
@@ -4789,121 +4936,141 @@ function lineOverrideTotalsHtmlRd(row) {
             <span class="num ${t.cls}">${fmtNum(t.amount)}</span>
         </div>`).join('') + `</div>`;
 }
-// Picking a value out of a row's own history is a write like any other in this tab: it confirms,
-// then sends.
-$(document).on('click', '.lo-mount .lo-history-item', function () {
-    // A static entry wears the same layout class and is not a control (read-only slip, and the
-    // calculated-value head in both) -- it has no `data-value` to apply either.
-    if ($(this).hasClass('lo-history-item-static')) return;
-    lineOverrideConfirmApplyHistoryValueRd($(this).closest('tr.lo-row').data('item-code'), $(this).attr('data-value') || '',
-        $(this).hasClass('lo-history-computed'));
-});
-/* ---------- "ประวัติการแก้ไข" modal (stacked on top of the modal holding the table) -- the full chain for
-   ONE line: every past value with when/who/note, and the same "use this value" action the dropdown
-   offers, for the entries the 5-row dropdown could not show. Rendered with the shared timeline
-   component (§6) -- newest first, grouped by day: the timeline's head only ever prints HH:mm, so
-   without the day header two edits made on different days read as the same time. The calculated
-   value carries no date at all and gets no header (its empty one is hidden in CSS). */
-let lineOverrideHistoryModalCode = null;
-// 2026-09-18, 4a-1: `canEdit` is the slip's own mode, not a second opinion -- a modal opened from a
-// read-only slip offers no way to write, and offers it by NOT RENDERING the button (a disabled one is
-// still a control in the tab order, and still says "this is where you would do it").
-function lineOverrideHistoryTimelineItemsRd(history, canEdit) {
-    const currentText = lineOverrideHistoryValueRd(history.current_value);
-    const useBtn = function (valueText, isComputed) {
-        if (!canEdit) return '';
-        return `<button type="button" class="btn btn-outline-primary lo-history-use" data-value="${escapeAttr(valueText)}"`
-            + (isComputed ? ' data-computed="1"' : '') + '>'
-            + escapeHtml(langData['line_override_history_use_value'] || 'Use this value') + '</button>';
-    };
-    const currentBadge = countBadgeHtml(0, { label: langData['line_override_history_current'] || 'Current' });
-    const editsNewestFirst = (history.edits || []).slice().reverse();
-    const currentIdx = lineOverrideHistoryCurrentIndexRd(editsNewestFirst, currentText);
-    const items = editsNewestFirst.map(function (edit, i) {
-        const valueText = lineOverrideHistoryValueRd(edit.new_value);
-        const fromText = lineOverrideHistoryValueRd(edit.old_value);
-        const isCurrent = i === currentIdx;
-        const tpl = langData['line_override_history_from_to'] || 'from {from} → {to}';
-        return {
-            time: edit.changed_at,
-            actor: { name: lineOverrideHistoryWhoRd(edit) },
-            title: valueText,
-            detail: fromText === '' ? '' : tpl.replace('{from}', fromText).replace('{to}', valueText),
-            // The button sits on the value's own line (CSS, .lo-history-timeline) -- the note is a
-            // second fact about the entry and stays under it, in the left column.
-            actionHtml: (isCurrent ? currentBadge : useBtn(valueText, false))
-                + (edit.note ? `<div class="lo-history-note">${escapeHtml(edit.note)}</div>` : ''),
-        };
-    });
-    // The calculated value is not an edit -- it is where the line started, so it is pinned to the top
-    // of the list rather than sorted into it by a timestamp it does not have.
-    const computedText = lineOverrideHistoryValueRd(history.original_value);
-    const computedIsCurrent = currentIdx === -1 && computedText !== '' && computedText === currentText;
-    items.unshift({
-        time: '',
-        title: computedText,
-        detail: langData['line_override_history_computed'] || 'Calculated value',
-        actionHtml: computedIsCurrent ? currentBadge : useBtn(computedText, true),
-    });
-    return items;
-}
-function openLineOverrideHistoryModalRd(itemCode) {
-    const line = lineOverrideRowsRd.find(l => l.code === itemCode);
-    if (!line) return;
-    const history = lineOverrideHistoryFor(line);
-    if (!history) return;
-    lineOverrideHistoryModalCode = itemCode;
-    const name = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || line.code;
-    $('#lineOverrideHistoryModalLabel').text(`${langData['line_override_history_modal_title'] || 'Edit history'} · ${name}`);
-    $('#lineOverrideHistoryModalBody').html('<div class="lo-history-timeline">'
-        + renderTimeline(lineOverrideHistoryTimelineItemsRd(history, lineOverrideHostRd.mode !== 'view'), { groupByDay: true }) + '</div>');
-    const $note = $('#lineOverrideHistoryModalNote');
-    if (!lineOverrideHistoryRd.historyAvailable && lineOverrideHistoryRd.startDate) {
-        const tpl = langData['line_override_history_since'] || 'History has been recorded since {date}';
-        $note.text(tpl.replace('{date}', formatDisplayDate(lineOverrideHistoryRd.startDate))).removeClass('d-none');
-    } else {
-        $note.addClass('d-none').text('');
+/* The badge under the History column is a disclosure, not a menu: it opens this row's whole history
+   as a table directly under the row, and closes it again. Built on demand out of what the slip
+   already holds -- every entry is client-side already (byKey), so there is nothing to fetch. */
+$(document).on('click', '.lo-mount .lo-history-toggle', function () {
+    const $btn = $(this);
+    const $row = $btn.closest('tr.lo-row');
+    const $open = $row.next('tr.lo-history-row');
+    if ($open.length) {
+        $open.remove();
+        $btn.attr('aria-expanded', 'false');
+        return;
     }
-    new bootstrap.Modal(document.getElementById('lineOverrideHistoryModal')).show();
-}
-$(document).on('click', '.lo-mount .lo-history-view-all', function () {
-    openLineOverrideHistoryModalRd($(this).closest('tr.lo-row').data('item-code'));
-});
-$(document).on('click', '#lineOverrideHistoryModal .lo-history-use', function () {
-    if (!lineOverrideHistoryModalCode) return;
-    lineOverrideConfirmApplyHistoryValueRd(lineOverrideHistoryModalCode, $(this).attr('data-value') || '',
-        $(this).attr('data-computed') === '1', function () {
-            bootstrap.Modal.getInstance(document.getElementById('lineOverrideHistoryModal')).hide();
+    const line = lineOverrideLineByRowRd($row);
+    if (!line) return;
+    // A row that is switched off is read-only here whatever the slip's own mode: the way back in is
+    // that row's own switch, and a [use this value] beside it would be a second control for the one
+    // thing (rules.md 0.4).
+    const mode = (lineOverrideHostRd.mode === 'view' || $row.hasClass('lo-row-off')) ? 'view' : 'edit';
+    $row.after(`<tr class="lo-history-row"><td colspan="${$row.children('td').length}"><div class="lo-history-panel">`
+        + lineOverrideHistoryTableHtmlRd(line, lineOverrideHistoryFor(line), mode) + '</div></td></tr>');
+    $btn.attr('aria-expanded', 'true');
+    // After the browser has laid the new rows out, never before it: a tall panel is what makes the
+    // dialog scroll vertically, and that scrollbar is what changes the width being published. TWO
+    // frames, not one -- the first is where the rows land, the second is where the scrollbar that
+    // appeared because of them has already taken its width out of the scroller.
+    const $scroller = $row.closest('.table-responsive');
+    const $table = $row.closest('table.lo-table');
+    requestAnimationFrame(function () {
+        requestAnimationFrame(function () {
+            lineOverridePublishPanelWidthRd($table.get(0), $scroller.get(0));
+            lineOverridePublishHistoryHeightRd($row.next('tr.lo-history-row').find('.lo-history-panel'));
         });
+    });
+});
+// The header's own [Close]. Same thing the badge does, from the other end of a list that may be
+// scrolled well past it -- and the focus goes back to the badge, which is where the reader was.
+$(document).on('click', '.lo-mount .lo-history-close', function () {
+    const $row = $(this).closest('tr.lo-history-row').prev('tr.lo-row');
+    $row.next('tr.lo-history-row').remove();
+    $row.find('.lo-history-toggle').attr('aria-expanded', 'false').trigger('focus');
+});
+// The one way back to any value this line has ever held, including the one the system calculated.
+$(document).on('click', '.lo-mount .lo-history-use', function () {
+    const $btn = $(this);
+    const $row = $btn.closest('tr.lo-history-row').prev('tr.lo-row');
+    const line = lineOverrideLineByRowRd($row);
+    if (!line) return;
+    lineOverrideConfirmApplyHistoryValueRd({
+        $row: $row,
+        line: line,
+        kind: $btn.attr('data-kind') || 'amount',
+        value: $btn.attr('data-value') || '',
+        label: $btn.attr('data-label') || $btn.attr('data-value') || '',
+        isComputed: $btn.attr('data-computed') === '1',
+    });
 });
 // Picking a value out of a history list is one click away from replacing a figure someone else set,
-// and the two lists sit right under the pointer while scrolling -- so it asks first. The row is
-// written the moment it is confirmed (this tab has no Save button to press afterwards).
-function lineOverrideConfirmApplyHistoryValueRd(itemCode, value, asComputed, onApplied) {
-    const $row = lineOverrideRowByCodeRd(itemCode);
-    if (!$row.length || $row.hasClass('lo-row-off')) return;
-    // A calculated figure history never recorded has no number to name -- say what it IS instead.
-    const valueLabel = value === '' ? (langData['line_override_history_computed'] || 'the calculated value') : value;
+// and the list sits right under the pointer while scrolling -- so it asks first. The row is written
+// the moment it is confirmed (this tab has no Save button to press afterwards).
+function lineOverrideConfirmApplyHistoryValueRd(plan) {
+    const $row = plan.$row;
+    if (!$row || !$row.length || $row.hasClass('lo-row-off')) return;
     const tpl = langData['line_override_confirm_use_value_message']
         || '{item} will be set to {value} and saved immediately.';
     showConfirm({
         title: langData['line_override_confirm_use_value_title'] || 'Use this value instead of the current one',
-        message: tpl.replace('{value}', valueLabel).replace('{item}', String($row.data('item-name') || itemCode)),
+        message: tpl.replace('{value}', plan.label).replace('{item}', String($row.data('item-name') || '')),
         tone: 'info',
         confirmText: langData['line_override_history_use_value'] || 'Use this value',
         cancelText: langData['cancel'] || 'Cancel',
-        onYes: function () {
-            if (typeof onApplied === 'function') onApplied();
-            // The calculated-value row means "drop what somebody put here", not "save this number as
-            // one" -- which on a tri-state row is 2 stored things, not 1 (lineOverrideRestoreRowRd).
-            if (asComputed) {
-                lineOverrideRestoreRowRd($row);
-            } else {
-                const parsed = typeof parseMoneyInput === 'function' ? parseMoneyInput(value) : parseFloat(value);
-                if (isNaN(parsed)) return;
-                lineOverrideSendRd($row, { action: 'override_amount', amount: parsed });
-            }
+        onYes: function () { lineOverrideApplyHistoryValueRd(plan); },
+    });
+}
+/* 2026-09-19, H-ui: one pick, 4 possible writes -- which one is decided by what the entry IS, not by
+   where it was clicked, because there is only one place left to click it:
+     the answer word (tri-state) -> save-employee-exemption, that field only (the other half is sent
+                                   back at the value the server already holds -- the endpoint writes
+                                   the pair, so leaving it out would reset it)
+     a hand-added line          -> update-manual-line, amount only
+     the calculated figure      -> line-override.remove / statutory-line-override.remove; it means
+                                   "drop what somebody put here", never "save this number as one"
+     any other figure           -> line-override.save with that figure */
+function lineOverrideApplyHistoryValueRd(plan) {
+    const line = plan.line;
+    if (plan.kind === 'text') {
+        statutoryExemptionSendRd(plan.$row, statutoryExemptionFieldRd(line), plan.value);
+        return;
+    }
+    const amount = typeof parseMoneyInput === 'function' ? parseMoneyInput(plan.value) : parseFloat(plan.value);
+    if ((line.line_type || 'earning_deduction') === 'manual_line') {
+        manualLineAmountOnlyUpdateRd(line, amount);
+        return;
+    }
+    if (plan.isComputed) {
+        lineOverrideSendRd(plan.$row, { action: 'remove' });
+        return;
+    }
+    if (isNaN(amount)) return;
+    lineOverrideSendRd(plan.$row, { action: 'override_amount', amount: amount });
+}
+/* A pick out of a hand-added line's history changes exactly ONE thing: the amount. Everything else
+   is sent back at the value the row already holds, read off the raw manual line the loader kept --
+   update-manual-line takes the whole row, so a field left out is a field cleared, not one kept. */
+function manualLineAmountOnlyUpdateRd(line, amount) {
+    const raw = manualLineRawByIdRd[String(line.manual_line_id)];
+    if (!raw || isNaN(amount)) return;
+    const payload = {
+        id: PAYROLL_RUN_ID,
+        employee_id: lineOverrideEmployeeIdRd(),
+        line_id: raw.id,
+        amount: amount,
+        note: raw.note || '',
+    };
+    if (raw.is_custom) {
+        payload.custom_item_name = raw.item_name_th || raw.item_name_en || '';
+        payload.custom_item_type = raw.item_type;
+    } else {
+        payload.ped_type_id = raw.ped_type_id;
+    }
+    if (raw.payee_type && raw.payee_type !== 'none') {
+        payload.payee_type = raw.payee_type;
+        if (raw.payee_type === 'employee' && raw.payee_employee_id) payload.payee_employee_id = raw.payee_employee_id;
+        if (raw.payee_type === 'company' && raw.bank_account_id) payload.bank_account_id = raw.bank_account_id;
+        if (raw.payee_type === 'other_person' && raw.destination_id) payload.destination = { destination_id: raw.destination_id };
+    }
+    setLineOverrideTableBusyRd(true);
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.update-manual-line`,
+        method: 'POST', contentType: 'application/json', dataType: 'json', data: JSON.stringify(payload),
+        success: function (res) {
+            if (!res.status) { lineOverrideSendFailedRd(null, null, res.message); return; }
+            showSuccess(langData['line_override_saved'] || 'Saved.');
+            lineOverrideAfterWriteRd();
         },
+        error: function () { lineOverrideSendFailedRd(null, null, null); },
     });
 }
 // `api/payroll-run.sync-lines-for-employee` answers 2 unrelated questions in one response (see
@@ -4976,26 +5143,34 @@ function loadSyncLineOverridesRd() {
         // draw its History column without knowing which rows have edits, and since 4a-2 the
         // hand-added lines are rows of it too. Rendering as each one lands would redraw the whole
         // table 2 extra times, which is visible as a flicker on every open.
+        // 2026-09-19, H-ui: `line-history` with no line named, not `line-override-history` -- the
+        // badge has to count what the table can SHOW, which since H-backend is overrides plus the
+        // hand-added lines plus the tri-state answer. The old endpoint answers a narrower question
+        // (overrides only, grouped oldest-first) and the Payroll Run Audit report is built on that
+        // shape, so it is left exactly as it is rather than widened.
         $.when(
-            lineOverrideSideRequestRd('api/payroll-run.line-override-history', employeeId),
+            lineOverrideSideRequestRd('api/payroll-run.line-history', employeeId),
             lineOverrideSideRequestRd('api/payroll-run.manual-lines', employeeId)
         ).done(function (historyRes, manualRes) {
             const payload = (historyRes && historyRes.status && historyRes.data) ? historyRes.data : null;
             lineOverrideHistoryRd = { byKey: {}, historyAvailable: payload ? !!payload.history_available : true, startDate: payload ? payload.history_start_date : null };
-            (payload && payload.lines ? payload.lines : []).forEach(function (line) {
-                lineOverrideHistoryRd.byKey[line.line_type + '|' + line.item_code] = line;
+            (payload && payload.rows ? payload.rows : []).forEach(function (row) {
+                const key = lineOverrideHistoryKeyRd(row.line_type, row.item_code);
+                (lineOverrideHistoryRd.byKey[key] || (lineOverrideHistoryRd.byKey[key] = [])).push(row);
             });
             const manual = (manualRes && manualRes.status && manualRes.data) ? manualRes.data : [];
             // Same response, second half (PayrollController::syncLinesForEmployee) -- the TH_PIT/TH_SSO
             // rows are rendered from it, so it is set BEFORE the table draws, never after.
             lineOverrideExemptionRd = res.exemption || null;
+            // Held raw as well: a pick out of a hand-added line's history rewrites that line through
+            // update-manual-line, which takes the WHOLE row -- so the fields the table's own shape
+            // drops (custom name, destination, bank account) have to still be reachable.
+            manualLineRawByIdRd = {};
+            manual.forEach(function (line) { manualLineRawByIdRd[String(line.id)] = line; });
             renderLineOverrideTableRd((res.data || []).concat(manual.map(manualLineToTableRowRd)), res.run_settings, lineOverrideHostRd.mode);
             refreshBreakdownFooterStateRd();
         });
     });
-}
-function lineOverrideRowByCodeRd(itemCode) {
-    return lineOverrideMountRd().find(`tr.lo-row[data-item-code="${itemCode}"]`);
 }
 // Flipping the switch changes what this employee gets paid, in both directions -- so both directions
 // ask, and neither writes anything until the answer is yes. A cancelled confirm puts the switch back
@@ -5118,50 +5293,6 @@ function statutoryExemptionSendRd($row, field, value, $busyBtn) {
     statutoryExemptionRequestRd(changes, function (ok, message) {
         if (!ok) { lineOverrideSendFailedRd($row, $busyBtn, message); return; }
         showSuccess(langData['line_override_saved'] || 'Saved.');
-        lineOverrideAfterWriteRd();
-    });
-}
-/* "Back to what the system decided", for ONE row. On an ordinary row that is dropping its override,
-   which is what it has always been. On a tri-state row it is dropping the answer somebody chose --
-   back to 'inherit', the value no switch position can express -- and, if the same row also carries an
-   amount override, that too: both are "what somebody put here instead". Sent in order, never in
-   parallel: each write recalculates the whole run inside itself. */
-function lineOverrideRestoreRowRd($row) {
-    const field = String($row.data('exemption-field') || '');
-    const resetExemption = !!field && statutoryExemptionStateRd(field) !== 'inherit';
-    const dropOverride = !!($row.data('orig-action') || '');
-    if (!resetExemption && !dropOverride) return;
-    let failMessage = null;
-    const calls = [];
-    if (resetExemption) {
-        const changes = {};
-        changes[field] = 'inherit';
-        calls.push(function (next) {
-            statutoryExemptionRequestRd(changes, function (ok, message) {
-                if (!ok) { failMessage = message || ''; }
-                next(ok);
-            });
-        });
-    }
-    if (dropOverride) {
-        calls.push(function (next) {
-            lineOverrideRequestRd($row.data('line-type'), lineOverridePayloadRd($row.data('item-code'), { action: 'remove' }), 'remove',
-                function (ok, message) {
-                    if (!ok) { failMessage = message || ''; }
-                    next(ok);
-                });
-        });
-    }
-    setLineOverrideTableBusyRd(true);
-    runSequentialAjaxRd(calls, function () {
-        setLineOverrideTableBusyRd(false);
-        if (failMessage !== null) {
-            showError(failMessage || langData['save_failed'] || 'Could not save.');
-        } else {
-            showSuccess(langData['line_override_saved'] || 'Saved.');
-        }
-        // Either way: on a 2-call restore the first one may have landed, so the table has to show
-        // what the server really holds now.
         lineOverrideAfterWriteRd();
     });
 }
@@ -5854,7 +5985,7 @@ function lineFormSectionsRd(ctx) {
     if (!ctx || ctx.kind !== 'override') {
         // The manual form as it always was: the deduction/earning split still decides the payee
         // block (syncManualLineTypeDependentsRd), so this says "editable" and lets that decide.
-        return { item: true, computed: false, payee: 'edit', useComputed: false };
+        return { item: true, computed: false, payee: 'edit' };
     }
     const line = ctx.overrideLine || {};
     const source = line.source || '';
@@ -5864,9 +5995,10 @@ function lineFormSectionsRd(ctx) {
     } else if (source === 'ped' && line.payee && line.payee.payee_type) {
         payee = 'readonly';
     }
-    // 2026-09-18, 4b: also for a tri-state row whose answer is not 'inherit' but whose amount was
-    // never overridden -- this button is the ONLY way back to 'inherit', so it has to be there.
-    return { item: false, computed: true, payee: payee, useComputed: !!line.override_action || statutoryExemptionChangedRd(line) };
+    // 2026-09-19, H-ui: no `useComputed` slot any more. "Back to what the system calculated" is a row
+    // of the line's own history table (its top one), which is where every other value this line has
+    // ever held is already listed -- one way back, not two.
+    return { item: false, computed: true, payee: payee };
 }
 function applyLineFormSectionsRd(sections, ctx) {
     $('#manualLineItemCol').toggleClass('d-none', !sections.item);
@@ -5921,12 +6053,8 @@ function openManualLineFormRd(ctx) {
     lineFormApplyTitleRd(ctx, isEdit);
     // Built per open, not toggled: the primary button's LABEL is the difference between adding and
     // saving an edit, and modalFooterButtonsHtml() (§9/§11) is what keeps the pair from drifting on
-    // size/class. Primary left, [ปิด] right -- §4's order. The LEFT slot exists only on a line that
-    // really carries an override to drop (§9's "enable = มีของให้ทำจริง").
+    // size/class. Primary left, [ปิด] right -- §4's order.
     $('#manualLineFormFooter').html(modalFooterButtonsHtml({
-        left: sections.useComputed
-            ? { id: 'btnLineFormUseComputed', key: 'line_override_use_computed', fallback: 'Use the calculated value' }
-            : null,
         primary: { id: 'btnSaveManualLine', key: isEdit ? 'save' : 'add_line', fallback: isEdit ? 'Save' : 'Add Line' },
         secondary: { key: 'close', fallback: 'Close', dismiss: true },
     }));
@@ -6162,14 +6290,6 @@ function lineFormCloseRd() {
     $(el).data('dirtyGuardBypass', true);
     inst.hide();
 }
-// The footer's left slot: drop this line's override and go back to what the engine calculated. Same
-// confirm, same request as the history menu's own calculated row -- reached from the form because
-// that is where both figures are on screen together.
-$(document).on('click', '#btnLineFormUseComputed', function () {
-    const ctx = manualLineFormCtxRd;
-    if (!ctx || ctx.kind !== 'override') return;
-    lineOverrideConfirmApplyHistoryValueRd(ctx.overrideLine.code, '', true, lineFormCloseRd);
-});
 // Adding and editing differ in 2 places only: the endpoint, and one extra id in the body. Everything
 // else -- validation, the busy lock, what happens after -- is deliberately one path.
 function submitManualLineFormRd($btn) {
