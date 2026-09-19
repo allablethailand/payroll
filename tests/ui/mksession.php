@@ -137,6 +137,8 @@ if (in_array('--cleanup', array_slice($argv, 1), true)) {
         foreach ([
             'line_overrides' => 'payroll_run_line_overrides',
             'line_override_history' => 'payroll_run_line_override_history',
+            // 2026-09-19, H-ui: the tri-state answer this tool now writes, for the same reason.
+            'employee_exemptions' => 'payroll_run_employee_exemptions',
         ] as $label => $table) {
             $sweep = $pdo->prepare("DELETE t FROM `{$table}` t
                 JOIN `payroll_runs` r ON r.id = t.run_id
@@ -169,13 +171,18 @@ if (in_array('--cleanup', array_slice($argv, 1), true)) {
     $historyLeft = $runId > 0
         ? (int)$pdo->query("SELECT COUNT(*) FROM `payroll_run_line_override_history` WHERE run_id = " . $runId)->fetchColumn()
         : 0;
+    $exemptionsLeft = $runId > 0
+        ? (int)$pdo->query("SELECT COUNT(*) FROM `payroll_run_employee_exemptions` WHERE run_id = " . $runId)->fetchColumn()
+        : 0;
     $result['line_overrides_left'] = $overridesLeft;
     $result['line_override_history_left'] = $historyLeft;
+    $result['employee_exemptions_left'] = $exemptionsLeft;
     $result['fixture_still_present'] = !empty($result['run_still_present'])
         || (int)($result['run_detail_rows_left'] ?? 0) > 0
         || (int)($result['manual_lines_left'] ?? 0) > 0
         || $overridesLeft > 0
         || $historyLeft > 0
+        || $exemptionsLeft > 0
         || (int)($result['recurring_fixture_left'] ?? 0) > 0;
 
     unlink(STATE_FILE);
@@ -259,6 +266,11 @@ if (in_array('--with-recurring', array_slice($argv, 1), true)) {
 // "คืนค่าระบบทั้งหมด" has a row to act on.
 $model->addManualLine($runId, COMP_ID, $employeeId, null, 1234.50, ADMIN_EMPLOYEE_ID, true, null, 'UI test bonus', 'earning');
 $model->lineOverrideSave($runId, COMP_ID, $employeeId, '__base_salary__', 'override_amount', 28500.00, null, ADMIN_EMPLOYEE_ID, true);
+// 2026-09-19, H-ui: and one tri-state answer, which is the THIRD kind of edit the history table can
+// show and the only one this fixture never produced -- so TH_PIT's own history had nothing in it to
+// measure against. SSO is left on 'inherit' on purpose: the pair is written together, and a row that
+// was NOT answered is as much a case as one that was.
+$model->saveEmployeeExemption($runId, COMP_ID, $employeeId, 'no', 'inherit', 'UI test exemption', ADMIN_EMPLOYEE_ID, true);
 
 // A real session file, written where this install's own PHP will read it back.
 session_id('uitest' . bin2hex(random_bytes(8)));
