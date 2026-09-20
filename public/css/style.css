@@ -7223,9 +7223,17 @@ html, body {
        imperceptible for an icon-tile glyph. */
     font-size: var(--fs-xs);
 }
-.rd-report-tile-orange { background: var(--c-primary); }
-.rd-report-tile-purple { background: #6f5fd6; }
-.rd-report-tile-green { background: #17c88b; }
+/* 2026-09-20, 3e-1 round 1 follow-up: the 3 per-report-type tile colours are gone -- orange (which
+   was --c-primary) plus a purple and a green that were both raw hex literals sitting outside
+   tokens.css (rules.md 12 rule 1), and purple is not a colour this app's palette has at all. Report
+   TYPE is a category, not a status: rules.md 0.1 gives colour exactly 2 jobs (say what to do next /
+   say a decision is needed) and a report being "statutory" rather than "internal" is neither. One
+   neutral tile for every row; the per-type ICON stays, because an icon IS allowed to carry the
+   category (rules.md 7). The retired class names were .rd-report-tile-orange/-purple/-green. */
+.rd-report-tile {
+    background: var(--c-bg-subtle);
+    color: var(--c-text-muted);
+}
 #runDetailTabs .nav-link.active {
     color: #b45f00;
     font-weight: 600;
@@ -7240,35 +7248,14 @@ html, body {
 #runDetailTabsContent {
     margin-top: var(--sp-4);
 }
-/* 2026-09-13, Round 3 item 3b follow-up -- the retired card's own generic per-pane padding (below,
-   removed) supersedes 2026-09-09's "every pane gets the same padding automatically" fix; that fix's
-   OWN reasoning (every pane should look consistent, not just 3 hardcoded ids) is preserved here, just
-   inverted: #run-employee-pane (this round's own focus) is now the ONE deliberately flush/full-width
-   exception -- its table+filter-bar reach the full content width -- while every OTHER pane below
-   still visually depends on this padding for its CURRENT look (Details/#run-details-pane's own
-   .detail-section boxes below, Action History/#run-history-pane's timeline, Reports/Cash Payments/
-   Bank Account Assignment/Third-Party Remittance's own tables -- none of these 6 are in this round's
-   own scope). TEMPORARY, per-pane instead of global on purpose (explicit instruction: "จะจัดจริงใน
-   3e") -- 3e is where each of these tabs gets its own real content-width decision, this is a
-   stopgap copy of the old card's exact padding values so nothing else visibly changes yet. */
-#run-details-pane,
-#run-reports-pane,
-#run-cash-pane,
-#run-bank-account-pane,
-#run-remittance-pane,
-#run-history-pane {
-    padding: 1.75rem 1.5rem;
-}
-@media (min-width: 768px) {
-    #run-details-pane,
-    #run-reports-pane,
-    #run-cash-pane,
-    #run-bank-account-pane,
-    #run-remittance-pane,
-    #run-history-pane {
-        padding: 2rem 2rem;
-    }
-}
+/* 2026-09-20, 3e-1 round 1: the per-pane padding stopgap that lived here (`1.75rem 1.5rem`, `2rem`
+   from 768px up, on 6 of the 7 panes -- #run-employee-pane was already the flush exception) is
+   REMOVED. It was written in 3b explicitly as "TEMPORARY...จะจัดจริงใน 3e", and 3e is now. rules.md
+   6: each `.tab-pane` "ชิดเนื้อหาโดยตรง...ไม่มีขอบ/พื้น/padding ข้างของตัวเอง", the only spacing from
+   the tab bar being `--sp-4`, which #runDetailTabsContent's own margin-top already provides. All 7
+   panes now start exactly where #runDetailTabs itself starts. Nothing INSIDE any pane changed: the
+   Details pane's .detail-section boxes and the Action History timeline keep their own padding and
+   simply span the full content width now, which is what the rule asks for. */
 /* 2026-09-16, D2: the add/edit line form is a modal of its own (#manualLineFormModal) instead of a
    block sitting inside a tab, so it has no surface of its own any more -- the modal IS the surface,
    and a tinted panel inside a modal body is the "card ซ้อน card" §9 rules out. Only the spacing
@@ -7614,7 +7601,16 @@ html, body {
    `ms-1`/`ms-2` utility classes) and the length-vs-search / info-vs-pagination left/right split
    (`justify-content-between` on the row, pure flex distribution) are both independent of the gutter
    variable, so neither is affected by removing it. */
-#tb_run_detail_wrapper .row {
+#tb_run_detail_wrapper .row,
+/* 2026-09-20, 3e-1 round 1: the same one-line, per-wrapper collapse for the 4 OTHER DataTables on
+   this page. With the pane padding gone (above), Bootstrap's own grid gutter on the layout row that
+   datatables.net-bs5 generates was the remaining 9px that made every table sit indented from the
+   callout/empty-state beside it -- measured, not guessed. Scoped per wrapper id exactly like the
+   line above it, so `--bs-gutter-x` is untouched everywhere else in the app. */
+#tb_run_reports_wrapper .row,
+#tb_run_cash_wrapper .row,
+#tb_run_bank_account_wrapper .row,
+#tb_run_remittance_wrapper .row {
     --bs-gutter-x: 0;
 }
 /* 2026-09-09, real bug found and fixed (explicit report: "ปุ่มในตาราง Employee อยากให้แสดงอยู่ในแถวเดียว

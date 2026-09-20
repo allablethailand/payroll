@@ -1060,6 +1060,7 @@
     "confirm_remittance_retry_message": "Revert this back to pending so it can be retried?",
     "no_remittances": "No third-party remittances for this run.",
     "no_cash_payments": "No cash-paying employees in this run.",
+    "bank_account_no_employees": "No bank-paying employees in this run.",
     "confirm_mark_paid_title": "Mark as Paid",
     "confirm_mark_paid_message": "Confirm this cash payment has been handed over to the employee?",
     "confirm_mark_unpaid_title": "Mark as Unpaid",

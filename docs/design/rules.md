@@ -244,8 +244,11 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
     — **แผนสำหรับรอบ 4**: ถ้าเจอหน้าที่สอง (นอกจาก Payroll Detail) ที่ต้องการ live-update ค่าเดี่ยวแบบนี้
     ให้ `stat-card.php`/`$stat` รับ `value_id`/`sub_id` (optional, string) เพิ่ม — เมื่อระบุ ให้ partial
     ใส่ `id="<?=$value_id?>"` บน `.stat-value`/`.stat-sub` แทนที่จะปล่อยไม่มี id เลย caller เดิมที่ไม่ส่งมา
-    ไม่กระทบอะไร (id ไม่ใช่ required field) — **ยังไม่ทำตอนนี้เพราะมีแค่ 1 หน้าที่ต้องการ** ไม่อยากเดา
-    shape ล่วงหน้าจากตัวอย่างเดียว
+    ไม่กระทบอะไร (id ไม่ใช่ required field) — **ทำแล้ว 2026-09-20 (3e-1) ตาม shape นี้เป๊ะ** ตอน Cash
+    Payments/Third-Party Remittance ของ Payroll Detail ย้ายมาใช้ partial (6 การ์ด, live-update ค่าเดี่ยว)
+  - **`label_i18n` (optional, 3e-1)** — `data-i18n="<key>"` บน `.stat-label` การ์ดที่ render จาก PHP
+    ถึงจะสลับภาษาสดได้ (แอปแปล DOM ผ่าน `updateText()` sweep เท่านั้น) รูปแบบเดียวกับ field `i18n` ของ
+    breadcrumb ใน `page-header.php` — `$stat['label']` ยังเป็นข้อความจริงเหมือนเดิม key แค่ mark ไว้
 - Dashboard: ไม่มี welcome card, ไม่มีกราฟที่มีข้อมูลแท่งเดียว — เนื้อหาต้องเป็น "งานที่ต้องทำ" ก่อน (รออนุมัติ/อนุมัติแล้วรอทำต่อ/ค้างนาน) ตามด้วยตัวเลขสรุป
 - ปุ่ม `?` ลอย: เอาออก — ความช่วยเหลือให้อยู่ใน helper text หรือลิงก์ "วิธีใช้" ใน page header เท่านั้น
 - Max content width ไม่จำกัด (ตารางกว้าง) แต่ **padding ซ้าย/ขวาของ content เท่ากันทุกหน้า = `--sp-5`** และตาราง/การ์ด **เต็มความกว้าง content เสมอ** ไม่มี padding ซ่อนในตาราง (ปัญหา "ตารางไม่เต็มขอบ")
@@ -1197,6 +1200,15 @@ approved → ...) ไม่ใช่สลับหน้า)
   - partial/ฟังก์ชันนี้เอง**ไม่มีความเห็นว่ากรณีไหนใช้ความหมายไหน** — caller เป็นคนตัดสิน ยกเว้น
     `initSharedDataTable()`'s own `emptyState` option ด้านล่างที่ **auto-pick ให้เอง** สำหรับ DataTable
     โดยเฉพาะ (ที่เดียวที่ auto-detect จริง)
+- **"ยังไม่พร้อม" = empty-state, "ประกาศคู่กับเนื้อหาที่ยังเห็นอยู่" = callout** (3e-1) — tab ที่ซ่อนเนื้อหา
+  ทั้งหมดจนกว่ารอบจะอนุมัติ (Cash Payments/Bank Account/Third-Party Remittance) ใช้ empty-state เพราะ
+  **ไม่มีอะไรให้ดูจริงๆ**; tab ที่ยังโชว์ตาราง/รายการอยู่แต่กดไม่ได้ (Reports — แถวครบ ปุ่ม `disabled`)
+  ใช้ **callout** เหนือเนื้อหานั้น ห้ามใช้ empty-state เพราะมันจะบอกว่า "ไม่มีข้อมูล" ทั้งที่มี —
+  tone ของ callout แบบนี้เป็น `neutral` (เป็นข้อเท็จจริงว่ารอบอยู่ขั้นไหน ไม่ใช่สิ่งที่ต้องทำใน tab นี้)
+- **`title_i18n`/`text_i18n`/`text_id` (optional, 3e-1)** ของ `empty-state.php` — 2 ตัวแรกคือ `data-i18n`
+  บน title/text (เหตุผลเดียวกับ `label_i18n` ของ stat-card: PHP include ที่ไม่มี marker จะค้างภาษาเดิม
+  ตลอดอายุหน้า), `text_id` คือ `id` บนบรรทัด text สำหรับ caller ที่ต้องแทนบรรทัดนั้นสดๆ (เช่นเอา error
+  message จาก server มาแทนประโยคมาตรฐาน) — JS twin `emptyStateHtml()` รับ `text_id` เหมือนกัน
 - **partial `app/views/partials/empty-state.php`** (`$icon, $title, $text, $action`) + JS twin
   **`emptyStateHtml({icon, title, text, action})`** (`app.js`) — รูปแบบเดียวกันเป๊ะทั้งสองฝั่ง
   (`action.onClick` เป็นของ JS ฝั่งเดียวเท่านั้น — จำเป็นเพราะ caller ที่ re-render block นี้ซ้ำๆ เช่น

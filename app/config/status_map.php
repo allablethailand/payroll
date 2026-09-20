@@ -162,6 +162,18 @@ return [
         'failed' => ['label_key' => 'remittance_status_failed', 'tone' => 'danger'],
     ],
 
+    // payroll_run_cash_payments.status (2026-09-20, 3e-1) -- the Cash Payments tab's own per-employee
+    // paid/unpaid marker, migrated off a hand-written `bg-success-subtle`/`bg-secondary-subtle` pair
+    // in payroll/detail.js. label_key values are the 2 keys that renderer already used verbatim
+    // (status_paid/status_unpaid), and the tones are what those subtle classes already meant, so the
+    // badge reads byte-identically before and after. 'unpaid' is NEUTRAL, not warning: on a run that
+    // has only just been approved every row is unpaid, and that is the normal starting state, not
+    // something wrong.
+    'cash_payment_status' => [
+        'paid' => ['label_key' => 'status_paid', 'tone' => 'success'],
+        'unpaid' => ['label_key' => 'status_unpaid', 'tone' => 'neutral'],
+    ],
+
     // attendance_records.status. 'holiday' is NEUTRAL (not blue/info) -- confirmed: purely
     // informational, nothing for the viewer to act on.
     'attendance_status' => [

@@ -1351,3 +1351,59 @@ badge "แก้ไข n" ต่อบรรทัดในสลิปนับ
 body เหมือนกันทุกไบต์ (ตอนนี้ ~บรรทัด 5043 และ ~5185) — ไม่ error เพราะเป็น function declaration
 ตัวหลังทับตัวแรก แต่เป็น dead code ที่รอ drift · H-ui ไม่แตะตามกฎ "ห้ามย้าย/จัดลำดับฟังก์ชันที่ไม่ได้ลบ"
 **Source:** H-ui (2026-09-19)
+
+---
+
+## 3e-1 เก็บตก — Payroll Detail (2026-09-20)
+
+**(ก) `columnFilters` + sticky thead ของ 4 ตารางแท็บนอกสลิป** — `#tb_run_reports`/`#tb_run_cash`/
+`#tb_run_bank_account`/`#tb_run_remittance` ยังไม่มี `columnFilters` เลยสักตัว (§7 ให้ทุก `<th>` ที่มี
+ข้อมูลจริงต้อง sort+filter) · ตัดสินแล้วว่าไม่ทำในรอบ 3e-1 รวมกับ sticky thead ไปทำรอบ 4 ทีเดียว
+
+**(ข) lint §12 rule 5 — `.DataTable(` ตรง 6 จุดใน `payroll/detail.js`** (`:1116` `#tb_report_history`,
+`:6483` `#tb_join_employees` + การเรียกซ้ำของทั้งคู่) ยังไม่ผ่าน `initSharedDataTable()` · ตัดสินแล้วว่า
+ไม่ทำในรอบนี้ — เป็นตารางใน modal คนละสายกับ 4 แท็บ
+
+**(ค) `<th data-i18n>` — ปิดแล้วสำหรับ `payroll/detail.php` (2026-09-20 รอบแก้เพิ่ม 1)** · ที่เหลือ
+ทั้งแอปคือ **47 จุดใน `app/views/layout/modals.php`** ซึ่งเป็น global include ของทุกหน้า (`footer.php`)
+— แก้ที่นั่นกระทบทุกหน้าพร้อมกัน ต้องเป็นงานของตัวเองพร้อมวัดหน้าอื่น ไม่ใช่งานของหน้า Detail ·
+ยืนยันด้วย `tests/ui/m3e1_tabs_shared.js` cell 12 (owned = 0, page-wide = 47)
+
+**(ง) CSS `.reports-not-ready-banner*` (`public/css/style.css:10866-10896`, 4 rule) ยังลบไม่ได้** —
+consumer ไม่เป็น 0: `app/views/reports/index.php:126-131` และ `:158-163` ยังใช้อยู่ · ลบได้เมื่อหน้า
+Reports ย้ายมา callout ด้วย (รอบของหน้านั้นเอง)
+
+**(จ) lint §12 rule 3 ที่ยังเหลือในขอบเขตใกล้เคียง** — (`detail.php:156` `btn-outline-dark` ปิดแล้ว
+ในรอบแก้เพิ่ม 1 พร้อมกับการแปลง banner) · `detail.js:1559/1581/1589` `text-success` ใน Run Settings summary (คู่กับ `text-danger` ที่กฎยอมให้
+อยู่แล้ว — ต้องตัดสินพร้อมกันทั้งคู่ ไม่ใช่เอาสีออกข้างเดียว), `:1747` `btn-success` ของปุ่มตัดสินใน
+Approval Timeline (ควรเป็น `.btn-decision-success` ตาม §4) · `stateBadgeRd()` (`detail.js:44-57`)
+ยังเป็น map สีเขียนมือที่ §5 ห้าม ใช้อยู่ 2 ที่ (page-header badge, Action History timeline) —
+`status_map.php`'s `run_state` ครอบค่าครบอยู่แล้ว แต่ Action History สั่งให้แตะเฉพาะ empty state
+รอบนี้ จึงไม่ทำ
+
+
+**Source:** 3e-1 (2026-09-20)
+
+**(ช) `.tab-pane` ของหน้าอื่นยังมี padding ของตัวเอง** — 3e-1 ตัดของ Payroll Detail ครบทั้ง 7 pane แล้ว
+(กฎ §6 บอกว่าใช้กับ **ทุกหน้า** ที่มี top-level page tab) · หน้าอื่นที่มี `.nav-tabs` + `.tab-content`
+ยังไม่ถูกไล่ · ทำพร้อมรอบของหน้านั้น ๆ ไม่ sweep ทีเดียว
+
+**(ซ) `--bs-gutter-x: 0` ยังต้องเขียนต่อ wrapper ทีละตาราง** — ตอนนี้มี 5 id ใน `style.css`
+(`#tb_run_detail_wrapper` + 4 ตัวที่ 3e-1 เพิ่ม) · ทุกตาราง DataTables ในแอปมีปัญหา gutter เดียวกัน
+ทั้งหมด ถ้าจะให้จบควรเป็นกฎเดียวที่ `.dt-container > .row` แต่นั่นกระทบทุกหน้าพร้อมกัน ต้องวัดก่อน
+
+**(ฌ) sort glyph ของ DataTables เป็น ▲ กับ ▼ 2 ตัวติดกันทุกคอลัมน์ที่ sort ได้** — `.dt-column-order`
+1 element ที่มี `::before` = ▲ และ `::after` = ▼ (ของ `dataTables.bootstrap5.css` เอง, ยืนยันด้วย
+computed content) · **ไม่ใช่ผลของ 3e-1** (มาก่อนการย้าย `data-i18n` เข้า `<span>` — DataTables สร้าง
+element นี้เองไม่ว่า `<th>` ข้างในจะเป็นอะไร) · ถ้าจะเหลือลูกศรเดียวต้อง override CSS กลาง กระทบทุกตาราง
+
+**(ญ) 3e-3 — tab ประวัติเป็น DataTable + column filter** — ใช้ `logs` จาก `api/payroll-run.get` เดิม
+ไม่แตะ backend · คอลัมน์ เวลา / ผู้ทำ / การกระทำ / สถานะรอบ / หมายเหตุ / อุปกรณ์·IP · ก่อนลบ
+`.apv-history-*` ต้อง grep consumer หน้าอื่นก่อน · `note` ที่ backend ส่งมาเป็นอังกฤษ = งาน
+"Batch 5 error code i18n" คนละก้อน
+
+**(ฎ) `#btnMergeIntoTarget` ยังเป็น `btn-primary` + ไอคอน `fa-code-merge` ในปุ่มข้อความ** — §4 ให้ปุ่ม
+ข้อความไม่มีไอคอน · 3e-1 รอบแก้เพิ่ม 1 เปลี่ยนแค่กล่อง `.alert` ที่ครอบเป็น callout ไม่แตะปุ่ม เพราะ
+เป็น primary action จริงของ flow merge ต้องตัดสินพร้อมกับ flow นั้น
+
+**Source:** 3e-1 รอบแก้เพิ่ม 1 (2026-09-20)

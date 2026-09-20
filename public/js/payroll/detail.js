@@ -470,14 +470,18 @@ function rdReportLabel(row) {
 // TH_SSO110/TH_PND1[statutory]/BANK_TRANSFER_FILE[payment] -- PAYROLL_REGISTER[internal] is filtered
 // out above, it has its own dedicated button) but `internal` is still mapped here for consistency/
 // future-proofing, same reasoning reports/index.js's own REPORT_TYPE_ICONS map already uses.
+// 2026-09-20, 3e-1 round 1: the `bg` half of each entry (rd-report-tile-orange/-purple/-green) is
+// gone -- a report's TYPE is a category, and rules.md 0.1 gives colour only 2 jobs, neither of which
+// is "this row is statutory rather than internal". The tile is one neutral swatch for every row now
+// (style.css); the per-type ICON stays, since an icon may carry a category (rules.md 7).
 const RD_REPORT_TILE_BY_TYPE = {
-    statutory: { bg: 'rd-report-tile-orange', icon: 'fa-landmark' },
-    payment: { bg: 'rd-report-tile-purple', icon: 'fa-money-check-dollar' },
-    internal: { bg: 'rd-report-tile-green', icon: 'fa-file-lines' },
+    statutory: { icon: 'fa-landmark' },
+    payment: { icon: 'fa-money-check-dollar' },
+    internal: { icon: 'fa-file-lines' },
 };
 function rdReportIconTileHtml(row) {
     const tile = RD_REPORT_TILE_BY_TYPE[row.report_type] || RD_REPORT_TILE_BY_TYPE.internal;
-    return `<span class="rd-report-tile ${tile.bg} me-2"><i class="fa-solid ${tile.icon}"></i></span>`;
+    return `<span class="rd-report-tile me-2"><i class="fa-solid ${tile.icon}"></i></span>`;
 }
 // 2026-08-29, same-day follow-up: "ที่โชว์ในตารางประวัติการ Download มีเก็บครบหรือยังถ้ายังไม่ครบเก็บเพิ่มให้
 // ครบครับ" -- os_name/browser_version are now captured too (see the migration's own header comment),
@@ -528,7 +532,13 @@ function loadRunReportsTab() {
         // the first time this tab is actually visible (this tab isn't the default-active one, so this
         // call itself usually runs while the tab-pane is still display:none -- same gotcha
         // #tb_run_detail's own Employee-tab handler already exists for).
+        // 2026-09-20, 3e-1 round 1: this table is a FIXED catalogue of the reports this run can
+        // produce (one row per registered generator, never paginated in practice), so DataTables'
+        // pageLength select, "Showing 1 to N of N" line and pagination bar are three controls that
+        // can never do anything. Passed through `dtOptions` -- a per-table decision, nothing about
+        // initSharedDataTable() itself changes, and every other table keeps its controls.
         tb_run_reports_dt = initSharedDataTable('#tb_run_reports', {
+            dtOptions: { paging: false, info: false, lengthChange: false },
             searchThreshold: 5,
             renderRows: function () {
                 $('#runReportsTableBody').html(rdReportsRows.map(row => {
@@ -541,7 +551,7 @@ function loadRunReportsTab() {
                         <td data-order="${row.last_downloaded_at || ''}">${row.last_downloaded_at ? formatDisplayDateTime(row.last_downloaded_at) : `<span class="text-muted">${langData['report_never_downloaded'] || 'Never'}</span>`}</td>
                         <td class="text-center">
                             <div class="d-flex gap-1 justify-content-center">
-                                <button type="button" class="btn btn-link btn-circle-action text-primary btn-report-preview" data-code="${row.code}" ${disabledAttr} title="${rowIsReady ? (langData['report_preview_and_download'] || 'Preview & Download') : notReadyTitle}"><i class="fa-solid fa-download"></i></button>
+                                <button type="button" class="btn btn-link btn-circle-action btn-report-preview" data-code="${row.code}" ${disabledAttr} title="${rowIsReady ? (langData['report_preview_and_download'] || 'Preview & Download') : notReadyTitle}"><i class="fa-solid fa-download"></i></button>
                                 <button type="button" class="btn btn-link btn-circle-action text-secondary btn-report-history" data-code="${row.code}" ${disabledAttr} title="${rowIsReady ? (langData['report_view_history'] || 'View Download History') : notReadyTitle}"><i class="fa-solid fa-clock-rotate-left"></i></button>
                             </div>
                         </td>
@@ -596,14 +606,25 @@ function loadRunCashTab() {
         // comma-formatted/localized display text (CLAUDE.md's own Table convention on this exact bug).
         tb_run_cash_dt = initSharedDataTable('#tb_run_cash', {
             searchThreshold: 5,
-            dtOptions: { language: { emptyTable: langData['no_cash_payments'] || 'No cash-paying employees in this run.' } },
+            // 2026-09-20, 3e-1 (§6): DataTables' own one-line `language.emptyTable` replaced by
+            // initSharedDataTable()'s `emptyState`, which renders the shared empty-state component
+            // AND tells the two meanings apart on its own -- "nothing here at all" (this config) vs
+            // "your filter matched none of the rows that ARE here" (the helper's own fixed copy plus
+            // a Clear action). The one-line version could only ever say the first, even when the
+            // second was what had happened. Title only: the sentence this tab already had IS the
+            // whole message, and there is no create action to offer on a run's own cash list.
+            emptyState: { icon: 'fa-solid fa-money-bill-wave', title: langData['no_cash_payments'] || 'No cash-paying employees in this run.' },
             renderRows: function () {
                 $('#runCashTableBody').html(cashRows.map(row => {
                     const name = escapeHtml((currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim());
                     const isPaid = row.status === 'paid';
-                    const badge = isPaid
-                        ? `<span class="badge bg-success-subtle text-success">${langData['status_paid'] || 'Paid'}</span>`
-                        : `<span class="badge bg-secondary-subtle text-secondary">${langData['status_unpaid'] || 'Unpaid'}</span>`;
+                    // 2026-09-20, 3e-1 (rules.md §5: one helper, map in status_map.php, never in a
+                    // view/JS): the hand-written subtle-class pair is the shared badge now, via the
+                    // new 'cash_payment_status' context -- same 2 label keys, same 2 tones, so the
+                    // rendered badge is unchanged; what changes is that it now carries the
+                    // `data-badge="status"` marker and follows a live language switch like every
+                    // other badge in the app.
+                    const badge = statusBadgeHtml(row.status, 'cash_payment_status');
                     const paidByName = currentLang === 'th' ? row.paid_by_name_th : row.paid_by_name_en;
                     const paidAtCell = isPaid ? `${formatDisplayDateTime(row.paid_at)}${paidByName ? `<div class="text-muted small">${escapeHtml(paidByName)}</div>` : ''}` : '-';
                     // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
@@ -611,11 +632,11 @@ function loadRunCashTab() {
                     // former .btn-sm, redundant now that .btn-circle-action sets a fixed 32x32 size).
                     const actionBtn = isPaid
                         ? `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-cash-mark-unpaid" data-id="${row.id}" title="${langData['mark_as_unpaid'] || 'Mark as Unpaid'}"><i class="fa-solid fa-rotate-left"></i></button>`
-                        : `<button type="button" class="btn btn-link btn-circle-action text-success btn-cash-mark-paid" data-id="${row.id}" title="${langData['mark_as_paid'] || 'Mark as Paid'}"><i class="fa-solid fa-check"></i></button>`;
+                        : `<button type="button" class="btn btn-link btn-circle-action btn-cash-mark-paid" data-id="${row.id}" title="${langData['mark_as_paid'] || 'Mark as Paid'}"><i class="fa-solid fa-check"></i></button>`;
                     return `<tr>
                         <td>${escapeHtml(row.employee_no)}</td>
                         <td>${name}</td>
-                        <td class="text-end" data-order="${Number(row.amount) || 0}">${fmtNum(row.amount)}</td>
+                        <td data-order="${Number(row.amount) || 0}">${fmtNum(row.amount)}</td>
                         <td class="text-center">${badge}</td>
                         <td data-order="${isPaid ? row.paid_at : ''}">${paidAtCell}</td>
                         <td class="text-center"><div class="d-flex gap-1 justify-content-center">${actionBtn}</div></td>
@@ -686,7 +707,7 @@ function loadRunBankAccountTab() {
         // Source are both plain text/badge, no data-order needed.
         tb_run_bank_account_dt = initSharedDataTable('#tb_run_bank_account', {
             searchThreshold: 5,
-            dtOptions: { language: { emptyTable: langData['bank_account_no_employees'] || 'No bank-paying employees in this run.' } },
+            emptyState: { icon: 'fa-solid fa-building-columns', title: langData['bank_account_no_employees'] || 'No bank-paying employees in this run.' },
             renderRows: function () {
                 $('#runBankAccountTableBody').html(rdBankAccountRows.map(row => {
                     const name = escapeHtml((currentLang === 'th' ? `${row.name_th} ${row.surname_th}` : `${row.name_en} ${row.surname_en}`).trim());
@@ -694,11 +715,16 @@ function loadRunBankAccountTab() {
                     const accountCell = row.bank_account_id
                         ? escapeHtml(`${bankName || ''} - ${row.bank_account_name || ''}`)
                         : `<span class="text-danger">${langData['bank_account_unassigned'] || 'No account configured'}</span>`;
-                    const sourceBadgeClass = row.is_overridden ? 'bg-primary-subtle text-primary' : 'bg-secondary-subtle text-secondary';
+                    // 2026-09-20, 3e-1 (rules.md §5: "Badge = สถานะเท่านั้น ไม่ใช่ label ทั่วไป (ประเภท,
+                    // หมวด, ที่มา -> เป็นข้อความธรรมดาหรือคอลัมน์)"). WHERE this employee's paying
+                    // account was resolved from is provenance, not a state that can be acted on, so
+                    // it cannot go through statusBadgeHtml() either -- the rule's own answer for this
+                    // case is plain text. The override case stays distinguishable by weight, not by
+                    // colour: it is the only one of the 4 a human set deliberately on this run.
                     const sourceLabel = langData[RD_BANK_ACCOUNT_SOURCE_LABEL_KEY[row.source]] || row.source;
                     // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
                     // ".btn-circle-action" section) replace the old adjacent .btn-group.
-                    let actionBtns = `<button type="button" class="btn btn-link btn-circle-action text-primary btn-bank-account-edit" data-employee-id="${row.employee_id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>`;
+                    let actionBtns = `<button type="button" class="btn btn-link btn-circle-action btn-bank-account-edit" data-employee-id="${row.employee_id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>`;
                     if (row.is_overridden) {
                         actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-bank-account-remove" data-employee-id="${row.employee_id}" title="${langData['bank_account_remove_override'] || 'Remove Override'}"><i class="fa-solid fa-rotate-left"></i></button>`;
                     }
@@ -706,7 +732,7 @@ function loadRunBankAccountTab() {
                         <td>${escapeHtml(row.employee_no)}</td>
                         <td>${name}</td>
                         <td>${accountCell}</td>
-                        <td class="text-center"><span class="badge ${sourceBadgeClass}">${sourceLabel}</span></td>
+                        <td class="text-center"><span class="${row.is_overridden ? 'fw-semibold' : 'text-muted'}">${escapeHtml(sourceLabel)}</span></td>
                         <td class="text-center"><div class="d-flex gap-1 justify-content-center">${actionBtns}</div></td>
                     </tr>`;
                 }).join(''));
@@ -795,12 +821,6 @@ $(document).on('click', '#btnExportRunBankAccountSummary', function () {
 // comment for why the client-side state check exists at all (purely to show the right empty-state
 // message without a round trip; the server enforces this independently on every mutating action).
 let rdRemittanceRows = [];
-const RD_REMITTANCE_STATUS_BADGE = {
-    pending: 'bg-warning-subtle text-warning',
-    transferred: 'bg-primary-subtle text-primary',
-    success: 'bg-success-subtle text-success',
-    failed: 'bg-danger-subtle text-danger',
-};
 function rdRemittanceDestinationLabel(row) {
     if (row.destination_type === 'company') {
         return langData['remittance_destination_company'] || 'Company';
@@ -841,20 +861,25 @@ function loadRunRemittanceTab() {
         // timestamp), same reason as Cash Payments' own Amount/Paid At columns.
         tb_run_remittance_dt = initSharedDataTable('#tb_run_remittance', {
             searchThreshold: 5,
-            dtOptions: { language: { emptyTable: langData['no_remittances'] || 'No third-party remittances for this run.' } },
+            emptyState: { icon: 'fa-solid fa-money-bill-transfer', title: langData['no_remittances'] || 'No third-party remittances for this run.' },
             renderRows: function () {
                 $('#runRemittanceTableBody').html(rdRemittanceRows.map(row => {
-                    const badgeClass = RD_REMITTANCE_STATUS_BADGE[row.status] || 'bg-secondary-subtle text-secondary';
-                    const badge = `<span class="badge ${badgeClass}">${langData[`remittance_status_${row.status}`] || row.status}</span>`;
+                    // 2026-09-20, 3e-1 (§5): RD_REMITTANCE_STATUS_BADGE (a class map living in this
+                    // file, exactly what §5 forbids) retired in favour of status_map.php's own
+                    // 'remittance_status' context, which already carried these 4 values and the same
+                    // 4 label keys. One tone really changes: 'transferred' was blue
+                    // (`bg-primary-subtle`), the map says warning -- §3 does not use blue at all, and
+                    // "transferred, not yet confirmed" is genuinely still waiting on someone.
+                    const badge = statusBadgeHtml(row.status, 'remittance_status');
                     const failedNote = row.status === 'failed' && row.note ? `<div class="text-danger small">${escapeHtml(row.note)}</div>` : '';
                     const transferredAtCell = row.transferred_at ? formatDisplayDateTime(row.transferred_at) : '-';
                     // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
                     // ".btn-circle-action" section) replace the old adjacent .btn-group.
                     let actionBtns = `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-remittance-breakdown" data-id="${row.id}" title="${langData['remittance_view_breakdown'] || 'View Breakdown'}"><i class="fa-solid fa-list"></i></button>`;
                     if (row.status === 'pending') {
-                        actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-primary btn-remittance-mark-transferred" data-id="${row.id}" title="${langData['mark_as_transferred'] || 'Mark as Transferred'}"><i class="fa-solid fa-paper-plane"></i></button>`;
+                        actionBtns += `<button type="button" class="btn btn-link btn-circle-action btn-remittance-mark-transferred" data-id="${row.id}" title="${langData['mark_as_transferred'] || 'Mark as Transferred'}"><i class="fa-solid fa-paper-plane"></i></button>`;
                     } else if (row.status === 'transferred') {
-                        actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-success btn-remittance-confirm-success" data-id="${row.id}" title="${langData['remittance_confirm_success'] || 'Confirm Success'}"><i class="fa-solid fa-circle-check"></i></button>`;
+                        actionBtns += `<button type="button" class="btn btn-link btn-circle-action btn-remittance-confirm-success" data-id="${row.id}" title="${langData['remittance_confirm_success'] || 'Confirm Success'}"><i class="fa-solid fa-circle-check"></i></button>`;
                         actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-remittance-mark-failed" data-id="${row.id}" title="${langData['mark_as_failed'] || 'Mark as Failed'}"><i class="fa-solid fa-circle-xmark"></i></button>`;
                     } else if (row.status === 'failed') {
                         actionBtns += `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-remittance-retry" data-id="${row.id}" title="${langData['retry'] || 'Retry'}"><i class="fa-solid fa-rotate-left"></i></button>`;
@@ -863,7 +888,7 @@ function loadRunRemittanceTab() {
                         <td>${escapeHtml(rdRemittanceDestinationLabel(row))}</td>
                         <td>${escapeHtml(rdRemittanceDestinationTypeLabel(row.destination_type))}</td>
                         <td class="text-center">${Number(row.employee_count) || 0}</td>
-                        <td class="text-end" data-order="${Number(row.total_amount) || 0}">${fmtNum(row.total_amount)}</td>
+                        <td data-order="${Number(row.total_amount) || 0}">${fmtNum(row.total_amount)}</td>
                         <td class="text-center">${badge}${failedNote}</td>
                         <td data-order="${row.transferred_at || ''}">${transferredAtCell}</td>
                         <td class="text-center"><div class="d-flex gap-1 justify-content-center">${actionBtns}</div></td>
@@ -892,7 +917,7 @@ $(document).on('click', '.btn-remittance-breakdown', function () {
                 <td>${escapeHtml(item.employee_no)}</td>
                 <td>${name}</td>
                 <td>${escapeHtml(item.item_code)}</td>
-                <td class="text-end">${fmtNum(item.amount)}</td>
+                <td class="num col-money">${fmtNum(item.amount)}</td>
             </tr>`;
         }).join(''));
         new bootstrap.Modal(document.getElementById('remittanceBreakdownModal')).show();
@@ -1447,8 +1472,10 @@ function renderMergeTargetBanner(run) {
         // it, so this is a genuine dead end, same category as the sync-side 'target_rejected'
         // status -- swapped to a danger-styled alert with no "it'll resolve on its own" implication.
         const cycleInactive = run.merge_target_cycle_status && run.merge_target_cycle_status !== 'active';
-        $('#mergeTargetWaitingBanner').toggleClass('alert-warning', !cycleInactive).toggleClass('alert-danger', cycleInactive);
-        $('#mergeTargetWaitingBanner i').toggleClass('fa-hourglass-half', !cycleInactive).toggleClass('fa-triangle-exclamation', cycleInactive);
+        // 2026-09-20, 3e-1 round 1: the box is a callout now (see its markup in detail.php), so the
+        // tone swap is `callout-warning`/`callout-danger`. The icon line that went with it is gone --
+        // rules.md 15: a callout carries its meaning in the left border and has no icon at all.
+        $('#mergeTargetWaitingBanner').toggleClass('callout-warning', !cycleInactive).toggleClass('callout-danger', cycleInactive);
         const tpl = cycleInactive
             ? (langData['merge_target_waiting_banner_inactive_text'] || 'The target Payroll Cycle "{cycle}" was deactivated or deleted -- this will never merge automatically. Edit this run to pick a different merge target.')
             : (langData['merge_target_waiting_banner_text'] || 'This run is waiting to merge into the next round of "{cycle}" ({period}), once it\'s created.');
@@ -1573,10 +1600,15 @@ function runSettingsExcludedItemsSummaryHtml(itemOptions, excludedCodes) {
     if (!excludedCodes.length) {
         return `<div class="text-muted small"><i class="fa-solid fa-circle-check me-1 text-success"></i>${langData['run_settings_no_excluded_items'] || "Nothing is excluded -- every item is included in this run's calculation."}</div>`;
     }
+    // 2026-09-20, 3e-1 (rules.md §5: "Badge = สถานะเท่านั้น ไม่ใช่ label ทั่วไป (ประเภท, หมวด, ที่มา
+    // -> เป็นข้อความธรรมดาหรือคอลัมน์)"). These pills carried an ITEM NAME coloured by its item_type --
+    // a category, and one that statusBadgeHtml() structurally cannot render either (that helper draws
+    // the label from status_map.php, and the label here is a row of real data). §5's own answer for
+    // this case is plain text, so that is what this is now: the same names, in the same order, read
+    // as the list they always were. Nothing here was ever a state anyone could act on.
     const excluded = itemOptions.filter(item => excludedCodes.includes(item.item_code));
-    const chipClass = item => item.item_type === 'base_salary' ? 'text-bg-warning-subtle text-warning-emphasis'
-        : item.item_type === 'earning' ? 'text-bg-success-subtle text-success' : 'text-bg-danger-subtle text-danger';
-    return `<div>${excluded.map(item => `<span class="badge rounded-pill ${chipClass(item)} me-1 mb-1">${escapeHtml((currentLang === 'th' ? item.item_name_th : item.item_name_en) || item.item_code)}</span>`).join('')}</div>`;
+    const names = excluded.map(item => escapeHtml((currentLang === 'th' ? item.item_name_th : item.item_name_en) || item.item_code));
+    return `<div class="small">${names.join(', ')}</div>`;
 }
 function renderRunSettingsSummary(d) {
     const excludedCodes = d.excluded_item_codes || [];
@@ -2054,7 +2086,7 @@ function viewBreakdownButtonRd(row) {
     // the thing, and it carries a tooltip either way).
     const label = langData['action_view_breakdown'] || 'View Breakdown';
     return `<div class="position-relative d-inline-block">
-        <button type="button" class="btn btn-link btn-circle-action text-info btn-view-breakdown" data-employee-id="${row.employee_id}" title="${label}" aria-label="${escapeAttr(label)}"><i class="fa-solid fa-receipt"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action btn-view-breakdown" data-employee-id="${row.employee_id}" title="${label}" aria-label="${escapeAttr(label)}"><i class="fa-solid fa-receipt"></i></button>
         ${countBadge}
     </div>`;
 }
@@ -3211,21 +3243,22 @@ function selectedRunDetailEmployeeIds() {
 // ข้อความเดียวกับ verify all แต่ใช้จำนวนที่เลือก...ปุ่มยืนยัน 'ตรวจสอบแล้ว'" -- confirmTitle carries a
 // "{count}" placeholder (see confirm_bulk_verify_title), filled in here from the ACTUAL selection
 // size once known, same {count}/{name} template-replace convention already used throughout this
-// app. Swal.fire() called directly (not showConfirm(), which hardcodes Yes/No) for the same reason
-// as the single-employee .btn-verify-employee handler above -- still the one central SweetAlert2
-// confirm modal, just with a real action label on the confirm button instead of "OK".
+// app.
+// 2026-09-20, 3e-1 (§12 rule 6 / §11: no direct SweetAlert2 call outside app.js/alert.js): this used to
+// call the dialog itself, on the reasoning that showConfirm() hardcoded Yes/No. It does not -- it
+// has taken `confirmText`/`cancelText` for a while now, so the custom action label that justified
+// going around it is a plain option, and every other property this call passed maps one-for-one
+// (icon 'info' is showConfirm()'s own default tone, `text` -> `message`, the isConfirmed branch ->
+// `onYes`). Same central dialog either way; now it is reached the same way as everywhere else.
 function bulkVerifyLockRd(url, payload, confirmTitle, confirmMessage, confirmButtonText) {
     const employeeIds = selectedRunDetailEmployeeIds();
     if (!employeeIds.length) return;
-    Swal.fire({
-        icon: 'info',
+    showConfirm({
         title: confirmTitle.replace('{count}', employeeIds.length),
-        text: confirmMessage,
-        showCancelButton: true,
-        confirmButtonText: confirmButtonText || (langData.yes || 'Yes'),
-        cancelButtonText: langData['cancel'] || 'Cancel'
-    }).then(function (result) {
-        if (!result.isConfirmed) return;
+        message: confirmMessage,
+        confirmText: confirmButtonText || (langData.yes || 'Yes'),
+        cancelText: langData['cancel'] || 'Cancel',
+        onYes: function () {
         $.ajax({
             url: `${BASE_URL}${url}`, method: 'POST', contentType: 'application/json', dataType: 'json',
             data: JSON.stringify(Object.assign({ id: PAYROLL_RUN_ID, employee_ids: employeeIds }, payload)),
@@ -3239,6 +3272,7 @@ function bulkVerifyLockRd(url, payload, confirmTitle, confirmMessage, confirmBut
             },
             error: function () { showWarning(langData['save_failed'] || 'An error occurred while saving.'); }
         });
+        },
     });
 }
 // 2026-08-31: Verify now carries the freeze-from-recalculation behavior Lock used to have (Lock
@@ -3270,12 +3304,10 @@ function singleVerifyLockRd(url, employeeId, payload, successMsgKey) {
 // 2026-09-11, Batch 3C item 9, explicit instruction: "กดแล้ว confirm ก่อนทุกครั้ง" -- unverify used to
 // skip confirm entirely (see the 2026-08-31 comment above bulkVerifyLockRd(), now superseded). Both
 // directions confirm now, each with its own wording that names the employee and states the actual
-// action (not a generic "OK") -- Swal.fire() called directly rather than through showConfirm() since
-// showConfirm()'s own confirmButtonText is hardcoded to Yes/No, and the whole point here is a
-// specific action label on that button. Still the SAME central SweetAlert2 confirm modal
-// showConfirm() itself wraps, per the "ใช้ modal confirm กลางของระบบ" instruction -- same pattern
-// already used elsewhere in this app whenever a confirm needs a custom confirm button label (e.g.
-// employee/detail.js's #btnSuspendEmployee).
+// action (not a generic "OK").
+// 2026-09-20, 3e-1 (§12 rule 6): goes through showConfirm() like every other confirm in this app --
+// see bulkVerifyLockRd()'s own note above for why the "showConfirm hardcodes Yes/No" reasoning this
+// call was written on no longer holds (`confirmText`/`cancelText` are real options).
 $(document).on('click', '.btn-verify-employee', function () {
     const employeeId = $(this).data('employee-id');
     const employeeName = $(this).data('employee-name') || '';
@@ -3290,16 +3322,14 @@ $(document).on('click', '.btn-verify-employee', function () {
     const confirmButtonText = nowVerified
         ? (langData['verify_status_verified'] || 'Verified')
         : (langData['action_unverify'] || 'Unverify');
-    Swal.fire({
-        icon: 'info',
-        title,
-        text: message,
-        showCancelButton: true,
-        confirmButtonText,
-        cancelButtonText: langData['cancel'] || 'Cancel'
-    }).then(function (result) {
-        if (!result.isConfirmed) return;
-        singleVerifyLockRd('/api/payroll-run.employee-verify.save', employeeId, { verified: nowVerified }, 'save_success');
+    showConfirm({
+        title: title,
+        message: message,
+        confirmText: confirmButtonText,
+        cancelText: langData['cancel'] || 'Cancel',
+        onYes: function () {
+            singleVerifyLockRd('/api/payroll-run.employee-verify.save', employeeId, { verified: nowVerified }, 'save_success');
+        },
     });
 });
 // 2026-08-31, explicit request: "สามารถ Verify ทั้ง Process ได้เลย...ให้ Verify ได้ทั้ง Process ทั้ง Detail
@@ -6911,6 +6941,18 @@ $(document).on('shown.bs.tab', '#run-remittance-tab', function () {
 function refreshPayrollDetailLanguage() {
     if (currentRun) {
         renderRunHeaderText(currentRun);
+    }
+    // 2026-09-20, 3e-1 round 1, real gap found while measuring c10 in en: the 3 tab tables hand
+    // initSharedDataTable() an `emptyState` whose copy is read out of langData ONCE, when the tab
+    // loads -- so an empty table kept whichever language was active at first load for the rest of
+    // the page's life. Same shape as the `language.emptyTable` string these replaced, i.e. not new,
+    // but now it is this page's own hook that can fix it: re-running the 3 loaders rebuilds each
+    // table (and its empty state, and its row badges) against the language now in force. Guarded on
+    // currentRun because they all read it.
+    if (currentRun) {
+        loadRunCashTab();
+        loadRunBankAccountTab();
+        loadRunRemittanceTab();
     }
     // The Comments modal's own title is built from a `{count}` template in JS (see
     // updateEmployeeCommentTitle()), so the generic `data-i18n` sweep can't relabel it -- re-render it

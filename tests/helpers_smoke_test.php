@@ -76,11 +76,15 @@ check('loadStatusMap() context keys match status_map.php required directly', arr
 // statutory row was skipped for this employee; since 4a-2 such a row is not rendered at all (it
 // contributes nothing to any of the 3 totals), so the context, its 4 labels and this entry all went
 // together rather than being left behind as dead config.
+// 2026-09-20, 3e-1: 'cash_payment_status' ADDED -- payroll_run_cash_payments.status (paid/unpaid),
+// which the Cash Payments tab used to draw as a hand-written bg-*-subtle pair in payroll/detail.js.
+// Same 2 label keys and same 2 tones as that renderer used, so nothing about the badge changed
+// except that it now comes from this one map like every other badge (rules.md 5).
 $expectedContexts = [
     'run_state', 'payroll_process_tab', 'approval_status', 'payslip_request_status',
     'employment_certificate_request_status', 'employee_status', 'employment_status',
     'document_delivery_status', 'sync_batch_status', 'payroll_calc_status', 'eed_status',
-    'eed_installment_status', 'remittance_status', 'attendance_status',
+    'eed_installment_status', 'remittance_status', 'attendance_status', 'cash_payment_status',
     'recurring_earning_status', 'payroll_line_type', 'payment_method',
     'verify_status', 'employee_comment_tag', 'manual_line_mode', 'data_source',
 ];

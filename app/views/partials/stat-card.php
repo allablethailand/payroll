@@ -52,6 +52,16 @@
  *     `app/config/status_map.php` -- there is no way to pass an ad-hoc label/color that bypasses the
  *     shared map.
  *   - 'link' is optional (e.g. "ดูทั้งหมด" -- rendered as a tertiary/text link, never a button).
+ *   - 'value_id'/'sub_id' (optional, added 2026-09-20, 3e-1) -- the `id` this partial puts on
+ *     `.stat-value`/`.stat-sub`. §2 planned these for the caller that updates ONE number live
+ *     (`.text()` on a fixed id, every time a table redraws) instead of re-rendering the whole card
+ *     from `$stat`; Payroll Detail's Cash Payments/Third-Party Remittance tabs are that caller, so
+ *     the plan is now implemented exactly as written there. A caller that omits them renders
+ *     byte-identically to before.
+ *   - 'label_i18n' (optional, added 2026-09-20, 3e-1) -- `data-i18n="<key>"` on the label, so a
+ *     server-rendered card still relabels itself on a live language switch (app.js's updateText()
+ *     sweep). Same optional-attribute shape `page-header.php`'s own breadcrumb `i18n` field already
+ *     uses; the label TEXT still comes from `$stat['label']` as always, this only marks it.
  *   - 'badge' and 'link' (and even 'sub') can all be present at once -- the bottom slot lays out
  *     whichever of the three exist, in that order, and reserves the SAME height whether 0, 1, 2, or
  *     all 3 of them are present, so a card with nothing in its bottom slot is still exactly as tall
@@ -69,17 +79,20 @@ $stSub = $stat['sub'] ?? null;
 $stBadge = $stat['badge'] ?? null;
 $stLink = $stat['link'] ?? null;
 $stValueClass = $stat['value_class'] ?? null;
+$stValueId = $stat['value_id'] ?? null;
+$stSubId = $stat['sub_id'] ?? null;
+$stLabelI18n = $stat['label_i18n'] ?? null;
 $stHasFooter = $stSub || $stBadge || $stLink;
 ?>
 <div class="stat">
     <div class="stat-head">
-        <div class="stat-label"><?=htmlspecialchars($stat['label'])?></div>
+        <div class="stat-label"<?=$stLabelI18n ? ' data-i18n="' . htmlspecialchars($stLabelI18n, ENT_QUOTES, 'UTF-8') . '"' : ''?>><?=htmlspecialchars($stat['label'])?></div>
         <?php if ($stIcon): ?><i class="<?=htmlspecialchars($stIcon)?> stat-icon"></i><?php endif; ?>
     </div>
-    <div class="stat-value num<?=$stValueClass ? ' ' . htmlspecialchars($stValueClass) : ''?>"><?=htmlspecialchars((string)$stat['value'])?></div>
+    <div class="stat-value num<?=$stValueClass ? ' ' . htmlspecialchars($stValueClass) : ''?>"<?=$stValueId ? ' id="' . htmlspecialchars($stValueId, ENT_QUOTES, 'UTF-8') . '"' : ''?>><?=htmlspecialchars((string)$stat['value'])?></div>
     <div class="stat-footer<?=$stHasFooter ? '' : ' stat-footer-empty'?>">
         <?php if ($stBadge): ?><?=statusBadge($stBadge['enum'], $stBadge['context'])?><?php endif; ?>
-        <?php if ($stSub): ?><span class="stat-sub"><?=htmlspecialchars($stSub)?></span><?php endif; ?>
+        <?php if ($stSub): ?><span class="stat-sub"<?=$stSubId ? ' id="' . htmlspecialchars($stSubId, ENT_QUOTES, 'UTF-8') . '"' : ''?>><?=htmlspecialchars($stSub)?></span><?php endif; ?>
         <?php if ($stLink): ?><a href="<?=htmlspecialchars($stLink['href'])?>" class="stat-link"><?=htmlspecialchars($stLink['label'])?></a><?php endif; ?>
     </div>
 </div>

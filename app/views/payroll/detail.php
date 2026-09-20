@@ -146,14 +146,26 @@
         </div>
     </div>
 
-    <div class="alert alert-danger small d-none" id="validationErrorsBanner"></div>
+    <!-- 2026-09-20, 3e-1 round 1 (rules.md 15): every run-level announcement in this header region is
+         a callout now, not a solid `.alert` tile -- the "next step" box right above (#nextStepBanner)
+         has been one since 3a, and two boxes that say the same KIND of thing must not be two
+         different shapes. Left border carries the tone; the copy, the ids and every handler below are
+         untouched. JS toggles `d-none` on these (not attr('class')), so the tone class can live here
+         in the markup. -->
+    <div class="callout callout-danger d-none" id="validationErrorsBanner"></div>
     <!-- 2026-08-30 (Phase 8, T041): reconciliation warning for a sync-based run -- employees who
          would normally be expected in payroll but weren't in this Origami sync payload and nobody
          manually joined them either. Advisory only (alert-warning, not alert-danger) -- never blocks
          submit, just a prompt to verify before doing so. See PayrollRunModel::syncMissingEmployees(). -->
-    <div class="alert alert-warning small d-none d-flex justify-content-between align-items-center flex-wrap gap-2" id="syncMissingEmployeesBanner">
-        <span id="syncMissingEmployeesBannerText"></span>
-        <button type="button" class="btn btn-sm btn-outline-dark" id="syncMissingEmployeesViewBtn" data-i18n="view_list">View List</button>
+    <div class="callout callout-warning d-none" id="syncMissingEmployeesBanner">
+        <!-- The flex row moves INSIDE the callout: `calloutHtml()`/callout.php own the box (padding,
+             radius, left border), the caller owns what sits in it -- the same "caller-authored
+             content" contract the partial documents. No shared component changed. The button is
+             `btn-sm` neutral (rules.md 4): it opens a list, it is not the decision on this screen. -->
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span id="syncMissingEmployeesBannerText"></span>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="syncMissingEmployeesViewBtn" data-i18n="view_list">View List</button>
+        </div>
     </div>
     <!-- 2026-09-01, explicit request: "ตอนดึงมาทำรอบหรือเพิ่มรอบใหม่ ให้มี radio เลือกว่า เปิดรอบใหม่ หรือ
          อ้างอิงถึงรอบ" -- shown whenever this run was created with "อ้างอิงถึงรอบ" ticked
@@ -163,15 +175,25 @@
          when ready -- folds this run's resolved amounts into the target and soft-deletes this one
          (same mechanics/confirmation dance as the Pending-Pull table's own "Merge into Target"
          action, see PayrollRunModel::performRunMerge()'s own docblock). -->
-    <div class="alert alert-info small d-none d-flex justify-content-between align-items-center flex-wrap gap-2" id="mergeTargetBanner">
-        <span id="mergeTargetBannerText"></span>
-        <button type="button" class="btn btn-sm btn-primary" id="btnMergeIntoTarget"><i class="fa-solid fa-code-merge me-1"></i><span data-i18n="btn_merge_sync">Merge into Target</span></button>
+    <!-- Same conversion as the 2 boxes above. `alert-info` was also the last BLUE surface in this
+         region (rules.md 3: blue is not used) -- this box announces the next step for a run that was
+         created against a merge target, so `primary` is its tone, the same one #nextStepBanner uses
+         for "still moving forward". #btnMergeIntoTarget keeps its own look for now (it is a real
+         primary action, and its icon is a separate rules.md 4 question -- see BACKLOG). -->
+    <div class="callout callout-primary d-none" id="mergeTargetBanner">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span id="mergeTargetBannerText"></span>
+            <button type="button" class="btn btn-sm btn-primary" id="btnMergeIntoTarget"><i class="fa-solid fa-code-merge me-1"></i><span data-i18n="btn_merge_sync">Merge into Target</span></button>
+        </div>
     </div>
     <!-- 2026-09-06: the "future cycle" merge-target form -- no button here at all (there is
          nothing to merge into yet), just a status line; see renderMergeTargetBanner()'s own
          docblock for how this and #mergeTargetBanner above stay mutually exclusive. -->
-    <div class="alert alert-warning small d-none" id="mergeTargetWaitingBanner">
-        <i class="fa-solid fa-hourglass-half me-1"></i><span id="mergeTargetWaitingBannerText"></span>
+    <!-- The icon goes with the `.alert` (rules.md 15: a callout has no icon, the left border is the
+         signal). renderMergeTargetBanner() still swaps this box between its warning and danger tone,
+         now by swapping `callout-warning`/`callout-danger` instead of `alert-*`. -->
+    <div class="callout callout-warning d-none" id="mergeTargetWaitingBanner">
+        <span id="mergeTargetWaitingBannerText"></span>
     </div>
 
     <!-- 2026-09-13, Round 3 item 3a (§6: "Tabs ไม่มีไอคอน") -- icons stripped from the 5 tab buttons
@@ -374,7 +396,7 @@
                                 </div>
                                 <div class="form-check form-check-inline m-0">
                                     <input class="form-check-input" type="radio" name="runCalcTax" id="runCalcTaxYes" value="yes">
-                                    <label class="form-check-label small text-success fw-semibold" for="runCalcTaxYes"><i class="fa-solid fa-check me-1"></i><span data-i18n="run_calc_tax_yes">Calculate for Everyone</span></label>
+                                    <label class="form-check-label small fw-semibold" for="runCalcTaxYes"><i class="fa-solid fa-check me-1"></i><span data-i18n="run_calc_tax_yes">Calculate for Everyone</span></label>
                                 </div>
                                 <div class="form-check form-check-inline m-0">
                                     <input class="form-check-input" type="radio" name="runCalcTax" id="runCalcTaxNo" value="no">
@@ -391,7 +413,7 @@
                                 </div>
                                 <div class="form-check form-check-inline m-0">
                                     <input class="form-check-input" type="radio" name="runCalcSso" id="runCalcSsoYes" value="yes">
-                                    <label class="form-check-label small text-success fw-semibold" for="runCalcSsoYes"><i class="fa-solid fa-check me-1"></i><span data-i18n="run_calc_sso_yes">Send for Everyone</span></label>
+                                    <label class="form-check-label small fw-semibold" for="runCalcSsoYes"><i class="fa-solid fa-check me-1"></i><span data-i18n="run_calc_sso_yes">Send for Everyone</span></label>
                                 </div>
                                 <div class="form-check form-check-inline m-0">
                                     <input class="form-check-input" type="radio" name="runCalcSso" id="runCalcSsoNo" value="no">
@@ -806,24 +828,37 @@
                  .reports-period-bar's own visual language (icon-circle + gradient bar) in a
                  warning/amber tone instead of the brand-orange "pick a context" one, since this is
                  informational, not an action to take. -->
-            <div class="reports-not-ready-banner mb-3 d-none" id="runReportsNotReadyBanner">
-                <div class="reports-not-ready-banner-icon"><i class="fa-solid fa-hourglass-half"></i></div>
-                <div class="reports-not-ready-banner-body">
-                    <div class="reports-not-ready-banner-title" data-i18n="reports_not_ready_title">Reports Not Available Yet</div>
-                    <div class="reports-not-ready-banner-hint" data-i18n="reports_available_after_approval">Reports are available once this run is approved.</div>
-                </div>
+            <!-- 2026-09-20, 3e-1: the bespoke `.reports-not-ready-banner` (icon-circle + gradient bar,
+                 4 CSS rules of its own) is retired HERE for the shared callout (§15/§11) -- the CSS
+                 itself stays, because `app/views/reports/index.php:126,158` still uses it and that
+                 page is not in this round; deleting it now would break a page nobody touched. --
+                 this block is an announcement standing NEXT TO content the user can still see (the
+                 report list is right below it, rows and all, just disabled), which is exactly what a
+                 callout is for; an empty-state would claim there is nothing here. Tone `neutral`
+                 (not the old amber): "approve the run first" is a standing fact about where this run
+                 is in its own lifecycle, not something to act on in this tab (§0.1). -->
+            <div class="mb-3 d-none" id="runReportsNotReadyBanner">
+                <?php
+                $text = '<b><span data-i18n="reports_not_ready_title">Reports Not Available Yet</span></b> <span data-i18n="reports_available_after_approval">Reports are available once this run is approved.</span>';
+                $tone = 'neutral';
+                include __DIR__ . '/../partials/callout.php';
+                ?>
             </div>
-            <div id="runReportsNotReady" class="text-center text-secondary py-4 d-none">
-                <i class="fa-solid fa-file-export fa-2x mb-3 text-secondary opacity-50"></i>
-                <span data-i18n="reports_available_after_approval">Reports are available once this run is approved.</span>
+            <div id="runReportsNotReady" class="d-none">
+                <?php
+                $icon = 'fa-solid fa-file-export'; $action = null; $text_id = null;
+                $title = 'Reports Not Available Yet'; $title_i18n = 'reports_not_ready_title';
+                $text = 'Reports are available once this run is approved.'; $text_i18n = 'reports_available_after_approval';
+                include __DIR__ . '/../partials/empty-state.php';
+                ?>
             </div>
             <div class="table-responsive">
                 <table class="table table-hover align-middle w-100 d-none" id="tb_run_reports">
                     <thead class="table-light text-secondary">
                         <tr>
-                            <th data-i18n="report_name">Report</th>
-                            <th class="text-center" data-i18n="download_count">Downloaded</th>
-                            <th data-i18n="last_downloaded_at">Last Downloaded</th>
+                            <th><span data-i18n="report_name">Report</span></th>
+                            <th class="text-center"><span data-i18n="download_count">Downloaded</span></th>
+                            <th><span data-i18n="last_downloaded_at">Last Downloaded</span></th>
                             <th class="text-center"></th>
                         </tr>
                     </thead>
@@ -833,40 +868,42 @@
         </div>
 
         <div class="tab-pane fade" id="run-cash-pane" role="tabpanel" aria-labelledby="run-cash-tab" tabindex="0">
-            <div id="runCashNotReady" class="text-center text-secondary py-4 d-none">
-                <i class="fa-solid fa-money-bill-wave fa-2x mb-3 text-secondary opacity-50"></i>
-                <span id="runCashNotReadyMessage" data-i18n="reports_available_after_approval">Reports are available once this run is approved.</span>
+            <!-- 2026-09-20, 3e-1: the hand-written "not ready" block (centred text + a fa-2x icon)
+                 is the shared empty-state (§6/§11) -- 32px `--c-text-faint` icon, title + one line.
+                 The wrapper keeps `#runCashNotReady` because that is what loadRunCashTab() toggles,
+                 and `$text_id` keeps `#runCashNotReadyMessage` on the line that same function
+                 replaces with a server error message on a failed load. Same 3 lines below for Bank
+                 Account Assignment and Third-Party Remittance. -->
+            <div id="runCashNotReady" class="d-none">
+                <?php
+                $icon = 'fa-solid fa-money-bill-wave'; $action = null; $text_id = 'runCashNotReadyMessage';
+                $title = 'Reports Not Available Yet'; $title_i18n = 'reports_not_ready_title';
+                $text = 'Reports are available once this run is approved.'; $text_i18n = 'reports_available_after_approval';
+                include __DIR__ . '/../partials/empty-state.php';
+                ?>
             </div>
             <div id="runCashContent" class="d-none">
+                <!-- 2026-09-20, 3e-1: `.stat-card`/`.stat-card-{tone}` (coloured edge + icon tile)
+                     replaced by `stat-card.php` (§2: plain card, no tone colour, optional flat icon).
+                     `value_id` (§2's own planned field, implemented this round) keeps the ids
+                     loadRunCashTab() writes the numbers into. -->
                 <div class="row g-3 mb-4">
                     <div class="col-6 col-md-3">
-                        <div class="stat-card stat-card-info h-100">
-                            <div class="stat-card-icon"><i class="fa-solid fa-money-bill-wave"></i></div>
-                            <div>
-                                <div class="stat-card-label" data-i18n="total_cash_payment">Total Cash</div>
-                                <div class="stat-card-value" id="runCashTotalCash">-</div>
-                            </div>
-                        </div>
+                        <?php $stat = ['label' => 'Total Cash', 'label_i18n' => 'total_cash_payment', 'value' => '-', 'value_id' => 'runCashTotalCash', 'icon' => 'fa-solid fa-money-bill-wave', 'value_class' => 'money-net']; include __DIR__ . '/../partials/stat-card.php'; ?>
                     </div>
                     <div class="col-6 col-md-3">
-                        <div class="stat-card stat-card-primary h-100">
-                            <div class="stat-card-icon"><i class="fa-solid fa-building-columns"></i></div>
-                            <div>
-                                <div class="stat-card-label" data-i18n="total_bank_payment">Total Bank Transfer</div>
-                                <div class="stat-card-value" id="runCashTotalBank">-</div>
-                            </div>
-                        </div>
+                        <?php $stat = ['label' => 'Total Bank Transfer', 'label_i18n' => 'total_bank_payment', 'value' => '-', 'value_id' => 'runCashTotalBank', 'icon' => 'fa-solid fa-building-columns', 'value_class' => 'money-net']; include __DIR__ . '/../partials/stat-card.php'; ?>
                     </div>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle w-100" id="tb_run_cash">
                         <thead class="table-light text-secondary">
                             <tr>
-                                <th data-i18n="employee_no">Employee No.</th>
-                                <th data-i18n="employee">Employee</th>
-                                <th class="text-end" data-i18n="amount">Amount</th>
-                                <th class="text-center" data-i18n="status">Status</th>
-                                <th data-i18n="table_paid_at">Paid At</th>
+                                <th><span data-i18n="employee_no">Employee No.</span></th>
+                                <th><span data-i18n="employee">Employee</span></th>
+                                <th class="col-money"><span data-i18n="amount">Amount</span></th>
+                                <th class="text-center"><span data-i18n="status">Status</span></th>
+                                <th><span data-i18n="table_paid_at">Paid At</span></th>
                                 <th class="text-center"></th>
                             </tr>
                         </thead>
@@ -878,25 +915,30 @@
 
         <!-- 2026-09-02, multi-bank-account payroll -- see the tab button's own comment above. -->
         <div class="tab-pane fade" id="run-bank-account-pane" role="tabpanel" aria-labelledby="run-bank-account-tab" tabindex="0">
-            <div id="runBankAccountNotReady" class="text-center text-secondary py-4 d-none">
-                <i class="fa-solid fa-building-columns fa-2x mb-3 text-secondary opacity-50"></i>
-                <span id="runBankAccountNotReadyMessage" data-i18n="reports_available_after_approval">Reports are available once this run is approved.</span>
+            <div id="runBankAccountNotReady" class="d-none">
+                <?php
+                $icon = 'fa-solid fa-building-columns'; $action = null; $text_id = 'runBankAccountNotReadyMessage';
+                $title = 'Reports Not Available Yet'; $title_i18n = 'reports_not_ready_title';
+                $text = 'Reports are available once this run is approved.'; $text_i18n = 'reports_available_after_approval';
+                include __DIR__ . '/../partials/empty-state.php';
+                ?>
             </div>
             <div id="runBankAccountContent" class="d-none">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                     <div class="text-muted small" data-i18n="bank_account_assignment_hint">Which of the company's own settlement accounts pays each employee this run. Leave unassigned to use the employee's own default or the pay cycle/company default.</div>
-                    <button type="button" class="btn btn-outline-success btn-sm" id="btnExportRunBankAccountSummary">
-                        <i class="fa-solid fa-file-excel me-1"></i><span data-i18n="export_excel">Export Excel</span>
-                    </button>
+                    <!-- 2026-09-20, 3e-1 (§4): a text button carries no icon, and `btn-outline-success`
+                         said nothing `btn-outline-secondary` does not (§12 rule 3). Same for
+                         #btnExportRunRemittance below. id/handler unchanged. -->
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnExportRunBankAccountSummary"><span data-i18n="export_excel">Export Excel</span></button>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle w-100" id="tb_run_bank_account">
                         <thead class="table-light text-secondary">
                             <tr>
-                                <th data-i18n="employee_no">Employee No.</th>
-                                <th data-i18n="employee">Employee</th>
-                                <th data-i18n="bank_account">Bank Account</th>
-                                <th class="text-center" data-i18n="bank_account_source">Source</th>
+                                <th><span data-i18n="employee_no">Employee No.</span></th>
+                                <th><span data-i18n="employee">Employee</span></th>
+                                <th><span data-i18n="bank_account">Bank Account</span></th>
+                                <th class="text-center"><span data-i18n="bank_account_source">Source</span></th>
                                 <th class="text-center"></th>
                             </tr>
                         </thead>
@@ -915,64 +957,42 @@
              Success / Mark as Failed (with a reason, retry-able back to pending). Same layout
              convention as the Cash Payments tab right above (not-ready state + stat cards + table). -->
         <div class="tab-pane fade" id="run-remittance-pane" role="tabpanel" aria-labelledby="run-remittance-tab" tabindex="0">
-            <div id="runRemittanceNotReady" class="text-center text-secondary py-4 d-none">
-                <i class="fa-solid fa-money-bill-transfer fa-2x mb-3 text-secondary opacity-50"></i>
-                <span id="runRemittanceNotReadyMessage" data-i18n="reports_available_after_approval">Reports are available once this run is approved.</span>
+            <div id="runRemittanceNotReady" class="d-none">
+                <?php
+                $icon = 'fa-solid fa-money-bill-transfer'; $action = null; $text_id = 'runRemittanceNotReadyMessage';
+                $title = 'Reports Not Available Yet'; $title_i18n = 'reports_not_ready_title';
+                $text = 'Reports are available once this run is approved.'; $text_i18n = 'reports_available_after_approval';
+                include __DIR__ . '/../partials/empty-state.php';
+                ?>
             </div>
             <div id="runRemittanceContent" class="d-none">
                 <div class="d-flex justify-content-end mb-3">
-                    <button type="button" class="btn btn-outline-success btn-sm" id="btnExportRunRemittance">
-                        <i class="fa-solid fa-file-excel me-1"></i><span data-i18n="export_excel">Export Excel</span>
-                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnExportRunRemittance"><span data-i18n="export_excel">Export Excel</span></button>
                 </div>
                 <div class="row g-3 mb-4">
                     <div class="col-6 col-md-3">
-                        <div class="stat-card stat-card-warning h-100">
-                            <div class="stat-card-icon"><i class="fa-solid fa-hourglass-half"></i></div>
-                            <div>
-                                <div class="stat-card-label" data-i18n="remittance_status_pending">Pending</div>
-                                <div class="stat-card-value" id="runRemittanceTotalPending">-</div>
-                            </div>
-                        </div>
+                        <?php $stat = ['label' => 'Pending', 'label_i18n' => 'remittance_status_pending', 'value' => '-', 'value_id' => 'runRemittanceTotalPending', 'icon' => 'fa-solid fa-hourglass-half', 'value_class' => 'money-net']; include __DIR__ . '/../partials/stat-card.php'; ?>
                     </div>
                     <div class="col-6 col-md-3">
-                        <div class="stat-card stat-card-primary h-100">
-                            <div class="stat-card-icon"><i class="fa-solid fa-paper-plane"></i></div>
-                            <div>
-                                <div class="stat-card-label" data-i18n="remittance_status_transferred">Transferred</div>
-                                <div class="stat-card-value" id="runRemittanceTotalTransferred">-</div>
-                            </div>
-                        </div>
+                        <?php $stat = ['label' => 'Transferred', 'label_i18n' => 'remittance_status_transferred', 'value' => '-', 'value_id' => 'runRemittanceTotalTransferred', 'icon' => 'fa-solid fa-paper-plane', 'value_class' => 'money-net']; include __DIR__ . '/../partials/stat-card.php'; ?>
                     </div>
                     <div class="col-6 col-md-3">
-                        <div class="stat-card stat-card-success h-100">
-                            <div class="stat-card-icon"><i class="fa-solid fa-circle-check"></i></div>
-                            <div>
-                                <div class="stat-card-label" data-i18n="remittance_status_success">Success</div>
-                                <div class="stat-card-value" id="runRemittanceTotalSuccess">-</div>
-                            </div>
-                        </div>
+                        <?php $stat = ['label' => 'Success', 'label_i18n' => 'remittance_status_success', 'value' => '-', 'value_id' => 'runRemittanceTotalSuccess', 'icon' => 'fa-solid fa-circle-check', 'value_class' => 'money-net']; include __DIR__ . '/../partials/stat-card.php'; ?>
                     </div>
                     <div class="col-6 col-md-3">
-                        <div class="stat-card stat-card-danger h-100">
-                            <div class="stat-card-icon"><i class="fa-solid fa-circle-xmark"></i></div>
-                            <div>
-                                <div class="stat-card-label" data-i18n="remittance_status_failed">Failed</div>
-                                <div class="stat-card-value" id="runRemittanceTotalFailed">-</div>
-                            </div>
-                        </div>
+                        <?php $stat = ['label' => 'Failed', 'label_i18n' => 'remittance_status_failed', 'value' => '-', 'value_id' => 'runRemittanceTotalFailed', 'icon' => 'fa-solid fa-circle-xmark', 'value_class' => 'money-net']; include __DIR__ . '/../partials/stat-card.php'; ?>
                     </div>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle w-100" id="tb_run_remittance">
                         <thead class="table-light text-secondary">
                             <tr>
-                                <th data-i18n="remittance_destination">Destination</th>
-                                <th data-i18n="remittance_destination_type">Type</th>
-                                <th class="text-center" data-i18n="remittance_employee_count">Employees</th>
-                                <th class="text-end" data-i18n="amount">Amount</th>
-                                <th class="text-center" data-i18n="status">Status</th>
-                                <th data-i18n="remittance_transferred_at">Transferred At</th>
+                                <th><span data-i18n="remittance_destination">Destination</span></th>
+                                <th><span data-i18n="remittance_destination_type">Type</span></th>
+                                <th class="text-center"><span data-i18n="remittance_employee_count">Employees</span></th>
+                                <th class="col-money"><span data-i18n="amount">Amount</span></th>
+                                <th class="text-center"><span data-i18n="status">Status</span></th>
+                                <th><span data-i18n="remittance_transferred_at">Transferred At</span></th>
                                 <th class="text-center"></th>
                             </tr>
                         </thead>
@@ -1013,7 +1033,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="button" class="btn btn-primary" id="btnSaveBankAccountAssign" data-i18n="save">Save</button>
                     </div>
                 </div>
@@ -1032,10 +1052,10 @@
                             <table class="table table-sm align-middle w-100">
                                 <thead class="table-light text-secondary">
                                     <tr>
-                                        <th data-i18n="employee_no">Employee No.</th>
-                                        <th data-i18n="employee">Employee</th>
-                                        <th data-i18n="item">Item</th>
-                                        <th class="text-end" data-i18n="amount">Amount</th>
+                                        <th><span data-i18n="employee_no">Employee No.</span></th>
+                                        <th><span data-i18n="employee">Employee</span></th>
+                                        <th><span data-i18n="item">Item</span></th>
+                                        <th class="num col-money"><span data-i18n="amount">Amount</span></th>
                                     </tr>
                                 </thead>
                                 <tbody id="remittanceBreakdownTableBody"></tbody>
@@ -1043,7 +1063,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     </div>
                 </div>
             </div>
@@ -1064,7 +1084,7 @@
                         <input type="file" class="form-control" id="remittanceEvidenceFile" accept=".jpg,.jpeg,.png,.pdf">
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="button" class="btn btn-primary" id="btnConfirmMarkTransferred" data-i18n="confirm">Confirm</button>
                     </div>
                 </div>
@@ -1085,7 +1105,7 @@
                         <textarea class="form-control" id="remittanceFailedNote" rows="3" data-i18n="remittance_failed_note_placeholder" placeholder="e.g., Bank rejected — incorrect account number"></textarea>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="button" class="btn btn-danger" id="btnConfirmMarkFailed" data-i18n="confirm">Confirm</button>
                     </div>
                 </div>
@@ -1125,7 +1145,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light me-auto" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                        <button type="button" class="btn btn-outline-secondary me-auto" data-bs-dismiss="modal" data-i18n="close">Close</button>
                         <button type="button" class="btn btn-outline-secondary btn-report-download" data-language="th"><img src="<?=BASE_URL?>/public/flags/th.png" width="16" height="16" alt="TH" class="me-1"><span data-i18n="language_th">Thai</span></button>
                         <button type="button" class="btn btn-primary btn-report-download" data-language="en"><img src="<?=BASE_URL?>/public/flags/gb.png" width="16" height="16" alt="EN" class="me-1"><span data-i18n="language_en">English</span></button>
                     </div>
@@ -1188,13 +1208,13 @@
                             <table class="table table-sm align-middle w-100" id="tb_report_history">
                                 <thead class="table-light text-secondary small">
                                     <tr>
-                                        <th data-i18n="downloaded_at">Date/Time</th>
-                                        <th data-i18n="downloaded_by">By</th>
-                                        <th data-i18n="language">Language</th>
-                                        <th data-i18n="device">Device</th>
-                                        <th data-i18n="browser">Browser</th>
+                                        <th><span data-i18n="downloaded_at">Date/Time</span></th>
+                                        <th><span data-i18n="downloaded_by">By</span></th>
+                                        <th><span data-i18n="language">Language</span></th>
+                                        <th><span data-i18n="device">Device</span></th>
+                                        <th><span data-i18n="browser">Browser</span></th>
                                         <th>IP</th>
-                                        <th data-i18n="source">Source</th>
+                                        <th><span data-i18n="source">Source</span></th>
                                     </tr>
                                 </thead>
                                 <tbody></tbody>
@@ -1202,7 +1222,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     </div>
                 </div>
             </div>
@@ -1218,9 +1238,17 @@
              (state change, note, IP/user-agent) is now rendered directly in each card instead. See
              renderAuditHistoryTimelineRd()/auditHistoryRowHtmlRd()'s own docblock in detail.js. -->
         <div class="tab-pane fade" id="run-history-pane" role="tabpanel" aria-labelledby="run-history-tab" tabindex="0">
-            <div id="noAuditYet" class="text-center text-secondary py-4 d-none">
-                <i class="fa-solid fa-clock-rotate-left fa-2x mb-3 text-secondary opacity-50"></i>
-                <span data-i18n="no_history_yet">No action has been taken on this request yet.</span>
+            <!-- 2026-09-20, 3e-1: shared empty-state (§6). Title only, no supporting line: the one
+                 sentence this tab has ALREADY says what is missing and there is nothing to do about
+                 it here (history writes itself as the run moves). `.empty-state > *:last-child`
+                 zeroes the empty text line's own margin, so the block reads as a 2-part one. -->
+            <div id="noAuditYet" class="d-none">
+                <?php
+                $icon = 'fa-solid fa-clock-rotate-left'; $action = null; $text_id = null;
+                $title = 'No action has been taken on this request yet.'; $title_i18n = 'no_history_yet';
+                $text = ''; $text_i18n = null;
+                include __DIR__ . '/../partials/empty-state.php';
+                ?>
             </div>
             <div id="run_audit_timeline" class="apv-history-timeline"></div>
         </div>
@@ -1385,12 +1413,12 @@
                         <thead class="table-light text-secondary">
                             <tr>
                                 <th><input type="checkbox" id="joinSelectAll" title="Select all on this page"></th>
-                                <th data-i18n="table_code">Code</th>
-                                <th data-i18n="table_name">Name</th>
-                                <th data-i18n="department">Department</th>
-                                <th data-i18n="team">Team</th>
-                                <th data-i18n="position">Position</th>
-                                <th data-i18n="payroll_cycle">Payroll Schedule</th>
+                                <th><span data-i18n="table_code">Code</span></th>
+                                <th><span data-i18n="table_name">Name</span></th>
+                                <th><span data-i18n="department">Department</span></th>
+                                <th><span data-i18n="team">Team</span></th>
+                                <th><span data-i18n="position">Position</span></th>
+                                <th><span data-i18n="payroll_cycle">Payroll Schedule</span></th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -1402,7 +1430,7 @@
                         <button type="button" class="btn btn-primary" id="btnJoinSelected" disabled>
                             <i class="fa-solid fa-user-plus me-1"></i><span data-i18n="action_join_employees">Join Employees</span>
                         </button>
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     </div>
                 </div>
             </div>
@@ -1433,7 +1461,7 @@
                          that opened this modal. `.btn-decision-success` matches #btnApproveRunHeader's
                          own tone so the color stays consistent from trigger to actual confirmation. -->
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="submit" class="btn btn-decision-success"><span data-i18n="approval_confirm_approve">Confirm Approve</span></button>
                     </div>
                 </form>
@@ -1458,7 +1486,7 @@
                          §4-violation note as the Approve modal above; `.btn-decision-danger` (outline,
                          not solid) matches #btnRejectRunHeader's own tone. -->
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="submit" class="btn btn-decision-danger"><span data-i18n="approval_confirm_reject">Confirm Reject</span></button>
                     </div>
                 </form>
@@ -1483,7 +1511,7 @@
                          warning signal at all before this) -- `.btn-decision-warning` (outline) now
                          matches #btnRequestInfoRunHeader's own tone. -->
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="submit" class="btn btn-decision-warning"><span data-i18n="approval_confirm_request_info">Confirm</span></button>
                     </div>
                 </form>
@@ -1524,7 +1552,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="submit" class="btn btn-primary"><span data-i18n="action_mark_paid">Mark as Paid</span></button>
                     </div>
                 </form>
@@ -1551,7 +1579,7 @@
                 <div class="modal-body" id="runTimelineModalBody"></div>
                 <div class="modal-footer justify-content-between">
                     <div id="runTimelineModalActions" class="d-flex flex-wrap gap-2"></div>
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>

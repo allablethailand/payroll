@@ -2274,10 +2274,15 @@ function emptyStateHtml(config) {
     const actionHtml = action
         ? `<button type="button" class="${btnClass} empty-state-action" id="${escapeHtml(action.id || '')}">${escapeHtml(action.label || '')}</button>`
         : '';
+    // `text_id` -- PHP twin parity (empty-state.php, 2026-09-20): an `id` on the text line alone, for
+    // a caller that has to replace that one sentence live (a server error message taking the place of
+    // the standard one) without re-rendering the block. Omitted = the markup every existing caller
+    // already gets, unchanged.
+    const textIdAttr = config.text_id ? ` id="${escapeHtml(config.text_id)}"` : '';
     return `<div class="empty-state">
         <i class="empty-state-icon ${escapeHtml(icon)}" aria-hidden="true"></i>
         <div class="empty-state-title">${escapeHtml(config.title || '')}</div>
-        <div class="empty-state-text">${escapeHtml(config.text || '')}</div>
+        <div class="empty-state-text"${textIdAttr}>${escapeHtml(config.text || '')}</div>
         ${actionHtml}
     </div>`;
 }

@@ -21,6 +21,19 @@
  *                          'fa-solid fa-inbox' when omitted.
  * @var string      $title  Required. One line.
  * @var string      $text   Required. One line, says what can be done next.
+ * @var string|null $title_i18n Optional. `data-i18n="<key>"` on the title line.
+ * @var string|null $text_i18n  Optional. Same, on the text line. A SERVER-rendered empty state has
+ *                          no other way to follow a live language switch: this app translates the
+ *                          DOM through app.js's `updateText()` sweep over `[data-i18n]`, so a PHP
+ *                          include that only echoes a literal stays frozen in whatever language it
+ *                          was written in. Same optional-attribute shape `page-header.php`'s own
+ *                          breadcrumb `i18n` field already uses -- `$title`/`$text` still carry the
+ *                          (English) literal that shows before the sweep runs.
+ * @var string|null $text_id Optional. `id` put on the text line itself, for the rare caller that
+ *                          has to REPLACE that one line live (e.g. a tab that swaps the standard
+ *                          "not ready yet" sentence for a server error message it just received)
+ *                          without re-rendering the whole block. Nothing else about the component
+ *                          changes; a caller that omits it gets exactly the markup it always got.
  * @var array|null  $action Optional. ['label'=>string, 'id'=>string (for the caller's own JS to bind
  *                          a click handler to -- this partial never wires behavior itself),
  *                          'variant'=>'primary'|'secondary'|'tertiary' (default 'secondary' -- §4:
@@ -43,13 +56,16 @@
  *   include __DIR__ . '/../partials/empty-state.php';
  */
 $esIcon = htmlspecialchars($icon ?? 'fa-solid fa-inbox', ENT_QUOTES, 'UTF-8');
+$esTitleI18n = !empty($title_i18n) ? ' data-i18n="' . htmlspecialchars($title_i18n, ENT_QUOTES, 'UTF-8') . '"' : '';
+$esTextI18n = !empty($text_i18n) ? ' data-i18n="' . htmlspecialchars($text_i18n, ENT_QUOTES, 'UTF-8') . '"' : '';
+$esTextId = !empty($text_id) ? ' id="' . htmlspecialchars($text_id, ENT_QUOTES, 'UTF-8') . '"' : '';
 $esVariant = in_array($action['variant'] ?? 'secondary', ['primary', 'secondary', 'tertiary'], true) ? ($action['variant'] ?? 'secondary') : 'secondary';
 $esBtnClass = $esVariant === 'tertiary' ? 'btn btn-link' : ($esVariant === 'primary' ? 'btn btn-primary' : 'btn btn-outline-secondary');
 ?>
 <div class="empty-state">
     <i class="empty-state-icon <?=$esIcon?>" aria-hidden="true"></i>
-    <div class="empty-state-title"><?=htmlspecialchars($title)?></div>
-    <div class="empty-state-text"><?=htmlspecialchars($text)?></div>
+    <div class="empty-state-title"<?=$esTitleI18n?>><?=htmlspecialchars($title)?></div>
+    <div class="empty-state-text"<?=$esTextId?><?=$esTextI18n?>><?=htmlspecialchars($text)?></div>
     <?php if (!empty($action)): ?>
     <button type="button" class="<?=$esBtnClass?> empty-state-action" id="<?=htmlspecialchars($action['id'] ?? '', ENT_QUOTES, 'UTF-8')?>"><?=htmlspecialchars($action['label'])?></button>
     <?php endif; ?>
