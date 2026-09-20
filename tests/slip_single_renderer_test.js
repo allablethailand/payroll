@@ -407,6 +407,11 @@ check('every entry is listed -- the list is never cut to the first N',
         'view'), '<tr') === 38 + 1);
 check('newest first, as the endpoint hands them over',
     tblEdit.indexOf('11:00:00') < tblEdit.indexOf('10:00:00'));
+// 2026-09-20, tiny-G: the column head already says what this column is, so a row does not say it
+// again -- what is left is the 2 values and the arrow between them.
+check('a change reads as value -> value, with nothing worded in front of it',
+    countOf(tblEdit, '<td class="lo-history-change">1,800.00 → 1,500.00') === 1
+    && countOf(tblEdit, '<td class="lo-history-change">2,000.00 → 1,800.00') === 1, tblEdit);
 // 2026-09-19: the baseline is not an edit and has no time of its own, so it is not a row of the
 // list at all -- as the list's first row it also scrolled away, which is what a baseline must not do.
 check('the calculated value is in the title bar, above the list',
@@ -489,6 +494,9 @@ const tblPit = api.lineOverrideHistoryTableHtmlRd(PIT_LINE, [histRow({ source_ty
 check('the entry prints the words the rest of the slip says it with, never a figure',
     tblPit.indexOf(LANG['calc_override_no']) !== -1 && tblPit.indexOf(LANG['calc_override_inherit']) !== -1
     && tblPit.indexOf('0.00') === -1, tblPit);
+check('...and so does a tri-state answer -- the 2 words, and nothing in front of them either',
+    tblPit.indexOf('<td class="lo-history-change">' + LANG['calc_override_inherit']
+        + ' → ' + LANG['calc_override_no'] + '</td>') !== -1, tblPit);
 check('its calculated row is what inherit resolves to, and applies that third value',
     tblPit.indexOf('data-value="inherit"') !== -1 && tblPit.indexOf('data-kind="text"') !== -1, tblPit);
 check('...and no amount row is invented for a line with no amount trail',

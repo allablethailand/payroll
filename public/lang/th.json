@@ -1956,7 +1956,7 @@
     "line_override_history_use_value": "ใช้ค่านี้",
     "line_override_confirm_use_value_title": "ใช้ค่านี้แทนค่าปัจจุบัน",
     "line_override_confirm_use_value_message": "จะตั้ง {item} เป็น {value} และบันทึกทันที",
-    "line_override_history_from_to": "จาก {from} → {to}",
+    "line_override_history_from_to": "{from} → {to}",
     "line_override_restore_all_computed": "คืนค่าระบบทั้งหมด",
     "line_override_group_restore": "คืนค่าระบบ",
     "confirm_group_restore_title": "คืนค่าระบบทั้งกลุ่ม",

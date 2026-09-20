@@ -308,6 +308,35 @@ async function openHistory(page, code) {
             headColor: cells(':scope > thead > tr > th').length ? getComputedStyle(cells(':scope > thead > tr > th')[0]).color : null,
             currentColor: cells(':scope > tbody .lo-history-current').length
                 ? getComputedStyle(cells(':scope > tbody .lo-history-current')[0]).color : null,
+            /* tiny-G: the space OUTSIDE the panel -- what the history ROW's own cell pads with,
+               above the panel and below it. Both are the table's own surface showing through a
+               transparent cell, never a painted band, and the two have to be the same. */
+            gaps: (() => {
+                const td = panelRow ? panelRow.querySelector('td') : null;
+                if (!panel || !td) return null;
+                const next = panelRow.nextElementSibling;
+                const pr = panel.getBoundingClientRect();
+                const tr = td.getBoundingClientRect();
+                const r1 = (n) => Math.round(n * 10) / 10;
+                const tds = getComputedStyle(td);
+                return {
+                    // Row to row, as a reader sees it: from the line's own underline down to the
+                    // panel, and from the panel down to whatever comes next. The two carry ONE
+                    // collapsed 1px rule between them, and which side of a boundary that pixel
+                    // lands on is a rounding matter that moves with the viewport -- which is why
+                    // the pair below, measured inside the cell, is what the token is checked on.
+                    top: r1(pr.top - row.getBoundingClientRect().bottom),
+                    bottom: next ? r1(next.getBoundingClientRect().top - pr.bottom) : null,
+                    innerTop: r1(pr.top - tr.top),
+                    innerBottom: r1(tr.bottom - pr.bottom),
+                    rowBorder: r1(parseFloat(tds.borderBottomWidth) || 0),
+                    padTop: tds.paddingTop,
+                    padBottom: tds.paddingBottom,
+                    tdBg: tds.backgroundColor,
+                    nextClass: next ? next.className : null,
+                    tokenSp2: cs.getPropertyValue('--sp-2').trim(),
+                };
+            })(),
             // The slip around it must not have moved.
             totalsOutsideScroller: (() => {
                 const block = document.querySelector(args.wrap + ' .lo-totals');
@@ -329,6 +358,39 @@ function contrastOf(fg, bg) {
     const a = lum(parse(fg));
     const b = lum(parse(bg));
     return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+/* tiny-G: the panel is a box INSIDE a table row, and the space around it is that row's own padding.
+   Above it there was none at all -- the panel's top edge sat straight on the line's underline --
+   while below it there was a step, so the box read as belonging to whatever came next rather than to
+   the line it was opened from. What is measured is the space OUTSIDE the panel on each side.
+   One rule sits on each side of the block and neither is space: above, the line row's own underline;
+   below, this row's. Chromium reports a collapsed rule against one row or split between both
+   depending on where the fractional layout falls (0.5/0.5 at 1400, 0/1 at 430 -- measured), so
+   "top === bottom" alone is not a number this can be held to. What IS exact at every width is their
+   SUM: twice the padding plus that one rule. Held to both, plus the padding's own declarations. */
+function checkGaps(label, o) {
+    const g = o.gaps;
+    const pad = g ? parseFloat(g.padTop) : NaN;
+    check(`${label}: the panel is inset from the line above it by the same step it leaves below`,
+        !!g && g.bottom !== null && Math.abs(g.top - g.bottom) <= g.rowBorder + 0.05,
+        g ? `top=${g.top} bottom=${g.bottom} (rule=${g.rowBorder})` : 'no panel');
+    check(`${label}: ...and what separates them is that one rule, nothing else`,
+        !!g && g.bottom !== null && Math.abs((g.top + g.bottom) - (2 * pad + g.rowBorder)) <= 0.5,
+        g ? `${g.top}+${g.bottom} vs 2x${pad}+${g.rowBorder}` : 'no panel');
+    check(`${label}: ...so the step itself is the token, resolved, on both sides`,
+        !!g && g.padTop === g.padBottom && g.padTop === g.tokenSp2
+        && Math.abs(g.innerTop - pad) <= g.rowBorder + 0.05
+        && Math.abs(g.innerBottom - pad) <= g.rowBorder + 0.05,
+        g ? `${g.innerTop}/${g.innerBottom} padding ${g.padTop}/${g.padBottom} token=${g.tokenSp2}` : 'no panel');
+    // The gap is the table showing through, so the cell may not paint anything of its own -- least
+    // of all the token the group headings use, which is what the panel itself was taken off.
+    check(`${label}: ...over the table's own surface, not a band of its own`,
+        !!g && (g.tdBg === 'rgba(0, 0, 0, 0)' || g.tdBg === 'transparent') && g.tdBg !== o.tokenBgSubtle,
+        g && g.tdBg);
+    console.log(`  MEASURED ${label}: gapTop=${g && g.top} gapBottom=${g && g.bottom}`
+        + ` | inCell ${g && g.innerTop}/${g && g.innerBottom} (padding ${g && g.padTop}/${g && g.padBottom},`
+        + ` token ${g && g.tokenSp2}, rule ${g && g.rowBorder})`
+        + ` | scrollBox=${o.boxHeight} panel=${o.panelHeight}`);
 }
 async function tableHeight(page) {
     return page.evaluate((wrap) => {
@@ -568,6 +630,7 @@ async function h1(opts) {
         + ` | head ${contrastOf(base.headOnPanel.color, base.headOnPanel.bg).toFixed(2)}:1`
         + ` | indent=${base.panelIndent} (name x=${base.nameColLeft - base.tableLeft})`
         + ` | panel=${base.panelWidth} of ${base.scrollerWidth}`);
+    checkGaps(label, base);
     const r = report();
     check(`${label}: nothing was written`, r.blockedWrites === 0 && r.blockedRecalculates === 0,
         `writes=${r.blockedWrites} recalc=${r.blockedRecalculates}`);
@@ -644,6 +707,7 @@ async function h2(opts) {
         `${base.computedRows} / ${base.textButtons.join(' | ')}`);
     check(`${label}: the panel is pinned here too`, base.panelPosition === 'sticky' && base.panelPinned === true,
         `${base.panelPosition}/left=${base.panelLeftAfterScroll} after ${base.scrollAmount}px`);
+    checkGaps(label, base);
     await closeSlip(page);
 
     const restored = await post(page, 'payroll-run.employee-verify.save', { employee_id: Number(employeeId), verified: false });
@@ -714,13 +778,19 @@ async function h3(opts) {
     const contrast = contrastOf(long.afterPanelScroll.headColor, long.afterPanelScroll.headBg);
     check(`${label}: ...and readable on it (>= 4.5:1)`, contrast >= 4.5,
         `${contrast.toFixed(2)}:1 (${long.afterPanelScroll.headColor} on ${long.afterPanelScroll.headBg})`);
-    // A 38-entry chain may not push the slip's own table down by more than the panel it opened.
-    // Plus the row's own box (its border and the cell's line box) -- what must NOT happen is the
-    // table growing by the whole 38-entry list, which is what the cap is for.
+    // A 38-entry chain may not push the slip's own table down by more than the panel it opened,
+    // plus the row that holds it -- which is the step above the panel, the step below it and the
+    // rule between the rows, all of them measured rather than allowed for with a round number
+    // (2026-09-20, tiny-G: the row pads on BOTH sides now, and a flat 16 no longer covered it).
+    // What must NOT happen is the table growing by the whole 38-entry list, which is what the cap
+    // is for.
+    const rowBox = long.gaps ? long.gaps.top + long.gaps.bottom : 16;
     check(`${label}: the slip's table grows by no more than the panel itself`,
-        tableGrowth <= long.panelHeight + 16, `growth=${tableGrowth} panel=${long.panelHeight}`);
+        tableGrowth <= long.panelHeight + rowBox + 1,
+        `growth=${tableGrowth} panel=${long.panelHeight} + row ${rowBox}`);
     check(`${label}: ...which is far less than the uncapped list would have taken`,
         tableGrowth < long.panelScrollH, `growth=${tableGrowth} full=${long.panelScrollH}`);
+    checkGaps(label, long);
     await closeSlip(page);
     const r = report();
     check(`${label}: this cell wrote NOTHING to run 752`, r.blockedWrites === 0, String(r.blockedWrites));

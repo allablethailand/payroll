@@ -1956,7 +1956,7 @@
     "line_override_history_use_value": "Use this value",
     "line_override_confirm_use_value_title": "Use this value instead of the current one",
     "line_override_confirm_use_value_message": "{item} will be set to {value} and saved immediately.",
-    "line_override_history_from_to": "from {from} → {to}",
+    "line_override_history_from_to": "{from} → {to}",
     "line_override_restore_all_computed": "Restore all calculated values",
     "line_override_group_restore": "Restore calculated values",
     "confirm_group_restore_title": "Restore this group",

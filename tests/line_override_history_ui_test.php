@@ -90,7 +90,15 @@ checkTrue('a switched-off row opens read-only, in either slip',
     strpos($toggleBody, "const mode = (lineOverrideHostRd.mode === 'view' || \$row.hasClass('lo-row-off')) ? 'view' : 'edit';") !== false);
 // The measured one. Below `sm` the table is a horizontal scroller wider than its host, so whatever
 // a full-width cell holds slides away with the drag unless it pins.
-$panelBlock = substr($css, (int)strpos($css, '.lo-history-panel {'), 1700);
+// The WHOLE rule, not a fixed-length window onto it: a comment added inside the block pushes a
+// declaration out of a counted slice and fails an assertion about CSS nobody touched (hit for real,
+// 2026-09-20).
+$ruleBlock = static function (string $css, string $selector): string {
+    $start = (int)strpos($css, $selector);
+    $end = strpos($css, "\n}", $start);
+    return $end === false ? substr($css, $start) : substr($css, $start, $end - $start + 2);
+};
+$panelBlock = $ruleBlock($css, '.lo-history-panel {');
 checkTrue('the panel pins to the left edge of the scroller', strpos($panelBlock, 'position: sticky') !== false
     && strpos($panelBlock, 'left: 0') !== false);
 checkTrue('...and takes the VISIBLE width, not the scrolled one, minus where it starts',
@@ -114,6 +122,11 @@ checkTrue('the cell itself stays a table cell', strpos($rowCssBlock, 'display:')
 checkTrue('the cell keeps the table surface, it does not repaint it',
     strpos($rowCssBlock, 'background: transparent') !== false
     && strpos($rowCssBlock, '--c-bg-subtle') === false);
+// 2026-09-20, tiny-G: the space outside the panel is this cell's padding, and it is the same step
+// above it as below -- the box used to sit straight on the line's underline and stand clear only of
+// what came after, which reads as belonging to the row below rather than to its own line.
+checkTrue('the cell insets the panel by the same step above and below',
+    strpos($rowCssBlock, 'padding: var(--sp-2) 0;') !== false);
 checkTrue('...and the panel is a box of its own instead', strpos($panelBlock, 'background: var(--c-bg);') !== false
     && strpos($panelBlock, 'border: 1px solid var(--c-border)') !== false
     && strpos($panelBlock, 'border-radius: var(--radius)') !== false);
@@ -129,6 +142,10 @@ checkTrue('the LIST caps its own height and scrolls, not the whole panel',
     && strpos($panelBlock, 'max-height') === false);
 checkTrue('...and neither of them can add a sideways drag', strpos($scrollBlock, 'overflow-x: hidden') !== false
     && strpos($panelBlock, 'overflow: hidden') !== false);
+// An inline-block sits on the cell's text baseline, which leaves the font's descender space under
+// it: ~4px that is not padding and that no padding can balance.
+checkTrue('...and the box is top-aligned, so that padding is all there is around it',
+    strpos($panelBlock, 'vertical-align: top;') !== false);
 // Padding above a sticky head shows THROUGH it as a strip of background while the list scrolls.
 checkTrue('...with no padding above the head it pins', strpos($panelBlock, 'padding: 0 var(--sp-2);') !== false);
 $heightBody = substr($js, (int)strpos($js, 'function lineOverridePublishHistoryHeightRd('), 1200);
@@ -454,6 +471,14 @@ checkTrue('line_override_confirm_use_value_message keeps {item} in both',
     && strpos((string)$en['line_override_confirm_use_value_message'], '{item}') !== false);
 checkTrue('line_override_history_from_to keeps {to} in both', strpos((string)$th['line_override_history_from_to'], '{to}') !== false
     && strpos((string)$en['line_override_history_from_to'], '{to}') !== false);
+// 2026-09-20, tiny-G: the column head says what this column is; a row that opened with the word
+// "from" said it again, once per entry, 38 times over on a real line. What is left is the 2 values
+// and the arrow between them -- which is the same string in both files, because it holds no word.
+checkTrue('the change reads as value -> value, with nothing worded in front of it',
+    strpos((string)$th['line_override_history_from_to'], '{from}') === 0
+    && strpos((string)$en['line_override_history_from_to'], '{from}') === 0);
+checkTrue('...and it is therefore the same string in both files',
+    $th['line_override_history_from_to'] === $en['line_override_history_from_to']);
 // The 2 marks say different things and must not drift into the same word: a line added by hand was
 // never calculated at all, which is not the same as a calculated figure somebody replaced.
 checkTrue('the 2 read-only marks are different words in both languages',

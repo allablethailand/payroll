@@ -4464,7 +4464,7 @@ function lineOverrideHistoryTableHtmlRd(line, rows, mode) {
         if (isCurrent) matched[kind] = true;
         const change = from === ''
             ? escapeHtml(to)
-            : escapeHtml((langData['line_override_history_from_to'] || 'from {from} -> {to}')
+            : escapeHtml((langData['line_override_history_from_to'] || '{from} → {to}')
                 .replace('{from}', from).replace('{to}', to));
         const who = (currentLang === 'th' ? row.changed_by_name_th : row.changed_by_name_en)
             || row.changed_by_name_th || row.changed_by_name_en || '';

@@ -9899,15 +9899,26 @@ th.lo-history-col {
    2026-09-19: the CELL keeps the table's own surface. The panel used to paint `--c-bg-subtle` here,
    which is the very token the group headings above it use -- so an opened panel and the heading it
    sat under read as one block. What separates the panel now is its own surface plus a border, which
-   is what a box inside a table is, and the row around it stays part of the table. */
+   is what a box inside a table is, and the row around it stays part of the table.
+   2026-09-20, tiny-G: the same step above the panel as below it. It had none above at all, so the
+   box sat straight on the line's underline while standing a step clear of whatever came next --
+   which reads as belonging to the row BELOW rather than to the line it was opened from. Both sides
+   are this one cell's padding, and the space itself is the table showing through: the cell paints
+   nothing, here or above. */
 .lo-table > tbody > tr.lo-history-row > td {
-    padding: 0 0 var(--sp-2);
+    padding: var(--sp-2) 0;
     background: transparent;
 }
 .lo-history-panel {
     position: sticky;
     left: 0;
     display: inline-block;
+    /* An inline-block sits on the cell's text baseline, which leaves the font's descender space
+       under it -- ~4px of gap that is not padding and cannot be balanced with any. Aligning it to
+       the top of the line box is what makes the space around the panel its cell's padding and
+       nothing else. (The box stays inline-block: that is what lets it take a measured width and
+       still be pinned by the slip's own scroller.) */
+    vertical-align: top;
     width: calc(var(--lo-history-panel-w, 100%) - var(--lo-history-indent, 0px));
     max-width: 100%;
     /* Starts where the ITEM NAME above it starts, not at the edge of the table: the panel belongs
