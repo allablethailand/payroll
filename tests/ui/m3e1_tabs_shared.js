@@ -26,7 +26,7 @@
  * opened read-only; run 752 / EM009 are never opened at all.
  */
 'use strict';
-const { openContext, closeAll } = require('./harness');
+const { openContext, closeAll, applyAppTheme } = require('./harness');
 
 const sessionId = process.argv[2];
 const runToken = process.argv[3];
@@ -207,11 +207,13 @@ async function cell2() {
     const ctx = await openContext({ sessionId: sessionId, width: 430, height: 932, colorScheme: 'dark', blockPaths: WRITE_PATHS });
     await gotoRun(ctx, runToken, 'th');
     // The app stamps `data-bs-theme` from the viewer's SAVED preference (employee 28 = light), so a
-    // Chromium colorScheme alone leaves the page in light. setTheme() is what the toggle calls; its
-    // write-back to api/user-preference.save is already aborted by the harness, so employee 28's row
-    // is untouched either way.
-    await ctx.page.evaluate(() => { if (typeof setTheme === 'function') setTheme('dark'); });
-    await ctx.page.waitForTimeout(600);
+    // Chromium colorScheme alone leaves the page in light. 2026-09-21, 3e-2a round 1: this cell's own
+    // inline setTheme() call moved to harness.js's applyAppTheme(), so every round applies a theme
+    // one way and proves it the same way. Same behaviour, same blocked write-back -- employee 28's
+    // row is untouched either way.
+    const themeInfo = await applyAppTheme(ctx.page, 'dark');
+    measured('c2 theme', themeInfo);
+    check('c2: applyAppTheme really put the page in dark', themeInfo.ok === true, themeInfo.stamp);
     const faint = await ctx.page.evaluate(() => {
         const raw = getComputedStyle(document.documentElement).getPropertyValue('--c-text-faint').trim();
         const probe = document.createElement('span');

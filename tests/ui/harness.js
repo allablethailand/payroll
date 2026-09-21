@@ -201,6 +201,53 @@ async function openContext(opts) {
     };
 }
 
+/**
+ * Puts the PAGE into a theme, the way the app itself does, and proves it took.
+ *
+ * WHY A CHROMIUM `colorScheme` IS NOT A THEME HERE
+ * layout/header.php stamps `data-bs-theme` on <html> from the VIEWER'S SAVED preference, and
+ * tokens.css hangs its dark values off `[data-bs-theme="dark"]` plus an OS media query guarded by
+ * `:root:not([data-bs-theme="light"])`. The UI test account is saved as 'light', so it is stamped
+ * `light`, which switches that guard OFF -- an OS-level dark context renders the LIGHT tokens, every
+ * time. A cell that opened `colorScheme: 'dark'` and measured colours was therefore measuring the
+ * light theme under a dark-sounding label. Three round scripts already worked around this on their
+ * own (h_history_table.js, k4b_close_batch4.js, k4c_employee_detail.js each call applyTheme()
+ * inline); this is that same call, once, with the proof attached -- so a cell cannot silently go on
+ * measuring the wrong theme if the mechanism ever changes again.
+ *
+ * applyTheme() is exactly what the app's own theme toggle calls. Its write-back to
+ * api/user-preference.save is aborted by every context this file opens, so the account's saved
+ * preference is never touched -- confirmed by the caller re-reading employees.ui_theme afterwards.
+ *
+ * @returns {{stamp: string|null, ok: boolean, bg, text, border, appBg, bodyBackground}}
+ *   `ok` is the whole point: false means the page is NOT in the theme asked for, and the caller must
+ *   fail its cell rather than measure colours that do not mean what its label says.
+ */
+async function applyAppTheme(page, theme) {
+    await page.evaluate((t) => {
+        if (typeof applyTheme === 'function') applyTheme(t);
+    }, theme);
+    await page.waitForTimeout(600);
+    return page.evaluate((t) => {
+        const cs = getComputedStyle(document.documentElement);
+        const token = (n) => cs.getPropertyValue(n).trim();
+        return {
+            stamp: document.documentElement.getAttribute('data-bs-theme'),
+            ok: document.documentElement.getAttribute('data-bs-theme') === t,
+            bg: token('--c-bg'),
+            text: token('--c-text'),
+            border: token('--c-border'),
+            // <body>'s own paint still comes from the LEGACY --app-bg, not --c-bg: the --app-*
+            // family is the pre-token set the design system is still migrating off (BACKLOG:
+            // "~220 บรรทัด"). Both are returned so a caller can assert against the one that
+            // actually paints the surface it is measuring, instead of guessing they are the same
+            // colour -- in dark they are not (#14181f vs #15181C).
+            appBg: token('--app-bg'),
+            bodyBackground: getComputedStyle(document.body).backgroundColor,
+        };
+    }, theme);
+}
+
 async function closeAll() {
     while (openBrowsers.length) {
         const b = openBrowsers.pop();
@@ -212,4 +259,4 @@ async function closeAll() {
     }
 }
 
-module.exports = { openContext, closeAll, resolvePlaywright, PREFERENCE_SAVE_PATH, RECALCULATE_PATH };
+module.exports = { openContext, closeAll, applyAppTheme, resolvePlaywright, PREFERENCE_SAVE_PATH, RECALCULATE_PATH };
