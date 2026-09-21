@@ -3579,6 +3579,23 @@ th.col-money div.dt-column-header .dt-column-title {
     --bs-popover-body-color: var(--c-text);
     --bs-popover-font-size: var(--fs-sm);
     max-width: 320px;
+    /* 2026-09-21, 3e-2a, BACKLOG item closed: the BOX itself never declared a color, so it inherited
+       the legacy grey `html, body` still sets at the top of this file -- invisible today only because
+       every child that carries real text sets its own. Any text element added inside the box later
+       would have quietly got the wrong colour. (The hex is deliberately not written out here: rule 1
+       of the design lint reads a literal colour in a COMMENT exactly as it reads one in a
+       declaration, and it is right to -- a hex in this file is a hex in this file.)
+       The 2 --bs-popover-*-color vars above stay: they are what the header/body actually read. */
+    color: var(--c-text);
+}
+/* 2026-09-21, 3e-2a: a popover listing one sentence per code has no natural ceiling -- a row with 6
+   of them grew a tip taller than a phone screen, with its bottom entries unreachable (the tip is
+   position:fixed, so the page behind it cannot be scrolled to them either). The list scrolls inside
+   the box instead. min() of a viewport share and an absolute: 50vh keeps it to half the screen on a
+   phone, 20rem stops it becoming a full-height column on a desktop monitor. */
+.popover-body {
+    max-height: min(50vh, 20rem);
+    overflow-y: auto;
 }
 /* 2026-09-14, same-day follow-up, explicit instruction: "× เบี้ยว/หนา...จัด align-items:center กับหัว"
    -- .popover-header's OWN background/border-bottom (previously driven by --bs-popover-header-bg,
@@ -6177,6 +6194,22 @@ html, body {
    own caption, a tighter gap than the --sp-5 used everywhere else -- item A.1). */
 #nextStepBanner.callout {
     margin-top: var(--sp-3);
+}
+/* 2026-09-21, 3e-2a -- the run-level banner stack on Payroll Detail (see its own markup comment).
+   `gap` is the whole mechanism: it applies only BETWEEN boxes that actually render, so a hidden
+   (`d-none`) banner contributes nothing, and the same rule handles 1 visible box or 4. Nothing here
+   touches `.callout` itself, which every other page shares.
+   The gap to the tab bar is --sp-4 rather than the --sp-3 used between the boxes: the boxes are one
+   group and read as a stack, the tab bar is the next thing on the page. It is on `:has()` on purpose
+   -- a run with NO visible banner must keep the exact spacing it had before this wrapper existed,
+   which a plain `margin-bottom` here would have silently changed for every run without one. */
+.rd-run-banners {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+}
+.rd-run-banners:has(> :not(.d-none)) {
+    margin-bottom: var(--sp-4);
 }
 /* Setting row (§9/§11, new 2026-09-14, Round 3 "เก็บตกรอบ 6") -- app/views/partials/setting-row.php's
    own CSS contract, see that file's docblock for the full spec/rationale. Supersedes

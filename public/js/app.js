@@ -3783,11 +3783,13 @@ function resetModalTabs($modal) {
     $modal.find('.tab-pane').removeClass('show active');
 }
 // 2026-09-14, Round 3 item 3c-2 follow-up, explicit instruction: a central popover component (§9/
-// §11) -- "ทำเป็นกฎ popover กลาง...ใช้ทุกที่ที่มี ? ไม่เฉพาะ payslip". payroll/detail.js's
-// formulaButtonRd() (breakdown modal's "?" info button) is the one real call site today, but this is
-// written as a genuinely shared mechanism, the same way emp-header-card/apvAvatarHtml are, not
-// scoped to that one caller -- any future "?" info button anywhere calls THIS, not its own
-// `new bootstrap.Popover(...)`.
+// §11) -- "ทำเป็นกฎ popover กลาง...ใช้ทุกที่ที่มี ? ไม่เฉพาะ payslip". Written as a genuinely shared
+// mechanism, the same way emp-header-card/apvAvatarHtml are -- any badge or "?" info button anywhere
+// calls THIS, not its own `new bootstrap.Popover(...)`.
+// 2026-09-21, 3e-2a: this docblock used to name payroll/detail.js's formulaButtonRd() as "the one
+// real call site today". That function was deleted in 4a-1 (tests/line_override_row_render_test.js
+// asserts it is gone) and the comment was never updated -- the real call sites today are the
+// Calculation column's 2 badges (payroll/detail.js's calcPopoverBadgeRd()).
 //
 // initPopovers(root = document): (re)initializes every `[data-bs-toggle="popover"]` under `root` --
 // dispose-then-create, same idempotent pattern a caller re-rendering its own container (e.g. a
@@ -3830,14 +3832,40 @@ function initPopovers(root = document) {
     // entirely, which would also stop sanitizing the CONTENT every real caller passes in via
     // `data-bs-content`/`data-bs-html="true"`) with exactly the 2 tags/attributes this one static
     // template needs.
+    // 2026-09-21, 3e-2a, real bug found by measurement (not reasoning): a caller passing
+    // `<li data-code="...">` through data-bs-content got its `<li>` rendered and the attribute
+    // SILENTLY REMOVED -- Bootstrap's allowList is per-tag AND per-attribute, and `li` ships with no
+    // attributes of its own at all. The whole point of data-code (rules.md: the raw machine code
+    // never reads as text, but stays findable when someone reports a row) was therefore lost the
+    // moment it went through a popover, while the identical markup rendered outside one -- the
+    // Calculation Breakdown modal's callouts -- kept it. Caught by the round's own Playwright cell
+    // reading the attribute back out of the live tip; every `<li>` came back null.
     const popoverAllowList = Object.assign({}, bootstrap.Popover.Default.allowList, {
         button: ['type', 'class', 'aria-label'],
         i: (bootstrap.Popover.Default.allowList.i || []).concat(['class']),
+        li: (bootstrap.Popover.Default.allowList.li || []).concat(['data-code']),
+        span: (bootstrap.Popover.Default.allowList.span || []).concat(['data-code']),
     });
     $(root).find('[data-bs-toggle="popover"]').each(function () {
         const existing = bootstrap.Popover.getInstance(this);
         if (existing) existing.dispose();
-        new bootstrap.Popover(this, { template: POPOVER_TEMPLATE_RD, trigger: 'click', allowList: popoverAllowList });
+        // The resting half of the aria-expanded pair wired at the bottom of this function: a
+        // disclosure control has to announce itself as one BEFORE it is ever pressed, not only once
+        // it has been. Set here rather than in each caller's markup so no caller can forget it.
+        this.setAttribute('aria-expanded', 'false');
+        // 2026-09-21, 3e-2a: `strategy: 'fixed'` as the default for every popover in the app. The
+        // triggers that exist today live inside a DataTable cell, and Popper's own default
+        // ('absolute') positions the tip against the nearest positioned ancestor -- which for a
+        // table inside `.table-responsive` is a scroll container that CLIPS it. Fixed positions
+        // against the viewport instead, so a tip opened on the last visible row is never cut off.
+        // Merged onto whatever default Popper hands in, never replacing it: the modifiers Bootstrap
+        // itself installs (arrow, offset, flip, preventOverflow) all have to survive this.
+        new bootstrap.Popover(this, {
+            template: POPOVER_TEMPLATE_RD,
+            trigger: 'click',
+            allowList: popoverAllowList,
+            popperConfig: (defaultConfig) => Object.assign({}, defaultConfig, { strategy: 'fixed' }),
+        });
     });
     if (popoverGlobalHandlersWired) return;
     popoverGlobalHandlersWired = true;
@@ -3913,6 +3941,18 @@ function initPopovers(root = document) {
         if (e.target && typeof e.target.focus === 'function') {
             e.target.focus({ preventScroll: true });
         }
+    });
+    // 2026-09-21, 3e-2a: Bootstrap sets `aria-describedby` on the trigger while the tip is open, which
+    // is how a screen reader finds the CONTENT -- but it never sets `aria-expanded`, which is how one
+    // announces that the control is a disclosure at all, open or shut. Wired here, next to the focus
+    // return, so every popover in the app gets it from the one place that already owns open/close --
+    // never per caller. Set on show (not shown) so the attribute is already correct by the time the
+    // tip appears, and on hidden so it is only cleared once the tip is really gone.
+    document.addEventListener('show.bs.popover', function (e) {
+        if (e.target && e.target.setAttribute) e.target.setAttribute('aria-expanded', 'true');
+    });
+    document.addEventListener('hidden.bs.popover', function (e) {
+        if (e.target && e.target.setAttribute) e.target.setAttribute('aria-expanded', 'false');
     });
 }
 // 2026-09-13, §1 follow-up, explicit instruction -- consolidates 3 near-identical per-page functions

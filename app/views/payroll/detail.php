@@ -152,6 +152,14 @@
          different shapes. Left border carries the tone; the copy, the ids and every handler below are
          untouched. JS toggles `d-none` on these (not attr('class')), so the tone class can live here
          in the markup. -->
+    <!-- 2026-09-21, 3e-2a: the 4 run-level boxes below were siblings with no spacing of their own --
+         two that happened to be visible at once rendered as ONE box with a 2-coloured left edge, and the last one sat flush against the tab bar. The
+         wrapper owns the rhythm (column flex + gap), NOT .callout, which is shared with every other
+         page. A `d-none` child is display:none, so it is not a flex item at all and its gap
+         disappears with it -- nothing here reserves space for a box that is not on screen, and a run
+         with no banners keeps exactly the spacing it had before this wrapper existed. ids, classes,
+         tone classes and every handler are untouched. -->
+    <div class="rd-run-banners">
     <div class="callout callout-danger d-none" id="validationErrorsBanner"></div>
     <!-- 2026-08-30 (Phase 8, T041): reconciliation warning for a sync-based run -- employees who
          would normally be expected in payroll but weren't in this Origami sync payload and nobody
@@ -194,6 +202,7 @@
          now by swapping `callout-warning`/`callout-danger` instead of `alert-*`. -->
     <div class="callout callout-warning d-none" id="mergeTargetWaitingBanner">
         <span id="mergeTargetWaitingBannerText"></span>
+    </div>
     </div>
 
     <!-- 2026-09-13, Round 3 item 3a (§6: "Tabs ไม่มีไอคอน") -- icons stripped from the 5 tab buttons

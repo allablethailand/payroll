@@ -507,6 +507,24 @@ component กลางแทนการคัดลอก — §0.4)
 (`active`/`inactive`/`deleted`) และ `publish_status` (`draft`/`public`) — ทั้งคู่ render เป็น toggle
 switch ไม่เคยเป็น badge เลยที่ไหนในแอป
 
+### 5.1 Badge ที่มีรายละเอียดอยู่เบื้องหลัง = ปุ่ม + popover (3e-2a, 2026-09-21)
+
+- Badge ที่บอกแค่ **ว่า** เกิดอะไรขึ้น แต่คำอธิบาย **ทำไม** อยู่ที่อื่น (modal อื่น, หน้าอื่น) → ห่อ badge นั้นด้วย
+  `<button>` แล้วเปิดรายละเอียดด้วย `initPopovers()` (§11) ในที่เดิม ห้ามให้ผู้ใช้ต้องเปิดหน้าอื่นเพื่ออ่านเหตุผล
+  - badge ไม่มีไอคอน ไม่มี caret — ตัว badge เองคือปุ่ม
+  - `<li>`/`<span>` ละ 1 ประโยค · ปุ่มต้อง Tab ถึงและ Enter เปิดได้ (`initPopovers()` จัดการ
+    `aria-expanded` + คืน focus ให้เอง ห้ามผูกเอง)
+  - ไม่มีรายละเอียดจริงให้แสดง → เป็น badge เปล่าเหมือนเดิม ห้ามมีปุ่มที่กดแล้วเปิดกล่องว่าง
+  - `render.display` เท่านั้น — `sort`/`filter` ของคอลัมน์ต้องอ่านค่าดิบ/label เดิม ห้ามให้ markup ของปุ่มรั่วเข้าไป
+
+### 5.2 Machine code ห้ามเป็นข้อความบนจอ → `data-code` (3e-2a, 2026-09-21)
+
+- code จาก backend (`calc_errors`, enum ที่ยังไม่ map, ฯลฯ) **ห้าม render เป็นข้อความให้ผู้ใช้อ่าน**
+  แม้ในกรณี fallback — code ที่ไม่รู้จักต้องมี **key กลาง 1 ตัว** เป็นประโยคเดียว
+- code ตัวจริงเก็บไว้ที่ `data-code` ของ element นั้นเท่านั้น (ยังหาเจอตอนผู้ใช้แจ้งปัญหา)
+- ส่งผ่าน popover ต้องเพิ่ม attribute ใน `allowList` ของ `initPopovers()` ด้วย — Bootstrap sanitize
+  ตัด attribute ที่ไม่ได้ allow ทิ้งเงียบๆ (เจอจริง: `<li data-code>` ถูกตัดหมด ทั้งที่ callout นอก popover ไม่โดน)
+
 ---
 
 ## 6. Tabs, Status tabs, Stepper, Timeline, Filter bar, Notification, Empty state

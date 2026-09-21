@@ -1047,7 +1047,10 @@ body-color` ซึ่งมีผลกับ `.popover-body` ไม่ใช่
 `.tcf-panel-title`/`.tcf-item`) ตั้งสีของตัวเองทับหมด — เป็นสีที่รอ inherit ให้ผิด ถ้ามีใครเพิ่ม element
 ข้อความใหม่ในกล่องพวกนี้แล้วลืมตั้งสี
 
-**ทำตอนรอบ 3d ที่ mark `design:clean`**: ตั้ง `color: var(--c-text)` ที่ `.tcf-panel`/`.popover` ให้จบ
+**`.popover` ปิดแล้ว (3e-2a, 2026-09-21)** — `color: var(--c-text)` อยู่ที่ `.popover` แล้ว เหลือ
+`.tcf-panel` ตัวเดียวในข้อนี้
+
+**ทำตอนรอบ 3d ที่ mark `design:clean`**: ตั้ง `color: var(--c-text)` ที่ `.tcf-panel` ให้จบ
 (หรือถ้าจะแก้ที่ต้นทางจริงคือ `html, body`'s `#555` ซึ่งกระทบทั้งแอป ต้องเป็นงานของตัวเองพร้อมวัดหน้าอื่นด้วย
 ไม่ควรพ่วงกับ 3d เงียบๆ) — ดู `--app-*` ~220 บรรทัดที่เหลือใน `style.css` เป็นงานเดียวกันชุดใหญ่กว่า
 
@@ -1407,3 +1410,78 @@ element นี้เองไม่ว่า `<th>` ข้างในจะเ�
 เป็น primary action จริงของ flow merge ต้องตัดสินพร้อมกับ flow นั้น
 
 **Source:** 3e-1 รอบแก้เพิ่ม 1 (2026-09-20)
+
+---
+
+## 3e-2a ทิ้งไว้ 2 ข้อ (2026-09-21)
+
+### (A) tiny backend: advisory prorate 0 แยกตามสาขา
+
+3e-2a ทำ **ตัวเลือก (A)** ไปแล้ว — `calcAdvisoryCodesRd()` (format-helpers.js) derive
+`prorate_zero_days:{days}/{total}` ฝั่ง client จึงได้ข้อความกลาง **1 ประโยคเดียว** บอกไม่ได้ว่ามาจาก
+สาขาไหน **ตัวเลือก (B)** คือ push advisory code ที่ engine แยก 4 สาขา ข้อความร่างไว้แล้ว:
+
+| สาขา (`PayrollRunModel::recalculate()`) | th | en |
+|---|---|---|
+| daily/weekly/semi_monthly/bi_weekly `:3504-3521` | ช่วงที่จ่ายในงวดนี้เป็นวันหยุดทั้งหมด จึงคิดเป็น 0 วัน — ตรวจกะที่ผูกกับพนักงานและวันหยุดของบริษัทในงวดนี้ | Every day of this employee's pay window falls on a holiday or weekly off day, so 0 days are payable -- check their assigned Shift and this period's company holidays. |
+| hourly `:3529-3544` | *(ใช้ `hourly_salary_no_attendance_data` เดิม ไม่ต้องเพิ่ม)* | — |
+| `schedule_based` `:3620-3628` | พนักงานลาหรือหยุดครบทุกวันที่มีตารางงานในงวดนี้ จึงคิดเป็น 0 วัน — ตรวจใบลาและนโยบาย "หักวันลา/วันหยุด" ของรอบนี้ | This employee was on leave or off on every scheduled day this period, so 0 days are payable -- check their leave records and this run's "deduct leave/holidays" policy. |
+| monthly default `:3628-3643` | ช่วงการจ้างของพนักงานไม่ทับกับงวดนี้เลย จึงคิดเป็น 0 วัน — ตรวจวันเริ่มงาน/วันสิ้นสุดการจ้างในข้อมูลพนักงาน | This employee's employment window does not overlap this pay period at all, so 0 days are payable -- check their employment start/end dates on Employee Detail. |
+
+ขนาด ~14 บรรทัด PHP + ~8 JS + 4 key × 2 ภาษา · **ต้องแก้ 3 assert** ที่ hardcode จำนวน advisory code
+ไว้: `tests/payroll_calc_warnings_test.php:52-59` (ลิสต์เต็ม), `:64` (`=== 8`), `:103`
+(`$legacyBlocking` hardcode 6 code) · ถ้าทำแล้วให้ถอด `prorate_zero_days` ฝั่ง client ออก ไม่ใช่ทิ้งไว้ซ้อนกัน
+
+### (B) `--c-warning` กับ `--c-danger` ที่ light mode แยกยากบนเส้น 3px
+
+`.callout-danger` ใช้ `--c-danger` = `#D92D20` · `.callout-warning` ใช้ `--c-warning` = `#B54708`
+(`tokens.css:44-45`) — hue ต่างกัน ~20° แต่ lightness ใกล้กันมาก บนเส้นซ้าย 3px ของ callout ที่ไม่ได้
+วางติดกันแล้วแยกด้วยตายาก (dark mode `#F97066` vs `#F5B14C` แยกออกสบาย ไม่มีปัญหา)
+
+3e-2a แก้ด้วย**ระยะห่างอย่างเดียว** (`--sp-3` ระหว่างกล่อง) ตามที่ตัดสินใจไว้ ไม่แตะสี/ความหนาเส้น —
+**token ทั้งแอป ต้องถามก่อนเปลี่ยน** ทางเลือกถ้าจะทำ: retune `--c-warning` ให้สว่างขึ้น (กระทบทุก badge/
+callout/ปุ่ม warning ทั้งระบบ ต้องวัดหน้าอื่นด้วย) หรือเพิ่มความหนาเส้นเฉพาะ callout (ไม่แตะ token แต่
+เปลี่ยนรูปร่างของ shared component)
+
+**Source:** 3e-2a (2026-09-21) — ดู `docs/decisions/2026-09-21-3e2a-calc-badges.md`
+
+---
+
+## UI test scripts: cell ชื่อ dark ที่ไม่ได้ dark จริง (3e-2a รอบแก้เพิ่ม 1, 2026-09-21)
+
+บัญชีที่ UI test ใช้ (employee 28) save `ui_theme = 'light'` → `layout/header.php` stamp
+`data-bs-theme="light"` ซึ่งเป็นตัวที่ปิด `@media (prefers-color-scheme: dark)` ใน `tokens.css:285-286`
+พอดี — **เปิด context ด้วย `colorScheme: 'dark'` เฉยๆ หน้าจึงยังเป็น light ทุกครั้ง** cell ที่วัดสีแล้ว
+รายงานว่าเป็น dark จึงวัดค่า light ใต้ชื่อ dark
+
+**กลไกที่ถูกคือ `applyAppTheme(page, theme)` (`tests/ui/harness.js`)** — เรียก `applyTheme()` ของแอปเอง
+แล้ว assert `data-bs-theme` ก่อนวัด (`user-preference.save` ยัง block อยู่ ไม่แตะ preference จริง)
+
+| script | cell ที่ชื่อ dark | กลไกตอนนี้ | dark จริง? |
+|---|---|---|---|
+| `h_history_table.js` | h1/h2/h3 dark | `applyTheme()` inline (`:77-84`) | ✅ จริง |
+| `k4b_close_batch4.js` | `:564-571` | `applyTheme('dark')` + assert stamp | ✅ จริง |
+| `k4c_employee_detail.js` | `:456-461` | `applyTheme('dark')` + อ่าน stamp | ✅ จริง |
+| `m3e1_tabs_shared.js` | c2 | **ย้ายมาใช้ `applyAppTheme()` แล้ว** (3e-2a) | ✅ จริง |
+| `m3e2a_calc_badges.js` | p2, p6-dark | **ใช้ `applyAppTheme()` ตั้งแต่ต้น** (3e-2a) | ✅ จริง |
+| `k4a1_slip_single_renderer.js` | cell ที่ส่ง `colorScheme:'dark'` | colorScheme อย่างเดียว | ❌ หลอก — ไม่มีหลักฐาน MEASURED (script crash ก่อนถึง cell, ดูข้อล่าง) |
+| `k4a2_manual_lines_in_table.js` | เดียวกัน | colorScheme อย่างเดียว | ❌ หลอก — ไม่มีหลักฐาน (ไม่ได้รันในรอบนี้) |
+| `k4a2b_view_tab_filter.js` | เดียวกัน | colorScheme อย่างเดียว | ❌ หลอก — ไม่มีหลักฐาน |
+| `l6a_line_form.js` | 2 cell | colorScheme อย่างเดียว | ❌ หลอก — ไม่มีหลักฐาน |
+| `l6b_table_and_form.js` | 3 cell | colorScheme อย่างเดียว | ❌ หลอก — ไม่มีหลักฐาน |
+| `tinyc_computed_amount.js` | 2 cell | colorScheme อย่างเดียว | ❌ หลอก — ไม่มีหลักฐาน |
+
+**ทำ**: 6 script ล่างเปลี่ยนไปใช้ `applyAppTheme()` + assert ก่อนวัด (script ละ ~3 บรรทัด) แล้วรันซ้ำ —
+ค่าสีที่เคย MEASURED ไว้ใน cell dark ของ 6 ตัวนี้ **ถือว่าใช้ไม่ได้** จนกว่าจะรันใหม่
+
+## `k4a1_slip_single_renderer.js` crash ตั้งแต่ commit `974b1ac4`
+
+`historyUseCount()` (`:133`) เรียก `openLineOverrideHistoryModalRd` ที่ถูกลบไปพร้อม dropdown+modal ของ
+ประวัติต่อบรรทัด (commit `974b1ac4` "ประวัติต่อบรรทัดเป็นตารางใต้บรรทัด เลิกใช้ dropdown + modal") →
+`page.evaluate: ReferenceError` ตั้งแต่ cell แรก ยังไม่มี assertion ไหนได้รันเลย
+ยืนยัน: `git show HEAD:public/js/payroll/detail.js | grep -c openLineOverrideHistoryModalRd` = 0
+
+**ไปที่ก้อน "สลิป layout รอบ 2"** — ประวัติอยู่ในตารางใต้บรรทัดแล้ว cell นั้นต้องวัดของใหม่ ไม่ใช่แค่
+เปลี่ยนชื่อฟังก์ชัน
+
+**Source:** 3e-2a รอบแก้เพิ่ม 1 (2026-09-21)

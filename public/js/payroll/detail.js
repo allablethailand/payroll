@@ -60,67 +60,10 @@ function stateBadgeRd(state) {
 // retired -- its one caller (initRunDetailTable()'s calc_status column) now routes through the shared
 // statusBadgeHtml() + status_map.php's existing 'payroll_calc_status' context instead (see that
 // column's own comment).
-/* ---------- payroll_run_details.calc_errors is a comma-separated list of machine codes (e.g.
-   "profile_incomplete, missing_base_salary") -- this translates ONE code to a readable sentence; an
-   unrecognized code (defensive) falls back to showing the raw code rather than hiding it.
-   profile_incomplete is what a placeholder employee (auto-created via Origami SSO or a Payroll Sync
-   pull) shows -- per explicit request these employees are pulled into the table like anyone else
-   rather than being silently excluded, so this message is what tells the admin WHY that row still
-   needs attention.
-   2026-09-16: these sentences no longer live in the table cell itself (2 wrapped lines per row made
-   every row a different height) -- the calculation column shows a "N คำเตือน" badge whose popover
-   lists them, and the Calculation Breakdown modal shows them in full as callouts. */
-function calcErrorMessageRd(code) {
-    if (code === 'profile_incomplete') return langData['calc_error_profile_incomplete'] || 'Employee profile is incomplete -- complete it via Employee Detail, then recalculate.';
-    if (code === 'missing_base_salary') return langData['calc_error_missing_base_salary'] || 'Missing base salary.';
-    if (code === 'no_manual_lines') return langData['calc_error_no_manual_lines'] || 'No payment items added yet -- use "Items" to add one.';
-    if (code === 'daily_salary_no_shift_pattern') return langData['calc_error_daily_salary_no_shift_pattern'] || 'This salary type is paid per day/week/period but no Shift is assigned -- paid for every non-holiday day; assign a Shift to exclude weekly off-days.';
-    // 2026-08-31, real hourly formula now exists (was previously flagged unsupported and
-    // silently used the monthly formula) -- salary_type_hourly_not_supported itself is retired
-    // going forward but kept translatable here in case an older, already-calculated run still
-    // carries it in its preserved calc_errors.
-    if (code === 'salary_type_hourly_not_supported') return langData['calc_error_salary_type_hourly_not_supported'] || 'Hourly salary type was not yet supported when this was calculated -- used the monthly formula instead. Recalculate to use the real hourly formula.';
-    if (code === 'hourly_salary_no_attendance_data') return langData['calc_error_hourly_salary_no_attendance_data'] || 'Hourly salary type but no attendance data (clock in/out) was found for this employee this period -- paid 0 for base salary; verify attendance has been recorded/synced.';
-    if (code === 'sync_actual_days_no_data') return langData['calc_error_sync_actual_days_no_data'] || 'Base Salary Basis is "Actual Days (Origami Sync)" but no PROBATION_WORKING_DAYS was available for this employee this cycle -- paid in full instead.';
-    if (code === 'no_attendance_data_this_period') return langData['calc_error_no_attendance_data_this_period'] || 'No attendance/OT/leave data found for this employee this period -- verify Origami sync has completed, or confirm this is expected.';
-    if (code === 'ot_not_calculated_ineligible') return langData['calc_error_ot_not_calculated_ineligible'] || 'This employee is not marked eligible for OT -- Origami sent OT hours this period, but they were NOT calculated. Verify with the employee/HR whether this is correct.';
-    if (code.indexOf('no_rate_configured:') === 0) {
-        const item = code.substring('no_rate_configured:'.length);
-        const tpl = langData['calc_error_no_rate_configured'] || 'No statutory rate configured for {item}.';
-        return tpl.replace('{item}', item);
-    }
-    if (code.indexOf('transfer_payee_not_in_run:') === 0) {
-        const item = code.substring('transfer_payee_not_in_run:'.length);
-        const tpl = langData['calc_error_transfer_payee_not_in_run'] || 'The transfer payee for {item} is not part of this run -- the deduction still applies, but nobody was credited.';
-        return tpl.replace('{item}', item);
-    }
-    // 2026-09-02, advisory-only (never blocks submit -- see PayrollRunModel::recalculate()'s
-    // own $blockingErrors filter). Origami confirmed this can never fire from a genuine sync
-    // payload (working_days/working_mins share the same umbrella selection flag as Late/Absent,
-    // never independently 0) -- it fires in practice for a Manual Entry/Import-driven cycle run,
-    // where there's genuinely no scheduled working-day count available at all (see
-    // TransactionDataPayAdapter's own docblock). See SyncPayResolver::resolve()'s own 2026-09-02
-    // docblock for the full reasoning.
-    if (code.indexOf('working_days_fallback_with_attendance_deduction:') === 0) {
-        const eventLabel = code.substring('working_days_fallback_with_attendance_deduction:'.length);
-        const tpl = langData['calc_error_working_days_fallback_with_attendance_deduction'] || 'The {event} deduction this period was computed using the fixed 30-day standard divisor (no real scheduled working-day count was available for this period) -- this may under- or over-deduct compared to the period\'s actual working days. Review this amount.';
-        return tpl.replace('{event}', eventLabel);
-    }
-    // 2026-09-02, explicit request: "การตั้งค่าเงินรวมกันถ้าเกินจำนวนเงินเดือนมีการดักส่วนนี้ไว้ไหม" --
-    // PayrollRunModel::recalculate() now checks a Mixed-payment employee's FULL line set
-    // (cash+transfer+check together) against this row's own net pay the moment it's known,
-    // instead of the mismatch only ever surfacing later as a silently-skipped row inside an
-    // exported Bank Transfer/Cash Payment file. Advisory only (never blocks submit -- same
-    // exclusion-list treatment as daily_salary_no_shift_pattern above).
-    if (code === 'mixed_payment_lines_mismatch') return langData['calc_error_mixed_payment_lines_mismatch'] || "This employee's Mixed payment lines don't add up to their net pay -- check the Payment tab on Employee Detail.";
-    return code;
-}
-// 2026-09-16: the server already splits calc_errors into calc_warnings/calc_blocking
-// (PayrollRunModel::splitCalcErrors(), one advisory list shared with recalculate()) -- these 2 just
-// translate whichever list they are handed. Nothing here decides advisory-vs-blocking anymore.
-function calcErrorMessagesRd(codes) {
-    return (codes || []).map(calcErrorMessageRd);
-}
+// 2026-09-21, 3e-2a: calcErrorMessageRd()/calcErrorMessagesRd() moved VERBATIM to
+// public/js/format-helpers.js (loaded on every page, layout/header.php) -- the Payroll List page
+// needs the same sentences and cannot load this file. calcErrorItemsRd()/calcAdvisoryCodesRd()
+// live there too; this file calls all 4 unchanged.
 // 2026-09-16, explicit instruction ("คอลัมน์การคำนวณ = statusBadge สถานะ + badge 'N คำเตือน' tone
 // warning ไม่มีไอคอน คลิกเปิด popover รายการบรรทัดละข้อ"): advisory notes leave the cell. The badge is
 // countBadgeHtml()'s own markup with the count wrapped in the sentence (§5: a non-neutral tone only
@@ -128,15 +71,39 @@ function calcErrorMessagesRd(codes) {
 // app's shared popover (initPopovers(), app.js/§11 -- token-styled, closes on Esc/click-outside,
 // one open at a time) rather than the column-filter panel: that panel is a single app-wide instance
 // built around a checklist + Clear/Apply footer, nothing of which this read-only list needs.
-function calcWarningBadgeRd(row) {
-    const messages = calcErrorMessagesRd(row.calc_warnings);
-    if (!messages.length) return '';
-    const badge = countBadgeHtml(messages.length, { tone: 'warning', label: langData['calc_warning_count'] || '{n} warnings' });
-    const content = `<ul class="rd-calc-warning-list">${messages.map(m => `<li>${escapeHtml(m)}</li>`).join('')}</ul>`;
-    return `<button type="button" class="btn btn-link p-0 border-0 ms-1 align-baseline rd-calc-warning-btn"
+// 2026-09-21, 3e-2a: the warning badge and the NEW error badge are the same control -- a badge that
+// opens its own list -- so they are built by one function and differ only by (class, title, codes,
+// what the badge itself is). Written as a shared builder the moment the second one existed, rather
+// than copying 9 lines and changing 3 of them (CLAUDE.md: "generalize, don't mirror-copy").
+// Every `<li>` carries `data-code` (rules.md: the raw code never reads as text, but stays findable
+// for a bug report) -- calcErrorItemsRd() (format-helpers.js) is what supplies both halves.
+function calcPopoverBadgeRd(codes, badgeHtml, btnClass, titleKey, titleFallback) {
+    const items = calcErrorItemsRd(codes);
+    if (!items.length) return '';
+    const content = `<ul class="rd-calc-warning-list">${items.map(it => `<li data-code="${escapeAttr(it.code)}">${escapeHtml(it.message)}</li>`).join('')}</ul>`;
+    return `<button type="button" class="btn btn-link p-0 border-0 ms-1 align-baseline ${btnClass}"
         data-bs-toggle="popover" data-bs-trigger="click" data-bs-html="true" data-bs-placement="left"
-        data-bs-title="${escapeAttr(langData['calc_warnings_title'] || 'Warnings')}"
-        data-bs-content="${escapeAttr(content)}">${badge}</button>`;
+        data-bs-title="${escapeAttr(langData[titleKey] || titleFallback)}"
+        data-bs-content="${escapeAttr(content)}">${badgeHtml}</button>`;
+}
+function calcWarningBadgeRd(row) {
+    // 2026-09-21, 3e-2a: the advisory list is calcAdvisoryCodesRd()'s to decide now (it adds the
+    // prorate-0 note the engine has no code for) -- this reads whatever that returns, same as before.
+    const codes = calcAdvisoryCodesRd(row);
+    if (!codes.length) return '';
+    const badge = countBadgeHtml(codes.length, { tone: 'warning', label: langData['calc_warning_count'] || '{n} warnings' });
+    return calcPopoverBadgeRd(codes, badge, 'rd-calc-warning-btn', 'calc_warnings_title', 'Warnings');
+}
+// 2026-09-21, 3e-2a, explicit instruction ("badge error = popover แบบเดียวกับ badge คำเตือน"): the red
+// status badge said only THAT the row failed; why it failed was one modal away. It is now the same
+// shape as the warning badge next to it -- press it, read the blocking list. A row whose calc_status
+// is 'error' with an EMPTY calc_blocking (possible: the state is stored, the codes are not) keeps
+// the plain, unpressable badge rather than gaining a button that opens nothing.
+function calcErrorBadgeRd(d, row) {
+    const badge = statusBadgeHtml(d, 'payroll_calc_status');
+    const blocking = (row && row.calc_blocking) || [];
+    if (d !== 'error' || !blocking.length) return badge;
+    return calcPopoverBadgeRd(blocking, badge, 'rd-calc-error-btn', 'calc_errors_title', 'Why this row failed');
 }
 // 2026-09-14, Round 3 item 3c-1 follow-up, real bug fix (explicit report: "column filter popup
 // แสดงค่าดิบ 'calculated' แทน 'คำนวณแล้ว'") -- a status_map-backed badge column's own `render.filter`
@@ -2268,9 +2235,15 @@ function renderBreakdownModal(row) {
     // the full sentences live now that the table cell only carries the count -- one callout per
     // message (§15: a callout is one statement; 3 stacked notes read as 3 things to act on, a single
     // callout holding 3 sentences reads as one). Blocking first: it is why the row says 'error'.
+    // 2026-09-21, 3e-2a: both lists now come from the SAME 2 helpers the table cell's popovers use
+    // (calcErrorItemsRd + calcAdvisoryCodesRd, format-helpers.js) -- the sentence in a callout here
+    // and the sentence in the popover for the same row are the same string, by construction rather
+    // than by two copies staying in step. data-code rides along for the same reason it does there.
+    const calcNoteHtmlRd = (items, tone) => items.map(it =>
+        calloutHtml(`<span data-code="${escapeAttr(it.code)}">${escapeHtml(it.message)}</span>`, tone)).join('');
     $('#breakdownCalcNotes').html(
-        calcErrorMessagesRd(row.calc_blocking).map(m => calloutHtml(escapeHtml(m), 'danger')).join('')
-        + calcErrorMessagesRd(row.calc_warnings).map(m => calloutHtml(escapeHtml(m), 'warning')).join('')
+        calcNoteHtmlRd(calcErrorItemsRd(row.calc_blocking), 'danger')
+        + calcNoteHtmlRd(calcErrorItemsRd(calcAdvisoryCodesRd(row)), 'warning')
     );
     const $totalDays = $('#breakdownTotalDays');
     if (row.total_days !== null && row.total_days !== undefined) {
@@ -3018,8 +2991,12 @@ function initRunDetailTable(details) {
             // there are advisory notes) a "N คำเตือน" badge that opens them in a popover. Red stays
             // exclusively the calc_status='error' badge's own job; the full text of both lists lives
             // in the Calculation Breakdown modal (renderBreakdownModal()).
+            // 2026-09-21, 3e-2a: `display` only -- calcErrorBadgeRd() wraps the SAME statusBadgeHtml()
+            // in a button when there is a blocking list to show, so `sort`/`filter` below are
+            // untouched and the column still sorts/filters on the raw enum + its translated label,
+            // never on the button markup.
             { data: 'calc_status', render: {
-                display: (d, t, row) => `${statusBadgeHtml(d, 'payroll_calc_status')}${calcWarningBadgeRd(row)}`,
+                display: (d, t, row) => `${calcErrorBadgeRd(d, row)}${calcWarningBadgeRd(row)}`,
                 sort: d => d,
                 filter: d => statusMapFilterLabelRd(d, 'payroll_calc_status'),
             } },
@@ -3104,7 +3081,7 @@ function initRunDetailTable(details) {
             // EMPLOYEES with at least one advisory note, not total notes -- it sits next to a/b,
             // which are employee counts too, so mixing units in one line would misread.
             const calculatedCount = visibleRows.filter(r => r.calc_status === 'calculated').length;
-            const warningRowCount = visibleRows.filter(r => (r.calc_warnings || []).length > 0).length;
+            const warningRowCount = visibleRows.filter(r => calcAdvisoryCodesRd(r).length > 0).length;
             const calcFootParts = [`${langData['calc_status_calculated'] || 'Calculated'} ${calculatedCount}/${visibleRows.length}`];
             if (warningRowCount > 0) {
                 calcFootParts.push((langData['calc_warning_count'] || '{n} warnings').replace('{n}', String(warningRowCount)));
