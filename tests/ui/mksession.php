@@ -10,6 +10,7 @@
  * Usage:
  *   php tests/ui/mksession.php              create -- prints one line of JSON
  *   php tests/ui/mksession.php --with-recurring   ...and give that run a recurring deduction to drive
+ *   php tests/ui/mksession.php --with-calc-errors ...and 7 rows with calc-error/warning/prorate cases
  *   php tests/ui/mksession.php --cleanup    delete what the last create made
  *
  * Guards (all 3, every run): CLI only, BASE_URL must be a loopback host, and the run it deletes
@@ -81,6 +82,133 @@ function sweepRecurringFixture(PDO $pdo): array {
     $stmtIds->execute([':comp_id' => COMP_ID, ':code' => RECURRING_ITEM_CODE]);
     $out['recurring_fixture_left'] = count($stmtIds->fetchAll(PDO::FETCH_COLUMN));
     return $out;
+}
+
+/**
+ * Employees --with-calc-errors must never write to: 28 is this fixture's own driven row (every
+ * manual line/override/exemption below is on it), and 159/499 are k4b_close_batch4.js's own
+ * OFF_LIMITS pair, off limits on whatever run they appear.
+ */
+const CALC_ERROR_OFF_LIMITS = [ADMIN_EMPLOYEE_ID, 159, 499];
+/**
+ * The 7 cases --with-calc-errors sets, in the order they are handed rows. A key that is ABSENT
+ * leaves that column exactly as recalculate() wrote it -- which is the whole point of R5/R6/R7:
+ * a control row is only worth having if nothing touched it. `calc_errors => []` means a real SQL
+ * NULL (R4: prorate 0 with nothing to explain it), not an empty string.
+ *
+ * Every code here is a real one, and each is written in the exact shape its own push site produces:
+ * `missing_ot_rate_weekday` (SyncPayResolver.php:438 x its own OT_SCOPE_COLUMNS, :77-81),
+ * `working_days_fallback_with_attendance_deduction:late` (SyncPayResolver.php:821 x
+ * RULE_DRIVEN_ITEM_DEFS, :216-220). `zz_fixture_unknown` is the one deliberate fake: nothing emits
+ * it, which is what makes it the test of detail.js's calcErrorMessageRd() fallback (`return code`).
+ * Advisory-vs-blocking is never restated here -- PayrollRunModel::isAdvisoryCalcError() decides it,
+ * and calc_status below follows that same invariant (blocking >= 1 => 'error').
+ */
+const CALC_ERROR_FIXTURE_SPEC = [
+    'R1' => ['calc_status' => 'error', 'calc_errors' => ['no_manual_lines', 'profile_incomplete']],
+    'R2' => ['calc_status' => 'error', 'calc_errors' => [
+        'no_rate_configured:TH_SSO', 'missing_base_salary', 'missing_ot_rate_weekday',
+        'transfer_payee_not_in_run:LOAN_REPAY', 'ot_not_calculated_ineligible', 'zz_fixture_unknown',
+    ]],
+    'R3' => ['calc_status' => 'calculated', 'calc_errors' => [
+        'mixed_payment_lines_mismatch', 'working_days_fallback_with_attendance_deduction:late',
+    ]],
+    'R4' => ['calc_status' => 'calculated', 'calc_errors' => [], 'prorate_days' => 0],
+    'R5' => [],
+    'R6' => ['prorate_days' => 0],
+    'R7' => ['prorate_days' => 15],
+];
+
+/**
+ * --with-calc-errors: written with UPDATE straight onto the rows recalculate() just produced,
+ * because the engine cannot produce this set on this machine at all -- every code above needs input
+ * data company 1 does not have (no sync process on this run, no OT hours, no mixed-payment lines),
+ * and prorate only ever fills in for a mid-period joiner/leaver. Nothing overwrites these values
+ * afterwards: the run is created with auto_recalculate=0, and harness.js blocks
+ * api/payroll-run.recalculate for every round that did not explicitly ask for it.
+ *
+ * Rows are chosen at RUN TIME, never hard-coded: employee ids are a property of whatever the dev DB
+ * holds today, and the round that reads this fixture is handed the ids through .last-session.json.
+ */
+function applyCalcErrorFixture(PDO $pdo, PayrollRunModel $model, int $runId): array {
+    // The same list, in the same order, the Employee Breakdown table itself renders (employee_no
+    // ASC) -- so "the row k4b picks" below is decided by exactly what k4b will see.
+    $rows = $model->getDetails($runId, COMP_ID);
+    // k4b_close_batch4.js:481-489 picks its own second row at runtime: first row that is not one of
+    // OFF_LIMITS and has no adjustments yet. Re-derived here rather than hard-coded as an id,
+    // because the id that rule lands on is a property of the DB, not of either script.
+    $reserved = null;
+    foreach ($rows as $r) {
+        if (!in_array((int)$r['employee_id'], CALC_ERROR_OFF_LIMITS, true) && (int)$r['adjustment_count'] === 0) {
+            $reserved = (int)$r['employee_id'];
+            break;
+        }
+    }
+    $pool = array_values(array_filter($rows, static fn($r) => !in_array((int)$r['employee_id'], CALC_ERROR_OFF_LIMITS, true)
+        && (int)$r['employee_id'] !== $reserved));
+    usort($pool, static fn($a, $b) => (int)$a['employee_id'] <=> (int)$b['employee_id']);
+    $need = count(CALC_ERROR_FIXTURE_SPEC);
+    // All 7 or none: half a set is worse than no set, because a round would still find its key in
+    // .last-session.json and report the missing cases as failures of the page.
+    if (count($pool) < $need) {
+        fwrite(STDERR, "--with-calc-errors needs {$need} rows outside employees "
+            . implode('/', CALC_ERROR_OFF_LIMITS) . " and k4b's own (" . var_export($reserved, true)
+            . "); this run has " . count($pool) . " -- nothing was set\n");
+        exit(1);
+    }
+    $baselineErrorCount = count(array_filter($rows, static fn($r) => $r['calc_status'] === 'error'));
+    // The company's own configured divisor, read fresh -- recalculate() itself divides by this
+    // (PayrollRunModel.php:2847-2849), so a prorate fixture that hard-coded 30 would stop matching
+    // the real page the day someone changes it on Company Profile.
+    $divisor = (int)($pdo->query("SELECT prorate_divisor_days FROM `companies` WHERE id = " . COMP_ID)->fetchColumn() ?: 30);
+
+    $fixture = [];
+    $ids = [];
+    $i = 0;
+    foreach (CALC_ERROR_FIXTURE_SPEC as $label => $want) {
+        $row = $pool[$i++];
+        $ids[$label] = (int)$row['id'];
+        $fixture[$label] = ['employee_id' => (int)$row['employee_id'], 'employee_no' => (string)$row['employee_no']];
+        $set = [];
+        $params = [':id' => (int)$row['id']];
+        if (array_key_exists('calc_status', $want)) {
+            $set[] = 'calc_status = :calc_status';
+            $params[':calc_status'] = $want['calc_status'];
+        }
+        if (array_key_exists('calc_errors', $want)) {
+            $set[] = 'calc_errors = :calc_errors';
+            // The exact shape recalculate() stores, so splitCalcErrors() has nothing special to do.
+            $params[':calc_errors'] = $want['calc_errors'] ? implode(', ', $want['calc_errors']) : null;
+        }
+        if (array_key_exists('prorate_days', $want)) {
+            $set[] = 'prorate_days = :prorate_days';
+            $set[] = 'prorate_total_days = :prorate_total_days';
+            $params[':prorate_days'] = $want['prorate_days'];
+            $params[':prorate_total_days'] = $divisor;
+        }
+        if ($set) {
+            $pdo->prepare("UPDATE `payroll_run_details` SET " . implode(', ', $set) . " WHERE id = :id")->execute($params);
+        }
+    }
+    // Reported back from the DB, not from the spec: R5/R6/R7 keep columns nobody here wrote, and a
+    // round comparing against what this file MEANT to set would never notice if a write was lost.
+    $read = $pdo->prepare("SELECT calc_status, calc_errors, prorate_days, prorate_total_days FROM `payroll_run_details` WHERE id = :id");
+    foreach ($ids as $label => $detailId) {
+        $read->execute([':id' => $detailId]);
+        $now = $read->fetch(PDO::FETCH_ASSOC) ?: [];
+        $fixture[$label] += [
+            'calc_status'        => (string)($now['calc_status'] ?? ''),
+            'calc_errors'        => $now['calc_errors'] !== null ? (string)$now['calc_errors'] : null,
+            'prorate_days'       => $now['prorate_days'] !== null ? (int)$now['prorate_days'] : null,
+            'prorate_total_days' => $now['prorate_total_days'] !== null ? (int)$now['prorate_total_days'] : null,
+        ];
+    }
+    // The run-level flag behind Run Detail's own banner (payroll/detail.js:1416). Idempotent: this
+    // fixture's employee 28 already errors, so it is normally 1 before this line ever runs -- but
+    // the banner must not depend on that staying true. The List page's red pill needs nothing here:
+    // error_employee_count is counted from the rows above on read (PayrollRunModel.php:152).
+    $pdo->prepare("UPDATE `payroll_runs` SET has_validation_errors = 1 WHERE id = :id")->execute([':id' => $runId]);
+    return $fixture + ['k4b_reserved' => $reserved, 'baseline_error_count' => $baselineErrorCount];
 }
 
 $pdo = Database::getInstance()->pdo;
@@ -272,6 +400,12 @@ $model->lineOverrideSave($runId, COMP_ID, $employeeId, '__base_salary__', 'overr
 // was NOT answered is as much a case as one that was.
 $model->saveEmployeeExemption($runId, COMP_ID, $employeeId, 'no', 'inherit', 'UI test exemption', ADMIN_EMPLOYEE_ID, true);
 
+// Last, on purpose: the rows it reserves are decided from adjustment_count, which the 3 writes
+// above are what set.
+if (in_array('--with-calc-errors', array_slice($argv, 1), true)) {
+    $calcErrorFixture = ['calc_error_fixture' => applyCalcErrorFixture($pdo, $model, $runId)];
+}
+
 // A real session file, written where this install's own PHP will read it back.
 session_id('uitest' . bin2hex(random_bytes(8)));
 session_start();
@@ -284,6 +418,6 @@ $state = [
     'token'       => IdCodec::encode($runId),
     'employee_id' => $employeeId,
     'session_id'  => $sid,
-] + ($recurringFixture ?? []);
+] + ($recurringFixture ?? []) + ($calcErrorFixture ?? []);
 file_put_contents(STATE_FILE, json_encode($state, JSON_UNESCAPED_UNICODE) . "\n");
 echo json_encode($state, JSON_UNESCAPED_UNICODE) . "\n";
