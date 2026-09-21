@@ -129,7 +129,7 @@ function departmentNameRd(row) {
     return (currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || row.department_name_en || '-';
 }
 // 2026-09-11, Batch 3C item 8 -- generalized out of 4 identical copies of this exact expression
-// (.btn-view-breakdown/.btn-comment-employee/.btn-remove-manual-employee/.btn-raw-sync-data' own
+// (.btn-view-breakdown/.btn-comment-employee/.btn-remove-manual-employee' own
 // click handlers, each independently re-deriving "find this employee's row in the currently-loaded
 // table data") rather than adding a 5th copy for .btn-comment-employee -- per this project's own
 // "generalize, don't mirror-copy" convention.
@@ -2059,7 +2059,8 @@ function viewBreakdownButtonRd(row) {
 }
 /* 2026-09-18, 4b: 3 circles, no ⋮. The menu held 3 entries and each one left with what it opened:
    the per-employee settings modal and the read-only "รายการที่ปรับ" viewer are both gone (the slip is
-   where an adjustment is made AND read now), and Raw Sync Data moves to the attendance tab (BACKLOG).
+   where an adjustment is made AND read now), and Raw Sync Data is a panel inside the slip itself
+   now (3e-2b, see rawSyncPanelAvailableRd()) rather than an entry anywhere in this menu.
    What is left -- slip / comments / remove -- is exactly §7's "≤3 ปุ่ม", so there is nothing to fold
    and a ⋮ holding one item is a second click in front of one action. Remove is draft-only and simply
    absent otherwise; a non-draft row shows 2. */
@@ -2223,7 +2224,13 @@ function renderBreakdownModal(row) {
     // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
     // name in the modal-header (#breakdownEmployeeName removed from the view -- see this modal's
     // own markup comment).
-    $('#breakdownHeaderCard').html(employeeHeaderCardHtml(row));
+    // 2026-09-21, 3e-2b: the raw-sync disclosure lives in the card's own right slot. Reset FIRST,
+    // then render -- the button is rebuilt with the card on every open, so the panel's own state has
+    // to be cleared against the row that is arriving, never the one that just left.
+    resetRawSyncPanelRd();
+    $('#breakdownHeaderCard').html(employeeHeaderCardHtml(row, {
+        actionHtml: rawSyncPanelAvailableRd(row) ? rawSyncPanelToggleHtmlRd() : '',
+    }));
     // 2026-09-06, explicit request: Origami's opt-in TOTAL_DAYS item_values entry (calendar-based
     // day count) -- row.total_days is null (see PayrollRunModel::getDetails()'s own docblock) for
     // every run/employee with no data, never 0, so a plain truthiness-adjacent null check is
@@ -2532,8 +2539,13 @@ function rawSyncDataSectionIsEmpty(section, data) {
 // working_days number above it -- so an admin can see both side by side.
 function workingDaysBreakdownHtml(breakdown) {
     if (!breakdown) return '';
+    // 2026-09-21, 3e-2b: was `.small.text-warning` + a triangle icon -- i.e. Bootstrap's own #ffc107
+    // (measured: Bootstrap's own warning yellow, a colour that is in no token at all) on a line of text, plus an icon
+    // repeating what the colour already said. It is a statement about this employee's data sitting
+    // under the block it qualifies, which is exactly §15's callout: tone lives on the left edge, the
+    // text stays --c-text, and a callout has no icon. Same i18n key, unchanged.
     const noShiftNote = !breakdown.has_shift_pattern
-        ? `<div class="small text-warning mt-1"><i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['working_days_breakdown_no_shift'] || 'No shift assigned -- every non-holiday day counted as a working day.'}</div>`
+        ? calloutHtml(escapeHtml(langData['working_days_breakdown_no_shift'] || 'No shift assigned -- every non-holiday day counted as a working day.'), 'warning')
         : '';
     return `<div class="small mt-2 pt-2 border-top">
         <div class="text-muted mb-1">${langData['working_days_breakdown_title'] || "This company's own calendar (holidays/shift)"}:</div>
@@ -2546,55 +2558,125 @@ function workingDaysBreakdownHtml(breakdown) {
         ${noShiftNote}
     </div>`;
 }
-function renderRawSyncDataModal(data) {
+// 2026-09-21, 3e-2b: `target` (optional) -- where to put the rendered block. The slip's own panel
+// passes '#rawSyncPanel', so the exact same renderer serves it rather than a second copy of this
+// markup being written for the panel. The default is kept at the id this function always wrote to,
+// which the deleted modal owned: there is no element by that name any more, so the no-target call
+// is a no-op, not a second render path -- the one real caller always names its host.
+function renderRawSyncDataModal(data, target) {
     const sectionsHtml = RAW_SYNC_DATA_SECTIONS_RD.map(section => {
         if (rawSyncDataSectionIsEmpty(section, data)) {
             return '';
         }
+        // 2026-09-21, 3e-2b: `col-sm-6`/`col-md-6` answered the VIEWPORT, but this block lives inside
+        // a modal-lg -- measured 776px of panel at a 1400px viewport, where `col-md-6` still put 2
+        // cards per row and left the third alone on a line of its own. Both levels are CSS grid with
+        // `auto-fit`/`minmax` now (see `.rd-sync-sections`/`.rd-sync-fields`, style.css): they wrap
+        // against the width they actually have, so the same markup is 3-up in the panel, 2-up and
+        // 1-up as it narrows, with no breakpoint named here at all.
+        // The card also loses its border/background: it is already inside the panel's own box, and a
+        // box inside a box says nothing the heading + spacing does not (§0.3). `.ped-type-panel` is
+        // dropped with it -- this renderer was its last markup user (grep: 0 left).
         const fieldsHtml = section.fields.map(key => {
             const f = rawSyncDataFieldLookupRd(key);
             if (!f) return '';
-            return `<div class="col-sm-6">
-                <div class="text-muted small">${langData[f.labelKey] || f.fallback}</div>
-                <div class="fw-semibold">${rawSyncDataValueDisplay(data[f.key])}</div>
+            return `<div class="rd-sync-field">
+                <div class="rd-sync-field-label">${langData[f.labelKey] || f.fallback}</div>
+                <div class="rd-sync-field-value">${rawSyncDataValueDisplay(data[f.key])}</div>
             </div>`;
         }).join('');
         const breakdownHtml = section.titleKey === 'raw_sync_data_section_attendance' ? workingDaysBreakdownHtml(data.working_days_breakdown) : '';
-        return `<div class="col-md-6">
-            <div class="ped-type-panel border rounded-3 p-3 h-100">
-                <h6 class="text-secondary fw-bold mb-2"><i class="fa-solid ${section.icon} me-1"></i>${langData[section.titleKey] || section.fallback}</h6>
-                <div class="row g-2">${fieldsHtml}</div>
-                ${breakdownHtml}
-            </div>
+        return `<div class="rd-sync-section">
+            <h6 class="rd-sync-section-title"><i class="fa-solid ${section.icon} me-1"></i>${langData[section.titleKey] || section.fallback}</h6>
+            <div class="rd-sync-fields">${fieldsHtml}</div>
+            ${breakdownHtml}
         </div>`;
     }).join('');
-    $('#rawSyncDataModalBody').html(`
-        <div class="row g-3 mb-3">${sectionsHtml}</div>
-        <h6 class="text-secondary fw-bold mb-2">${langData['raw_sync_data_item_values_title'] || 'Additional Line Items'}</h6>
+    $(target || '#rawSyncDataModalBody').html(`
+        <div class="rd-sync-sections">${sectionsHtml}</div>
+        <h6 class="rd-sync-section-title">${langData['raw_sync_data_item_values_title'] || 'Additional Line Items'}</h6>
         ${rawSyncDataItemValuesTableHtml(data.item_values)}
     `);
 }
-let rawSyncDataEmployeeId = null;
-// 2026-08-29: the tax/SSO exemption card that used to live in THIS modal moved to the universal
-// Manage Items modal's own "Tax & SSO" tab (see manageLinesCalcPane) -- this viewer is read-only
-// again, matching its original single purpose (a sync-only row's raw Origami payload).
-$(document).on('click', '.btn-raw-sync-data', function () {
-    rawSyncDataEmployeeId = $(this).data('employee-id');
-    const rowData = runDetailRowByEmployeeId(rawSyncDataEmployeeId);
-    // 2026-09-11, Batch 3C item 8: employeeHeaderCardHtml() (app.js) block first, no more employee
-    // name in the modal-header (#rawSyncDataEmployeeName removed from the view).
-    $('#rawSyncDataHeaderCard').html(rowData ? employeeHeaderCardHtml(rowData) : '');
+
+/* ---------- The raw-sync panel inside the slip (2026-09-21, 3e-2b) ----------
+   The payload above used to open a SECOND modal on top of the slip. It is a disclosure panel under
+   the slip's own header card now: one modal stays one modal, and the numbers a reader is checking
+   stay on screen next to what Origami sent. Everything it renders is the same 8 functions above,
+   reused verbatim through renderRawSyncDataModal()'s new `target` argument -- nothing was copied.
+
+   Shown ONLY when both halves are true: the RUN came from a sync (currentRun.sync_process_id) and
+   THIS ROW did (row.data_source === 'sync'). Either alone means there is no payload to show --
+   PayrollRunModel::rawSyncDataForEmployee() returns null for both cases -- so the button is not
+   rendered at all rather than rendered and then apologising (§0.3).
+
+   Fetched on the first open PER SLIP and kept in rawSyncPanelCacheRd until the slip closes; opening
+   the same panel again re-shows what is already in the DOM without a second request. */
+let rawSyncPanelCacheRd = null;
+function rawSyncPanelAvailableRd(row) {
+    return !!(currentRun && currentRun.sync_process_id) && !!row && row.data_source === 'sync';
+}
+// The disclosure itself: a text button, no icon and no caret -- the panel opening below it is the
+// state, and `aria-expanded` is what carries that to a screen reader.
+// 2026-09-21, 3e-2b follow-up (user report: "ดูไม่เหมือนของที่กดได้"): it now carries the SAME CSS as
+// the slip's own group-head links (`lineOverrideAddLinkHtmlRd()` :4759 / `.lo-add-line-btn`,
+// style.css's shared selector list) -- one more selector on that rule, not a second copy of it
+// (§0.4). Same tier, same page, same kind of control: a worded link that acts on the block beside it.
+// The word changes with the state ("ข้อมูลดิบจาก Origami" <-> "ซ่อนข้อมูลดิบ") because the panel it
+// opens is long enough to push the button off screen -- the label has to say what pressing it does
+// now, not what it did once. `data-i18n` is deliberately NOT used: the central sweep would re-write
+// it with the closed label while the panel is open.
+function rawSyncPanelToggleLabelRd(expanded) {
+    return expanded
+        ? (langData['raw_sync_panel_hide'] || 'Hide raw data')
+        : (langData['raw_sync_panel_link'] || 'Raw data from Origami');
+}
+function rawSyncPanelToggleHtmlRd() {
+    return `<button type="button" class="btn btn-link btn-raw-sync-toggle" id="btnRawSyncPanel"
+        aria-expanded="false" aria-controls="rawSyncPanel">${escapeHtml(rawSyncPanelToggleLabelRd(false))}</button>`;
+}
+// Called from renderBreakdownModal() on EVERY open: closed, empty, cache dropped. Without this the
+// next employee's slip would open showing the previous employee's payload -- the exact "ค้างจากแถวก่อน"
+// bug class this file has hit before with modal-scoped state.
+function rawSyncPanelSetExpandedRd($btn, expanded) {
+    $btn.attr('aria-expanded', expanded ? 'true' : 'false').text(rawSyncPanelToggleLabelRd(expanded));
+}
+function resetRawSyncPanelRd() {
+    rawSyncPanelCacheRd = null;
+    $('#rawSyncPanel').addClass('d-none').empty();
+    const $btn = $('#btnRawSyncPanel');
+    if ($btn.length) rawSyncPanelSetExpandedRd($btn, false);
+}
+$(document).on('click', '.btn-raw-sync-toggle', function () {
+    const $btn = $(this);
+    const $panel = $('#rawSyncPanel');
+    if ($btn.attr('aria-expanded') === 'true') {
+        $panel.addClass('d-none');
+        rawSyncPanelSetExpandedRd($btn, false);
+        return;
+    }
+    rawSyncPanelSetExpandedRd($btn, true);
+    $panel.removeClass('d-none');
+    if (rawSyncPanelCacheRd) { return; }
+    $panel.html(`<div class="text-muted small">${escapeHtml(langData['loading'] || 'Loading...')}</div>`);
     $.ajax({
         url: `${BASE_URL}/api/payroll-run.raw-sync-data-for-employee`,
         method: 'GET',
-        data: { run_id: PAYROLL_RUN_ID, employee_id: rawSyncDataEmployeeId },
+        data: { run_id: PAYROLL_RUN_ID, employee_id: breakdownRowRd ? breakdownRowRd.employee_id : null },
         dataType: 'json',
+        // A refusal belongs in the panel that was opened, not in a toast over the slip (§9): the
+        // whole point of moving this inline was to stop putting things on top of the figures.
         success: function (res) {
-            if (!res.status) { showWarning(res.message || langData['load_employee_failed'] || 'Failed to load data.'); return; }
-            renderRawSyncDataModal(res.data);
-            new bootstrap.Modal(document.getElementById('rawSyncDataModal')).show();
+            if (!res.status) {
+                $panel.html(`<div class="text-muted small">${escapeHtml(langData['raw_sync_panel_unavailable'] || 'Origami sent no data for this employee in this run.')}</div>`);
+                return;
+            }
+            rawSyncPanelCacheRd = res.data;
+            renderRawSyncDataModal(res.data, '#rawSyncPanel');
         },
-        error: function () { showWarning(langData['load_employee_failed'] || 'Failed to load data.'); }
+        error: function () {
+            $panel.html(`<div class="text-muted small">${escapeHtml(langData['raw_sync_panel_unavailable'] || 'Origami sent no data for this employee in this run.')}</div>`);
+        }
     });
 });
 

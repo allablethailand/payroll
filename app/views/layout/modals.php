@@ -3569,14 +3569,15 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
-                <h5 class="modal-title text-danger" id="runErrorEmployeesModalLabel">
-                    <i class="fa-solid fa-triangle-exclamation me-1"></i><span data-i18n="incomplete_data">Incomplete data</span>
-                </h5>
+                <!-- 2026-09-21, 3e-2b: §9's "Header = ชื่อ + × เท่านั้น" -- the icon and the red title
+                     both said "something is wrong" a third and fourth time, over a list that is
+                     already nothing but reasons. Footer button is §4's Secondary tier. -->
+                <h5 class="modal-title text-secondary mb-0" id="runErrorEmployeesModalLabel" data-i18n="incomplete_data">Incomplete data</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" id="runErrorEmployeesModalBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>

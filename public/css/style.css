@@ -3542,6 +3542,27 @@ th.col-money div.dt-column-header .dt-column-title {
     display: grid;
     gap: var(--sp-2);
 }
+/* One employee in the Payroll List's "incomplete data" modal (3e-2b). A rule between people, not a
+   bordered card each: the card's border drew a box around something that was already one entry in a
+   list, and a stack of boxes reads as a stack of things rather than a list (§0.3). Same underline
+   convention the comment list uses -- the last one carries none. */
+.run-error-employee {
+    padding-bottom: var(--sp-3);
+    margin-bottom: var(--sp-3);
+    border-bottom: 1px solid var(--c-border);
+}
+.run-error-employee-last {
+    padding-bottom: 0;
+    margin-bottom: 0;
+    border-bottom: 0;
+}
+/* The pill that opens it, and the 2 calc badges beside it, are `<button>`-wrapped badges (§5.1) --
+   the button contributes nothing but the press. `.btn-link`'s own underline-on-hover would land on
+   the badge inside it, which is not a link. */
+.btn-view-run-errors {
+    text-decoration: none;
+    line-height: 1;
+}
 /* The one section this modal has: the table. Its top padding is what keeps the first column head off
    the header card's bottom border (measured -- they are otherwise flush at 0px). */
 .breakdown-edit {
@@ -3555,10 +3576,84 @@ th.col-money div.dt-column-header .dt-column-title {
 .rd-calc-notes {
     display: grid;
     gap: var(--sp-2);
+    /* 2026-09-21, 3e-2b: the notes are no longer the first thing under the header card -- the raw
+       sync panel can sit between them. `margin-top` (not a margin on the card) is what keeps the gap
+       identical whether the panel is open or not: a `display:none` panel contributes nothing, and an
+       open one's own `margin-bottom` collapses with this one to the same 16px. */
+    margin-top: var(--sp-4);
     margin-bottom: var(--sp-3);
 }
 .rd-calc-notes:empty {
     display: none;
+}
+/* The slip's raw-sync panel (3e-2b) -- what Origami sent for THIS employee, inline under the header
+   card instead of a second modal on top of the slip. Its own box, by §5's panel rule: surface
+   `--c-bg` + 1px `--c-border`, never `--c-bg-subtle` (that is the header card's own fill directly
+   above it -- same fill would read as one block). 12px from the card it belongs to, 16px to whatever
+   block follows; hidden (`d-none`) it takes no height and no margin at all. */
+.rd-sync-panel {
+    margin-top: var(--sp-3);
+    margin-bottom: var(--sp-4);
+    padding: var(--sp-3);
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+}
+/* The sections inside it wrap against the PANEL's width, not the viewport's (3e-2b, measured: at a
+   1400px viewport this panel is 776px wide, where the old `col-md-6` still forced 2-up and left the
+   third section alone on its own row). `auto-fit` + `minmax` needs no breakpoint at all: 3-up here,
+   2-up and 1-up as the modal narrows, and the same rule keeps working if a section is ever added. */
+.rd-sync-sections {
+    display: grid;
+    /* 220px is a MEASURED floor, not a round number: it is the width below which a section stops
+       having room for its own 2-column field grid. Tried 200 so a 476px panel (768 viewport)
+       would get a 2-up middle step -- it does, and the panel gets TALLER doing it: 859.3px at
+       2-up vs 600.1px at 1-up, because each ~219px section then stacks all of its fields in one
+       column. Fewer, wider sections beat more, narrower ones here. Measured 3-up at a 776px
+       panel (1400), 1-up at 476 (768) and at 394 (430). */
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-4);
+}
+/* No border and no fill of its own: the section is already inside the panel's box, and a box drawn
+   inside a box adds nothing the heading and the spacing do not already say (§0.3). */
+.rd-sync-section {
+    min-width: 0;
+}
+.rd-sync-section-title {
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--c-text-muted);
+    margin-bottom: var(--sp-2);
+}
+/* Same rule one level down: 2 field columns while the section is wide enough for them, 1 when it is
+   not -- decided by the section's own width, again with no breakpoint. */
+.rd-sync-fields {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: var(--sp-2);
+}
+.rd-sync-field {
+    min-width: 0;
+}
+.rd-sync-field-label {
+    font-size: var(--fs-xs);
+    color: var(--c-text-muted);
+}
+/* Long values wrap instead of widening the grid track past the panel (`min-width:0` above is what
+   lets a grid item shrink below its content at all). */
+.rd-sync-field-value {
+    font-weight: 600;
+    color: var(--c-text);
+    overflow-wrap: anywhere;
+}
+/* The item codes in the "Additional Line Items" table were Bootstrap's own `code` default --
+   measured as Bootstrap's own pink at 10.5px, a colour that is in no token and a size smaller than the
+   text beside it. A code here is data in a cell, not a code sample. Scoped to this panel only. */
+.rd-sync-panel code {
+    color: var(--c-text-muted);
+    font-size: inherit;
+    font-family: inherit;
 }
 /* Shared popover (§9/§11, Round 3 item 3c-2 follow-up, explicit instruction) -- overrides Bootstrap's
    OWN --bs-popover-* CSS custom properties (exact names confirmed in bootstrap.min.css) rather than
@@ -3906,8 +4001,17 @@ th.col-money div.dt-column-header .dt-column-title {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
+    /* 2026-09-21, 3e-2b, real bug found by measuring: the fixed 24px this slot was given was SMALLER
+       than its own height with one line in it -- `padding-top` (--sp-2 = 8px) + one `.stat-sub` line
+       box (--fs-sm 13px x line-height 1.5 = 19.5px) = 27.5px. So a card whose sub-line is written
+       LATER (Payroll Detail's #infoPaymentBreakdown, filled by updateSummaryCardsFromTable() when the
+       employee table first draws) grew 3.5px at that moment and pushed the tab bar and every tab pane
+       down with it -- measured 114.3 -> 117.8, and it is what made m3e1's c13 report pane gaps of
+       [16, 19.5]. The floor is derived from the 2 values it has to clear instead of being a number
+       typed next to them, so it cannot drift apart from them again. Line-height is deliberately NOT
+       squeezed to fit 24: Thai needs the leading. */
     gap: var(--sp-2);
-    min-height: 24px;
+    min-height: calc(var(--sp-2) + 1.5 * var(--fs-sm));
     margin-top: auto;
     padding-top: var(--sp-2);
 }
@@ -5555,6 +5659,12 @@ button.badge {
     font-size: var(--fs-sm);
 }
 .emp-header-card-badge {
+    flex: none;
+}
+/* The card's RIGHT slot for a caller-owned control (3e-2b, first user: the slip's "ข้อมูลดิบจาก
+   Origami" disclosure). Same `flex:none` as the badge beside it -- the control keeps its own width,
+   the name/department block is what absorbs the remaining space. */
+.emp-header-card-action {
     flex: none;
 }
 
@@ -9808,12 +9918,19 @@ html, body {
 /* 2026-09-19: the group head's own link, in both of its meanings -- "เพิ่มรายการ" on a manual group,
    "คืนค่าระบบ" on a system one. ONE declaration block, so the two can never sit at different
    insets on heads of the same table (rules.md §9). */
+/* 2026-09-21, 3e-2b: `.btn-raw-sync-toggle` joins this list (user report: the raw-sync link "did not
+   look like something you can press"). It is the same tier of control on the same screen as the
+   group-head links below it -- a worded link that acts on the block it sits beside -- so it shares
+   this declaration instead of getting a second one that would then have to be kept in step (§0.4). */
 .lo-add-line-btn,
 .lo-add-line-btn:hover,
 .lo-add-line-btn:focus,
 .lo-group-restore-btn,
 .lo-group-restore-btn:hover,
-.lo-group-restore-btn:focus {
+.lo-group-restore-btn:focus,
+.btn-raw-sync-toggle,
+.btn-raw-sync-toggle:hover,
+.btn-raw-sync-toggle:focus {
     --bs-btn-color: var(--c-primary);
     --bs-btn-hover-color: var(--c-primary-hover);
     --bs-btn-padding-x: 0;

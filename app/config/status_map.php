@@ -155,8 +155,14 @@ return [
 
     // payroll_remittances.status. 'transferred' is WARNING (not neutral/success) -- confirmed:
     // "transferred but not yet confirmed received" is still an open/pending state in spirit.
+    // 2026-09-21, 3e-2b: 'pending' moved warning -> NEUTRAL. On a run that has only just been
+    // approved every remittance row is pending; that is the normal starting state of the tab, not
+    // something to act on, and a table where every row is yellow tells a reader nothing (§5: a tone
+    // answers "must the user do something about THIS one"). Same reasoning already applied to
+    // cash_payment_status.unpaid above. 'transferred' keeps warning -- that one really is waiting on
+    // somebody to confirm receipt.
     'remittance_status' => [
-        'pending' => ['label_key' => 'remittance_status_pending', 'tone' => 'warning'],
+        'pending' => ['label_key' => 'remittance_status_pending', 'tone' => 'neutral'],
         'transferred' => ['label_key' => 'remittance_status_transferred', 'tone' => 'warning'],
         'success' => ['label_key' => 'remittance_status_success', 'tone' => 'success'],
         'failed' => ['label_key' => 'remittance_status_failed', 'tone' => 'danger'],

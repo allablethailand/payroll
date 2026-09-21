@@ -4012,7 +4012,7 @@ $(document).on('show.bs.modal', '.modal', function () {
         // above is only ever true on a modal's FIRST open, meaning every later language switch left
         // this exact button frozen in whichever language was active that first time, for the rest of
         // the page's life, on every `data-footer="view"` modal app-wide (empAdjustmentsModal,
-        // rawSyncDataModal, runDetailBreakdownModal, ...). `data-i18n="close"` here is the actual
+        // runDetailBreakdownModal, ...). `data-i18n="close"` here is the actual
         // fix; a full page reload "fixed" it before only because that re-runs this same injection
         // from scratch with fresh langData, not because anything was truly in sync.
         $('<div class="modal-footer"></div>')
@@ -4382,8 +4382,15 @@ function empQuickViewPaymentMethodHtml(emp) {
 // missing that field renders exactly the same as before (no badge slot at all), never a broken
 // "undefined" badge. PHP twin: app/views/partials/emp-header-card.php (new, not previously
 // PHP-reachable at all -- this function was JS-only before).
-function employeeHeaderCardHtml(employee) {
+//
+// 2026-09-21, 3e-2b: `options.actionHtml` -- raw HTML the caller owns, rendered in the card's own
+// RIGHT slot after the status badge. Same shape/contract as `renderTimeline()`'s `item.actionHtml`
+// and `statusBadgeHtml()`'s `{menu}` (§6/§5): this function does not know what the control means and
+// binds no handler for it. JS-only, like `emptyStateHtml()`'s own `action.onClick` -- the PHP twin
+// (emp-header-card.php) has no caller that needs it, so it is not mirrored there.
+function employeeHeaderCardHtml(employee, options) {
     const emp = employee || {};
+    const actionHtml = (options && options.actionHtml) || '';
     const name = (currentLang === 'th' ? `${emp.name_th || ''} ${emp.surname_th || ''}` : `${emp.name_en || emp.name_th || ''} ${emp.surname_en || emp.surname_th || ''}`).trim() || '-';
     const department = (currentLang === 'th' ? emp.department_name_th : emp.department_name_en) || emp.department_name_th || emp.department_name_en || '-';
     const position = (currentLang === 'th' ? emp.position_name_th : emp.position_name_en) || emp.position_name_th || emp.position_name_en || '-';
@@ -4397,7 +4404,7 @@ function employeeHeaderCardHtml(employee) {
             </div>
             <div class="emp-header-card-line2">${escapeHtml(department)} &middot; ${escapeHtml(position)}</div>
         </div>
-        ${badgeHtml ? `<div class="emp-header-card-badge">${badgeHtml}</div>` : ''}
+        ${badgeHtml ? `<div class="emp-header-card-badge">${badgeHtml}</div>` : ''}${actionHtml ? `<div class="emp-header-card-action">${actionHtml}</div>` : ''}
     </div>`;
 }
 // 2026-09-11, Batch 3C item 3, explicit instruction: "ห้าม trigger row click ไปหน้า Detail

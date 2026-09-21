@@ -187,8 +187,13 @@
          region (rules.md 3: blue is not used) -- this box announces the next step for a run that was
          created against a merge target, so `primary` is its tone, the same one #nextStepBanner uses
          for "still moving forward". #btnMergeIntoTarget keeps its own look for now (it is a real
-         primary action, and its icon is a separate rules.md 4 question -- see BACKLOG). -->
-    <div class="callout callout-primary d-none" id="mergeTargetBanner">
+         primary action, and its icon is a separate rules.md 4 question -- see BACKLOG).
+         2026-09-21, 3e-2b: `primary` -> `neutral`. This box states a FACT about how the run was
+         created (it has a merge target), and the thing to do about it is the button inside it --
+         which is already the orange one. An orange left edge behind an orange button is the same
+         signal twice, and it left #nextStepBanner, the box that really does say "this is the next
+         step", competing with it for the one meaning primary carries (§15/§0.1). -->
+    <div class="callout callout-neutral d-none" id="mergeTargetBanner">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
             <span id="mergeTargetBannerText"></span>
             <button type="button" class="btn btn-sm btn-primary" id="btnMergeIntoTarget"><i class="fa-solid fa-code-merge me-1"></i><span data-i18n="btn_merge_sync">Merge into Target</span></button>
@@ -1293,6 +1298,14 @@
                          renderBreakdownModal() in detail.js) so this card doesn't get wiped along
                          with it. -->
                     <div id="breakdownHeaderCard"></div>
+                    <!-- 2026-09-21, 3e-2b: what Origami sent for this employee, read-only, opened
+                         from the disclosure button in the header card's own right slot above.
+                         Static sibling for the same reason that card is one (#breakdownModalBody's
+                         content is replaced wholesale on every open), and a PANEL rather than a
+                         second modal: the slip must stay the one open modal. Filled/emptied by
+                         renderBreakdownModal()/the toggle handler in detail.js -- hidden and empty
+                         on every open, so it can never carry the previous employee's payload. -->
+                    <div id="rawSyncPanel" class="rd-sync-panel d-none"></div>
                     <!-- 2026-09-16: the calculation notes for this row (calc_blocking as danger
                          callouts, calc_warnings as warning ones -- see renderBreakdownModal()). The
                          table cell itself only shows the count now, so this is where the full text
@@ -1318,42 +1331,6 @@
                      by renderBreakdownFooterRd() (detail.js) -- read-only rows get [ปิด] alone, i.e.
                      exactly what the fallback used to inject. -->
                 <div class="modal-footer" id="breakdownModalFooter"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Raw Sync Data viewer (2026-08-21, explicit request: "ดูข้อมูลดิบได้...เพื่อทำการ Recheck
-         ข้อมูลย้อนหลังได้") -- read-only, shows exactly what Origami sent for this employee
-         (PayrollRunModel::RAW_SYNC_DATA_FIELDS -- payroll/attendance fields only, deliberately
-         excludes encrypted PII columns also on that row, see that const's own docblock). Only
-         opened for a row with data_source='sync' -- a manually-added employee on a sync run has no
-         sync row to show here at all. -->
-    <div class="modal fade" id="rawSyncDataModal" data-footer="view" tabindex="-1" aria-labelledby="rawSyncDataModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content border-0 shadow">
-                <div class="modal-header">
-                    <div>
-                        <h5 class="modal-title text-secondary mb-0" id="rawSyncDataModalLabel">
-                            <i class="fa-solid fa-file-code me-1"></i><span data-i18n="raw_sync_data_title">Raw Sync Data</span>
-                        </h5>
-                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
-                             ชื่อ modal ไม่มีชื่อพนักงานซ้ำ" -- #rawSyncDataEmployeeName removed, the
-                             employee's name now shows once, inside the new header card in the body. -->
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <!-- 2026-09-11, Batch 3C item 8, explicit instruction: employeeHeaderCardHtml()
-                         (app.js) as the first block in modal-body. -->
-                    <div id="rawSyncDataHeaderCard"></div>
-                    <!-- 2026-09-18, 4b: the per-run tax/SSO setting is not a card anywhere any more --
-                         it is the switch on the slip's own TH_PIT/TH_SSO rows, where the figures it
-                         decides are read. This viewer is read-only, its original single purpose. -->
-                    <div id="rawSyncDataModalBody"></div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
-                </div>
             </div>
         </div>
     </div>

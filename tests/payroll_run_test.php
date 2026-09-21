@@ -1315,7 +1315,10 @@ try {
     // errorEmployeesForRun() lookup that backs the List page's "i" info button, then restores the
     // row so nothing downstream in this shared-fixture file sees a stray error.
     echo "=== List page 'incomplete data' indicator: error_employee_count + errorEmployeesForRun() ===\n";
-    $stmtForceError = $pdo->prepare("UPDATE `payroll_run_details` SET calc_status = 'error', calc_errors = 'no_rate_configured' WHERE run_id = :run_id AND employee_id = :employee_id");
+    // 2026-09-21, 3e-2b: the forced value carries an ADVISORY code alongside the blocking one, so
+    // the 2 new arrays below are split from something that really has both halves. A single blocking
+    // code would have let a split that returns everything in one bucket pass.
+    $stmtForceError = $pdo->prepare("UPDATE `payroll_run_details` SET calc_status = 'error', calc_errors = 'no_rate_configured, no_attendance_data_this_period' WHERE run_id = :run_id AND employee_id = :employee_id");
     $stmtForceError->execute([':run_id' => $runId, ':employee_id' => $employeeFullId]);
     $runsListAfterForcedError = $runModel->list($compId, ['state' => 'draft']);
     $thisRunAfterForcedError = current(array_filter($runsListAfterForcedError, fn($r) => (int)$r['id'] === $runId));
@@ -1323,7 +1326,14 @@ try {
     $errorEmployees = $runModel->errorEmployeesForRun($runId, $compId);
     check('errorEmployeesForRun() returns exactly 1 row', count($errorEmployees), 1);
     check('errorEmployeesForRun() row is the correct employee', (int)($errorEmployees[0]['employee_no'] ?? 0) > 0 || !empty($errorEmployees[0]['employee_no']), true);
-    check('errorEmployeesForRun() surfaces the calc_errors text for the "i" button detail view', $errorEmployees[0]['calc_errors'] ?? null, 'no_rate_configured');
+    check('errorEmployeesForRun() surfaces the calc_errors text for the "i" button detail view', $errorEmployees[0]['calc_errors'] ?? null, 'no_rate_configured, no_attendance_data_this_period');
+    // 2026-09-21, 3e-2b: the List page's modal renders the BLOCKING reasons only, as sentences, via
+    // the same client-side table the Detail page uses -- so this lookup has to hand it the same
+    // split getDetails() already does, not the raw string for the page to re-parse.
+    check('errorEmployeesForRun() row carries calc_blocking as an array', is_array($errorEmployees[0]['calc_blocking'] ?? null), true);
+    check('errorEmployeesForRun() row carries calc_warnings as an array', is_array($errorEmployees[0]['calc_warnings'] ?? null), true);
+    check('errorEmployeesForRun() calc_blocking holds only the blocking code', $errorEmployees[0]['calc_blocking'] ?? null, ['no_rate_configured']);
+    check('errorEmployeesForRun() calc_warnings holds only the advisory code', $errorEmployees[0]['calc_warnings'] ?? null, ['no_attendance_data_this_period']);
     check('errorEmployeesForRun() on a nonexistent run returns empty (same not-found guard as getDetails())', $runModel->errorEmployeesForRun(999999999, $compId), []);
     $stmtRestoreError = $pdo->prepare("UPDATE `payroll_run_details` SET calc_status = 'calculated', calc_errors = NULL WHERE run_id = :run_id AND employee_id = :employee_id");
     $stmtRestoreError->execute([':run_id' => $runId, ':employee_id' => $employeeFullId]);

@@ -567,6 +567,12 @@ class PayrollRunModel {
      * separate, narrow, on-demand lookup (not part of list()'s own per-row query) so viewing the
      * whole List doesn't have to fetch every erroring employee for every run up front -- only the
      * one run the admin actually clicked "i" on.
+     *
+     * 2026-09-21, 3e-2b: each row now also carries `calc_blocking`/`calc_warnings`, split by the SAME
+     * splitCalcErrors() getDetails() uses for the Detail page's own table -- so the List's modal
+     * shows the blocking reasons only, and shows them through the same client-side sentence table
+     * (calcErrorItemsRd) the Detail page renders, instead of printing the raw codes. `calc_errors`
+     * stays exactly as it was: it is the raw audit value, and nothing that reads it had to change.
      */
     public function errorEmployeesForRun(int $runId, int $compId): array {
         if (!$this->get($runId, $compId)) {
@@ -579,7 +585,14 @@ class PayrollRunModel {
                 ORDER BY e.employee_no ASC";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':run_id' => $runId]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($rows as &$row) {
+            $split = self::splitCalcErrors($row['calc_errors'] ?? null);
+            $row['calc_blocking'] = $split['blocking'];
+            $row['calc_warnings'] = $split['warnings'];
+        }
+        unset($row);
+        return $rows;
     }
 
     /**

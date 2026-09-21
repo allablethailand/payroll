@@ -339,15 +339,23 @@ function renderRunErrorEmployeesModal(rows) {
     if (!rows.length) {
         return `<p class="text-muted mb-0">${langData['no_data_found'] || 'No data found.'}</p>`;
     }
-    const items = rows.map(r => {
+    // 2026-09-21, 3e-2b: the reasons are SENTENCES now, from format-helpers.js's own
+    // calcErrorItemsRd() -- the very same helper the Detail page's slip callouts and Calculation-
+    // column popovers use, so the same row reads identically wherever it is opened (rules.md §5.2:
+    // a machine code is never text on screen; it rides along in `data-code` so it stays findable
+    // when someone reports a row). Blocking codes only: this modal exists to answer "why does this
+    // run say N employees are incomplete", and an advisory note is not one of those reasons.
+    // One person = one block separated by a rule, not a bordered card each (§0.3 -- the border said
+    // nothing the separator does not).
+    const items = rows.map((r, i) => {
         const name = currentLang === 'th'
             ? escapeHtml(`${r.name_th || ''} ${r.surname_th || ''}`.trim())
             : escapeHtml(`${r.name_en || r.name_th || ''} ${r.surname_en || r.surname_th || ''}`.trim());
-        const errors = (r.calc_errors || '').split(',').map(s => s.trim()).filter(Boolean);
-        const errorList = errors.length
-            ? `<ul class="mb-0 ps-3 small text-danger">${errors.map(e => `<li>${escapeHtml(e)}</li>`).join('')}</ul>`
+        const blocking = calcErrorItemsRd(r.calc_blocking);
+        const errorList = blocking.length
+            ? `<ul class="mb-0 ps-3 small">${blocking.map(it => `<li data-code="${escapeAttr(it.code)}">${escapeHtml(it.message)}</li>`).join('')}</ul>`
             : `<span class="small text-muted">${langData['no_details'] || 'No further details.'}</span>`;
-        return `<div class="border rounded-3 p-2 mb-2">
+        return `<div class="run-error-employee${i === rows.length - 1 ? ' run-error-employee-last' : ''}">
             <div class="fw-semibold">${escapeHtml(r.employee_no)} - ${name}</div>
             ${errorList}
         </div>`;
@@ -582,8 +590,14 @@ function initPayrollRunTable() {
                     const mainLine = preApprovalStates.includes(row.state)
                         ? escapeHtml(`${langData['verify_status_verified'] || 'Verified'} ${verified}/${total}`)
                         : escapeHtml(String(total));
+                    // 2026-09-21, 3e-2b: the pill goes through the shared countBadgeHtml() (§5) with
+                    // a `{n}` label instead of a badge span written out by hand here -- it stands
+                    // alone in this cell, so the bare number would not say what it counts, and the
+                    // 2 icons it used to wear said nothing the words do not (§0.3). Still the same
+                    // `<button>`, same id-less `.btn-view-run-errors` + `data-id` handler as before.
+                    const errorLabel = langData['run_error_employee_count'] || '{n} with errors';
                     const errorHtml = errors
-                        ? `<div class="mt-1"><button type="button" class="badge rounded-pill bg-danger-subtle text-danger border-0 btn-view-run-errors" data-id="${row.id}" title="${langData['incomplete_data'] || 'Incomplete data'}"><i class="fa-solid fa-triangle-exclamation me-1"></i>${errors}<i class="fa-solid fa-circle-info ms-1"></i></button></div>`
+                        ? `<div class="mt-1"><button type="button" class="btn btn-link p-0 border-0 align-baseline btn-view-run-errors" data-id="${row.id}" title="${escapeAttr(langData['incomplete_data'] || 'Incomplete data')}">${countBadgeHtml(errors, { tone: 'danger', label: errorLabel })}</button></div>`
                         : '';
                     return `<div class="fw-semibold">${mainLine}</div>${errorHtml}`;
                 },

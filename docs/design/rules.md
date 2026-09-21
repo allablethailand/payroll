@@ -232,8 +232,8 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
     ด้านล่าง — **ถ้าไม่ส่งไอคอนมา ไม่เว้นที่ไว้** (ตัดสินใจเดิม ยังคงไว้ไม่เปลี่ยนข้ามทั้ง 2 รอบ:
     "เลือกไม่เว้น"/"ไม่มีไอคอน = ไม่เว้นที่") — label เป็นสมาชิกเดียวในแถว flex (label+ไอคอน,
     `justify-content:space-between`) จึงชิดซ้ายเองโดยธรรมชาติเมื่อไม่มีไอคอน ไม่ต้องเขียนโค้ดพิเศษกันที่ว่าง
-  - **ทุกการ์ดในแถวสูงเท่ากันเสมอ** — caller ครอบด้วย Bootstrap `.row` ธรรมดา (ยืด column เท่ากันเป็น default อยู่แล้ว ไม่ต้องเพิ่ม CSS) `.stat` เอง `height:100%` + เป็น flex column — **slot ล่างคงที่สำหรับ sub/badge/link เสมอ** (มี `min-height` แม้ไม่มีเนื้อหาอะไรเลย ก็ยังเว้นพื้นที่เท่ากับการ์ดที่มีครบทั้ง 3 อย่าง) และ `margin-top:auto` ดันลงชิดขอบล่างเสมอ ไม่ว่า header/ไอคอนด้านบนจะสูงแค่ไหน
-  - **ขนาดที่แน่นอน (item A.3, 2026-09-13)**: padding การ์ด `--sp-4`, label `--fs-sm`, value `--fs-xl` `line-height:1.2`, slot ล่างสูงคงที่ `24px` (แก้จาก `20px` เดิม) — รวมกันแล้วการ์ดสูง **~110px เท่ากันทุกใบ**; ไอคอน 16px ชิดขวาบนระดับเดียวกับ label (ไม่เปลี่ยนจากที่ตกลงไว้ก่อนหน้า); บรรทัดย่อยใน slot ล่าง (เช่น "โอนผ่านบัญชี 0 · เงินสด 2") เป็นข้อความ `--c-text-muted` ล้วน **ไม่มีไอคอน/สี** ใดๆ
+  - **ทุกการ์ดในแถวสูงเท่ากันเสมอ** — caller ครอบด้วย Bootstrap `.row` ธรรมดา (ยืด column เท่ากันเป็น default อยู่แล้ว ไม่ต้องเพิ่ม CSS) `.stat` เอง `height:100%` + เป็น flex column — **slot ล่างคงที่สำหรับ sub/badge/link เสมอ** (มี `min-height` แม้ไม่มีเนื้อหาอะไรเลย ก็ยังเว้นพื้นที่เท่ากับการ์ดที่มีครบทั้ง 3 อย่าง — **ค่านั้นต้อง ≥ ความสูงจริงของ slot ตอนมีเนื้อหา 1 บรรทัด ไม่งั้นมันไม่ได้คงที่จริง**: slot ที่เตี้ยกกว่าเนื้อหาของตัวเอง = การ์ดขยายทันทีที่เนื้อหาถูกเติม และทุกอย่างใต้มันขยับตาม) และ `margin-top:auto` ดันลงชิดขอบล่างเสมอ ไม่ว่า header/ไอคอนด้านบนจะสูงแค่ไหน
+  - **ขนาดที่แน่นอน (item A.3, 2026-09-13)**: padding การ์ด `--sp-4`, label `--fs-sm`, value `--fs-xl` `line-height:1.2`, slot ล่างสูงคงที่ **`calc(var(--sp-2) + 1.5 * var(--fs-sm))` = 27.5px** (เคยเป็น `20px` แล้ว `24px` — **24px ผิด: เตี้ยกว่า padding-top + 1 บรรทัดของ `.stat-sub` เอง การ์ดที่ถูกเติมข้อความทีหลังจึงโต 3.5px ดันทุกอย่างใต้มันลง — วัดจริง 2026-09-21**) — ค่าต้อง derive จาก token ที่มันต้องครอบเสมอ ห้ามพิมพ์เลขคงที่ — รวมกันแล้วการ์ดสูง **~118px เท่ากันทุกใบ**; ไอคอน 16px ชิดขวาบนระดับเดียวกับ label (ไม่เปลี่ยนจากที่ตกลงไว้ก่อนหน้า); บรรทัดย่อยใน slot ล่าง (เช่น "โอนผ่านบัญชี 0 · เงินสด 2") เป็นข้อความ `--c-text-muted` ล้วน **ไม่มีไอคอน/สี** ใดๆ
   - **`value_class` (ใหม่, item D, 2026-09-13)** — field เสริม optional ของ `$stat`, ใส่ class เพิ่มบน `.stat-value` ต่อจาก `.num` (เช่น `'money-gross'`) สำหรับตัวเลขที่มีความหมายทางบัญชีจริง — ดู §8 money-color system ด้านล่าง คนละเรื่องกับ `value_id`/`sub_id` ที่ยังเป็นแผนรอบ 4 ด้านล่าง (นี่คือ class เสริมตอน render ครั้งเดียว, ไม่เกี่ยวกับปัญหา live-update ค่าเดี่ยว)
   - **Migration**: รอบ 2 สร้าง `.stat`/`stat-card.php` ใหม่เท่านั้น **ไม่แตะ 5 ไฟล์ที่ใช้ `.stat-card` เดิม**; รอบ 4 ย้ายทีละหน้า (หน้าไหนมี stat card ก็ย้ายเป็นส่วนหนึ่งของการทำหน้านั้นให้ clean ไม่ใช่ commit แยก) เมื่อย้ายครบ 5 ไฟล์แล้วให้ลบ CSS ของ `.stat-card`/`.stat-card-*` (`style.css`) ทิ้งเป็นขั้นตอนสุดท้าย — ห้ามลบ CSS เดิมก่อนไฟล์ล่าสุดที่ใช้มันย้ายเสร็จ
   - **Gap พบระหว่างรอบ 3 (Payroll Detail pilot, item 3a, 2026-09-13) — ยังไม่แก้ partial, บันทึกไว้ก่อน**:
@@ -1925,6 +1925,19 @@ page-local block มา 2 รอบก่อนหน้า (callout ก่อ�
   หน้านี้) — **ผลคือ 6 modal จริงจะได้สไตล์ใหม่ทันทีที่ commit รอบนี้** (avatar 48px→40px ตามขนาดที่ตัดสิน
   รอบนี้, เพิ่มบรรทัด 2 + badge slot) ต่างจาก component อื่นในรอบ 2 ที่ยังไม่ถูก wire เข้าหน้าจริงเลย
 
+**รายละเอียดเบื้องหลังของแถวที่เปิดอยู่ใน modal แล้ว = แผง disclosure ในโมดัลนั้น ไม่ใช่ modal ที่สอง (3e-2b, 2026-09-21)**
+- ปุ่มเปิดเป็น**ข้อความ** (`.btn-link`) ไม่มีไอคอน/caret อยู่ใน slot ขวาของ `.emp-header-card` — `aria-expanded` +
+  `aria-controls` เท่านั้นที่บอกสถานะ, กดซ้ำ = ปิด · **`.modal.show` ต้อง = 1 ตลอด** (วัด ไม่ใช่เชื่อ)
+- แผงเป็นกล่องของตัวเอง: พื้น `--c-bg` + ขอบ 1px `--c-border` + `--radius` — **ห้าม `--c-bg-subtle`** (พื้นของ
+  หัวการ์ดที่อยู่ติดกันด้านบน สองก้อนจะอ่านเป็นก้อนเดียว) กฎเดียวกับแผงประวัติใน §5
+- **ระยะเป็นของแผง ไม่ใช่ของการ์ด**: `margin-top --sp-3` / `margin-bottom --sp-4` แล้วให้ block ถัดไปถือ
+  `margin-top --sp-4` ของตัวเอง — แผงที่ `d-none` ต้องไม่กินระยะ และระยะที่เหลือต้องเท่าเดิมก่อนมีแผง
+- **state ของแผงล้างที่จุด render ของแถว ไม่ใช่ตอนปิด** — ปิด + ล้างเนื้อ + ทิ้ง cache เป็นบรรทัดแรกของฟังก์ชันที่
+  วาดแถวใหม่ ไม่งั้นแถวถัดไปเปิดมาพร้อมข้อมูลของแถวก่อน · โหลดครั้งแรกของแถวนั้นครั้งเดียว เปิดซ้ำไม่ยิงซ้ำ
+- **คำปฏิเสธจาก server ลงในแผง** (key กลาง 1 ตัว) ห้าม toast/Swal — §9 เดิม: กล่องกลางจอบังของที่เพิ่งถูกปฏิเสธ
+- `employeeHeaderCardHtml(emp, {actionHtml})` เป็นทางเดียวที่ใส่ control ลง slot ขวานั้น (HTML ดิบของ caller,
+  component ไม่ผูก handler ให้ — shape เดียวกับ `renderTimeline()`'s `item.actionHtml`) **JS ฝั่งเดียว**
+
 **Quick-view พนักงาน** (จากคลิก avatar ทั่วแอป, ตัดสินใจแล้วรอบ 2 item 6c — migrate จริงรอบ 4)
 - เป็น **modal** (`modal-md`) ไม่ทำ popover — ใช้ `.emp-header-card` เป็นหัว, เนื้อหา 2 คอลัมน์เท่ากัน
   label/value, footer มีแค่ **[ปิด] [ดูข้อมูลเต็ม]** (ไม่มีปุ่มอื่น)
@@ -2056,7 +2069,7 @@ page-local block มา 2 รอบก่อนหน้า (callout ก่อ�
 | `initRowToggles($table, {onChange})` (ใหม่, item (2) — เสร็จแล้ว) | app.js | switch ต่อแถวที่แต่ละหน้าเขียน wiring เองคนละแบบ (tax-statutory/company-profile ฯลฯ — ยังไม่ migrate รอบนี้ ห้ามแตะหน้าจริง §13) |
 | `fmtMoney()` (ใหม่, item 7a — เสร็จแล้ว) / `fmtNum()` (มีแล้ว, `format-helpers.js` — **ไม่สร้าง `formatMoney()` ใหม่**, ตัดสินใจแล้วรอบ 2 — ดู §8) / `initMoneyInputs()` (ใหม่, item 7a — เสร็จแล้ว; ยังไม่มีหน้าจริงใช้ `.money-input`, migrate รอบ 4) / `parseMoneyInput()` (ใหม่, item 7a — `format-helpers.js`, จุดร่วมเดียวสำหรับ strip comma ที่ `collect*FormData` 8 ฟังก์ชันของหน้าจริงจะเรียกตอน migrate) | `app/helpers/helpers.php` + `app.js` + `format-helpers.js` | number_format กระจาย |
 | `apvAvatarHtml()` / `apvPersonLineHtml()` | app.js (มีแล้ว) | avatar เขียนเอง |
-| `emp-header-card.php` (ใหม่, item 6c) + `employeeHeaderCardHtml()` (generalize ของเดิม Batch 3C item 8 — เสร็จแล้ว, **มี 6 real call site ใน payroll/detail.js อยู่แล้ว ได้สไตล์ใหม่ทันทีที่ commit** ไม่เหมือน component อื่นในรอบนี้ — ดู §9) | `app/views/partials/` + `app.js` | หัว modal ธง+ไอคอน |
+| `emp-header-card.php` (ใหม่, item 6c) + `employeeHeaderCardHtml(emp, {actionHtml})` (generalize ของเดิม Batch 3C item 8; `actionHtml` = slot ขวาของ caller, 3e-2b — ดู §9 — เสร็จแล้ว, **มี 6 real call site ใน payroll/detail.js อยู่แล้ว ได้สไตล์ใหม่ทันทีที่ commit** ไม่เหมือน component อื่นในรอบนี้ — ดู §9) | `app/views/partials/` + `app.js` | หัว modal ธง+ไอคอน |
 | `isFormDirty()` / `confirmIfDirtyThen()` (ขยายรับ `promptOptions`, item 7b — เสร็จแล้ว) / `refreshDirtyGuard()` (ใหม่, item 7b) / `data-dirty-guard` modal marker (ใหม่, item 7b — opt-in, redesign ของกลไกที่เคยถูกสั่งปิดทั้งระบบไป 2026-09-09, ยังไม่มีหน้าจริงใช้ รอรอบ 4) | app.js (มีแล้ว, Platform Hardening Phase 1) | ผูก dirty-check เองทีละ modal — **ไม่สร้าง `guardDirtyModal()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §9) |
 | `showConfirm()` (ขยายรับ object form + `cancelText`, item 7b — เสร็จแล้ว; + `tone` 3 ทาง 2026-09-13 decision-set follow-up, `danger:true` ยังใช้ได้เป็น shorthand) / `showSuccess` (เปลี่ยนเป็น toast default, item 7b) / `showError` (ไม่เปลี่ยน) | app.js/alert.js (มีแล้ว) | Swal.fire ตรง — **ไม่สร้าง `confirmAction()` ใหม่** (ตัดสินใจแล้วรอบ 0 — ดู §10) |
 | `resetModalTabs()` | app.js (มีแล้ว) | strip class เอง |
