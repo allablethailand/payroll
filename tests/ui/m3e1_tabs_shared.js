@@ -634,11 +634,20 @@ async function cell9() {
         els.map((e) => ({ key: e.getAttribute('data-i18n'), text: (e.textContent || '').trim(), cls: e.className })));
     const lang = await ctx.page.evaluate(() => langData);
     measured('MOCK remittance badges', seen);
+    /* 2026-09-21, 3e-2b: the TONE per status is asserted here too, not just the label. `pending`
+       moved warning -> neutral this round (status_map.php) and nothing in this cell would have
+       noticed: a badge whose text is right and whose colour is wrong still passed. The expected tone
+       is written out per status deliberately -- reading it back out of STATUS_MAP would only assert
+       that the page agrees with itself. */
+    const EXPECTED_TONE = { pending: 'neutral', transferred: 'warning', success: 'success', failed: 'danger' };
     for (const st of ['pending', 'transferred', 'success', 'failed']) {
         const key = 'remittance_status_' + st;
         const hit = seen.find((b) => b.key === key);
         check('c9: status "' + st + '" renders once, text from langData', !!hit && hit.text === lang[key],
             hit ? '"' + hit.text + '" vs "' + lang[key] + '"' : 'missing');
+        check('c9: status "' + st + '" carries tone ' + EXPECTED_TONE[st],
+            !!hit && new RegExp('(^| )badge-' + EXPECTED_TONE[st] + '( |$)').test(hit.cls),
+            hit ? hit.cls : 'missing');
     }
     const money = await ctx.page.evaluate(() => Array.from(document.querySelectorAll('#run-remittance-pane td.col-money'))
         .map((td) => ({ cls: td.className, align: getComputedStyle(td).textAlign })));
@@ -748,7 +757,7 @@ async function cell12() {
     // there, out of scope -- see BACKLOG). Both numbers are reported, only the owned one asserted.
     const DETAIL_OWNED = ['#runDetailTabsContent', '#runDetailBreakdownModal', '#reportHistoryModal',
         '#reportPreviewModal', '#remittanceBreakdownModal', '#remittanceMarkTransferredModal',
-        '#remittanceMarkFailedModal', '#bankAccountAssignModal', '#rawSyncDataModal',
+        '#remittanceMarkFailedModal', '#bankAccountAssignModal',
         '#joinEmployeesModal', '#runApproveModal', '#runRejectModal', '#runRequestInfoModal',
         '#runMarkPaidModal', '#runTimelineModal', '#employeeCommentModal'];
     const count = async () => ctx.page.evaluate((sels) => ({
@@ -814,9 +823,17 @@ async function cell13() {
         const skipped = [];
         for (const p of ALL_PANES) {
             if (!(await openTab(ctx.page, p.tab))) { skipped.push(p.pane); continue; }
+            // 2026-09-21, 3e-2b: the tab bar is re-read HERE, in the same evaluate as the pane.
+            // `frame` above is captured once, before any tab is opened, and the page really does move
+            // under it: Payroll Detail's own stat card grows when its sub-line is written by
+            // updateSummaryCardsFromTable() (see the stat-card slot fix this round), which pushed the
+            // bar and every pane down 3.5px mid-cell and made this read [16, 19.5]. Comparing a live
+            // pane against a stale bar measured that shift, not the pane's own spacing.
             const m = await ctx.page.evaluate((sel) => {
                 const pane = document.querySelector(sel);
                 const cs = getComputedStyle(pane);
+                const tabsNow = document.querySelector('#runDetailTabs').getBoundingClientRect();
+                const card = document.querySelector('.stat');
                 const r = (el) => { const b = el.getBoundingClientRect(); return { l: Math.round(b.left * 10) / 10, r: Math.round(b.right * 10) / 10, t: Math.round(b.top * 10) / 10 }; };
                 const first = [...pane.children].find((e) => e.offsetParent !== null && e.getBoundingClientRect().height > 0);
                 const tbl = pane.querySelector('table');
@@ -824,6 +841,8 @@ async function cell13() {
                     .find((e) => e.offsetParent !== null && e.getBoundingClientRect().width > 0) || null;
                 return {
                     padL: cs.paddingLeft, padR: cs.paddingRight, paneTop: r(pane).t,
+                    tabsBottomNow: Math.round(tabsNow.bottom * 10) / 10,
+                    statCardH: card ? Math.round(card.getBoundingClientRect().height * 10) / 10 : null,
                     first: first ? r(first) : null, table: tbl ? r(tbl) : null, anchor: anchor ? r(anchor) : null,
                 };
             }, p.pane);
@@ -835,8 +854,9 @@ async function cell13() {
                     Math.abs(m.first.l - frame.left) <= 0.5, m.first.l + ' vs ' + frame.left);
                 check('c13 @' + label + ' ' + p.pane + ': ...and ends at its right',
                     Math.abs(m.first.r - frame.right) <= 0.5, m.first.r + ' vs ' + frame.right);
-                gaps.push({ pane: p.pane, paneGap: Math.round((m.paneTop - frame.bottom) * 10) / 10,
-                    firstChildGap: Math.round((m.first.t - frame.bottom) * 10) / 10 });
+                gaps.push({ pane: p.pane, paneGap: Math.round((m.paneTop - m.tabsBottomNow) * 10) / 10,
+                    firstChildGap: Math.round((m.first.t - m.tabsBottomNow) * 10) / 10,
+                    tabsBottomNow: m.tabsBottomNow, statCardH: m.statCardH });
             }
             if (m.table && m.anchor) {
                 check('c13 @' + label + ' ' + p.pane + ': <table> left == the block beside it',
@@ -851,9 +871,13 @@ async function cell13() {
         // #runDetailTabsContent's margin-top and nothing else. A pane's first CHILD can sit lower
         // when that child brings its own margin (a DataTables control row's .mt-2, a .mb-3 wrapper);
         // that is the child's spacing, not the pane's, so it is reported, never asserted equal.
-        const uniq = [...new Set(gaps.map((g) => g.paneGap))];
-        check('c13 @' + label + ': every pane starts the same distance below the tab bar',
-            uniq.length === 1 && uniq[0] === 16, JSON.stringify(uniq));
+        // The probe the 3e-2b investigation ran by hand, kept as one line: if the card height or the
+        // bar's bottom ever differs between panes again, it is visible here before the assert below
+        // has to explain itself.
+        measured('c13 @' + label + ' stat card height / tab bar bottom per pane',
+            gaps.map((g) => g.statCardH + '/' + g.tabsBottomNow).join(' '));
+        check('c13 @' + label + ': every pane starts 16px below the tab bar',
+            gaps.every((g) => Math.abs(g.paneGap - 16) <= 0.5), JSON.stringify(gaps.map((g) => g.paneGap)));
         const rep = ctx.report();
         measured('c13 @' + label + ' report', rep);
         check('c13 @' + label + ': nothing was written', rep.blockedWrites === 0, rep.blockedWritePaths.join(','));
@@ -866,15 +890,48 @@ async function cell13() {
    = 1 and sync_process_id = 191 (so syncMissingEmployees() has something to report). It is opened
    read-only with every write route blocked, and its auto_recalculate is 0, so nothing recalculates
    on load either. No mock is needed for this cell. */
-const BANNER_RUN_TOKEN = process.argv[4] || null;
+
+/* 2026-09-21, 3e-2b: where the banner run comes from. argv wins; otherwise ask the DB through
+   tests/ui/find_banner_run.php (one read-only SELECT, the same 4 conditions the page's own render
+   path reads), and only if THAT answers `none` does the cell fall back to mocking the fields. No run
+   id or token is written into this file any more -- a hard-coded token that stops matching measures
+   the wrong thing while still calling itself by the right name. */
+function resolveBannerRunToken(argvToken) {
+    if (argvToken) return { token: argvToken, source: 'argv' };
+    try {
+        const out = require('child_process')
+            .execFileSync('php', [require('path').join(__dirname, 'find_banner_run.php')], { encoding: 'utf8' })
+            .split('\n').map((s) => s.trim()).filter(Boolean).pop();
+        if (out && out !== 'none') return { token: out, source: 'find_banner_run.php' };
+        return { token: null, source: 'none' };
+    } catch (e) {
+        return { token: null, source: 'error: ' + (e && e.message ? String(e.message).split('\n')[0] : e) };
+    }
+}
+/* The `none` branch: patch the fields the banner render path reads into api/payroll-run.get's own
+   reply, so the boxes stay measurable on any draft run instead of the cell reporting that it could
+   not prove anything. Every other field of the real reply is passed through untouched, and this is
+   a READ route -- nothing is written either way. */
+async function mockBannerFields(page) {
+    await page.route('**/api/payroll-run.get*', async (route) => {
+        const res = await route.fetch();
+        let body;
+        try { body = JSON.parse(await res.text()); } catch (e) { return route.fulfill({ response: res }); }
+        if (body && body.data) body.data.has_validation_errors = 1;
+        return route.fulfill({ response: res, body: JSON.stringify(body) });
+    });
+}
+const BANNER_RUN = resolveBannerRunToken(process.argv[4]);
 async function cell14() {
     console.log('\n[c14] run-level banners -- callout, not a solid .alert tile');
-    if (!BANNER_RUN_TOKEN) {
-        check('c14: a run token with has_validation_errors=1 was supplied', false, 'pass it as argv[4]');
-        return;
-    }
+    measured('c14 banner run source', BANNER_RUN.source + ' -> ' + (BANNER_RUN.token || 'none'));
     const ctx = await openContext({ sessionId: sessionId, width: 1400, height: 950, blockPaths: WRITE_PATHS });
-    await gotoRun(ctx, BANNER_RUN_TOKEN, 'th');
+    if (!BANNER_RUN.token) {
+        console.log('  MOCK  c14: no draft run in this DB carries has_validation_errors=1 + a sync process --');
+        console.log('  MOCK  c14: has_validation_errors is patched into api/payroll-run.get on the fixture run.');
+        await mockBannerFields(ctx.page);
+    }
+    await gotoRun(ctx, BANNER_RUN.token || runToken, 'th');
     await ctx.page.waitForTimeout(900);
     const IDS = ['#nextStepBanner', '#validationErrorsBanner', '#syncMissingEmployeesBanner',
         '#mergeTargetBanner', '#mergeTargetWaitingBanner'];
@@ -932,6 +989,80 @@ async function cell14() {
     check('c14: nothing was written', rep.blockedWrites === 0, rep.blockedWritePaths.join(','));
 }
 
+/* ---------------- cell 15: the stat cards are one height, and stay one height ---------------- */
+/* 3e-2b. `.stat-footer`'s floor was 24px while one line in it is 27.5px (padding-top 8 + a --fs-sm
+   line box 19.5), so a card whose sub-line is written later grew 3.5px and shoved the tab bar and
+   every pane down with it. Both halves are measured: the cards agree with each other on the page as
+   loaded, AND emptying/refilling the one sub-line that is written late moves nothing. The second
+   half is done by editing the live DOM rather than by waiting for the right moment, so it cannot
+   pass by catching the page in the state that happens to look right. */
+async function cell15() {
+    for (const view of [{ w: 1400, h: 950 }, { w: 430, h: 932 }]) {
+        const label = view.w + (view.w === 430 ? ' dark' : ' light');
+        console.log('\n[c15] stat cards @' + label + ' -- one height, and no shift when the sub-line arrives');
+        const ctx = await openContext({ sessionId: sessionId, width: view.w, height: view.h, blockPaths: WRITE_PATHS });
+        await gotoRun(ctx, LOCKED_RUN_TOKEN, 'th');
+        if (view.w === 430) {
+            const t = await applyAppTheme(ctx.page, 'dark');
+            check('c15 @' + label + ': the page really is in the dark theme', t.ok === true, t.stamp);
+        }
+        // The employee table has to have drawn at least once -- that is what writes the sub-line.
+        await openTab(ctx.page, '#run-employee-tab');
+        await openTab(ctx.page, '#run-details-tab');
+        const shot = await ctx.page.evaluate(() => {
+            const cards = [...document.querySelectorAll('.stat')].filter((c) => c.getBoundingClientRect().height > 0);
+            const h = (c) => Math.round(c.getBoundingClientRect().height * 10) / 10;
+            return {
+                count: cards.length,
+                heights: cards.map(h),
+                withSub: cards.filter((c) => (c.querySelector('.stat-sub') || { textContent: '' }).textContent.trim() !== '').length,
+                footerMin: cards[0] ? getComputedStyle(cards[0].querySelector('.stat-footer')).minHeight : null,
+                footerPad: cards[0] ? getComputedStyle(cards[0].querySelector('.stat-footer')).paddingTop : null,
+                subLine: (() => { const sb = document.querySelector('.stat-sub'); const cs = sb ? getComputedStyle(sb) : null;
+                    return cs ? { fs: cs.fontSize, lh: cs.lineHeight } : null; })(),
+            };
+        });
+        measured('c15 @' + label + ' cards', shot);
+        check('c15 @' + label + ': there are stat cards on the page', shot.count > 0, shot.count);
+        check('c15 @' + label + ': at least one card has a sub-line and one does not (both shapes present)',
+            shot.withSub > 0 && shot.withSub < shot.count, shot.withSub + ' of ' + shot.count);
+        const uniqH = [...new Set(shot.heights)];
+        check('c15 @' + label + ': every card is the same height (+/-0.5)',
+            Math.max(...shot.heights) - Math.min(...shot.heights) <= 0.5, JSON.stringify(uniqH));
+        check('c15 @' + label + ": the slot's floor clears one line of its own text",
+            parseFloat(shot.footerMin) >= parseFloat(shot.footerPad) + parseFloat(shot.subLine.lh) - 0.01,
+            shot.footerMin + ' vs ' + shot.footerPad + ' + ' + shot.subLine.lh);
+        // The real symptom: empty the late-written sub-line and put it back. Nothing may move.
+        const shift = await ctx.page.evaluate(() => {
+            const sub = document.querySelector('#infoPaymentBreakdown');
+            const card = sub.closest('.stat');
+            const tabs = document.querySelector('#runDetailTabs');
+            const read = () => ({ card: Math.round(card.getBoundingClientRect().height * 10) / 10,
+                tabsBottom: Math.round(tabs.getBoundingClientRect().bottom * 10) / 10 });
+            const original = sub.textContent;
+            const filled = read();
+            sub.textContent = '';
+            const empty = read();
+            sub.textContent = original;
+            const restored = read();
+            return { text: (original || '').trim() || '(was already empty)', filled, empty, restored };
+        });
+        measured('c15 @' + label + ' sub-line emptied then restored', shift);
+        check('c15 @' + label + ': emptying the sub-line does not change the card height',
+            Math.abs(shift.filled.card - shift.empty.card) <= 0.5, shift.filled.card + ' vs ' + shift.empty.card);
+        check('c15 @' + label + ": ...nor the tab bar's own bottom",
+            Math.abs(shift.filled.tabsBottom - shift.empty.tabsBottom) <= 0.5,
+            shift.filled.tabsBottom + ' vs ' + shift.empty.tabsBottom);
+        check('c15 @' + label + ': putting it back changes nothing either',
+            Math.abs(shift.restored.card - shift.filled.card) <= 0.5
+            && Math.abs(shift.restored.tabsBottom - shift.filled.tabsBottom) <= 0.5, JSON.stringify(shift.restored));
+        const rep = ctx.report();
+        measured('c15 @' + label + ' report', rep);
+        check('c15 @' + label + ': nothing was written', rep.blockedWrites === 0, rep.blockedWritePaths.join(','));
+        await closeAll();
+    }
+}
+
 async function main() {
     try {
         await cell1();
@@ -969,6 +1100,7 @@ async function main() {
         await cell12();
         await cell13();
         await cell14();
+        await cell15();
     } finally {
         await closeAll();
     }

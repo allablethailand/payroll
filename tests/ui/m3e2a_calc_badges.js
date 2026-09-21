@@ -39,10 +39,37 @@ if (!sessionId || !runToken) {
     throw new Error('usage: node tests/ui/m3e2a_calc_badges.js <PHPSESSID> <runToken>');
 }
 
-/* run 29685 -- the only run in this dev DB that shows 2 run-level banners at once
-   (has_validation_errors=1 AND sync_process_id=191, still draft). Same run m3e1_tabs_shared.js's own
-   c14 takes as argv[4], for the same reason; passed the same way so neither file hard-codes an id. */
-const BANNER_RUN_TOKEN = process.argv[4] || 'AfsMwRxCbtR4wYbn6P4quzjd3rhYHYosj8iuvanj4codlA';
+/* The run that shows 2 run-level banners at once (has_validation_errors=1 AND a sync process, still
+   draft). 2026-09-21, 3e-2b: argv still wins, but the fallback is no longer a token typed into this
+   file -- tests/ui/find_banner_run.php asks the DB for it (one read-only SELECT, the same 4
+   conditions the page's own render path reads). A hard-coded token that stops matching measures the
+   wrong run while still calling itself by the right name. `none` -> p10c mocks the field instead of
+   reporting that it could not prove anything. Same resolver m3e1_tabs_shared.js's c14 uses. */
+function resolveBannerRunToken(argvToken) {
+    if (argvToken) return { token: argvToken, source: 'argv' };
+    try {
+        const out = require('child_process')
+            .execFileSync('php', [path.join(__dirname, 'find_banner_run.php')], { encoding: 'utf8' })
+            .split('\n').map((x) => x.trim()).filter(Boolean).pop();
+        if (out && out !== 'none') return { token: out, source: 'find_banner_run.php' };
+        return { token: null, source: 'none' };
+    } catch (e) {
+        return { token: null, source: 'error: ' + (e && e.message ? String(e.message).split('\n')[0] : e) };
+    }
+}
+const BANNER_RUN = resolveBannerRunToken(process.argv[4]);
+/* The `none` branch: patch the field the validation banner reads into api/payroll-run.get's own
+   reply (a READ route -- nothing is written either way), so the 2-box case stays measurable on the
+   fixture run. Every other field of the real reply is passed through untouched. */
+async function mockBannerFields(page) {
+    await page.route('**/api/payroll-run.get*', async (route) => {
+        const res = await route.fetch();
+        let body;
+        try { body = JSON.parse(await res.text()); } catch (e) { return route.fulfill({ response: res }); }
+        if (body && body.data) body.data.has_validation_errors = 1;
+        return route.fulfill({ response: res, body: JSON.stringify(body) });
+    });
+}
 
 const STATE = JSON.parse(fs.readFileSync(path.join(__dirname, '.last-session.json'), 'utf8'));
 const FIXTURE = STATE.calc_error_fixture;
@@ -827,12 +854,18 @@ async function cell10() {
        (sync_process_id=191, still draft) -- the same run m3e1_tabs_shared.js's c14 opens, and for the
        same reason. Opened read-only, auto_recalculate=0, every write route blocked. No mock needed:
        if this run ever stops showing 2, the check below says so instead of quietly measuring one. */
-    console.log('\n[p10c] run 29685 -- the 2-banner case the report was about');
+    console.log('\n[p10c] the 2-banner case the report was about');
+    measured('p10c banner run source', BANNER_RUN.source + ' -> ' + (BANNER_RUN.token || 'none'));
     const ctx3 = await openContext({ sessionId, width: 1400, height: 950, blockPaths: WRITE_PATHS });
-    await ctx3.page.goto(ctx3.url('/payroll-process/' + BANNER_RUN_TOKEN), { waitUntil: 'networkidle' });
+    if (!BANNER_RUN.token) {
+        console.log('  MOCK  p10c: no draft run in this DB carries has_validation_errors=1 + a sync process --');
+        console.log('  MOCK  p10c: has_validation_errors is patched into api/payroll-run.get on the fixture run.');
+        await mockBannerFields(ctx3.page);
+    }
+    await ctx3.page.goto(ctx3.url('/payroll-process/' + (BANNER_RUN.token || runToken)), { waitUntil: 'networkidle' });
     await ctx3.page.waitForTimeout(1400);
     const g3 = await readBannerGeometry(ctx3.page);
-    measured('p10c run 29685', g3);
+    measured('p10c banner run', g3);
     check('p10c: this run really shows 2 banners in the wrapper', g3.visible.length === 2,
         g3.visible.length + ' -> ' + JSON.stringify(g3.visibleIds));
     if (g3.visible.length === 2) {
