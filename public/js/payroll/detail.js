@@ -2592,11 +2592,63 @@ function renderRawSyncDataModal(data, target) {
             ${breakdownHtml}
         </div>`;
     }).join('');
+    /* 2026-09-22, slip2-b: one CARD per heading, "Additional Line Items" included, and the whole grid
+       inside a box of its own height.
+       The card: the panel rule of §5 -- `--c-bg` + 1px `--c-border` + `--radius` -- the same one
+       `.lo-history-panel` wears, because it is the same kind of thing (a box inside a dialog). 3e-2b
+       had deliberately taken it AWAY on the grounds that a box inside a box says nothing; what that
+       round did not have was a THIRD box, and the answer to 3 nested frames is to drop the OUTER one
+       (see `.rd-sync-panel`), not to leave the sections unbounded.
+       The item table is a card too -- it is one more thing Origami sent -- but it is a SIBLING of the
+       grid, not a member of it. Reported, and measured: as a `grid-column: 1 / -1` member it occupied
+       every track, and `auto-fit` collapses only tracks that are EMPTY, so nothing ever collapsed --
+       `grid-template-columns` computed to `270px 270px 270px 270px` whether there were 3 field cards
+       or 2, and a slip with a hidden section showed 2 cards of 270 with the right half of the panel
+       blank. Outside the grid it still takes the full width (it is a block), and the field cards can
+       finally share the row they are on.
+       The scroll box is what keeps the panel from pushing the slip's own first line off screen
+       (measured before: the table's first row ended 57.7px below the fold with the panel open). */
+    const scrollLabel = escapeAttr(rawSyncPanelToggleLabelRd(true));
     $(target || '#rawSyncDataModalBody').html(`
-        <div class="rd-sync-sections">${sectionsHtml}</div>
-        <h6 class="rd-sync-section-title">${langData['raw_sync_data_item_values_title'] || 'Additional Line Items'}</h6>
-        ${rawSyncDataItemValuesTableHtml(data.item_values)}
+        <div class="rd-sync-scroll" tabindex="0" role="group" aria-label="${scrollLabel}">
+            <div class="rd-sync-sections">${sectionsHtml}</div>
+            <div class="rd-sync-section rd-sync-section-wide">
+                <h6 class="rd-sync-section-title">${langData['raw_sync_data_item_values_title'] || 'Additional Line Items'}</h6>
+                ${rawSyncDataItemValuesTableHtml(data.item_values)}
+            </div>
+        </div>
     `);
+    rawSyncPanelPublishHeightRd($(target || '#rawSyncDataModalBody'));
+}
+/* How tall the panel may be, measured off the cards that are really there (2026-09-22, slip2-b).
+   Same shape as lineOverridePublishHistoryHeightRd(): the cap is "one row of cards", read from the
+   FIRST row's own rendered height rather than assumed from a card height, because a card carrying a
+   callout is taller than one that does not -- and the first row is what the reader needs to see
+   without scrolling the dialog.
+   `min(..., 45vh)` is the second half: a single very tall card (a phone, where a row IS one card)
+   would otherwise become the cap and take the whole dialog with it.
+   Re-published on resize, because which cards share the first row is decided by the panel's width. */
+function rawSyncPanelPublishHeightRd($panel) {
+    const panel = $panel.get(0);
+    if (!panel) return;
+    const box = panel.querySelector('.rd-sync-scroll');
+    const cards = panel.querySelectorAll('.rd-sync-section');
+    if (!box || !cards.length) return;
+    const publish = function () {
+        const firstTop = cards[0].getBoundingClientRect().top;
+        let bottom = 0;
+        for (const card of cards) {
+            const r = card.getBoundingClientRect();
+            // A card that starts lower than the first one is on the NEXT row -- stop there.
+            if (r.top > firstTop + 1) break;
+            bottom = Math.max(bottom, r.bottom);
+        }
+        const rowHeight = Math.round(bottom - firstTop);
+        if (rowHeight > 0) box.style.setProperty('--rd-sync-max-h', rowHeight + 'px');
+        else box.style.removeProperty('--rd-sync-max-h');
+    };
+    publish();
+    if (typeof ResizeObserver === 'function') new ResizeObserver(publish).observe(panel);
 }
 
 /* ---------- The raw-sync panel inside the slip (2026-09-21, 3e-2b) ----------
@@ -4508,6 +4560,8 @@ function lineOverrideHistoryTitlebarHtmlRd(line, rows, isView) {
 function lineOverrideHistoryTableHtmlRd(line, rows, mode) {
     const isView = mode === 'view';
     const field = statutoryExemptionFieldRd(line);
+    const lineName = (currentLang === 'th' ? line.name_th : line.name_en) || line.name_th || line.name_en || line.code;
+    const historyScrollLabel = `${lineName} -- ${langData['line_override_col_history'] || 'History'}`;
     // "Which entry is the one in effect" is asked once per KIND: a tri-state row can carry an amount
     // trail and an answer trail at the same time, and each has its own current value. Resolved
     // newest-first and only ONCE per kind -- the same figure can be set, changed and set again, and
@@ -4541,7 +4595,12 @@ function lineOverrideHistoryTableHtmlRd(line, rows, mode) {
         </tr>`;
     }).join('');
     return lineOverrideHistoryTitlebarHtmlRd(line, rows, isView)
-        + `<div class="lo-history-scroll"><table class="table table-sm lo-history-table mb-0">
+        /* 2026-09-22, slip2-b: the same 3 attributes the raw-sync panel's box got. A box that caps
+           its own height and scrolls is only reachable from a keyboard if it is focusable -- the
+           rows inside it are tabbable, but the SCROLLING is not, so a reader who cannot use a mouse
+           could not get past the 5th entry. The name is this row's own item plus the word this
+           column has always been called, so a screen reader says which line's history it is. */
+        + `<div class="lo-history-scroll" tabindex="0" role="group" aria-label="${escapeAttr(historyScrollLabel)}"><table class="table table-sm lo-history-table mb-0">
         <thead><tr>
             <th class="lo-history-when">${escapeHtml(langData['time'] || 'Time')}</th>
             <th class="lo-history-who">${escapeHtml(langData['line_override_history_col_who'] || 'Changed by')}</th>
@@ -5048,10 +5107,17 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
            already on the head above. Editable slip only: the read-only one never renders an empty
            group at all, so there is nothing there to explain. */
         if (!groupLines.length && manualOpen) {
-            // No `.lo-span-sticky` here, unlike the heading above it: that span is `nowrap` so it can
-            // stay put while a wide table is dragged, and this table no longer scrolls sideways at
-            // any width (min-width 348 in a 394 host). A sentence under nowrap would simply clip.
-            body += `<tr class="lo-group-empty"><td colspan="${colCount}">`
+            /* No `.lo-span-sticky` here, unlike the heading above it: that span is `nowrap` so it can
+               stay put while a wide table is dragged, and this table no longer scrolls sideways at
+               any width (min-width 348 in a 394 host). A sentence under nowrap would simply clip.
+               2026-09-22, slip2-b follow-up: the line sits in a REAL item cell -- an empty toggle
+               cell in front of it and `.lo-name-cell` carrying the rest -- rather than in one cell
+               spanning everything. It stands in for the rows that are not there yet, so it starts on
+               the x their names start on; building it out of the same cells is what makes that exact
+               at every width, instead of a padding that re-states the toggle column's width and the
+               cell padding as numbers of its own (reported: the line was centred). */
+            const emptyCheck = isView ? '' : '<td class="col-check tbl-sticky-col"></td>';
+            body += `<tr class="lo-group-empty">${emptyCheck}<td class="lo-name-cell tbl-sticky-col tbl-sticky-col-edge-left" colspan="${isView ? colCount : colCount - 1}">`
                 + emptyStateHtml({ inline: true, text: langData['line_override_group_empty'] || 'No items yet -- press "Add Line" to start.' })
                 + '</td></tr>';
         }

@@ -111,6 +111,53 @@ function snapshot(wrap) {
             const b = document.querySelector(wrap + ' .lo-totals');
             return b ? getComputedStyle(b).marginTop : null;
         })(),
+        /* 2026-09-22, slip2-b follow-up: the summary's rules have to be the SAME LENGTH as the
+           table's, and there has to be ONE of them between the last row and the first total. Both
+           were reported off a screenshot and both were true: the inset sat on the block, so its rules
+           were 12px short on each side; and the table's last cell drew its own underline on top of
+           the summary's, 12px apart. */
+        ruleEdges: (() => {
+            const r1 = (n) => Math.round(n * 10) / 10;
+            const t = document.querySelector(wrap + ' table.lo-table');
+            const row = document.querySelector(wrap + ' .lo-totals-row');
+            if (!t || !row) return null;
+            const tb = t.getBoundingClientRect();
+            const rb = row.getBoundingClientRect();
+            return { tableLeft: r1(tb.left), tableRight: r1(tb.right), totalsLeft: r1(rb.left), totalsRight: r1(rb.right) };
+        })(),
+        // Everything that paints a horizontal rule in the gap between the two.
+        rulesBetween: (() => {
+            const r1 = (n) => Math.round(n * 10) / 10;
+            const tbody = document.querySelector(wrap + ' table.lo-table tbody');
+            const first = document.querySelector(wrap + ' .lo-totals-row');
+            if (!tbody || !first) return null;
+            const lastTr = tbody.lastElementChild;
+            const from = lastTr ? lastTr.getBoundingClientRect().bottom : 0;
+            const to = first.getBoundingClientRect().top;
+            const out = [];
+            const scan = Array.from(document.querySelectorAll(wrap + ' table.lo-table, ' + wrap + ' table.lo-table tbody > tr > td, '
+                + wrap + ' .table-responsive, ' + wrap + ' .lo-totals, ' + wrap + ' .lo-totals-row'));
+            for (const el of scan) {
+                const cs = getComputedStyle(el);
+                const b = el.getBoundingClientRect();
+                const bt = parseFloat(cs.borderTopWidth) || 0;
+                const bb = parseFloat(cs.borderBottomWidth) || 0;
+                if (bb > 0 && b.bottom >= from - 2 && b.bottom <= to + 2) out.push({ el: el.tagName.toLowerCase() + '.' + String(el.className).split(' ')[0], edge: 'bottom', y: r1(b.bottom) });
+                if (bt > 0 && b.top >= from - 2 && b.top <= to + 2) out.push({ el: el.tagName.toLowerCase() + '.' + String(el.className).split(' ')[0], edge: 'top', y: r1(b.top) });
+            }
+            // One rule may be painted by more than one element at the same y -- count the LINES.
+            return { count: new Set(out.map((o) => Math.round(o.y))).size, painters: out };
+        })(),
+        // The empty-group line stands in for rows that are not there yet, so it starts where their
+        // names start.
+        emptyGroupTextLeft: (() => {
+            const e = document.querySelector(wrap + ' tr.lo-group-empty .empty-state-inline');
+            return e ? Math.round(e.getBoundingClientRect().left * 10) / 10 : null;
+        })(),
+        firstNameLeft: (() => {
+            const n = document.querySelector(wrap + ' tr.lo-row .lo-name');
+            return n ? Math.round(n.getBoundingClientRect().left * 10) / 10 : null;
+        })(),
         emptyGroupRows: document.querySelectorAll(wrap + ' tr.lo-group-empty .empty-state-inline').length,
         emptyGroupText: (() => {
             const e = document.querySelector(wrap + ' tr.lo-group-empty .empty-state-inline');
@@ -186,6 +233,12 @@ async function runGeometryCell(o) {
         figureRights.length === 1 && totalsRights.length === 1 && Math.abs(figureRights[0] - totalsRights[0]) <= 0.5,
         JSON.stringify({ rows: figureRights, totals: totalsRights }));
     check(`${label}: the totals block stands clear of the table`, s.totalsMarginTop === '12px', String(s.totalsMarginTop));
+    measured(`${label} rule edges / rules between`, { edges: s.ruleEdges, rules: s.rulesBetween && s.rulesBetween.count });
+    check(`${label}: the summary's rules are as long as the table's (+-0.5)`,
+        s.ruleEdges && Math.abs(s.ruleEdges.totalsLeft - s.ruleEdges.tableLeft) <= 0.5
+        && Math.abs(s.ruleEdges.totalsRight - s.ruleEdges.tableRight) <= 0.5, JSON.stringify(s.ruleEdges));
+    check(`${label}: exactly one rule sits between the last row and the first total`,
+        s.rulesBetween && s.rulesBetween.count === 1, JSON.stringify(s.rulesBetween));
 
     // The block keeps one width, so the pencil of every row starts on one x.
     const pencilLefts = Array.from(new Set(s.rows.filter((r) => r.pencilLeft !== null).map((r) => r.pencilLeft)));
@@ -254,6 +307,18 @@ async function runNarrowCell() {
         s.rows.filter((r) => r.blockTop !== null).every((r) => r.blockTop > r.nameTop),
         JSON.stringify(s.rows.map((r) => ({ code: r.code, name: r.nameTop, block: r.blockTop }))));
     // Every figure is inside the visible box without dragging -- which is what "no scroll" buys.
+    // The empty-group line is measured here too: the x it has to start on is the item names' x, and
+    // that x is a different number at this width (the toggle column and the cell padding both change).
+    measured(`${label} empty text x / first name x`, { empty: s.emptyGroupTextLeft, name: s.firstNameLeft });
+    if (s.emptyGroupTextLeft !== null) {
+        check(`${label}: the empty-group line starts on the x the item names start on (+-0.5)`,
+            s.firstNameLeft !== null && Math.abs(s.emptyGroupTextLeft - s.firstNameLeft) <= 0.5,
+            JSON.stringify({ empty: s.emptyGroupTextLeft, name: s.firstNameLeft }));
+    }
+    measured(`${label} rule edges / rules between`, { edges: s.ruleEdges, rules: s.rulesBetween && s.rulesBetween.count });
+    check(`${label}: the summary's rules are as long as the table's (+-0.5)`,
+        s.ruleEdges && Math.abs(s.ruleEdges.totalsLeft - s.ruleEdges.tableLeft) <= 0.5
+        && Math.abs(s.ruleEdges.totalsRight - s.ruleEdges.tableRight) <= 0.5, JSON.stringify(s.ruleEdges));
     const hostRight = await page.evaluate((wrap) => Math.round(document.querySelector(wrap + ' .table-responsive').getBoundingClientRect().right * 10) / 10, WRAP);
     check(`${label}: every figure is visible without dragging`,
         s.rows.every((r) => r.figureRight !== null && r.figureRight <= hostRight + 0.5),
@@ -389,14 +454,13 @@ async function runCountAndCloseCell() {
         opened.close && /btn-close/.test(opened.close.cls) && !/btn-icon/.test(opened.close.cls), JSON.stringify(opened.close));
     check(`${label}: ...at the 32px target every row control keeps`,
         opened.close && opened.close.w === 32 && opened.close.h === 32, JSON.stringify(opened.close));
-    /* The ✕ has to stay where the bordered circle was -- it is the top-right corner of a panel whose
-       other buttons all end on one x. The baseline is the circle's own centre, measured on the build
-       before this round (1400 th light); pass SLIP2A_CLOSE_CENTER_X to re-baseline it rather than
-       editing the number here. */
-    const closeBaseline = Number(process.env.SLIP2A_CLOSE_CENTER_X || 1059);
-    check(`${label}: ...on the x the bordered circle was on (+-1)`,
-        opened.close && Math.abs(opened.close.centerX - closeBaseline) <= 1,
-        JSON.stringify({ now: opened.close && opened.close.centerX, before: closeBaseline }));
+    /* The ✕ has to end on the x the buttons in the list below it end on -- that is §5's own wording
+       ("× ขวาสุด ตรงแนวขอบขวาปุ่มในรายการ"), and it is what the negative margin in `.lo-history-close`
+       exists to preserve.
+       2026-09-22, slip2-b: asked RELATIVE to the panel, not as an absolute page x. The absolute one
+       was pinned at 1059 and broke the day the dialog got wider (modal-lg -> modal-xl moved it to
+       1229) -- a true change that said nothing about the button. */
+
 
     const closed = await page.evaluate(async (wrap) => {
         document.querySelector(wrap + ' tr.lo-history-row .lo-history-close').click();
@@ -433,6 +497,11 @@ async function runEmptyGroupCell() {
         s.emptyGroupRows > 0, String(s.emptyGroupRows));
     check(`${label}: ...in the words of the key, not a fallback baked into the renderer`,
         !!lang && s.emptyGroupText === lang, JSON.stringify({ shown: s.emptyGroupText, key: lang }));
+    measured(`${label} empty text x / first name x`, { empty: s.emptyGroupTextLeft, name: s.firstNameLeft });
+    check(`${label}: ...starting on the x the item names start on (+-0.5)`,
+        s.emptyGroupTextLeft !== null && s.firstNameLeft !== null
+        && Math.abs(s.emptyGroupTextLeft - s.firstNameLeft) <= 0.5,
+        JSON.stringify({ empty: s.emptyGroupTextLeft, name: s.firstNameLeft }));
     const rep = report();
     await ctx.context.close();
     return rep;
@@ -459,6 +528,12 @@ async function runViewCell(o) {
     check(`${label}: every figure ends on the x the totals end on (+-0.5)`,
         figureRights.length === 1 && totalsRights.length === 1 && Math.abs(figureRights[0] - totalsRights[0]) <= 0.5,
         JSON.stringify({ rows: figureRights, totals: totalsRights }));
+    measured(`${label} rule edges / rules between`, { edges: s.ruleEdges, rules: s.rulesBetween && s.rulesBetween.count });
+    check(`${label}: the summary's rules are as long as the table's (+-0.5)`,
+        s.ruleEdges && Math.abs(s.ruleEdges.totalsLeft - s.ruleEdges.tableLeft) <= 0.5
+        && Math.abs(s.ruleEdges.totalsRight - s.ruleEdges.tableRight) <= 0.5, JSON.stringify(s.ruleEdges));
+    check(`${label}: exactly one rule sits between the last row and the first total`,
+        s.rulesBetween && s.rulesBetween.count === 1, JSON.stringify(s.rulesBetween));
     // The one control the read-only slip keeps, where the run really has something recorded.
     const withCount = s.rows.filter((r) => r.hasCount).length;
     measured(`${label} rows carrying a count`, withCount);
@@ -489,6 +564,39 @@ async function runAlignmentCell(o) {
         figureRights.length === 1 && totalsRights.length === 1 && Math.abs(figureRights[0] - totalsRights[0]) <= 0.5,
         JSON.stringify({ rows: figureRights, totals: totalsRights }));
     check(`${label}: every pencil starts on one x`, pencilLefts.length <= 1, JSON.stringify(pencilLefts));
+
+    /* The rule is that the ✕ ends on the x the LAST COLUMN's buttons end on (§5's own wording), so
+       it needs a panel that really has one: a line whose only recorded entry IS the value in force
+       prints the word "ปัจจุบัน" instead, and there is then nothing in that column to line up with.
+       Opened toggle by toggle until one has a button; says so out loud if none does. */
+    const closeAlign = await page.evaluate(async (wrap) => {
+        const r1 = (n) => Math.round(n * 10) / 10;
+        const toggles = Array.from(document.querySelectorAll(wrap + ' tr.lo-row .lo-history-toggle'));
+        for (const t of toggles) {
+            if (t.getAttribute('aria-expanded') !== 'true') {
+                t.click();
+                await new Promise((r) => setTimeout(r, 900));
+            }
+            const use = document.querySelector(wrap + ' tr.lo-history-row .lo-history-table .lo-history-use');
+            const x = document.querySelector(wrap + ' tr.lo-history-row .lo-history-close');
+            if (use && x) {
+                const out = { found: true, closeRight: r1(x.getBoundingClientRect().right),
+                    useRight: r1(use.getBoundingClientRect().right) };
+                x.click();
+                await new Promise((r) => setTimeout(r, 400));
+                return out;
+            }
+            if (x) { x.click(); await new Promise((r) => setTimeout(r, 400)); }
+        }
+        return { found: false };
+    }, WRAP);
+    measured(`${label} close alignment`, closeAlign);
+    if (closeAlign.found) {
+        check(`${label}: ...ending on the x the [use this value] buttons end on (+-1)`,
+            Math.abs(closeAlign.closeRight - closeAlign.useRight) <= 1, JSON.stringify(closeAlign));
+    } else {
+        console.log(`  SKIP  ${label}: no history on this run carries a [use this value] to line up with`);
+    }
     const rep = report();
     check(`${label}: nothing was written`, rep.blockedWrites === 0, JSON.stringify(rep.blockedWritePaths));
     await ctx.context.close();

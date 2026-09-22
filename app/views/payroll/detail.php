@@ -1285,7 +1285,13 @@
          Net Pay moved into the payslip summary itself, and the footer reverts to the plain [Close]
          `data-footer="view"` auto-injects (app.js's own show.bs.modal handler). -->
     <div class="modal fade" id="runDetailBreakdownModal" data-footer="view" tabindex="-1" aria-labelledby="runDetailBreakdownModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <!-- 2026-09-22, slip2-b: `modal-xl`, not `modal-lg`. Two reasons, and the rule already said
+             both: §9 reserves `modal-xl` for a dialog that CARRIES A TABLE, which this one does; and
+             the line form that opens on top of it stays `modal-lg`, so the child is now 340px
+             narrower than its parent instead of exactly as wide (measured: 800 vs 800 before, 1140
+             vs 800 after) and reads as a window on top rather than a replacement of the one below.
+             Below `lg` both collapse to the same full width, so nothing changes at 430. -->
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
                     <h5 class="modal-title text-secondary mb-0" id="runDetailBreakdownModalLabel" data-i18n="breakdown_title">Calculation Breakdown</h5>

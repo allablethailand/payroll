@@ -169,6 +169,32 @@ async function slipPicture(page) {
             sectionTops: panel ? Array.from(panel.querySelectorAll('.rd-sync-section')).map((c) => Math.round(c.getBoundingClientRect().top * 10) / 10) : [],
             sectionBorder: (() => { const c = panel ? panel.querySelector('.rd-sync-section') : null;
                 return c ? getComputedStyle(c).borderTopWidth : null; })(),
+            // 2026-09-22, slip2-b: the section is a card now -- its own surface, and the line-items
+            // one takes the whole row at the end of the grid.
+            sectionBg: (() => { const c = panel ? panel.querySelector('.rd-sync-section') : null;
+                return c ? getComputedStyle(c).backgroundColor : null; })(),
+            wideCards: panel ? panel.querySelectorAll('.rd-sync-section-wide').length : 0,
+            wideCardIsLast: (() => {
+                const all = panel ? Array.from(panel.querySelectorAll('.rd-sync-section')) : [];
+                return all.length ? all[all.length - 1].classList.contains('rd-sync-section-wide') : null;
+            })(),
+            // The box that caps the panel's height, and what a keyboard needs to reach it.
+            scroll: (() => {
+                const b = panel ? panel.querySelector('.rd-sync-scroll') : null;
+                if (!b) return null;
+                const cs = getComputedStyle(b);
+                return { maxH: cs.maxHeight, clientH: b.clientHeight, scrollH: b.scrollHeight,
+                    tabindex: b.getAttribute('tabindex'), role: b.getAttribute('role'),
+                    ariaLabel: b.getAttribute('aria-label') };
+            })(),
+            firstCardRowH: (() => {
+                const all = panel ? Array.from(panel.querySelectorAll('.rd-sync-section')) : [];
+                if (!all.length) return null;
+                const top = all[0].getBoundingClientRect().top;
+                let bottom = 0;
+                for (const c of all) { const r = c.getBoundingClientRect(); if (r.top > top + 1) break; bottom = Math.max(bottom, r.bottom); }
+                return Math.round(bottom - top);
+            })(),
             sectionOverflow: panel ? Array.from(panel.querySelectorAll('.rd-sync-section')).map((c) => c.scrollWidth - c.clientWidth) : [],
             panelH: panel ? Math.round(panel.getBoundingClientRect().height * 10) / 10 : null,
             panelW: panel ? Math.round(panel.getBoundingClientRect().width * 10) / 10 : null,
@@ -321,20 +347,26 @@ async function s1(opts) {
         check(tag + ' ' + row.employee_no + ': the panel is visible', pic.panelVisible === true);
         check(tag + ' ' + row.employee_no + ': STILL exactly 1 modal -- the panel is not a 2nd modal',
             pic.modalsOpen === 1, pic.modalsOpen);
-        check(tag + ' ' + row.employee_no + ': section cards = the non-empty sections of the response',
-            pic.sectionCards === expectSections, pic.sectionCards + ' vs ' + expectSections);
+        /* 2026-09-22, slip2-b: +1. "Additional Line Items" is a card of the SAME grid now instead of a
+           bare heading trailing under it -- it is one more thing Origami sent, and it was the only
+           block in the panel that did not look like one. */
+        check(tag + ' ' + row.employee_no + ': section cards = the non-empty sections of the response, plus the line-items one',
+            pic.sectionCards === expectSections + 1, pic.sectionCards + ' vs ' + (expectSections + 1));
+        check(tag + ' ' + row.employee_no + ': ...and that one takes the whole row',
+            pic.wideCards === 1 && pic.wideCardIsLast === true, JSON.stringify({ wide: pic.wideCards, last: pic.wideCardIsLast }));
         check(tag + ' ' + row.employee_no + ': open, the link reads the "hide" key', pic.btnText === labels.close,
             '"' + pic.btnText + '" vs "' + labels.close + '"');
         measured(tag + ' ' + row.employee_no + ' panel size / section rows',
             { panelW: pic.panelW, panelH: pic.panelH, tops: pic.sectionTops, border: pic.sectionBorder });
         check(tag + ' ' + row.employee_no + ': the old .ped-type-panel card is gone', pic.legacyPedPanels === 0, pic.legacyPedPanels);
-        check(tag + ' ' + row.employee_no + ': no section draws a border of its own', pic.sectionBorder === '0px', pic.sectionBorder);
         check(tag + ' ' + row.employee_no + ': no section overflows its own box',
             pic.sectionOverflow.every((v) => v <= 0), JSON.stringify(pic.sectionOverflow));
         if ((o.width || 1400) >= 1400) {
-            const rowsUsed = new Set(pic.sectionTops).size;
-            check(tag + ' ' + row.employee_no + ': at 1400 every section sits on ONE row', rowsUsed === 1,
-                rowsUsed + ' rows -> ' + JSON.stringify(pic.sectionTops));
+            // 2026-09-22, slip2-b: the FIELD sections share one row; the line-items card takes a row of
+            // its own because it is a table (`grid-column: 1 / -1`).
+            const fieldTops = pic.sectionTops.slice(0, pic.sectionTops.length - 1);
+            check(tag + ' ' + row.employee_no + ': at 1400 every field section sits on ONE row',
+                new Set(fieldTops).size === 1 && fieldTops.length === 3, JSON.stringify(pic.sectionTops));
         }
         if ((o.width || 1400) <= 430) {
             check(tag + ' ' + row.employee_no + ': at 430 each section has a row to itself',
@@ -374,15 +406,85 @@ async function s1(opts) {
             return { bg: toRgb(hex('--c-bg')), border: toRgb(hex('--c-border')), bgSubtle: toRgb(hex('--c-bg-subtle')) };
         });
         measured(tag + ' tokens', tokens);
-        check(tag + ' ' + row.employee_no + ': the panel is on --c-bg, not the card\'s own --c-bg-subtle',
-            pic.panelBg === tokens.bg, pic.panelBg + ' vs ' + tokens.bg);
-        check(tag + ' ' + row.employee_no + ': its border is 1px --c-border',
-            pic.panelBorder === tokens.border && pic.panelBorderWidth === '1px', pic.panelBorder + ' / ' + pic.panelBorderWidth);
+        /* 2026-09-22, slip2-b: the panel draws NOTHING of its own now -- with a card per heading
+           inside it and the dialog's frame around it, its border was the third nested frame, and
+           the outer one is the one that says least. */
+        /* 2026-09-22, slip2-b: the border moved INWARDS. 3e-2b took it off the sections because a box
+           inside a box says nothing; slip2-b agrees and drops the OUTER one instead -- the panel --
+           so the reader sees one frame per heading rather than one frame around everything. §5's
+           panel rule, the same 3 declarations `.lo-history-panel` uses. */
+        check(tag + ' ' + row.employee_no + ': every section is a card of its own', pic.sectionBorder === '1px'
+            && pic.sectionBg === tokens.bg, pic.sectionBorder + ' / ' + pic.sectionBg);
+        check(tag + ' ' + row.employee_no + ': the panel itself paints nothing',
+            pic.panelBg === 'rgba(0, 0, 0, 0)' || pic.panelBg === 'transparent', pic.panelBg);
+        check(tag + ' ' + row.employee_no + ': ...and draws no border either',
+            pic.panelBorderWidth === '0px', pic.panelBorderWidth);
         check(tag + ' ' + row.employee_no + ': 12px from the header card',
             Math.abs(pic.gapCardToPanel - 12) <= 0.5, pic.gapCardToPanel);
         check(tag + ' ' + row.employee_no + ': 16px to the block below it (' + pic.nextId + ')',
             Math.abs(pic.gapPanelToNext - 16) <= 0.5, pic.gapPanelToNext);
         check(tag + ' ' + row.employee_no + ': opening it made exactly 1 request', calls.n - before === 1, calls.n - before);
+
+        /* ---- 2026-09-22, slip2-b: the panel keeps its own height, and the slip stays readable ----
+           The dialog is `modal-xl` now (§9: a dialog that carries a table), read from the CSS rather
+           than typed here so this does not have to be re-edited if the scale ever moves. */
+        const shape = await ctx.page.evaluate(() => {
+            const modal = document.querySelector('#runDetailBreakdownModal');
+            const content = modal.querySelector('.modal-content');
+            const body = modal.querySelector('.modal-body');
+            const firstRow = document.querySelector('#breakdownLineOverrideWrap tr.lo-row');
+            const probe = document.createElement('div');
+            probe.className = 'modal-dialog modal-xl';
+            probe.style.position = 'absolute';
+            probe.style.visibility = 'hidden';
+            document.body.appendChild(probe);
+            const declaredXl = getComputedStyle(probe).getPropertyValue('--bs-modal-width').trim();
+            probe.remove();
+            return {
+                dialogCls: modal.querySelector('.modal-dialog').className,
+                contentW: Math.round(content.getBoundingClientRect().width * 10) / 10,
+                declaredXl,
+                bodyScrollTop: body.scrollTop,
+                bodyBottom: Math.round(body.getBoundingClientRect().bottom * 10) / 10,
+                firstRowBottom: firstRow ? Math.round(firstRow.getBoundingClientRect().bottom * 10) / 10 : null,
+                vh45: Math.round(window.innerHeight * 0.45),
+            };
+        });
+        measured(tag + ' ' + row.employee_no + ' modal / fold', shape);
+        check(tag + ' ' + row.employee_no + ': the slip is the xl dialog',
+            /modal-xl/.test(shape.dialogCls) && !/modal-lg/.test(shape.dialogCls), shape.dialogCls);
+        if ((o.width || 1400) >= 1400) {
+            check(tag + ' ' + row.employee_no + ': ...at the width the scale declares for xl',
+                shape.declaredXl !== '' && Math.abs(shape.contentW - parseFloat(shape.declaredXl)) <= 0.5,
+                shape.contentW + ' vs ' + shape.declaredXl);
+        }
+        // The cap: one row of cards, measured off the cards that are really there, never past 45vh.
+        check(tag + ' ' + row.employee_no + ': the panel caps itself at one row of cards',
+            pic.scroll && pic.firstCardRowH > 0
+            && Math.abs(parseFloat(pic.scroll.maxH) - pic.firstCardRowH) <= 1,
+            JSON.stringify({ maxH: pic.scroll && pic.scroll.maxH, rowH: pic.firstCardRowH }));
+        check(tag + ' ' + row.employee_no + ': ...and never past 45vh',
+            pic.scroll && parseFloat(pic.scroll.maxH) <= shape.vh45 + 0.5,
+            JSON.stringify({ maxH: pic.scroll && pic.scroll.maxH, vh45: shape.vh45 }));
+        // What the cap is FOR: the slip's own first line is still on screen with the panel open.
+        check(tag + ' ' + row.employee_no + ': the table first row is still above the fold, unscrolled',
+            shape.firstRowBottom !== null && shape.firstRowBottom <= shape.bodyBottom + 0.5 && shape.bodyScrollTop === 0,
+            JSON.stringify({ firstRowBottom: shape.firstRowBottom, bodyBottom: shape.bodyBottom, scrollTop: shape.bodyScrollTop }));
+        // A keyboard can reach the scrolling, not just the content inside it.
+        check(tag + ' ' + row.employee_no + ': the scroll box names itself and is reachable',
+            pic.scroll && pic.scroll.tabindex === '0' && pic.scroll.role === 'group'
+            && !!pic.scroll.ariaLabel && pic.scroll.ariaLabel.length > 0, JSON.stringify(pic.scroll));
+        if ((o.width || 1400) <= 430) {
+            check(tag + ' ' + row.employee_no + ': at 430 the capped box really scrolls',
+                pic.scroll && pic.scroll.scrollH > pic.scroll.clientH,
+                JSON.stringify({ scrollH: pic.scroll && pic.scroll.scrollH, clientH: pic.scroll && pic.scroll.clientH }));
+            const reached = await ctx.page.evaluate(() => {
+                const b = document.querySelector('#rawSyncPanel .rd-sync-scroll');
+                b.focus();
+                return document.activeElement === b;
+            });
+            check(tag + ' ' + row.employee_no + ': ...and the keyboard can land on it', reached === true, String(reached));
+        }
 
         // close -> open again: the panel comes back without a second request
         await ctx.page.click('#btnRawSyncPanel');
@@ -426,6 +528,86 @@ async function s1(opts) {
         await closeSlip(ctx.page);
     }
     reportOk(tag, ctx);
+    if ((o.width || 1400) >= 1400) await s1StretchCases(tag);
+}
+
+/* 2026-09-22, slip2-b follow-up, reported with a picture: a slip whose Attendance section is hidden
+   showed 2 cards of ~215px with the right half of the panel blank.
+   Cause, measured: the "Additional Line Items" card was a MEMBER of the grid spanning
+   `grid-column: 1 / -1`, and `auto-fit` collapses only tracks that are EMPTY -- that item filled
+   every one of them, so `grid-template-columns` computed to `270px 270px 270px 270px` whatever the
+   card count was. The card is a sibling of the grid now.
+   Each case gets its own context because a route mock must not leak into the assertions above, and
+   the payload is doctored rather than hunted for: the cards a run happens to have is a property of
+   that run, and what is being measured is the LAYOUT for a given count. */
+async function s1StretchCases(tag) {
+    // The field lists the renderer itself groups by -- a section whose every field is empty (0 counts
+    // as empty, see rawSyncDataValueIsEmpty) is not rendered at all.
+    const ATTENDANCE = ['working_days', 'working_mins', 'absent_days', 'absent_mins', 'late_mins', 'early_mins'];
+    const PAY = ['pay_type', 'pay_bank_code', 'pay_bank_name', 'trip_allowance', 'pass_pro', 'pass_pro_date'];
+    for (const kase of [{ name: '2 cards', drop: ATTENDANCE, want: 2 }, { name: '1 card', drop: ATTENDANCE.concat(PAY), want: 1 }]) {
+        const ctx = await openContext({ sessionId, width: 1400, height: 950, blockPaths: WRITE_PATHS });
+        await ctx.page.route('**/api/payroll-run.raw-sync-data-for-employee*', async (route) => {
+            const res = await route.fetch();
+            const json = await res.json();
+            if (json && json.data) for (const k of kase.drop) json.data[k] = 0;
+            await route.fulfill({ response: res, body: JSON.stringify(json), headers: { 'content-type': 'application/json' } });
+        });
+        await gotoRun(ctx, LOCKED_RUN_TOKEN, 'th');
+        const rows = await rowsFromTable(ctx.page);
+        await openSlip(ctx.page, rows[0].employee_id);
+        await ctx.page.locator('#btnRawSyncPanel').click();
+        await ctx.page.waitForTimeout(2000);
+        const g = await ctx.page.evaluate(() => {
+            const r1 = (n) => Math.round(n * 10) / 10;
+            const p = document.querySelector('#rawSyncPanel');
+            const grid = p.querySelector('.rd-sync-sections');
+            const cards = Array.from(p.querySelectorAll('.rd-sync-sections > .rd-sync-section'));
+            const box = p.querySelector('.rd-sync-scroll');
+            const all = Array.from(p.querySelectorAll('.rd-sync-section'));
+            const top = all.length ? all[0].getBoundingClientRect().top : 0;
+            let bottom = 0;
+            for (const c of all) { const b = c.getBoundingClientRect(); if (b.top > top + 1) break; bottom = Math.max(bottom, b.bottom); }
+            return {
+                panelW: r1(p.getBoundingClientRect().width),
+                gap: parseFloat(getComputedStyle(grid).columnGap) || 0,
+                tracks: getComputedStyle(grid).gridTemplateColumns,
+                cards: cards.length,
+                widths: cards.map((c) => r1(c.getBoundingClientRect().width)),
+                sum: r1(cards.reduce((a, c) => a + c.getBoundingClientRect().width, 0)),
+                fieldCols: cards.map((c) => { const f = c.querySelector('.rd-sync-fields');
+                    return f ? getComputedStyle(f).gridTemplateColumns.split(' ').length : null; }),
+                wideW: (() => { const w = p.querySelector('.rd-sync-section-wide'); return w ? r1(w.getBoundingClientRect().width) : null; })(),
+                wideInGrid: !!p.querySelector('.rd-sync-sections > .rd-sync-section-wide'),
+                maxH: box ? parseFloat(getComputedStyle(box).maxHeight) : null,
+                firstRowH: Math.round(bottom - top),
+            };
+        });
+        measured(tag + ' stretch ' + kase.name, g);
+        check(tag + ' stretch ' + kase.name + ': the payload really left ' + kase.want + ' field card(s)',
+            g.cards === kase.want, String(g.cards));
+        check(tag + ' stretch ' + kase.name + ': the line-items card is NOT a member of the grid',
+            g.wideInGrid === false && g.wideW !== null, JSON.stringify({ inGrid: g.wideInGrid, w: g.wideW }));
+        // The cards fill the panel: their widths plus the gaps between them ARE the panel.
+        const gaps = Math.max(0, g.cards - 1) * g.gap;
+        check(tag + ' stretch ' + kase.name + ': the cards fill the panel (+-1)',
+            Math.abs(g.sum + gaps - g.panelW) <= 1, JSON.stringify({ sum: g.sum, gaps, panelW: g.panelW }));
+        check(tag + ' stretch ' + kase.name + ': ...and each takes an equal share',
+            new Set(g.widths.map((w) => Math.round(w))).size === 1, JSON.stringify(g.widths));
+        if (kase.want === 1) {
+            check(tag + ' stretch 1 card: one card takes the whole panel',
+                Math.abs(g.widths[0] - g.panelW) <= 1, JSON.stringify({ card: g.widths[0], panelW: g.panelW }));
+        } else {
+            check(tag + ' stretch 2 cards: a half-panel card gets at least 3 field columns',
+                g.fieldCols.every((n) => n >= 3), JSON.stringify(g.fieldCols));
+        }
+        // The cap still follows the cards: they are wider now, so the first row is a different height.
+        check(tag + ' stretch ' + kase.name + ': the scroll cap is still the real first-row height (+-1)',
+            g.maxH !== null && g.firstRowH > 0 && Math.abs(g.maxH - g.firstRowH) <= 1,
+            JSON.stringify({ maxH: g.maxH, firstRowH: g.firstRowH }));
+        reportOk(tag + ' stretch ' + kase.name, ctx);
+        await ctx.context.close();
+    }
 }
 
 /* ================= s2: no state carried from one employee to the next ================= */
@@ -675,9 +857,11 @@ async function s6() {
     await ctx.page.waitForTimeout(1200);
     const open = await slipPicture(ctx.page);
     measured('s6 section titles rendered', open.sectionTitles);
+    const itemsTitle = await ctx.page.evaluate(() => langData['raw_sync_data_item_values_title']);
     check('s6: every rendered section heading is one of en.json\'s own',
-        open.sectionTitles.length > 0 && open.sectionTitles.every((t) => lang.sections.indexOf(t) !== -1),
-        JSON.stringify(open.sectionTitles));
+        open.sectionTitles.length > 0
+        && open.sectionTitles.every((t) => lang.sections.indexOf(t) !== -1 || t === itemsTitle),
+        JSON.stringify({ shown: open.sectionTitles, itemsTitle }));
     const hideLabel = await ctx.page.evaluate(() => langData['raw_sync_panel_hide']);
     check('s6: opened, the link reads en.json\'s own hide label', open.btnText === hideLabel,
         '"' + open.btnText + '" vs "' + hideLabel + '"');
@@ -944,6 +1128,117 @@ async function s9() {
     }
 }
 
+/* s10 -- the line form as a window ON TOP of the slip, not a replacement of it (2026-09-22,
+   slip2-b). Before this round both dialogs were `modal-lg` and came out at exactly the same width
+   (measured: 800 vs 800), so opening one simply swapped the contents of the same rectangle. The slip
+   is `modal-xl` now and the form stays `modal-lg`, which is §9's own split: xl for a dialog that
+   carries a table, lg for a form.
+   The segmented labels are measured too, because THAT is what a narrower form would have cost: the
+   short-label swap in `.segmented` is keyed to the VIEWPORT, not to the box, so a form squeezed at a
+   1400 viewport would have shown the full wording inside a box too small for it. */
+async function s10() {
+    console.log('\n[s10] the line form on top of the slip -- a child window, not the same rectangle');
+    const ctx = await openContext({ sessionId, width: 1400, height: 950, blockPaths: WRITE_PATHS });
+    await gotoRun(ctx, runToken, 'th');
+    const rows = await rowsFromTable(ctx.page);
+    const me = rows.find((r) => String(r.employee_id) === String(STATE.employee_id)) || rows[0];
+    await openSlip(ctx.page, me.employee_id);
+    /* The table is drawn twice on an open -- once from what the slip already holds, once when
+       loadSyncLineOverridesRd() comes back -- so the pencils are not there on the first frame.
+       Waiting for the CONTROL rather than for the row is what makes this stable (measured: it read
+       `null` on one run out of several and reported "no row with a pencil" on a run that has 4). */
+    await ctx.page.waitForSelector('#breakdownLineOverrideWrap tr.lo-row .lo-edit-btn', { timeout: 20000 }).catch(() => {});
+    // The recurring line: its form is the one that really shows the destination picker, which is
+    // where the segmented labels live.
+    const code = await ctx.page.evaluate(() => {
+        const rec = document.querySelector('#breakdownLineOverrideWrap tr.lo-row[data-item-code="TINYL6TMP"] .lo-edit-btn');
+        if (rec) return 'TINYL6TMP';
+        const any = document.querySelector('#breakdownLineOverrideWrap tr.lo-row .lo-edit-btn');
+        return any ? any.closest('tr').getAttribute('data-item-code') : null;
+    });
+    check('s10: the run has a row with a pencil to open', !!code, String(code));
+    if (!code) { reportOk('s10', ctx); await ctx.context.close(); return; }
+    await ctx.page.evaluate((c) => document.querySelector(`#breakdownLineOverrideWrap tr.lo-row[data-item-code="${c}"] .lo-edit-btn`).click(), code);
+    await ctx.page.waitForSelector('#manualLineFormModal.show', { timeout: 15000 });
+    await ctx.page.waitForTimeout(1400);
+    const pair = await ctx.page.evaluate(() => {
+        const box = (sel) => {
+            const m = document.querySelector(sel);
+            const c = m.querySelector('.modal-content');
+            return { cls: m.querySelector('.modal-dialog').className,
+                w: Math.round(c.getBoundingClientRect().width * 10) / 10,
+                z: parseInt(getComputedStyle(m).zIndex, 10) };
+        };
+        return {
+            open: document.querySelectorAll('.modal.show').length,
+            slip: box('#runDetailBreakdownModal'),
+            form: box('#manualLineFormModal'),
+            segLabels: Array.from(document.querySelectorAll('#manualLinePayeeDest label')).map((l) => ({
+                w: Math.round(l.clientWidth), sw: Math.round(l.scrollWidth),
+                clipped: l.scrollWidth > l.clientWidth + 0.5,
+                text: (l.textContent || '').trim().slice(0, 30),
+            })),
+        };
+    });
+    measured('s10 slip / form', pair);
+    check('s10: both are open, and the form is the second one', pair.open === 2, String(pair.open));
+    check('s10: the form is the lg dialog, the slip the xl one',
+        /modal-lg/.test(pair.form.cls) && /modal-xl/.test(pair.slip.cls), pair.form.cls + ' | ' + pair.slip.cls);
+    check('s10: the child is at least 300px narrower than its parent',
+        pair.form.w + 300 <= pair.slip.w, pair.form.w + ' + 300 vs ' + pair.slip.w);
+    check('s10: ...and sits above it', pair.form.z > pair.slip.z, pair.form.z + ' vs ' + pair.slip.z);
+    if (pair.segLabels.length) {
+        check('s10: no segmented label is clipped in the form',
+            pair.segLabels.every((l) => !l.clipped), JSON.stringify(pair.segLabels));
+    } else {
+        console.log('  NOTE  s10: this row form has no destination picker -- nothing to measure there.');
+    }
+    const closed = await ctx.page.evaluate(async () => {
+        window.jQuery('#manualLineFormModal').data('dirtyGuardBypass', true);
+        window.bootstrap.Modal.getInstance(document.querySelector('#manualLineFormModal')).hide();
+        await new Promise((r) => setTimeout(r, 900));
+        return { open: document.querySelectorAll('.modal.show').length,
+            focusOnPencil: !!document.activeElement && document.activeElement.classList.contains('lo-edit-btn') };
+    });
+    measured('s10 after close', closed);
+    check('s10: closing the form leaves the slip open behind it', closed.open === 1, String(closed.open));
+    reportOk('s10', ctx);
+    await ctx.context.close();
+}
+
+/* s11 -- the history panel's own scroll box takes the same 3 attributes the raw-sync one got. It
+   caps itself at 5 entries, so without them a keyboard reader could not get past the 5th. */
+async function s11() {
+    console.log('\n[s11] the history panel scroll box is reachable from a keyboard');
+    const ctx = await openContext({ sessionId, width: 1400, height: 950, blockPaths: WRITE_PATHS });
+    await gotoRun(ctx, runToken, 'th');
+    const rows = await rowsFromTable(ctx.page);
+    const me = rows.find((r) => String(r.employee_id) === String(STATE.employee_id)) || rows[0];
+    await openSlip(ctx.page, me.employee_id);
+    // Same race as s10: the toggles arrive with loadSyncLineOverridesRd(), not with the first frame.
+    await ctx.page.waitForSelector('#breakdownLineOverrideWrap .lo-history-toggle', { timeout: 20000 }).catch(() => {});
+    const info = await ctx.page.evaluate(async () => {
+        const t = document.querySelector('#breakdownLineOverrideWrap .lo-history-toggle');
+        if (!t) return { toggle: false };
+        t.click();
+        await new Promise((r) => setTimeout(r, 1200));
+        const b = document.querySelector('#breakdownLineOverrideWrap .lo-history-scroll');
+        if (!b) return { toggle: true, box: false };
+        b.focus();
+        return { toggle: true, box: true, tabindex: b.getAttribute('tabindex'), role: b.getAttribute('role'),
+            ariaLabel: b.getAttribute('aria-label'), focused: document.activeElement === b };
+    });
+    measured('s11 history scroll box', info);
+    check('s11: the fixture row has a history to open', info.toggle === true && info.box === true, JSON.stringify(info));
+    if (info.box) {
+        check('s11: the box is reachable from a keyboard', info.tabindex === '0' && info.focused === true, JSON.stringify(info));
+        check('s11: ...and names which line it belongs to', info.role === 'group'
+            && !!info.ariaLabel && info.ariaLabel.length > 0, JSON.stringify(info));
+    }
+    reportOk('s11', ctx);
+    await ctx.context.close();
+}
+
 async function main() {
     console.log('fixture rows: ' + Object.keys(FIXTURE).filter((k) => /^R\d$/.test(k))
         .map((k) => k + '=' + FIXTURE[k].employee_no).join(' '));
@@ -957,6 +1252,8 @@ async function main() {
         await listCell({ tag: 's7', width: 1400 });
         await listCell({ tag: 's8', width: 430, height: 932, theme: 'dark' });
         await s9();
+        await s10();
+        await s11();
     } finally {
         await closeAll();
     }

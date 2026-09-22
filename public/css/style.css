@@ -3591,13 +3591,14 @@ th.col-money div.dt-column-header .dt-column-title {
    `--c-bg` + 1px `--c-border`, never `--c-bg-subtle` (that is the header card's own fill directly
    above it -- same fill would read as one block). 12px from the card it belongs to, 16px to whatever
    block follows; hidden (`d-none`) it takes no height and no margin at all. */
+/* 2026-09-22, slip2-b: no box of its own any more. With a card per heading inside it (see
+   `.rd-sync-section`) and the dialog's own frame around it, a border here was the THIRD nested
+   frame -- and the outermost one is the one that says least: it groups things the heading above it
+   has already grouped. The margins stay, because what the panel still owes is its distance from the
+   card above and the block below; `d-none` still makes both collapse to nothing. */
 .rd-sync-panel {
     margin-top: var(--sp-3);
     margin-bottom: var(--sp-4);
-    padding: var(--sp-3);
-    background: var(--c-bg);
-    border: 1px solid var(--c-border);
-    border-radius: var(--radius);
 }
 /* The sections inside it wrap against the PANEL's width, not the viewport's (3e-2b, measured: at a
    1400px viewport this panel is 776px wide, where the old `col-md-6` still forced 2-up and left the
@@ -3613,12 +3614,36 @@ th.col-money div.dt-column-header .dt-column-title {
        panel (1400), 1-up at 476 (768) and at 394 (430). */
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: var(--sp-3);
-    margin-bottom: var(--sp-4);
 }
-/* No border and no fill of its own: the section is already inside the panel's box, and a box drawn
-   inside a box adds nothing the heading and the spacing do not already say (§0.3). */
+/* 2026-09-22, slip2-b: a real card, by §5's panel rule -- `--c-bg` + 1px `--c-border` + `--radius`,
+   the same 3 declarations `.lo-history-panel` uses, because it is the same kind of object: a box
+   inside a dialog. (3e-2b had taken the border away on the grounds that a box inside a box says
+   nothing. True -- but the fix for 3 nested frames is to drop the outer one, which is what
+   `.rd-sync-panel` above now does, not to leave every section unbounded in one long wall.) */
 .rd-sync-section {
     min-width: 0;
+    padding: var(--sp-3);
+    background: var(--c-bg);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+}
+/* "Additional Line Items" is a TABLE, so it takes the whole width -- as a block AFTER the grid, not
+   as a member of it spanning every column. An item spanning `1 / -1` leaves no track empty, and
+   `auto-fit` collapses only empty tracks: with it inside, the grid kept all 4 tracks whatever was in
+   them (measured: `270px 270px 270px 270px` with 2 field cards, right half of the panel blank).
+   `margin-top` is the same `--sp-3` the grid uses between its own rows, so nothing moves. */
+.rd-sync-section-wide {
+    margin-top: var(--sp-3);
+}
+/* The panel's own height, capped at one row of cards (published by rawSyncPanelPublishHeightRd) and
+   never more than 45vh. Without it, opening the panel pushed the slip's own first line 57.7px below
+   the fold (measured) -- the reader opened it to COMPARE the two and could then see only one.
+   `tabindex="0"` on the box in the markup is what lets a keyboard reach the scroll at all; without
+   it the content inside is reachable but the scrolling is not. */
+.rd-sync-scroll {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    max-height: min(var(--rd-sync-max-h, 45vh), 45vh);
 }
 .rd-sync-section-title {
     font-size: var(--fs-sm);
@@ -3630,7 +3655,11 @@ th.col-money div.dt-column-header .dt-column-title {
    not -- decided by the section's own width, again with no breakpoint. */
 .rd-sync-fields {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    /* 2026-09-22, slip2-b: 100px, not 140. A field here is a short label over a short value, and at
+       140 a card that could hold 3 of them held 2 -- the cards got taller for no reading benefit.
+       The SECTION floor stays 220 (a measured value, see the grid above): fewer, wider cards beat
+       more, narrower ones, and that trade was already measured in 3e-2b. */
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
     gap: var(--sp-2);
 }
 .rd-sync-field {
@@ -5738,12 +5767,17 @@ button.badge {
 .payslip-line-tag-warn {
     color: var(--c-warning);
 }
-/* The shared empty state's inline variant: one muted line, no icon and no button. */
+/* The shared empty state's inline variant: one muted line, no icon and no button.
+   2026-09-22, slip2-b follow-up: `align-items` too, not `text-align` alone. `.empty-state` is a
+   flex COLUMN with `align-items: center` (that is what centres the icon of the full variant), and a
+   flex item is placed by that, not by the text alignment inside it -- so the line came out centred
+   while `text-align: left` sat there doing nothing (reported, measured: `align-items: center`). */
 .empty-state-inline {
     padding: 0;
     font-size: var(--fs-sm);
     color: var(--c-text-muted);
     text-align: left;
+    align-items: flex-start;
 }
 
 /* ==========================================================================
@@ -9876,6 +9910,18 @@ html, body {
     vertical-align: bottom;
 }
 
+/* 2026-09-22, slip2-b follow-up: the last row of the table does not draw its own underline.
+   Bootstrap gives EVERY cell a `border-bottom` (`.table > :not(caption) > * > *`), so the table
+   ended on a rule, then `--sp-3` of air, then the summary's own `border-top` -- 2 rules 12px apart
+   where the reader sees one divider that got thick (measured: td bottom at y 876.5, totals top at
+   889). The summary's rule is the one that means something (it separates the slip from its bottom
+   line), so the table's last one goes. Scoped to `.lo-table`: the shared `.table` rule is untouched.
+   `:last-child` rather than naming a row kind -- what is last may be a data row, an empty group's
+   line, or an opened history panel. */
+.lo-table > tbody > tr:last-child > td {
+    border-bottom-width: 0;
+}
+
 /* While one write is in flight the whole block is inert -- a second action would race a recalculate
    that is already running. Controls are really disabled; this only says so.
    2026-09-16, D2: `.block-busy` is the same state for any block that writes on its own (the "added
@@ -9905,11 +9951,11 @@ html, body {
    group headings start on and the figure ends on the x their links end on, at every width. Every
    other value here -- the 2 border weights, the padding, the weight, the 2 sizes -- is what the rows
    it replaced computed to, measured before the move. */
+/* 2026-09-22, slip2-b follow-up, reported with a picture: the summary's rules were SHORTER than the
+   table's -- 12px in on each side (measured: 154..1246 against the table's 142..1258), because the
+   inset sat on the BLOCK and the rule is drawn by the row inside it. The inset moved to the row, so
+   the rule spans the block (= the table) while the label and the figure keep the exact x they had. */
 .lo-totals {
-    padding: 0 var(--payslip-inset, var(--sp-3));
-    /* 2026-09-22, slip2-a: a step above the block. Its first rule is a 1px line, which sat straight
-       on the table's own last underline -- 2 rules 1px apart read as one thick one, and the summary
-       read as one more row of the table rather than as the slip's bottom line (reported). */
     margin-top: var(--sp-3);
 }
 .lo-totals-row {
@@ -9918,7 +9964,7 @@ html, body {
     justify-content: space-between;
     gap: var(--sp-3);
     border-top: 1px solid var(--c-border);
-    padding: var(--sp-2) 0;
+    padding: var(--sp-2) var(--payslip-inset, var(--sp-3));
     font-size: var(--fs-xs);
     font-weight: 600;
 }
