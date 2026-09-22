@@ -429,14 +429,32 @@ checkTrue('...and it refuses to answer without a recorded history',
 // hand back a LATER override's old_value as if the engine had produced it.
 checkTrue('...and it never skips a null to reach an older figure',
     strpos($js, "const amounts = rows.filter(r => lineOverrideHistoryRowKindRd(r) === 'amount');") !== false);
-// 2026-09-18, tiny-L6a: "back to the calculated value" is no longer a second round button in the
-// row -- it is the form's own left slot, where both figures are on screen together. So the row
-// carries exactly one control, and the action still exists, just not here.
-// 2026-09-18, 4a-2: the cell holds the pencil for a calculated row and the hand-added row's own 2
-// buttons for a manual one -- one action column, never a second place actions can live.
-checkTrue('the row carries one action button, the pencil',
-    strpos($rowHtml, '<div class="lo-actions">${isManual ? manualActions : pencil}</div>') !== false
+/* 2026-09-18, 4a-2: one block holds a row's controls -- the pencil for a calculated row, the
+   hand-added row's own 2 for a manual one -- never a second place actions can live.
+   2026-09-22, slip2-a: that block moved out of a column of its own and into the item cell, and it
+   has 2 FIXED slots plus the history count. Slot 1 is always a pencil (the override form, or the
+   hand-added line's own form); slot 2 is the bin, "back to the calculated value", or a reserved
+   empty one -- so the pencil of every row starts on one x whatever the row carries.
+   "Back to the calculated value" is here again on purpose and is NOT a second write: it goes
+   through runRestoreAllComputedRd(), the same function the footer's own [คืนค่าระบบทั้งหมด] uses. */
+checkTrue('the row carries its controls in one block, pencil first',
+    strpos($rowHtml, 'const slotOne = isManual ? manualEdit : pencil;') !== false
+    && strpos($rowHtml, '<span class="lo-row-actions">${historyToggle}${isView ?') !== false
     && strpos($rowHtml, 'lo-use-system-btn') === false);
+checkTrue('slot 2 is the bin, the restore, or a reserved empty one -- never two of them',
+    strpos($rowHtml, 'manual-line-remove-btn') !== false
+    && strpos($rowHtml, 'lo-row-restore-btn') !== false
+    && strpos($rowHtml, "slotTwo = '<span class=\"lo-slot-empty\" aria-hidden=\"true\"></span>';") !== false);
+checkTrue('...and the restore slot is drawn only where there is something to put back',
+    strpos($rowHtml, 'editable && lineOverrideLineIsRestorableRd(line)') !== false);
+// The per-row restore is a second way IN to one write, not a second write: same runner, same confirm
+// shape, and the tri-state case (an amount override AND an answer) is 2 requests only that runner
+// knows how to send in order.
+$rowRestore = substr($js, (int)strpos($js, 'function lineOverrideRowRestoreRd('), 1200);
+checkTrue('the per-row restore goes through the shared runner, after one confirm',
+    strpos($rowRestore, 'runRestoreAllComputedRd(rows, resetExemption)') !== false
+    && strpos($rowRestore, 'showConfirm({') !== false
+    && strpos($rowRestore, "langData['confirm_row_restore_title']") !== false);
 checkTrue('a hand-added row carries its own 2 instead, addressed by line id',
     strpos($rowHtml, 'manual-line-edit-btn" data-line-id="${escapeAttr(line.manual_line_id)}"') !== false
     && strpos($rowHtml, 'manual-line-remove-btn" data-line-id="${escapeAttr(line.manual_line_id)}"') !== false);

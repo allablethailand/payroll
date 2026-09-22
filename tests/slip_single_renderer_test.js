@@ -51,7 +51,6 @@ let lineOverrideHistoryRd = { byKey: {}, historyAvailable: true, startDate: null
 function statusBadgeHtml(enumKey) { return '<!--badge:' + enumKey + '-->'; }
 function payeeDescriptorHtmlRd() { return '<div class="payslip-line-tag">PAYEE</div>'; }
 function lineOverrideOccurrencesHtml() { return ''; }
-function lineOverrideHistoryCellHtml() { return '<!--history-->'; }
 function buildFormulaStepsRd() { return null; }
 function explainLineNoteRd(note) { return note ? '<div>' + note + '</div>' : null; }
 function countBadgeHtml() { return '<!--count-->'; }
@@ -78,6 +77,9 @@ const extracted = [
     fn(detailSource, 'formulaTagTextRd'),
     fn(detailSource, 'lineOverrideExemptTextRd'),
     fn(detailSource, 'lineOverrideNoteTextRd'),
+    // 2026-09-22, slip2-a: the row builder asks it which rows get the "put it back" slot.
+    fn(detailSource, 'lineOverrideLineIsRestorableRd'),
+    fn(detailSource, 'lineOverrideHistoryToggleHtml'),
     // 2026-09-18, 4b: the tri-state the TH_PIT/TH_SSO rows carry -- real, not stubbed, so what the
     // row builder does with it here is what it does in the page.
     constDecl(detailSource, 'STATUTORY_EXEMPTION_FIELD_RD'),
@@ -176,9 +178,30 @@ console.log('=== (ข) strip the 2 columns view does not render, and the rest is
 // so -- the editable one already carries the switch, the pencil and the "System: x" sub-line on
 // those same rows, and a 4th way of saying it there would be noise (rules.md 0.3). It is a TAG, not
 // a column, so the rule this assertion guards -- the 2 modes differ by columns -- still holds.
-const strip = (html) => html
+/* 2026-09-22, slip2-a: the row's controls are not a column any more -- they are a block inside the
+   item cell, and the read-only slip renders that block with only the history count in it. So what is
+   stripped is the block, not a `<td>`; the rule being guarded is unchanged ("the 2 modes differ by
+   what they leave out, never by disabling something"), and the cells themselves must still match
+   character for character. */
+// The block nests spans of its own (the reserved slot, the count), so it is removed by matching
+// `<span>`/`</span>` rather than by a non-greedy regex, which would stop at the first inner close.
+const stripSpan = (html, open) => {
+    let out = html;
+    for (;;) {
+        const start = out.indexOf(open);
+        if (start === -1) return out;
+        let depth = 0;
+        let i = start;
+        while (i < out.length) {
+            if (out.startsWith('<span', i)) { depth++; i = out.indexOf('>', i) + 1; continue; }
+            if (out.startsWith('</span>', i)) { depth--; i += 7; if (depth === 0) break; continue; }
+            i++;
+        }
+        out = out.slice(0, start) + out.slice(i);
+    }
+};
+const strip = (html) => stripSpan(html, '<span class="lo-row-actions">')
     .replace(/<td class="col-check tbl-sticky-col">[\s\S]*?<\/td>/g, '')
-    .replace(/<td class="lo-action-cell">[\s\S]*?<\/td>/g, '')
     .replace(new RegExp('<div class="payslip-line-tag">(' + LANG['line_override_row_tag_edited']
         + '|' + LANG['line_override_row_tag_added'] + ')</div>', 'g'), '')
     .replace(/\s+/g, ' ').trim();
@@ -187,7 +210,9 @@ check('every remaining cell of every row matches, character for character', stri
 
 console.log('');
 console.log('=== (ค) the read-only slip has no control in the DOM at all (not hidden -- absent) ===');
-['lo-include', 'lo-edit-btn', 'col-check', 'lo-action-cell', 'form-switch'].forEach((needle) => {
+// 2026-09-22, slip2-a: `lo-action-cell` is retired with the column; `lo-slot-empty` is what now
+// holds the width of the second action slot, and the read-only slip reserves nothing.
+['lo-include', 'lo-edit-btn', 'col-check', 'lo-slot-empty', 'form-switch'].forEach((needle) => {
     check(`view renders no ${needle}`, view.indexOf(needle) === -1);
     check(`...and edit still does`, edit.indexOf(needle) !== -1);
 });
@@ -305,14 +330,34 @@ check('its toggle cell is present but empty -- nothing calculated it, so there i
 check('it carries the 2 actions, addressed by the line id, not by item code',
     manualEdit.indexOf('manual-line-edit-btn" data-line-id="91"') !== -1
     && manualEdit.indexOf('manual-line-remove-btn" data-line-id="91"') !== -1, manualEdit);
+// 2026-09-22, slip2-a: both sit in the row's own action block, and a hand-added line fills slot 2
+// with the bin -- so it never reserves an empty one, and never offers "back to the calculated value"
+// either (nothing calculated it).
+check('...both inside the row action block, with no empty slot and no restore',
+    manualEdit.indexOf('<span class="lo-row-actions">') !== -1
+    && manualEdit.indexOf('lo-slot-empty') === -1 && manualEdit.indexOf('lo-row-restore-btn') === -1, manualEdit);
 check('...and never the override pencil, which would write against a code 2 lines may share',
     manualEdit.indexOf('lo-edit-btn') === -1);
 // 2026-09-19, H-ui: it has a history cell like every other row -- a hand-added line HAS had an
 // amount trail since H-backend, and the cell decides for itself whether there is a badge to draw.
-check('its history cell goes through the same builder every other row uses',
-    manualEdit.indexOf('<td class="lo-history-cell"><!--history--></td>') !== -1, manualEdit);
-check('the read-only slip renders the same row with neither action column nor buttons',
-    manualView.indexOf('lo-action-cell') === -1 && manualView.indexOf('manual-line-remove-btn') === -1);
+/* 2026-09-22, slip2-a: the REAL builder now, not a stub -- it is a few lines of markup rather than
+   the pill it used to delegate to, so there is nothing left worth faking. Running the real one means
+   the row has to really HAVE a recorded edit for a count to appear, which is the rule itself: a
+   hand-added line gets the same count every other edited row gets, and a row with nothing recorded
+   gets none. Both directions are asked here. */
+check('a hand-added row with nothing recorded shows no count', manualEdit.indexOf('lo-history-count') === -1, manualEdit);
+api.setHistory({ historyAvailable: true, startDate: null, byKey: { 'earning_deduction|BONUS': [
+    { source_type: 'manual_line', source_id: 91, new_value: 5000, old_value: 4000, changed_at: '2026-09-20 10:00:00' },
+] } });
+const manualEditWithHistory = api.lineOverrideRowHtml(MANUAL_EARNING, 5, GROUPS.manual_earning, false, 'edit');
+check('its history count goes through the same builder every other row uses',
+    manualEditWithHistory.indexOf('<span class="lo-history-count">') !== -1
+    && manualEditWithHistory.indexOf(LANG['line_override_history_badge'].replace('{n}', '1')) !== -1,
+    manualEditWithHistory);
+api.setHistory({ byKey: {}, historyAvailable: true, startDate: null });
+check('the read-only slip renders the same row with neither reserved slot nor buttons',
+    manualView.indexOf('lo-slot-empty') === -1 && manualView.indexOf('manual-line-remove-btn') === -1
+    && manualView.indexOf('lo-edit-btn') === -1);
 check('its figure takes the money colour of the group it is in',
     manualEdit.indexOf('money-gross') !== -1
     && api.lineOverrideRowHtml(MANUAL_DEDUCTION, 6, GROUPS.manual_deduction, false, 'edit').indexOf('money-deduction') !== -1);
@@ -470,10 +515,14 @@ check('the title bar states the calculated figure, and offers it only where it c
     barEdit.indexOf('2,000.00') !== -1 && barView.indexOf('2,000.00') !== -1
     && countOf(barEdit, 'lo-history-use') === 1 && countOf(barView, 'lo-history-use') === 0,
     barView);
-check('both slips carry the way out, as the 32px neutral circle',
-    countOf(barEdit, 'btn btn-icon lo-history-close') === 1
-    && countOf(barView, 'btn btn-icon lo-history-close') === 1
-    && barEdit.indexOf('fa-xmark') !== -1);
+/* 2026-09-22, slip2-a: the app's own modal ✕, not a bordered circle -- this panel is a box that
+   opens and closes inside a dialog, so it closes the way every other box in the app closes.
+   `.btn-close` draws its own glyph, so there is no `<i>` left to look for; the 32px target comes
+   from padding in CSS, the same way `.modal-header .btn-close` gets there. */
+check("both slips carry the way out, as the app's own modal close button",
+    countOf(barEdit, 'btn-close lo-history-close') === 1
+    && countOf(barView, 'btn-close lo-history-close') === 1
+    && barEdit.indexOf('btn-icon') === -1 && barEdit.indexOf('fa-xmark') === -1);
 check('a hand-added line has no baseline at all, and says nothing rather than something untrue',
     api.lineOverrideHistoryTitlebarHtmlRd(MANUAL_EARNING, [], false)
         .indexOf('lo-history-computed-line') === -1);

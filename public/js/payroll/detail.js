@@ -4493,12 +4493,16 @@ function lineOverrideHistoryTitlebarHtmlRd(line, rows, isView) {
             ${isView ? '' : `<span class="lo-history-computed-action">${lineOverrideHistoryUseCellHtml(cell)}</span>`}
         </div>`;
     }).join('');
-    // The app's own 32px neutral circle (rules.md 7), not a worded button: it repeats on every open
-    // and says nothing the icon does not.
+    /* 2026-09-22, slip2-a: the app's own modal ✕ (`.btn-close`), not a bordered circle. This panel is
+       a box that opens and closes inside a dialog, so the way out of it should be the way out of
+       every other box in the app -- reported as exactly that ("เอาวงกลมออก เหลือกากบาทแบบเดียวกับปุ่ม
+       ปิด modal"). The 32px target survives: `.modal-header .btn-close` gets there with padding, and
+       `.lo-history-close` does the same (see its rule in style.css). Dark mode comes free --
+       Bootstrap 5.3 ships `[data-bs-theme=dark] .btn-close { filter: ... }`. */
     const closeLabel = escapeAttr(langData['close'] || 'Close');
     return `<div class="lo-history-titlebar">
         <div class="lo-history-computed">${lines}</div>
-        <button type="button" class="btn btn-icon lo-history-close" title="${closeLabel}" aria-label="${closeLabel}"><i class="fa-solid fa-xmark"></i></button>
+        <button type="button" class="btn-close lo-history-close" title="${closeLabel}" aria-label="${closeLabel}"></button>
     </div>`;
 }
 function lineOverrideHistoryTableHtmlRd(line, rows, mode) {
@@ -4655,18 +4659,22 @@ function statutoryExemptionTagHtmlRd(line) {
     return `<div class="payslip-line-tag">${escapeHtml(tpl.replace('{amount}', label))}</div>`;
 }
 /* 2026-09-19, H-ui: a plain disclosure toggle -- no caret and no menu behind it, the whole history
-   opens as a table under the row (see the click handler further down). `countBadgeHtml()` still
-   draws the badge itself (rules.md 5: a count with a word in it is that helper's own `label` mode);
-   it sits inside a `<button>` because a disclosure has to be focusable and pressable, which a
-   `<span>` is not.
+   opens as a table under the row (see the click handler further down). It sits inside a `<button>`
+   because a disclosure has to be focusable and pressable, which a `<span>` is not.
    Drawn on EVERY row that has something recorded -- an excluded one and a hand-added one included,
    because both really do carry edits (excluding a line IS a recorded edit, and a hand-added line has
-   had an amount trail since H-backend). Nothing recorded = no badge: there is nothing to go back to. */
-function lineOverrideHistoryCellHtml(line) {
+   had an amount trail since H-backend). Nothing recorded = no badge: there is nothing to go back to.
+   2026-09-22, slip2-a: the count is QUIET TEXT, not `countBadgeHtml()`'s pill. A soft-filled,
+   coloured pill on every edited row answers neither of §0.1's two questions -- how many times a
+   figure was changed is not "what to do next" and not "what to decide" -- and the tab above this
+   very table already says its own count as a grey number for exactly that reason
+   (`lineOverrideTabsHtmlRd()`). Still the same `<button aria-expanded>`, same handler, same word:
+   only the paint is gone. `countBadgeHtml()` itself is untouched and keeps its other callers. */
+function lineOverrideHistoryToggleHtml(line) {
     const rows = lineOverrideHistoryFor(line);
     if (!rows.length) return '';
     const label = (langData['line_override_history_badge'] || '{n} edit(s)').replace('{n}', String(rows.length));
-    return `<button type="button" class="lo-history-toggle" aria-expanded="false">${countBadgeHtml(rows.length, { label: label })}</button>`;
+    return `<button type="button" class="lo-history-toggle" aria-expanded="false"><span class="lo-history-count">${escapeHtml(label)}</span></button>`;
 }
 // 2026-09-19, H-ui: the read-only slip's own mark for a line somebody touched -- the quiet
 // `.payslip-line-tag` every other sub-line already wears (rules.md 9), last of the fixed order, and
@@ -4724,27 +4732,44 @@ function lineOverrideRowHtml(line, idx, group, runDisabled, mode) {
     const editable = included && !runDisabled;
     // 2026-09-17, R1: the pencil shows on every editable row, not on hover -- an affordance nobody
     // can see until they hover is not one (§7, the same conclusion the comment list reached).
-    // 2026-09-17, R1 follow-up: the plain `.btn-icon` circle, not the ghost variant -- §7's ghost is
-    // for a circle sitting on a panel that already has a surface of its own, which a table row is not.
-    // Same button as the pencil/bin in the "รายการเพิ่มเติม" block below it.
+    // 2026-09-22, slip2-a: the GHOST variant (`.btn-icon .btn-icon-ghost`, §7). A control that
+    // repeats on every row of a list is not a chip floating on the surface -- the ring and the fill
+    // the base variant draws at rest were 2 more boxes per row in a table that already has 3 columns
+    // and a sub-line under most figures. The hit area stays 32px: what got lighter is the style, not
+    // the target (§7's own "ลดน้ำหนักด้วยสไตล์ ไม่ใช่ลดขนาดพื้นที่กด").
     const pencil = (editable && !isManual)
-        ? `<button type="button" class="btn btn-icon lo-edit-btn" title="${escapeAttr(langData['line_override_edit_amount'] || 'Edit amount')}" aria-label="${escapeAttr(langData['line_override_edit_amount'] || 'Edit amount')}"><i class="fa-solid fa-pen"></i></button>`
+        ? `<button type="button" class="btn btn-icon btn-icon-ghost lo-edit-btn" title="${escapeAttr(langData['line_override_edit_amount'] || 'Edit amount')}" aria-label="${escapeAttr(langData['line_override_edit_amount'] || 'Edit amount')}"><i class="fa-solid fa-pen"></i></button>`
         : '';
-    // The same 2 round buttons the hand-added card carried, in this table's own action column so a
-    // pencil means the same thing on every row of it (§7). Delete is grey and only turns red on the
-    // confirm (§3/§4). `manual_line_id` is the PK -- a row without one has nothing to address.
-    const manualActions = (isManual && !isView && line.manual_line_id)
-        ? `<button type="button" class="btn btn-icon manual-line-edit-btn" data-line-id="${escapeAttr(line.manual_line_id)}" title="${escapeAttr(langData['manual_line_form_edit_title'] || 'Edit item')}" aria-label="${escapeAttr(langData['manual_line_form_edit_title'] || 'Edit item')}"><i class="fa-solid fa-pen"></i></button>`
-            + `<button type="button" class="btn btn-icon manual-line-remove-btn" data-line-id="${escapeAttr(line.manual_line_id)}" title="${escapeAttr(langData['action_remove'] || 'Remove')}" aria-label="${escapeAttr(langData['action_remove'] || 'Remove')}"><i class="fa-solid fa-trash-can"></i></button>`
+    /* Slot 2, one per row and always the same width (§7: "ช่องปุ่มต้องกว้างคงที่เสมอ แม้แถวนั้นจะไม่มีปุ่ม").
+       What goes in it is decided by what the row IS:
+         a hand-added line -> the bin. Nothing calculated it, so there is no system value to go back
+                              to; removing it is the only thing left to do to it.
+         a calculated line somebody changed -> "back to what the system calculated". Same action the
+                              history panel's top row performs and the footer's [คืนค่าระบบทั้งหมด]
+                              performs in bulk -- a second way IN to one write, not a second write
+                              (rules.md §0.4).
+         anything else     -> an empty slot that still takes its width, so the pencil of every row
+                              starts on one x and the figures beside them line up.
+       No row can want both: `lineOverrideLineIsRestorableRd()` is false for a hand-added line by
+       construction (it has no override and no tri-state answer). */
+    const manualEdit = (isManual && !isView && line.manual_line_id)
+        ? `<button type="button" class="btn btn-icon btn-icon-ghost manual-line-edit-btn" data-line-id="${escapeAttr(line.manual_line_id)}" title="${escapeAttr(langData['manual_line_form_edit_title'] || 'Edit item')}" aria-label="${escapeAttr(langData['manual_line_form_edit_title'] || 'Edit item')}"><i class="fa-solid fa-pen"></i></button>`
         : '';
-    // 2026-09-18, tiny-L6a: "back to what the system calculated" is no longer a second round button
-    // in this row -- it is the form's own left-slot action (rules.md §9), where the 2 figures it
-    // chooses between are both on screen. One row therefore carries one control: the pencil.
-    // 2026-09-17, R1 follow-up: the buttons are their OWN column now. A figure and the controls that
-    // act on it were sharing a cell, which meant the figure's right edge was wherever the buttons
-    // left it -- so it never lined up with the column head above it, and it moved again when the
-    // editor opened. Separating them lets both be what they are: a money column that ends on one x,
-    // and a fixed-width action column beside it.
+    const removeLabel = escapeAttr(langData['action_remove'] || 'Remove');
+    const restoreLabel = escapeAttr(langData['line_override_group_restore'] || 'Restore calculated values');
+    let slotTwo = '';
+    if (isView) {
+        slotTwo = '';
+    } else if (isManual && line.manual_line_id) {
+        slotTwo = `<button type="button" class="btn btn-icon btn-icon-ghost manual-line-remove-btn" data-line-id="${escapeAttr(line.manual_line_id)}" title="${removeLabel}" aria-label="${removeLabel}"><i class="fa-solid fa-trash-can"></i></button>`;
+    } else if (editable && lineOverrideLineIsRestorableRd(line)) {
+        slotTwo = `<button type="button" class="btn btn-icon btn-icon-ghost lo-row-restore-btn" title="${restoreLabel}" aria-label="${restoreLabel}"><i class="fa-solid fa-rotate-left"></i></button>`;
+    } else {
+        slotTwo = '<span class="lo-slot-empty" aria-hidden="true"></span>';
+    }
+    // The disclosure for this row's own edit history -- drawn only where there is something recorded
+    // (see its own builder). It is the one control the read-only slip keeps, so it is built for both.
+    const historyToggle = lineOverrideHistoryToggleHtml(line);
     // An excluded row has no amount to show: 0.00 struck through still reads as a figure that counts
     // for something. What is true about it is that it is not in the calculation, so it says that.
     const amountCell = included
@@ -4759,13 +4784,33 @@ function lineOverrideRowHtml(line, idx, group, runDisabled, mode) {
     const switchOn = exemptionField ? statutoryExemptionEffectiveRd(exemptionField) === 'yes' : included;
     const checkCell = isView ? '' : `<td class="col-check tbl-sticky-col">${isManual ? ''
         : `<div class="form-check form-switch mb-0"><input class="form-check-input lo-include" type="checkbox" role="switch" id="loInc${idx}" ${switchOn ? 'checked' : ''}${runDisabledAttr}></div>`}</td>`;
-    const actionCell = isView ? '' : `<td class="lo-action-cell"><div class="lo-actions">${isManual ? manualActions : pencil}</div></td>`;
+    /* 2026-09-22, slip2-a: the row's controls live in the ITEM cell now, not in 2 columns of their
+       own. What forced it was the figure: with an action column and a history column after it, a
+       row's amount ended 176px (measured, 1400) to the left of the same run's total under the table,
+       so the 2 figures a reader compares never shared an x. The money column is the LAST one now and
+       takes the table's own `--payslip-inset` as its right padding, which is the very inset
+       `.lo-totals` uses -- one declaration, not a number repeated in 2 places.
+       The block always ENDS on the cell's own right edge and the 2 button slots are its last items,
+       so the pencil of every row still starts on one x -- the alignment the old column bought,
+       without spending a column on it. (Its total width is not constant: the count in front of the
+       buttons is text, and it grows leftwards where it moves nothing.) */
+    // Slot 1 is the pencil in both cases -- the override form on a calculated line, the hand-added
+    // line's own form on a manual one -- so a pencil means the same thing on every row (§7).
+    const slotOne = isManual ? manualEdit : pencil;
+    /* The count comes FIRST and the 2 button slots after it, and that order is load-bearing: the
+       block is right-aligned in the cell, so whatever sits on its right keeps a fixed x and whatever
+       sits on its left grows leftwards. The count is TEXT of a width nobody controls ("แก้ไข 3" vs
+       "12 edits"), so with it on the right the pencil moved by ~39px between a row that had a
+       history and one that did not (measured). With it on the left, the 2 slots are always the last
+       64px + gap of the block and every row's pencil starts on one x -- which is the alignment this
+       round is about; the count reads as a quiet label in front of the controls it belongs to. */
+    const actionsBlock = isView && !historyToggle ? '' : `<span class="lo-row-actions">${historyToggle}${isView ? '' : slotOne + slotTwo}</span>`;
     return `<tr class="lo-row${included ? '' : ' lo-row-off'}${isManual ? ' lo-row-manual' : ''}" data-item-code="${escapeAttr(line.code)}" data-line-type="${escapeAttr(line.line_type || 'earning_deduction')}"
         data-group-type="${escapeAttr(group.type || '')}" data-manual-line-id="${escapeAttr(line.manual_line_id || '')}"
         data-exemption-field="${escapeAttr(exemptionField || '')}" data-exemption-changed="${statutoryExemptionChangedRd(line) ? '1' : ''}"
         data-orig-action="${escapeAttr(origAction)}" data-item-name="${escapeAttr(name)}" data-amount="${escapeAttr(fmtNum(line.current_amount))}"${title}>
         ${checkCell}<td class="lo-name-cell tbl-sticky-col tbl-sticky-col-edge-left">
-            <span class="lo-name" title="${escapeAttr(name)} (${escapeAttr(line.code)})">${escapeHtml(name)}</span>${sourceBadge}${statutoryBadge}
+            <span class="lo-name-line"><span class="lo-name" title="${escapeAttr(name)} (${escapeAttr(line.code)})">${escapeHtml(name)}</span>${sourceBadge}${statutoryBadge}${actionsBlock}</span>
             ${payeeDescriptorHtmlRd(line.payee, { variant: 'tag', installment: line.installment })}
             ${lineOverrideTagHtmlRd(lineOverrideExemptTextRd(line))}
             ${lineOverrideTagHtmlRd(formulaTagTextRd(line))}
@@ -4774,7 +4819,6 @@ function lineOverrideRowHtml(line, idx, group, runDisabled, mode) {
             ${lineOverrideOccurrencesHtml(line.occurrences)}
         </td>
         <td class="num col-money lo-amount-cell"><div class="lo-amount-view">${amountCell}</div>${lineOverrideComputedTagHtml(line)}${statutoryExemptionTagHtmlRd(line)}</td>
-        ${actionCell}<td class="lo-history-cell">${lineOverrideHistoryCellHtml(line)}</td>
     </tr>`;
 }
 // The way to add the next line, on the head of the group it would be added to -- the heading names
@@ -4830,6 +4874,34 @@ function lineOverrideGroupRestoreRd($btn) {
 }
 $(document).on('click', '.lo-mount .lo-group-restore-btn', function () {
     lineOverrideGroupRestoreRd($(this));
+});
+/* 2026-09-22, slip2-a: the same action, on the row it acts on. [คืนค่าระบบทั้งหมด] in the footer and
+   [ใช้ค่านี้] on the history panel's top row both already do this; what was missing was the way in
+   from the row itself, which is where a reader who has just compared "ระบบ: x" with the figure above
+   it is looking (reported). A second way IN to one write, never a second write -- it goes through
+   runRestoreAllComputedRd() with a list of ONE, which is what makes the tri-state case right for
+   free: such a row can carry an amount override AND an answer, and that function is the only place
+   that already knows to send both, in order.
+   Rendered only where `lineOverrideLineIsRestorableRd()` is true (see the row builder), so it never
+   appears on a row with nothing to put back -- absence, not `disabled` (§0.3). */
+function lineOverrideRowRestoreRd($btn) {
+    const $row = $btn.closest('tr.lo-row');
+    if (!$row.length || $row.find('.lo-include').is(':disabled')) return;
+    const line = lineOverrideLineByRowRd($row);
+    if (!line || !lineOverrideLineIsRestorableRd(line)) return;
+    const resetExemption = !!$row.attr('data-exemption-changed');
+    const rows = ($row.data('orig-action') || '') ? [$row] : [];
+    if (!rows.length && !resetExemption) return;
+    const tpl = langData['confirm_row_restore_message'] || '"{item}" goes back to its calculated value. Continue?';
+    showConfirm({
+        title: langData['confirm_row_restore_title'] || 'Restore the calculated value',
+        message: tpl.replace('{item}', String($row.data('item-name') || '')),
+        tone: 'warning',
+        onYes: function () { runRestoreAllComputedRd(rows, resetExemption); },
+    });
+}
+$(document).on('click', '.lo-mount .lo-row-restore-btn', function () {
+    lineOverrideRowRestoreRd($(this));
 });
 // 2026-09-17, R1 follow-up: the pinned 2nd column starts where the 1st one really ENDS. Its
 // declared width is 78px, but what a sticky `left` has to match is the rendered border-box -- borders
@@ -4940,7 +5012,9 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
         ? lineOverrideRowsRd.filter(l => !lineOverrideIsSkippedRd(l, mode) && lineOverrideIsChangedRd(l)).length
         : 0;
     const changedOnly = changedCount > 0 && lineOverrideViewFilterRd === 'changed';
-    const colCount = isView ? 3 : 5;
+    // 2026-09-22, slip2-a: 3 columns in the editable slip, 2 in the read-only one. The action and
+    // history columns are gone -- both controls sit in the item cell now (lineOverrideRowHtml()).
+    const colCount = isView ? 2 : 3;
     let idx = 0;
     let body = '';
     LINE_OVERRIDE_GROUPS_RD.forEach(function (group) {
@@ -4965,6 +5039,22 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
         // Still ONE row with one full-width cell -- the flex sits INSIDE the cell, never on the `<td>`
         // itself (rules.md §7: display:flex on a cell kills its table-cell behaviour and its colspan).
         body += `<tr class="lo-group"><td colspan="${colCount}"><div class="lo-group-head"><span class="lo-span-sticky">${escapeHtml(groupName)}</span>${manualOpen ? lineOverrideAddLinkHtmlRd(group) : ''}${groupRestorable ? lineOverrideGroupRestoreLinkHtmlRd(group, groupName) : ''}</div></td></tr>`;
+        /* 2026-09-22, slip2-a: an empty manual group says so, in a row of its own. Its head and its
+           "เพิ่มรายการ" link are the way in (4a-2), but a heading with nothing under it reads as a
+           divider rather than as a group that is waiting to be filled -- reported as exactly that.
+           `emptyStateHtml({inline: true})` is the shared component for a slot INSIDE a block (§6,
+           §11): one muted line, no icon, no title, no button of its own -- everything the full
+           variant adds would be wrong at the size of a table row, and the button it would add is
+           already on the head above. Editable slip only: the read-only one never renders an empty
+           group at all, so there is nothing there to explain. */
+        if (!groupLines.length && manualOpen) {
+            // No `.lo-span-sticky` here, unlike the heading above it: that span is `nowrap` so it can
+            // stay put while a wide table is dragged, and this table no longer scrolls sideways at
+            // any width (min-width 348 in a 394 host). A sentence under nowrap would simply clip.
+            body += `<tr class="lo-group-empty"><td colspan="${colCount}">`
+                + emptyStateHtml({ inline: true, text: langData['line_override_group_empty'] || 'No items yet -- press "Add Line" to start.' })
+                + '</td></tr>';
+        }
         groupLines.forEach(function (line) {
             // Disabled only where the run-level exclusion is genuinely in charge: a personal override
             // of any kind already wins over it (PayrollRunModel::recalculate()'s own resolution), so
@@ -4981,7 +5071,6 @@ function renderLineOverrideTableRd(lines, runSettings, mode) {
             <tr>
                 ${isView ? '' : `<th class="col-check tbl-sticky-col">${escapeHtml(langData['line_override_col_include'] || 'Include')}</th>`}<th class="lo-name-col tbl-sticky-col tbl-sticky-col-edge-left">${escapeHtml(langData['line_override_col_item'] || 'Item')}</th>
                 <th class="num col-money lo-amount-col">${escapeHtml(langData['line_override_col_amount'] || 'Amount')}</th>
-                ${isView ? '' : `<th class="lo-action-col"><span class="visually-hidden">${escapeHtml(langData['action'] || 'Action')}</span></th>`}<th class="lo-history-col">${escapeHtml(langData['line_override_col_history'] || 'History')}</th>
             </tr>
         </thead>
         <tbody>${body}</tbody>
@@ -5338,7 +5427,7 @@ function lineOverrideRequestRd(lineType, payload, action, done) {
 function setLineOverrideTableBusyRd(busy) {
     const $wrap = lineOverrideMountRd();
     $wrap.toggleClass('lo-table-busy', busy);
-    $wrap.find('.lo-include, .lo-edit-btn, .lo-history-toggle, .lo-group-restore-btn, .lo-add-line-btn').each(function () {
+    $wrap.find('.lo-include, .lo-edit-btn, .lo-row-restore-btn, .lo-history-toggle, .lo-group-restore-btn, .lo-add-line-btn').each(function () {
         const $el = $(this);
         if (busy) {
             if ($el.is(':disabled')) $el.attr('data-was-disabled', '1');

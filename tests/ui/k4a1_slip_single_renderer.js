@@ -53,7 +53,8 @@ async function measure(page) {
                 return true;
             }).length,
             checkCells: document.querySelectorAll(wrap + ' td.col-check').length,
-            actionCells: document.querySelectorAll(wrap + ' td.lo-action-cell').length,
+            // 2026-09-22, slip2-a: the controls are a block inside the item cell now, not a column.
+            actionBlocks: document.querySelectorAll(wrap + ' .lo-row-actions').length,
             switches: document.querySelectorAll(wrap + ' .lo-include').length,
             pencils: document.querySelectorAll(wrap + ' .lo-edit-btn').length,
             historyBadges: document.querySelectorAll(wrap + ' .lo-history-toggle').length,
@@ -224,8 +225,8 @@ async function runCell(opts) {
     const restore = await setVerified(page, false);
     check(`${label}: verify flag restored`, restore && restore.status === true, JSON.stringify(restore));
 
-    console.log(`  edit: rows=${edit.rowCount} groups=${edit.groupCount} check=${edit.checkCells} action=${edit.actionCells} totals=${edit.totals.length} manual=${edit.manualRows}`);
-    console.log(`  view: rows=${view.rowCount} groups=${view.groupCount} check=${view.checkCells} action=${view.actionCells} totals=${view.totals.length} manual=${view.manualRows}`);
+    console.log(`  edit: rows=${edit.rowCount} groups=${edit.groupCount} check=${edit.checkCells} blocks=${edit.actionBlocks} totals=${edit.totals.length} manual=${edit.manualRows}`);
+    console.log(`  view: rows=${view.rowCount} groups=${view.groupCount} check=${view.checkCells} blocks=${view.actionBlocks} totals=${view.totals.length} manual=${view.manualRows}`);
 
     /* 2026-09-21, a0: "the same rows" is now "the same rows BAR the tri-state ones the read-only
        slip has nothing to say about". 4b gave those 2 rows their own rule: in the editable slip they
@@ -247,11 +248,11 @@ async function runCell(opts) {
     check(`${label}: the same group headings, bar the empty manual ones only the editable slip offers`,
         edit.groupCount - edit.emptyGroups === view.groupCount && view.emptyGroups === 0 && view.groupCount > 0,
         `edit=${edit.groupCount}(-${edit.emptyGroups}) view=${view.groupCount}(-${view.emptyGroups})`);
-    check(`${label}: the read-only slip has no toggle/action cell in the DOM at all`,
-        view.checkCells === 0 && view.actionCells === 0 && view.switches === 0 && view.pencils === 0,
-        JSON.stringify({ check: view.checkCells, action: view.actionCells, sw: view.switches, pencil: view.pencils }));
-    check(`${label}: ...and the editable one does`, edit.checkCells > 0 && edit.actionCells > 0 && edit.switches > 0,
-        JSON.stringify({ check: edit.checkCells, action: edit.actionCells, sw: edit.switches }));
+    check(`${label}: the read-only slip has no toggle cell and no row control in the DOM at all`,
+        view.checkCells === 0 && view.switches === 0 && view.pencils === 0,
+        JSON.stringify({ check: view.checkCells, sw: view.switches, pencil: view.pencils }));
+    check(`${label}: ...and the editable one does`, edit.checkCells > 0 && edit.actionBlocks > 0 && edit.switches > 0,
+        JSON.stringify({ check: edit.checkCells, blocks: edit.actionBlocks, sw: edit.switches }));
     check(`${label}: nothing is merely hidden in either slip`, edit.hidden === 0 && view.hidden === 0,
         `${edit.hidden} / ${view.hidden}`);
     check(`${label}: the history badge works in both`, edit.historyBadges === view.historyBadges,

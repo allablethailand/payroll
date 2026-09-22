@@ -54,17 +54,30 @@ checkTrue('it does not slice the list to the first N', strpos($tableBody, 'rows.
 checkTrue('it has no count threshold of its own either', strpos($tableBody, 'if (rows.length >') === false);
 // The badge is what says how many there are, and it counts the SAME list the table then renders --
 // one source, so the number on the badge and the rows behind it cannot disagree.
-$cellStart = (int)strpos($js, 'function lineOverrideHistoryCellHtml(');
+// 2026-09-22, slip2-a: renamed for what it builds -- a toggle inside the row's own action block,
+// not the cell of a column of its own.
+$cellStart = (int)strpos($js, 'function lineOverrideHistoryToggleHtml(');
 $cellBody = substr($js, $cellStart, 800);
-checkTrue('the badge counts the rows the table will show', strpos($cellBody, 'const rows = lineOverrideHistoryFor(line);') !== false
+checkTrue('the count counts the rows the table will show', strpos($cellBody, 'const rows = lineOverrideHistoryFor(line);') !== false
     && strpos($cellBody, "replace('{n}', String(rows.length))") !== false);
-checkTrue('nothing recorded -> no badge at all, rather than a badge reading 0',
+checkTrue('nothing recorded -> no count at all, rather than one reading 0',
     strpos($cellBody, "if (!rows.length) return '';") !== false);
+// 2026-09-22, slip2-a: quiet text, not a pill -- how many times a figure was changed is a fact, not
+// something to act on, and the tab above this table already prints its own count as a grey number.
+checkTrue('the count is quiet text, not a coloured badge',
+    strpos($cellBody, 'lo-history-count') !== false && strpos($cellBody, 'countBadgeHtml') === false);
 // 2026-09-19, H-ui: the badge draws on every row now. An excluded line and a hand-added one both
 // really do carry recorded edits, and the cell used to be blanked for both of them.
-$rowHtml = substr($js, (int)strpos($js, 'function lineOverrideRowHtml('), 9000);
-checkTrue('every rendered row gets the same cell -- no row is blanked in the markup',
-    strpos($rowHtml, '<td class="lo-history-cell">${lineOverrideHistoryCellHtml(line)}</td>') !== false);
+// The whole builder, not the first 9000 characters of it: it grew past that window when slip2-a
+// moved the row's controls into the item cell, and a window that ends mid-function silently stops
+// checking the markup it was written to check.
+$rowHtml = substr($js, (int)strpos($js, 'function lineOverrideRowHtml('),
+    (int)strpos($js, 'function lineOverrideAddLinkHtmlRd(') - (int)strpos($js, 'function lineOverrideRowHtml('));
+// 2026-09-22, slip2-a: not a cell any more -- the last item of the row's own action block, which is
+// the ONE control the read-only slip keeps, so it is built for both modes from the one builder.
+checkTrue('every rendered row gets the same count, from the one builder',
+    strpos($rowHtml, 'const historyToggle = lineOverrideHistoryToggleHtml(line);') !== false
+    && strpos($rowHtml, '<span class="lo-row-actions">${historyToggle}') !== false);
 // 2026-09-19, H-ui: which recorded rows belong to which line. A hand-added line is keyed by its own
 // PK, because two of them on one employee can share one item_code.
 $forBody = substr($js, (int)strpos($js, 'function lineOverrideHistoryFor('), 700);
@@ -182,10 +195,12 @@ $barBody = substr($js, (int)strpos($js, 'function lineOverrideHistoryTitlebarHtm
 checkTrue('the title bar carries the way out, in both slips', strpos($barBody, 'lo-history-close') !== false
     && strpos($barBody, "langData['close']") !== false
     && strpos($tableBody, 'lineOverrideHistoryTitlebarHtmlRd(line, rows, isView)') !== false);
-// rules.md 7's own 32px neutral circle, not a worded button: it repeats on every open and says
-// nothing the icon does not.
-checkTrue('...as the app\'s own 32px neutral circle', strpos($barBody, 'class="btn btn-icon lo-history-close"') !== false
-    && strpos($barBody, 'fa-xmark') !== false
+/* 2026-09-22, slip2-a: the app's own modal close button. This panel is a box that opens and closes
+   inside a dialog, so it closes the way every other box in the app closes -- `.btn-close` draws its
+   own glyph (no `<i>` left to find), and the 32px target comes from padding in CSS, exactly how
+   `.modal-header .btn-close` gets there. */
+checkTrue('...as the app\'s own 32px neutral circle', strpos($barBody, 'class="btn-close lo-history-close"') !== false
+    && strpos($barBody, 'fa-xmark') === false
     && strpos($barBody, 'aria-label="${closeLabel}"') !== false);
 // The baseline is NOT an edit: it has no time of its own, and as the list's first row it scrolled
 // away -- which is exactly what a baseline must not do.

@@ -269,16 +269,31 @@ async function runWriteCell() {
         await page.locator('#manualLineDestinationWrapper .select2-selection').first().click();
         await page.waitForSelector('.select2-results__option', { timeout: 15000 });
         await page.waitForTimeout(800);
-        /* 2026-09-21, a0: pick one that is NOT the one already in force. The form sends only the
-           halves that really changed (rules.md 9), so re-running this cell against a destination it
-           had already set sent 1 request instead of 2 -- the ordering rule this step exists to
-           measure was never exercised, and the failure said nothing about the app. */
+        /* 2026-09-21, a0: the form sends only the halves that really changed (rules.md 9), so whether
+           this step exercises the 2-request path depends on whether the destination really MOVES --
+           and on a re-run it may already be where this round would put it.
+           2026-09-22: decided by comparing what the picker SHOWS before and after, not by select2's
+           `aria-selected` (which this build does not set on its result rows -- measured: it reported
+           "nothing else on file" while the pick went on to change the destination anyway). */
         const OPTION = '.select2-results__option[role="option"]:not(.select2-results__message)';
-        const unselected = page.locator(`${OPTION}[aria-selected="false"]`);
-        const changesDestination = (await unselected.count()) > 0;
-        await (changesDestination ? unselected : page.locator(OPTION)).first().click();
-        console.log(`  destination: ${changesDestination ? 'picked a different one' : 'only one on file -- unchanged'}`);
+        const shown = () => page.evaluate(() => {
+            const el = document.querySelector('#manualLineDestinationWrapper .select2-selection__rendered');
+            return el ? el.textContent.trim() : null;
+        });
+        const destBefore = await shown();
+        const options = page.locator(OPTION);
+        const optionCount = await options.count();
+        // Prefer the one whose text is not what is already shown; fall back to the first.
+        let pick = 0;
+        for (let i = 0; i < optionCount; i++) {
+            const t = (await options.nth(i).textContent() || '').trim();
+            if (destBefore === null || t !== destBefore) { pick = i; break; }
+        }
+        await options.nth(pick).click();
         await page.waitForTimeout(1000);
+        const destAfter = await shown();
+        const changesDestination = destBefore !== destAfter;
+        console.log(`  destination: ${JSON.stringify(destBefore)} -> ${JSON.stringify(destAfter)} (${optionCount} on file, ${changesDestination ? 'moved' : 'unchanged'})`);
         const saveEnabled = await page.evaluate(() => !document.querySelector('#btnSaveManualLine').disabled);
         check(`${label}: the picked destination leaves the form saveable`, saveEnabled,
             await page.getAttribute('#btnSaveManualLine', 'title'));

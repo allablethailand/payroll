@@ -96,11 +96,15 @@ async function runCell(opts) {
             type: r.getAttribute('data-line-type'),
             amount: r.getAttribute('data-amount'),
             pencil: !!r.querySelector('.lo-edit-btn'),
-            buttons: r.querySelectorAll('.lo-action-cell button').length,
+            // 2026-09-22, slip2-a: the row's controls are a block in the item cell, not a column --
+            // and the block has 2 fixed slots, so a calculated row carries the pencil plus either a
+            // "back to the calculated value" or a reserved empty slot holding its width.
+            buttons: r.querySelectorAll('.lo-row-actions button:not(.lo-history-toggle)').length,
+            slots: r.querySelectorAll('.lo-row-actions button:not(.lo-history-toggle), .lo-row-actions .lo-slot-empty').length,
         })));
-    check(`${label}: every editable row carries exactly one action button`,
-        rows.filter((r) => r.pencil).every((r) => r.buttons === 1),
-        JSON.stringify(rows.map((r) => r.buttons)));
+    check(`${label}: every editable row keeps its 2 action slots, whatever it has to put in them`,
+        rows.filter((r) => r.pencil).every((r) => r.slots === 2),
+        JSON.stringify(rows.map((r) => ({ code: r.code, buttons: r.buttons, slots: r.slots }))));
 
     // 2 -- the form, opened from a calculated row (base salary) and from a hand-added one.
     const baseRow = rows.find((r) => r.code === '__base_salary__' && r.pencil);

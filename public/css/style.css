@@ -9792,10 +9792,11 @@ html, body {
 .lo-table {
     table-layout: fixed;
     width: 100%;
-    /* 2026-09-18, tiny-L6b: 5 columns, not 6 -- the calculated figure is a sub-line of the amount
-       cell now, so the 120px column it used to hold is gone and the table needs 120px less before
-       it has to scroll. 78 + 140 (name) + 130 + 56 + 86 */
-    min-width: 490px;
+    /* 2026-09-22, slip2-a: 3 columns, not 5 -- the action and history columns are gone, their
+       controls live in the item cell. 78 + 140 (name) + 130 = 348, which is under the 394px this
+       dialog gets at 430, so the table no longer scrolls sideways there at all (it was 530 wide in
+       a 394 host, and a figure the reader had to drag to reach). */
+    min-width: 348px;
 }
 .lo-table th.col-check {
     width: 78px;
@@ -9803,31 +9804,46 @@ html, body {
 .lo-table th.lo-amount-col {
     width: 130px;
 }
-/* Wide enough for the WIDEST row this column can carry -- 2 circles plus the gap between them plus
-   the cell's own padding (2026-09-18, 4a-2: a hand-added row has a pencil AND a bin, a calculated one
-   has the pencil alone). Sizing it for the narrow case squeezed the pair on every manual row. */
-.lo-table th.lo-action-col {
-    width: 96px;
+/* The item name and the row's own controls on ONE line, the controls on the right (2026-09-22,
+   slip2-a). The name is the only part that may give ground, so it is the one that shrinks and
+   ellipsises; the block beside it keeps its width whatever it holds. */
+.lo-name-line {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    min-width: 0;
+}
+/* ONE width on every row, whatever the row really carries: 3 slots of 32px plus 2 gaps (§7's
+   "ช่องปุ่มต้องกว้างคงที่เสมอ แม้แถวนั้นจะไม่มีปุ่ม"). That is what keeps the pencil of every row on one
+   x, which is the alignment the retired action column used to buy with a column of its own.
+   `margin-left: auto` pins it right regardless of how short the name is. */
+.lo-row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sp-1);
+    margin-left: auto;
+    flex: 0 0 auto;
 }
 /* A circle stays a circle whatever the row: the flex parent may not shrink it, and the table may not
-   stretch it. Scoped to this table -- the shared `.btn-icon` token itself is untouched. */
-.lo-table .lo-actions .btn-icon {
+   stretch it. Scoped to this block -- the shared `.btn-icon` token itself is untouched. */
+.lo-row-actions .btn-icon,
+.lo-slot-empty {
     flex: 0 0 auto;
     width: 32px;
     height: 32px;
     min-width: 32px;
     min-height: 32px;
 }
+/* The reserved slot: it holds width and nothing else, so a row with no second action still puts its
+   pencil and its count on the same x as the rows around it. */
+.lo-slot-empty {
+    display: inline-block;
+}
 /* The figure fills its cell so `text-align: right` from `td.num` puts it on the column's own right
-   edge; the buttons sit in their own cell, which is what keeps the two from pushing each other. */
+   edge. */
 .lo-amount-view {
     display: block;
-}
-.lo-actions {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: var(--sp-2);
 }
 /* 2026-09-17, R1 follow-up: the table and the 3 summary rows under it share ONE left/right inset --
    the same `--payslip-inset` the slip already uses for exactly this (its column titles, its rows and
@@ -9847,10 +9863,14 @@ html, body {
     width: auto;
     min-width: 140px;
 }
-/* A long item name must not be able to widen its column now that the table is fixed. */
+/* A long item name must not be able to widen its column now that the table is fixed. `min-width: 0`
+   is what lets it shrink inside the flex line it shares with the row's controls (2026-09-22,
+   slip2-a) -- a flex item's floor is its content width until it is told otherwise, and without it a
+   long name pushed the buttons off the row instead of ellipsising. */
 .lo-table td .lo-name {
     display: inline-block;
     max-width: 100%;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     vertical-align: bottom;
@@ -9887,6 +9907,10 @@ html, body {
    it replaced computed to, measured before the move. */
 .lo-totals {
     padding: 0 var(--payslip-inset, var(--sp-3));
+    /* 2026-09-22, slip2-a: a step above the block. Its first rule is a 1px line, which sat straight
+       on the table's own last underline -- 2 rules 1px apart read as one thick one, and the summary
+       read as one more row of the table rather than as the slip's bottom line (reported). */
+    margin-top: var(--sp-3);
 }
 .lo-totals-row {
     display: flex;
@@ -9940,6 +9964,13 @@ html, body {
 .lo-amount-excluded {
     font-size: var(--fs-sm);
     color: var(--c-text-muted);
+}
+/* The line under an empty manual group head (2026-09-22, slip2-a). Same left inset as the heading
+   above it and the rows that will appear below it, and the same tight vertical rhythm the heading
+   uses -- it stands in for a row, so it may not be taller than one. */
+.lo-table > tbody > tr.lo-group-empty > td {
+    padding-top: var(--sp-2);
+    padding-bottom: var(--sp-2);
 }
 /* The "show N hidden" row: the LAST row of the table (what it reveals are rows), so it sits in the
    same grid -- a quiet, full-width tertiary button, no border/background of its own. */
@@ -10018,11 +10049,20 @@ html, body {
     white-space: nowrap;
     vertical-align: middle;
 }
-/* History column: the badge is the whole control, so the cell adds nothing around it. */
-.lo-history-cell,
-th.lo-history-col {
-    width: 86px;
+/* 2026-09-22, slip2-a: the count is quiet TEXT, not a pill. A coloured badge on every edited row
+   says "something needs doing" about a number that is only a fact (§0.1) -- the tab above this table
+   already prints its own count as a plain grey number for the same reason. Same size and same muted
+   colour as every other sub-line in the slip, so the row reads as one thing.
+   `white-space: nowrap` because the label carries a number inside a word ("แก้ไข 3"), and the block
+   it sits in is sized for one line. */
+.lo-history-count {
+    font-size: var(--fs-xs);
+    color: var(--c-text-muted);
     white-space: nowrap;
+}
+.lo-history-toggle:hover .lo-history-count,
+.lo-history-toggle:focus-visible .lo-history-count {
+    color: var(--c-text);
 }
 /* 2026-09-19, H-ui: the badge is a disclosure BUTTON now, not a dropdown toggle -- the whole history
    opens as a table under the row. countBadgeHtml() still draws the badge inside it, so the button
@@ -10034,6 +10074,11 @@ th.lo-history-col {
     border: 0;
     background: none;
     line-height: 1;
+    /* 2026-09-22, slip2-a: it sits in the row's own action block now, so it takes that block's
+       height -- the label is small, the thing you press is not (§7's 32px). */
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
 }
 /* The opened history: one full-width row directly under the line it belongs to, the same colspan
    shape the group headings use. Its panel PINS to the left edge of the scroller and takes the
@@ -10117,6 +10162,29 @@ th.lo-history-col {
 .lo-history-computed-label {
     font-size: var(--fs-xs);
     color: var(--c-text-muted);
+}
+/* The way out of the panel, as the app's own modal (2026-09-22, slip2-a). Bootstrap's `.btn-close`
+   is a 16px glyph in a content-box, so the 32px target comes from padding -- exactly how
+   `.modal-header .btn-close` gets there (`padding: calc(var(--bs-modal-header-padding-y) * .5)`,
+   i.e. 8px on each side of 16px). The negative margin gives that padding back to the layout, so the
+   GLYPH keeps the x the bordered circle's centre had and the title bar's own inset still decides
+   where the button ends. Dark mode needs nothing: Bootstrap 5.3 ships
+   `[data-bs-theme=dark] .btn-close { filter: var(--bs-btn-close-white-filter) }`. */
+.lo-history-close {
+    /* Bootstrap sizes the glyph as `1em` in a content-box, so the em is what decides the target:
+       inside this panel the inherited size is --fs-xs and the button came out 28px (measured).
+       --fs-md is 16px at the Medium setting, which with 8px of padding on each side is the 32 every
+       other control in this slip keeps -- and it still scales with the S/M/L font-size setting,
+       which a literal 16px would not. */
+    font-size: var(--fs-md);
+    padding: var(--sp-2);
+    /* Only the vertical padding is given back to the layout, so the title bar does not grow around a
+       button that got bigger. The horizontal padding STAYS in flow: it is what keeps the button's own
+       right edge on the x the bordered circle ended on (measured 1075 before and after), which is the
+       x the [ใช้ค่านี้] buttons in the list below it end on. */
+    margin-top: calc(-1 * var(--sp-2));
+    margin-bottom: calc(-1 * var(--sp-2));
+    flex: 0 0 auto;
 }
 /* Layer (c): the edits, and only they. A 38-entry chain that pushed the slip's own table to several
    screens is not a list, it is a wall -- the cap is measured per panel (title bar + column titles +
@@ -10240,8 +10308,8 @@ th.lo-history-col {
 }
 @media (max-width: 575.98px) {
     /* The item name is the only cell that can give ground -- everything else is a control or a
-       figure. Wrapping it keeps all 4 columns (History included) inside a 430px screen instead of
-       pushing the table into a horizontal scroll. */
+       figure. Wrapping it keeps all 3 columns inside a 430px screen instead of pushing the table
+       into a horizontal scroll. */
     .lo-table > tbody > tr > td,
     .lo-table > thead > tr > th {
         padding-left: var(--sp-1);
@@ -10251,9 +10319,19 @@ th.lo-history-col {
         white-space: normal;
         word-break: break-word;
     }
-    /* No hover on a touch screen, so the pencil cannot hide behind one. */
-    .lo-amount-view .btn-icon {
-        visibility: visible;
+    /* 2026-09-22, slip2-a: the row's controls drop to a line of their own here. Sharing the name's
+       line costs ~104px of a 186px column, which leaves the name 2 words before it wraps -- so at
+       this width the name takes the whole line and the block follows it, from the left, where every
+       other line of the cell starts. `order` cannot put it below the SUB-LINES too: those are
+       siblings in the `<td>`, and making that `<td>` a flex container would drop it out of the table
+       layout and take its `colspan` with it (§7, a real bug from D1). */
+    .lo-name-line {
+        flex-wrap: wrap;
+    }
+    .lo-row-actions {
+        width: 100%;
+        margin-left: 0;
+        justify-content: flex-start;
     }
 }
 .lo-occurrences {

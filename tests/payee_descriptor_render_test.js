@@ -72,7 +72,9 @@ function lineOverrideIsSkippedRd() { return false; }
 function lineOverrideMoneyClassRd() { return 'money-deduction'; }
 function lineOverrideComputedTagHtml() { return ''; }
 function lineOverrideOccurrencesHtml() { return ''; }
-function lineOverrideHistoryCellHtml() { return ''; }
+// 2026-09-22, slip2-a: renamed with what it builds -- a toggle in the row's own action block.
+function lineOverrideHistoryToggleHtml() { return ''; }
+function lineOverrideLineIsRestorableRd() { return false; }
 function lineOverrideChangeTagTextRd() { return ''; }
 function lineOverrideExemptTextRd() { return ''; }
 function formulaTagTextRd() { return ''; }

@@ -66,7 +66,8 @@ function payeeDescriptorHtmlRd() { return '<div class="payslip-line-tag">PAYEE</
 function buildFormulaStepsRd(formula) { return formula ? '<li class="mb-1">A × B</li><li class="mb-1">= 1.00</li>' : null; }
 function explainLineNoteRd(note) { return note === 'known_note' ? '<div class="small">คำอธิบาย</div>' : null; }
 function lineOverrideOccurrencesHtml() { return ''; }
-function lineOverrideHistoryCellHtml() { return ''; }
+// 2026-09-22, slip2-a: the count builder is real now (it is a few lines of markup, not a delegate
+// to the badge helper), so what a row shows for its history is measured, not faked.
 // 2026-09-19, H-ui: the read-only slip's own "somebody touched this" tag -- its own round.
 function lineOverrideChangeTagTextRd() { return ''; }
 function lineOverrideSkipEnumRd() { return null; }
@@ -87,6 +88,8 @@ const extracted = [
     fn(detailSource, 'formulaTagTextRd'),
     fn(detailSource, 'lineOverrideExemptTextRd'),
     fn(detailSource, 'lineOverrideNoteTextRd'),
+    fn(detailSource, 'lineOverrideLineIsRestorableRd'),
+    fn(detailSource, 'lineOverrideHistoryToggleHtml'),
     // 2026-09-18, 4b: the tri-state the TH_PIT/TH_SSO rows carry -- real, not stubbed, so what the
     // row builder does with it here is what it does in the page.
     constDeclLocal(detailSource, 'STATUTORY_EXEMPTION_FIELD_RD'),
@@ -170,11 +173,14 @@ Object.keys(LANG).forEach((lang) => {
     check(`[${lang}] overridden row with history: sub-line reads "${expected}"`, tag.indexOf(expected) !== -1, tag);
     check(`[${lang}] ...in the shared quiet tag class`, tag.indexOf('payslip-line-tag') !== -1, tag);
     const overRow = api.lineOverrideRowHtml(overridden, 0, GROUP, false);
-    // lastIndexOf: the name cell above carries sub-lines of its own in the same class now (4a-1),
-    // so "the LAST one" is the one that belongs to the figure.
+    /* lastIndexOf: the name cell above carries sub-lines of its own in the same class now (4a-1),
+       so "the LAST one" is the one that belongs to the figure. 2026-09-22, slip2-a: the upper bound
+       was `lo-action-cell`, a column that no longer exists -- the amount cell is the LAST cell of the
+       row now, so what has to hold is that the sub-line comes after the figure and inside that cell. */
     check(`[${lang}] ...rendered inside the amount cell, under the figure`,
         overRow.indexOf('lo-amount-view') < overRow.lastIndexOf('payslip-line-tag')
-        && overRow.lastIndexOf('payslip-line-tag') < overRow.indexOf('lo-action-cell'), overRow);
+        && overRow.lastIndexOf('payslip-line-tag') > overRow.indexOf('lo-amount-cell')
+        && overRow.lastIndexOf('payslip-line-tag') < overRow.lastIndexOf('</td>'), overRow);
     check(`[${lang}] ...and the row still has exactly 1 money cell`, countOf(overRow, 'col-money') === 1);
 
     // An excluded row has no figure of its own to compare against, which is the case that most
@@ -219,13 +225,15 @@ Object.keys(LANG).forEach((lang) => {
 console.log('\n=== the table agrees with its own rows ===');
 const tableSrc = fn(detailSource, 'renderLineOverrideTableRd');
 const headerThs = (tableSrc.match(/<th class=/g) || []).length;
-check('the header declares 5 columns', headerThs === 5, headerThs);
+check('the header declares 3 columns', headerThs === 3, headerThs);
+check('the 2 retired columns are gone from the header',
+    tableSrc.indexOf('lo-action-col') === -1 && tableSrc.indexOf('lo-history-col') === -1, tableSrc);
 check('the header has exactly 1 money column', countOf(tableSrc, 'col-money') === 1, countOf(tableSrc, 'col-money'));
 check('the retired calculated column is gone from the header', tableSrc.indexOf('lo-computed-col') === -1);
 // 2026-09-18, 4a-1: 5 columns in the editable slip, 3 in the read-only one -- every colspan in the
 // table is derived from that one number, never typed per row.
 check('the group row spans whatever the mode really renders', tableSrc.indexOf('colspan="${colCount}"') !== -1);
-check('...and that number is what each mode really has', tableSrc.indexOf("isView ? 3 : 5") !== -1);
+check('...and that number is what each mode really has', tableSrc.indexOf("isView ? 2 : 3") !== -1);
 check('no colspan is left at the old 6', detailSource.indexOf('colspan="6"') === -1);
 check('the hidden-rows collapse is gone entirely -- a skipped row says why on the row itself',
     detailSource.indexOf('lineOverrideHiddenRowHtml') === -1 && detailSource.indexOf('lo-hidden-toggle') === -1
@@ -287,10 +295,13 @@ const MANUAL_ROW = { code: 'BONUS', name_th: '\u0e42\u0e1a\u0e19\u0e31\u0e2a', n
 const manualEdit = api.lineOverrideRowHtml(MANUAL_ROW, 0, GROUP, false, 'edit');
 const manualView = api.lineOverrideRowHtml(MANUAL_ROW, 0, GROUP, false, 'view');
 const btnsOf = (html) => (html.match(/<button[^>]*class="([^"]*)"/g) || []);
-check('the editable slip gives it 2 buttons, in the one action cell',
-    (manualEdit.match(/<td class="lo-action-cell">[\s\S]*?<\/td>/) || [''])[0].match(/<button/g).length === 2, manualEdit);
+/* 2026-09-22, slip2-a: the 2 buttons sit in the row's own action BLOCK inside the item cell, not in
+   a column of their own -- and they wear the ghost variant, the one every control that repeats on
+   every row of this table now uses (§7). */
+check('the editable slip gives it 2 buttons, in the one action block',
+    (manualEdit.split('<span class="lo-row-actions">')[1] || '').split('<button').length - 1 === 2, manualEdit);
 check('...both the shared round icon button, same classes as the calculated row\'s pencil',
-    btnsOf(manualEdit).every(b => b.indexOf('class="btn btn-icon') !== -1), JSON.stringify(btnsOf(manualEdit)));
+    btnsOf(manualEdit).every(b => b.indexOf('class="btn btn-icon btn-icon-ghost') !== -1), JSON.stringify(btnsOf(manualEdit)));
 check('...a pencil and a bin, in that order',
     manualEdit.indexOf('manual-line-edit-btn') !== -1 && manualEdit.indexOf('manual-line-remove-btn') !== -1
     && manualEdit.indexOf('manual-line-edit-btn') < manualEdit.indexOf('manual-line-remove-btn'));
@@ -298,8 +309,8 @@ check('...each addressed by the line id, never by item code',
     (manualEdit.match(/data-line-id="91"/g) || []).length === 2, manualEdit);
 check('...and each carries a title AND an aria-label, not an icon alone',
     (manualEdit.match(/aria-label="/g) || []).length === 2 && (manualEdit.match(/title="/g) || []).length >= 2);
-check('the read-only slip renders neither the cell nor the buttons',
-    manualView.indexOf('lo-action-cell') === -1 && manualView.indexOf('manual-line-edit-btn') === -1
+check('the read-only slip renders neither the reserved slot nor the buttons',
+    manualView.indexOf('lo-slot-empty') === -1 && manualView.indexOf('manual-line-edit-btn') === -1
     && manualView.indexOf('manual-line-remove-btn') === -1, manualView);
 check('a hand-added row never gets the override pencil, in either mode',
     manualEdit.indexOf('lo-edit-btn') === -1 && manualView.indexOf('lo-edit-btn') === -1);

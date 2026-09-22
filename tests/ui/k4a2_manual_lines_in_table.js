@@ -83,13 +83,15 @@ async function measure(page) {
             manualPencils: manual.filter(r => r.querySelector('.lo-edit-btn')).length,
             manualEditBtns: document.querySelectorAll(wrap + ' .manual-line-edit-btn').length,
             manualRemoveBtns: document.querySelectorAll(wrap + ' .manual-line-remove-btn').length,
+            // 2026-09-22, slip2-a: the history count is the last item of the row's own action block
+            // inside the item cell -- the column it used to have is gone.
             manualHistoryCells: manual.filter(r => {
-                const td = r.querySelector('td.lo-history-cell');
-                return td && td.textContent.trim() !== '';
+                const c = r.querySelector('.lo-history-count');
+                return c && c.textContent.trim() !== '';
             }).length,
-            // ...and the cell itself, present on every manual row whether it carries a badge or not,
+            // ...and the block itself, present on every manual row whether it carries a count or not,
             // so the row stays in the same grid as every other one.
-            manualHistoryCellSlots: manual.filter(r => !!r.querySelector('td.lo-history-cell')).length,
+            manualHistoryCellSlots: manual.filter(r => !!r.querySelector('.lo-row-actions')).length,
             manualTags: manual.map(r => Array.from(r.querySelectorAll('.payslip-line-tag')).map(t => t.textContent.trim())),
             // 2026-09-18, follow-up 3: the link rides on the group HEAD, so there is no add row left
             // and every link must be inside a `tr.lo-group`.
@@ -181,7 +183,7 @@ async function measure(page) {
                 .map(r => ({ code: r.getAttribute('data-item-code'), amount: (r.querySelector('.lo-amount-view') || { textContent: '' }).textContent.trim() })),
             // Every round icon button in this table, measured -- a circle may not be squashed by the
             // flex row it sits in nor stretched by the cell.
-            iconButtonSizes: Array.from(document.querySelectorAll(wrap + ' .lo-actions .btn-icon')).map(b => {
+            iconButtonSizes: Array.from(document.querySelectorAll(wrap + ' .lo-row-actions .btn-icon')).map(b => {
                 const r = b.getBoundingClientRect();
                 return { cls: b.className.indexOf('manual-line') !== -1 ? 'manual' : 'lo',
                     w: Math.round(r.width), h: Math.round(r.height) };
