@@ -1520,3 +1520,24 @@ callout/ปุ่ม warning ทั้งระบบ ต้องวัดห�
    auto-provision มาจาก SSO (`employee_no LIKE 'SSO-%'`) ส่งให้ HR ตัดสินทีละราย (ผูกรอบ / ตั้ง
    participant=0) · dev ตอนนี้ 22 + 2 (`SSO-D4735E3A26`, `CEO`) → ดู
    `docs/decisions/2026-09-22-tiny1-sync-missing-criteria.md`
+
+## tiny-2 (2026-09-22) — fixture
+
+1. **`mksession --with-sync` ผสม `--with-calc-errors` ไม่ได้** (สคริปต์ exit 1 เอง) — sync run ไม่เข้า
+   สาขา `no_attendance_data_this_period` (`PayrollRunModel.php:4131` เป็น `elseif` ของสาขา sync) แต่
+   R5–R7 เป็น control row ที่ยึดว่า "recalculate() เขียนอะไรไว้ก็เท่านั้น" ซึ่ง advisory ตัวนี้อยู่ด้วย
+   ถ้าอนาคตต้องใช้ทั้งคู่ ให้ fixture ปลอม advisory ลง R5–R7 ตรงๆ แบบเดียวกับ R1–R4 แล้วปลดข้อห้าม
+
+## n (2026-09-22) — picker
+
+1. **avatar ใน `#tb_join_employees` ยังกดไม่ได้** (`employeeId: null`) — ทุกลิสต์พนักงานอื่นในแอปส่ง
+   employee id เข้า `apvPersonLineHtml()` แล้วกดเปิด quick-view ได้ ที่นี่ไม่ส่งเพราะจะเปิด modal ซ้อนบน
+   picker ที่เปิดอยู่ · มี precedent แล้วจริง (`public/js/reports/annual-summary.js:509` เปิด quick-view
+   จากหัว modal ของตัวเอง) → ถ้าจะเปิดสิทธิ์นี้ ให้ตัดสิน z-index/โฟกัสของ modal ซ้อนเป็นกฎใน §9 ก่อน
+   แล้วค่อยเปลี่ยนเป็น `{ employeeId: row.id }` ทีเดียวทั้งแอป ไม่ใช่เฉพาะตารางนี้
+
+2. **c12 ของ `tests/ui/m3e1_tabs_shared.js` มี branch เปิด picker ที่ตายอยู่** — มันกด
+   `#btnJoinEmployees` แบบมี `isVisible()` guard แต่ปุ่มนั้นอยู่ในตารางพนักงานซึ่งอยู่ในแท็บที่ไม่ active
+   ตอนโหลด (`run-details-pane` เป็น default) → `#joinEmployeesModal opened` = false เสมอ
+   assertion ยังถูกเพราะวัด markup นิ่งใน DOM แต่ "เปิดจริงแล้ววัด" ไม่เคยเกิด — ถ้าจะปลดให้กด
+   `#run-employee-tab` ก่อน แบบเดียวกับ `n_missing_pull.js`'s `openPicker(page,'toolbar')`

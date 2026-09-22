@@ -1353,14 +1353,23 @@
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
                     <div>
+                        <!-- 2026-09-22, n: the title's own `data-i18n` is SWAPPED at runtime (this
+                             one modal serves 2 modes, see applyJoinEmployeesModeRd() in detail.js).
+                             It lives on this leaf span, never on the <h5>, so app.js's generic sweep
+                             keeps owning it after the swap and cannot wipe the icon beside it. -->
                         <h5 class="modal-title text-secondary mb-0" id="joinEmployeesModalLabel">
-                            <i class="fa-solid fa-user-plus me-1"></i><span data-i18n="join_employees_title">Join Employees</span>
+                            <i class="fa-solid fa-user-plus me-1"></i><span id="joinEmployeesModalTitleText" data-i18n="join_employees_title">Join Employees</span>
                         </h5>
                         <div class="text-muted small" id="joinEmployeesHint"></div>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <!-- 2026-09-22, n: `missing` mode only -- one neutral sentence saying what this
+                         narrowed list is (rules.md 15: tone carries the meaning, no icon). Neutral,
+                         not warning: the banner that opens this already carries the warning, and
+                         repeating it here would make the same fact shout twice. -->
+                    <div class="callout callout-neutral d-none mb-3" id="joinEmployeesMissingCallout" data-i18n="sync_missing_pull_hint">These are the employees expected in this run but absent from the Origami sync -- pick who you need and pull them in from here.</div>
                     <div class="row g-2 mb-3">
                         <div class="col-sm-3">
                             <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
@@ -1411,6 +1420,12 @@
                                 <th><span data-i18n="team">Team</span></th>
                                 <th><span data-i18n="position">Position</span></th>
                                 <th><span data-i18n="payroll_cycle">Payroll Schedule</span></th>
+                                <!-- Column 7, `missing` mode only (DataTables column visibility, see
+                                     detail.js). Deliberately unlabelled: it is an action column (7).
+                                     If it ever needs a label, the `data-i18n` goes on a <span> leaf
+                                     inside, never on this <th> -- m3e1_tabs_shared.js's c12 asserts
+                                     `#joinEmployeesModal th[data-i18n]` is 0. -->
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -1419,8 +1434,11 @@
                 <div class="modal-footer d-flex justify-content-between align-items-center">
                     <div class="text-muted small" id="joinSelectedCount">0 <span data-i18n="bulk_pull_selected_label">selected</span></div>
                     <div>
+                        <!-- The label span carries an id because `missing` mode rewrites it with a
+                             {count} template and drops its `data-i18n` while that lasts -- see
+                             renderJoinPrimaryLabelRd() in detail.js for why the marker has to go. -->
                         <button type="button" class="btn btn-primary" id="btnJoinSelected" disabled>
-                            <i class="fa-solid fa-user-plus me-1"></i><span data-i18n="action_join_employees">Join Employees</span>
+                            <i class="fa-solid fa-user-plus me-1"></i><span id="btnJoinSelectedLabel" data-i18n="action_join_employees">Join Employees</span>
                         </button>
                         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     </div>

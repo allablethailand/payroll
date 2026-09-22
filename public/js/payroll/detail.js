@@ -1472,22 +1472,25 @@ function loadSyncMissingEmployeesBanner(run) {
             }
             const tpl = langData['sync_missing_employees_banner'] || '{count} employee(s) who would normally be expected in this payroll were NOT in this Origami sync -- verify whether their data has arrived yet before submitting.';
             $('#syncMissingEmployeesBannerText').text(tpl.replace('{count}', list.length));
-            $('#syncMissingEmployeesBanner').removeClass('d-none').data('list', list);
+            // 2026-09-22, n: the `.data('list', list)` this line used to also stash was read by
+            // exactly one thing -- the Swal list below, now gone (the button opens the real picker
+            // instead, which fetches its own rows server-side and paginates/filters them). Dropped
+            // rather than left behind: a cached copy nothing reads is a second source of truth for
+            // who is missing, and it would go stale the moment anyone is pulled in.
+            $('#syncMissingEmployeesBanner').removeClass('d-none');
         },
         error: function () {
             $('#syncMissingEmployeesBanner').addClass('d-none');
         },
     });
 }
+// 2026-09-22, n: "ดูรายชื่อ" used to open a read-only Swal list and stop there -- seeing who the sync
+// left out and doing something about it were two separate screens, and the second one (Join
+// Employees) offered the WHOLE company with no way to narrow it to the missing few. It now opens the
+// same picker in `missing` mode instead: one list, filterable/paginated like every other table in
+// the app, with the pull action on the rows themselves. See openJoinEmployeesModalRd().
 $(document).on('click', '#syncMissingEmployeesViewBtn', function () {
-    const list = $('#syncMissingEmployeesBanner').data('list') || [];
-    const listHtml = list.map(e => `<li class="text-start">${escapeHtml(e.employee_no)} — ${escapeHtml((currentLang === 'th' ? `${e.name_th} ${e.surname_th}` : `${e.name_en} ${e.surname_en}`).trim())}</li>`).join('');
-    Swal.fire({
-        title: langData['sync_missing_employees_title'] || 'Not in This Sync',
-        html: `<ul class="ps-3 mb-0">${listHtml}</ul>`,
-        icon: 'warning',
-        confirmButtonText: langData['close'] || 'Close',
-    });
+    openJoinEmployeesModalRd('missing');
 });
 
 /* ---------- "Run Settings" panel (2026-08-29) -- see PayrollRunModel::runSettingsGet()'s own
@@ -6694,11 +6697,153 @@ $(document).on('click', '.btn-remove-manual-employee', function () {
    the same way the Pending Sync bulk-pull picker does), then Join all at once. ---------- */
 let tb_join_employees;
 let joinSelectedEmployees = {};
+/* 2026-09-22, n: ONE mode variable for the whole picker, never a second table or a second modal.
+   'all'     = the pre-existing Join Employees behaviour (every employee this run could still take).
+   'missing' = only the ones this run's Origami sync left out, i.e. exactly what
+               #syncMissingEmployeesBanner counts (api/payroll-run.sync-missing-employees and the
+               picker's own `missing_only` share one server-side WHERE --
+               PayrollRunModel::buildManualEmployeeWhere(), tiny-1 -- so the two can never disagree).
+   Read by all 3 of the picker's endpoints, by the title/callout/label/column swaps, and reset by
+   openJoinEmployeesModalRd() on EVERY open so a mode can never leak into the next opening. */
+let joinEmployeesMode = 'all';
+const joinEmployeesModeIsMissingRd = () => joinEmployeesMode === 'missing';
 
 function updateJoinSelectedCountRd() {
     const count = Object.keys(joinSelectedEmployees).length;
     $('#joinSelectedCount').text(`${count} ${langData['bulk_pull_selected_label'] || 'selected'}`);
     $('#btnJoinSelected').prop('disabled', count === 0);
+    renderJoinPrimaryLabelRd();
+}
+
+/* 2026-09-22, n: the footer primary's label. In `all` mode it is a plain i18n string and KEEPS its
+   own `data-i18n` marker, so app.js's generic sweep owns it exactly as before. In `missing` mode it
+   is a `{count}` TEMPLATE, which that sweep cannot fill -- so the marker is removed for as long as
+   that mode lasts (leaving it would paint the literal "{count}" onto the button on the next language
+   switch) and refreshPayrollDetailLanguage() calls this instead, the same contract every other
+   JS-templated string on this page already follows. */
+function renderJoinPrimaryLabelRd() {
+    const $label = $('#btnJoinSelectedLabel');
+    if (!joinEmployeesModeIsMissingRd()) {
+        $label.attr('data-i18n', 'action_join_employees').text(langData['action_join_employees'] || 'Join Employees');
+        return;
+    }
+    const count = Object.keys(joinSelectedEmployees).length;
+    $label.removeAttr('data-i18n')
+        .text((langData['action_pull_selected'] || 'Pull Selected ({count})').replace('{count}', count));
+}
+
+/* The picker's own empty state, as a CONFIG for the shared renderer (§11) -- not HTML handed to
+   DataTables' own `language.emptyTable`, which is read once at construction and would freeze both
+   the mode and the language into it. `missing` mode has a real thing to say when it comes back empty
+   (nobody is missing any more -- the banner that opened this modal is about to disappear on the next
+   loadRunDetail()), which is not the same sentence as an ordinary picker with nothing left to offer.
+   Rebuilt on every draw, so mode and language are always the current ones. */
+function joinEmptyStateRd() {
+    const missing = joinEmployeesModeIsMissingRd();
+    return {
+        icon: missing ? 'fa-solid fa-user-check' : 'fa-solid fa-users',
+        title: missing
+            ? (langData['sync_missing_empty_state'] || 'No employee is missing from this sync')
+            : (langData['emptyTable'] || 'No data available in table'),
+    };
+}
+
+/* Everything that differs between the 2 modes, in one place. Called BEFORE the table is (re)loaded
+   so the empty state is already right when the reply lands. The `tb_join_employees` guard is for the
+   very first open, where the table does not exist yet -- initJoinEmployeesTable() builds it with the
+   same two values (`language.emptyTable`, column 7's `visible`) read off this same mode. */
+function applyJoinEmployeesModeRd() {
+    const missing = joinEmployeesModeIsMissingRd();
+    const titleKey = missing ? 'sync_missing_pull_title' : 'join_employees_title';
+    $('#joinEmployeesModalTitleText').attr('data-i18n', titleKey)
+        .text(langData[titleKey] || (missing ? 'Pull Employees Missing from This Sync' : 'Join Employees'));
+    $('#joinEmployeesMissingCallout').toggleClass('d-none', !missing);
+    renderJoinPrimaryLabelRd();
+    if (tb_join_employees) {
+        // `false` = don't recalculate column widths yet; the adjust() right after does it once.
+        tb_join_employees.column(7).visible(missing, false);
+        tb_join_employees.columns.adjust();
+    }
+}
+
+/* The ONE way this modal is opened -- both the toolbar's #btnJoinEmployees and the sync-missing
+   banner's own "ดูรายชื่อ" go through here, so resetting the selection/filters/mode can never be
+   forgotten by one of them. */
+function openJoinEmployeesModalRd(mode) {
+    joinEmployeesMode = mode === 'missing' ? 'missing' : 'all';
+    joinSelectedEmployees = {};
+    updateJoinSelectedCountRd();
+    $('#joinFilterDepartment, #joinFilterTeam, #joinFilterPosition, #joinFilterCycle').val(null).trigger('change');
+    // Cycle-only run: this modal can only ever re-include a previously-removed employee (see
+    // manualEmployeeOptions()'s cycle-only branch server-side) -- say so, since "Join Employees"
+    // otherwise implies adding someone brand new. Never true in `missing` mode (that mode only
+    // exists on a sync-based run, and a sync run is not a pure cycle run) -- left unconditional
+    // anyway so the one hint has one owner.
+    const isPureCycleRun = currentRun && currentRun.cycle_id && !currentRun.sync_process_id;
+    $('#joinEmployeesHint').text(isPureCycleRun
+        ? (langData['join_employees_hint_cycle_only'] || 'This run\'s membership is automatic by employment date -- only employees previously removed from it are shown here.')
+        : '');
+    applyJoinEmployeesModeRd();
+    new bootstrap.Modal(document.getElementById('joinEmployeesModal')).show();
+    initJoinEmployeesTable();
+}
+
+/* 2026-09-22, n: ONE request path for both ways of pulling employees in -- the footer's "pull
+   selected" and each row's own single-employee button, which hands it an array of one. Split out of
+   #btnJoinSelected's own handler rather than copied into the new button (the no-mirror-copy rule),
+   so the two can never drift apart on what they do after the reply lands. */
+function joinEmployeesRequestRd(employeeIds, $btn) {
+    if (!employeeIds.length) return;
+    // setButtonLoading() replaces a button's contents with a spinner AND a "Saving..." label -- right
+    // for the footer's wide primary, wrong for a 32px `.btn-icon` circle, which has no room for a
+    // word and would be blown out of shape by one. A row action just goes disabled while in flight,
+    // the same as every other row button in the app.
+    const busy = (on) => {
+        if ($btn.hasClass('btn-icon')) $btn.prop('disabled', on);
+        else setButtonLoading($btn, on);
+    };
+    busy(true);
+    $.ajax({
+        url: `${BASE_URL}/api/payroll-run.join-employees`,
+        method: 'POST',
+        contentType: 'application/json',
+        dataType: 'json',
+        data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_ids: employeeIds }),
+        success: function (res) {
+            busy(false);
+            if (!res.status) {
+                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
+                return;
+            }
+            // joinEmployees() silently drops any id that is not a payroll participant and names them
+            // back in `skipped_employee_ids` (PayrollRunModel::joinEmployees()). The run really did
+            // change, so the modal still closes and the page still reloads either way -- but a plain
+            // "saved" toast would hide that part of what was ticked never went in, so the warning
+            // REPLACES the success toast rather than stacking on top of it.
+            const skipped = (res.skipped_employee_ids || []).length;
+            if (skipped > 0) {
+                showWarning((langData['sync_missing_pull_skipped'] || '{joined} pulled in, {count} skipped (not paid through payroll).')
+                    .replace('{joined}', employeeIds.length - skipped).replace('{count}', skipped));
+            } else {
+                showSuccess(langData['save_success'] || 'Saved successfully.');
+            }
+            bootstrap.Modal.getInstance(document.getElementById('joinEmployeesModal')).hide();
+            // loadRunDetail() -> renderRunHeader() -> loadSyncMissingEmployeesBanner() already
+            // re-counts the banner, so it is NOT called again here.
+            loadRunDetail();
+        },
+        error: function () {
+            busy(false);
+            showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
+        }
+    });
+}
+
+/* The picker's own display name. Its endpoint already returns name_th/name_en as one concatenated
+   string each (PayrollRunModel::manualEmployeeOptions()), so this is not employeeDisplayNameRd()'s
+   run-row shape and cannot reuse it. */
+function joinEmployeeNameRd(row) {
+    return (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '-';
 }
 
 function initJoinEmployeesTable() {
@@ -6719,6 +6864,10 @@ function initJoinEmployeesTable() {
                 d.team_id = $('#joinFilterTeam').val() || '';
                 d.position_id = $('#joinFilterPosition').val() || '';
                 d.emp_cycle_id = $('#joinFilterCycle').val() || '';
+                // 2026-09-22, n: the one flag that turns this picker into the sync-missing list.
+                // Sent on all 3 of its endpoints (here, all-ids, column-values) so paging, "Select
+                // All Matching" and the Excel-style column filters all agree on the same population.
+                d.missing_only = joinEmployeesModeIsMissingRd() ? 1 : 0;
                 // Built from `settings` (not the outer `tb_join_employees` variable) -- see
                 // table-column-filter.js's getColumnFilterValues() docblock for why.
                 d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
@@ -6732,11 +6881,35 @@ function initJoinEmployeesTable() {
                 }
             },
             { data: 'employee_no' },
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '-') },
+            // 2026-09-22, n: avatar + name, the same line every other employee list in the app shows
+            // (apvPersonLineHtml(), app.js) -- in BOTH modes, not just the new one, so the picker
+            // does not look like two different tables. `employeeId: null` deliberately: a clickable
+            // avatar here would stack the app-wide quick-view modal on top of an open picker, which
+            // is a separate decision (see BACKLOG). Object-form render (this app's DataTables
+            // sort-safety convention) since display is now HTML -- filter stays the plain name.
+            { data: null, render: {
+                display: (d, t, row) => apvPersonLineHtml(joinEmployeeNameRd(row), 24, row.profile_photo_path, { employeeId: null }),
+                filter: (d, t, row) => joinEmployeeNameRd(row),
+            } },
             { data: 'department', render: d => escapeHtml(d || '-') },
             { data: 'team', render: d => escapeHtml(d || '-') },
             { data: 'position', render: d => escapeHtml(d || '-') },
             { data: 'cycle_name', render: d => escapeHtml(d || '-') },
+            // Column 7 -- `missing` mode only (hidden by DataTables' own column visibility in `all`
+            // mode, not by a second table). One row = one employee this run is missing, so "pull this
+            // one in" belongs on the row; the footer button stays for pulling several at once.
+            {
+                data: null, orderable: false, className: 'text-center',
+                visible: joinEmployeesModeIsMissingRd(),
+                // Responsive drops columns right-to-left, so this one -- the rightmost -- would be the
+                // first to fold into a child row on a phone. An action you have to expand a row to
+                // reach is not reachable; it keeps its place at every width.
+                responsivePriority: 1,
+                render: function (d, t, row) {
+                    const label = escapeAttr(langData['action_pull_one'] || 'Pull this employee into the run');
+                    return `<button type="button" class="btn-icon btn-icon-ghost join-emp-pull-one" data-id="${row.id}" title="${label}" aria-label="${label}"><i class="fa-solid fa-arrow-right-to-bracket"></i></button>`;
+                }
+            },
         ],
         order: [],
         searching: false,
@@ -6771,6 +6944,7 @@ function initJoinEmployeesTable() {
                             position_id: $('#joinFilterPosition').val() || '',
                             emp_cycle_id: $('#joinFilterCycle').val() || '',
                             column: key,
+                            missing_only: joinEmployeesModeIsMissingRd() ? 1 : 0,
                             column_filters: getColumnFilterValues(self)
                         },
                         dataType: 'json'
@@ -6791,22 +6965,16 @@ function initJoinEmployeesTable() {
             // All Matching" would select, shown right next to that button so the number it acts on
             // is never a guess.
             $('#joinFilteredCount').text(this.api().page.info().recordsDisplay);
+            // 2026-09-22, n: the shared empty state (11), on every draw rather than once at
+            // construction -- so it follows the mode AND the language with nothing to invalidate. It
+            // no-ops unless the table really is empty, and falls back to the app-wide "narrowed to
+            // nothing + clear filter" copy by itself when a filter is what emptied it.
+            dtRenderEmptyState(this.api(), joinEmptyStateRd());
         }
     });
 }
 $(document).on('click', '#btnJoinEmployees', function () {
-    joinSelectedEmployees = {};
-    updateJoinSelectedCountRd();
-    $('#joinFilterDepartment, #joinFilterTeam, #joinFilterPosition, #joinFilterCycle').val(null).trigger('change');
-    // Cycle-only run: this modal can only ever re-include a previously-removed employee (see
-    // manualEmployeeOptions()'s cycle-only branch server-side) -- say so, since "Join Employees"
-    // otherwise implies adding someone brand new.
-    const isPureCycleRun = currentRun && currentRun.cycle_id && !currentRun.sync_process_id;
-    $('#joinEmployeesHint').text(isPureCycleRun
-        ? (langData['join_employees_hint_cycle_only'] || 'This run\'s membership is automatic by employment date -- only employees previously removed from it are shown here.')
-        : '');
-    new bootstrap.Modal(document.getElementById('joinEmployeesModal')).show();
-    initJoinEmployeesTable();
+    openJoinEmployeesModalRd('all');
 });
 $(document).on('change', '#joinFilterDepartment, #joinFilterTeam, #joinFilterPosition, #joinFilterCycle', function () {
     if (tb_join_employees) tb_join_employees.ajax.reload(null, false);
@@ -6847,6 +7015,7 @@ $(document).on('click', '#btnJoinSelectAllMatching', function () {
             team_id: $('#joinFilterTeam').val() || '',
             position_id: $('#joinFilterPosition').val() || '',
             emp_cycle_id: $('#joinFilterCycle').val() || '',
+            missing_only: joinEmployeesModeIsMissingRd() ? 1 : 0,
             search: tb_join_employees ? tb_join_employees.search() : '',
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- "Select All Matching" now
             // also honors whatever Excel-style column filters are currently checked, not just the
@@ -6871,31 +7040,13 @@ $(document).on('click', '#btnJoinSelectAllMatching', function () {
     });
 });
 $(document).on('click', '#btnJoinSelected', function () {
-    const employeeIds = Object.keys(joinSelectedEmployees).map(Number);
-    if (employeeIds.length === 0) return;
-    const $btn = $(this);
-    setButtonLoading($btn, true);
-    $.ajax({
-        url: `${BASE_URL}/api/payroll-run.join-employees`,
-        method: 'POST',
-        contentType: 'application/json',
-        dataType: 'json',
-        data: JSON.stringify({ id: PAYROLL_RUN_ID, employee_ids: employeeIds }),
-        success: function (res) {
-            setButtonLoading($btn, false);
-            if (res.status) {
-                showSuccess(langData['save_success'] || 'Saved successfully.');
-                bootstrap.Modal.getInstance(document.getElementById('joinEmployeesModal')).hide();
-                loadRunDetail();
-            } else {
-                showWarning(res.message || langData['save_failed'] || 'Failed to save data.');
-            }
-        },
-        error: function () {
-            setButtonLoading($btn, false);
-            showWarning(langData['save_failed'] || 'An error occurred while saving the data.');
-        }
-    });
+    joinEmployeesRequestRd(Object.keys(joinSelectedEmployees).map(Number), $(this));
+});
+// 2026-09-22, n: `missing` mode's per-row button -- the same request as the footer's, with an array
+// of one. No confirm step, for the same reason the footer button has never had one: it adds an
+// employee to a draft run, and removing them again is one click away in the run's own table.
+$(document).on('click', '.join-emp-pull-one', function () {
+    joinEmployeesRequestRd([Number($(this).data('id'))], $(this));
 });
 // 2026-09-01, same-day follow-up (explicit push-back: "เหตุผลอะไรบ้างในหน้า Edit ที่ไม่สามารถแก้ไขได้
 // ควรเปิดให้แก้ไขได้") -- the field itself is now ALWAYS editable (never disabled); re-examining
@@ -7173,6 +7324,22 @@ function refreshPayrollDetailLanguage() {
     // here, the same way every other JS-templated string on this page is handled.
     if ($('#employeeCommentModal').hasClass('show')) {
         updateEmployeeCommentTitle();
+    }
+    // 2026-09-22, n: the Join/Pull picker carries 3 strings the generic sweep cannot own, for 3
+    // different reasons: the footer primary's `{count}` template (its `data-i18n` marker is
+    // deliberately absent in `missing` mode), the selected-count line (`.text()` on a container that
+    // HAD a `data-i18n` span inside it -- the first render replaces it, so nothing is left for the
+    // sweep to find, a pre-existing gap this now closes too), and the empty state (rebuilt by the
+    // table's own drawCallback, which is why the redraw below is all it needs). Guarded on the
+    // table existing at all, i.e. the picker has
+    // been opened at least once this page session. The redraw is only worth a round trip while the
+    // modal is actually open -- the rows themselves are language-scoped server-side (`lang` is a
+    // parameter of manualEmployeeOptions()), so it re-fetches rather than repainting a stale list.
+    if (tb_join_employees) {
+        updateJoinSelectedCountRd();
+        if ($('#joinEmployeesModal').hasClass('show')) {
+            tb_join_employees.draw(false);
+        }
     }
     // 2026-09-14, Round 3 "เก็บตกรอบ 7" -- the "defensive re-sync" this block used to contain (added
     // 2026-09-14 "เก็บตกรอบ 6", while the real bug below was still unsolved) is REMOVED: it only ever
