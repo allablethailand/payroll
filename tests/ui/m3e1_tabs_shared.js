@@ -975,10 +975,19 @@ async function cell14() {
         measured('c14 #syncMissingEmployeesViewBtn', bcls);
         check('c14: the View List button is btn-sm neutral', /btn-sm/.test(bcls) && /btn-outline-secondary/.test(bcls), bcls);
         await btn.click();
-        await ctx.page.waitForTimeout(700);
-        const dlgs = await ctx.page.evaluate(() => document.querySelectorAll('.swal2-container').length);
+        await ctx.page.waitForTimeout(1200);
+        // 2026-09-22, round n: this used to count `.swal2-container` -- the button opened a read-only
+        // Swal list and that was the end of it. It now opens the Join Employees picker in `missing`
+        // mode instead, so seeing who the sync left out and pulling them in is one screen rather than
+        // two (docs/decisions/2026-09-22-n-sync-missing-pull-ui.md). The contract this cell asserts is
+        // unchanged -- the button opens exactly one thing -- only WHICH thing moved.
+        const dlgs = await ctx.page.evaluate(() => ({
+            picker: document.querySelectorAll('#joinEmployeesModal.show').length,
+            swal: document.querySelectorAll('.swal2-container').length,
+        }));
         measured('c14 dialogs after View List', dlgs);
-        check('c14: it opens exactly 1 dialog', dlgs === 1, dlgs);
+        check('c14: it opens exactly 1 dialog -- the picker, and no Swal',
+            dlgs.picker === 1 && dlgs.swal === 0, JSON.stringify(dlgs));
         await ctx.page.keyboard.press('Escape');
         await ctx.page.waitForTimeout(400);
     } else {
