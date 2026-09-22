@@ -4399,6 +4399,125 @@ try {
     foreach ($mixedDetailsFixed as $row) { if ((int)$row['employee_id'] === $mixedEmployeeId) { $mixedRowFixed = $row; break; } }
     check('mixed_payment_lines_mismatch clears once the lines genuinely sum to net pay', strpos((string)($mixedRowFixed['calc_errors'] ?? ''), 'mixed_payment_lines_mismatch') !== false, false);
 
+    // ==================== 2026-09-22, tiny-1: what "should have been in this run" means ==========
+    // The dev DB holds real company-1 employees alongside these fixtures, and most of them are
+    // cycle-unassigned -- so every assertion below compares a SET (an exact intersection with this
+    // file's own ids, or an exact before/after difference), never a raw count that real data moves.
+    echo "=== 2026-09-22, tiny-1: sync-missing criteria / missing_only picker / participant guard ===\n";
+    $t1Ids = static function (array $rows): array {
+        $ids = array_map(static fn($r) => (int)$r['id'], $rows);
+        sort($ids);
+        return $ids;
+    };
+    $t1Own = static function (array $ids, array $mine): array {
+        $hit = array_values(array_intersect($ids, $mine));
+        sort($hit);
+        return $hit;
+    };
+    // Its own employee, because every earlier fixture employee has since been pulled into
+    // $pulledRunId one way or another ($employeeFullId/$employeeMidId are in its sync payload,
+    // $employeeOptOutId was manually joined) -- this one is eligible by date, assigned to no
+    // cycle, in no payload and joined to nothing, which is exactly the case the banner is for.
+    $insEmp->execute([
+        ':comp_id' => $compId, ':employee_no' => 'TEST_TINY1_MISSING_' . uniqid(),
+        ':name_th' => 'ทดสอบ', ':surname_th' => 'ไม่มาในซิงค์', ':name_en' => 'Test', ':surname_en' => 'NotInSync',
+        ':email' => uniqid() . '@test.local', ':employment_date' => '2020-01-01', ':employment_end_date' => null,
+        ':employee_status_enum' => 'permanent',
+        ':base_salary' => 30000, ':salary_effective_date' => '2020-01-01',
+        ':sso_enrolled' => 1, ':pvd_enrolled' => 1, ':tax_exempt' => 0,
+    ]);
+    $t1MissingEmpId = (int)$pdo->lastInsertId();
+    // $pulledRunId is the sync-based run_purpose='payroll' run built above.
+    $t1MissingBefore = $t1Ids($runModel->syncMissingEmployees($pulledRunId, $compId));
+    check('tiny-1: an eligible employee the sync payload never sent is listed as missing, while those already in the run are not',
+        $t1Own($t1MissingBefore, [$t1MissingEmpId, $employeeMidId, $employeeOptOutId, $employeeFullId]), [$t1MissingEmpId]);
+
+    // The cycle rule, all 3 branches in one probe -- it MIRRORS recalculate()'s own cycle-branch
+    // eligibility query (PayrollRunModel, the `elseif ($run['cycle_id'] !== null)` block): an
+    // employee with no standing cycle is eligible for every cycle's run, one assigned elsewhere is
+    // eligible for none of this one's. A stricter rule here would hide employees recalculate()
+    // would have paid.
+    $t1OtherCycleRes = $cycleModel->save($compId, [
+        'cycle_name' => 'TEST_CYCLE_TINY1_' . uniqid(), 'payroll_frequency' => 'monthly',
+        'cutoff_day_of_month' => 20, 'payment_day_of_month' => 1,
+        'ot_cutoff_type' => 'same_as_attendance', 'bank_file_format_id' => 1, 'status' => 'active',
+    ], $adminUserId);
+    $t1SetCycle = $pdo->prepare("UPDATE `employees` SET cycle_id = :cycle_id WHERE id = :id");
+    $t1CycleProbe = [];
+    foreach ([null, $cycleId, (int)($t1OtherCycleRes['id'] ?? 0)] as $t1Probe) {
+        $t1SetCycle->execute([':cycle_id' => $t1Probe ?: null, ':id' => $t1MissingEmpId]);
+        $t1CycleProbe[] = in_array($t1MissingEmpId, $t1Ids($runModel->syncMissingEmployees($pulledRunId, $compId)), true);
+    }
+    $t1SetCycle->execute([':cycle_id' => null, ':id' => $t1MissingEmpId]);
+    check('tiny-1: cycle rule -- unassigned and same-cycle employees are listed, one assigned to another cycle is not',
+        $t1CycleProbe, [true, true, false]);
+
+    $runModel->joinEmployees($pulledRunId, $compId, [$t1MissingEmpId], $adminUserId, true);
+    $t1MissingAfterJoin = $t1Ids($runModel->syncMissingEmployees($pulledRunId, $compId));
+    check('tiny-1: joining the missing employee removes exactly them from the list, nobody else',
+        array_values(array_diff($t1MissingBefore, $t1MissingAfterJoin)), [$t1MissingEmpId]);
+
+    // removeManualEmployee() writes payroll_run_excluded_employees, and the WHERE excludes those
+    // rows -- somebody already decided about them, so they must NOT be offered back as "missing".
+    $runModel->removeManualEmployee($pulledRunId, $compId, $t1MissingEmpId, $adminUserId, true);
+    check('tiny-1: an employee removed from the run does NOT come back into the missing list (the exclusion is a decision)',
+        $t1Own($t1Ids($runModel->syncMissingEmployees($pulledRunId, $compId)), [$t1MissingEmpId]), []);
+
+    check('tiny-1: a run with no sync_process_id has no missing list at all',
+        $runModel->syncMissingEmployees($runId, $compId), []);
+
+    // A sync process this run can legally be incentive against: create() rejects run_purpose=
+    // incentive whenever a cycle is selected, and requires a cycle for a REGULAR sync process --
+    // so the only shape that reaches the gate is a supplemental process with no cycle.
+    $pdo->prepare("INSERT INTO payroll_sync_processes
+        (comp_id, origami_process_id, process_no, run_kind, origami_comp_code, origami_comp_name, frequency_type, schema_version, raw_payload)
+        VALUES (:comp_id, :origami_process_id, :process_no, 'supplemental', 'TESTCODE', 'Test Co.', 'monthly', 1, '{}')")
+        ->execute([':comp_id' => $compId, ':origami_process_id' => random_int(1000000, 9999999), ':process_no' => 'SYNCTEST_INC_' . uniqid()]);
+    $t1IncentiveProcessId = (int)$pdo->lastInsertId();
+    $insSyncItem->execute([':process_id' => $t1IncentiveProcessId, ':employee_id' => $employeeFullId, ':payroll_code' => 'INC_MAPPED', ':mapping_status' => 'mapped']);
+    $t1IncentiveRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'run_name' => 'TINY1_INCENTIVE_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +9 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +9 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +9 months')->format('Y-m-d'),
+        'sync_process_id' => $t1IncentiveProcessId,
+    ], $adminUserId, true);
+    check('tiny-1: a sync-based run whose purpose is not payroll has no missing list (nobody "should" be in a ค่าเที่ยว round)' . (empty($t1IncentiveRes['status']) ? " ({$t1IncentiveRes['message']})" : ''),
+        $runModel->syncMissingEmployees((int)($t1IncentiveRes['id'] ?? 0), $compId), []);
+
+    // $employeeUnpaidId (is_payroll_participant = 0) was mapped into $syncProcessId by the T021
+    // section above -- the exact case syncMissingEmployees() can never surface, since it excludes
+    // everyone present in the payload by definition.
+    $t1MissingRows = $runModel->syncMissingEmployees($pulledRunId, $compId);
+    check('tiny-1: every missing row carries the read-only photo fields, and the mapped-but-unpaid employee is counted separately',
+        [
+            count(array_filter($t1MissingRows, static fn($r) => array_key_exists('profile_photo_path', $r) && array_key_exists('profile_photo_thumbnail_path', $r))) === count($t1MissingRows),
+            $runModel->syncMappedNotParticipantCount($pulledRunId, $compId),
+            $runModel->syncMappedNotParticipantCount($runId, $compId),
+        ],
+        [true, 1, 0]);
+
+    // The picker's missing_only mode and the banner's own list are one definition
+    // (syncMissingEmployeeWhere()) -- a length big enough that pagination cannot hide the answer.
+    $t1PickerRows = $runModel->manualEmployeeOptions($compId, $pulledRunId, 0, 500, [], '', 'en', [], true);
+    $t1PickerIds = $t1Ids($t1PickerRows['data']);
+    $t1PickerAllIds = $runModel->manualEmployeeAllIds($compId, $pulledRunId, [], '', 'en', [], true);
+    sort($t1PickerAllIds);
+    check('tiny-1: manualEmployeeOptions(missing_only) and manualEmployeeAllIds(missing_only) return exactly the banner\'s own set',
+        [$t1PickerIds, $t1PickerAllIds], [$t1Ids($t1MissingRows), $t1Ids($t1MissingRows)]);
+
+    $t1JoinMixed = $runModel->joinEmployees($pulledRunId, $compId, [$employeeUnpaidId, $t1MissingEmpId], $adminUserId, true);
+    $t1AfterMixedJoin = array_map(static fn($d) => (int)$d['employee_id'], $runModel->getDetails($pulledRunId, $compId));
+    check('tiny-1: joinEmployees() skips an employee who is not paid through payroll, joins the rest, and names who it skipped',
+        [
+            !empty($t1JoinMixed['status']),
+            $t1JoinMixed['skipped_employee_ids'] ?? null,
+            $t1JoinMixed['joined_count'] ?? null,
+            in_array($employeeUnpaidId, $t1AfterMixedJoin, true),
+            in_array($t1MissingEmpId, $t1AfterMixedJoin, true),
+        ],
+        [true, [$employeeUnpaidId], 1, false, true]);
+
 } finally {
     $pdo->rollBack();
 }

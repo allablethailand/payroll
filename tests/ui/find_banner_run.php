@@ -10,6 +10,10 @@
  *
  *   has_validation_errors = 1   -> #validationErrorsBanner
  *   sync_process_id IS NOT NULL -> #syncMissingEmployeesBanner (loadSyncMissingEmployeesBanner())
+ *   run_purpose = 'payroll'     -> the same banner, 2026-09-22: PayrollRunModel::
+ *                                  syncMissingEmployeeWhere() returns no list at all for an
+ *                                  incentive/off-cycle-purpose run, so such a run shows only ONE
+ *                                  banner and would make this tool's answer a lie
  *   state = 'draft'             -> both of the above are draft-only
  *   auto_recalculate = 0        -> so merely opening the run does not POST recalculate
  *
@@ -50,6 +54,7 @@ $db = Database::getInstance()->pdo;
 $stmt = $db->prepare("SELECT id FROM `payroll_runs`
     WHERE has_validation_errors = 1
       AND sync_process_id IS NOT NULL
+      AND run_purpose = 'payroll'
       AND auto_recalculate = 0
       AND state = 'draft'
     ORDER BY id DESC LIMIT 1");

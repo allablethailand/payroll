@@ -506,30 +506,88 @@ class PayrollRunModel {
      * anything) -- returns who's missing so an admin at cutoff can tell "Origami hasn't sent
      * everyone yet" apart from "this really is everyone this period" before submitting for approval.
      * Returns [] for any run that isn't sync-based (nothing to reconcile against for a cycle-based
-     * or off-cycle run, whose membership rules are different).
-     * @return array<int,array{id:int,employee_no:string,name_th:string,surname_th:string,name_en:string,surname_en:string}>
+     * or off-cycle run, whose membership rules are different) and, since 2026-09-22, for any run
+     * whose run_purpose isn't 'payroll' -- see syncMissingEmployeeWhere() below, which owns both
+     * of those rules and the WHERE itself now.
+     * @return array<int,array{id:int,employee_no:string,name_th:string,surname_th:string,name_en:string,surname_en:string,profile_photo_path:?string,profile_photo_thumbnail_path:?string}>
      */
     public function syncMissingEmployees(int $runId, int $compId): array {
         $run = $this->get($runId, $compId);
-        if (!$run || $run['sync_process_id'] === null) {
+        [$where, $params] = $this->syncMissingEmployeeWhere($run ?: [], $runId, $compId);
+        if ($where === null) {
             return [];
         }
-        $stmt = $this->db->prepare("SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en
+        // profile_photo_path/_thumbnail_path are read-only additions (2026-09-22, tiny-1) so the
+        // caller can render the same avatar every other employee list on this page already does
+        // (apvPersonLineHtml) instead of a bare code+name line.
+        $stmt = $this->db->prepare("SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en,
+                e.profile_photo_path, e.profile_photo_thumbnail_path
             FROM `employees` e
-            WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 1
+            WHERE {$where}
+            ORDER BY e.employee_no ASC");
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * The ONE definition of "should have been in this run but isn't" (2026-09-22, tiny-1) -- the
+     * WHERE fragment + params, so syncMissingEmployees() above and the Join Employees picker's own
+     * `missing_only` mode (buildManualEmployeeWhere()) can never drift apart. Returns [null, []]
+     * when this run has no such list at all, which the callers turn into "no rows":
+     *  - no sync_process_id: nothing to reconcile against (a cycle-based/off-cycle run's membership
+     *    rules are different), same early return this method has always had.
+     *  - run_purpose !== 'payroll' (2026-09-22): an incentive/off-cycle-purpose run's membership is
+     *    whatever items were actually sent/picked for it -- there is no set of employees who
+     *    "should" be in a ค่าเที่ยว round, so the whole question is meaningless there. Before this,
+     *    run 29685 (incentive, 3 sync items) claimed 25 employees were missing: every payroll
+     *    participant in the company who simply had no trip allowance that month.
+     * The `e.cycle_id IS NULL OR e.cycle_id = :cycle_id` branch deliberately MIRRORS
+     * recalculate()'s own cycle-branch eligibility query (see its long comment at the
+     * `$stmtEmp = ...` in the `elseif ($run['cycle_id'] !== null)` branch): an employee with no
+     * standing cycle is eligible for every cycle's run, so they genuinely can be missing from one.
+     * The two must change together -- a stricter rule here would hide exactly the employees
+     * recalculate() would have paid.
+     * @return array{0:?string,1:array<string,mixed>}
+     */
+    private function syncMissingEmployeeWhere(array $run, int $runId, int $compId): array {
+        if (empty($run) || $run['sync_process_id'] === null || ($run['run_purpose'] ?? 'payroll') !== 'payroll') {
+            return [null, []];
+        }
+        $where = "e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 1
             AND e.employment_date <= :period_end
             AND (e.employment_end_date IS NULL OR e.employment_end_date >= :period_start)
             AND (e.cycle_id IS NULL OR e.cycle_id = :cycle_id)
             AND NOT EXISTS (SELECT 1 FROM `payroll_sync_items` psi WHERE psi.process_id = :process_id AND psi.employee_id = e.id AND psi.mapping_status = 'mapped')
             AND NOT EXISTS (SELECT 1 FROM `payroll_run_manual_employees` pme WHERE pme.run_id = :run_id AND pme.employee_id = e.id)
-            AND NOT EXISTS (SELECT 1 FROM `payroll_run_excluded_employees` pex WHERE pex.run_id = :run_id2 AND pex.employee_id = e.id)
-            ORDER BY e.employee_no ASC");
-        $stmt->execute([
+            AND NOT EXISTS (SELECT 1 FROM `payroll_run_excluded_employees` pex WHERE pex.run_id = :run_id2 AND pex.employee_id = e.id)";
+        return [$where, [
             ':comp_id' => $compId, ':period_end' => $run['period_end_date'], ':period_start' => $run['period_start_date'],
             ':cycle_id' => $run['cycle_id'], ':process_id' => $run['sync_process_id'],
             ':run_id' => $runId, ':run_id2' => $runId,
-        ]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        ]];
+    }
+
+    /**
+     * The OTHER half of the same reconciliation question (2026-09-22, tiny-1): how many employees
+     * Origami DID send in this run's sync payload but who never reached the run because they are
+     * marked is_payroll_participant = 0. syncMissingEmployees() above can never surface these --
+     * it excludes anyone present in the payload by definition -- so without this count a mapped
+     * employee silently dropped by the unpaid-staff filter is invisible everywhere in the app.
+     * Deliberately NOT behind the run_purpose gate: "the payload contained someone we did not
+     * calculate" is a real fact about the sync regardless of what the run is for. 0 when the run
+     * isn't sync-based at all.
+     */
+    public function syncMappedNotParticipantCount(int $runId, int $compId): int {
+        $run = $this->get($runId, $compId);
+        if (!$run || $run['sync_process_id'] === null) {
+            return 0;
+        }
+        $stmt = $this->db->prepare("SELECT COUNT(DISTINCT e.id)
+            FROM `employees` e
+            JOIN `payroll_sync_items` psi ON psi.employee_id = e.id AND psi.process_id = :process_id AND psi.mapping_status = 'mapped'
+            WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 0");
+        $stmt->execute([':process_id' => $run['sync_process_id'], ':comp_id' => $compId]);
+        return (int)$stmt->fetchColumn();
     }
 
     /**
@@ -4812,6 +4870,8 @@ class PayrollRunModel {
      *    cycle-only run in the first place), and if NOTHING in the request qualifies, the call fails.
      * Either way, any exclusion row for the ids actually being joined is cleared, so a previously
      * -removed synced/cycle-automatic employee comes back correctly on the recalculate() below.
+     * Ids with is_payroll_participant = 0 are skipped and reported back in `skipped_employee_ids`
+     * (2026-09-22, tiny-1 -- see that guard's own comment below).
      * @param int[] $employeeIds
      */
     public function joinEmployees(int $id, int $compId, array $employeeIds, int $userId, bool $isAdmin): array {
@@ -4833,6 +4893,23 @@ class PayrollRunModel {
         $validIds = array_map('intval', $stmtValid->fetchAll(PDO::FETCH_COLUMN));
         if (empty($validIds)) {
             return ['status' => false, 'message' => 'None of the selected employees belong to this company.'];
+        }
+
+        // 2026-09-22, tiny-1: is_payroll_participant = 0 ("staff only, not paid through payroll")
+        // is already enforced by manualEmployeeOptions()'s own picker WHERE and by recalculate()'s
+        // 3 eligibility branches -- but NOT here, so a request naming such an employee (any caller
+        // that didn't come through the picker) wrote a payroll_run_manual_employees row that
+        // recalculate() then silently ignored forever: a membership row that looks joined and never
+        // is. They're SKIPPED rather than failing the whole call, so a bulk "join these 20" isn't
+        // lost to one ineligible id; the caller is told which ones via skipped_employee_ids below.
+        $participantPlaceholders = implode(',', array_fill(0, count($validIds), '?'));
+        $stmtParticipant = $this->db->prepare("SELECT id FROM `employees` WHERE is_payroll_participant = 1 AND id IN ({$participantPlaceholders})");
+        $stmtParticipant->execute($validIds);
+        $participantIds = array_map('intval', $stmtParticipant->fetchAll(PDO::FETCH_COLUMN));
+        $skippedIds = array_values(array_diff($validIds, $participantIds));
+        $validIds = array_values(array_intersect($validIds, $participantIds));
+        if (empty($validIds)) {
+            return ['status' => false, 'message' => 'None of the selected employees are paid through payroll.'];
         }
 
         $isPureCycleRun = $run['cycle_id'] !== null && $run['sync_process_id'] === null;
@@ -4867,6 +4944,7 @@ class PayrollRunModel {
 
         $recalcRes = $this->recalculate($id, $compId, $userId, $isAdmin);
         $recalcRes['joined_count'] = count($validIds);
+        $recalcRes['skipped_employee_ids'] = $skippedIds;
         return $recalcRes;
     }
 
@@ -4964,11 +5042,27 @@ class PayrollRunModel {
         return $whereSql;
     }
 
-    private function buildManualEmployeeWhere(int $compId, int $runId, array $filters): array {
+    private function buildManualEmployeeWhere(int $compId, int $runId, array $filters, bool $missingOnly = false): array {
         $run = $this->get($runId, $compId);
         $isPureCycleRun = $run && $run['cycle_id'] !== null && $run['sync_process_id'] === null;
 
-        if ($isPureCycleRun) {
+        // 2026-09-22, tiny-1: the picker opened FROM the "not in this sync" banner offers exactly
+        // the employees that banner counted -- so it REPLACES the membership WHERE below entirely
+        // rather than AND-ing onto it. Same fragment, same params, one definition
+        // (syncMissingEmployeeWhere()), so the picker's rows and the banner's number can never
+        // disagree. Note this set deliberately does NOT include employees this run has excluded
+        // (the default branch below does surface them, as the undo path for Remove) -- somebody
+        // already decided about those, and the banner is about people nobody has decided about.
+        // The per-field filters (department/team/position/cycle) and column_filters still append
+        // below; their param names don't collide with this fragment's.
+        if ($missingOnly) {
+            [$missingWhere, $missingParams] = $this->syncMissingEmployeeWhere($run ?: [], $runId, $compId);
+            if ($missingWhere === null) {
+                return ['1 = 0', []];
+            }
+            $where = $missingWhere;
+            $params = $missingParams;
+        } elseif ($isPureCycleRun) {
             // 2026-08-21, explicit request ("พนักงานทุกคน สามารถลบข้อมูลออกจากรอบได้..."): a
             // cycle-based run's membership is fully automatic by employment date -- the only thing
             // this picker can ever offer here is "re-include a previously-removed employee" (see
@@ -5025,13 +5119,13 @@ class PayrollRunModel {
         return [$where, $params];
     }
 
-    public function manualEmployeeOptions(int $compId, int $runId, int $start, int $length, array $filters, string $search, string $lang = 'th', array $columnFilters = []): array {
+    public function manualEmployeeOptions(int $compId, int $runId, int $start, int $length, array $filters, string $search, string $lang = 'th', array $columnFilters = [], bool $missingOnly = false): array {
         $deptCol = $lang === 'en' ? 'department_name_en' : 'department_name_th';
         $posiCol = $lang === 'en' ? 'position_name_en' : 'position_name_th';
         $teamCol = $lang === 'en' ? 'team_name_en' : 'team_name_th';
         $filterExprMap = $this->manualEmployeeFilterExprMap($lang);
 
-        [$baseWhere, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters);
+        [$baseWhere, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters, $missingOnly);
 
         // Both COUNT queries need the same JOINs as the main data query below -- column_filters
         // (2026-08-27) can filter on a JOINed display-name column (e.g. d.department_name_th), not
@@ -5060,7 +5154,10 @@ class PayrollRunModel {
                     CONCAT(e.name_th, ' ', e.surname_th) AS name_th, CONCAT(e.name_en, ' ', e.surname_en) AS name_en,
                     COALESCE(d.{$deptCol}, '') AS department, COALESCE(tm.{$teamCol}, '') AS team, COALESCE(p.{$posiCol}, '') AS position,
                     COALESCE(c.cycle_name, '') AS cycle_name,
-                    e.employment_date
+                    e.employment_date,
+                    -- 2026-09-22, tiny-1: read-only, so this picker's rows can carry the same
+                    -- avatar every other employee list in the app renders (apvPersonLineHtml).
+                    e.profile_photo_path, e.profile_photo_thumbnail_path
                 " . self::MANUAL_EMPLOYEE_JOINS . "
                 WHERE {$whereSql}
                 ORDER BY e.employee_no ASC
@@ -5085,8 +5182,8 @@ class PayrollRunModel {
      *  -- 2026-08-27 -- so "select all matching" also honors whatever Excel-style filters are
      *  currently checked, not just the pre-existing department/team/position/cycle dropdowns)
      *  -- just id-only, unpaginated. */
-    public function manualEmployeeAllIds(int $compId, int $runId, array $filters, string $search, string $lang = 'th', array $columnFilters = []): array {
-        [$whereSql, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters);
+    public function manualEmployeeAllIds(int $compId, int $runId, array $filters, string $search, string $lang = 'th', array $columnFilters = [], bool $missingOnly = false): array {
+        [$whereSql, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters, $missingOnly);
         if ($search !== '') {
             $whereSql .= " AND (e.employee_no LIKE :search1 OR e.name_th LIKE :search2 OR e.surname_th LIKE :search3 OR e.name_en LIKE :search4 OR e.surname_en LIKE :search5)";
             for ($i = 1; $i <= 5; $i++) {
@@ -5104,13 +5201,13 @@ class PayrollRunModel {
      *  EmployeeModel::listColumnValues()'s own docblock for why. Also respects this run's own
      *  membership WHERE (buildManualEmployeeWhere()) -- the dropdown only ever offers values that
      *  could actually appear in the picker's own rows, same as every other table in this rollout. */
-    public function manualEmployeeColumnValues(int $compId, int $runId, array $filters, string $column, string $lang, array $columnFilters): array {
+    public function manualEmployeeColumnValues(int $compId, int $runId, array $filters, string $column, string $lang, array $columnFilters, bool $missingOnly = false): array {
         $exprMap = $this->manualEmployeeFilterExprMap($lang);
         if (!isset($exprMap[$column])) {
             return [];
         }
         $expr = $exprMap[$column];
-        [$whereSql, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters);
+        [$whereSql, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters, $missingOnly);
         $whereSql = $this->applyManualEmployeeColumnFilters($whereSql, $params, $columnFilters, $exprMap, $column);
         $sql = "SELECT DISTINCT {$expr} AS value " . self::MANUAL_EMPLOYEE_JOINS . "
                 WHERE {$whereSql} AND {$expr} IS NOT NULL AND {$expr} != ''

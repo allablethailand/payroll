@@ -645,7 +645,12 @@ class PayrollController extends Controller {
         $search = (string)($_POST['search']['value'] ?? '');
         $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
         $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
-        $res = $this->model->manualEmployeeOptions((int)$compId, $runId, $start, $length, $filters, $search, (string)$lang, $columnFilters);
+        // 2026-09-22, tiny-1: deliberately NOT part of $filters above -- those 4 are all
+        // "narrow the rows", this one replaces the membership rule the rows come from
+        // (PayrollRunModel::buildManualEmployeeWhere()). Absent = the picker behaves exactly as it
+        // always has. The string '0' must not read as true, hence the explicit comparison.
+        $missingOnly = isset($_POST['missing_only']) && !in_array((string)$_POST['missing_only'], ['', '0', 'false'], true);
+        $res = $this->model->manualEmployeeOptions((int)$compId, $runId, $start, $length, $filters, $search, (string)$lang, $columnFilters, $missingOnly);
         $this->json([
             'draw' => intval($_POST['draw'] ?? 1),
             'recordsTotal' => $res['total'],
@@ -671,7 +676,10 @@ class PayrollController extends Controller {
         $column = (string)($_POST['column'] ?? '');
         $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
         $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
-        $values = $this->model->manualEmployeeColumnValues((int)$compId, $runId, $filters, $column, (string)$lang, $columnFilters);
+        // Same flag the table itself was loaded with -- otherwise this dropdown would offer values
+        // no row in "missing only" mode can actually have (2026-09-22, tiny-1).
+        $missingOnly = isset($_POST['missing_only']) && !in_array((string)$_POST['missing_only'], ['', '0', 'false'], true);
+        $values = $this->model->manualEmployeeColumnValues((int)$compId, $runId, $filters, $column, (string)$lang, $columnFilters, $missingOnly);
         $this->json(['status' => true, 'values' => $values]);
     }
 
@@ -697,7 +705,10 @@ class PayrollController extends Controller {
         $search = (string)($_POST['search'] ?? '');
         $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
         $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
-        $ids = $this->model->manualEmployeeAllIds((int)$compId, $runId, $filters, $search, (string)$lang, $columnFilters);
+        // "Select All Matching" has to mean the same set the table in front of the user shows
+        // (2026-09-22, tiny-1).
+        $missingOnly = isset($_POST['missing_only']) && !in_array((string)$_POST['missing_only'], ['', '0', 'false'], true);
+        $ids = $this->model->manualEmployeeAllIds((int)$compId, $runId, $filters, $search, (string)$lang, $columnFilters, $missingOnly);
         $this->json(['status' => true, 'employee_ids' => $ids]);
     }
 
@@ -1189,7 +1200,15 @@ class PayrollController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json(['status' => true, 'data' => $this->model->syncMissingEmployees($id, (int)$compId)]);
+        // 2026-09-22, tiny-1: `in_sync_not_participant_count` is the mirror-image case `data` can
+        // never contain -- employees Origami DID send who never reached the run because they're
+        // marked as not paid through payroll. Returned regardless of run_purpose (unlike `data`,
+        // which is payroll-runs-only now). Nothing renders it yet -- see BACKLOG.md.
+        $this->json([
+            'status' => true,
+            'data' => $this->model->syncMissingEmployees($id, (int)$compId),
+            'in_sync_not_participant_count' => $this->model->syncMappedNotParticipantCount($id, (int)$compId),
+        ]);
     }
 
     public function employeeCommentList() {

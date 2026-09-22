@@ -1507,3 +1507,16 @@ callout/ปุ่ม warning ทั้งระบบ ต้องวัดห�
    เดียวคือแผงในสลิป) · rename พร้อมตัด default target `'#rawSyncDataModalBody'` ที่เป็น no-op ทิ้ง
 5. **`.ped-type-panel` เหลือ 0 consumer** — markup ตัวสุดท้ายถูกถอดออกในรอบนี้ (grep ยืนยัน) CSS ยังอยู่
    ใน `style.css` · ลบได้เมื่อยืนยันแล้วว่าไม่มีหน้าไหนพึ่งอยู่
+
+## tiny-1 (2026-09-22) — 3 อย่างที่ backend รู้แล้วแต่ยังไม่มีใครเห็น
+
+1. **แสดง `in_sync_not_participant_count` ใน UI (สูง)** — `api/payroll-run.sync-missing-employees`
+   คืนค่านี้แล้ว แต่ `detail.js` ยังไม่อ่าน · แปลว่า "Origami ส่งมาแล้วแต่ไม่เข้ารอบเพราะไม่ได้รับเงินเดือน"
+   ยัง**มองไม่เห็นทั้งระบบ** (ของจริง: emp 661 `EM062` อยู่ใน sync 191/192 ไม่มีแถวใน run ไหนเลย)
+2. **หน้าพนักงาน (rules.md §16) เตือนเมื่อ participant ยังไม่มี `cycle_id`** — พนักงานที่
+   `is_payroll_participant=1` แต่ `cycle_id` ว่าง มีสิทธิ์เข้าทุกรอบตามกฎ `recalculate()` จึงโผล่ใน
+   banner "ไม่พบใน Sync" ของทุกรอบ · เป็นสภาพข้อมูลที่ไม่มีที่ไหนบอกตอนกรอกฟอร์ม
+3. **Checklist ก่อนขึ้น prod** — query พนักงาน `is_payroll_participant=1 AND cycle_id IS NULL` และบัญชีที่
+   auto-provision มาจาก SSO (`employee_no LIKE 'SSO-%'`) ส่งให้ HR ตัดสินทีละราย (ผูกรอบ / ตั้ง
+   participant=0) · dev ตอนนี้ 22 + 2 (`SSO-D4735E3A26`, `CEO`) → ดู
+   `docs/decisions/2026-09-22-tiny1-sync-missing-criteria.md`
