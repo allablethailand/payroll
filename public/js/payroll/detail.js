@@ -7,6 +7,11 @@ let tb_run_reports_dt = null;
 let tb_run_cash_dt = null;
 let tb_run_bank_account_dt = null;
 let tb_run_remittance_dt = null;
+// 2026-09-22, 3e-3 round B1: Action History's own instance -- same page-level-var convention as the
+// 4 above (initSharedDataTable(), reused via `$.fn.DataTable.isDataTable()` on every reload instead
+// of destroying/rebuilding, same pattern tb_run_detail's own construction already uses). See
+// initAuditLogTableRd()'s own docblock further down this file.
+let tb_run_audit_log = null;
 let currentRun = null;
 
 function toIsoDateRd(displayVal) {
@@ -1709,8 +1714,9 @@ $(document).on('click', '#btnSaveRunSettings', function () {
 // now built entirely from app.js's own renderApprovalTimelineBody(). renderAuditTimelineRd() (this
 // modal's own condensed "History" section) is gone too, per the same instruction ("ตัด section
 // ประวัติออกจากทุกที่ (ประวัติอยู่ใน tab ของ Detail ที่เดียว)") -- it duplicated this exact tab's own
-// Action History section (auditHistoryRowHtmlRd() below), which is now the ONLY place this run's
-// action history renders anywhere in the app.
+// Action History section, which is now the ONLY place this run's action history renders anywhere
+// in the app (2026-09-22, 3e-3 round B1: that section is initAuditLogTableRd()'s own DataTable now,
+// not auditHistoryRowHtmlRd() -- see that function's own docblock further down this file).
 /* 2026-08-23, explicit request ("ในหน้า Process Detail ส่วนของปุ่มดำเนินการ หรือกด View อยากให้แสดงใน
    ช่องของ Timeline นั้นๆ เช่นปุ่มดึงกลับหรือปุ่มอนุมัติให้อยู่ตรงกับ Timeline ที่สามารถดำเนินการได้ และหาก
    มีสิทธิ์อนุมัติให้ขึ้นปุ่มอนุมัติที่สามารถกดได้ให้ตรงกับ Timeline เลย") -- the old standalone
@@ -3951,116 +3957,199 @@ document.addEventListener('keydown', function (e) {
     exitEmployeeCommentInlineEdit();
 }, true);
 
-// 2026-09-10: moved to app.js as auditActionLabel() -- shared with index.js/approval.js's own
-// Timeline modals so all 3 pages can never drift out of sync on action-code wording again.
-// 2026-08-27, explicit request: "ในหน้า Process Detail Tab Action History ปรับจากตารางเป็น Timeline
-// สวยๆ" -- reuses the SAME `.apv-stage` circular-marker/connector-line component this page's own
-// Timeline modal/status card already builds with (app.js's own apvIconHtml()/apvBadgeHtml()/
-// apvCreatedStageHtml()).
-// 2026-09-11, Batch 3C item 1: the Timeline modal's own condensed "History" section
-// (renderAuditTimelineRd()) is gone entirely now -- this tab is the ONLY place this run's action
-// history renders anywhere in the app, not just the "fuller" rendering of a summary that duplicated
-// it elsewhere.
-const AUDIT_TIMELINE_META_RD = {
-    create: { tone: 'done', icon: 'fa-plus' },
-    submit: { tone: 'info', icon: 'fa-paper-plane' },
-    approve: { tone: 'done', icon: 'fa-check' },
-    reject: { tone: 'rejected', icon: 'fa-xmark' },
-    request_info: { tone: 'info', icon: 'fa-circle-info' },
-    revert: { tone: 'pending', icon: 'fa-rotate-left' },
-    reviseAfterReject: { tone: 'pending', icon: 'fa-pen' },
-    reviseAfterNeedInfo: { tone: 'pending', icon: 'fa-pen' },
-    markPaid: { tone: 'done', icon: 'fa-money-check-dollar' },
-    lock: { tone: 'muted', icon: 'fa-lock' },
-    delete: { tone: 'rejected', icon: 'fa-trash' },
-    cancel: { tone: 'muted', icon: 'fa-ban' },
-    reopen: { tone: 'pending', icon: 'fa-unlock' },
-    line_override_save: { tone: 'pending', icon: 'fa-sliders' },
-    line_override_remove: { tone: 'muted', icon: 'fa-rotate-left' },
-    run_settings_save: { tone: 'pending', icon: 'fa-sliders' },
-};
-function auditTimelineMetaRd(action) {
-    return AUDIT_TIMELINE_META_RD[action] || { tone: 'muted', icon: 'fa-pen' };
+// 2026-09-22, 3e-3 round B1, explicit instruction/user confirmation (2026-09-22): the vertical
+// Timeline card list this tab used to render (AUDIT_TIMELINE_META_RD/auditTimelineMetaRd()/
+// auditHistoryRowHtmlRd()/renderAuditHistoryTimelineRd()/auditHistoryEntries -- all deleted here,
+// 0 consumers outside that block per 3e-3 round A's own grep) is replaced with a real DataTable --
+// rules.md §6 now carries a line for this
+// exact case ("feed ที่โตไม่จำกัด = DataTable, Timeline = feed สั้นที่ตัดยอดได้"): run 752 in dev alone
+// carries 1571 rows (round A's own COUNT), far past anything a card-per-row list can show without
+// its own pagination, which is exactly what DataTables already does for free. Same data source as
+// before (payroll-run.get's own `audit_log`, PayrollRunModel::getAuditLog() -- unmodified, backend
+// untouched), same tab, same call site (loadRunDetail()) -- only the renderer changed.
+// Column titles are NOT static `<th>` text here, unlike every other table on this page -- every
+// column's content is language-bound at RENDER time (auditActionLabel()/statusBadgeHtml()/the
+// actor's own th/en name), so `columns[].title` is set from langData in JS at construction, and
+// refreshAuditLogTableLanguage() (called from refreshPayrollDetailLanguage()) rewrites both the
+// header cells and every row's rendered output on a live language switch.
+// §5.2 "machine code ห้ามเป็นข้อความบนจอ" -- auditActionLabel() (app.js) falls back to the RAW action
+// code itself for a code with no i18n mapping (its own documented behaviour, correct for every
+// OTHER caller). A label that comes back byte-identical to the `action` it was given means that
+// fallback fired; this substitutes the one shared `action_unknown` key instead and keeps the real
+// code recoverable via `data-code` rather than shown as text.
+function auditActionLabelInfoRd(action) {
+    const label = auditActionLabel(action);
+    if (label === action) {
+        return { label: getLangValue('action_unknown') || 'Unknown action', known: false };
+    }
+    return { label: label, known: true };
 }
-// 2026-08-29, explicit follow-up request: "ปรับ Action History ให้เป็น Timeline แบบเดิมดูดีกว่าครับ แต่เพิ่ม
-// ให้กดดู Detail ได้ ช่วย Design ให้สวยๆ" -- reverted the same-day boustrophedon/snake grid redesign
-// right back to a single vertical spine (the earlier round's own explicit ask, now un-asked-for) --
-// KEEPING the one genuinely new thing that round added: the "View Detail" button + modal (the
-// original vertical version before ANY of this showed everything inline in the row itself). Restyled
-// beyond a plain revert though ("Design ให้สวยๆ"): each stage is now a real card (white background,
-// soft shadow, hover lift) instead of bare icon+text sitting directly on the tab's own background,
-// and the connector line/icon markers got a bit more visual weight to read as a proper timeline
-// spine at a glance. auditHistoryEntries still holds the CURRENTLY rendered, newest-first-ordered
-// array so the detail modal can look an entry up by its plain index.
-let auditHistoryEntries = [];
-// 2026-08-29, same-day follow-up: "หน้า ประวัติการดำเนินการ Detail ไม่เยอะไม่ต้องมีปุ่มกดดูก็ได้ครับ แสดงใน
-// timeline ได้เลย" -- the "View Detail" button + #auditHistoryDetailModal round trip is gone; every
-// field that modal used to show (state change badges, note/remark, IP/user-agent) is now rendered
-// directly in the card itself, since there's rarely enough audit history on one run to make an
-// always-expanded card feel cluttered.
-function auditHistoryRowHtmlRd(entry, index, isLast) {
-    const meta = auditTimelineMetaRd(entry.action);
-    const color = (APV_COLORS[meta.tone] || APV_COLORS.muted).icon;
-    // 2026-09-11, Batch 3C item 2, explicit instruction: "ชื่อผู้ทำ -> apvPersonLineHtml (รูป + ชื่อ,
-    // คลิก quick-view ได้) แบบเดียวกับไทม์ไลน์" -- same size (26) the Approval Timeline modal's own
-    // Created/Paid/Locked stages use (app.js's apvCreatedStageHtml() etc.), same {employeeId} option
-    // that wires up the shared .emp-avatar-link click handler.
-    const actorName = personDisplayNameRd(entry, 'performed_by');
-    const actorHtml = apvPersonLineHtml(actorName, 26, entry.performed_by_profile_photo_path, entry.performed_by ? { employeeId: entry.performed_by } : null);
-    // 2026-09-11, Batch 3C item 2, explicit instruction: "from_state -> to_state ถ้าเท่ากัน แสดงครั้ง
-    // เดียว ไม่ใช่ 'กำลังทำรอบ  กำลังทำรอบ'" -- an action that doesn't actually change state (e.g. a
-    // comment/note logged mid-state) used to always render the arrow-transition shape even when both
-    // sides were identical.
-    let stateChangeHtml = '';
-    if (entry.from_state && entry.to_state && entry.from_state !== entry.to_state) {
-        stateChangeHtml = `${stateBadgeRd(entry.from_state)} <i class="fa-solid fa-arrow-right mx-1"></i> ${stateBadgeRd(entry.to_state)}`;
-    } else if (entry.to_state) {
-        stateChangeHtml = stateBadgeRd(entry.to_state);
-    } else if (entry.from_state) {
-        stateChangeHtml = stateBadgeRd(entry.from_state);
-    }
-    // 2026-09-11, Batch 3C item 2, explicit instruction: raw User-Agent parsed into a compact
-    // "Windows 10 · Edge 152" summary (app.js's formatUserAgentSummary(), OS · main browser + major
-    // version only) with the RAW string kept in a tooltip (title attribute), not shown inline
-    // anymore -- IP address moves to its own line right below it, instead of sharing one line.
-    const metaLines = [];
-    if (entry.user_agent) {
-        const uaSummary = formatUserAgentSummary(entry.user_agent) || entry.user_agent;
-        metaLines.push(`<div title="${escapeAttr(entry.user_agent)}"><i class="fa-solid fa-desktop me-1"></i>${escapeHtml(uaSummary)}</div>`);
-    }
-    if (entry.ip_address) {
-        metaLines.push(`<div><i class="fa-solid fa-location-dot me-1"></i>${escapeHtml(entry.ip_address)}</div>`);
-    }
-    return `
-        <div class="apv-history-row${isLast ? ' apv-history-row-last' : ''}">
-            <div class="apv-history-row-marker">
-                <div class="apv-history-row-icon" style="background:${color};"><i class="fa-solid ${meta.icon}"></i></div>
-                ${isLast ? '' : '<div class="apv-history-row-line"></div>'}
-            </div>
-            <div class="apv-history-row-card">
-                <div class="apv-history-row-top">
-                    <span class="apv-history-row-title">${escapeHtml(auditActionLabel(entry.action))}</span>
-                    <span class="apv-history-row-date"><i class="fa-regular fa-clock me-1"></i>${escapeHtml(formatDisplayDateTime(entry.performed_at))}</span>
-                </div>
-                <div class="apv-history-row-actor">${actorHtml}</div>
-                ${stateChangeHtml ? `<div class="mt-2">${stateChangeHtml}</div>` : ''}
-                ${entry.note ? `<div class="apv-substep-remark mt-2">${escapeHtml(entry.note)}</div>` : ''}
-                ${metaLines.length ? `<div class="small text-muted mt-2">${metaLines.join('')}</div>` : ''}
-            </div>
-        </div>
-    `;
+function auditActionCellHtmlRd(action) {
+    const info = auditActionLabelInfoRd(action);
+    return info.known ? escapeHtml(info.label) : `<span data-code="${escapeAttr(action)}">${escapeHtml(info.label)}</span>`;
 }
-function renderAuditHistoryTimelineRd(auditLog) {
-    const logs = auditLog || [];
-    $('#noAuditYet').toggleClass('d-none', logs.length > 0);
-    $('#run_audit_timeline').toggleClass('d-none', logs.length === 0);
-    if (!logs.length) {
-        $('#run_audit_timeline').empty();
-        auditHistoryEntries = [];
+// "สถานะรอบ" shows `to_state` only (the state THIS action left the run in) -- `from_state` is not
+// rendered, per the decided column spec. Shared with both the display badge and the Excel-filter's
+// own filter/sort value (a label string, never the badge's HTML -- §5.1's own filter/sort rule).
+function auditLogStateFilterTextRd(state) {
+    const entry = getStatusMapEntry(state, 'run_state');
+    return (entry && (getLangValue(entry.label_key) || entry.label_key)) || state || '';
+}
+// Note cell: single-line truncate (§7 "ทุกแถวต้องสูงเท่ากัน" -- round A found notes up to 283 chars in
+// dev data) via the `.rd-audit-note-cell` CSS class (style.css); the untruncated text lives in
+// `data-full-note`, read back by auditLogRefreshNoteTooltipsRd() below to decide which rows actually
+// need a tooltip. Raw English system note, unmodified (Batch 5 error-code i18n is separate work).
+function auditNoteCellHtmlRd(note) {
+    if (!note) return '';
+    return `<span class="rd-audit-note-cell" data-full-note="${escapeAttr(note)}">${escapeHtml(note)}</span>`;
+}
+// Device/IP cell -- same "OS · Browser N" summary + raw-string tooltip + separate IP line the old
+// Timeline card rendered, just inside a table cell now. Both empty (every non-view_detail row
+// written from a CLI/cron context, e.g. tests/ui/mksession.php, has neither) renders a plain '-',
+// matching this file's own personDisplayNameRd() empty-value convention -- no dedicated lang key
+// exists for a bare placeholder dash and this one is a symbol, not language content.
+function auditDeviceIpCellHtmlRd(row) {
+    const uaSummary = row.user_agent ? (formatUserAgentSummary(row.user_agent) || row.user_agent) : '';
+    const ip = row.ip_address || '';
+    if (!uaSummary && !ip) return '-';
+    const lines = [];
+    if (uaSummary) lines.push(`<div title="${escapeAttr(row.user_agent)}"><i class="fa-solid fa-desktop me-1"></i>${escapeHtml(uaSummary)}</div>`);
+    if (ip) lines.push(`<div><i class="fa-solid fa-location-dot me-1"></i>${escapeHtml(ip)}</div>`);
+    return `<div class="small text-muted">${lines.join('')}</div>`;
+}
+// Column titles read fresh from langData every time (construction AND refreshAuditLogTableLanguage()
+// share this one function) so the 2 call sites can never drift on wording.
+function auditLogColumnTitlesRd() {
+    return [
+        getLangValue('audit_performed_at') || 'Date/Time',
+        getLangValue('audit_performed_by') || 'Performed By',
+        getLangValue('audit_log_action') || 'Action',
+        getLangValue('table_status') || 'Status',
+        getLangValue('audit_note') || 'Note',
+        getLangValue('audit_device_ip') || 'Device · IP',
+    ];
+}
+// Built lazily inside initAuditLogTableRd()'s own construction branch, NOT as a module-level const
+// evaluated at parse time -- this script runs synchronously as the page loads, well before
+// window.langReady resolves (loadRunDetail(), this file's own call site, is deliberately deferred
+// behind that promise; a plain top-level `const` here is not), so an eager getLangValue() call would
+// have baked in whatever langData held before the real fetch completed -- empty, on a fresh load --
+// permanently, since the same object reference is reused (only mutated in place by
+// refreshAuditLogTableLanguage()) rather than rebuilt on every call.
+let AUDIT_LOG_EMPTY_STATE_RD = null;
+// Disposed-then-rebuilt on every draw (not just once) -- a client-side DataTable can re-render the
+// SAME page's cells on a redraw (filter/sort/language switch), and the old note-cell DOM nodes
+// created before that redraw are gone from the tree by the time this runs again; tracking the
+// bootstrap.Tooltip instances in this array (rather than re-querying the DOM for "old" ones that no
+// longer exist) is what lets every previous instance actually get `.dispose()`d before the next
+// batch is created. Only ever looks at the CURRENT page's rows (`dt.table().body()`), which for a
+// paginated client-side table is already exactly the rows visible right now.
+let auditLogNoteTooltipsRd = [];
+function auditLogRefreshNoteTooltipsRd(dt) {
+    auditLogNoteTooltipsRd.forEach((inst) => inst.dispose());
+    auditLogNoteTooltipsRd = [];
+    if (typeof bootstrap === 'undefined' || !bootstrap.Tooltip) return;
+    $(dt.table().body()).find('.rd-audit-note-cell').each(function () {
+        if (this.scrollWidth > this.clientWidth) {
+            auditLogNoteTooltipsRd.push(new bootstrap.Tooltip(this, { title: this.getAttribute('data-full-note') || '', placement: 'top' }));
+        }
+    });
+}
+// Constructed once; every subsequent call (a fresh loadRunDetail() after any mutating action) just
+// swaps the data -- same `$.fn.DataTable.isDataTable()` reuse check tb_run_detail's own construction
+// already uses, rather than destroying/rebuilding the table (and its column filters/tooltips) on
+// every single reload.
+function initAuditLogTableRd(entries) {
+    const rows = entries || [];
+    if ($.fn.DataTable.isDataTable('#tb_run_audit_log')) {
+        $('#tb_run_audit_log').DataTable().clear().rows.add(rows).draw();
         return;
     }
-    auditHistoryEntries = logs.slice().reverse(); // newest first at the top, oldest at the bottom -- same ordering convention this tab already had
-    $('#run_audit_timeline').html(auditHistoryEntries.map((entry, i) => auditHistoryRowHtmlRd(entry, i, i === auditHistoryEntries.length - 1)).join(''));
+    const titles = auditLogColumnTitlesRd();
+    AUDIT_LOG_EMPTY_STATE_RD = {
+        icon: 'fa-solid fa-clock-rotate-left',
+        title: getLangValue('no_history_yet') || 'No action has been taken on this request yet.',
+    };
+    tb_run_audit_log = initSharedDataTable('#tb_run_audit_log', {
+        // §7 per-column Excel filter -- 4 of the 6 columns per the decided spec (not "เวลา", which
+        // sorts instead, and not "หมายเหตุ", covered by the table's own global search box).
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 1, key: 'audit_performed_by' },
+                { index: 2, key: 'audit_action' },
+                { index: 3, key: 'audit_state' },
+                { index: 5, key: 'audit_device_ip' },
+            ],
+        },
+        emptyState: AUDIT_LOG_EMPTY_STATE_RD,
+        dtOptions: {
+            responsive: false,
+            data: rows,
+            order: [[0, 'desc']], // newest first, same convention the old Timeline card list used
+            columns: [
+                { data: 'performed_at', title: titles[0], render: {
+                    display: (d) => escapeHtml(formatDisplayDateTime(d)),
+                    sort: (d) => d, // raw MySQL timestamp string -- sorts correctly lexicographically; the display format does not
+                    filter: (d) => d,
+                } },
+                { data: null, title: titles[1], render: {
+                    display: (d, t, row) => apvPersonLineHtml(personDisplayNameRd(row, 'performed_by'), 24, row.performed_by_profile_photo_path, { employeeId: null }),
+                    filter: (d, t, row) => personDisplayNameRd(row, 'performed_by'),
+                    sort: (d, t, row) => personDisplayNameRd(row, 'performed_by'),
+                } },
+                { data: null, title: titles[2], render: {
+                    display: (d, t, row) => auditActionCellHtmlRd(row.action),
+                    filter: (d, t, row) => auditActionLabelInfoRd(row.action).label,
+                    sort: (d, t, row) => auditActionLabelInfoRd(row.action).label,
+                } },
+                { data: null, title: titles[3], render: {
+                    display: (d, t, row) => statusBadgeHtml(row.to_state, 'run_state'),
+                    filter: (d, t, row) => auditLogStateFilterTextRd(row.to_state),
+                    sort: (d, t, row) => auditLogStateFilterTextRd(row.to_state),
+                } },
+                // No Excel column filter on this one (search box covers it instead, per the decided
+                // spec) -- object-form render is still needed so the search box matches the RAW note
+                // text, not the truncated cell's own HTML (a bare function-form render is used for
+                // every purpose alike, display included, which would make a plain-text search box
+                // query have to contain literal markup to match anything).
+                { data: 'note', orderable: false, title: titles[4], render: {
+                    display: (d) => auditNoteCellHtmlRd(d),
+                    filter: (d) => d || '',
+                } },
+                { data: null, title: titles[5], render: {
+                    display: (d, t, row) => auditDeviceIpCellHtmlRd(row),
+                    filter: (d, t, row) => row.ip_address || '',
+                    sort: (d, t, row) => row.ip_address || '',
+                } },
+            ],
+            drawCallback: function () {
+                auditLogRefreshNoteTooltipsRd(this.api());
+            },
+        },
+    });
+}
+// Registered in refreshPayrollDetailLanguage() (bottom of this file). Header text + the empty-state
+// title are re-read from langData directly; row content (actor name/action label/state badge) needs
+// `rows().invalidate()` first since a client-side DataTable caches each cell's already-rendered
+// output and reuses it on a plain `.draw()` -- same fix class documented on app.js's own
+// reloadAllTablesForLanguageChange(). `settings().oLanguage.sEmptyTable` is set directly before that
+// draw (2026-09-22 lesson, this same round): the app-wide sync for that string
+// (refreshAllDataTablesLanguage(), app.js) only runs from applyLanguage()'s own tail call, not
+// synchronously inside this per-page hook, so setting it here too is what guarantees this table's
+// own "no rows" message is never one draw cycle behind a fast language switch.
+function refreshAuditLogTableLanguage() {
+    if (!tb_run_audit_log) return;
+    const titles = auditLogColumnTitlesRd();
+    tb_run_audit_log.columns().every(function (idx) {
+        const $th = $(this.header());
+        const $titleEl = $th.find('.dt-column-title');
+        ($titleEl.length ? $titleEl : $th).text(titles[idx]);
+    });
+    AUDIT_LOG_EMPTY_STATE_RD.title = getLangValue('no_history_yet') || 'No action has been taken on this request yet.';
+    const settings = tb_run_audit_log.settings()[0];
+    if (settings) settings.oLanguage.sEmptyTable = getLangValue('emptyTable') || settings.oLanguage.sEmptyTable;
+    tb_run_audit_log.rows().invalidate().draw(false);
 }
 
 // 2026-08-31: fires the auto-recalculate-on-load check exactly once per page session (see
@@ -4116,7 +4205,7 @@ function loadRunDetail() {
                 }
                 renderRunHeader(res.data);
                 initRunDetailTable(res.data.details || []);
-                renderAuditHistoryTimelineRd(res.data.audit_log || []);
+                initAuditLogTableRd(res.data.audit_log || []);
                 // 2026-08-28, explicit request: Process List/Approval Queue (opened in a SEPARATE
                 // browser tab, see index.js/approval.js's own window.open(...'_blank')) should
                 // reload once this run's data changes -- every mutating action on this page
@@ -7299,6 +7388,11 @@ $(document).on('shown.bs.tab', '#run-bank-account-tab', function () {
 $(document).on('shown.bs.tab', '#run-remittance-tab', function () {
     if (tb_run_remittance_dt) tb_run_remittance_dt.columns.adjust();
 });
+// 2026-09-22, 3e-3 round B1: same fix, same reason, for the Action History tab's own new DataTable
+// (initAuditLogTableRd()) -- its pane is not the default-active one either.
+$(document).on('shown.bs.tab', '#run-history-tab', function () {
+    if (tb_run_audit_log) tb_run_audit_log.columns.adjust();
+});
 // 2026-09-14, Round 3 "เก็บตกรอบ 6" item 1 -- Payroll Detail's own missing changeLanguage() hook (see
 // renderRunHeaderText()'s own docblock, further up this file, for the full root-cause explanation).
 // Registered in app.js's changeLanguage() alongside the other ~6 per-page `refreshXxxLanguage()` hooks
@@ -7362,6 +7456,11 @@ function refreshPayrollDetailLanguage() {
     // it -- without this, switching language could leave columns visibly misaligned until the next
     // resize/redraw for an unrelated reason.
     if (tb_run_detail) tb_run_detail.columns.adjust();
+    // 2026-09-22, 3e-3 round B1: Action History's own DataTable -- header titles, row content
+    // (actor name/action label/state badge) and its empty-state title are all language-bound, none
+    // of them carry a `data-i18n` the generic sweep could relabel on their own. See
+    // refreshAuditLogTableLanguage()'s own docblock.
+    refreshAuditLogTableLanguage();
 }
 // 2026-09-13, §1 follow-up: activateTabFromHash() itself moved to app.js (shared with employee/list.js
 // and employee/detail.js's own near-identical versions -- see that function's own docblock) -- the

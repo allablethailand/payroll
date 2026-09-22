@@ -1541,3 +1541,30 @@ callout/ปุ่ม warning ทั้งระบบ ต้องวัดห�
    ตอนโหลด (`run-details-pane` เป็น default) → `#joinEmployeesModal opened` = false เสมอ
    assertion ยังถูกเพราะวัด markup นิ่งใน DOM แต่ "เปิดจริงแล้ววัด" ไม่เคยเกิด — ถ้าจะปลดให้กด
    `#run-employee-tab` ก่อน แบบเดียวกับ `n_missing_pull.js`'s `openPicker(page,'toolbar')`
+
+## 3e-3 (2026-09-22) — Action History tab → DataTable
+
+1. **`renderTimeline()` (app.js) เหลือ consumer จริง = 0** — สร้างไว้รอบ 2 (item (3)/6b) สำหรับ feed
+   สั้นที่ตัดยอดได้ แต่ `docs/design/components.php` เป็นที่เดียวที่เรียก ไม่มีหน้าจริงย้ายมาใช้เลย
+   (Action History ที่ตั้งใจไว้เป็น use case หลักก็กลายเป็น DataTable แทนในรอบนี้) — ตัดสินใจว่าจะลบทิ้ง
+   หรือหาหน้าจริงมาใช้ก่อนรอบ 4
+2. **`#tb_run_audit_log` แสดงแค่ `to_state` ไม่แสดง `from_state`** — เมื่อ state เปลี่ยนจริง (`draft→
+   pending_approval` ฯลฯ, 84/4887 แถวในเดฟ per round A) ตารางไม่บอกว่ามาจากไหน ต่างจาก Timeline เดิมที่
+   render ลูกศร `from → to` เมื่อไม่เท่ากัน — เพิ่มคอลัมน์/tooltip แสดง `from_state` เมื่อต่างจาก `to_state`
+3. **`api/payroll-run.get`'s `audit_log` หนักถึง 710 KB (run 752, 1571 แถว) ส่งทุก `loadRunDetail()`**
+   แม้ผู้ใช้ไม่ได้เปิดแท็บ Action History เลย — endpoint serverSide เฉพาะแท็บนี้ (รวมกับอีก 5 ตาราง audit
+   ดิบที่ยังเป็น client-side ทั้งระบบ) = งานรอบ 4
+4. **แถวเสีย `id=156711`** (`payroll_run_audit_logs`, run 461, action=`delete`) — `ip_address`/
+   `user_agent` ทั้งคู่มีค่า `'2026-09-08 18:37:13'` (เป็น timestamp ไม่ใช่ ip/user-agent จริง) — บั๊กใน
+   `PayrollRunModel::clientIp()`/`clientUserAgent()` (`:1676-1684`) หรือ caller ที่ยังไม่ยืนยันสาเหตุ ต้อง
+   ตรวจก่อนขึ้น prod (row เดียวในเดฟ ไม่กระทบอะไรตอนนี้)
+5. **`tests/ui/mksession.php`'s fixture (`--with-recurring --with-calc-errors`) สร้าง audit log แค่ 9
+   แถว** — ต่ำกว่า `initSharedDataTable()`'s `searchThreshold` (default 10, `app.js:1157`) เสมอ ทำให้
+   column filter ของตารางนี้ (และตารางไหนก็ตามที่พึ่ง fixture นี้) ทดสอบบน fixture ไม่ได้เลย ต้องพึ่ง run
+   จริงที่มีแถวเยอะ (752) แทนทุกครั้ง — ถ้า mksession เพิ่ม action สัก 2-3 รายการให้เกิน threshold
+   (เช่นเรียก `recalculate()` ซ้ำอีกสองสามครั้ง) จะทำให้ fixture วัด filter ได้ในตัวเองโดยไม่ต้องพึ่ง
+   run 752 read-only ทุกรอบ
+6. **CLI guard `exit("string")` = exit code 0 เสมอ ในไฟล์พี่น้องอีก 2 ไฟล์** — `id_codec_cli.php`
+   แก้เป็น `fwrite(STDERR)+exit(1)` แล้ว (round B2) แต่ `tests/ui/find_banner_run.php` และ
+   `tests/ui/mksession.php` ยังใช้แพทเทิร์นเดิม (`exit("...is a CLI tool.\n")`) ซึ่งไม่เคยตั้ง exit code
+   จริงเป็น non-zero เลย — caller ที่เช็ค exit code (ไม่ใช่แค่อ่าน output) จะไม่มีทางรู้ว่าไฟล์ถูกเรียกผิดโหมด

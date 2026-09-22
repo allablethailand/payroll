@@ -6619,66 +6619,14 @@ html, body {
 .apv-step-group-title { font-weight: 600; color: #374151; font-size: 0.9167rem; }
 .apv-timeline-log .apv-log-note { font-size: 1rem; color: #4b5563; margin-top: 2px; }
 
-/* 2026-08-29, explicit follow-up request: "ปรับ Action History ให้เป็น Timeline แบบเดิมดูดีกว่าครับ แต่เพิ่ม
-   ให้กดดู Detail ได้ ช่วย Design ให้สวยๆ" -- reverted the same-day boustrophedon/snake grid (its own
-   CSS block used to live here) back to a single vertical spine, restyled beyond a plain revert:
-   each stage is now a real elevated card (white surface, soft shadow, a subtle hover lift/border
-   tint) instead of bare text sitting on the tab's own background, and the connector spine got a
-   gradient-tinted line + a slightly larger icon marker with its own ring shadow so it reads as a
-   deliberate "timeline" at a glance, not just a bullet list. New class names (.apv-history-*)
-   instead of restyling .apv-stage/.apv-timeline directly -- those stay exactly as-is for the "View
-   Timeline" modal's own fixed 3-stage Created/Approval/Paid summary right above, which was never
-   part of either the grid experiment or this revert. */
-.apv-history-timeline { padding: 4px 2px; }
-.apv-history-row { position: relative; display: flex; gap: 16px; padding-bottom: 22px; }
-.apv-history-row-last { padding-bottom: 0; }
-.apv-history-row-marker { position: relative; flex: none; width: 40px; display: flex; justify-content: center; }
-.apv-history-row-icon {
-    width: 40px; height: 40px;
-    border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    color: #fff;
-    font-size: 1.25rem;
-    position: relative;
-    z-index: 2;
-    box-shadow: 0 0 0 4px #fff, 0 2px 6px rgba(16, 24, 40, .12);
-}
-.apv-history-row-line {
-    position: absolute;
-    top: 40px; bottom: -22px; left: 50%;
-    width: 2px;
-    margin-left: -1px;
-    background: linear-gradient(180deg, #e5e7eb, #eef0f2);
-    z-index: 1;
-}
-.apv-history-row-card {
-    flex: 1;
-    min-width: 0;
-    background: #fff;
-    border: 1px solid #eef0f2;
-    border-radius: 12px;
-    padding: 12px 16px;
-    box-shadow: 0 1px 3px rgba(16, 24, 40, .04);
-    transition: box-shadow .15s ease, border-color .15s ease, transform .15s ease;
-}
-.apv-history-row-card:hover {
-    box-shadow: 0 4px 12px rgba(16, 24, 40, .08);
-    border-color: #ffe3b3;
-    transform: translateY(-1px);
-}
-.apv-history-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-/* 2026-08-30, explicit bug report: "Tab Action History ตัวอักษรใหญ่ไปให้ปรับขนาดตัวอักษรลงหน่อยให้โหมด
-   Medium" -- real root cause: these were hardcoded px (14px/11.5px/12.5px), not rem, so they never
-   scaled with the per-user S/M/L font-size preference at all (html[data-font-size] only changes
-   the ROOT rem base -- see that rule's own comment) -- 14px happened to equal the Large mode's own
-   root size, which is why the title specifically read as oversized even while sitting in Medium.
-   Converted to rem (now genuinely responds to the user's own S/M/L setting) and reduced a step
-   below the raw px this replaced, matching this app's own comparable timeline widget
-   (.apv-timeline-log's own .apv-log-action/-date/-meta, immediately above) instead of standing
-   out larger than every other timeline in the app for no reason. */
-.apv-history-row-title { font-weight: 700; color: #1f2937; font-size: .9rem; }
-.apv-history-row-date { font-size: .78rem; color: #9ca3af; white-space: nowrap; }
-.apv-history-row-actor { font-size: .82rem; color: #4b5563; margin-top: 2px; margin-bottom: 4px; }
+/* 2026-09-22, 3e-3 round B1: Action History's Timeline card list (.apv-history-*, 12 rules) is gone
+   -- replaced by a real DataTable (initAuditLogTableRd(), detail.js; see detail.php's own docblock
+   on #run-history-pane for why). Its note cell is the one thing here that needs its own CSS: §7
+   "ข้อความยาวต่อแถวห้ามอยู่ในเซลล์...ทุกแถวต้องสูงเท่ากัน" -- dev data carries notes up to 283 characters
+   (3e-3 round A's own COUNT), so a fixed max-width + single-line truncate is what keeps every row
+   the same height; the full text stays reachable via a Bootstrap tooltip
+   (auditLogRefreshNoteTooltipsRd(), detail.js), only for a row actually cut off. */
+.rd-audit-note-cell { display: inline-block; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 
 /* 2026-09-14, Round 3 item 3c-3, explicit instruction: "รายการความคิดเห็นใช้ shared timeline
    component" -- every rule this block used to define for the LIST itself
@@ -7431,8 +7379,10 @@ html, body {
    6: each `.tab-pane` "ชิดเนื้อหาโดยตรง...ไม่มีขอบ/พื้น/padding ข้างของตัวเอง", the only spacing from
    the tab bar being `--sp-4`, which #runDetailTabsContent's own margin-top already provides. All 7
    panes now start exactly where #runDetailTabs itself starts. Nothing INSIDE any pane changed: the
-   Details pane's .detail-section boxes and the Action History timeline keep their own padding and
-   simply span the full content width now, which is what the rule asks for. */
+   Details pane's .detail-section boxes kept their own padding and simply spanned the full content
+   width, which is what the rule asked for. (2026-09-22, 3e-3 round B1: Action History's own vertical
+   timeline this sentence used to also name is gone -- a plain DataTable now, flush like every other
+   already-migrated tab's own table, never had a padded surface of its own to begin with.) */
 /* 2026-09-16, D2: the add/edit line form is a modal of its own (#manualLineFormModal) instead of a
    block sitting inside a tab, so it has no surface of its own any more -- the modal IS the surface,
    and a tinted panel inside a modal body is the "card ซ้อน card" §9 rules out. Only the spacing

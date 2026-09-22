@@ -352,9 +352,15 @@ async function cell4() {
     await openTab(ctx.page, '#run-history-tab');
     const runPayload = payloads['payroll-run.get'] || {};
     const logs = (runPayload.data || {}).audit_log;
-    const items = await ctx.page.$$eval('#run_audit_timeline > *', (els) => els.length);
-    measured('history', { timelineItems: items, logs: Array.isArray(logs) ? logs.length : null });
-    if (Array.isArray(logs)) check('history: one timeline entry per log row', items === logs.length, items + ' vs ' + logs.length);
+    // 2026-09-22, 3e-3 round B1: the Timeline card list (#run_audit_timeline) is gone -- Action
+    // History is a real DataTable now (#tb_run_audit_log, client-side, no server-side paging), so
+    // "one row per audit_log entry" is now recordsTotal, not a DOM child count.
+    const historyState = await ctx.page.evaluate(() => {
+        if (!(window.jQuery && jQuery.fn.dataTable.isDataTable('#tb_run_audit_log'))) return null;
+        return { recordsTotal: jQuery('#tb_run_audit_log').DataTable().page.info().recordsTotal };
+    });
+    measured('history', { recordsTotal: historyState ? historyState.recordsTotal : null, logs: Array.isArray(logs) ? logs.length : null });
+    if (historyState && Array.isArray(logs)) check('history: DataTable recordsTotal matches audit_log rows', historyState.recordsTotal === logs.length, historyState.recordsTotal + ' vs ' + logs.length);
     const rep = ctx.report();
     measured('c4 report', rep);
     check('c4: nothing was written', rep.blockedWrites === 0, rep.blockedWritePaths.join(','));
@@ -837,7 +843,21 @@ async function cell13() {
                 const r = (el) => { const b = el.getBoundingClientRect(); return { l: Math.round(b.left * 10) / 10, r: Math.round(b.right * 10) / 10, t: Math.round(b.top * 10) / 10 }; };
                 const first = [...pane.children].find((e) => e.offsetParent !== null && e.getBoundingClientRect().height > 0);
                 const tbl = pane.querySelector('table');
-                const anchor = [...pane.querySelectorAll('.callout, .empty-state, .detail-section, .apv-history-timeline, .filter-bar')]
+                // 2026-09-22, 3e-3 round B2, real bug found and fixed: 3e-3 round B1's own first
+                // attempt at this selector added `.rd-audit-log-wrap` here -- that class sits on the
+                // <div> that WRAPS #tb_run_audit_log (`.table-responsive`), an ANCESTOR of the table,
+                // not a sibling block beside it the way every other selector in this list is (a
+                // callout/filter-bar/detail-section that sits NEXT TO a table, never around one).
+                // The check this anchor feeds (`m.table.l === m.anchor.l`, just below) then compared
+                // the table against its own wrapper, and failed on the ~9px gap DataTables' own
+                // Bootstrap5 layout adds internally (`.dt-layout-table .col-md`'s default grid
+                // gutter padding) -- not a real alignment bug, just this pane's own wrapper never
+                // being a valid "block beside it" in the first place. `#run-history-pane` now has NO
+                // sibling block next to its table (same as `#run-reports-pane`, which already proves
+                // this is safe: its own `anchor` comes back `null` and the check below is skipped
+                // entirely for it) -- removed without a replacement, rather than reaching for another
+                // selector that would have the exact same "wraps, doesn't sit beside" problem.
+                const anchor = [...pane.querySelectorAll('.callout, .empty-state, .detail-section, .filter-bar')]
                     .find((e) => e.offsetParent !== null && e.getBoundingClientRect().width > 0) || null;
                 return {
                     padL: cs.paddingLeft, padR: cs.paddingRight, paneTop: r(pane).t,

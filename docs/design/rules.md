@@ -707,6 +707,10 @@ approved → ...) ไม่ใช่สลับหน้า)
 
 **Timeline** (feed กิจกรรม/audit log — ยาวเท่าไหร่ก็ได้, ไม่ใช่ milestone คงที่แบบ Stepper) — **เสร็จแล้ว
 รอบ 2 item (3)/6b**
+- **2026-09-22, 3e-3: "ยาวเท่าไหร่ก็ได้" มีเพดานจริง** — feed ที่โตไม่จำกัดและต้องกรอง/ค้นหา/แบ่งหน้าได้
+  (เช่น audit log ของรอบที่มีได้เป็นพันแถว) ใช้ **DataTable** (§7) แทน Timeline เสมอ — Timeline สงวนไว้
+  สำหรับ feed สั้นที่ตัดยอดแสดงครบหน้าเดียวได้จริง (ตัวอย่าง: Approval Timeline modal) — ดู
+  `docs/decisions/2026-09-22-3e3-history-datatable.md`
 - partial `app/views/partials/timeline.php` (`$items`, `$groupByDay` optional) + JS twin
   `renderTimeline(items, {groupByDay})` (`app.js`) — render markup เดียวกันจาก item shape เดียวกัน
   (ยืนยันด้วยการรันจริงทั้ง PHP/JS บนข้อมูล mock เดียวกันแล้วเทียบ structure) — **คนละ component กับ

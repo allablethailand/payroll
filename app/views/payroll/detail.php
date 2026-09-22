@@ -1242,29 +1242,39 @@
             </div>
         </div>
 
-        <!-- 2026-08-27, explicit request: "ในหน้า Process Detail Tab Action History ปรับจากตารางเป็น
-             Timeline สวยๆ" -- was a plain DataTable (5 columns: Date/Time, Action, Status Change,
-             Performed By, Note). Replaced with a vertical icon+connector-line timeline. 2026-08-29
-             briefly redesigned into a boustrophedon/snake grid (explicit request), then reverted the
-             SAME day back to vertical, briefly gaining a "View Detail" button+modal in that same
-             round -- REMOVED again same-day per explicit follow-up ("หน้า ประวัติการดำเนินการ Detail
-             ไม่เยอะไม่ต้องมีปุ่มกดดูก็ได้ครับ แสดงใน timeline ได้เลย"): every field that modal used to show
-             (state change, note, IP/user-agent) is now rendered directly in each card instead. See
-             renderAuditHistoryTimelineRd()/auditHistoryRowHtmlRd()'s own docblock in detail.js. -->
+        <!-- 2026-09-22, 3e-3 round B1, explicit instruction/user confirmation (2026-09-22): the
+             vertical icon+connector-line Timeline (2026-08-27 -- 2026-08-29 history, see git log) is
+             replaced with a real DataTable -- rules.md §6 now allows this for a feed that grows
+             unbounded (run 752 in dev carries 1571 rows; Timeline's own spec is for a feed short
+             enough to show in full). Column headers carry NO `data-i18n` here, unlike every other
+             `<th>` on this page -- every column's content is language-bound at render time
+             (actor name/action label/state badge), so `columns[].title` is set from langData in JS
+             at construction instead (initAuditLogTableRd(), detail.js) and kept in sync on a live
+             switch by refreshAuditLogTableLanguage(). Empty state (both "no rows yet" and "filtered
+             to zero") is the table's own `emptyState`/`dtRenderEmptyState()` (§6), not a static
+             `empty-state.php` block -- same pattern tb_run_detail already uses.
+             2026-09-22, round B2: the `.rd-audit-log-wrap` marker this div carried was a test-only
+             hook (no CSS of its own) for m3e1_tabs_shared.js's own c13 anchor selector -- removed
+             along with that selector once it turned out to be the wrong kind of anchor for that
+             check (an ancestor of the table, not a sibling block beside it -- see that file's own
+             docblock on the fix). No consumer left anywhere (grep confirmed), so the dead class goes
+             too rather than staying as markup with no meaning (rules.md §0.3). -->
         <div class="tab-pane fade" id="run-history-pane" role="tabpanel" aria-labelledby="run-history-tab" tabindex="0">
-            <!-- 2026-09-20, 3e-1: shared empty-state (§6). Title only, no supporting line: the one
-                 sentence this tab has ALREADY says what is missing and there is nothing to do about
-                 it here (history writes itself as the run moves). `.empty-state > *:last-child`
-                 zeroes the empty text line's own margin, so the block reads as a 2-part one. -->
-            <div id="noAuditYet" class="d-none">
-                <?php
-                $icon = 'fa-solid fa-clock-rotate-left'; $action = null; $text_id = null;
-                $title = 'No action has been taken on this request yet.'; $title_i18n = 'no_history_yet';
-                $text = ''; $text_i18n = null;
-                include __DIR__ . '/../partials/empty-state.php';
-                ?>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle w-100" id="tb_run_audit_log">
+                    <thead class="table-light text-secondary">
+                        <tr>
+                            <th class="text-nowrap"></th>
+                            <th class="text-nowrap"></th>
+                            <th class="text-nowrap"></th>
+                            <th class="text-nowrap"></th>
+                            <th></th>
+                            <th class="text-nowrap"></th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </div>
-            <div id="run_audit_timeline" class="apv-history-timeline"></div>
         </div>
     </div>
 
