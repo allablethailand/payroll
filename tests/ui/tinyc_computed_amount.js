@@ -11,7 +11,7 @@
  * 2 cells (a logic round): 1400 th light, 430 th dark.
  */
 'use strict';
-const { openContext, closeAll } = require('./harness');
+const { openContext, closeAll, ensureCellTheme } = require('./harness');
 
 const sessionId = process.argv[2];
 const runToken = process.argv[3];
@@ -39,6 +39,8 @@ async function runCell(opts) {
     }, opts.lang);
     await page.goto(ctx.url(`/payroll-process/${runToken}`), { waitUntil: 'networkidle' });
     await page.waitForTimeout(700);
+    // 2026-09-21, a0: a cell named "dark" was measuring LIGHT -- see ensureCellTheme() in harness.js.
+    if (!await ensureCellTheme(page, opts.colorScheme, { label, when: 'first load', check, log: console.log })) return report();
     await page.waitForSelector(`.btn-view-breakdown[data-employee-id="${employeeId}"]`, { state: 'attached', timeout: 30000 });
     await page.evaluate((id) => document.querySelector(`.btn-view-breakdown[data-employee-id="${id}"]`).click(), employeeId);
     await page.waitForSelector(`${WRAP} tr.lo-row`, { timeout: 30000 });
@@ -50,6 +52,10 @@ async function runCell(opts) {
         return {
             code: r.getAttribute('data-item-code'),
             action: r.getAttribute('data-orig-action') || '',
+            // 2026-09-21, a0: 4b gave the 2 tri-state rows a sub-line in this same slot, from the
+            // same template -- but carrying a WORD, because what was replaced there is a yes/no.
+            // This round is about the FIGURE one, so the two are told apart by the row itself.
+            answered: !!r.getAttribute('data-exemption-changed'),
             amount: r.getAttribute('data-amount'),
             sub: tag ? tag.textContent.trim() : null,
         };
@@ -67,14 +73,23 @@ async function runCell(opts) {
     }, employeeId);
 
     const fmt = (n) => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    const tagged = rendered.filter((r) => r.sub !== null);
+    /* 2026-09-21, a0: which CODES carry a sub-line is a property of the run being measured, not of
+       this rule -- `__base_salary__` and `LOAN_REPAY` were what one particular fixture happened to
+       have, and every round that writes to the run (l6a, l6b) changes the set. The rule itself is
+       "a figure sub-line appears exactly on the rows that carry an amount override", so the expected
+       set is read off the rows and the endpoint instead of being named here. */
+    const tagged = rendered.filter((r) => r.sub !== null && !r.answered);
     const untagged = rendered.filter((r) => r.sub === null);
-
-    check(`${label}: exactly 2 rows carry the sub-line`, tagged.length === 2, JSON.stringify(tagged.map((r) => r.code)));
-    check(`${label}: they are the 2 rows that really carry an override`,
-        ['__base_salary__', 'LOAN_REPAY'].every((c) => tagged.some((r) => r.code === c)),
-        JSON.stringify(tagged.map((r) => r.code)));
-    check(`${label}: no other row carries one`, untagged.every((r) => r.action === ''),
+    const overridden = rendered.filter((r) => r.action !== '');
+    console.log(`  rows with a figure sub-line: ${JSON.stringify(tagged.map(r => r.code))} · with an override: ${JSON.stringify(overridden.map(r => r.code))}`);
+    check(`${label}: the run has an overridden row to measure`, overridden.length > 0,
+        JSON.stringify(rendered.map((r) => r.code)));
+    check(`${label}: the figure sub-line appears on exactly the rows that carry an override`,
+        tagged.map((r) => r.code).sort().join('|') === overridden.map((r) => r.code).sort().join('|'),
+        `${JSON.stringify(tagged.map(r => r.code))} vs ${JSON.stringify(overridden.map(r => r.code))}`);
+    check(`${label}: no untouched row carries one`,
+        untagged.every((r) => r.action === '') && rendered.filter((r) => r.sub !== null && r.answered)
+            .every((r) => !/\d/.test(r.sub)),
         JSON.stringify(untagged.filter((r) => r.action !== '')));
 
     tagged.forEach((r) => {
@@ -85,11 +100,14 @@ async function runCell(opts) {
                 r.sub.indexOf(fmt(s.computed)) !== -1, `${r.sub} vs ${fmt(s.computed)}`);
         }
     });
-    // The one row where the engine figure and the live figure genuinely differ -- proof the sub-line
-    // is not simply echoing the row's own amount back.
-    const loan = tagged.find((r) => r.code === 'LOAN_REPAY');
-    check(`${label}: LOAN_REPAY sub-line differs from its own live figure`,
-        loan && loan.sub.indexOf(loan.amount) === -1, loan ? `${loan.sub} / ${loan.amount}` : 'row missing');
+    /* A row where the engine figure and the live figure genuinely differ -- proof the sub-line is not
+       simply echoing the row's own amount back. 2026-09-21, a0: found among the rows that are
+       really there rather than named (`LOAN_REPAY` is not a line of this fixture's employee at all,
+       so this check has been reporting "row missing" instead of measuring anything). With none to
+       find it says so out loud rather than passing on an empty set. */
+    const differing = tagged.filter((r) => r.sub.indexOf(r.amount) === -1);
+    check(`${label}: at least one sub-line differs from its own row's live figure`,
+        differing.length > 0, JSON.stringify(tagged.map((r) => ({ code: r.code, sub: r.sub, amount: r.amount }))));
 
     const rep = report();
     console.log(`  cell report: ${JSON.stringify(rep)}`);

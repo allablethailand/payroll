@@ -248,6 +248,29 @@ async function applyAppTheme(page, theme) {
     }, theme);
 }
 
+/* The whole of what a round script does with applyAppTheme(), in one place (2026-09-21, a0).
+ * 6 round scripts had to gain the same 4 lines -- apply, print the proof, assert it took, refuse to
+ * measure if it did not -- and 4 lines copied 6 times is the mirror-copy this project bans.
+ *
+ * `check` and `log` come from the CALLER because they are the caller's: every round counts its own
+ * PASS/FAIL and prints in its own shape, and a harness that owned either would have to own the
+ * round's exit code too.
+ *
+ * A LIGHT cell is a no-op that returns true -- the stamped default already is light, so there is
+ * nothing to apply and nothing to prove. Call it after EVERY page load, not once per cell: the
+ * preference write-back is blocked, so a reload comes back at the stamped light again.
+ *
+ * @returns {boolean} false = the page is not in the theme the cell is named after; the caller must
+ *   stop that cell instead of measuring colours that do not mean what its label says.
+ */
+async function ensureCellTheme(page, colorScheme, on) {
+    if (colorScheme !== 'dark') return true;
+    const t = await applyAppTheme(page, 'dark');
+    on.log(`  MEASURED  theme ${on.when} = ${JSON.stringify({ stamp: t.stamp, bg: t.bg, bodyBackground: t.bodyBackground })}`);
+    on.check(`${on.label}: the page really is in the dark theme (${on.when})`, t.ok === true, t.stamp);
+    return t.ok === true;
+}
+
 async function closeAll() {
     while (openBrowsers.length) {
         const b = openBrowsers.pop();
@@ -259,4 +282,4 @@ async function closeAll() {
     }
 }
 
-module.exports = { openContext, closeAll, applyAppTheme, resolvePlaywright, PREFERENCE_SAVE_PATH, RECALCULATE_PATH };
+module.exports = { openContext, closeAll, applyAppTheme, ensureCellTheme, resolvePlaywright, PREFERENCE_SAVE_PATH, RECALCULATE_PATH };

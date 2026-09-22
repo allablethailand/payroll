@@ -8,7 +8,7 @@
  * Everything it writes goes to the throwaway run tests/ui/mksession.php made -- never run 752.
  */
 'use strict';
-const { openContext, closeAll } = require('./harness');
+const { openContext, closeAll, ensureCellTheme } = require('./harness');
 
 const sessionId = process.argv[2];
 const runToken = process.argv[3];
@@ -82,6 +82,8 @@ async function runCell(opts) {
     const { page, report } = ctx;
     await page.goto(ctx.url(`/payroll-process/${runToken}`), { waitUntil: 'networkidle' });
     await page.waitForTimeout(600);
+    // 2026-09-21, a0: a cell named "dark" was measuring LIGHT -- see ensureCellTheme() in harness.js.
+    if (!await ensureCellTheme(page, opts.colorScheme, { label, when: 'first load', check, log: console.log })) return report();
     await openBreakdown(page);
 
     // 1 -- the inline cell editor is gone: no input of any kind inside a money cell, on any row.
@@ -145,9 +147,27 @@ async function runCell(opts) {
     // 3 -- edit the base amount through the form, then put it back with the left-slot button.
     if (baseRow) {
         const before = baseRow.amount;
-        const next = String(Math.round((parseFloat(before.replace(/,/g, '')) || 0) + 111));
+        /* 2026-09-21, a0, real damage found by reading what this round had written: the figure used
+           to be `before + 111`, so every run built on the last one -- and because the typing below
+           was APPENDING rather than replacing, the override on the fixture run climbed
+           28,500 -> 2,850,028,611 -> the decimal(15,2) ceiling in 2 rounds. A target that does not
+           depend on the current value cannot ratchet, and 2 fixed figures still make the assertion
+           ("the table shows the NEW figure") mean what it says. */
+        const next = (parseFloat(before.replace(/,/g, '')) || 0) === 31000 ? '32000' : '31000';
         await clickPencil(page, '__base_salary__');
-        await page.fill('#manualLineAmount', next);
+        /* `page.fill()` is not enough on a `.money-input`: initMoneyInputs() reformats on every
+           `input` event and puts the caret back at the end, so the characters land AFTER what is
+           already there ("28500" + "28611" -> 2850028611, measured in the history table). Select
+           all, delete, then type -- and read the field back before saving, so a money input that
+           starts swallowing keystrokes again fails HERE instead of writing a figure nobody typed. */
+        const $amount = page.locator('#manualLineAmount');
+        await $amount.click();
+        await $amount.press('Control+a');
+        await $amount.press('Delete');
+        await $amount.pressSequentially(next, { delay: 20 });
+        const typed = await page.inputValue('#manualLineAmount');
+        check(`${label}: the amount field holds exactly what was typed`,
+            typed.replace(/,/g, '') === next, `${JSON.stringify(typed)} vs ${next}`);
         await page.locator('#btnSaveManualLine').click();
         // Caught mid-flight: the button says what it is doing, in the app's own words, without
         // outgrowing itself.
@@ -160,14 +180,34 @@ async function runCell(opts) {
         check(`${label}: saving -> the label does not overflow its button`, !loading || loading.fits,
             loading ? String(loading.text.length) : '');
         await page.waitForSelector(`${FORM}.show`, { state: 'hidden', timeout: 30000 });
-        await page.waitForTimeout(1500);
-        const after = await page.getAttribute('#breakdownLineOverrideWrap tr.lo-row[data-item-code="__base_salary__"]', 'data-amount');
+        /* Wait for the ROW to change, not for a fixed number of milliseconds. A save reloads the
+           whole table (loadSyncLineOverridesRd + loadRunDetail), and at 430 that took longer than
+           the 1500ms this used to sleep -- so the round read the old figure and reported a write
+           that had in fact landed (confirmed against the history table: 31000 -> 32000 was there).
+           A timeout here still fails the check, but only when nothing really changed. */
+        let after = before;
+        try {
+            await page.waitForFunction((args) => {
+                const r = document.querySelector('#breakdownLineOverrideWrap tr.lo-row[data-item-code="__base_salary__"]');
+                return !!r && r.getAttribute('data-amount') !== args.before;
+            }, { before }, { timeout: 15000 });
+        } catch (e) { /* leave `after` at `before` -- the check below is what reports it */ }
+        after = await page.getAttribute('#breakdownLineOverrideWrap tr.lo-row[data-item-code="__base_salary__"]', 'data-amount');
         check(`${label}: the table shows the new figure`, after !== before, `${before} -> ${after}`);
 
         // ...and the left-slot button, which only exists now that the row carries an override.
         await clickPencil(page, '__base_salary__');
         const st2 = await formState(page);
-        check(`${label}: an overridden row's form offers "use the calculated value"`, st2.useComputed);
+        /* 2026-09-21, a0: it does NOT, and deliberately so. 974b1ac4 deleted
+           #btnLineFormUseComputed along with the dropdown and the history modal: "back to what the
+           system calculated" is the top row of the row's own history panel now, where every other
+           value that line has ever held is already listed -- one way back, not two (rules.md 5).
+           So the assertion is the other way round, and it checks that the ONE way back is really
+           there on the row rather than just that the old one is gone. */
+        check(`${label}: the form offers no second way back to the calculated value`, !st2.useComputed);
+        const historyWayBack = await page.evaluate(() => !!document.querySelector(
+            '#breakdownLineOverrideWrap tr.lo-row[data-item-code="__base_salary__"] .lo-history-toggle'));
+        check(`${label}: ...because the row's own history is the one way back`, historyWayBack);
         if (st2.useComputed) {
             await page.locator('#btnLineFormUseComputed').click();
             await page.waitForSelector('.swal2-confirm', { timeout: 15000 });
@@ -193,7 +233,33 @@ async function runCell(opts) {
     }
 
     // 4 -- nothing sideways, nothing in the console.
-    const overflow = await page.evaluate(() => Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth));
+    // When it is not 0, say WHAT is wider than the page -- a bare number sends the next round
+    // hunting for it by hand.
+    const overflowInfo = await page.evaluate(() => {
+        const doc = document.documentElement;
+        const over = Math.max(0, doc.scrollWidth - doc.clientWidth);
+        if (!over) return { over: 0, widest: [] };
+        const limit = doc.clientWidth;
+        const widest = Array.from(document.querySelectorAll('body *'))
+            // `position: fixed` is in the viewport's own coordinate space, not the document's, so a
+            // drawer parked at `right: -380px` sits past the edge without being what the document
+            // scrolls to reach. Ranking it first sends the reader after the wrong element.
+            .filter(el => getComputedStyle(el).position !== 'fixed')
+            .map((el) => ({ el, r: el.getBoundingClientRect() }))
+            .filter(x => x.r.width > 0 && x.r.right > limit + 0.5)
+            .sort((a, b) => b.r.right - a.r.right)
+            .slice(0, 5)
+            .map(x => ({
+                tag: x.el.tagName.toLowerCase(),
+                cls: String(x.el.className || '').slice(0, 60),
+                id: x.el.id || '',
+                right: Math.round(x.r.right),
+                width: Math.round(x.r.width),
+            }));
+        return { over, limit, widest };
+    });
+    const overflow = overflowInfo.over;
+    if (overflow) console.log(`  MEASURED  horizontal overflow ${overflow}px past ${overflowInfo.limit}px: ${JSON.stringify(overflowInfo.widest)}`);
     check(`${label}: horizontal page overflow = 0`, overflow === 0, String(overflow));
     const r = report();
     check(`${label}: console errors = 0`, r.consoleErrors.length === 0 && r.pageErrors.length === 0,

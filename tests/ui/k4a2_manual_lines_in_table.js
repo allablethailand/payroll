@@ -12,7 +12,7 @@
  * 8 cells (a layout round): th/en x light/dark x 1400/430.
  */
 'use strict';
-const { openContext, closeAll } = require('./harness');
+const { openContext, closeAll, ensureCellTheme } = require('./harness');
 
 const sessionId = process.argv[2];
 const runToken = process.argv[3];
@@ -53,6 +53,14 @@ async function measure(page) {
         return {
             rowCount: rows.length,
             codes: rows.map(r => r.getAttribute('data-item-code')),
+            // The 2 tri-state rows, as the ROW itself declares them -- the read-only slip drops one
+            // that has nothing to say (0, untouched, no answer chosen). See the assertion's own note.
+            tristate: rows.filter(r => r.getAttribute('data-exemption-field')).map(r => ({
+                code: r.getAttribute('data-item-code'),
+                changed: !!r.getAttribute('data-exemption-changed'),
+                overridden: !!r.getAttribute('data-orig-action'),
+                amount: parseFloat(String(r.getAttribute('data-amount') || '0').replace(/,/g, '')) || 0,
+            })),
             groupCount: document.querySelectorAll(wrap + ' tr.lo-group').length,
             groupLabels: Array.from(document.querySelectorAll(wrap + ' tr.lo-group')).map(r => r.textContent.trim()),
             checkCells: document.querySelectorAll(wrap + ' td.col-check').length,
@@ -79,6 +87,9 @@ async function measure(page) {
                 const td = r.querySelector('td.lo-history-cell');
                 return td && td.textContent.trim() !== '';
             }).length,
+            // ...and the cell itself, present on every manual row whether it carries a badge or not,
+            // so the row stays in the same grid as every other one.
+            manualHistoryCellSlots: manual.filter(r => !!r.querySelector('td.lo-history-cell')).length,
             manualTags: manual.map(r => Array.from(r.querySelectorAll('.payslip-line-tag')).map(t => t.textContent.trim())),
             // 2026-09-18, follow-up 3: the link rides on the group HEAD, so there is no add row left
             // and every link must be inside a `tr.lo-group`.
@@ -117,13 +128,43 @@ async function measure(page) {
                 return { color: cs.color, bg: cs.backgroundColor, borderColor: cs.borderTopColor, deco: cs.textDecorationLine };
             })(),
 
-            // --- the 3 totals, back as the table's own last rows ---
+            /* --- the 3 totals: a BLOCK after the scroller, not rows of the table ---
+               2026-09-19, tiny-4b-fix1 v2 reversed 4a-2 on exactly this, and for a reason 4a-2 had
+               not measured: below `sm` this table is a horizontal scroller (host 394px, table 530px)
+               so a ROW of it carries its figures out of view with every drag, whatever cells it is
+               built from. A total is the slip's bottom line, not a line of the slip, so it lives
+               outside the scroller. See docs/decisions/2026-09-19-4b-fix1-totals-block.md. */
             totals: totalTr.map(r => ({
                 label: r.children[0].textContent.trim(),
-                amount: (r.querySelector('td.lo-total-amount .num') || { textContent: '' }).textContent.trim(),
+                amount: (r.querySelector('.num') || { textContent: '' }).textContent.trim(),
             })),
-            totalsAreLastRows: totalTr.length === 3 && allTr.slice(-3).every(r => r.className.indexOf('lo-total-row') !== -1),
-            totalsAreTr: totalTr.every(r => r.tagName === 'TR'),
+            totalsIsBlockAfterScroller: (() => {
+                const host = document.querySelector(wrap);
+                const block = document.querySelector(wrap + ' .lo-totals');
+                return !!block && !!host && host.lastElementChild === block && !block.closest('.table-responsive');
+            })(),
+            // ...and carries no table markup at all any more.
+            totalsHasNoTableMarkup: document.querySelectorAll(wrap + ' .lo-totals tr, ' + wrap + ' .lo-totals td').length === 0,
+            // The 2 x's the decision fixed it on: the label starts where the group headings start,
+            // the figure ends where the "เพิ่มรายการ" link ends -- both on the block's own inset.
+            totalsAlign: (() => {
+                const host = document.querySelector(wrap);
+                const block = document.querySelector(wrap + ' .lo-totals');
+                const trows = Array.from(document.querySelectorAll(wrap + ' .lo-totals-row'));
+                const head = document.querySelector(wrap + ' tr.lo-group .lo-span-sticky');
+                if (!host || !block || !trows.length) return null;
+                const hostRight = host.getBoundingClientRect().right;
+                const inset = parseFloat(getComputedStyle(block).paddingRight) || 0;
+                const headLeft = head ? head.getBoundingClientRect().left : null;
+                return {
+                    labelLeftDelta: headLeft === null ? null
+                        : trows.map(r => Math.round((r.children[0].getBoundingClientRect().left - headLeft) * 10) / 10),
+                    figureRightGap: trows.map((r) => {
+                        const n = r.querySelector('.num');
+                        return n ? Math.round((hostRight - inset - n.getBoundingClientRect().right) * 10) / 10 : null;
+                    }),
+                };
+            })(),
             // The retired card and its block, anywhere in the modal.
             retiredNodes: body
                 ? body.querySelectorAll('.ml-mount, .lo-totals-block, #breakdownNetSummary, #breakdownManualLines, .payslip-view, .manual-line-item').length
@@ -145,20 +186,16 @@ async function measure(page) {
                 return { cls: b.className.indexOf('manual-line') !== -1 ? 'manual' : 'lo',
                     w: Math.round(r.width), h: Math.round(r.height) };
             }),
-            // The figure of each totals row must end on the table's own right edge.
-            totalsRightGap: (() => {
-                const t = document.querySelector(wrap + ' table.lo-table');
-                if (!t) return null;
-                const tr = t.getBoundingClientRect().right;
-                return Array.from(document.querySelectorAll(wrap + ' td.lo-total-amount'))
-                    .map(td => Math.round((tr - td.getBoundingClientRect().right) * 10) / 10);
-            })(),
             // An ordinary statutory row still says what it is AND shows its sum.
             statutoryNormal: rows.filter(r => r.getAttribute('data-line-type') === 'statutory'
                 && r.className.indexOf('lo-row-skipped') === -1).map(r => ({
                 code: r.getAttribute('data-item-code'),
                 badges: r.querySelectorAll('.badge').length,
                 tags: r.querySelectorAll('.lo-name-cell .payslip-line-tag').length,
+                // The whole row, not the name cell alone: a tri-state row says why it is 0 in the
+                // AMOUNT cell ("ระบบ: คำนวณ"), which is a sub-line of the figure it qualifies.
+                rowTags: r.querySelectorAll('.payslip-line-tag').length,
+                amountValue: parseFloat(String(r.getAttribute('data-amount') || '0').replace(/,/g, '')) || 0,
             })),
 
             // --- 430 ---
@@ -232,12 +269,15 @@ async function removeManualLines(page, ids) {
 async function runCell(opts) {
     const label = `${opts.width} ${opts.lang} ${opts.colorScheme}`;
     console.log(`\n=== ${label} ===`);
+    const applyCellTheme = (page, o, l, when) =>
+        ensureCellTheme(page, o.colorScheme, { label: l, when, check, log: console.log });
     const ctx = await openContext({ sessionId, width: opts.width, height: opts.height, colorScheme: opts.colorScheme });
     const { page, report } = ctx;
     await page.goto(ctx.url(`/payroll-process/${runToken}`), { waitUntil: 'networkidle' });
     await page.waitForTimeout(700);
     await page.evaluate((lang) => { if (typeof changeLanguage === 'function') changeLanguage(lang); }, opts.lang);
     await page.waitForTimeout(600);
+    if (!await applyCellTheme(page, opts, label, 'first load')) return report();
     await page.waitForSelector(`.btn-view-breakdown[data-employee-id="${employeeId}"]`, { state: 'attached', timeout: 30000 });
     // Start from a known state, and leave nothing from an interrupted cell behind.
     await setVerified(page, false);
@@ -248,10 +288,19 @@ async function runCell(opts) {
     check(`${label}: 3 hand-added lines seeded`, seeded.every(r => r && r.status === true), JSON.stringify(seeded.map(r => r && r.message)));
     const expectedManual = baseIds.length + 3;
     if (baseIds.length) console.log(`  (run already carried ${baseIds.length} hand-added line(s): ${JSON.stringify(baseIds)} -- left alone)`);
+    // A cell that has to give up after seeding still owes the run the state it found: the seeded
+    // lines go, the verify flag goes back. Nothing below measures anything after this.
+    const bailCell = async () => {
+        await setVerified(page, false);
+        const leftovers = (await listManualLineIds(page)).filter(id => baseIds.indexOf(id) === -1);
+        if (leftovers.length) await removeManualLines(page, leftovers);
+        return report();
+    };
     await page.reload({ waitUntil: 'networkidle' });
     await page.waitForTimeout(700);
     await page.evaluate((lang) => { if (typeof changeLanguage === 'function') changeLanguage(lang); }, opts.lang);
     await page.waitForTimeout(600);
+    if (!await applyCellTheme(page, opts, label, 'after seed reload')) return bailCell();
 
     // 1. the editable slip
     await openSlip(page);
@@ -265,6 +314,7 @@ async function runCell(opts) {
     await page.waitForTimeout(700);
     await page.evaluate((lang) => { if (typeof changeLanguage === 'function') changeLanguage(lang); }, opts.lang);
     await page.waitForTimeout(600);
+    if (!await applyCellTheme(page, opts, label, 'after verify reload')) return bailCell();
     await openSlip(page);
     const view = await measure(page);
     await closeSlip(page);
@@ -294,9 +344,18 @@ async function runCell(opts) {
     check(`${label}: every hand-added line is a row of the table itself, in BOTH slips`,
         edit.manualRows === expectedManual && view.manualRows === expectedManual && edit.manualInTable && view.manualInTable,
         `${edit.manualRows} / ${view.manualRows} (expected ${expectedManual})`);
-    check(`${label}: the same rows and the same order in both slips`,
-        edit.codes.join('|') === view.codes.join('|') && edit.rowCount === view.rowCount,
-        `${edit.codes.join('|')} vs ${view.codes.join('|')}`);
+    /* 2026-09-21, a0: "the same rows" is now "the same rows BAR the tri-state ones the read-only
+       slip has nothing to say about" -- 4b's own rule (detail.js, lineOverrideIsSkippedRd()'s `view`
+       branch): TH_PIT/TH_SSO always render in the editable slip because the switch there is the only
+       way to set that answer, and render in the read-only one only when they carry a figure or an
+       answer somebody chose. Derived from the editable slip's own rows, so it holds for any fixture
+       instead of naming the code this one happens to drop. */
+    const silentTriState = edit.tristate.filter(t => t.amount === 0 && !t.overridden && !t.changed).map(t => t.code);
+    const expectedViewCodes = edit.codes.filter(c => silentTriState.indexOf(c) === -1);
+    if (silentTriState.length) console.log(`  read-only drops (tri-state with nothing to say): ${silentTriState.join('|')}`);
+    check(`${label}: the same rows and the same order in both slips, bar the silent tri-state ones`,
+        expectedViewCodes.join('|') === view.codes.join('|') && expectedViewCodes.length === view.rowCount,
+        `${expectedViewCodes.join('|')} vs ${view.codes.join('|')}`);
     check(`${label}: the 2 manual groups render, named, with no raw i18n key anywhere`,
         edit.groupCount === view.groupCount && edit.rawKeys === 0 && view.rawKeys === 0
         && edit.groupLabels.every(l => l.length > 0),
@@ -305,7 +364,17 @@ async function runCell(opts) {
         edit.manualSwitches === 0 && edit.manualEmptyCheckCells === expectedManual,
         `${edit.manualSwitches} / ${edit.manualEmptyCheckCells}`);
     check(`${label}: ...and never the override pencil`, edit.manualPencils === 0 && view.manualPencils === 0);
-    check(`${label}: ...and no history in its own cell`, edit.manualHistoryCells === 0 && view.manualHistoryCells === 0);
+    /* 2026-09-21, a0: was "no history in its own cell". 974b1ac4 (H-ui) reversed exactly that -- a
+       hand-added line HAS carried an amount trail since H-backend, and adding one is itself a
+       recorded edit, so it gets the same disclosure badge every other edited row gets. What must
+       still hold is that the cell is there on every manual row in both slips (the row stays in the
+       same grid) and that what it opens is the badge, not a second kind of control. */
+    check(`${label}: a hand-added row keeps its own history cell in both slips`,
+        edit.manualHistoryCellSlots === expectedManual && view.manualHistoryCellSlots === expectedManual,
+        `${edit.manualHistoryCellSlots} / ${view.manualHistoryCellSlots} (expected ${expectedManual})`);
+    check(`${label}: ...and a freshly added one already has something recorded to show`,
+        edit.manualHistoryCells === expectedManual && view.manualHistoryCells === expectedManual,
+        `${edit.manualHistoryCells} / ${view.manualHistoryCells} (expected ${expectedManual})`);
     check(`${label}: one bin per hand-added row in the editable slip, 0 in the read-only one`,
         edit.manualRemoveBtns === expectedManual && view.manualRemoveBtns === 0,
         `${edit.manualRemoveBtns} / ${view.manualRemoveBtns}`);
@@ -327,7 +396,8 @@ async function runCell(opts) {
         edit.addLinkRightGap && Math.abs(edit.addLinkRightGap.toInset) <= 1,
         JSON.stringify(edit.addLinkRightGap));
     check(`${label}: a group with rows renders the same rows in both slips`,
-        edit.rowCount === view.rowCount && edit.rowCount > 0, `${edit.rowCount} vs ${view.rowCount}`);
+        expectedViewCodes.length === view.rowCount && edit.rowCount > 0,
+        `${edit.rowCount} - ${silentTriState.length} vs ${view.rowCount}`);
     check(`${label}: ...one per manual group, each carrying its own type`,
         edit.addButtonTypes.slice().sort().join('|') === 'deduction|earning', JSON.stringify(edit.addButtonTypes));
     check(`${label}: the add row is a text link, not a filled button`,
@@ -342,9 +412,11 @@ async function runCell(opts) {
         edit.manualTags.every(t => t.every(x => x.indexOf('30,') === -1 && !/^(ระบบ|System):/.test(x))),
         JSON.stringify(edit.manualTags));
 
-    check(`${label}: the 3 totals are the LAST 3 <tr> of the table, in both slips`,
-        edit.totalsAreLastRows && view.totalsAreLastRows && edit.totalsAreTr && view.totalsAreTr,
-        JSON.stringify({ e: edit.totalsAreLastRows, v: view.totalsAreLastRows }));
+    check(`${label}: the 3 totals are a block AFTER the scroller, with no table markup, in both slips`,
+        edit.totalsIsBlockAfterScroller && view.totalsIsBlockAfterScroller
+        && edit.totalsHasNoTableMarkup && view.totalsHasNoTableMarkup && edit.totals.length === 3,
+        JSON.stringify({ e: edit.totalsIsBlockAfterScroller, v: view.totalsIsBlockAfterScroller,
+            markupE: edit.totalsHasNoTableMarkup, markupV: view.totalsHasNoTableMarkup, n: edit.totals.length }));
     check(`${label}: ...with the same 3 figures in both`,
         edit.totals.map(t => t.amount).join('|') === view.totals.map(t => t.amount).join('|')
         && edit.totals.every(t => t.amount.length > 0), JSON.stringify({ e: edit.totals, v: view.totals }));
@@ -362,12 +434,26 @@ async function runCell(opts) {
     check(`${label}: ...and the hand-added rows really contribute 2 each`,
         edit.iconButtonSizes.filter(b => b.cls === 'manual').length === expectedManual * 2,
         JSON.stringify(edit.iconButtonSizes.filter(b => b.cls === 'manual').length));
-    check(`${label}: each totals figure ends on the table's own right edge (+-1px), in both slips`,
-        edit.totalsRightGap && edit.totalsRightGap.length === 3 && edit.totalsRightGap.every(g => Math.abs(g) <= 1)
-        && view.totalsRightGap && view.totalsRightGap.length === 3 && view.totalsRightGap.every(g => Math.abs(g) <= 1),
-        JSON.stringify({ e: edit.totalsRightGap, v: view.totalsRightGap }));
-    check(`${label}: an ordinary statutory row keeps its badge AND its formula sub-line`,
-        edit.statutoryNormal.length > 0 && edit.statutoryNormal.every(r => r.badges >= 1 && r.tags > 0),
+    // The block's own 2 x's, not the table's: label on the x the group headings start on, figure on
+    // the x the "add a line" links end on -- both the block's own inset (tiny-4b-fix1 v2).
+    console.log(`  totals align: edit=${JSON.stringify(edit.totalsAlign)} view=${JSON.stringify(view.totalsAlign)}`);
+    check(`${label}: each totals label starts on the x the group headings start on (+-1px), in both slips`,
+        [edit, view].every(m => m.totalsAlign && m.totalsAlign.labelLeftDelta
+            && m.totalsAlign.labelLeftDelta.length === 3 && m.totalsAlign.labelLeftDelta.every(d => Math.abs(d) <= 1)),
+        JSON.stringify({ e: edit.totalsAlign && edit.totalsAlign.labelLeftDelta, v: view.totalsAlign && view.totalsAlign.labelLeftDelta }));
+    check(`${label}: each totals figure ends on the block's own inset (+-1px), in both slips`,
+        [edit, view].every(m => m.totalsAlign && m.totalsAlign.figureRightGap
+            && m.totalsAlign.figureRightGap.length === 3 && m.totalsAlign.figureRightGap.every(g => g !== null && Math.abs(g) <= 1)),
+        JSON.stringify({ e: edit.totalsAlign && edit.totalsAlign.figureRightGap, v: view.totalsAlign && view.totalsAlign.figureRightGap }));
+    /* 2026-09-21, a0: was "an ordinary statutory row keeps its badge AND its formula sub-line".
+       The formula half is a property of the EMPLOYEE, not of the slip: this fixture's own employee
+       is not enrolled in SSO and is tax-exempt, so both statutory rows are 0 and the engine produced
+       no formula for either. What the slip really owes is 4a-2's rule -- a statutory row says what
+       it is, and a row rendered at 0 says why it is 0. */
+    console.log(`  statutory rows: ${JSON.stringify(edit.statutoryNormal)}`);
+    check(`${label}: every statutory row says what it is, and one at 0 says why`,
+        edit.statutoryNormal.length > 0 && edit.statutoryNormal.every(r => r.badges >= 1)
+        && edit.statutoryNormal.filter(r => r.amountValue === 0).every(r => r.rowTags > 0),
         JSON.stringify(edit.statutoryNormal));
 
     check(`${label}: the read-only slip still has no toggle/action column at all`,
