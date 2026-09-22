@@ -11,7 +11,30 @@
  *   php tests/ui/mksession.php              create -- prints one line of JSON
  *   php tests/ui/mksession.php --with-recurring   ...and give that run a recurring deduction to drive
  *   php tests/ui/mksession.php --with-calc-errors ...and 7 rows with calc-error/warning/prorate cases
+ *   php tests/ui/mksession.php --with-sync        ...and make it a SYNC-based run (see below)
  *   php tests/ui/mksession.php --cleanup    delete what the last create made
+ *
+ * --with-sync gives the run its own throwaway `payroll_sync_processes` row plus one mapped
+ * `payroll_sync_items` row per company-1 payroll participant EXCEPT two, deliberately left out so
+ * the Detail page's "sync missing employees" banner/picker has a real, non-empty answer to show.
+ * It exists for the employee-pulling round ONLY -- it is NOT part of the 11-script sequence, which
+ * keeps using a plain (no-flag) session:
+ *  - A sync-based run never reaches recalculate()'s `no_attendance_data_this_period` branch
+ *    (PayrollRunModel.php:4131 -- it is the `elseif` to the sync branch), so that advisory, which
+ *    EVERY row of a no-flag session carries, is absent from every row here. Left to disappear on
+ *    its own rather than faked back in: it is what a real sync run genuinely looks like.
+ *  - Every row's `data_source` is 'sync' instead of 'manual', for the same reason.
+ * That first point is why --with-sync REFUSES to run together with --with-calc-errors: that
+ * fixture's R5/R6/R7 are control rows whose whole contract is "whatever recalculate() wrote is
+ * still there", and what recalculate() writes for them differs between the two run types.
+ *
+ * It deliberately does NOT hand the new process to PayrollRunModel::create(): create()'s own
+ * sync branch (PayrollRunModel.php:2146) first runs MasterDataSyncOrchestrator::syncAllMasterData(),
+ * i.e. a real HTTP pull from Origami across 9 master-data entity types, writing real master rows
+ * and a sync_batches row each -- a fixture tool must not do that. The run is created exactly as it
+ * always was, the one column create() would have set from the sync side (sync_process_id, see that
+ * INSERT's own column list) is written straight after, and recalculate() is then called normally --
+ * which is the whole of what create()'s sync branch contributes to the run's end state.
  *
  * Guards (all 3, every run): CLI only, BASE_URL must be a loopback host, and the run it deletes
  * must be one it created itself (the id is read back from its own state file, never from argv).
@@ -49,6 +72,13 @@ const ADMIN_EMPLOYEE_ID = 28;
 // The catalog item --with-recurring creates. Every sweep below is bounded by (COMP_ID, this code)
 // rather than by an id read back from anywhere, so it can only ever reach rows this tool wrote.
 const RECURRING_ITEM_CODE = 'TINYL6TMP';
+// Same idea for --with-sync's own process row: every sweep below is bounded by (COMP_ID, this
+// prefix), never by an id read back from anywhere. `_` is escaped in the LIKE pattern so the
+// prefix can only ever match itself.
+const SYNC_PROCESS_PREFIX = 'UITEST_';
+const SYNC_PROCESS_LIKE = 'UITEST\_%';
+/** How many participants --with-sync leaves OUT of the payload, i.e. what the banner must report. */
+const SYNC_MISSING_COUNT = 2;
 
 /**
  * Hard-deletes the --with-recurring fixture: the recurring deduction rows first, then the catalog
@@ -82,6 +112,20 @@ function sweepRecurringFixture(PDO $pdo): array {
     $stmtIds->execute([':comp_id' => COMP_ID, ':code' => RECURRING_ITEM_CODE]);
     $out['recurring_fixture_left'] = count($stmtIds->fetchAll(PDO::FETCH_COLUMN));
     return $out;
+}
+
+/**
+ * Hard-deletes --with-sync's own process rows (its `payroll_sync_items` go with them, FK CASCADE;
+ * a `payroll_runs` row still pointing at one is set back to NULL, FK SET NULL -- both verified
+ * against information_schema, not assumed). Called by --cleanup always, and by create before it
+ * inserts, so a session that died before its own cleanup cannot leave a process behind that the
+ * next one would have to work around. Bounded by (COMP_ID, SYNC_PROCESS_PREFIX), which only this
+ * tool ever writes -- a real Origami process can never match it.
+ */
+function sweepSyncFixture(PDO $pdo): int {
+    $del = $pdo->prepare("DELETE FROM `payroll_sync_processes` WHERE comp_id = :comp_id AND process_no LIKE :pattern");
+    $del->execute([':comp_id' => COMP_ID, ':pattern' => SYNC_PROCESS_LIKE]);
+    return $del->rowCount();
 }
 
 /**
@@ -284,6 +328,22 @@ if (in_array('--cleanup', array_slice($argv, 1), true)) {
     // reached its own cleanup.
     $result += sweepRecurringFixture($pdo);
 
+    // After the run above, never before: delete() is what clears payroll_runs.sync_process_id
+    // (PayrollRunModel.php:2813), so by the time the process row goes there is nothing left
+    // pointing at it. The two "left" counters are read back AFTER the sweep, by the recorded id --
+    // they answer "is this session's own process really gone", which the removed-count alone does
+    // not (it also counts strays from sessions that died).
+    $syncProcessId = (int)($state['sync_process_id'] ?? 0);
+    $result['stray_sync_processes_removed'] = sweepSyncFixture($pdo);
+    $syncProcessLeft = $syncProcessId > 0
+        ? (int)$pdo->query("SELECT COUNT(*) FROM `payroll_sync_processes` WHERE id = " . $syncProcessId)->fetchColumn()
+        : 0;
+    $syncItemsLeft = $syncProcessId > 0
+        ? (int)$pdo->query("SELECT COUNT(*) FROM `payroll_sync_items` WHERE process_id = " . $syncProcessId)->fetchColumn()
+        : 0;
+    $result['sync_process_left'] = $syncProcessLeft;
+    $result['sync_items_left'] = $syncItemsLeft;
+
     // The session file, by the id this tool generated -- it never reads or lists anyone else's.
     $sessionFile = rtrim((string)session_save_path(), '/\\') . DIRECTORY_SEPARATOR . 'sess_' . $sid;
     $result['session_deleted'] = ($sid !== '' && is_file($sessionFile)) ? unlink($sessionFile) : false;
@@ -311,11 +371,26 @@ if (in_array('--cleanup', array_slice($argv, 1), true)) {
         || $overridesLeft > 0
         || $historyLeft > 0
         || $exemptionsLeft > 0
-        || (int)($result['recurring_fixture_left'] ?? 0) > 0;
+        || (int)($result['recurring_fixture_left'] ?? 0) > 0
+        || $syncProcessLeft > 0
+        || $syncItemsLeft > 0;
 
     unlink(STATE_FILE);
     echo json_encode($result, JSON_UNESCAPED_UNICODE) . "\n";
     exit(empty($result['fixture_still_present']) && empty($result['session_still_present']) ? 0 : 1);
+}
+
+$withSync = in_array('--with-sync', array_slice($argv, 1), true);
+// Refused here, before anything at all has been created, so a rejected combination cannot leave a
+// half-built session behind. See this file's own docblock for why the two are incompatible: R5/R6/
+// R7 are control rows asserting what recalculate() itself wrote, and a sync-based run writes
+// something different there (no `no_attendance_data_this_period`) than the run that fixture was
+// measured against.
+if ($withSync && in_array('--with-calc-errors', array_slice($argv, 1), true)) {
+    fwrite(STDERR, "--with-sync and --with-calc-errors cannot be combined: a sync-based run never writes "
+        . "no_attendance_data_this_period, which R5/R6/R7 (the control rows, left exactly as recalculate() "
+        . "wrote them) currently carry -- the fixture's own contract would silently stop holding. Nothing was created.\n");
+    exit(1);
 }
 
 // A run with NO cycle_id is an off-cycle run, and recalculate() then only pulls in employees
@@ -342,6 +417,87 @@ $runId = (int)$res['id'];
 // Recorded the moment the run exists, before anything else can fail: otherwise a failure below
 // leaves a run behind that --cleanup has no way to find.
 file_put_contents(STATE_FILE, json_encode(['run_id' => $runId], JSON_UNESCAPED_UNICODE) . "\n");
+
+// --with-sync: turn the run just created into a sync-based one BEFORE the recalculate() below, so
+// that single existing call is the one that takes recalculate()'s sync branch -- no second pass,
+// and no window where the run exists with a process that nothing has read yet.
+$syncFixture = null;
+if ($withSync) {
+    sweepSyncFixture($pdo);
+    // Ordered by employee_no because that is the order k4b_close_batch4.js's own row rule reads
+    // (see applyCalcErrorFixture()'s note on it) -- the employee that rule would reserve must not
+    // be one of the two left out of the payload, or the rule lands somewhere else.
+    $participants = $pdo->query("SELECT id, employee_no FROM `employees`
+        WHERE comp_id = " . COMP_ID . " AND deleted_at IS NULL AND is_payroll_participant = 1
+        ORDER BY employee_no ASC")->fetchAll(PDO::FETCH_ASSOC);
+    $k4bReserved = null;
+    foreach ($participants as $p) {
+        if (!in_array((int)$p['id'], CALC_ERROR_OFF_LIMITS, true)) {
+            $k4bReserved = (int)$p['id'];
+            break;
+        }
+    }
+    // 28/159/499 stay IN the payload on purpose: 28 is the row every other fixture here drives and
+    // the one real calc error on this run, and 159/499 are k4b's OFF_LIMITS pair -- all three have
+    // to be present for the rest of the session to mean what it always meant.
+    $missingPool = [];
+    foreach ($participants as $p) {
+        $eid = (int)$p['id'];
+        if (!in_array($eid, CALC_ERROR_OFF_LIMITS, true) && $eid !== $k4bReserved) {
+            $missingPool[] = $eid;
+        }
+    }
+    sort($missingPool);
+    if (count($missingPool) < SYNC_MISSING_COUNT) {
+        fwrite(STDERR, "--with-sync needs " . SYNC_MISSING_COUNT . " participants outside employees "
+            . implode('/', CALC_ERROR_OFF_LIMITS) . " and k4b's own (" . var_export($k4bReserved, true)
+            . "); this company has " . count($missingPool) . " -- nothing was set\n");
+        exit(1);
+    }
+    $missingIds = array_slice($missingPool, 0, SYNC_MISSING_COUNT);
+    $itemEmployeeIds = [];
+    foreach ($participants as $p) {
+        if (!in_array((int)$p['id'], $missingIds, true)) {
+            $itemEmployeeIds[] = (int)$p['id'];
+        }
+    }
+
+    // Minimal payload on purpose -- the only NOT NULL columns, nothing else (same shape
+    // tests/payroll_run_test.php's own sync fixture uses). Every amount on this run still comes
+    // from the `employees` master exactly as it did before: SyncPayResolver only ever ADDS
+    // attendance-derived lines, and with no attendance columns set it produces none and flags
+    // nothing. origami_process_id is UNIQUE and real ones here are 2-digit; this band cannot
+    // collide with one, and the sweep above already removed any leftover of ours.
+    $insProc = $pdo->prepare("INSERT INTO `payroll_sync_processes`
+        (comp_id, origami_process_id, process_no, origami_comp_code, origami_comp_name, frequency_type, schema_version, raw_payload)
+        VALUES (:comp_id, :origami_process_id, :process_no, 'UITEST', 'UI test (delete me)', 'monthly', 1, '{}')");
+    $insProc->execute([
+        ':comp_id' => COMP_ID,
+        ':origami_process_id' => random_int(900000000, 999999999),
+        ':process_no' => SYNC_PROCESS_PREFIX . strtoupper(bin2hex(random_bytes(6))),
+    ]);
+    $syncProcessId = (int)$pdo->lastInsertId();
+    $insItem = $pdo->prepare("INSERT INTO `payroll_sync_items` (process_id, employee_id, payroll_code, mapping_status)
+        VALUES (:process_id, :employee_id, :payroll_code, 'mapped')");
+    foreach ($participants as $p) {
+        if (in_array((int)$p['id'], $missingIds, true)) {
+            continue;
+        }
+        $insItem->execute([':process_id' => $syncProcessId, ':employee_id' => (int)$p['id'], ':payroll_code' => (string)$p['employee_no']]);
+    }
+    // The one column create() itself would have written from the sync side -- see this file's own
+    // docblock for why create() is not handed the process instead. Guarded by the same run_name
+    // condition every other statement in this tool uses, so it can only reach our own run.
+    $pdo->prepare("UPDATE `payroll_runs` SET sync_process_id = :pid
+        WHERE id = :id AND comp_id = :comp_id AND run_name LIKE 'UI test run (delete me)%'")
+        ->execute([':pid' => $syncProcessId, ':id' => $runId, ':comp_id' => COMP_ID]);
+    $syncFixture = [
+        'sync_process_id' => $syncProcessId,
+        'sync_item_employee_ids' => $itemEmployeeIds,
+        'sync_missing_employee_ids' => $missingIds,
+    ];
+}
+
 $model->recalculate($runId, COMP_ID, ADMIN_EMPLOYEE_ID, true);
 
 $employeeId = (int)$pdo->query("SELECT employee_id FROM `payroll_run_details` WHERE run_id = {$runId} ORDER BY employee_id LIMIT 1")->fetchColumn();
@@ -418,6 +574,6 @@ $state = [
     'token'       => IdCodec::encode($runId),
     'employee_id' => $employeeId,
     'session_id'  => $sid,
-] + ($recurringFixture ?? []) + ($calcErrorFixture ?? []);
+] + ($syncFixture ?? []) + ($recurringFixture ?? []) + ($calcErrorFixture ?? []);
 file_put_contents(STATE_FILE, json_encode($state, JSON_UNESCAPED_UNICODE) . "\n");
 echo json_encode($state, JSON_UNESCAPED_UNICODE) . "\n";
