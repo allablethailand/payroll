@@ -811,7 +811,7 @@ function registerSidebarMenuSearch() {
 // mirror-copy" rule) -- see this session's own grep/report for the full list of tables this covers.
 function applyFixedStrategyToTableDropdowns(root) {
     $(root || document).find('.dropdown-toggle[data-bs-toggle="dropdown"]').each(function () {
-        if (!$(this).closest('.dataTables_wrapper, .table-responsive').length) return;
+        if (!$(this).closest('.dataTables_wrapper, .dt-container, .table-responsive').length) return;
         bootstrap.Dropdown.getOrCreateInstance(this, {
             popperConfig: (defaultConfig) => Object.assign({}, defaultConfig, { strategy: 'fixed' })
         });
