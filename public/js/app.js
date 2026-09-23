@@ -1420,7 +1420,12 @@ function initFilterBar(bar, options) {
         if (explicit !== undefined) return explicit;
         return $select.hasClass('select2-remote') ? '' : 'all';
     }
+    // 2026-09-23, 3e-3b round B5: `input.form-control` fields (a date-range filter, e.g. Action
+    // History's own #auditLogFilterBar -- no `<select>` semantics apply to those at all) branch off
+    // FIRST, before any of the `<select>`-only logic below runs; the 3 original lines that follow
+    // are otherwise untouched.
     function isActive($select) {
+        if (!$select.is('select')) return (($select.val() || '') + '').trim() !== '';
         const val = $select.val();
         if (val === null || val === '') return false;
         return val !== defaultValueFor($select);
@@ -1449,12 +1454,32 @@ function initFilterBar(bar, options) {
         const $target = $defaultOption.length ? $defaultOption : $select.find('option').first();
         $select.val($target.length ? $target.val() : '').trigger('change');
     }
+    // 2026-09-23, 3e-3b round B5: the ONE new branch point for a plain `input.form-control` field --
+    // resetSelect() itself is untouched above (still exactly what it was), called from here unchanged
+    // for anything that IS a `<select>`. An input has none of resetSelect()'s own option-list
+    // machinery to worry about -- blank + the same real `change` event every reset here fires, which
+    // is what scheduleNotify() (below) is listening for either kind of field on.
+    function resetField($field) {
+        if (!$field.is('select')) {
+            $field.val('').trigger('change');
+            return;
+        }
+        resetSelect($field);
+    }
     // 2026-09-13: chip text widened from value-only to "label: ค่า" -- the field's own <label> (a
     // SIBLING of the <select>, per this partial's own docblock convention every existing
     // `.station-filter-body` field already follows) gives the chip context on its own, without
     // requiring a glance back at which column it came from.
     function fieldLabelFor($select) {
         return (($select.siblings('label').first().text() || '').trim());
+    }
+    // 2026-09-23, 3e-3b round B5: a select's own chip VALUE text has always come from its selected
+    // `<option>` (falling back to the raw `.val()` only when that lookup finds nothing); an input
+    // has no options at all, so its own `.val()` -- already exactly what the field displays, e.g.
+    // "23/09/2026" from a datepicker -- IS the chip value, directly.
+    function fieldValueLabel($select) {
+        if (!$select.is('select')) return String($select.val() || '');
+        return (($select.find('option:selected').text() || '').trim()) || String($select.val());
     }
     // 2026-09-13, real bug found and fixed (explicit report: "ปุ่ม 'ล้างตัวกรอง' และ × บน chip กดแล้วไม่
     // ทำงาน") -- both were bound DIRECTLY (`$clearBtn.on('click', ...)`, `$chip.find(...).on('click', ...)`)
@@ -1474,9 +1499,13 @@ function initFilterBar(bar, options) {
     // `$select` (delegation has no per-chip closure to rely on) -- `data-target` on the chip itself
     // (the filter field's own `id`, required from here on for any field used with this partial) is
     // looked up by id instead.
+    // 2026-09-23, 3e-3b round B5: `$allSelects` -> `$allFields`, selector widened to also match
+    // `input.form-control` -- the ONE combining point this whole function needed; every call below
+    // that already just invoked `isActive($(this))`/etc. needed no further change, since those
+    // helpers now branch by element type internally.
     function refresh() {
-        const $allSelects = $fields.find('select');
-        const $active = $allSelects.filter(function () { return isActive($(this)); });
+        const $allFields = $fields.find('select, input.form-control');
+        const $active = $allFields.filter(function () { return isActive($(this)); });
         const n = $active.length;
         $count.text(n);
         $countWrap.toggleClass('d-none', n === 0);
@@ -1492,14 +1521,14 @@ function initFilterBar(bar, options) {
         // parent, per this partial's own docblock contract) gets `.filter-bar-field-active` toggled
         // onto it directly, independent of collapse state, so a filled-in field still visibly reads as
         // "not default" even with no chip anywhere to say so.
-        $allSelects.each(function () {
+        $allFields.each(function () {
             $(this).parent().toggleClass('filter-bar-field-active', isActive($(this)));
         });
         $chips.empty();
         $active.each(function () {
             const $select = $(this);
             const fieldLabel = fieldLabelFor($select);
-            const valueLabel = (($select.find('option:selected').text() || '').trim()) || String($select.val());
+            const valueLabel = fieldValueLabel($select);
             // 2026-09-13, explicit instruction: "chips...ตัวหนังสือ --c-text-muted ค่าเป็น --c-text
             // (label: ค่า)" -- label and value are now 2 separate spans (were one plain text node) so
             // each half can carry its own color via CSS (.filter-bar-chip-label/-value, style.css)
@@ -1521,14 +1550,15 @@ function initFilterBar(bar, options) {
             if (typeof options.onChange === 'function') options.onChange();
         }, 0);
     }
-    $fields.on('change', 'select', scheduleNotify);
+    // 2026-09-23, 3e-3b round B5: widened the same way refresh()'s own selector was, above.
+    $fields.on('change', 'select, input.form-control', scheduleNotify);
     // e.stopPropagation() on both -- see the toggle-zone comment above; these buttons sit right next
     // to the widened toggle zone in the header, so a click on either must never also be interpreted
     // as a click on an ancestor toggle target.
     $bar.on('click', '.filter-bar-chip-remove', function (e) {
         e.stopPropagation();
         const targetId = $(this).closest('.filter-bar-chip').data('target');
-        if (targetId) resetSelect($fields.find('#' + CSS.escape(String(targetId))));
+        if (targetId) resetField($fields.find('#' + CSS.escape(String(targetId))));
     });
     // The same routine the Clear button runs, reachable from outside the panel (the table's own
     // empty state calls it -- see clearAllTableFilters()). Stored on the element, not in a module
@@ -1542,15 +1572,19 @@ function initFilterBar(bar, options) {
         // .remove()` branch above) is exactly the kind of operation that could throw on a field in an
         // unexpected state, and one bad field must not leave every field after it in the loop
         // un-cleared. scheduleNotify()'s shared debounce timer still guarantees refresh()/onChange()
-        // fire exactly once after the whole loop finishes (every resetSelect() call below runs
+        // fire exactly once after the whole loop finishes (every reset call below runs
         // synchronously within this same tick, so only the LAST scheduled setTimeout(0) survives) --
         // unchanged, already correct before this round.
-        const selects = $fields.find('select').toArray();
-        selects.forEach(function (el) {
+        // 2026-09-23, 3e-3b round B5: `const selects` -> `const fields` (widened selector), `resetSelect`
+        // -> `resetField` in the loop -- resetField() itself still calls resetSelect() unchanged for
+        // anything that IS a `<select>`, so a select's own clear behaviour here is byte-for-byte the
+        // same call it always was, just one level deeper.
+        const fields = $fields.find('select, input.form-control').toArray();
+        fields.forEach(function (el) {
             try {
-                resetSelect($(el));
+                resetField($(el));
             } catch (err) {
-                console.error('[filter-bar] resetSelect() failed for one field during "ล้างตัวกรอง" -- continuing with the rest', el, err);
+                console.error('[filter-bar] resetField() failed for one field during "ล้างตัวกรอง" -- continuing with the rest', el, err);
             }
         });
     }
