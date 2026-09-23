@@ -4497,6 +4497,26 @@ try {
         ],
         [true, 1, 0]);
 
+    // 2026-09-23, tiny sync-not-participant list: syncMappedNotParticipants() is the row-level
+    // counterpart to the count above -- resolve sync_process_id from the run first, same as the
+    // controller itself does, so this also proves the two can never disagree on what counts.
+    $t1PulledSyncProcessId = (int)($runModel->get($pulledRunId, $compId)['sync_process_id'] ?? 0);
+    $t1NotParticipantRows = $runModel->syncMappedNotParticipants($t1PulledSyncProcessId, $compId);
+    check('tiny: syncMappedNotParticipants() list length equals syncMappedNotParticipantCount() for the same process',
+        count($t1NotParticipantRows), $runModel->syncMappedNotParticipantCount($pulledRunId, $compId));
+    check('tiny: the row is the mapped-but-unpaid employee itself, carrying employee_no + all 4 name fields',
+        [
+            $t1Ids($t1NotParticipantRows),
+            array_key_exists('employee_no', $t1NotParticipantRows[0] ?? []),
+            array_key_exists('name_th', $t1NotParticipantRows[0] ?? []) && array_key_exists('surname_th', $t1NotParticipantRows[0] ?? []),
+            array_key_exists('name_en', $t1NotParticipantRows[0] ?? []) && array_key_exists('surname_en', $t1NotParticipantRows[0] ?? []),
+        ],
+        [[$employeeUnpaidId], true, true, true]);
+    // $t1IncentiveProcessId mapped $employeeFullId, who IS a participant -- a real process with
+    // nobody meeting the condition, so this must be [] and not null.
+    check('tiny: a process where nobody is mapped-but-unpaid returns [] not null',
+        $runModel->syncMappedNotParticipants($t1IncentiveProcessId, $compId), []);
+
     // The picker's missing_only mode and the banner's own list are one definition
     // (syncMissingEmployeeWhere()) -- a length big enough that pagination cannot hide the answer.
     $t1PickerRows = $runModel->manualEmployeeOptions($compId, $pulledRunId, 0, 500, [], '', 'en', [], true);

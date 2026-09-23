@@ -591,6 +591,32 @@ class PayrollRunModel {
     }
 
     /**
+     * The row-level counterpart to syncMappedNotParticipantCount() above (2026-09-23, tiny sync-
+     * not-participant list) -- same FROM/JOIN/WHERE, but returns who they are instead of how many.
+     * Uses the same key names as syncMissingEmployees()'s own `data` shape (id/employee_no/name_th/
+     * surname_th/name_en/surname_en) so a future UI can render both lists with one row template.
+     * `id` is the raw employees.id, unencoded, matching that same `data` shape -- IdCodec is only
+     * ever used for the run's own route id (see PayrollController::detail()), never an employee id.
+     * A new method rather than widening the count query: the count is a scalar a banner already
+     * consumes as an int, and this list has its own consumer coming later -- keeping them apart
+     * means neither one's contract can break the other's caller.
+     * Takes $processId directly (not $runId) because what this answers is "who did this sync
+     * payload mention", which is a property of the process, not of any one run built from it -- the
+     * caller resolves sync_process_id from the run first, same as syncMappedNotParticipantCount()
+     * does internally. No run_purpose/state gate, matching that method exactly.
+     * @return array<int,array{id:int,employee_no:string,name_th:string,surname_th:string,name_en:string,surname_en:string}>
+     */
+    public function syncMappedNotParticipants(int $processId, int $compId): array {
+        $stmt = $this->db->prepare("SELECT DISTINCT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en
+            FROM `employees` e
+            JOIN `payroll_sync_items` psi ON psi.employee_id = e.id AND psi.process_id = :process_id AND psi.mapping_status = 'mapped'
+            WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 0
+            ORDER BY e.employee_no ASC");
+        $stmt->execute([':process_id' => $processId, ':comp_id' => $compId]);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
      * 2026-08-29, explicit request: "ตรงที่ปริ้น Slip ของพนักงาน ปรับให้ขึ้นเป็นรายชื่อพนักงานมาเลย และ emp
      * code ด้วย แผนกตำแหน่งทีม" -- a lean roster (employee_no/name/department/position/team only) for
      * the Reports page's Pay Slip picker, deliberately NOT reusing getDetails() (that method carries

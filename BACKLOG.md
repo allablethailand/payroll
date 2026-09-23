@@ -1535,9 +1535,9 @@ callout/ปุ่ม warning ทั้งระบบ ต้องวัดห�
 
 ## tiny-1 (2026-09-22) — 3 อย่างที่ backend รู้แล้วแต่ยังไม่มีใครเห็น
 
-1. **แสดง `in_sync_not_participant_count` ใน UI (สูง)** — `api/payroll-run.sync-missing-employees`
-   คืนค่านี้แล้ว แต่ `detail.js` ยังไม่อ่าน · แปลว่า "Origami ส่งมาแล้วแต่ไม่เข้ารอบเพราะไม่ได้รับเงินเดือน"
-   ยัง**มองไม่เห็นทั้งระบบ** (ของจริง: emp 661 `EM062` อยู่ใน sync 191/192 ไม่มีแถวใน run ไหนเลย)
+1. **แสดง `in_sync_not_participant` ใน UI (สูง)** — `api/payroll-run.sync-missing-employees` คืน
+   ทั้ง count และ list (`id`/`employee_no`/ชื่อ) แล้ว (2026-09-23) แต่ `detail.js` ยังไม่อ่านทั้งคู่ ·
+   UI = ก้อนถัดไป (ของจริง: emp 661 `EM062` อยู่ใน sync 191/190 ไม่มีแถวใน run ไหนเลย)
 2. **หน้าพนักงาน (rules.md §16) เตือนเมื่อ participant ยังไม่มี `cycle_id`** — พนักงานที่
    `is_payroll_participant=1` แต่ `cycle_id` ว่าง มีสิทธิ์เข้าทุกรอบตามกฎ `recalculate()` จึงโผล่ใน
    banner "ไม่พบใน Sync" ของทุกรอบ · เป็นสภาพข้อมูลที่ไม่มีที่ไหนบอกตอนกรอกฟอร์ม

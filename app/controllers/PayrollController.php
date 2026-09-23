@@ -1200,14 +1200,18 @@ class PayrollController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        // 2026-09-22, tiny-1: `in_sync_not_participant_count` is the mirror-image case `data` can
-        // never contain -- employees Origami DID send who never reached the run because they're
+        // 2026-09-22/23, tiny-1: `in_sync_not_participant`/`_count` are the mirror-image case `data`
+        // can never contain -- employees Origami DID send who never reached the run because they're
         // marked as not paid through payroll. Returned regardless of run_purpose (unlike `data`,
-        // which is payroll-runs-only now). Nothing renders it yet -- see BACKLOG.md.
+        // which is payroll-runs-only now). Backend sends both the count and the rows now; nothing
+        // renders the list yet -- see BACKLOG.md (UI is the next chunk).
+        $run = $this->model->get($id, (int)$compId);
+        $syncProcessId = ($run && $run['sync_process_id'] !== null) ? (int)$run['sync_process_id'] : null;
         $this->json([
             'status' => true,
             'data' => $this->model->syncMissingEmployees($id, (int)$compId),
             'in_sync_not_participant_count' => $this->model->syncMappedNotParticipantCount($id, (int)$compId),
+            'in_sync_not_participant' => $syncProcessId !== null ? $this->model->syncMappedNotParticipants($syncProcessId, (int)$compId) : [],
         ]);
     }
 
