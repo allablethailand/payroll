@@ -2594,29 +2594,36 @@ function eedStatusBadge(row) {
 function eedActionButtons(row) {
     const notStarted = Number(row.current_installment) === 0;
     const isOpen = row.status === 'active' || row.status === 'paused';
-    // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
-    // ".btn-circle-action" section) replace the old adjacent .btn-group/border-start convention
-    // this section previously followed (2026-08-21).
-    let html = '<div class="d-flex gap-1 justify-content-center">';
-    // View is always available, Edit only while nothing has been paid yet (2026-08-20, explicit
-    // request: "Status ของแต่ละงวดการจ่าย...จ่ายแล้วหรือรอจ่าย") -- once current_installment > 0
+    // 2026-09-23, ปุ่มแถว EED B1 (rules.md §7 L1573-1580, demo components.php:1060-1094): ≤3 ปุ่ม
+    // วงกลม .btn-icon เดียวกันหมด ไม่มีสีต่อ action -- ที่เหลือ (Edit/Delete, เฉพาะตอนยังไม่เริ่มงวด)
+    // พับเข้า ⋮ เดียว, ลบอยู่ล่างสุดคั่นเส้น text-danger ตาม demo. View is always available (2026-08-20,
+    // explicit request: "Status ของแต่ละงวดการจ่าย...จ่ายแล้วหรือรอจ่าย") -- once current_installment > 0
     // save() permanently blocks edits (see EmployeeEarningDeductionModel::save()), so this is the
     // only way to see the per-installment paid/pending schedule for an assignment already in
     // progress or finished. Same modal, populateEedForm(row, true) just disables everything.
-    html += `<button type="button" class="btn btn-link btn-circle-action text-info btn-view-eed" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>`;
-    if (isOpen && notStarted) {
-        html += `<button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-eed" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>`;
-    }
+    let html = '<div class="d-flex gap-1 justify-content-center">';
+    html += `<button type="button" class="btn btn-icon btn-view-eed" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>`;
     if (isOpen) {
         if (row.status === 'active') {
-            html += `<button type="button" class="btn btn-link btn-circle-action text-warning btn-eed-status" data-id="${row.id}" data-status="paused" title="${langData['pause_item'] || 'Pause'}"><i class="fa-solid fa-pause"></i></button>`;
+            html += `<button type="button" class="btn btn-icon btn-eed-status" data-id="${row.id}" data-status="paused" title="${langData['pause_item'] || 'Pause'}"><i class="fa-solid fa-pause"></i></button>`;
         } else {
-            html += `<button type="button" class="btn btn-link btn-circle-action text-success btn-eed-status" data-id="${row.id}" data-status="active" title="${langData['resume_item'] || 'Resume'}"><i class="fa-solid fa-play"></i></button>`;
+            html += `<button type="button" class="btn btn-icon btn-eed-status" data-id="${row.id}" data-status="active" title="${langData['resume_item'] || 'Resume'}"><i class="fa-solid fa-play"></i></button>`;
         }
-        html += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-eed-status" data-id="${row.id}" data-status="cancelled" title="${langData['cancel_item'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
-    }
-    if (isOpen && notStarted) {
-        html += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-eed" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
+        html += `<button type="button" class="btn btn-icon btn-eed-status" data-id="${row.id}" data-status="cancelled" title="${langData['cancel_item'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
+        if (notStarted) {
+            // <button class="dropdown-item">, not demo's <a href="#"> -- same real precedent already
+            // in this app (reports/index.js's .btn-cycle-matrix-print dropdown item) so a click never
+            // jumps the page to "#" the way an un-prevented <a> would; class/data-* the delegated
+            // .btn-edit-eed/.btn-delete-eed handlers (below, unchanged) read stay identical either way.
+            html += `<div class="dropdown">
+                <button type="button" class="btn btn-icon dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="${langData['action_more'] || 'More'}" aria-label="${langData['action_more'] || 'More'}"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><button type="button" class="dropdown-item btn-edit-eed" data-id="${row.id}"><i class="fa-solid fa-pen-to-square me-2"></i>${langData['edit'] || 'Edit'}</button></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><button type="button" class="dropdown-item text-danger btn-delete-eed" data-id="${row.id}"><i class="fa-solid fa-trash-can me-2"></i>${langData['delete'] || 'Delete'}</button></li>
+                </ul>
+            </div>`;
+        }
     }
     html += '</div>';
     return html;
