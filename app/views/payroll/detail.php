@@ -175,6 +175,21 @@
             <button type="button" class="btn btn-sm btn-outline-secondary" id="syncMissingEmployeesViewBtn" data-i18n="view_list">View List</button>
         </div>
     </div>
+    <!-- 2026-09-23, B1: the mirror-image case `#syncMissingEmployeesBanner` above can never contain --
+         employees Origami DID send in this run's sync payload but who never reached the run because
+         they're marked not a payroll participant. See PayrollRunModel::syncMappedNotParticipants().
+         `neutral` tone (rules.md §15 has no `info` tone -- confirmed with the user 2026-09-23): this
+         is advisory information, not a warning, and using `warning` here would read as the same
+         severity as the missing-employees box right above it, which is a real reconciliation concern
+         while this one is just a fact about roster setup -- see docs/decisions/2026-09-23-sync-not-
+         participant-banner.md. Same caller-authored-content contract as the box above, no shared
+         component changed. -->
+    <div class="callout callout-neutral d-none" id="syncNotParticipantBanner">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span id="syncNotParticipantBannerText"></span>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="syncNotParticipantViewBtn" data-i18n="view_list">View List</button>
+        </div>
+    </div>
     <!-- 2026-09-01, explicit request: "ตอนดึงมาทำรอบหรือเพิ่มรอบใหม่ ให้มี radio เลือกว่า เปิดรอบใหม่ หรือ
          อ้างอิงถึงรอบ" -- shown whenever this run was created with "อ้างอิงถึงรอบ" ticked
          (payroll_runs.merge_target_run_id set) and is still a draft, off-cycle run (matches
@@ -1655,6 +1670,30 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body" id="auditLogDetailModalBody"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2026-09-23, B1: read-only roster for #syncNotParticipantBanner above (opened via the
+         syncNotParticipantViewBtn click handler, detail.js -- rows come from the SAME response the
+         banner already holds, never a live re-fetch). rules.md §9 "modal record-only" -- data-footer
+         ="view" same as #auditLogDetailModal above, footer has only [Close], no primary action (this
+         screen has nothing to change -- the fix is on the employee's own Payroll Participation
+         card). Each row is its own link to the employee's profile in a new tab. -->
+    <div class="modal fade" id="syncNotParticipantModal" data-footer="view" tabindex="-1" aria-labelledby="syncNotParticipantModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary mb-0" id="syncNotParticipantModalLabel" data-i18n="sync_not_participant_modal_title">Employees not set as payroll participants</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-3" data-i18n="sync_not_participant_modal_hint">Change this on the Payroll Participation card on the employee's own page.</p>
+                    <div id="syncNotParticipantModalList"></div>
+                </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>

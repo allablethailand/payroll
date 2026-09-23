@@ -969,8 +969,12 @@ async function cell14() {
     }
     await gotoRun(ctx, BANNER_RUN.token || runToken, 'th');
     await ctx.page.waitForTimeout(900);
+    // 2026-09-23, B1: '#syncNotParticipantBanner' added -- same gate as '#syncMissingEmployeesBanner'
+    // (sync_process_id && state==='draft'), so it is null/invisible on this cell's fixture exactly
+    // like that one is, contributing 0 checks to the loop below either way (see
+    // docs/decisions/2026-09-23-sync-not-participant-banner.md for the count verification).
     const IDS = ['#nextStepBanner', '#validationErrorsBanner', '#syncMissingEmployeesBanner',
-        '#mergeTargetBanner', '#mergeTargetWaitingBanner'];
+        '#syncNotParticipantBanner', '#mergeTargetBanner', '#mergeTargetWaitingBanner'];
     const shot = await ctx.page.evaluate((ids) => {
         const head = document.querySelector('#runDetailTabs').parentElement;
         const tabs = document.querySelector('#runDetailTabs').getBoundingClientRect();

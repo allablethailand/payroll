@@ -42,3 +42,12 @@ Chromium log request ที่ถูก abort เป็น console error ขอ�
 **`--cleanup` ต้องได้ `fixture_still_present: false`** (roll-up ของ run/detail/manual line/override/history) — เดิมดู
 ทีละตัวเลข ทำให้แถว `payroll_run_line_overrides` + `payroll_run_line_override_history` ที่ tool นี้สร้างเองหลุดสะสมมา
 ตลอด (กวาดทิ้งครั้งแรก 21 + 23 แถว) ทั้งคู่ผูกด้วย guard 3 ข้อเดิม จึงเอื้อมไปแตะ run ของคนอื่นไม่ได้
+
+**เจอจริง 2026-09-23 (B2): `--with-sync` ทำให้ `tests/payroll_calc_warnings_test.php` fail ชั่วคราวถ้ารัน
+`run_all.php` ก่อน `--cleanup`** — เทสนั้นเลือก target ด้วย `ORDER BY d.run_id DESC LIMIT 1` (run ล่าสุดในเดฟ
+DB ที่ใช้ร่วมกัน) ไม่ scope เฉพาะ run ที่ตัวเองสร้าง — run ที่ `--with-sync` สร้างมี `run_id` สูงสุดเสมอ (auto-
+increment ใหม่) เทสจึงหยิบมันมาเป็น target แล้วไปเจอ manual line/override/exemption ที่ `mksession.php`
+ใส่ไว้ในพนักงานคนหนึ่งของ run นั้นเอง อ่านเป็น "พนักงานอีกคนในรอบเดียวกันควรมี adjustment_count=0" ผิดพลาด —
+**ไม่ใช่บั๊กของโค้ดที่แก้ในรอบนั้น** ยืนยันด้วยการรัน `run_all.php --compare` ก่อน/หลัง `--cleanup`: ต่างกัน
+เฉพาะไฟล์นี้ (48/1 → 48/0) หายไปทันทีที่ลบ run fixture ทิ้ง — ลำดับที่ถูกต้องเสมอ: รัน `--cleanup` ก่อน แล้วค่อย
+`run_all.php --compare` ตัวสุดท้ายที่จะอ้างอิงเป็นผลจริง

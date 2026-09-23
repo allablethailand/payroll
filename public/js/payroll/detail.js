@@ -1463,6 +1463,7 @@ function renderMergeTargetBanner(run) {
 function loadSyncMissingEmployeesBanner(run) {
     if (!run.sync_process_id || run.state !== 'draft') {
         $('#syncMissingEmployeesBanner').addClass('d-none');
+        $('#syncNotParticipantBanner').addClass('d-none'); // 2026-09-23, B1: same gate, same skipped-fetch branch
         return;
     }
     $.ajax({
@@ -1470,6 +1471,7 @@ function loadSyncMissingEmployeesBanner(run) {
         method: 'GET',
         data: { id: run.id },
         success: function (res) {
+            renderSyncNotParticipantBanner(res && res.status ? res.in_sync_not_participant : []); // 2026-09-23, B1: same response, no extra request
             const list = (res && res.status && Array.isArray(res.data)) ? res.data : [];
             if (list.length === 0) {
                 $('#syncMissingEmployeesBanner').addClass('d-none');
@@ -1486,8 +1488,57 @@ function loadSyncMissingEmployeesBanner(run) {
         },
         error: function () {
             $('#syncMissingEmployeesBanner').addClass('d-none');
+            $('#syncNotParticipantBanner').addClass('d-none'); // 2026-09-23, B1
         },
     });
+}
+// 2026-09-23, B1: #syncNotParticipantBanner -- the mirror-image case `data` above can never contain
+// (employees Origami DID send in this run's sync payload but who never reached the run because
+// they're marked not a payroll participant). Reuses the SAME response as the function above -- no
+// separate request. `syncNotParticipantList` caches the rows so a language switch can redraw the
+// banner text and modal body from the SAME data without refetching (see
+// refreshSyncNotParticipantLanguage(), same pattern as auditLogDetailEntryRd/
+// renderAuditLogDetailModalBody()). Not gated by run_purpose, matching the backend
+// (PayrollRunModel::syncMappedNotParticipants()) exactly.
+let syncNotParticipantList = [];
+function renderSyncNotParticipantBanner(list) {
+    syncNotParticipantList = Array.isArray(list) ? list : [];
+    if (syncNotParticipantList.length === 0) {
+        $('#syncNotParticipantBanner').addClass('d-none');
+        return;
+    }
+    const tpl = langData['sync_not_participant_banner'] || '{count} employee(s) sent by Origami are not set as payroll participants, so they are not in this run.';
+    $('#syncNotParticipantBannerText').text(tpl.replace('{count}', syncNotParticipantList.length));
+    $('#syncNotParticipantBanner').removeClass('d-none');
+}
+// employeeDisplayNameRd() expects the shape `syncMappedNotParticipants()` actually returns
+// (name_th/surname_th/name_en/surname_en, separate fields) -- NOT joinEmployeeNameRd()'s shape
+// (manualEmployeeOptions() pre-concatenates name_th/name_en into one string each).
+function syncNotParticipantRowHtml(row) {
+    const url = `${BASE_URL}/employees/${encodeURIComponent(row.employee_no)}`;
+    const name = escapeHtml(employeeDisplayNameRd(row));
+    return `<a href="${url}" target="_blank" rel="noopener" class="d-flex justify-content-between align-items-center gap-2 py-2 border-bottom text-body text-decoration-none">
+        <span class="text-muted">${escapeHtml(row.employee_no)}</span>
+        <span class="flex-grow-1 text-truncate">${name}</span>
+    </a>`;
+}
+function renderSyncNotParticipantModalBody() {
+    $('#syncNotParticipantModalList').html(syncNotParticipantList.map(syncNotParticipantRowHtml).join(''));
+}
+$(document).on('click', '#syncNotParticipantViewBtn', function () {
+    renderSyncNotParticipantModalBody();
+    new bootstrap.Modal(document.getElementById('syncNotParticipantModal')).show();
+});
+// Mirrors refreshAuditLogTableLanguage()'s own tail comment: the banner text and modal rows below
+// are plain strings built from cached data, not data-i18n spans the app-wide switch already walks.
+function refreshSyncNotParticipantLanguage() {
+    if (syncNotParticipantList.length > 0) {
+        const tpl = langData['sync_not_participant_banner'] || '{count} employee(s) sent by Origami are not set as payroll participants, so they are not in this run.';
+        $('#syncNotParticipantBannerText').text(tpl.replace('{count}', syncNotParticipantList.length));
+    }
+    if ($('#syncNotParticipantModal').hasClass('show')) {
+        renderSyncNotParticipantModalBody();
+    }
 }
 // 2026-09-22, n: "ดูรายชื่อ" used to open a read-only Swal list and stop there -- seeing who the sync
 // left out and doing something about it were two separate screens, and the second one (Join
@@ -7620,6 +7671,9 @@ function refreshPayrollDetailLanguage() {
     // of them carry a `data-i18n` the generic sweep could relabel on their own. See
     // refreshAuditLogTableLanguage()'s own docblock.
     refreshAuditLogTableLanguage();
+    // 2026-09-23, B1: #syncNotParticipantBanner/#syncNotParticipantModal -- same reason as
+    // refreshAuditLogTableLanguage() above, see refreshSyncNotParticipantLanguage()'s own docblock.
+    refreshSyncNotParticipantLanguage();
 }
 // 2026-09-13, §1 follow-up: activateTabFromHash() itself moved to app.js (shared with employee/list.js
 // and employee/detail.js's own near-identical versions -- see that function's own docblock) -- the

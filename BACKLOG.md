@@ -1535,9 +1535,11 @@ callout/ปุ่ม warning ทั้งระบบ ต้องวัดห�
 
 ## tiny-1 (2026-09-22) — 3 อย่างที่ backend รู้แล้วแต่ยังไม่มีใครเห็น
 
-1. **แสดง `in_sync_not_participant` ใน UI (สูง)** — `api/payroll-run.sync-missing-employees` คืน
-   ทั้ง count และ list (`id`/`employee_no`/ชื่อ) แล้ว (2026-09-23) แต่ `detail.js` ยังไม่อ่านทั้งคู่ ·
-   UI = ก้อนถัดไป (ของจริง: emp 661 `EM062` อยู่ใน sync 191/190 ไม่มีแถวใน run ไหนเลย)
+1. **~~แสดง `in_sync_not_participant` ใน UI~~ ปิดแล้ว (2026-09-23, B1)** — `#syncNotParticipantBanner`
+   + `#syncNotParticipantModal` (Payroll Detail) อ่าน response เดิม ไม่ยิง request เพิ่ม · tone
+   `neutral` (rules.md §15 ไม่มี tone `info` จริง) ดู `docs/decisions/2026-09-23-sync-not-participant-
+   banner.md` · **ของใหม่**: banner ค้างจนกว่าจะ reload ถ้าเปลี่ยน `is_payroll_participant` ในแท็บอื่น
+   ระหว่างเปิดหน้านี้ค้างไว้ (ไม่มี re-fetch แบบ live) — ยังไม่แก้ ของเดิม (`#syncMissingEmployeesBanner`) ก็เป็นเหมือนกัน
 2. **หน้าพนักงาน (rules.md §16) เตือนเมื่อ participant ยังไม่มี `cycle_id`** — พนักงานที่
    `is_payroll_participant=1` แต่ `cycle_id` ว่าง มีสิทธิ์เข้าทุกรอบตามกฎ `recalculate()` จึงโผล่ใน
    banner "ไม่พบใน Sync" ของทุกรอบ · เป็นสภาพข้อมูลที่ไม่มีที่ไหนบอกตอนกรอกฟอร์ม
@@ -1545,6 +1547,11 @@ callout/ปุ่ม warning ทั้งระบบ ต้องวัดห�
    auto-provision มาจาก SSO (`employee_no LIKE 'SSO-%'`) ส่งให้ HR ตัดสินทีละราย (ผูกรอบ / ตั้ง
    participant=0) · dev ตอนนี้ 22 + 2 (`SSO-D4735E3A26`, `CEO`) → ดู
    `docs/decisions/2026-09-22-tiny1-sync-missing-criteria.md`
+4. **`#syncMissingEmployeesBanner` ไม่ re-render ตอนสลับภาษา (บั๊กเดิม, พบระหว่างทำ B1 ข้อ 1 — ไม่แก้ในก้อนนี้)**
+   — `loadSyncMissingEmployeesBanner()` (detail.js) เรียกจาก `renderRunHeader()` เท่านั้น ไม่ใช่
+   `renderRunHeaderText()`/`refreshPayrollDetailLanguage()` ข้อความเลยค้างภาษาเดิมจนกว่าจะโหลดหน้าใหม่ ·
+   `#syncNotParticipantBanner` (ของใหม่) แก้แล้วด้วยกลไกแยก (`refreshSyncNotParticipantLanguage()`)
+   เพราะ diff ของ banner เดิมต้องเป็น 0
 
 ## tiny-2 (2026-09-22) — fixture
 
