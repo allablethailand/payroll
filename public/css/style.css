@@ -7733,25 +7733,25 @@ html, body {
    `ms-1`/`ms-2` utility classes) and the length-vs-search / info-vs-pagination left/right split
    (`justify-content-between` on the row, pure flex distribution) are both independent of the gutter
    variable, so neither is affected by removing it. */
-#tb_run_detail_wrapper .row,
-/* 2026-09-20, 3e-1 round 1: the same one-line, per-wrapper collapse for the 4 OTHER DataTables on
-   this page. With the pane padding gone (above), Bootstrap's own grid gutter on the layout row that
-   datatables.net-bs5 generates was the remaining 9px that made every table sit indented from the
-   callout/empty-state beside it -- measured, not guessed. Scoped per wrapper id exactly like the
-   line above it, so `--bs-gutter-x` is untouched everywhere else in the app. */
-#tb_run_reports_wrapper .row,
-#tb_run_cash_wrapper .row,
-#tb_run_bank_account_wrapper .row,
-#tb_run_remittance_wrapper .row,
-/* 2026-09-23, 3e-3b round B6: #tb_run_audit_log didn't exist yet when the 5 selectors above were
-   written (3e-1) -- same root cause, same fix, now that it sits beside a real sibling block
-   (#auditLogFilterBar) and the same 9px gutter became measurable (m3e1_tabs_shared.js's own c13,
-   round B5's own finding). NOT a JS `toolbar`/`dom`/`layout` option -- confirmed by reading
-   initRunDetailTable()'s own initSharedDataTable() call (detail.js): `layout: {topStart:'pageLength',
-   topEnd:'search'}` is set unconditionally by initSharedDataTable() itself for EVERY table (line
-   ~1192, this file's own JS), identical for #tb_run_detail and #tb_run_audit_log alike -- the gutter
-   was always this CSS-only, per-wrapper-id fix, never a per-table JS config difference. */
-#tb_run_audit_log_wrapper .row {
+/* 2026-09-20, 3e-1 round 1: the same one-line collapse for the 4 OTHER DataTables on this page (and
+   #tb_run_audit_log, added 3e-3b round B6 -- same root cause, same fix, once it sat beside a real
+   sibling block (#auditLogFilterBar) and the same 9px gutter became measurable, m3e1_tabs_shared.js's
+   own c13). NOT a JS `toolbar`/`dom`/`layout` option -- confirmed by reading initRunDetailTable()'s own
+   initSharedDataTable() call (detail.js): `layout: {topStart:'pageLength', topEnd:'search'}` is set
+   unconditionally by initSharedDataTable() itself for EVERY table (line ~1192, this file's own JS),
+   identical for #tb_run_detail and #tb_run_audit_log alike -- the gutter was always this CSS-only fix,
+   never a per-table JS config difference.
+   2026-09-23, 3e-3b round B1: the 6 per-wrapper-id selectors this rule used to list one-by-one are
+   replaced with ONE selector scoped to `#runDetailTabsContent > .tab-pane` instead -- confirmed
+   equivalent to the old list, not broader, before making this change (round B1's own item 1.4/B
+   pre-check): every one of the 6 `.tab-pane` elements under `#runDetailTabsContent` is a DIRECT child
+   of it (payroll/detail.php, indentation-verified), and the only OTHER DataTable inside
+   `#runDetailTabsContent` (#tb_report_history, inside #reportHistoryModal) sits as a SIBLING of those
+   `.tab-pane` elements, never nested inside one -- so the child combinator on `.tab-pane` excludes it
+   correctly, same as the old list never covered it. Scoped to THIS ONE page only: `#runDetailTabsContent`
+   is a page-unique id (grep-confirmed, app/views/payroll/detail.php only), so this selector can never
+   match anything on any other page. */
+#runDetailTabsContent > .tab-pane .dt-container .row {
     --bs-gutter-x: 0;
 }
 /* 2026-09-09, real bug found and fixed (explicit report: "ปุ่มในตาราง Employee อยากให้แสดงอยู่ในแถวเดียว

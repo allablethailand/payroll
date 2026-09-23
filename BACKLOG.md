@@ -1603,3 +1603,48 @@ callout/ปุ่ม warning ทั้งระบบ ต้องวัดห�
    แก้เป็น `fwrite(STDERR)+exit(1)` แล้ว (round B2) แต่ `tests/ui/find_banner_run.php` และ
    `tests/ui/mksession.php` ยังใช้แพทเทิร์นเดิม (`exit("...is a CLI tool.\n")`) ซึ่งไม่เคยตั้ง exit code
    จริงเป็น non-zero เลย — caller ที่เช็ค exit code (ไม่ใช่แค่อ่าน output) จะไม่มีทางรู้ว่าไฟล์ถูกเรียกผิดโหมด
+
+## ก้อน 3 / 3e-3b round B1 (2026-09-23) — Payroll Detail filter-bar/gutter-zero (docs/decisions/2026-09-23-chunk3-run-detail-filter-gutter.md)
+
+1. **(ก) 4 ตาราง (#tb_run_reports/#tb_run_cash/#tb_run_bank_account/#tb_run_remittance) + column filter
+   cash/remittance** — ยังไม่ได้ทำในก้อนนี้ (นอกขอบเขต) `payroll_run_employee_bank_accounts`/
+   `payroll_remittances` ว่างทั้งฐาน dev DB (0 แถว) ต้องสร้าง tiny fixture ก่อนถึงจะทดสอบ >5 แถวได้จริง —
+   สเปก fixture เต็มอยู่ในรอบ A §1.3 (tmp-chunk3-roundA.md, ลบแล้ว — ขอรอบสำรวจใหม่ถ้าต้องการรายละเอียด
+   เต็มอีกครั้ง) — candidate เพิ่ม column filter ให้สถานะของ cash (paid/unpaid)/remittance (pending/
+   transferred/success/failed) ตาม pattern เดียวกับ #tb_run_detail's เอง calc_status/verify_status
+   (closed-set badge columns) แต่ยังไม่มีเกณฑ์ชัดเจนในกฎว่าจำเป็นแค่ไหนสำหรับตารางที่มีคอลัมน์น้อย
+2. **sticky thead แนวตั้ง (shared, ไม่มีจริงในแอปทั้งระบบ)** — rules.md §7's own layout diagram
+   (`docs/design/rules.md:1513`) เขียนไว้ว่ามาตรฐานคือ "fix คอลัมน์แรก และหัวตาราง" แต่ยืนยันจากโค้ดแล้วว่า
+   ส่วน "fix หัวตาราง" (vertical `position:sticky; top:0`) ไม่เคย implement ที่ไหนเลย รวมหน้าต้นแบบ
+   (`/employees#employee-recheck-top-tab`) — `initStickyColumns()`
+   (`public/js/sticky-table-columns.js`) รองรับแค่ `left`/`right` เท่านั้น ต้องเพิ่ม `top` option ใหม่
+   ถ้าจะทำจริง เป็นงาน shared function กระทบทุกตารางที่ใช้ `stickyColumns` ไม่ใช่แค่ #tb_run_detail
+3. **`.structure-tabs-wrap`'s `.bg-light` ไม่ theme-aware ใน dark mode** (`employee/detail.php:1967`,
+   แท็บเงินได้/รายหัก) — เป็น Bootstrap utility class ล้วน แอปไม่เคย override เลย (`grep .bg-light` ใน
+   style.css = 0 hits) ไม่ยืนยันแน่ชัดว่า Bootstrap 5.3.3 เองทำ dark ให้อัตโนมัติหรือไม่ (เคยเจอ pattern
+   คล้ายกันที่กลายเป็นเจอว่าไม่ทำงานจริงกับ `.table-light`) — ต้องวัดจริงในเบราว์เซอร์ก่อนตัดสินวิธีแก้
+4. **hint `{card}` ไม่ตรงกับชื่อการ์ดจริง (TH เท่านั้น)** — `sync_not_participant_modal_hint`
+   (`public/lang/th.json:1717`) เขียนว่า "เปลี่ยนได้ที่การ์ด **Payroll Participation**" (ใช้ชื่ออังกฤษฝัง
+   ในประโยคไทย) ขณะที่การ์ดจริงในหน้าไทยใช้ key `payroll_participant_label`
+   (`public/lang/th.json:707`) = "**การจ่ายเงินเดือน**" — EN ↔ EN ตรงกัน (ทั้งคู่ "Payroll
+   Participation") แต่ TH ↔ TH ไม่ตรงกัน ผู้ใช้ที่อ่าน UI ไทยล้วนจะเห็น hint อ้างชื่อการ์ดที่ไม่ปรากฏใน
+   UI ไทยเลย — แก้ได้ 2 ทาง: เปลี่ยน hint ให้ใช้ "การจ่ายเงินเดือน" หรือเปลี่ยนชื่อการ์ดให้ตรง hint (ต้อง
+   ถามก่อนเลือก ไม่ใช่ตัดสินเอง)
+5. **`.detail-section` พื้นขาวใน dark mode ไม่มี token ตรงให้ diff 0** — grep ใหม่ยืนยันครบทุกจุด (round B2c),
+   แยก CSS rule ออกจาก consumer ชัดเจน:
+   - **CSS rule (2 จุด)**: `public/css/style.css:7677` (`.detail-section { background:#fff; border:1px
+     solid #eef0f2; ... }` — ตัวกฎจริงที่ hardcode ค่า), `public/css/style.css:7683`
+     (`.detail-section + .detail-section { margin-top:1.75rem; }` — กฎ margin ระหว่างการ์ดติดกัน ไม่มี
+     สี ไม่เกี่ยวกับ dark mode)
+   - **Consumer จริง (8 จุด/3 ไฟล์, ใช้ `class="detail-section"`)**: `app/views/payroll/detail.php:332`
+     (การ์ด "①" Run Information), `app/views/payroll/detail.php:381` (การ์ดที่ 2 ของ Details tab),
+     `public/js/payroll/index.js:1261` (Payroll List's Sync Summary modal, section 1),
+     `public/js/payroll/index.js:1292` (section 2), `app/views/employee/detail.php:2054,2289,2336,2376`
+     (Family tab, 4 sub-card แยกกัน) — ตรวจแล้วรอบ B1
+   (`docs/decisions/2026-09-23-chunk3-run-detail-filter-gutter.md`): `--c-bg`(`#FFFFFF`)/
+   `--app-surface-bg`(`#ffffff`) ตรง `#fff` (background) พอดี แต่**ไม่มี token ไหนตรง `#eef0f2` (border) เป๊ะ**
+   เลยสักตัว — ตัวเลือกที่ใกล้สุด `--c-border` (`#E5E7EB`, tokens.css:23) หรือ `--app-border`
+   (`#f0f0f0`, style.css:5820, `.card-surface` การ์ดหลักของแอปเองใช้จริง) ทั้งคู่ทำให้สี light เปลี่ยนไปเล็กน้อย
+   จากเดิม (ไม่ diff 0) — ต้องตัดสินใจ design จากภาพจริงก่อน (rules.md §0.6 "ห้ามเดา design") ว่ายอมรับ diff
+   เล็กน้อยได้ไหม หรือต้องเพิ่ม token ใหม่ให้ตรง `#eef0f2` เป๊ะ — เป็นงาน shared (8 จุด/3 ไฟล์) ต้องมี
+   regression check ต่อ consumer ถ้าแก้จริง ไม่ใช่แก้แค่จุดเดียวแล้วจบ
