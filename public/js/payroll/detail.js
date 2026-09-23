@@ -1261,8 +1261,8 @@ function runTypeLabelRd(run) {
 // leaving them showing an empty "not ready"/"no rows" state -- computed straight off the SAME
 // api/payroll-run.get response renderRunHeader() already has in hand: run.details' own
 // payment_method_code per employee (already sent, no new field needed -- isCashishPaymentMethod()/
-// isBankishPaymentMethod() below are the same 2 helpers registerPaymentMethodSearchFilter() already
-// uses, so "cash-ish"/"bank-ish" can never drift between the filter and this visibility check) for
+// isBankishPaymentMethod() below are the same 2 helpers updatePaymentMethodSummary() already uses, so
+// "cash-ish"/"bank-ish" can never drift between the summary card and this visibility check) for
 // the first two, and the new run.remittance_count field (PayrollRunModel::get(), a real COUNT()
 // query -- remittance rows live in a wholly separate table not reachable from run.details at all)
 // for the third. Called from renderRunHeader() itself, which runs on every full run reload
@@ -2820,7 +2820,9 @@ function updatePaymentMethodSummary(details) {
 }
 // 2026-09-09, real bug found and fixed (explicit report: "วิธีจ่ายเงิน ตอนนี้ติ๊กแล้ว Employee ไม่เปลี่ยนตาม
 // ครับ") -- the Bank/Cash payment-method filter checkboxes already correctly filtered #tb_run_detail's
-// own ROWS (registerPaymentMethodSearchFilter() below) and its own <tfoot> totals (footerCallback(),
+// own ROWS (via a payment-method filter-bar predicate, REMOVED 2026-09-23 round B1 มติ ข -- department/
+// payment-method filtering is column-header-only from that round on, see docs/decisions for the
+// removed field/function ids) and its own <tfoot> totals (footerCallback(),
 // {search:'applied'}) -- but the 4 big Summary Cards above the tabs (#infoEmployeeCount/#infoGross/
 // #infoDeduction/#infoNet, moved there 2026-09-09 -- see app/views/payroll/detail.php's own comment)
 // were only ever set ONCE, from renderRunHeader()'s own run-level totals (run.employee_count/
@@ -2843,37 +2845,28 @@ function updateSummaryCardsFromTable() {
     $('#infoNet').text(fmtNum(sum('net_amount')));
     updatePaymentMethodSummary(visibleRows);
 }
-// 2026-08-31, explicit request: "ก่อนตารางพนักงาน ให้มี checkbox ขึ้นมาเพื่อให้เลือกกรองข้อมูล พนักงานที่รับผ่าน
-// บัญชี และเงินสด" -- registered ONCE (guarded the same way registerStationSearchFilter() in
-// payroll/index.js is, scoped to this one table's id so it never affects any other DataTable on the
-// page) rather than re-pushed every time initRunDetailTable() runs.
-let paymentMethodSearchFilterRegistered = false;
-// 2026-09-13, Round 3 item 3b: reads the new #rdPaymentMethodFilter SELECT's own value (filter-bar.php,
-// see initRunDetailFilterBarOnce() below) instead of 2 checkboxes -- same 2 reachable boolean states as
-// before (bankOn/cashOn), just derived from ONE value now: 'all' means both on, 'bank'/'cash' means
-// only that one. No change to the predicate itself (still isBankishPaymentMethod()/isCashishPaymentMethod()
-// against payment_method_code, still lets 'mixed' pass if EITHER is on).
-function registerPaymentMethodSearchFilter() {
-    if (paymentMethodSearchFilterRegistered) return;
-    paymentMethodSearchFilterRegistered = true;
-    $.fn.dataTable.ext.search.push(function (settings, searchData, dataIndex, rowData) {
-        if (!settings.nTable || settings.nTable.id !== 'tb_run_detail') return true;
-        const val = $('#rdPaymentMethodFilter').val() || 'all';
-        const bankOn = val === 'all' || val === 'bank';
-        const cashOn = val === 'all' || val === 'cash';
-        const code = (rowData && rowData.payment_method_code) || 'transfer';
-        return (isBankishPaymentMethod(code) && bankOn) || (isCashishPaymentMethod(code) && cashOn);
-    });
-}
+// 2026-09-23, 3e-3b round B1, มติ ข: the Department and Payment Method filter-bar search predicates
+// (their own registrar functions, see docs/decisions for the old names) are REMOVED outright, not
+// just their fields -- rules.md §7's "ห้ามทำ select ซ้ำ" rule (see filter-bar field removal comment in
+// app/views/payroll/detail.php) applies to both, since #tb_run_detail's own column-header Excel filter
+// already covers department (column index 3) and payment_method_code (index 4) -- see
+// initRunDetailTable()'s own `columnFilters` option below. isBankishPaymentMethod()/
+// isCashishPaymentMethod() above are NOT part of this removal -- updatePaymentMethodSummary() (the
+// "Bank X · Cash Y" subtext under the Employees summary card) still calls them unconditionally,
+// independent of whatever filter-bar field existed.
 
 // 2026-09-11, Batch 3C item 7, explicit instruction: "ตัดคอลัมน์ แหล่งที่มา ออก (ย้ายไปเป็น filter pill
-// 'ที่มา: ทั้งหมด/Sync/เพิ่มเอง' เหนือตาราง ถ้ายังต้องกรอง)" -- same registered-once-per-table-id guard as
-// registerPaymentMethodSearchFilter() above, filtering on row.data_source ('sync'/'manual', same
-// field the old Source column's badge used to render). #rdDataSourceFilterWrap's own visibility
-// (hidden for a run that never brings base salary into the calculation, since data_source doesn't
-// apply there either) is still owned by initRunDetailTable() -- see its own showDataSourceFilter
-// comment. 2026-09-13, Round 3 item 3b: reads the new #rdSourceFilter SELECT instead of a 3-way
-// radio-pill group (same 3 values -- all/sync/manual -- same predicate, view-only change).
+// 'ที่มา: ทั้งหมด/Sync/เพิ่มเอง' เหนือตาราง ถ้ายังต้องกรอง)" -- registered ONCE (guarded the same way
+// registerStationSearchFilter() in payroll/index.js is, scoped to this one table's id so it never
+// affects any other DataTable on the page) rather than re-pushed every time initRunDetailTable() runs,
+// filtering on row.data_source ('sync'/'manual', same field the old Source column's badge used to
+// render). #rdDataSourceFilterWrap's own visibility (hidden for a run that never brings base salary
+// into the calculation, since data_source doesn't apply there either) is still owned by
+// initRunDetailTable() -- see its own showDataSourceFilter comment. 2026-09-13, Round 3 item 3b: reads
+// the new #rdSourceFilter SELECT instead of a 3-way radio-pill group (same 3 values -- all/sync/manual
+// -- same predicate, view-only change). 2026-09-23, round B1: this is now the ONLY search predicate/
+// field left in #runDetailFilterBar (see removal comment above) -- department/payment-method filtering
+// is column-header-only from this round on.
 let dataSourceSearchFilterRegistered = false;
 function registerDataSourceSearchFilter() {
     if (dataSourceSearchFilterRegistered) return;
@@ -2885,44 +2878,20 @@ function registerDataSourceSearchFilter() {
         return (rowData && rowData.data_source) === val;
     });
 }
-// 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "เพิ่มช่อง 'แผนก' (select2-remote
-// /api/department.get เหมือน Employee list) เป็นช่องแรก" -- filters on row.department_id, the SAME
-// column PayrollRunModel::getDetails()'s own SQL already SELECTs (`e.department_id`, confirmed via
-// grep -- it just had no reader in this file before now, departmentNameRd() only ever read the
-// display-name columns). Number()-coerced on both sides since select2's own `.val()` returns a
-// string, while row.department_id (JSON-decoded from a SQL integer column) is already a number.
-let departmentSearchFilterRegistered = false;
-function registerDepartmentSearchFilter() {
-    if (departmentSearchFilterRegistered) return;
-    departmentSearchFilterRegistered = true;
-    $.fn.dataTable.ext.search.push(function (settings, searchData, dataIndex, rowData) {
-        if (!settings.nTable || settings.nTable.id !== 'tb_run_detail') return true;
-        const val = $('#rdDepartmentFilter').val();
-        if (!val) return true;
-        return Number(rowData && rowData.department_id) === Number(val);
-    });
-}
-// 2026-09-13, Round 3 item 3b -- registered ONCE (same guard shape as the 3 search-filter registrars
-// above), separate from them since this wires the shared filter-bar.php shell itself (chevron/count/
-// chips/Clear -- see initFilterBar()'s own docblock in app.js), not a DataTables search predicate.
-// #rdPaymentMethodFilter/#rdSourceFilter go through initSelect2(..., {mode:'static'}) per this app's
-// own mandatory Select2 convention (CLAUDE.md) -- 'select2-static' is already on each <select>'s own
-// class in detail.php, so this only needs to explicitly set each one's default value to 'all'
-// afterward (this app's own established select2-static convention leaves a freshly-initialized static
-// select on its EMPTY placeholder by default, not its first real option -- see employee/reports.js's
-// own #employee_structure_filter_group_by for the same pattern) so both filters visibly start as "show
-// everyone", matching the OLD checkbox/radio defaults exactly. #rdDepartmentFilter is a genuine
-// select2-remote (ajax mode, data-api/data-type already on its own <select>, exactly Employee List's
-// #employee_filter_department convention) -- its own resting empty value already means "no filter" via
-// initFilterBar()'s own isActive() check, no explicit default-value step needed the way the 2 static
-// selects above do.
+// 2026-09-13, Round 3 item 3b -- registered ONCE, wires the shared filter-bar.php shell itself
+// (chevron/count/chips/Clear -- see initFilterBar()'s own docblock in app.js), not a DataTables search
+// predicate. 2026-09-23, round B1: #rdSourceFilter is now the ONLY field in this bar (มติ ข removed the
+// other 2 -- see docs/decisions for the old field ids) -- still goes through initSelect2(..., {mode:'static'}) per this
+// app's own mandatory Select2 convention (CLAUDE.md) -- 'select2-static' is already on its own <select>
+// class in detail.php, so this only needs to explicitly set its default value to 'all' afterward (this
+// app's own established select2-static convention leaves a freshly-initialized static select on its
+// EMPTY placeholder by default, not its first real option -- see employee/reports.js's own
+// #employee_structure_filter_group_by for the same pattern) so it visibly starts as "show everyone".
 let runDetailFilterBarInitialized = false;
 function initRunDetailFilterBarOnce() {
     if (runDetailFilterBarInitialized) return;
     runDetailFilterBarInitialized = true;
-    initSelect2('#rdDepartmentFilter');
-    initSelect2('#rdPaymentMethodFilter, #rdSourceFilter', { mode: 'static' });
-    $('#rdPaymentMethodFilter').val('all').trigger('change');
+    initSelect2('#rdSourceFilter', { mode: 'static' });
     $('#rdSourceFilter').val('all').trigger('change');
     initFilterBar('#runDetailFilterBar', {
         onChange: function () { if (tb_run_detail) tb_run_detail.draw(); },
@@ -2942,9 +2911,7 @@ let currentRunDetails = [];
 // see app/views/payroll/detail.php's own removal comment for the tab nav/pane markup.
 function initRunDetailTable(details) {
     currentRunDetails = details;
-    registerPaymentMethodSearchFilter();
     registerDataSourceSearchFilter();
-    registerDepartmentSearchFilter();
     initRunDetailFilterBarOnce();
     // 2026-09-09: no longer called directly here with the FULL, unfiltered `details` array -- see
     // updateSummaryCardsFromTable()'s own docblock (called from drawCallback below instead, which
@@ -2975,8 +2942,34 @@ function initRunDetailTable(details) {
     // 2026-09-11, Batch 3C item 7: the column this used to gate is gone (see the retirement comment
     // above dataSourceBadgeRd()'s old location) -- this same condition now gates the FILTER PILL's
     // own visibility instead, right below.
-    const showDataSourceFilter = !currentRun || currentRun.run_purpose !== 'incentive' || !!currentRun.include_base_salary;
-    $('#rdDataSourceFilterWrap').toggleClass('d-none', !showDataSourceFilter);
+    // 2026-09-23, round B1 follow-up: toggles the WHOLE #runDetailFilterBar now, not just
+    // #rdDataSourceFilterWrap -- since มติ ข (this same round) removed the bar's other 2 fields (see
+    // docs/decisions for the old ids), #rdSourceFilter is the bar's ONLY remaining field, so hiding just its own
+    // wrap while leaving the bar's header (label/chevron/Clear) visible would show a filter panel that
+    // expands to literally nothing (an incentive run with include_base_salary=0 -- confirmed real via a
+    // live run in dev DB, round B1's own item 1.1). Condition itself is UNCHANGED (still gates on the
+    // same run-level "does this run bring base salary/data_source into the picture at all" question) --
+    // only the toggle TARGET changed, smallest diff that fixes the empty-bar case. Also resets
+    // #rdSourceFilter back to its own default ('all') whenever it's hidden this way -- a value picked
+    // on a PRIOR run before navigating/switching to one where the field is hidden would otherwise sit on
+    // the underlying <select> invisibly and keep silently narrowing registerDataSourceSearchFilter()'s
+    // own predicate with no chip/field on screen to explain why, and no way for the user to clear it.
+    // 2026-09-23, round B2c, real bug found and fixed: `!!currentRun.include_base_salary` -- PDO
+    // returns every column as a string, and `api/payroll-run.get`'s own json_encode() never casts
+    // include_base_salary to a real JSON number, so the client receives the STRING "0" for an
+    // opted-out incentive run -- `!!"0"` is `true` in JS (any non-empty string is truthy), the
+    // opposite of what this condition means. Confirmed live via a real run in dev DB (round B2b's own
+    // measurement, s_run_detail_c3.js c1/false): run 29685 (run_purpose='incentive',
+    // include_base_salary=0 in the DB) showed showDataSourceFilter=true instead of false. Same
+    // `Number(x) === 1` pattern this file already uses correctly for the exact same field elsewhere
+    // (detail.js:1247/7487/7531, and the unrelated auto_recalculate flag at detail.js:4403) --
+    // pre-existing bug, not introduced by this round's own toggle-target change (that part of the
+    // condition is untouched).
+    const showDataSourceFilter = !currentRun || currentRun.run_purpose !== 'incentive' || Number(currentRun.include_base_salary) === 1;
+    $('#runDetailFilterBar').toggleClass('d-none', !showDataSourceFilter);
+    if (!showDataSourceFilter) {
+        $('#rdSourceFilter').val('all').trigger('change');
+    }
     if ($.fn.DataTable.isDataTable('#tb_run_detail')) {
         const existingApi = $('#tb_run_detail').DataTable();
         const existingCheckboxColumn = existingApi.column(0);
@@ -3040,9 +3033,10 @@ function initRunDetailTable(details) {
         // 2026-09-23, 3e-3b round B4: named explicitly now that #auditLogFilterBar (Action History
         // tab) makes this page's 2nd `.filter-bar` -- tableFilterBarFor() (app.js) only auto-picks
         // "the single `.filter-bar` on the page" when there is exactly one; without this, this
-        // table's own empty-state Clear button would silently stop resetting
-        // #rdDepartmentFilter/#rdPaymentMethodFilter/#rdSourceFilter (real regression, caught before
-        // it shipped by tracing tableFilterBarFor()'s own fallback while adding the 2nd bar).
+        // table's own empty-state Clear button would silently stop resetting #rdSourceFilter (real
+        // regression, caught before it shipped by tracing tableFilterBarFor()'s own fallback while
+        // adding the 2nd bar -- the other 2 fields this bar held at the time were REMOVED 2026-09-23
+        // round B1 มติ ข, see docs/decisions for their old ids).
         filterBar: '#runDetailFilterBar',
         // §6: "empty state 2 แบบ" -- this config is the "genuinely no data yet" variant (reuses the
         // exact copy/icon #noDetailsYet used to show); dtRenderEmptyState() (app.js) auto-swaps to its
@@ -3051,9 +3045,9 @@ function initRunDetailTable(details) {
         // Known gap, not fixed here (a shared-function limitation, affects every initSharedDataTable()
         // caller, not specific to this table): that built-in filtered-state "Clear Filter" action only
         // clears the DataTables global search box (`dt.search('').draw()`), not this table's OWN
-        // #rdPaymentMethodFilter/#rdSourceFilter selects (custom ext.search predicates, a different
-        // mechanism) -- a user who filtered to zero via those selects and clicks "Clear Filter" would
-        // see the search box clear but the select-driven filter stay active.
+        // #rdSourceFilter select (custom ext.search predicate, a different mechanism) -- a user who
+        // filtered to zero via that select and clicks "Clear Filter" would see the search box clear but
+        // the select-driven filter stay active.
         emptyState: {
             icon: 'fa-solid fa-calculator',
             title: getLangValue('no_details_yet') || 'No employees calculated yet. Click "Recalculate" to compute this run.',
@@ -4126,7 +4120,7 @@ function updateAuditLogDateRangeCalloutRd() {
 // CLAUDE.md -- applies here too) -- compared as a STRING against the datepicker's own ISO value via
 // toIsoDateRd(), never through a `Date` parse that would silently apply the browser's local offset
 // to a value that was never UTC in the first place. Registered once (module-level guard, same shape
-// as registerPaymentMethodSearchFilter() etc. above) and scoped to this one table's id so it can
+// as registerDataSourceSearchFilter() etc. above) and scoped to this one table's id so it can
 // never affect any other DataTable on this page.
 let auditLogDateRangeSearchFilterRegistered = false;
 function registerAuditLogDateRangeSearchFilter() {

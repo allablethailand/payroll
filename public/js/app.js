@@ -1405,7 +1405,7 @@ function initFilterBar(bar, options) {
     // one; a lone remote selection -> × never works AT ALL) -- root cause confirmed by reading
     // input.js's own initSelect2() ajax branch: a select2-remote field's underlying `<select>` never
     // carries a baked-in "all" placeholder `<option>` the way a static/native field's markup always
-    // does (`#rdDepartmentFilter`'s own markup is a bare `<select ...></select>`, zero options) --
+    // does (a select2-remote field's own markup is a bare `<select ...></select>`, zero options) --
     // select2 only ever appends ONE `<option>` dynamically, for whatever value the user actually
     // picked. The OLD resetSelect() (below) always reset via `.find('option').first()` -- for a
     // remote field that's the SAME option that's currently selected, so "reset" just set the value

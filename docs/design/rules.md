@@ -987,8 +987,10 @@ approved → ...) ไม่ใช่สลับหน้า)
   "เลือก 2 ช่อง → × ของช่องที่ 2 (static) ทำงาน, ช่องที่ 1 (แผนก = select2-remote) × ไม่ทำงาน; 'ล้างตัวกรอง'
   ล้างได้แค่ช่อง static; เลือกแผนกช่องเดียว × ไม่ทำงานเลย" — components.php's demo เดิมทุกช่องเป็น
   `select2-native` (มี option ครบในมาร์กอัปเสมอ) จึง repro บั๊กนี้ไม่ได้เลย จนกว่าจะเปลี่ยนช่องแรก
-  (`#cpFilterDept`) เป็น `select2-remote` จริง ชี้ `/api/department.get` เหมือน `#rdDepartmentFilter`
-  ของหน้าจริงทุกประการ (ตามที่สั่ง) — root cause: `resetSelect()` เดิมใช้ `.find('option').first()` เป็นค่า
+  (`#cpFilterDept`) เป็น `select2-remote` จริง ชี้ `/api/department.get` เหมือน `#employee_filter_department`
+  ของหน้า Employee List จริงทุกประการ (ตามที่สั่ง — อ้างอิงเดิมชี้ไปที่ field ของ payroll/detail.php
+  ซึ่งถูกลบแล้ว 2026-09-23 round B1 มติ ข (ดู docs/decisions), สลับมาอ้าง select2-remote จริงตัวอื่นแทน
+  ความหมายไม่เปลี่ยน) — root cause: `resetSelect()` เดิมใช้ `.find('option').first()` เป็นค่า
   "default" เสมอ ถูกสำหรับ static/native (option แรกในมาร์กอัปคือ `value="all"` จริง) แต่**ผิดสำหรับ
   select2-remote** เพราะช่อง ajax ไม่มี option ใดๆ ในมาร์กอัปเลยตอนเริ่มต้น (ดู `initSelect2()`'s ajax
   branch, input.js) — option เดียวที่เคยมีคือตัวที่ select2 append ตอนผู้ใช้เลือกค่าจริง ดังนั้น

@@ -46,10 +46,11 @@
  *       follow langData, modal stays open through the switch) · dark + 430: filter bar causes no
  *       sideways scroll, the datepicker popup opens and isn't stuck light, modal-lg doesn't overflow
  *       the viewport
- *   c17 round B5 regression check ("โหมดเดิมไม่แตก"): #runDetailFilterBar (Employee tab, 3 SELECT
- *       fields, 0 inputs) still gets a working (1)/chip/Clear-button/chip-x/Clear-button cycle after
- *       initFilterBar() gained its input branch -- every expected value read from the DOM itself
- *       (option text, field's own <label>, select's own default), never hardcoded
+ *   c17 round B5 regression check ("โหมดเดิมไม่แตก"): #runDetailFilterBar (Employee tab, 1 SELECT field
+ *       -- #rdSourceFilter, the only one left after round B1's own มติ ข removed the other 2) still
+ *       gets a working (1)/chip/Clear-button/chip-x/Clear-button cycle after initFilterBar() gained its
+ *       input branch -- every expected value read from the DOM itself (option text, field's own
+ *       <label>, select's own default), never hardcoded
  *
  * Writes: none. This suite never clicks anything that would trigger a mutating call -- but round B2
  * stopped relying on that alone once cells started opening run 752 (real dev data, not a throwaway
@@ -1185,12 +1186,22 @@ async function c16() {
 }
 
 /* ---------------- c17 ---------------- */
-// 2026-09-23, round B5: "โหมดเดิมไม่แตก" -- #runDetailFilterBar (Employee tab, 3 SELECT fields, no
-// `<input class="form-control">` at all) is the ONE existing real consumer of initFilterBar() that
-// this round's own app.js change could regress, since every select-branch line in that function
-// was supposed to survive completely untouched. Every expectation below is read from the DOM
-// itself (the option's own text, the field's own <label>, the select's own default value) rather
-// than a hardcoded Thai/English string, so a copy change elsewhere can never make this cell lie.
+// 2026-09-23, round B5: "โหมดเดิมไม่แตก" -- #runDetailFilterBar (Employee tab) is the ONE existing real
+// consumer of initFilterBar() that this round's own app.js change could regress, since every
+// select-branch line in that function was supposed to survive completely untouched. Every expectation
+// below is read from the DOM itself (the option's own text, the field's own <label>, the select's own
+// default value) rather than a hardcoded Thai/English string, so a copy change elsewhere can never
+// make this cell lie.
+// 2026-09-23, round B1, มติ ข: this bar had 3 SELECT fields when c17 was first written
+// (#rdDepartmentFilter/#rdPaymentMethodFilter/#rdSourceFilter) -- the first 2 were REMOVED that same
+// round (rules.md §7's "ห้ามทำ select ซ้ำ" -- department/payment-method already have their own
+// column-header Excel filter on #tb_run_detail, see docs/decisions), leaving #rdSourceFilter as the
+// bar's only field. Selector swapped from #rdPaymentMethodFilter to #rdSourceFilter (its 3 option
+// values are all/sync/manual, not all/bank/cash -- 'sync'/'manual' used below in its place) -- every
+// other assertion (chip label/value/clear cycle) is unchanged, still read live from the DOM, not
+// hardcoded to either field's own copy. mksession.php's own fixture run is always run_purpose='payroll'
+// (mksession.php:410), never 'incentive', so #rdSourceFilter's own run-level visibility gate
+// (showDataSourceFilter, detail.js) is always true for this run -- the bar is never hidden here.
 async function c17() {
     console.log('\n[c17] "โหมดเดิมไม่แตก" -- #runDetailFilterBar (select-only) still works exactly as before');
     const ctx = await openContext({ sessionId, width: 1400, height: 950, lang: 'th', blockPaths: WRITE_PATHS });
@@ -1200,9 +1211,9 @@ async function c17() {
     measured('c17 before (no select filter set)', before);
     check('c17: starts with no chip/count, Clear hidden', before.chips.length === 0 && !before.countVisible && !before.clearBtnVisible, JSON.stringify(before));
 
-    const optionText = await ctx.page.evaluate(() => ($('#rdPaymentMethodFilter').find('option[value="bank"]').text() || '').trim());
-    const fieldLabel = await ctx.page.evaluate(() => document.querySelector('label[for="rdPaymentMethodFilter"]').textContent.trim());
-    await ctx.page.evaluate(() => { $('#rdPaymentMethodFilter').val('bank').trigger('change'); });
+    const optionText = await ctx.page.evaluate(() => ($('#rdSourceFilter').find('option[value="sync"]').text() || '').trim());
+    const fieldLabel = await ctx.page.evaluate(() => document.querySelector('label[for="rdSourceFilter"]').textContent.trim());
+    await ctx.page.evaluate(() => { $('#rdSourceFilter').val('sync').trigger('change'); });
     await ctx.page.waitForTimeout(300);
     let state = await runDetailFilterBarState(ctx.page);
     measured('c17 after selecting a value', Object.assign({ optionText, fieldLabel }, state));
@@ -1216,18 +1227,18 @@ async function c17() {
     await ctx.page.evaluate(() => { document.querySelector('#runDetailFilterBar .filter-bar-chip .filter-bar-chip-remove').click(); });
     await ctx.page.waitForTimeout(300);
     state = await runDetailFilterBarState(ctx.page);
-    const selectValueAfterChipRemove = await ctx.page.evaluate(() => $('#rdPaymentMethodFilter').val());
+    const selectValueAfterChipRemove = await ctx.page.evaluate(() => $('#rdSourceFilter').val());
     measured('c17 after chip x', Object.assign({ selectValueAfterChipRemove }, state));
     check('c17: chip x brings count/chip back to nothing', state.chips.length === 0 && !state.countVisible && !state.clearBtnVisible, JSON.stringify(state));
     check('c17: the select itself is back to its own default value', selectValueAfterChipRemove === 'all', selectValueAfterChipRemove);
 
     // Select again, then use the bar's own Clear button this time -- same end state either path.
-    await ctx.page.evaluate(() => { $('#rdPaymentMethodFilter').val('cash').trigger('change'); });
+    await ctx.page.evaluate(() => { $('#rdSourceFilter').val('manual').trigger('change'); });
     await ctx.page.waitForTimeout(300);
     await ctx.page.click('#runDetailFilterBar .filter-bar-clear');
     await ctx.page.waitForTimeout(300);
     const afterClear = await runDetailFilterBarState(ctx.page);
-    const selectValueAfterClear = await ctx.page.evaluate(() => $('#rdPaymentMethodFilter').val());
+    const selectValueAfterClear = await ctx.page.evaluate(() => $('#rdSourceFilter').val());
     measured('c17 after Clear button', Object.assign({ selectValueAfterClear }, afterClear));
     check('c17: Clear button resets the same way chip x did', afterClear.chips.length === 0 && !afterClear.countVisible && !afterClear.clearBtnVisible, JSON.stringify(afterClear));
     check('c17: back to the exact same starting state as "before"', JSON.stringify(afterClear) === JSON.stringify(before), JSON.stringify(afterClear));

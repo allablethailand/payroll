@@ -549,33 +549,26 @@
                  ย้ายเข้า filter-bar.php (2 ช่อง select)" -- the independent Bank/Cash checkboxes AND the
                  Source radio-pill group both retired in favor of ONE shared filter-bar.php panel (§6)
                  holding real `<select>` fields (this app's own mandatory Select2 convention, CLAUDE.md
-                 -- initSelect2(...), wired in initRunDetailFilterBarOnce() in detail.js). Payment
-                 Method's 3 options (All/Bank Transfer/Cash) reach the exact same 2 reachable filter
-                 states the old 2-checkbox pair did (both boolean flags
-                 registerPaymentMethodSearchFilter() already computed from bank/cash-on booleans -- now
-                 derived from this ONE select's value instead of 2 checkboxes, same predicate, no logic
-                 change). #rdDataSourceFilterWrap keeps its id (now the Source field's own column div)
-                 so its existing run-level d-none toggle in initRunDetailTable() (a run that never
-                 brings base salary into the calculation) still works unchanged.
-                 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "เพิ่มช่อง 'แผนก'
-                 (select2-remote /api/department.get เหมือน Employee list) เป็นช่องแรก" -- same
-                 markup/data-api/data-type convention as Employee List's own #employee_filter_department
-                 (app/views/employee/list.php), filtered client-side against row.department_id (already
-                 selected by PayrollRunModel::getDetails()'s own SQL -- confirmed via grep, just never
-                 read by this file's JS before now -- see registerDepartmentSearchFilter() in detail.js).
-                 "grid 6 ช่อง/แถว = col-lg-2 ต่อช่องเสมอ" -- all 3 fields now col-lg-2 (was col-sm-3, which
-                 read too stretched at 3-up); the other 3 of the 6 grid slots are simply left empty. -->
+                 -- initSelect2(...), wired in initRunDetailFilterBarOnce() in detail.js).
+                 2026-09-23, 3e-3b round B1, มติ ข: the Department and Payment Method selects that used
+                 to live here are REMOVED outright, not just hidden (see docs/decisions for the field
+                 ids/full analysis) -- rules.md §7's own rule, added the same round ("คอลัมน์ที่เป็นค่าจากลิสต์ปิด
+                 ... ใช้ column filter ของตัวเองอยู่แล้ว ห้ามทำ select ซ้ำไว้ข้างบนอีก"), applies exactly to
+                 both: #tb_run_detail's own column-header Excel filter already covers department (column
+                 index 3) and payment_method_code (index 4) -- see initRunDetailTable()'s own
+                 `columnFilters` option in detail.js. #rdSourceFilter stays (the ONLY field left in this
+                 bar) because data_source has NO column of its own to filter on anymore (the column
+                 itself was retired 2026-09-11, Batch 3C item 7 -- see registerDataSourceSearchFilter()'s
+                 own comment in detail.js) -- exactly the "สิ่งที่คอลัมน์-header checklist ทำไม่ได้" case
+                 rules.md §7 still allows a filter-bar field for. #rdDataSourceFilterWrap keeps its id (the
+                 Source field's own column div) so its existing run-level visibility toggle in
+                 initRunDetailTable() (a run that never brings base salary into the calculation) still
+                 works unchanged -- 2026-09-23 round B1 follow-up: that same condition now also hides the
+                 WHOLE #runDetailFilterBar (not just this one field) when it's false, since this field is
+                 the bar's only remaining content -- see initRunDetailTable()'s own comment in detail.js. -->
             <?php
             ob_start(); ?>
             <div class="row g-2">
-                <div class="col-lg-2">
-                    <label class="form-label small mb-1" for="rdDepartmentFilter" data-i18n="department">Department</label>
-                    <select class="form-select select2-remote" id="rdDepartmentFilter" data-api="/api/department.get" data-type="department"></select>
-                </div>
-                <div class="col-lg-2">
-                    <label class="form-label small mb-1" for="rdPaymentMethodFilter" data-i18n="table_payment_method">Payment Method</label>
-                    <select class="form-select select2-static" id="rdPaymentMethodFilter" data-option-keys="filter_all,table_payment_bank,table_payment_cash" data-option-values="all,bank,cash"></select>
-                </div>
                 <div class="col-lg-2" id="rdDataSourceFilterWrap">
                     <label class="form-label small mb-1" for="rdSourceFilter" data-i18n="table_source">Source</label>
                     <select class="form-select select2-static" id="rdSourceFilter" data-option-keys="filter_all,data_source_sync,data_source_manual" data-option-values="all,sync,manual"></select>
