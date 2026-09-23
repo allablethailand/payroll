@@ -1260,7 +1260,43 @@
              docblock on the fix). No consumer left anywhere (grep confirmed), so the dead class goes
              too rather than staying as markup with no meaning (rules.md §0.3). -->
         <div class="tab-pane fade" id="run-history-pane" role="tabpanel" aria-labelledby="run-history-tab" tabindex="0">
-            <div class="table-responsive">
+            <!-- 2026-09-23, 3e-3b round B4: date-range filter for `performed_at` -- the ONE column
+                 the header checklists (table-column-filter.js) can't reach. Round B1/B2 used
+                 `.station-filter` (reports/index.php), B3 replaced it with a plain flex row on the
+                 theory that rules.md §6 named no box at all -- BOTH wrong: §6 (rules.md:846-877)
+                 DOES name one decided component, `.filter-bar` (this exact partial, `design:clean`),
+                 already in real use on THIS SAME PAGE for #tb_run_detail's own filter fields
+                 (Department/Payment Method/Source, above). Byte-identical include here: same
+                 `$id`/`$filter_fields_html` contract, same `row g-2`/`col-lg-2` grid, only the field
+                 markup itself differs (2 bare `.form-control.datepicker` inputs instead of selects --
+                 no icon/input-group addon, matching this app's OWN dominant datepicker convention,
+                 employee/detail.php: 18 bare fields, 0 with an icon addon -- opens on focus). No
+                 `$pageKey` set, matching #runDetailFilterBar exactly (that bar doesn't persist its
+                 collapse state either -- initFilterBar()'s own viewport-width fallback runs every
+                 load for both). initFilterBar()'s own `clearAllFields()` only ever resets `<select>`
+                 fields (app.js, confirmed by reading it) -- a real gap for a date-input filter bar,
+                 not a page-specific choice -- so detail.js supplements the shared `.filter-bar-clear`
+                 button (never a 2nd button of our own) with its own delegated handler for these 2
+                 fields specifically; see that handler's own comment for the reasoning. -->
+            <?php
+            ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-lg-2">
+                    <label class="form-label small mb-1" for="auditLogDateFrom" data-i18n="date_from">From</label>
+                    <input type="text" class="form-control datepicker" id="auditLogDateFrom" autocomplete="off">
+                </div>
+                <div class="col-lg-2">
+                    <label class="form-label small mb-1" for="auditLogDateTo" data-i18n="date_to">To</label>
+                    <input type="text" class="form-control datepicker" id="auditLogDateTo" autocomplete="off">
+                </div>
+            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'auditLogFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
+            <div class="callout callout-warning d-none mt-2" id="auditLogDateRangeInvalidCallout" data-i18n="date_range_invalid">Start date must not be later than end date.</div>
+            <div class="table-responsive mt-2">
                 <table class="table table-hover align-middle w-100" id="tb_run_audit_log">
                     <thead class="table-light text-secondary">
                         <tr>
@@ -1269,6 +1305,7 @@
                             <th class="text-nowrap"></th>
                             <th class="text-nowrap"></th>
                             <th></th>
+                            <th class="text-nowrap"></th>
                             <th class="text-nowrap"></th>
                         </tr>
                     </thead>
@@ -1599,6 +1636,26 @@
                 <div class="modal-body" id="runTimelineModalBody"></div>
                 <div class="modal-footer justify-content-between">
                     <div id="runTimelineModalActions" class="d-flex flex-wrap gap-2"></div>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2026-09-23, 3e-3b round B1: read-only detail for ONE #tb_run_audit_log row (opened via
+         openAuditLogDetailRd(), detail.js -- entry comes from dt.row($tr).data(), never a live
+         re-fetch). rules.md §9 "modal record-only" -- data-footer="view" same as #runTimelineModal
+         above, no primary action (backend has no edit/delete for an audit row), never opened on top
+         of another modal. -->
+    <div class="modal fade" id="auditLogDetailModal" data-footer="view" tabindex="-1" aria-labelledby="auditLogDetailModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary mb-0" id="auditLogDetailModalLabel" data-i18n="audit_detail_title">Action Detail</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="auditLogDetailModalBody"></div>
+                <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>

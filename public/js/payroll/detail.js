@@ -2986,6 +2986,13 @@ function initRunDetailTable(details) {
                 { index: 10, key: 'verify_status' },
             ],
         },
+        // 2026-09-23, 3e-3b round B4: named explicitly now that #auditLogFilterBar (Action History
+        // tab) makes this page's 2nd `.filter-bar` -- tableFilterBarFor() (app.js) only auto-picks
+        // "the single `.filter-bar` on the page" when there is exactly one; without this, this
+        // table's own empty-state Clear button would silently stop resetting
+        // #rdDepartmentFilter/#rdPaymentMethodFilter/#rdSourceFilter (real regression, caught before
+        // it shipped by tracing tableFilterBarFor()'s own fallback while adding the 2nd bar).
+        filterBar: '#runDetailFilterBar',
         // §6: "empty state 2 แบบ" -- this config is the "genuinely no data yet" variant (reuses the
         // exact copy/icon #noDetailsYet used to show); dtRenderEmptyState() (app.js) auto-swaps to its
         // OWN built-in "filtered to zero results" variant instead whenever the table has real rows but
@@ -3996,12 +4003,14 @@ function auditLogStateFilterTextRd(state) {
     return (entry && (getLangValue(entry.label_key) || entry.label_key)) || state || '';
 }
 // Note cell: single-line truncate (§7 "ทุกแถวต้องสูงเท่ากัน" -- round A found notes up to 283 chars in
-// dev data) via the `.rd-audit-note-cell` CSS class (style.css); the untruncated text lives in
-// `data-full-note`, read back by auditLogRefreshNoteTooltipsRd() below to decide which rows actually
-// need a tooltip. Raw English system note, unmodified (Batch 5 error-code i18n is separate work).
+// dev data) via the `.rd-audit-note-cell` CSS class (style.css). Raw English system note, unmodified
+// (Batch 5 error-code i18n is separate work).
+// 2026-09-23, 3e-3b round B1: the tooltip that used to show the untruncated text here (and the
+// `data-full-note` attribute it read) is gone -- openAuditLogDetailRd()'s modal is the one place the
+// full note is read now, straight from the row data, not from a DOM attribute.
 function auditNoteCellHtmlRd(note) {
     if (!note) return '';
-    return `<span class="rd-audit-note-cell" data-full-note="${escapeAttr(note)}">${escapeHtml(note)}</span>`;
+    return `<span class="rd-audit-note-cell">${escapeHtml(note)}</span>`;
 }
 // Device/IP cell -- same "OS · Browser N" summary + raw-string tooltip + separate IP line the old
 // Timeline card rendered, just inside a table cell now. Both empty (every non-view_detail row
@@ -4027,6 +4036,7 @@ function auditLogColumnTitlesRd() {
         getLangValue('table_status') || 'Status',
         getLangValue('audit_note') || 'Note',
         getLangValue('audit_device_ip') || 'Device · IP',
+        '', // 2026-09-23, 3e-3b round B1: button-only column ("ดูรายละเอียด") -- never has header text
     ];
 }
 // Built lazily inside initAuditLogTableRd()'s own construction branch, NOT as a module-level const
@@ -4037,23 +4047,100 @@ function auditLogColumnTitlesRd() {
 // permanently, since the same object reference is reused (only mutated in place by
 // refreshAuditLogTableLanguage()) rather than rebuilt on every call.
 let AUDIT_LOG_EMPTY_STATE_RD = null;
-// Disposed-then-rebuilt on every draw (not just once) -- a client-side DataTable can re-render the
-// SAME page's cells on a redraw (filter/sort/language switch), and the old note-cell DOM nodes
-// created before that redraw are gone from the tree by the time this runs again; tracking the
-// bootstrap.Tooltip instances in this array (rather than re-querying the DOM for "old" ones that no
-// longer exist) is what lets every previous instance actually get `.dispose()`d before the next
-// batch is created. Only ever looks at the CURRENT page's rows (`dt.table().body()`), which for a
-// paginated client-side table is already exactly the rows visible right now.
-let auditLogNoteTooltipsRd = [];
-function auditLogRefreshNoteTooltipsRd(dt) {
-    auditLogNoteTooltipsRd.forEach((inst) => inst.dispose());
-    auditLogNoteTooltipsRd = [];
-    if (typeof bootstrap === 'undefined' || !bootstrap.Tooltip) return;
-    $(dt.table().body()).find('.rd-audit-note-cell').each(function () {
-        if (this.scrollWidth > this.clientWidth) {
-            auditLogNoteTooltipsRd.push(new bootstrap.Tooltip(this, { title: this.getAttribute('data-full-note') || '', placement: 'top' }));
-        }
+// 2026-09-23, 3e-3b round B1: the note cell's own tooltip (and the auditLogNoteTooltipsRd array /
+// auditLogRefreshNoteTooltipsRd() drawCallback that rebuilt it on every draw) is gone -- grep
+// confirmed 0 consumers left of either once the column-7 "ดูรายละเอียด" button + modal became the
+// one way to read a note in full (rules.md §0.3). The cell itself still truncates
+// (`.rd-audit-note-cell`, style.css) -- only the hover affordance is removed.
+// ---------- Date-range filter above the table (2026-09-23, 3e-3b round B1) ----------
+// `performed_at` is the ONE column the header checklists can't reach (a continuous range, not a
+// closed set of values) -- everything else stays a column filter per round A's own decided fact.
+// True whenever the range itself makes sense to filter by: either field empty (nothing to compare),
+// or from <= to. Shared by the predicate (which must not narrow anything while the range is
+// nonsensical) and the callout toggle (which must show/hide from the SAME truth, not a second
+// re-derivation of it that could drift from the first).
+function auditLogDateRangeValidRd() {
+    const from = toIsoDateRd($('#auditLogDateFrom').val());
+    const to = toIsoDateRd($('#auditLogDateTo').val());
+    return !(from && to && from > to);
+}
+function updateAuditLogDateRangeCalloutRd() {
+    $('#auditLogDateRangeInvalidCallout').toggleClass('d-none', auditLogDateRangeValidRd());
+}
+// 2026-09-23, 3e-3b round B5: `updateAuditLogFilterBarClearVisibilityRd()` (round B4 -- toggled
+// `.filter-bar-clear` manually, since initFilterBar()'s own `refresh()` only ever counted
+// `<select>` fields, always 0 in this bar) is gone -- `refresh()` itself is input-aware now
+// (app.js), so the shared button's own visibility already reflects these 2 date fields correctly.
+// `performed_at` is a raw MySQL DATETIME string with no timezone attached (Batch 5's own lesson --
+// CLAUDE.md -- applies here too) -- compared as a STRING against the datepicker's own ISO value via
+// toIsoDateRd(), never through a `Date` parse that would silently apply the browser's local offset
+// to a value that was never UTC in the first place. Registered once (module-level guard, same shape
+// as registerPaymentMethodSearchFilter() etc. above) and scoped to this one table's id so it can
+// never affect any other DataTable on this page.
+let auditLogDateRangeSearchFilterRegistered = false;
+function registerAuditLogDateRangeSearchFilter() {
+    if (auditLogDateRangeSearchFilterRegistered) return;
+    auditLogDateRangeSearchFilterRegistered = true;
+    $.fn.dataTable.ext.search.push(function (settings, searchData, dataIndex, rowData) {
+        if (!settings.nTable || settings.nTable.id !== 'tb_run_audit_log') return true;
+        if (!auditLogDateRangeValidRd()) return true; // nonsensical range -- warned via callout, don't narrow yet
+        const from = toIsoDateRd($('#auditLogDateFrom').val());
+        const to = toIsoDateRd($('#auditLogDateTo').val());
+        if (!from && !to) return true;
+        const day = String((rowData && rowData.performed_at) || '').slice(0, 10);
+        if (from && day < from) return false;
+        if (to && day > to) return false;
+        return true;
     });
+}
+// ---------- #auditLogDetailModal (2026-09-23, 3e-3b round B1) ----------
+// rules.md §9 "modal record-only" -- one #tb_run_audit_log row, read-only, no primary action. Kept
+// so refreshAuditLogTableLanguage() can re-render the SAME entry after a live language switch while
+// this modal is still open, instead of it freezing in whatever language it was opened in.
+let auditLogDetailEntryRd = null;
+function auditDetailValueDisplayRd(value) {
+    return (value === null || value === undefined || value === '') ? '—' : escapeHtml(value);
+}
+function auditDetailFieldHtmlRd(labelKey, labelFallback, valueHtml) {
+    return `<div class="rd-sync-field mb-3">
+        <div class="rd-sync-field-label">${escapeHtml(getLangValue(labelKey) || labelFallback)}</div>
+        <div class="rd-sync-field-value">${valueHtml}</div>
+    </div>`;
+}
+// `toDisplayDateRd()` only converts a bare ISO DATE (its own docblock's contract) -- `performed_at`
+// is a full "YYYY-MM-DD HH:MM:SS" DATETIME, so the time half is split off first and appended as-is
+// rather than handed to a helper that was never built to parse it.
+function auditDetailTimeHtmlRd(performedAt) {
+    const parts = String(performedAt || '').split(' ');
+    return escapeHtml(toDisplayDateRd(parts[0]) + (parts[1] ? ' ' + parts[1] : ''));
+}
+function auditDetailStatusHtmlRd(entry) {
+    if (entry.from_state && entry.from_state !== entry.to_state) {
+        return `${statusBadgeHtml(entry.from_state, 'run_state')}<span class="text-muted mx-1">&rarr;</span>${statusBadgeHtml(entry.to_state, 'run_state')}`;
+    }
+    return statusBadgeHtml(entry.to_state, 'run_state');
+}
+// Full text, line breaks kept (`.rd-audit-detail-note`, style.css: `white-space: pre-wrap`) --
+// unlike the table cell's own single-line `.rd-audit-note-cell` truncate, this is the one place the
+// note is shown in full now that the cell's tooltip is gone.
+function auditDetailNoteHtmlRd(note) {
+    return note ? `<span class="rd-audit-detail-note">${escapeHtml(note)}</span>` : '—';
+}
+function renderAuditLogDetailModalBody(entry) {
+    $('#auditLogDetailModalBody').html([
+        auditDetailFieldHtmlRd('audit_performed_at', 'Date/Time', auditDetailTimeHtmlRd(entry.performed_at)),
+        auditDetailFieldHtmlRd('audit_performed_by', 'Performed By', apvPersonLineHtml(personDisplayNameRd(entry, 'performed_by'), 24, entry.performed_by_profile_photo_path, { employeeId: null })),
+        auditDetailFieldHtmlRd('audit_log_action', 'Action', auditActionCellHtmlRd(entry.action)),
+        auditDetailFieldHtmlRd('table_status', 'Status', auditDetailStatusHtmlRd(entry)),
+        auditDetailFieldHtmlRd('audit_note', 'Note', auditDetailNoteHtmlRd(entry.note)),
+        auditDetailFieldHtmlRd('device', 'Device', auditDetailValueDisplayRd(entry.user_agent)),
+        auditDetailFieldHtmlRd('ip_address', 'IP', auditDetailValueDisplayRd(entry.ip_address)),
+    ].join(''));
+}
+function openAuditLogDetailRd(entry) {
+    auditLogDetailEntryRd = entry;
+    renderAuditLogDetailModalBody(entry);
+    new bootstrap.Modal(document.getElementById('auditLogDetailModal')).show();
 }
 // Constructed once; every subsequent call (a fresh loadRunDetail() after any mutating action) just
 // swaps the data -- same `$.fn.DataTable.isDataTable()` reuse check tb_run_detail's own construction
@@ -4070,6 +4157,22 @@ function initAuditLogTableRd(entries) {
         icon: 'fa-solid fa-clock-rotate-left',
         title: getLangValue('no_history_yet') || 'No action has been taken on this request yet.',
     };
+    // Both fit inside this same reuse-guarded branch -- construction runs exactly once per page
+    // load, same as the column filters below, so neither needs its own separate once-guard.
+    initDatepicker('#auditLogDateFrom');
+    initDatepicker('#auditLogDateTo');
+    registerAuditLogDateRangeSearchFilter();
+    // 2026-09-23, 3e-3b round B5: initFilterBar() now listens on `input.form-control` too (app.js),
+    // so these 2 date fields genuinely fire `onChange` (debounced via its own scheduleNotify(),
+    // same as a select's own change would) -- round B4's separate page-level `change` handler on
+    // #auditLogDateFrom/To is gone, its 2 jobs (hide/show the callout, redraw the table) both moved
+    // in here instead of running twice per change.
+    initFilterBar('#auditLogFilterBar', {
+        onChange: function () {
+            updateAuditLogDateRangeCalloutRd();
+            if (tb_run_audit_log) tb_run_audit_log.draw();
+        },
+    });
     tb_run_audit_log = initSharedDataTable('#tb_run_audit_log', {
         // §7 per-column Excel filter -- 4 of the 6 columns per the decided spec (not "เวลา", which
         // sorts instead, and not "หมายเหตุ", covered by the table's own global search box).
@@ -4082,6 +4185,13 @@ function initAuditLogTableRd(entries) {
                 { index: 5, key: 'audit_device_ip' },
             ],
         },
+        // 2026-09-23, 3e-3b round B4: now that #auditLogFilterBar exists, this page carries 2
+        // `.filter-bar` instances (the other is #runDetailFilterBar, Employee tab) -- tableFilterBarFor()
+        // (app.js) only auto-picks "the single `.filter-bar` on the page" when there is EXACTLY one,
+        // so both tables now need this named explicitly (#tb_run_detail's own initSharedDataTable()
+        // call gained the matching `filterBar: '#runDetailFilterBar'` in this same round, or its own
+        // empty-state Clear button would have silently stopped clearing its selects).
+        filterBar: '#auditLogFilterBar',
         emptyState: AUDIT_LOG_EMPTY_STATE_RD,
         dtOptions: {
             responsive: false,
@@ -4122,10 +4232,16 @@ function initAuditLogTableRd(entries) {
                     filter: (d, t, row) => row.ip_address || '',
                     sort: (d, t, row) => row.ip_address || '',
                 } },
+                // 2026-09-23, 3e-3b round B1: "ดูรายละเอียด" -- the ONE action this row has, so no
+                // .btn-group/dropdown, just the one ghost circle (§7). `searchable:false` keeps the
+                // global search box from ever matching this cell's own title attribute text.
+                { data: null, orderable: false, searchable: false, responsivePriority: 1, title: titles[6], render: {
+                    display: () => {
+                        const label = escapeAttr(getLangValue('action_view_detail') || 'View Detail');
+                        return `<button type="button" class="btn btn-icon btn-icon-ghost audit-log-view-detail-btn" title="${label}" aria-label="${label}"><i class="fa-solid fa-eye"></i></button>`;
+                    },
+                } },
             ],
-            drawCallback: function () {
-                auditLogRefreshNoteTooltipsRd(this.api());
-            },
         },
     });
 }
@@ -4150,7 +4266,50 @@ function refreshAuditLogTableLanguage() {
     const settings = tb_run_audit_log.settings()[0];
     if (settings) settings.oLanguage.sEmptyTable = getLangValue('emptyTable') || settings.oLanguage.sEmptyTable;
     tb_run_audit_log.rows().invalidate().draw(false);
+    // 2026-09-23, 3e-3b round B1: #auditLogDetailModal's own body is plain HTML built once at open
+    // time (getLangValue() baked into strings, not live data-i18n spans) -- a language switch while
+    // it's still open needs this explicit re-render from the SAME stored entry, or it would freeze
+    // in whatever language it opened in. The filter bar's labels/callout need no such call: they are
+    // data-i18n spans the app-wide switch already walks on its own.
+    if (auditLogDetailEntryRd && $('#auditLogDetailModal').hasClass('show')) {
+        renderAuditLogDetailModalBody(auditLogDetailEntryRd);
+    }
 }
+// 2026-09-23, 3e-3b round B5: 2 of the 3 page-level handlers this comment used to retire really are
+// gone for good --
+//   1. the collapse toggle was always #auditLogFilterBar's OWN (`.filter-bar-toggle`, wired by
+//      initFilterBar() itself), never bound here.
+//   2. the `change` handler on #auditLogDateFrom/To -- initFilterBar()'s own `onChange` (this
+//      table's own initAuditLogTableRd(), above) now does both of its jobs (callout, draw), since
+//      app.js's own `refresh()`/`scheduleNotify()` finally listen on `input.form-control` too.
+// The 3rd one was a REAL bug, caught by actually running o_history_dt.js (round B5's own measure
+// pass) rather than reasoned about from the code alone: `.filter-bar-clear`'s OWN click handler
+// (initFilterBar(), app.js) only ever calls `clearAllFields()` -- this bar's own fields, nothing
+// else. It was NEVER the thing that cleared the search box / column-header checklists on this
+// table; `#btnAuditLogClearFilter` (the page-local button rounds B1-B3 had) was, because ITS OWN
+// handler explicitly called `clearAllTableFilters()`. Merging that button INTO the shared
+// `.filter-bar-clear` button (B4) merged the ELEMENT but not that call -- so a real click on the
+// bar's own Clear button stopped resetting search/column filters at all (verified failing: c14's
+// own "search box empty"/"no column filter left checked" assertions, 2026-09-23). Re-added as the
+// ONE thing this button still needs supplementing -- `dtRenderEmptyState()`'s own auto-clear button
+// (empty-state row) already calls this same function directly and was never affected.
+// 2026-09-23, real bug found running this the 2nd time: a `$(document).on('click', '#auditLogFilterBar
+// .filter-bar-clear', ...)` delegated binding here NEVER fired -- initFilterBar()'s OWN handler on
+// this exact button (app.js) calls `e.stopPropagation()`, which halts native bubbling before it
+// ever reaches a listener bound on `document` (an ancestor). Bound directly on `#auditLogFilterBar`
+// itself instead -- the SAME node initFilterBar()'s own `$bar.on(...)` uses -- so both are sibling
+// listeners on that one node; `stopPropagation()` only blocks bubbling PAST a node, never other
+// listeners already bound to it (`stopImmediatePropagation()` would, but that's not what's called
+// here). `#auditLogFilterBar` is static PHP markup already in the DOM by the time this script runs,
+// same as every other direct element-id binding in this file.
+$('#auditLogFilterBar').on('click', '.filter-bar-clear', function () {
+    if (tb_run_audit_log) clearAllTableFilters(tb_run_audit_log, '#auditLogFilterBar');
+});
+$(document).on('click', '.audit-log-view-detail-btn', function () {
+    if (!tb_run_audit_log) return;
+    const entry = tb_run_audit_log.row($(this).closest('tr')).data();
+    if (entry) openAuditLogDetailRd(entry);
+});
 
 // 2026-08-31: fires the auto-recalculate-on-load check exactly once per page session (see
 // loadRunDetail()'s own use of it) -- every mutation this page's own actions make already

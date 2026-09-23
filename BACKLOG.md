@@ -877,6 +877,31 @@ questions about the payee sub-form (2026-09-15).
 
 ---
 
+## รอบ 4: `.station-filter` → `.filter-bar` — blocker ที่เคยมี (ไม่รองรับ input วันที่) ปิดแล้ว (3e-3b B5, 2026-09-23)
+
+`docs/design/audit.md`'s เอง "Blocked on `filter-bar.php`" (§6, บรรทัด 328) เคยเขียนไว้ว่าเป็น mechanical
+swap แค่สำหรับ field ที่เป็น `<select>` — ตอนนี้ `initFilterBar()` (app.js) รองรับ `input.form-control`
+(active/count/chip/ล้าง ครบเหมือน select) แล้วจริง (พิสูจน์แล้วกับ `#auditLogFilterBar`, Action History
+tab) — 18 ไฟล์ยัง grep เจอ `.station-filter` อยู่ (`grep -rl station-filter app/views/`), ในนั้นมีตาราง
+รูปแบบ audit-log/date-filter จริง (`setup/audit-log.php`, `reports/run-audit.php`,
+`employee/login-history.php`, ที่เหลือรอไล่นับตอนทำรอบ 4 จริง — ตัวเลขที่แน่นอนยังไม่ยืนยันในรอบนี้)
+ไม่ต้องรอ backend/component เพิ่มอีกแล้ว ทำได้เลยตอนไล่หน้าตาม audit.md รอบ 4
+
+**เก็บตกจากรอบเดียวกัน (B6, 2026-09-23) — 2 จุด รอบ 4 ต้องทำด้วย**:
+- **`--bs-gutter-x: 0` ต้องเพิ่มทีละ `#<table-id>_wrapper .row` เอง ไม่ใช่ auto** (style.css ~7736) —
+  ตอนนี้มี 6 ตัวแล้ว (`tb_run_detail`/`tb_run_reports`/`tb_run_cash`/`tb_run_bank_account`/
+  `tb_run_remittance`/`tb_run_audit_log`) — ตารางไหนที่ round 4 ทำให้มี sibling block (filter-bar/
+  callout/detail-section) วางข้างๆ ต้องเช็ค/เพิ่ม selector นี้ด้วยเสมอ ไม่งั้น `<table>` เยื้องจากบล็อกข้างๆ
+  ~9px (Bootstrap grid gutter ที่ DataTables' bs5 skin ใส่ให้อัตโนมัติ — ดู comment เต็มที่ selector นั้น)
+- **`filter-bar` ↔ column filter (table-column-filter.js) เป็นคนละ state กันอยู่ตอนนี้ (บังคับรวมตอนรอบ 4)**
+  — `initFilterBar()`'s เอง "(N)"/chip นับแค่ field ของตัวเอง (select/input) เท่านั้น ไม่รู้จัก column-header
+  checklist ของตารางเดียวกันเลย (`table-column-filter.js`) — หน้าที่มีทั้งคู่ (เช่น `#run-history-pane`
+  ตอนนี้: filter-bar ช่วงวันที่ + column filter 4 คอลัมน์) ผู้ใช้กรองผ่าน column filter อย่างเดียวจะไม่เห็น
+  count ที่ header ของ filter-bar เพิ่มขึ้นเลย ทั้งที่ตารางถูกกรองจริง — ต้องออกแบบรวม 1 ตัวเลขเดียวตอนรอบ 4
+  (ยังไม่ทำตอนนี้ เพราะกระทบ `initFilterBar()`ทั้งแอปเกินขอบเขตรอบนี้)
+
+---
+
 ## รอบ 4: ย้ายทุกหน้าที่ยังใช้ `$().DataTable()` ตรงๆ → `initSharedDataTable` + ส่งปุ่มผ่าน `options.toolbar`
 
 `initSharedDataTable()` มี toolbar slot แล้ว (2026-09-15, rules.md §7 "DataTable toolbar") — ปุ่ม toolbar
@@ -1548,9 +1573,9 @@ callout/ปุ่ม warning ทั้งระบบ ต้องวัดห�
    สั้นที่ตัดยอดได้ แต่ `docs/design/components.php` เป็นที่เดียวที่เรียก ไม่มีหน้าจริงย้ายมาใช้เลย
    (Action History ที่ตั้งใจไว้เป็น use case หลักก็กลายเป็น DataTable แทนในรอบนี้) — ตัดสินใจว่าจะลบทิ้ง
    หรือหาหน้าจริงมาใช้ก่อนรอบ 4
-2. **`#tb_run_audit_log` แสดงแค่ `to_state` ไม่แสดง `from_state`** — เมื่อ state เปลี่ยนจริง (`draft→
-   pending_approval` ฯลฯ, 84/4887 แถวในเดฟ per round A) ตารางไม่บอกว่ามาจากไหน ต่างจาก Timeline เดิมที่
-   render ลูกศร `from → to` เมื่อไม่เท่ากัน — เพิ่มคอลัมน์/tooltip แสดง `from_state` เมื่อต่างจาก `to_state`
+2. ~~**`#tb_run_audit_log` แสดงแค่ `to_state` ไม่แสดง `from_state`**~~ — **ปิดแล้ว (3e-3b round B1,
+   2026-09-23)**: `#auditLogDetailModal` (เปิดจากปุ่ม "ดูรายละเอียด" ท้ายแถว) render `from → to` เมื่อ
+   2 ค่าต่างกัน ตารางเองยังคง `to_state` อย่างเดียวตามเดิม (ตัดสินใจรอบ A -- ไม่ใช่บั๊ก)
 3. **`api/payroll-run.get`'s `audit_log` หนักถึง 710 KB (run 752, 1571 แถว) ส่งทุก `loadRunDetail()`**
    แม้ผู้ใช้ไม่ได้เปิดแท็บ Action History เลย — endpoint serverSide เฉพาะแท็บนี้ (รวมกับอีก 5 ตาราง audit
    ดิบที่ยังเป็น client-side ทั้งระบบ) = งานรอบ 4

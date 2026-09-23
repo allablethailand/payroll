@@ -6624,9 +6624,14 @@ html, body {
    on #run-history-pane for why). Its note cell is the one thing here that needs its own CSS: §7
    "ข้อความยาวต่อแถวห้ามอยู่ในเซลล์...ทุกแถวต้องสูงเท่ากัน" -- dev data carries notes up to 283 characters
    (3e-3 round A's own COUNT), so a fixed max-width + single-line truncate is what keeps every row
-   the same height; the full text stays reachable via a Bootstrap tooltip
-   (auditLogRefreshNoteTooltipsRd(), detail.js), only for a row actually cut off. */
+   the same height. 2026-09-23, 3e-3b round B1: the per-cell tooltip this comment used to point at
+   is gone -- the full text is only reachable via #auditLogDetailModal now (openAuditLogDetailRd(),
+   detail.js). */
 .rd-audit-note-cell { display: inline-block; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+/* The modal's own Note field, unlike the cell above, shows the FULL text -- line breaks in the raw
+   note are meaningful (Batch 5 error messages, one per line), so this preserves them instead of
+   collapsing to one line. */
+.rd-audit-detail-note { white-space: pre-wrap; }
 
 /* 2026-09-14, Round 3 item 3c-3, explicit instruction: "รายการความคิดเห็นใช้ shared timeline
    component" -- every rule this block used to define for the LIST itself
@@ -7737,7 +7742,16 @@ html, body {
 #tb_run_reports_wrapper .row,
 #tb_run_cash_wrapper .row,
 #tb_run_bank_account_wrapper .row,
-#tb_run_remittance_wrapper .row {
+#tb_run_remittance_wrapper .row,
+/* 2026-09-23, 3e-3b round B6: #tb_run_audit_log didn't exist yet when the 5 selectors above were
+   written (3e-1) -- same root cause, same fix, now that it sits beside a real sibling block
+   (#auditLogFilterBar) and the same 9px gutter became measurable (m3e1_tabs_shared.js's own c13,
+   round B5's own finding). NOT a JS `toolbar`/`dom`/`layout` option -- confirmed by reading
+   initRunDetailTable()'s own initSharedDataTable() call (detail.js): `layout: {topStart:'pageLength',
+   topEnd:'search'}` is set unconditionally by initSharedDataTable() itself for EVERY table (line
+   ~1192, this file's own JS), identical for #tb_run_detail and #tb_run_audit_log alike -- the gutter
+   was always this CSS-only, per-wrapper-id fix, never a per-table JS config difference. */
+#tb_run_audit_log_wrapper .row {
     --bs-gutter-x: 0;
 }
 /* 2026-09-09, real bug found and fixed (explicit report: "ปุ่มในตาราง Employee อยากให้แสดงอยู่ในแถวเดียว

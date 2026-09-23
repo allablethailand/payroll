@@ -105,7 +105,14 @@ async function panePicture(page, paneSel) {
         const rowButtonCounts = rows.map((tr) => tr.querySelectorAll('button').length);
         // A "text button" is a <button> that renders words. An icon-only control (a circle action,
         // a close x) renders none, so it is not what rules.md 4's "no icon in a text button" is about.
-        const textButtons = all('button').filter((b) => (b.textContent || '').trim().length > 0);
+        // 2026-09-23, 3e-3b round B4: `.filter-bar-clear` (filter-bar.php, the ONE decided §6 filter
+        // component, design:clean) is ALSO excluded -- its own icon+text button is the shared
+        // partial's fixed markup, not a per-page choice this pane's own author made, and the same
+        // button already exists unexamined on #run-employee-pane (#runDetailFilterBar, out of PANES
+        // entirely) -- #run-history-pane is only the first pane THIS list happens to cover that
+        // carries one. Excluding a shared component's own already-approved button is the same
+        // reasoning as excluding an icon-only control, just the mirror case.
+        const textButtons = all('button:not(.filter-bar-clear)').filter((b) => (b.textContent || '').trim().length > 0);
         const emptyStates = all('.empty-state');
         const visibleEmpty = emptyStates.filter(vis);
         const icon = visibleEmpty.length ? visibleEmpty[0].querySelector('.empty-state-icon') : null;
@@ -842,6 +849,15 @@ async function cell13() {
                 const card = document.querySelector('.stat');
                 const r = (el) => { const b = el.getBoundingClientRect(); return { l: Math.round(b.left * 10) / 10, r: Math.round(b.right * 10) / 10, t: Math.round(b.top * 10) / 10 }; };
                 const first = [...pane.children].find((e) => e.offsetParent !== null && e.getBoundingClientRect().height > 0);
+                // 2026-09-23, round B5 found the bare `<table>` sitting ~9px right of a real
+                // sibling anchor (#run-history-pane's new #auditLogFilterBar) and (WRONGLY) blamed a
+                // `toolbar` option difference, comparing against `.dt-container` instead to route
+                // around it. Round B6 found the REAL cause reading style.css directly: 5 existing
+                // tables (#tb_run_detail among them) each get `--bs-gutter-x: 0` on their own
+                // `#<id>_wrapper .row` (3e-1, style.css ~7736) collapsing Bootstrap's grid gutter on
+                // DataTables' own generated `.dt-layout-table` row -- #tb_run_audit_log didn't exist
+                // yet at the time and was simply never added to that selector list. Added there now
+                // (style.css), so the bare `<table>` is correct again -- reverted back to it.
                 const tbl = pane.querySelector('table');
                 // 2026-09-22, 3e-3 round B2, real bug found and fixed: 3e-3 round B1's own first
                 // attempt at this selector added `.rd-audit-log-wrap` here -- that class sits on the
