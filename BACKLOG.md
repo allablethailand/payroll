@@ -1648,3 +1648,75 @@ callout/ปุ่ม warning ทั้งระบบ ต้องวัดห�
    จากเดิม (ไม่ diff 0) — ต้องตัดสินใจ design จากภาพจริงก่อน (rules.md §0.6 "ห้ามเดา design") ว่ายอมรับ diff
    เล็กน้อยได้ไหม หรือต้องเพิ่ม token ใหม่ให้ตรง `#eef0f2` เป๊ะ — เป็นงาน shared (8 จุด/3 ไฟล์) ต้องมี
    regression check ต่อ consumer ถ้าแก้จริง ไม่ใช่แก้แค่จุดเดียวแล้วจบ
+
+---
+
+## Audit Log serverSide (Round B4): N1=2, c9=3 ล็อกเป็นค่าที่รู้แล้ว, root cause ของ c9 เจอแล้ว (แก้ไม่ได้รอบนี้)
+
+`tests/ui/o_history_dt.js` — N1 (คลิกแท็บ History ครั้งแรก) และ c9 (เปลี่ยนภาษาระหว่างมี column filter
+ค้าง) — assertion **ล็อกเป็นค่าที่วัดได้จริงแล้ว** (N1=2, c9=3, ดูโค้ดใน `n1()`/`c9()` เอง) แทนเพดานเดิม
+— ถ้าเกินค่านี้ในอนาคตเทสต้อง fail ไม่ใช่ปล่อยผ่านเงียบๆ
+
+**Round B4 ตรวจสมมติฐานของที่ปรึกษา** ("filter-bar แจ้ง onChange ตอนสร้าง/ตอน relabel ภาษา แล้ว
+onChange ของตารางนี้สั่ง reload ไม่ดูว่าค่าเปลี่ยนไหม") **ด้วยหลักฐานตรง ไม่ใช่เชื่อ — สรุปว่าเท็จ**:
+- `initFilterBar()`'s เอง call ตอนสร้าง (`public/js/app.js:1638`, `refresh();`) เรียกแค่ `refresh()`
+  เฉยๆ ไม่เคยเรียก `options.onChange` เลย — `onChange` ถูกเรียกจาก `scheduleNotify()`'s debounced
+  timer เท่านั้น (`public/js/app.js:1589-1594`) ซึ่งผูกกับ event `'change'` จริงบน field เท่านั้น
+  (`public/js/app.js:1597`)
+- ไม่มีจุดไหนใน `initAuditLogTableRd()`/`refreshAuditLogTableLanguage()` (`public/js/payroll/
+  detail.js`) ที่ trigger `'change'` บน `#auditLogDateFrom`/`#auditLogDateTo` เองเลย — grep ยืนยันแล้ว
+  0 hit
+- N1 ไม่เกี่ยวภาษาเลย (ไม่มีการ switch ภาษาในเคสนี้) จึงตัดสมมติฐานทิ้งได้เต็มที่สำหรับ N1 — root cause
+  ของ N1 **ยังไม่พบ** หลังตรวจ 2 รอบ (B3+B4) — เคยลองแก้ (`auditLogSkipNextRefreshRd` flag,
+  `detail.js`, Round B3) แล้ว **ไม่ได้ผล + ทำ N2 พัง** — revert ทิ้งแล้ว ไม่ลองอีกรอบนี้ตามกฎ "หยุดสืบ"
+
+**Root cause ของ c9's เอง request ที่ 3 เจอแล้วจริง** (คนละกลไกกับที่ปรึกษาเดา, พบจากการอ่านโค้ดตรง
+ไม่ใช่เดา): `refreshAllDataTablesLanguage()`'s เอง inner loop (`public/js/app.js:4911-4944`,
+โดยเฉพาะ `table.draw(false)` ที่บรรทัด `4944`) วนทุก DataTable บนหน้าผ่าน `$.fn.dataTable.tables()`
+**โดยไม่เช็ค visibility เลย** (ต่างจาก `reloadAllTablesForLanguageChange()`'s เอง `{visible:true}`
+filter) — ตารางนี้เป็น `serverSide:true` ทำให้ `.draw()` reload จริงทุกครั้ง ไม่ว่าจะ visible หรือไม่ —
+รวมเป็น 3 reload mechanism อิสระต่อกันที่แตะตารางเดียวกันในการ switch ภาษาครั้งเดียว: (1)
+`reloadAllTablesForLanguageChange()` ถ้า visible, (2) `refreshAuditLogTableLanguage()`'s เอง
+`clearColumnFilters()` ถ้ามี filter ค้าง, (3) `refreshAllDataTablesLanguage()`'s เอง unconditional
+`table.draw(false)` — **ไม่แก้รอบนี้เพราะห้ามแตะ `app.js`** (ข้อห้ามของ B4) — ถ้าทำต่อ: (a) แก้จุดนี้
+กระทบทุกตารางในแอปที่เป็น `serverSide` ไม่ใช่แค่ตารางนี้ ต้องตรวจสอบ `#tb_join_employees`/ตารางอื่นๆ
+ด้วยก่อนแก้ (b) แนวทางที่เป็นไปได้: ข้าม `.draw(false)` สำหรับตารางที่ `settings().oFeatures.bServerSide`
+true และปล่อยให้กลไกอื่น (1)/(2) จัดการแทน หรือเช็ค visibility เหมือน (1)
+
+สมมติฐาน DataTables 2.x serverSide init เอง (จาก B3) **ยังไม่ตัดทิ้ง** สำหรับ N1 โดยเฉพาะ (ไม่เกี่ยว
+กับสิ่งที่พบใน c9 เลย เพราะ N1 ไม่มีการ switch ภาษา) — ยังไม่ได้ตรวจกับ `#tb_join_employees` — ถ้าทำต่อ
+ควรเริ่มจากจุดนี้ก่อนลองแก้โค้ดใหม่
+
+## Audit Log detail modal: เวลาไม่แปลง timezone ต่างจากตาราง (7 ชั่วโมง)
+
+**Round B3, พบระหว่างวัดผลไม่ได้ตั้งใจแก้รอบนี้ (ไม่แตะโค้ด modal ตามที่สั่ง):**
+`auditDetailTimeHtmlRd()` (`public/js/payroll/detail.js:4165-4168`) แสดงเวลาจาก `entry.performed_at`
+ด้วยการ split string ตรงๆ ไม่แปลง timezone เลย ขณะที่ตารางแถวเดียวกัน (คอลัมน์ `performed_at`,
+`public/js/payroll/detail.js:4314-4318`) ใช้ `formatDisplayDateTime()` (`public/js/app.js:2959-2974`)
+ซึ่งแปลง UTC→เวลาไทย (+7) ตามธรรมเนียมที่ยืนยันแล้วว่าค่า DATETIME ดิบจาก DB นี้เป็น UTC จริง — ผลคือ
+modal's "Date/Time" field กับตารางแถวเดียวกันแสดงเวลาต่างกัน 7 ชั่วโมง (พบจริง: modal 06:16:01 vs
+ตาราง 13:16) — แก้โดยเปลี่ยน `auditDetailTimeHtmlRd()` ให้เรียก `formatDisplayDateTime()` แบบเดียวกับ
+ตาราง แทนการ split string เอง (ยังไม่ได้แก้ ต้องถามก่อนว่ากระทบ format การแสดงผลจุดอื่นที่ใช้ pattern
+เดียวกันหรือไม่)
+
+## UI test session: ไม่มีเอกสารในนี้ที่อ้าง "หมดอายุตายตัว 24 นาที" ให้แก้
+
+**Round B3**: ตรวจตามที่ prompt สั่ง (grep ทั้ง `docs/`, `CLAUDE.md`, `tests/` หา "24 นาที"/"24-minute")
+**ไม่พบไฟล์ในนี้ไฟล์ไหนเขียนตัวเลขนี้ไว้เป็นข้อความจริง** — ความเชื่อที่ว่า UI test session หมดอายุตายตัว
+ที่ 24 นาทีดูเหมือนเคยใช้เป็นสมมติฐานปฏิบัติงานในรอบก่อนๆ เท่านั้น (ไฟล์ prompt ของแต่ละรอบ ซึ่งอยู่นอก
+repo นี้ ไม่ใช่เอกสารที่ดูแล) ไม่เคยถูกเขียนลง `docs/decisions/ui-test-session.md` หรือที่อื่นในนี้เลย —
+ยืนยันแล้วจาก B2b/B3 ว่า session จริงต่ออายุตามการใช้งาน ไม่หมดตายตัว — ถ้าเจอไฟล์ในนี้ที่อ้างเลข 24
+นาทีในอนาคต ให้แก้ตาม CLAUDE.md's เอง กฎ (ถ้าไฟล์นั้นคือ CLAUDE.md เอง ให้เสนอ wording ก่อน ห้ามแก้ตรง)
+
+## Audit Log serverSide (Round B3): m3e2a/k4a2 pre-existing failures ยืนยันแล้วว่าไม่เกี่ยวกับงานนี้
+
+Part A ของรอบ B3 รัน `m3e2a_calc_badges.js`/`k4a2_manual_lines_in_table.js` บนโค้ด clean (`git stash`,
+HEAD=`9cdcbfc3`, ไม่มีงาน audit-log serverSide เลย) แล้วเทียบกับผลบนโค้ดที่มีงานนี้ครบ — **ชื่อ check
+และจำนวน fail ตรงกันเป๊ะทั้ง 2 ไฟล์** ยืนยันว่าไม่เกี่ยวกับ initiative นี้เลย ไม่ต้องแก้ในรอบนี้:
+- `m3e2a_calc_badges.js`: 1 fail — `p10c: this run really shows 2 banners in the wrapper` (ต้องการ 2
+  banner บน run ที่ query เจอ แต่ตอนนี้เจอแค่ 1 — ข้อมูลจริงใน dev DB เปลี่ยนไปตั้งแต่รอบก่อนๆ ไม่ใช่
+  โค้ดพัง — ต้องหา run ใหม่ที่ตรงเงื่อนไข 2-banner จริง หรือปรับ query fallback)
+- `k4a2_manual_lines_in_table.js`: 8 fail (ครบทุก theme/lang/width: 1400/430 × th/en × light/dark) —
+  check เดียวกันทุกจุด `each totals figure ends on the block's own inset (+-1px), in both slips`
+  (ค่าจริง `{"e":[12,12,12],"v":[12,12,12]}` เท่ากันทุกตัว แปลว่า assertion logic เองผิด ไม่ใช่ pixel
+  จริงต่างกัน — ต้องอ่าน assertion ใน `tests/ui/k4a2_manual_lines_in_table.js` ว่า compare ผิดจุดไหน)

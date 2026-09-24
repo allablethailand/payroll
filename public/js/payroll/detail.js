@@ -4092,6 +4092,23 @@ function auditLogColumnTitlesRd() {
 // permanently, since the same object reference is reused (only mutated in place by
 // refreshAuditLogTableLanguage()) rather than rebuilt on every call.
 let AUDIT_LOG_EMPTY_STATE_RD = null;
+// 2026-09-24, Round B1 (D5) -- set whenever loadRunDetail() succeeds while #run-history-tab is NOT
+// the active tab and the table already exists (a mutating action elsewhere on the page may have
+// changed this run's audit trail); cleared, and the table reloaded, the next time that tab is shown
+// (the `shown.bs.tab` handler further down this file). Never set/read while the table doesn't exist
+// yet -- lazy construction (initAuditLogTableRd(), called from that same handler) always fetches
+// fresh on its own first build, so there is nothing to mark stale before that point.
+let auditLogTableStaleRd = false;
+// 2026-09-24, Round B3 -- investigated a real 2nd HTTP request on the very first tab click via a
+// live request-stack trace (AUDIT_TRACE=1, tests/ui/o_history_dt.js): draw #1's own stack led back to
+// DataTables' normal init path (_fnLoadState -> _fnReDraw), draw #2's led back to a genuine
+// `__reload()` API call. A `loadRunDetail()`-vs-lazy-construction race (see git history for the
+// attempted fix, reverted) was tried and DID NOT resolve it (still 2 requests after the fix), and the
+// fix itself broke N2 (loadRunDetail() called deliberately while off-tab, later, stopped marking the
+// table stale) -- reverted. Root cause remains UNIDENTIFIED; see
+// docs/decisions/2026-09-24-audit-log-serverside.md for the full trace evidence. Do not reintroduce a
+// "skip the next refresh" flag without first proving which specific refresh call is the race, not just
+// whichever one happens to run next.
 // 2026-09-23, 3e-3b round B1: the note cell's own tooltip (and the auditLogNoteTooltipsRd array /
 // auditLogRefreshNoteTooltipsRd() drawCallback that rebuilt it on every draw) is gone -- grep
 // confirmed 0 consumers left of either once the column-7 "ดูรายละเอียด" button + modal became the
@@ -4119,25 +4136,15 @@ function updateAuditLogDateRangeCalloutRd() {
 // `performed_at` is a raw MySQL DATETIME string with no timezone attached (Batch 5's own lesson --
 // CLAUDE.md -- applies here too) -- compared as a STRING against the datepicker's own ISO value via
 // toIsoDateRd(), never through a `Date` parse that would silently apply the browser's local offset
-// to a value that was never UTC in the first place. Registered once (module-level guard, same shape
-// as registerDataSourceSearchFilter() etc. above) and scoped to this one table's id so it can
-// never affect any other DataTable on this page.
-let auditLogDateRangeSearchFilterRegistered = false;
-function registerAuditLogDateRangeSearchFilter() {
-    if (auditLogDateRangeSearchFilterRegistered) return;
-    auditLogDateRangeSearchFilterRegistered = true;
-    $.fn.dataTable.ext.search.push(function (settings, searchData, dataIndex, rowData) {
-        if (!settings.nTable || settings.nTable.id !== 'tb_run_audit_log') return true;
-        if (!auditLogDateRangeValidRd()) return true; // nonsensical range -- warned via callout, don't narrow yet
-        const from = toIsoDateRd($('#auditLogDateFrom').val());
-        const to = toIsoDateRd($('#auditLogDateTo').val());
-        if (!from && !to) return true;
-        const day = String((rowData && rowData.performed_at) || '').slice(0, 10);
-        if (from && day < from) return false;
-        if (to && day > to) return false;
-        return true;
-    });
-}
+// to a value that was never UTC in the first place.
+// 2026-09-24, Round B1 (serverSide conversion): `registerAuditLogDateRangeSearchFilter()` (a
+// `$.fn.dataTable.ext.search` predicate, scoped to this table's own id) used to live here -- removed
+// (0 other consumers, grep-confirmed) now that the table is `serverSide`. An `ext.search` predicate
+// only ever runs against rows already IN THE BROWSER, which for a serverSide table is just the
+// current page -- leaving it in place would have silently double-filtered each page's own rows
+// without ever correcting `recordsTotal`/`recordsFiltered`, instead of the real fix: gating what
+// `ajax.data` sends (`initAuditLogTableRd()`'s own `ajax.data` function, below) using this exact same
+// `auditLogDateRangeValidRd()` check the predicate used to gate on.
 // ---------- #auditLogDetailModal (2026-09-23, 3e-3b round B1) ----------
 // rules.md §9 "modal record-only" -- one #tb_run_audit_log row, read-only, no primary action. Kept
 // so refreshAuditLogTableLanguage() can re-render the SAME entry after a live language switch while
@@ -4187,14 +4194,22 @@ function openAuditLogDetailRd(entry) {
     renderAuditLogDetailModalBody(entry);
     new bootstrap.Modal(document.getElementById('auditLogDetailModal')).show();
 }
-// Constructed once; every subsequent call (a fresh loadRunDetail() after any mutating action) just
-// swaps the data -- same `$.fn.DataTable.isDataTable()` reuse check tb_run_detail's own construction
-// already uses, rather than destroying/rebuilding the table (and its column filters/tooltips) on
-// every single reload.
-function initAuditLogTableRd(entries) {
-    const rows = entries || [];
+// 2026-09-24, Round B1 -- was fed whole from `.get()`'s own `res.data.audit_log` and reused
+// (`$.fn.DataTable.isDataTable()` + clear/rows.add/draw) on every subsequent loadRunDetail(); now
+// `serverSide`, fed by `api/payroll-run.audit-log.list` -- reused the SAME way, but a reuse call now
+// means `.ajax.reload()`, not swapping an in-memory array (see refreshAuditLogAfterRunLoadRd(), the
+// new call site that replaces the old unconditional `initAuditLogTableRd(res.data.audit_log || [])`).
+// Lazy (D5): constructed the first time `#run-history-tab` is actually shown, not eagerly at page
+// load -- S2 (round B1) confirmed this pane is never the default-active tab and the only 2 ways it
+// CAN become active (a real click, or `activateTabFromHash()`'s own genuine `bootstrap.Tab.show()`
+// call on a page load restored from a bookmarked hash) both fire a real `shown.bs.tab` event -- there
+// is no 3rd path that shows this pane without one, so "construct on first shown.bs.tab" alone is
+// provably sufficient; no "or construct immediately if the tab happens to already be active" branch
+// is reachable. `PAYROLL_RUN_ID` (detail.php's own page-level constant) is what `ajax.data` reads,
+// not `currentRun.id` -- available before `.get()` even resolves, so construction no longer waits on
+// that response at all, unlike the old eager-from-response build.
+function initAuditLogTableRd() {
     if ($.fn.DataTable.isDataTable('#tb_run_audit_log')) {
-        $('#tb_run_audit_log').DataTable().clear().rows.add(rows).draw();
         return;
     }
     const titles = auditLogColumnTitlesRd();
@@ -4206,12 +4221,12 @@ function initAuditLogTableRd(entries) {
     // load, same as the column filters below, so neither needs its own separate once-guard.
     initDatepicker('#auditLogDateFrom');
     initDatepicker('#auditLogDateTo');
-    registerAuditLogDateRangeSearchFilter();
     // 2026-09-23, 3e-3b round B5: initFilterBar() now listens on `input.form-control` too (app.js),
     // so these 2 date fields genuinely fire `onChange` (debounced via its own scheduleNotify(),
     // same as a select's own change would) -- round B4's separate page-level `change` handler on
     // #auditLogDateFrom/To is gone, its 2 jobs (hide/show the callout, redraw the table) both moved
-    // in here instead of running twice per change.
+    // in here instead of running twice per change. `.draw()` on a serverSide table re-triggers
+    // `ajax.data` (below) same as any other draw would -- unchanged from what this call already did.
     initFilterBar('#auditLogFilterBar', {
         onChange: function () {
             updateAuditLogDateRangeCalloutRd();
@@ -4219,16 +4234,70 @@ function initAuditLogTableRd(entries) {
         },
     });
     tb_run_audit_log = initSharedDataTable('#tb_run_audit_log', {
+        serverSide: true,
+        ajax: {
+            url: `${BASE_URL}/api/payroll-run.audit-log.list`,
+            type: 'POST',
+            // Built from `settings` (not the outer `tb_run_audit_log` variable), same reason
+            // table-column-filter.js's own getColumnFilterValues() docblock gives for
+            // `#tb_join_employees`'s identical pattern -- DataTables calls this synchronously to
+            // build the very FIRST request while `tb_run_audit_log = ...` is still being assigned.
+            data: function (d, settings) {
+                d.run_id = PAYROLL_RUN_ID;
+                // Nonsensical range (from > to) is never sent to the server -- the same guard the
+                // removed ext.search predicate used to gate on (auditLogDateRangeValidRd(), above);
+                // the callout already warns the user, and the table simply keeps its last-good result
+                // set instead of sending a WHERE clause that could only ever match wrongly.
+                const rangeValid = auditLogDateRangeValidRd();
+                d.date_from = rangeValid ? (toIsoDateRd($('#auditLogDateFrom').val()) || '') : '';
+                d.date_to = rangeValid ? (toIsoDateRd($('#auditLogDateTo').val()) || '') : '';
+                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
+            },
+        },
         // §7 per-column Excel filter -- 4 of the 6 columns per the decided spec (not "เวลา", which
         // sorts instead, and not "หมายเหตุ", covered by the table's own global search box).
+        // `mode:'server'` now (was 'client') -- unique values come from the run's FULL row set via
+        // `api/payroll-run.audit-log.column-values`, not just whatever page happens to be loaded.
+        // `audit_action`/`audit_state` carry `formatValue` (D3, table-column-filter.js) since the
+        // backend intentionally returns the RAW enum for those 2 keys (no server-side Thai i18n
+        // mechanism exists anywhere in this app -- PayrollRunModel::auditLogFilterColumns()'s own
+        // docblock) -- the checkbox list still shows the same translated label it always has, via the
+        // SAME 2 functions the table's own display cells already use; `audit_performed_by`/
+        // `audit_device_ip` need no formatter -- the backend already resolves the actor name to the
+        // caller's own display language, and the ip is never translated either way.
         columnFilters: {
-            mode: 'client',
+            mode: 'server',
             columns: [
                 { index: 1, key: 'audit_performed_by' },
-                { index: 2, key: 'audit_action' },
-                { index: 3, key: 'audit_state' },
+                { index: 2, key: 'audit_action', formatValue: (key, v) => auditActionLabelInfoRd(v).label },
+                { index: 3, key: 'audit_state', formatValue: (key, v) => auditLogStateFilterTextRd(v) },
                 { index: 5, key: 'audit_device_ip' },
             ],
+            // Same scope as the main table's own `ajax.data` above (run_id + current date range +
+            // every other column's own current selection) -- same convention `#tb_join_employees`'s
+            // own `fetchValues` already uses for its `api/payroll-run.manual-employee-column-values`.
+            // The backend excludes `key`'s own column from `column_filters` when resolving IT
+            // (PayrollRunModel::auditLogColumnValues(), `$col === $column` guard) -- sending it here
+            // regardless is harmless and keeps this payload identical in shape to the main list call.
+            fetchValues: function (key, done) {
+                $.ajax({
+                    url: `${BASE_URL}/api/payroll-run.audit-log.column-values`,
+                    method: 'POST',
+                    data: {
+                        run_id: PAYROLL_RUN_ID,
+                        column: key,
+                        date_from: auditLogDateRangeValidRd() ? (toIsoDateRd($('#auditLogDateFrom').val()) || '') : '',
+                        date_to: auditLogDateRangeValidRd() ? (toIsoDateRd($('#auditLogDateTo').val()) || '') : '',
+                        column_filters: getColumnFilterValues(tb_run_audit_log),
+                    },
+                    dataType: 'json',
+                }).done(function (res) {
+                    done((res && res.values) || []);
+                }).fail(function () {
+                    done([]);
+                });
+            },
+            onApply: function () { if (tb_run_audit_log) tb_run_audit_log.ajax.reload(null, false); },
         },
         // 2026-09-23, 3e-3b round B4: now that #auditLogFilterBar exists, this page carries 2
         // `.filter-bar` instances (the other is #runDetailFilterBar, Employee tab) -- tableFilterBarFor()
@@ -4240,8 +4309,7 @@ function initAuditLogTableRd(entries) {
         emptyState: AUDIT_LOG_EMPTY_STATE_RD,
         dtOptions: {
             responsive: false,
-            data: rows,
-            order: [[0, 'desc']], // newest first, same convention the old Timeline card list used
+            order: [[0, 'desc']], // newest first, same convention the old Timeline card list used; server default (no order[] sent) resolves the same way plus an `id DESC` tie-break (PayrollRunModel::getAuditLogPaged())
             columns: [
                 { data: 'performed_at', title: titles[0], render: {
                     display: (d) => escapeHtml(formatDisplayDateTime(d)),
@@ -4290,6 +4358,21 @@ function initAuditLogTableRd(entries) {
         },
     });
 }
+// 2026-09-24, Round B1 (D5) -- replaces the old unconditional `initAuditLogTableRd(res.data.audit_log
+// || [])` call inside loadRunDetail()'s own success handler. The table no longer depends on `.get()`'s
+// response at all (it fetches its own rows via `ajax`), so this function's only remaining job after a
+// run mutation is deciding WHEN to make it catch up: reload immediately if the tab is the one on
+// screen right now, otherwise just remember that it needs to next time it is (the `shown.bs.tab`
+// handler below reads/clears `auditLogTableStaleRd`). Not constructed yet -- nothing to do; its own
+// first construction (lazy, on that same shown.bs.tab handler) always fetches fresh.
+function refreshAuditLogAfterRunLoadRd() {
+    if (!tb_run_audit_log) return;
+    if ($('#run-history-tab').hasClass('active')) {
+        tb_run_audit_log.ajax.reload(null, false);
+    } else {
+        auditLogTableStaleRd = true;
+    }
+}
 // Registered in refreshPayrollDetailLanguage() (bottom of this file). Header text + the empty-state
 // title are re-read from langData directly; row content (actor name/action label/state badge) needs
 // `rows().invalidate()` first since a client-side DataTable caches each cell's already-rendered
@@ -4310,7 +4393,32 @@ function refreshAuditLogTableLanguage() {
     AUDIT_LOG_EMPTY_STATE_RD.title = getLangValue('no_history_yet') || 'No action has been taken on this request yet.';
     const settings = tb_run_audit_log.settings()[0];
     if (settings) settings.oLanguage.sEmptyTable = getLangValue('emptyTable') || settings.oLanguage.sEmptyTable;
-    tb_run_audit_log.rows().invalidate().draw(false);
+    // 2026-09-24, Round B1 (S1/S5): this table is `serverSide` now -- `app.js`'s own
+    // reloadAllTablesForLanguageChange() (fired earlier in the SAME changeLanguage() call, before
+    // this function runs) already called `.ajax.reload(null,false)` on this table if it was VISIBLE
+    // at switch time (its own `dt.ajax.url()` branch); a plain `.rows().invalidate().draw(false)`
+    // here on TOP of that would fire a 2nd, redundant request on every language switch (a `.draw()`
+    // re-triggers `ajax.data` on a serverSide table, unlike a client-side one, where invalidate+draw
+    // was the ONLY way to force a re-render -- that old reasoning no longer applies here at all). If
+    // the pane was hidden at switch time (not visible, so the reload above never ran), app.js's own
+    // `shown.bs.tab` langEpoch handler reloads it the next time this tab is actually shown instead --
+    // either way, no extra reload belongs here.
+    // A stale `audit_performed_by` column-filter selection is a real, separate risk this branch also
+    // closes: that key resolves to a DIFFERENT real column server-side depending on language
+    // (PayrollRunModel::auditLogFilterColumns(), `e.name_th` vs `e.name_en`) -- a Thai name selected
+    // before the switch would silently match ZERO rows against the English column after it, with no
+    // visible reason why (explicit round B1 requirement: "ห้ามมีสถานะที่กรองแบบมองไม่เห็นแล้วได้ 0
+    // แถว"). Clearing every column filter on a genuine language switch is simpler and safer than
+    // adding a per-column "this one is language-dependent" concept to the shared file for one column
+    // -- `clearColumnFilters()` itself already triggers exactly one `.ajax.reload()` when it actually
+    // clears something (table-column-filter.js), so this never doubles up with the branch above; when
+    // there is nothing to clear, this line is a no-op and the reload above (or the langEpoch catch-up)
+    // is what refreshes the action/status labels and this run's own actor names into the new language.
+    if (tb_run_audit_log.ajax.url()) {
+        if (typeof clearColumnFilters === 'function') clearColumnFilters(tb_run_audit_log);
+    } else {
+        tb_run_audit_log.rows().invalidate().draw(false);
+    }
     // 2026-09-23, 3e-3b round B1: #auditLogDetailModal's own body is plain HTML built once at open
     // time (getLangValue() baked into strings, not live data-i18n spans) -- a language switch while
     // it's still open needs this explicit re-render from the SAME stored entry, or it would freeze
@@ -4409,7 +4517,7 @@ function loadRunDetail() {
                 }
                 renderRunHeader(res.data);
                 initRunDetailTable(res.data.details || []);
-                initAuditLogTableRd(res.data.audit_log || []);
+                refreshAuditLogAfterRunLoadRd();
                 // 2026-08-28, explicit request: Process List/Approval Queue (opened in a SEPARATE
                 // browser tab, see index.js/approval.js's own window.open(...'_blank')) should
                 // reload once this run's data changes -- every mutating action on this page
@@ -7594,7 +7702,21 @@ $(document).on('shown.bs.tab', '#run-remittance-tab', function () {
 });
 // 2026-09-22, 3e-3 round B1: same fix, same reason, for the Action History tab's own new DataTable
 // (initAuditLogTableRd()) -- its pane is not the default-active one either.
+// 2026-09-24, Round B1 -- this handler now does 2 MORE jobs, both from D5's lazy+stale spec: (1) the
+// table's own FIRST construction (previously eager, fed from `.get()`'s response as soon as it
+// arrived) now happens here, the first time this tab is ever actually shown -- initAuditLogTableRd()
+// itself already no-ops on every later call via its own `$.fn.DataTable.isDataTable()` guard, so
+// calling it unconditionally on every show is safe; (2) `auditLogTableStaleRd`
+// (refreshAuditLogAfterRunLoadRd(), above) is read and cleared here -- a mutating action elsewhere on
+// the page while this tab was hidden left the table's own data behind, and this is the one place that
+// catches it up. `columns.adjust()` still runs unconditionally after either branch, same as before.
 $(document).on('shown.bs.tab', '#run-history-tab', function () {
+    if (!tb_run_audit_log) {
+        initAuditLogTableRd();
+    } else if (auditLogTableStaleRd) {
+        auditLogTableStaleRd = false;
+        tb_run_audit_log.ajax.reload(null, false);
+    }
     if (tb_run_audit_log) tb_run_audit_log.columns.adjust();
 });
 // 2026-09-14, Round 3 "เก็บตกรอบ 6" item 1 -- Payroll Detail's own missing changeLanguage() hook (see

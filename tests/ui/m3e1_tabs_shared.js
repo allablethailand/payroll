@@ -300,8 +300,10 @@ async function cell4() {
     const payloads = {};
     ctx.page.on('response', async (res) => {
         const u = res.url();
+        // 2026-09-24, B2a: 'payroll-run.audit-log.list' added -- #tb_run_audit_log's own serverSide
+        // feed (Round B1), captured the SAME way every other pane's own list endpoint already is.
         const keys = ['payroll-run-cash-payment.list', 'payroll-run-employee-bank-account.list',
-            'payroll-remittance.list', 'report.run-summary', 'payroll-run.get'];
+            'payroll-remittance.list', 'report.run-summary', 'payroll-run.get', 'payroll-run.audit-log.list'];
         for (const key of keys) {
             if (u.indexOf(key) !== -1) { try { payloads[key] = await res.json(); } catch (e) { /* not json */ } }
         }
@@ -314,8 +316,21 @@ async function cell4() {
         '#run-remittance-pane': (payloads['payroll-remittance.list'] || {}).data,
     };
     const skipped4 = [];
+    // 2026-09-24, B2a: #tb_run_audit_log is lazy now (Round B1, D5) -- its own construction (and
+    // first `audit-log.list` fetch) happens on THIS loop's own `openTab('#run-history-tab')` call,
+    // not eagerly at page load. `openTab()` itself only waits a fixed 450ms (shared by every pane in
+    // this loop, not this round's to change) -- too race-prone for a real network round trip, so the
+    // History pane's own turn through this loop additionally waits for that specific response before
+    // moving on, the same `page.waitForResponse` mechanism the round's own helper convention uses
+    // elsewhere. `auditListJson` is read after the loop, once, for the TINY-2 comparison below.
+    let auditListJson = null;
     for (const p of PANES) {
-        if (!(await openTab(ctx.page, p.tab))) { skipped4.push(p.pane); continue; }
+        if (p.pane === '#run-history-pane') {
+            const auditListPromise = ctx.page.waitForResponse((res) => res.url().indexOf('payroll-run.audit-log.list') !== -1 && res.request().method() === 'POST', { timeout: 10000 }).catch(() => null);
+            if (!(await openTab(ctx.page, p.tab))) { skipped4.push(p.pane); continue; }
+            const auditListRes = await auditListPromise;
+            if (auditListRes) { try { auditListJson = await auditListRes.json(); } catch (e) { /* not json */ } }
+        } else if (!(await openTab(ctx.page, p.tab))) { skipped4.push(p.pane); continue; }
         const pic = await panePicture(ctx.page, p.pane);
         measured(p.pane + ' @1015', pic);
         const exp = expect[p.pane];
@@ -356,18 +371,21 @@ async function cell4() {
             check(sel + ': money cell right-aligned through .num', m.align === 'right' && /(^|\s)num(\s|$)/.test(m.cls), JSON.stringify(m));
         }
     }
-    await openTab(ctx.page, '#run-history-tab');
+    // 2026-09-24, B2a: the Timeline card list (#run_audit_timeline) is long gone, and as of Round B1
+    // #tb_run_audit_log is a real serverSide DataTable (`api/payroll-run.audit-log.list`), not the
+    // client-side one this comment used to describe -- `recordsTotal` now comes from that endpoint's
+    // OWN response (`auditListJson`, captured via `page.waitForResponse` during the tab-open loop
+    // above), not from a synchronous `page.info()` read after a bare re-click (`page.info()` on a
+    // serverSide table only reflects whatever the LAST response said, and re-clicking an already-
+    // active tab fires no new request to wait on at all). `.get()`'s own `audit_log` key is untouched
+    // by Round B1 (D6) -- still the full, unpaged array -- so it remains the correct TINY-2 reference.
     const runPayload = payloads['payroll-run.get'] || {};
+    // TINY-2: reference value read from `.get()`'s own (still-full, unpaged) `audit_log`.
     const logs = (runPayload.data || {}).audit_log;
-    // 2026-09-22, 3e-3 round B1: the Timeline card list (#run_audit_timeline) is gone -- Action
-    // History is a real DataTable now (#tb_run_audit_log, client-side, no server-side paging), so
-    // "one row per audit_log entry" is now recordsTotal, not a DOM child count.
-    const historyState = await ctx.page.evaluate(() => {
-        if (!(window.jQuery && jQuery.fn.dataTable.isDataTable('#tb_run_audit_log'))) return null;
-        return { recordsTotal: jQuery('#tb_run_audit_log').DataTable().page.info().recordsTotal };
-    });
-    measured('history', { recordsTotal: historyState ? historyState.recordsTotal : null, logs: Array.isArray(logs) ? logs.length : null });
-    if (historyState && Array.isArray(logs)) check('history: DataTable recordsTotal matches audit_log rows', historyState.recordsTotal === logs.length, historyState.recordsTotal + ' vs ' + logs.length);
+    measured('history', { recordsTotal: auditListJson ? auditListJson.recordsTotal : null, logs: Array.isArray(logs) ? logs.length : null });
+    // TINY-2: comparison is against that same `.get().audit_log` reference.
+    if (auditListJson && Array.isArray(logs)) check('history: audit-log.list\'s own recordsTotal matches .get()\'s audit_log length', auditListJson.recordsTotal === logs.length, auditListJson.recordsTotal + ' vs ' + logs.length);
+    else console.log('  NOTE  history: audit-log.list response or .get().audit_log unavailable -- cannot compare');
     const rep = ctx.report();
     measured('c4 report', rep);
     check('c4: nothing was written', rep.blockedWrites === 0, rep.blockedWritePaths.join(','));
