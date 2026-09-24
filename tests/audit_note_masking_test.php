@@ -79,10 +79,16 @@ checkTrue('payroll-run.get runs audit_log through maskAuditNote()',
     strpos($controllerSrc, "\$row['audit_log'] = \$this->maskAuditNote(\$row['audit_log'], (int)\$compId);") !== false);
 checkTrue('it sits with the other maskers, after the model has filled the response',
     strpos($controllerSrc, "maskRunDetailRows(\$row['details']") < strpos($controllerSrc, "maskAuditNote(\$row['audit_log']"));
-// One function, one call site: 1 definition + 1 call. A third occurrence means the rule started
-// spreading, which is exactly what doing it in one place was meant to prevent.
-check('maskAuditNote appears exactly twice in the file (definition + its single call)',
-    substr_count($controllerSrc, 'maskAuditNote'), 2);
+// 2026-09-24, tiny round B: a SECOND legitimate call site now exists (auditLogList(), the new
+// paginated history feed -- masks the same rows `.get()`'s own audit_log always has, just paged).
+// Checked by exact call-site string, not a raw substring count of the function name (that count
+// would now be wrong either way -- 2 real calls plus this file's own prose mentions of the name --
+// and wrongness in either direction is exactly what this test exists to catch). Still exactly ONE
+// definition: that half of the original guard still matters just as much with 2 call sites as with 1.
+check('maskAuditNote is defined exactly once',
+    substr_count($controllerSrc, 'private function maskAuditNote(array $auditLog, int $compId): array {'), 1);
+checkTrue('auditLogList() (the new paginated history feed) also runs its rows through maskAuditNote() before responding',
+    strpos($controllerSrc, "\$res['data'] = \$this->maskAuditNote(\$res['data'], (int)\$compId);") !== false);
 checkTrue('the pattern lives on the class, not inline at a call site',
     strpos($controllerSrc, 'AUDIT_NOTE_MONEY_PATTERN') !== false);
 checkTrue('and it says in the file that it is temporary until the figures become real columns',
@@ -149,6 +155,40 @@ if (!$realRows) {
     check('and a full reader still gets every one of them unchanged',
         maskWith(makeController(VIS_FULL), $realRows), $realRows);
 }
+
+echo "\n=== 6. 2026-09-24, tiny round B: the 2 new paginated endpoints wire the same guards ===\n";
+// Bounds each method's own source to between its `public function` line and the next `public
+// function` line after it, same lightweight source-check style as section 1 above (position
+// comparison, not full parsing) -- so a permission/masking string found ANYWHERE in the file isn't
+// mistaken for being inside the method that actually needs it.
+function methodBodySrc(string $src, string $methodSignature): string {
+    $start = strpos($src, $methodSignature);
+    if ($start === false) {
+        return '';
+    }
+    $next = strpos($src, 'public function ', $start + strlen($methodSignature));
+    return $next === false ? substr($src, $start) : substr($src, $start, $next - $start);
+}
+$auditLogListSrc = methodBodySrc($controllerSrc, 'public function auditLogList() {');
+$auditLogColumnValuesSrc = methodBodySrc($controllerSrc, 'public function auditLogColumnValues() {');
+checkTrue('auditLogList() exists', $auditLogListSrc !== '');
+checkTrue('auditLogColumnValues() exists', $auditLogColumnValuesSrc !== '');
+checkTrue('auditLogList() calls requireViewAccess() before touching the model',
+    strpos($auditLogListSrc, 'if (!$this->requireViewAccess()) return;') !== false);
+checkTrue('auditLogColumnValues() calls requireViewAccess() before touching the model',
+    strpos($auditLogColumnValuesSrc, 'if (!$this->requireViewAccess()) return;') !== false);
+checkTrue('auditLogList() masks its rows before responding (the call site section 1 above also checks file-wide)',
+    strpos($auditLogListSrc, "\$this->maskAuditNote(\$res['data'], (int)\$compId)") !== false);
+// column-values never returns `note` (its own 4 filterable keys are performed_by/action/to_state/
+// ip_address -- see PayrollRunModel::auditLogFilterColumns()'s own docblock) -- masking exists
+// solely to redact figures INSIDE `note` text, so there is nothing for it to do here. Asserted
+// explicitly (not just "absent by omission") so a future column added to this endpoint's filter
+// list has to consciously revisit this assumption rather than silently inherit it.
+checkTrue('auditLogColumnValues() does not call maskAuditNote() (it never returns note text at all)',
+    strpos($auditLogColumnValuesSrc, 'maskAuditNote') === false);
+checkTrue('both new methods scope to the run\'s own company before running any query (same guard getAuditLog() itself uses)',
+    strpos($auditLogListSrc, '$this->model->get($runId, (int)$compId)') !== false
+    && strpos($auditLogColumnValuesSrc, '$this->model->get($runId, (int)$compId)') !== false);
 
 echo "\n" . str_repeat('-', 50) . "\n";
 echo "Passed: {$passes}, Failed: {$failures}\n";

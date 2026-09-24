@@ -496,6 +496,81 @@ class PayrollController extends Controller {
         $this->json(['status' => true, 'data' => $row]);
     }
 
+    /** ServerSide DataTable feed for the Action History tab (#tb_run_audit_log), tiny round B --
+     *  same row shape/exclusion (`action != 'view_detail'`) as getAuditLog() (used by `.get()`
+     *  above), just paginated/sorted/filtered server-side instead of loaded whole. Not yet wired
+     *  to the frontend -- `.get()`'s own `audit_log` key is untouched this round. Every row is run
+     *  through maskAuditNote(), same as `.get()`'s own call at :494, before it ever leaves this
+     *  method -- a masked payroll figure inside a `note` must never be a paging/sort/search away
+     *  from being unmasked by a stale-permission cached response. */
+    public function auditLogList() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = intval($_POST['run_id'] ?? 0);
+        if (!$compId || $runId <= 0) {
+            $this->json(['draw' => 1, 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
+            return;
+        }
+        // Same comp-scope guard getAuditLog() itself uses (PayrollRunModel.php:740-742) -- a run id
+        // that exists but belongs to another company must read as "not found", not leak a 0-row vs
+        // a real empty-history run distinction to a caller who was never allowed to see it at all.
+        if (!$this->model->get($runId, (int)$compId)) {
+            $this->json(['draw' => intval($_POST['draw'] ?? 1), 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
+            return;
+        }
+        $start = intval($_POST['start'] ?? 0);
+        // -1 = DataTables' own "All" length option (app.js's shared `lengthMenu`, confirmed in use
+        // app-wide this round, S4) -- passed through as-is, the model resolves it to "no LIMIT".
+        // Any other non-positive/missing value falls back to 50, matching app.js's own `pageLength`.
+        $lengthRaw = intval($_POST['length'] ?? 50);
+        $length = ($lengthRaw === -1 || $lengthRaw > 0) ? $lengthRaw : 50;
+        $search = (string)($_POST['search']['value'] ?? '');
+        $colIndex = isset($_POST['order'][0]['column']) ? (int)$_POST['order'][0]['column'] : 0;
+        $orderDir = isset($_POST['order'][0]['dir']) && $_POST['order'][0]['dir'] === 'asc' ? 'asc' : 'desc';
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $filters = [
+            'date_from' => (string)($_POST['date_from'] ?? ''),
+            'date_to' => (string)($_POST['date_to'] ?? ''),
+        ];
+        $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
+        $res = $this->model->getAuditLogPaged($runId, (int)$compId, $start, $length, $search, $colIndex, $orderDir, (string)$lang, $filters, $columnFilters);
+        $res['data'] = $this->maskAuditNote($res['data'], (int)$compId);
+        $this->json([
+            'draw' => intval($_POST['draw'] ?? 1),
+            'recordsTotal' => $res['recordsTotal'],
+            'recordsFiltered' => $res['recordsFiltered'],
+            'data' => $res['data'],
+        ]);
+    }
+
+    /** Distinct-values feed for #tb_run_audit_log's `mode:'server'` Excel column filters, same
+     *  shape as manualEmployeeColumnValues() (:662-684) -- `audit_action`/`audit_state` return RAW
+     *  enum values (never a translated label -- no server-side Thai i18n mechanism exists in this
+     *  app at all, see this round's own S1/S2 investigation notes; matches the same raw-value
+     *  convention AuditLogModel::list()/audit-log.js's own auditLogActionBadge() already use for
+     *  the unrelated generic audit_logs viewer -- client translates for display whenever a future
+     *  round wires this endpoint to the table). `audit_device_ip` is ip_address only, matching the
+     *  Excel filter's own actual filter value (detail.js:4277), not the combined device+IP display
+     *  cell. */
+    public function auditLogColumnValues() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = intval($_POST['run_id'] ?? 0);
+        $column = (string)($_POST['column'] ?? '');
+        if (!$compId || $runId <= 0 || !$this->model->get($runId, (int)$compId)) {
+            $this->json(['status' => false, 'values' => []]);
+            return;
+        }
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $filters = [
+            'date_from' => (string)($_POST['date_from'] ?? ''),
+            'date_to' => (string)($_POST['date_to'] ?? ''),
+        ];
+        $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
+        $values = $this->model->auditLogColumnValues($runId, (int)$compId, $column, (string)$lang, $filters, $columnFilters);
+        $this->json(['status' => true, 'values' => $values]);
+    }
+
     /** Feeds the Approval Timeline modal on the Approval Queue page -- that page's own list
      *  endpoint stays lean (one row per run, no audit log/approver breakdown) since most rows'
      *  timeline never gets opened; this is fetched on demand only when the modal opens. */

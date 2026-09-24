@@ -293,6 +293,13 @@ class PayrollRunModel {
                     -- payment counts (already derivable from `r.details`' own payment_method_code
                     -- per employee, no new field needed there), remittances live in their own table
                     -- with nothing reachable from getDetails() at all, so this needs a real count.
+                    -- 2026-09-24, tiny round B: same subquery list() already carries at :142 (now
+                    -- shifted further down by this round's own additions) -- runLifecycleCancelledFromState()
+                    -- (app.js) falls back to this column when `run.audit_log`'s own last 'cancel'
+                    -- entry isn't available; `.get()` never selected it before, only `list()` did,
+                    -- a real gap this round's own S6/B2 investigation found (dormant today since
+                    -- `.get()` still carries `audit_log` in full, unchanged this round).
+                    (SELECT from_state FROM `payroll_run_audit_logs` WHERE run_id = r.id AND action = 'cancel' ORDER BY id DESC LIMIT 1) AS cancelled_from_state,
                     (SELECT COUNT(*) FROM `payroll_remittances` pr WHERE pr.run_id = r.id) AS remittance_count
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
@@ -752,6 +759,186 @@ class PayrollRunModel {
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':run_id' => $runId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /** Column index -> real SQL column whitelist for auditLogList()'s ORDER BY, same shape as
+     *  EmployeeLoginLogModel::listForCompany()'s own `$sortColumns` (:331) -- an out-of-whitelist
+     *  index is simply absent from this array, never reaches raw SQL. Actor (index 1) sorts by the
+     *  bilingual name column matching the caller's own language, same resolution
+     *  manualEmployeeFilterExprMap() already uses elsewhere in this class ($lang param). Note
+     *  (index 4) and the view-detail button (index 6) are intentionally absent -- not orderable
+     *  client-side either (detail.js:4271,4283). */
+    private function auditLogSortColumns(string $lang): array {
+        return [
+            0 => 'a.performed_at',
+            1 => ($lang === 'en' ? 'e.name_en' : 'e.name_th'),
+            2 => 'a.action',
+            3 => 'a.to_state',
+            5 => 'a.ip_address',
+        ];
+    }
+
+    /** column_filters key -> real SQL column whitelist, tiny round B -- `audit_action`/`audit_state`
+     *  deliberately map to the RAW enum columns (never a translated label): no server-side Thai
+     *  i18n mechanism exists in this app (statusEnLabelFallback(), helpers.php:251-259, loads
+     *  en.json only, by deliberate design -- see this round's own S1/S2 notes), and this matches
+     *  the same raw-value convention AuditLogModel::list()/audit-log.js's own auditLogActionBadge()
+     *  already use for the unrelated generic audit_logs viewer. `audit_device_ip` maps to
+     *  ip_address only, matching the Excel filter's own actual filter value (detail.js:4277), not
+     *  the combined device+IP display cell -- user_agent is never filterable through this key. */
+    private function auditLogFilterColumns(string $lang): array {
+        return [
+            'audit_performed_by' => ($lang === 'en' ? 'e.name_en' : 'e.name_th'),
+            'audit_action' => 'a.action',
+            'audit_state' => 'a.to_state',
+            'audit_device_ip' => 'a.ip_address',
+        ];
+    }
+
+    /** ServerSide DataTable source for #tb_run_audit_log (tiny round B) -- same row shape/exclusion
+     *  as getAuditLog() above (unmodified, still used by `.get()`), just paginated/sorted/filtered
+     *  server-side. Caller (PayrollController::auditLogList()) has already confirmed the run exists
+     *  in this company before calling here, same guard getAuditLog() itself does at :740. This
+     *  method never writes to `payroll_run_audit_logs` -- a read of the audit trail must never
+     *  itself become an entry in it (unlike page navigation elsewhere, which does log a
+     *  'view_detail' row -- deliberately not replicated here, this is a paging/filter API, not a
+     *  page view). */
+    public function getAuditLogPaged(int $runId, int $compId, int $start, int $length, string $search, int $colIndex, string $orderDir, string $lang, array $filters, array $columnFilters): array {
+        // Same comp-scope guard getAuditLog() itself uses at :740-742 -- kept here too (not just in
+        // the controller) so this method stays safe to call directly, same self-contained contract
+        // getAuditLog() already has.
+        if (!$this->get($runId, $compId)) {
+            return ['recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []];
+        }
+        $sortColumns = $this->auditLogSortColumns($lang);
+        $sortColumn = $sortColumns[$colIndex] ?? 'a.performed_at';
+        $orderDir = strtoupper($orderDir) === 'ASC' ? 'ASC' : 'DESC';
+        $filterColumns = $this->auditLogFilterColumns($lang);
+
+        $joins = "FROM `payroll_run_audit_logs` a LEFT JOIN `employees` e ON e.id = a.performed_by";
+        $where = "a.run_id = :run_id AND a.action != 'view_detail'";
+        $params = [':run_id' => $runId];
+
+        $totalStmt = $this->db->prepare("SELECT COUNT(*) {$joins} WHERE {$where}");
+        $totalStmt->execute($params);
+        $recordsTotal = (int)$totalStmt->fetchColumn();
+
+        if (!empty($filters['date_from'])) {
+            $where .= " AND a.performed_at >= :date_from";
+            $params[':date_from'] = $filters['date_from'] . ' 00:00:00';
+        }
+        if (!empty($filters['date_to'])) {
+            // Inclusive of the whole end day: strictly less than the day AFTER date_to, rather than
+            // `<= date_to 23:59:59`, so a `performed_at` with sub-second precision this column
+            // doesn't actually have is never a future footgun (2026-09-24, explicit spec).
+            $where .= " AND a.performed_at < DATE_ADD(:date_to, INTERVAL 1 DAY)";
+            $params[':date_to'] = $filters['date_to'];
+        }
+        if ($search !== '') {
+            $where .= " AND (a.note LIKE :search OR e.name_th LIKE :search OR e.name_en LIKE :search OR a.ip_address LIKE :search)";
+            $params[':search'] = "%{$search}%";
+        }
+        $paramIdx = 0;
+        foreach ($columnFilters as $col => $values) {
+            if (!isset($filterColumns[$col]) || !is_array($values) || empty($values)) {
+                continue;
+            }
+            $values = array_values(array_filter($values, fn($v) => $v !== null && $v !== ''));
+            if (empty($values)) {
+                continue;
+            }
+            $placeholders = [];
+            foreach ($values as $v) {
+                $paramIdx++;
+                $ph = ":cf{$paramIdx}";
+                $placeholders[] = $ph;
+                $params[$ph] = (string)$v;
+            }
+            $where .= " AND {$filterColumns[$col]} IN (" . implode(', ', $placeholders) . ")";
+        }
+
+        $countStmt = $this->db->prepare("SELECT COUNT(*) {$joins} WHERE {$where}");
+        $countStmt->execute($params);
+        $recordsFiltered = (int)$countStmt->fetchColumn();
+
+        // `id` is always the final tie-break (same direction as the primary sort) -- a stable order
+        // across pages regardless of how many rows share the same performed_at/action/to_state/
+        // ip_address value (2026-09-24, explicit spec: "ต้องมี id เป็น tie-break ท้ายทุก order").
+        $dataStmt = $this->db->prepare(
+            "SELECT a.*, e.name_th AS performed_by_name_th, e.name_en AS performed_by_name_en,
+                    e.profile_photo_path AS performed_by_profile_photo_path
+             {$joins} WHERE {$where}
+             ORDER BY {$sortColumn} {$orderDir}, a.id {$orderDir}
+             LIMIT :limit OFFSET :offset"
+        );
+        foreach ($params as $k => $v) {
+            $dataStmt->bindValue($k, $v);
+        }
+        // length === -1 = DataTables' own "All" option (app.js's shared lengthMenu, confirmed in
+        // use app-wide this round, S4) -- no LIMIT at all rather than a magic-number ceiling, since
+        // the worst real run on record (round A, run 752) is ~3,612 rows, not a runaway size.
+        if ($length === -1) {
+            $dataStmt->bindValue(':limit', $recordsFiltered > 0 ? $recordsFiltered : 1, PDO::PARAM_INT);
+            $dataStmt->bindValue(':offset', 0, PDO::PARAM_INT);
+        } else {
+            $dataStmt->bindValue(':limit', $length, PDO::PARAM_INT);
+            $dataStmt->bindValue(':offset', $start, PDO::PARAM_INT);
+        }
+        $dataStmt->execute();
+
+        return ['recordsTotal' => $recordsTotal, 'recordsFiltered' => $recordsFiltered, 'data' => $dataStmt->fetchAll(PDO::FETCH_ASSOC)];
+    }
+
+    /** Distinct-values feed for #tb_run_audit_log's `mode:'server'` Excel column filters, same
+     *  shape/scope-by-other-filters pattern as manualEmployeeColumnValues() (:5230-5244). Raw
+     *  values only (see auditLogFilterColumns()'s own docblock for why `audit_action`/`audit_state`
+     *  are never translated here). */
+    public function auditLogColumnValues(int $runId, int $compId, string $column, string $lang, array $filters, array $columnFilters): array {
+        if (!$this->get($runId, $compId)) {
+            return [];
+        }
+        $filterColumns = $this->auditLogFilterColumns($lang);
+        if (!isset($filterColumns[$column])) {
+            return [];
+        }
+        $expr = $filterColumns[$column];
+        $joins = "FROM `payroll_run_audit_logs` a LEFT JOIN `employees` e ON e.id = a.performed_by";
+        $where = "a.run_id = :run_id AND a.action != 'view_detail'";
+        $params = [':run_id' => $runId];
+
+        if (!empty($filters['date_from'])) {
+            $where .= " AND a.performed_at >= :date_from";
+            $params[':date_from'] = $filters['date_from'] . ' 00:00:00';
+        }
+        if (!empty($filters['date_to'])) {
+            $where .= " AND a.performed_at < DATE_ADD(:date_to, INTERVAL 1 DAY)";
+            $params[':date_to'] = $filters['date_to'];
+        }
+        $paramIdx = 0;
+        foreach ($columnFilters as $col => $values) {
+            if ($col === $column || !isset($filterColumns[$col]) || !is_array($values) || empty($values)) {
+                continue;
+            }
+            $values = array_values(array_filter($values, fn($v) => $v !== null && $v !== ''));
+            if (empty($values)) {
+                continue;
+            }
+            $placeholders = [];
+            foreach ($values as $v) {
+                $paramIdx++;
+                $ph = ":cf{$paramIdx}";
+                $placeholders[] = $ph;
+                $params[$ph] = (string)$v;
+            }
+            $where .= " AND {$filterColumns[$col]} IN (" . implode(', ', $placeholders) . ")";
+        }
+
+        $sql = "SELECT DISTINCT {$expr} AS value {$joins}
+                WHERE {$where} AND {$expr} IS NOT NULL AND {$expr} != ''
+                ORDER BY value ASC LIMIT 500";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'value');
     }
 
     /** Raw view_detail rows for a run -- see getAuditLog()'s own docblock for why those are kept

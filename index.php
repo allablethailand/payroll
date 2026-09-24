@@ -115,6 +115,8 @@
     $router->get('api/payroll-run.employee-comment.list', 'PayrollController@employeeCommentList');
     $router->post('api/payroll-run.employee-comment.update', 'PayrollController@employeeCommentUpdate');
     $router->post('api/payroll-run.employee-comment.delete', 'PayrollController@employeeCommentDelete');
+    $router->post('api/payroll-run.audit-log.list', 'PayrollController@auditLogList');
+    $router->post('api/payroll-run.audit-log.column-values', 'PayrollController@auditLogColumnValues');
     $router->get('api/payroll-run.error-employees', 'PayrollController@errorEmployees');
     $router->get('api/payroll-run.sync-missing-employees', 'PayrollController@syncMissingEmployees');
     $router->post('api/payroll-run.submit', 'PayrollController@submit');

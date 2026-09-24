@@ -4538,6 +4538,149 @@ try {
         ],
         [true, [$employeeUnpaidId], 1, false, true]);
 
+    // ==================== 2026-09-24, tiny round B: api/payroll-run.audit-log.list +
+    // .audit-log.column-values + get()'s new cancelled_from_state ====================
+    // Real dev-DB run 1014 (18 non-view_detail rows as of round A's own measurement) is used
+    // throughout -- every expected value below is SELECTed live, never hardcoded, per this round's
+    // own spec. Real cancelled runs (271/294/310/1018, all comp_id=1) already exist, so no fixture
+    // is needed for the cancelled_from_state assertions either.
+    echo "\n=== 2026-09-24, tiny audit-list: audit-log.list / column-values / get() cancelled_from_state ===\n";
+    $auditRunId = 1014;
+    $auditCompStmt = $pdo->prepare("SELECT comp_id FROM payroll_runs WHERE id = :id");
+    $auditCompStmt->execute([':id' => $auditRunId]);
+    $auditCompId = (int)$auditCompStmt->fetchColumn();
+    checkTrue('tiny audit-list: fixture run 1014 really exists in this dev DB', $auditCompId > 0);
+
+    $auditExpectedTotalStmt = $pdo->prepare("SELECT COUNT(*) FROM payroll_run_audit_logs WHERE run_id = :id AND action != 'view_detail'");
+    $auditExpectedTotalStmt->execute([':id' => $auditRunId]);
+    $auditExpectedTotal = (int)$auditExpectedTotalStmt->fetchColumn();
+
+    $auditAllIdsStmt = $pdo->prepare("SELECT id FROM payroll_run_audit_logs WHERE run_id = :id AND action != 'view_detail' ORDER BY performed_at DESC, id DESC");
+    $auditAllIdsStmt->execute([':id' => $auditRunId]);
+    $auditAllIdsExpected = array_map('intval', $auditAllIdsStmt->fetchAll(PDO::FETCH_COLUMN));
+
+    $page1 = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 0, 'desc', 'th', [], []);
+    check('tiny audit-list: recordsTotal matches a direct COUNT (action != view_detail)', $page1['recordsTotal'], $auditExpectedTotal);
+    check('tiny audit-list: recordsFiltered equals recordsTotal with no filters applied', $page1['recordsFiltered'], $auditExpectedTotal);
+    checkTrue('tiny audit-list: no view_detail row ever appears in the result',
+        !in_array('view_detail', array_column($page1['data'], 'action'), true));
+    $page1Ids = array_map(static fn($r) => (int)$r['id'], $page1['data']);
+    check('tiny audit-list: default order (performed_at DESC, id DESC) exactly matches a direct SELECT', $page1Ids, $auditAllIdsExpected);
+
+    $controllerSrcForDraw = file_get_contents(__DIR__ . '/../app/controllers/PayrollController.php');
+    checkTrue('tiny audit-list: auditLogList() echoes draw as an int (DataTables contract)',
+        strpos($controllerSrcForDraw, "'draw' => intval(\$_POST['draw'] ?? 1),") !== false);
+
+    // -- paging: 2 pages of 10 concatenate to the exact same full id set, no dup/no gap --
+    $pageA = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, 10, '', 0, 'desc', 'th', [], []);
+    $pageB = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 10, 10, '', 0, 'desc', 'th', [], []);
+    $pagedIds = array_merge(array_map(static fn($r) => (int)$r['id'], $pageA['data']), array_map(static fn($r) => (int)$r['id'], $pageB['data']));
+    check('tiny audit-list: paging start=0,10/length=10 concatenated equals the full id set (no dup, no gap)', $pagedIds, $auditAllIdsExpected);
+    check('tiny audit-list: page A has exactly length=10 rows', count($pageA['data']), min(10, $auditExpectedTotal));
+
+    // -- order whitelist: every whitelisted a.* column, both directions, against a direct SELECT --
+    foreach (['performed_at' => 0, 'action' => 2, 'to_state' => 3, 'ip_address' => 5] as $colName => $colIdx) {
+        foreach (['asc', 'desc'] as $dir) {
+            $stmtOrder = $pdo->prepare("SELECT id FROM payroll_run_audit_logs WHERE run_id = :id AND action != 'view_detail' ORDER BY {$colName} " . strtoupper($dir) . ", id " . strtoupper($dir));
+            $stmtOrder->execute([':id' => $auditRunId]);
+            $expectedOrderIds = array_map('intval', $stmtOrder->fetchAll(PDO::FETCH_COLUMN));
+            $result = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', $colIdx, $dir, 'th', [], []);
+            $actualIds = array_map(static fn($r) => (int)$r['id'], $result['data']);
+            check("tiny audit-list: order whitelist col {$colIdx} ({$colName}) {$dir} matches ground truth", $actualIds, $expectedOrderIds);
+        }
+    }
+
+    // -- actor (col 1) sorts by the bilingual name column matching the caller's own language --
+    foreach (['th' => 'e.name_th', 'en' => 'e.name_en'] as $lang => $nameCol) {
+        foreach (['asc', 'desc'] as $dir) {
+            $stmtActor = $pdo->prepare("SELECT a.id FROM payroll_run_audit_logs a LEFT JOIN employees e ON e.id = a.performed_by WHERE a.run_id = :id AND a.action != 'view_detail' ORDER BY {$nameCol} " . strtoupper($dir) . ", a.id " . strtoupper($dir));
+            $stmtActor->execute([':id' => $auditRunId]);
+            $expectedActorIds = array_map('intval', $stmtActor->fetchAll(PDO::FETCH_COLUMN));
+            $resultActor = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 1, $dir, $lang, [], []);
+            $actualActorIds = array_map(static fn($r) => (int)$r['id'], $resultActor['data']);
+            check("tiny audit-list: order whitelist col 1 (actor, lang={$lang}) {$dir} matches ground truth", $actualActorIds, $expectedActorIds);
+        }
+    }
+
+    // -- out-of-whitelist column index falls back to the default order, no SQL error --
+    $outOfWhitelist = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 4, 'desc', 'th', [], []); // 4 = note, intentionally not orderable
+    $outOfWhitelistIds = array_map(static fn($r) => (int)$r['id'], $outOfWhitelist['data']);
+    check('tiny audit-list: an out-of-whitelist column index (4, note) falls back to the default order, no SQL error', $outOfWhitelistIds, $auditAllIdsExpected);
+    $outOfRange = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 999, 'asc', 'th', [], []);
+    checkTrue('tiny audit-list: a column index far outside any real column (999) does not throw', is_array($outOfRange['data']));
+
+    // -- search: note + actor name + ip_address, LIKE, bound (not action/to_state per spec) --
+    // 2 rows really do match (verified live) -- 'reopen's note has "Correcting payment_date...",
+    // 'approve's re-approval note has "...correcting payment_date..." lower-case (MySQL LIKE is
+    // case-insensitive under this column's own utf8mb4_unicode_ci collation).
+    $searchResult = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, 'Correcting payment_date', 0, 'desc', 'th', [], []);
+    check('tiny audit-list: search matches both real note substrings (case-insensitive LIKE)', $searchResult['recordsFiltered'], 2);
+    $noMatchResult = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, 'ZZZ_NO_SUCH_TEXT_ZZZ', 0, 'desc', 'th', [], []);
+    check('tiny audit-list: a non-matching search returns recordsFiltered=0', $noMatchResult['recordsFiltered'], 0);
+    check('tiny audit-list: recordsTotal is unaffected by search (still the full run count)', $noMatchResult['recordsTotal'], $auditExpectedTotal);
+
+    // -- date range on performed_at, inclusive both boundaries (>= from 00:00:00, < to+1 day) --
+    $dateSame = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 0, 'desc', 'th', ['date_from' => '2026-09-08', 'date_to' => '2026-09-08'], []);
+    check('tiny audit-list: date_from=date_to=2026-09-08 includes every row (all 18 rows are that day)', $dateSame['recordsFiltered'], $auditExpectedTotal);
+    $dateAfter = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 0, 'desc', 'th', ['date_from' => '2026-09-09'], []);
+    check('tiny audit-list: date_from the day after excludes everything (inclusive lower bound confirmed)', $dateAfter['recordsFiltered'], 0);
+    $dateBefore = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 0, 'desc', 'th', ['date_to' => '2026-09-07'], []);
+    check('tiny audit-list: date_to the day before excludes everything (inclusive upper bound confirmed)', $dateBefore['recordsFiltered'], 0);
+
+    // -- column_filters: audit_action IN (...), bound --
+    $filteredByAction = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 0, 'desc', 'th', [], ['audit_action' => ['approve']]);
+    check('tiny audit-list: column_filters audit_action=[approve] matches a direct COUNT (2 real approve rows on this run)', $filteredByAction['recordsFiltered'], 2);
+    checkTrue('tiny audit-list: every row column_filters returned really has action=approve',
+        count($filteredByAction['data']) > 0 && count(array_filter($filteredByAction['data'], fn($r) => $r['action'] === 'approve')) === count($filteredByAction['data']));
+
+    // -- comp scope / nonexistent run / zero-audit run --
+    $wrongComp = $runModel->getAuditLogPaged($auditRunId, 999999, 0, -1, '', 0, 'desc', 'th', [], []);
+    check('tiny audit-list: the same run id under a company it does not belong to returns empty (no 2nd real company exists in this dev DB to test with instead)', [$wrongComp['recordsTotal'], $wrongComp['data']], [0, []]);
+    $noSuchRun = $runModel->getAuditLogPaged(999999999, $auditCompId, 0, -1, '', 0, 'desc', 'th', [], []);
+    check('tiny audit-list: a run id that does not exist at all returns empty, not a throw', [$noSuchRun['recordsTotal'], $noSuchRun['data']], [0, []]);
+
+    // No real run with zero audit rows exists in this dev DB (create() always logs a 'create' row
+    // first, per PayrollRunModel's own docblock at getAuditLog() -- confirmed by this round's own
+    // S6 investigation) -- a bare INSERT bypassing create() is used instead, same rolled-back
+    // transaction as every other fixture in this file, to reach a state the model's own public API
+    // cannot produce but the SQL itself must still handle correctly (e.g. a pre-audit-log-era row).
+    $zeroAuditStmt = $pdo->prepare("INSERT INTO payroll_runs (comp_id, run_name, period_start_date, period_end_date, payment_date, state) VALUES (:comp_id, 'tiny audit-list zero-audit fixture', '2099-01-01', '2099-01-31', '2099-02-05', 'draft')");
+    $zeroAuditStmt->execute([':comp_id' => $auditCompId]);
+    $zeroAuditRunId = (int)$pdo->lastInsertId();
+    $zeroAuditResult = $runModel->getAuditLogPaged($zeroAuditRunId, $auditCompId, 0, -1, '', 0, 'desc', 'th', [], []);
+    check('tiny audit-list: a real run with genuinely zero audit rows returns recordsTotal=0, data=[]', [$zeroAuditResult['recordsTotal'], $zeroAuditResult['data']], [0, []]);
+
+    // -- start/length regression guard: bound as int, never string-concatenated --
+    $zeroLength = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, 0, '', 0, 'desc', 'th', [], []);
+    checkTrue('tiny audit-list: length=0 does not throw (LIMIT 0, valid SQL, empty data)', $zeroLength['data'] === []);
+    check('tiny audit-list: length=0 still reports the correct recordsTotal/recordsFiltered', [$zeroLength['recordsTotal'], $zeroLength['recordsFiltered']], [$auditExpectedTotal, $auditExpectedTotal]);
+    $hugeStart = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 100000, 10, '', 0, 'desc', 'th', [], []);
+    checkTrue('tiny audit-list: an out-of-range start does not throw, returns empty data', $hugeStart['data'] === []);
+
+    // -- column-values: distinct values match a direct SELECT DISTINCT exactly --
+    $stmtDistinctAction = $pdo->prepare("SELECT DISTINCT action FROM payroll_run_audit_logs WHERE run_id = :id AND action != 'view_detail' ORDER BY action ASC");
+    $stmtDistinctAction->execute([':id' => $auditRunId]);
+    $expectedActions = $stmtDistinctAction->fetchAll(PDO::FETCH_COLUMN);
+    $actualActions = $runModel->auditLogColumnValues($auditRunId, $auditCompId, 'audit_action', 'th', [], []);
+    check('tiny audit-list: column-values(audit_action) exactly matches a direct SELECT DISTINCT', $actualActions, $expectedActions);
+    $unknownColumn = $runModel->auditLogColumnValues($auditRunId, $auditCompId, 'not_a_real_key', 'th', [], []);
+    check('tiny audit-list: column-values() for an unmapped key returns empty, not an error', $unknownColumn, []);
+
+    // -- get(): existing keys untouched, plus the new cancelled_from_state --
+    $beforeKeysRun = $runModel->get($auditRunId, $auditCompId);
+    checkTrue('tiny audit-list: get() still returns a row for run 1014', is_array($beforeKeysRun));
+    checkTrue('tiny audit-list: get() still has remittance_count (the column immediately after the new subquery)', array_key_exists('remittance_count', $beforeKeysRun));
+    checkTrue('tiny audit-list: get()\'s own core fields (id/run_name/state) are untouched',
+        (int)$beforeKeysRun['id'] === $auditRunId && is_string($beforeKeysRun['run_name']) && is_string($beforeKeysRun['state']));
+    checkTrue('tiny audit-list: get() gained the new cancelled_from_state key', array_key_exists('cancelled_from_state', $beforeKeysRun));
+    check('tiny audit-list: get() on a run that was never cancelled (1014) returns cancelled_from_state = null', $beforeKeysRun['cancelled_from_state'], null);
+
+    $cancelledRun = $runModel->get(1018, 1);
+    $stmtCancelledGroundTruth = $pdo->prepare("SELECT from_state FROM payroll_run_audit_logs WHERE run_id = :id AND action = 'cancel' ORDER BY id DESC LIMIT 1");
+    $stmtCancelledGroundTruth->execute([':id' => 1018]);
+    $expectedCancelledFromState = $stmtCancelledGroundTruth->fetchColumn();
+    check('tiny audit-list: get() on a real cancelled run (1018) matches list():142\'s own subquery exactly', $cancelledRun['cancelled_from_state'], $expectedCancelledFromState);
+
 } finally {
     $pdo->rollBack();
 }
