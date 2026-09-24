@@ -46,6 +46,25 @@
  *   ajax: { url: ..., data: function (d, settings) {
  *       d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
  *   } }
+ *
+ * `formatValue(key, value)` (opt-in, 2026-09-24, D3): the checkbox list's own displayed text and the
+ * value it actually submits are the SAME string by default (`value` verbatim, either mode) -- some
+ * columns need those to differ (e.g. a raw enum column whose values a caller wants translated in the
+ * list but must still send back untranslated, since that is the real column a `mode:'server'`
+ * backend filters on). When given, it re-labels every value for display AND for the panel's own
+ * search box (both read the rendered text, never the raw value) AND re-sorts the list by that label
+ * (client mode's own `uniqueClientValues()` already sorts by displayed text -- a `mode:'server'`
+ * list's raw arrival order, e.g. a backend's `ORDER BY` on the untranslated column, does not
+ * generally match its labels' own alphabetical order once translated, so this only re-sorts when a
+ * formatter is actually given). `getColumnFilterValues(dt)` is untouched either way -- it always
+ * reads back the RAW value from the checkbox, never the label:
+ *   initExcelColumnFilters(dt, {
+ *       mode: 'server',
+ *       columns: [ { index: 2, key: 'audit_action', formatValue: (key, v) => actionLabel(v) } ],
+ *       ...
+ *   });
+ * Omit it (every consumer of this file before this option existed, and every consumer that has no
+ * need for it) and the list behaves exactly as before -- see `buildFilterListItems()`'s own docblock.
  */
 (function () {
     let $panel = null; // one shared floating panel, reused across every table/column
@@ -224,14 +243,30 @@
         panelOwner = null;
     }
 
-    function renderList(values, checkedSet) {
+    /** Pure (no DOM) -- `values` (raw) -> `{raw, label}` pairs, per `formatValue`'s own docblock
+     *  above. `col` may be omitted/have no `formatValue` (every call site before this option existed,
+     *  and every one that still doesn't need it): `label` then equals `raw` for every item, in the
+     *  exact order `values` arrived in -- byte-identical to what this file did before this function
+     *  existed. Extracted out of renderList() (DOM writing) so this exact logic is testable without a
+     *  DOM -- see tests/tcf_format_value_test.js. */
+    function buildFilterListItems(values, col) {
+        const format = (col && typeof col.formatValue === 'function') ? col.formatValue : null;
+        const items = (values || []).map(function (v) {
+            return { raw: v, label: format ? String(format(col.key, v)) : v };
+        });
+        if (format) {
+            items.sort(function (a, b) { return a.label.localeCompare(b.label, undefined, { numeric: true }); });
+        }
+        return items;
+    }
+    function renderList(values, checkedSet, col) {
         const $list = $panel.find('.tcf-list').empty();
-        values.forEach(function (val) {
-            const checked = !checkedSet || checkedSet.has(val);
+        buildFilterListItems(values, col).forEach(function (item) {
+            const checked = !checkedSet || checkedSet.has(item.raw);
             $list.append(
                 $('<label class="tcf-item"></label>').append(
-                    $('<input type="checkbox" class="tcf-value-cb form-check-input">').val(val).prop('checked', checked),
-                    $('<span></span>').text(val)
+                    $('<input type="checkbox" class="tcf-value-cb form-check-input">').val(item.raw).prop('checked', checked),
+                    $('<span></span>').text(item.label)
                 )
             );
         });
@@ -269,7 +304,7 @@
 
         function afterValuesLoaded(values) {
             const checkedSet = state.selected[col.key] || null; // null = everything checked (no filter yet)
-            renderList(values, checkedSet);
+            renderList(values, checkedSet, col);
         }
         if (col.mode === 'server') {
             col.fetchValues(col.key, afterValuesLoaded);

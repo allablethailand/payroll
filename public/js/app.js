@@ -1131,6 +1131,20 @@ $(document).on('init.dt', function (e, settings) {
     const label = lang.searchAriaLabel || (getLangValue('search') || 'Search').replace(/\.+$/, '');
     $(api.table().container()).find('.dt-search > input').attr('aria-label', label);
 });
+// 2026-09-24, D2 (serverSide opt-in) -- server mode's own half of the search-box threshold rule
+// (S4): the client-mode calculation just above (`rowCount > searchThreshold`, unchanged) only ever
+// runs once, at construction, against whatever's already in the DOM/`dtOptions.data` -- a serverSide
+// table has neither at that point, so this instead re-checks the real, current `recordsTotal` (the
+// UNFILTERED total the server just reported, never `recordsDisplay`) on every draw and toggles the
+// rendered box's visibility directly, rather than trying to flip DataTables' own `searching` feature
+// flag after construction (there is no supported way to do that once `.DataTable()` has run). A
+// search value already typed keeps the box visible regardless of the count -- hiding an active
+// filter out from under the user would strand it typed but invisible, with no way to clear it.
+function dtSyncServerSearchVisibility($table, dt, threshold) {
+    const info = dt.page.info();
+    const show = info.recordsTotal > threshold || !!dt.search();
+    $table.closest('.dataTables_wrapper, .dt-container').find('.dt-search').toggleClass('d-none', !show);
+}
 function initSharedDataTable(selector, options) {
     options = options || {};
     const $table = $(selector);
@@ -1153,7 +1167,17 @@ function initSharedDataTable(selector, options) {
     // callers in payroll/detail.js, none of which pass a `data` key in `dtOptions` either) never
     // hits this branch at all, so it falls through to the tbody count exactly as before --
     // unaffected by this change.
-    const rowCount = options.dtOptions && Array.isArray(options.dtOptions.data) ? options.dtOptions.data.length : $table.find('tbody tr').length;
+    // 2026-09-24, D2 (serverSide opt-in): a serverSide table has no rows in hand yet at THIS point --
+    // `recordsTotal` only exists once the first response comes back, well after `.DataTable()` below
+    // has already committed to whatever `searching` this line computes -- so the one-time threshold
+    // check below is meaningless for it either way. Rather than guess at construction time, a
+    // serverSide table always starts with `searching: true` (kept, never hidden, at construction) and
+    // gets the REAL recordsTotal-driven show/hide as a per-draw toggle instead (see the
+    // `options.serverSide` branch inside the drawCallback composition below) -- forcing `rowCount`
+    // above the threshold here is what keeps `searching: true` for it without touching the 2-branch
+    // expression below at all, which stays exactly what it was for every caller that doesn't pass
+    // `options.serverSide` (both existing branches, DOM-sourced and array-sourced, untouched).
+    const rowCount = options.serverSide ? Infinity : (options.dtOptions && Array.isArray(options.dtOptions.data) ? options.dtOptions.data.length : $table.find('tbody tr').length);
     const searchThreshold = options.searchThreshold != null ? options.searchThreshold : 10;
     // `language` is merged one level deep on top of getTableLang() (not just Object.assign'd whole)
     // so a caller passing e.g. { language: { emptyTable: '...' } } (a localized empty-state message
@@ -1198,12 +1222,26 @@ function initSharedDataTable(selector, options) {
         // miss -- gets the same single trailing redraw. Default 0 = one full redraw per keystroke,
         // which on these tables drags sticky columns + column filters + the empty-state re-render
         // along with it every time.
-        // Only client-side tables reach this today (none of this helper's own tables are serverSide;
-        // the app's 6 real serverSide tables still build themselves with `$().DataTable()` --
-        // BACKLOG "รอบ 4"). When those migrate they pass their own `searchDelay: 400` here rather
-        // than this helper guessing a second value for a mode nothing currently uses.
+        // 2026-09-24, D2: serverSide support landed (see `options.serverSide` just below) -- this
+        // 300ms default now also covers whichever caller opts into it first, rather than every
+        // serverSide table guessing its own value. The app's other 6 real serverSide tables were
+        // built before this option existed and still build themselves with a raw `$().DataTable()`
+        // call, unaffected either way (BACKLOG "รอบ 4" -- migrating those is a separate decision, not
+        // this round's).
         searchDelay: 300,
     }, options.dtOptions || {});
+    // 2026-09-24, D2 (serverSide opt-in, tiny round B1): a caller passes `serverSide: true` +
+    // `ajax: {...}` as TOP-LEVEL options (siblings of `columnFilters`/`filterBar`/etc.), not nested
+    // inside `dtOptions` -- kept separate from `options.dtOptions` so this one flag can also drive the
+    // rowCount/searchThreshold branch above and the drawCallback branch below without the caller
+    // having to repeat itself. Absent (the default for every one of the other 9 current callers of
+    // this function): none of these 3 keys are ever added to `dtOptions`, so `.DataTable(dtOptions)`
+    // at the very end of this function receives an object byte-identical to what it always has.
+    if (options.serverSide) {
+        dtOptions.serverSide = true;
+        dtOptions.processing = true;
+        dtOptions.ajax = options.ajax;
+    }
     dtOptions.language = Object.assign({}, getTableLang(), dtOptions.language || {});
     // 2026-09-12, Round 2 item 3 -- auto columnDefs from marker classes (§7), prepended so an
     // explicit `dtOptions.columnDefs` the caller already supplies for the SAME column index still
@@ -1229,7 +1267,7 @@ function initSharedDataTable(selector, options) {
         // option for a caller that has nothing to configure about it.
         options.export = options.export || {};
     }
-    if (options.stickyColumns || options.columnFilters || options.export || options.emptyState || options.toolbar) {
+    if (options.stickyColumns || options.columnFilters || options.export || options.emptyState || options.toolbar || options.serverSide) {
         const userDrawCallback = dtOptions.drawCallback;
         const userInitComplete = dtOptions.initComplete;
         // 2026-09-13, Round 2 item 6e -- `options.emptyState` needs the SAME every-draw hook
@@ -1237,11 +1275,16 @@ function initSharedDataTable(selector, options) {
         // table is empty -- and why -- can change on any redraw (typing in the search box, applying a
         // column filter, changing page), not just at load. See dtRenderEmptyState()'s own docblock for
         // the recordsTotal/recordsDisplay distinction it renders around.
-        if (options.stickyColumns || options.emptyState) {
+        // 2026-09-24, D2: `options.serverSide` joins this same every-draw hook for the same reason --
+        // recordsTotal is only known once a response comes back, so the search-box threshold (S4) has
+        // to be re-decided on every draw too, not just at construction (see
+        // dtSyncServerSearchVisibility()'s own docblock below).
+        if (options.stickyColumns || options.emptyState || options.serverSide) {
             dtOptions.drawCallback = function () {
                 if (typeof userDrawCallback === 'function') userDrawCallback.apply(this, arguments);
                 if (options.stickyColumns) initStickyColumns(selector, options.stickyColumns);
                 if (options.emptyState) dtRenderEmptyState(this.api(), options.emptyState, options.filterBar);
+                if (options.serverSide) dtSyncServerSearchVisibility($table, this.api(), searchThreshold);
             };
         }
         dtOptions.initComplete = function () {
