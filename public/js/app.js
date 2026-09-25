@@ -612,6 +612,26 @@ function translateApiError(data) {
     });
     return text;
 }
+/** 2026-09-25, round B (bank transfer export, see
+ *  docs/decisions/2026-09-25-bank-transfer-export-paid-runs.md): sibling of translateApiError()
+ *  above, for a NON-error advisory a report generator attaches to an otherwise-successful download
+ *  via the X-Report-Warning response header (generate() streams raw file bytes, so there's no JSON
+ *  envelope to carry this in-band) -- looks up `langData['warning_' + warningKey]` and substitutes
+ *  `{param}` placeholders with plain values (every current param here is a count, no
+ *  payroll_runs.state translation needed, unlike translateApiError()'s params). Returns null when
+ *  the key/template is missing so the caller can simply skip showing anything, same degrade-
+ *  gracefully posture as translateApiError(). */
+function translateReportWarning(warningKey, params) {
+    const template = langData['warning_' + warningKey];
+    if (!template) {
+        return null;
+    }
+    let text = template;
+    Object.keys(params || {}).forEach(key => {
+        text = text.split('{' + key + '}').join(params[key]);
+    });
+    return text;
+}
 /** 2026-08-29: moved here from public/js/reports/index.js (unchanged) so any page can trigger a
  *  report download through the existing GET /api/report.generate endpoint -- originally only the
  *  Reports page itself loaded that file, but the Payroll Process List/Detail pages' own "print"
@@ -633,6 +653,35 @@ function generateReport(url, onSuccess) {
             const disposition = res.headers.get('Content-Disposition') || '';
             const match = disposition.match(/filename="?([^"]+)"?/);
             const fileName = match ? match[1] : 'report';
+            // 2026-09-25, round B -- read BEFORE consuming the body (headers are available
+            // immediately); absent for every report except BankTransferFileReport's own
+            // paid/locked-run advisory today, same "unused key is ignored" tolerance every other
+            // report already gets from this shared function. See translateReportWarning()'s own
+            // docblock for why this is a header, not part of the JSON error path just above.
+            // `warnings` is a LIST (same-day follow-up: a paid/locked run's own "already recorded
+            // as paid" caveat and an exclusion breakdown can both apply to the same download at
+            // once) -- each entry translated separately, then joined into ONE modal so the user
+            // reads both concerns together instead of two consecutive popups.
+            let warningText = null;
+            const warningHeader = res.headers.get('X-Report-Warning');
+            if (warningHeader) {
+                try {
+                    const parsed = JSON.parse(decodeURIComponent(warningHeader));
+                    const texts = (parsed.warnings || [])
+                        .map(w => translateReportWarning(w.key, w.params))
+                        .filter(t => !!t);
+                    // showWarning() renders plain text (Swal2's default .swal2-html-container has no
+                    // white-space:pre-line, confirmed against node_modules/sweetalert2's own CSS --
+                    // a bare "\n" join would collapse into one run-on sentence), so 2+ entries get a
+                    // numbered prefix instead of relying on a line break to separate them. A single
+                    // entry (today's common case) is shown exactly as before, unprefixed.
+                    warningText = texts.length === 0 ? null
+                        : texts.length === 1 ? texts[0]
+                        : texts.map((t, i) => `${i + 1}) ${t}`).join('   ');
+                } catch (e) {
+                    // Malformed header must never block a real, already-generated file download.
+                }
+            }
             const blob = await res.blob();
             const blobUrl = window.URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -642,10 +691,17 @@ function generateReport(url, onSuccess) {
             a.click();
             a.remove();
             window.URL.revokeObjectURL(blobUrl);
-            // 2026-08-29, explicit request: "ตอนกดออก Report สำเร็จ ให้ alert ปิดเองอัตโนมัติ" -- 1.5s,
-            // enough to register "it worked" without needing a click, same spirit as the file
-            // download itself already happening with no further action needed.
-            showSuccess(langData['generate_success'] || 'Report generated successfully.', true, 1500);
+            if (warningText) {
+                // A must-acknowledge modal (showWarning(), not the success toast) -- this is
+                // information the user needs to actually read (who's missing from the file and
+                // why), not a passive "it worked" blip.
+                showWarning(warningText);
+            } else {
+                // 2026-08-29, explicit request: "ตอนกดออก Report สำเร็จ ให้ alert ปิดเองอัตโนมัติ" -- 1.5s,
+                // enough to register "it worked" without needing a click, same spirit as the file
+                // download itself already happening with no further action needed.
+                showSuccess(langData['generate_success'] || 'Report generated successfully.', true, 1500);
+            }
             if (typeof onSuccess === 'function') onSuccess();
         })
         .catch(function () {
