@@ -1749,3 +1749,37 @@ HEAD=`9cdcbfc3`, ไม่มีงาน audit-log serverSide เลย) แล
    แค่ตัวตารางเอง (`table`/`tbody`) — ยังไม่รู้ว่าเกิดจาก `f0ef3876` (serverSide + lazy/stale ของรอบ
    ก่อนหน้า) หรือเป็นพฤติกรรมเดิมของ `initSharedDataTable()` shared ที่มีอยู่ก่อนแล้ว ต้อง bisect ก่อน
    สรุปสาเหตุ
+
+## บั๊ก export ธนาคาร รอบ B/C (2026-09-25) — เก็บตก (ดู docs/decisions/2026-09-25-bank-transfer-export-paid-runs.md)
+
+**รอบ C (พบระหว่าง UI smoke test, ยังไม่แก้):**
+
+C1. **คอลัมน์ "ดาวน์โหลดล่าสุด" ของแถวไฟล์โอนเงินอาจไม่อัปเดตเวลาทุกครั้ง** — เห็น 14:53 ค้างขณะตัวนับดาวน์โหลด
+    เพิ่มจาก 2→3 ระหว่าง smoke test รอบ C — **ยังไม่ยืนยัน อาจเป็นแค่การปัดเวลาในการแสดงผล** ไม่ใช่ข้อมูลผิดจริง
+    ต้องตรวจ `ReportExportLogModel::summaryForRun()`/`last_downloaded_at` formatting ก่อนสรุป
+C2. **สลับพนักงานจาก "โอนเข้าบัญชี" กลับเป็น "เงินสด" ผ่านหน้า Employee Detail ไม่ล้างค่า `bank_id`/
+    `bank_account_no`/`bank_account_name` เดิมทิ้ง** — พบระหว่างรอบ C: EM009 ถูกเปลี่ยน `payment_method_id`
+    เป็น cash แล้ว (ยืนยัน "บันทึกข้อมูลสำเร็จ" + SELECT) แต่ `bank_id`/`bank_account_no` ยังมีค่าอยู่ (`has_bank_id:1,
+    has_account_no:1`) — ไม่กระทบ `BankTransferFileReport`/pane ต่างๆ ที่นับตาม `payment_method_code` เป็นหลัก
+    (ทดสอบแล้วว่า pane/export ทำงานถูกต้องแม้เลขบัญชียังค้าง) แต่เป็นข้อมูลกำพร้าที่ไม่มีประโยชน์เหลืออยู่ในระบบ —
+    ถ้าจะแก้ ต้องตัดสินใจว่า `EmployeeModel::save()` ควรล้าง 3 ฟิลด์นี้อัตโนมัติเมื่อ payment_method เปลี่ยนออกจาก
+    transfer/mixed หรือไม่ (ธุรกิจอาจต้องการเก็บไว้เผื่อสลับกลับ) — **ต้องถามผู้ใช้ก่อนตัดสินใจเรื่อง business rule นี้**
+
+**รอบ B (2026-09-25) — เก็บตก 4 ข้อ:**
+
+1. **`EmployeeModel::paymentMethodCode(null)` คืน `null` ขณะที่ export/หัวหน้า run ถือ NULL = `transfer`**
+   (`EmployeeModel.php:370-373` vs `BankTransferFileReport.php`/`PayrollRunModel::getDetails()` ทั้งคู่ใช้
+   `?? 'transfer'`/`COALESCE(...,'transfer')`) — ทำให้ `calculateCompleteness()`'s `$bankOk` ข้ามการเช็คเลข
+   บัญชีเงียบๆ ให้พนักงานที่ `payment_method_id` ยัง NULL (รายงานรอบ A ข้อ 3.4) — ในทางปฏิบัติเกิดยากเพราะ
+   dropdown "Payment Type" เป็น required field ในฟอร์ม Employee Detail แต่ import/sync path อาจหลุดผ่านได้
+2. **ไม่บังคับกรอกธนาคาร/เลขบัญชีเมื่อเลือก "โอนบัญชี"** — `bank_id`/`bank_account_no` ไม่ใช่ required field
+   (`EmployeeModel::requiredColumns()` ไม่มี 2 ฟิลด์นี้) มีแค่ completeness % soft-flag — Origami sync
+   default `payment_method_id` เป็นโอนบัญชีเมื่อ payload ไม่ระบุชัดว่า `cash` (`EmployeeSyncer.php:1278`)
+   โดยไม่บังคับว่าต้องมีเลขบัญชีมาด้วย — เป็นต้นตอที่แท้จริงที่ทำให้พนักงาน sync ใหม่ถูก mark โอนบัญชีแต่ไม่มี
+   เลขบัญชีติดตัวไปตลอดจนกว่าจะมีคนมาแก้มือ (ทางเลือกที่ 1/3 ของรายงานรอบ A) — ยังไม่ตัดสินใจว่าจะบังคับ
+   required แบบมีเงื่อนไข หรือทำ preflight warning ก่อน export แทน
+3. **Payment Voucher / Payroll Register ยังไม่ได้ตรวจว่าใช้เกณฑ์ due เดียวกับ Bank Transfer File หรือไม่**
+   — ยังไม่เปิดอ่านทั้ง 2 ไฟล์ในรอบนี้ ถ้ารอบ paid/locked เจอปัญหาคล้ายกัน (ยอด 0/ไฟล์ว่างผิดที่) ต้องเช็คว่า
+   ใช้ `net_amount_due`/`net_amount_paid_via_transfer` เกณฑ์เดียวกับที่แก้ในรอบ B นี้หรือเป็นคนละสูตร
+4. **Run ที่ยกเลิกแล้วยังแสดง banner "calculation errors" และปุ่ม "แก้ไข"** (เห็นจาก run 1018 วันที่ 25-09,
+   สังเกตระหว่างสืบบั๊กรอบนี้ ไม่เกี่ยวกับ export ธนาคารโดยตรง) — ยังไม่ได้ไล่ดูว่า banner ดึงจาก state ไหน
