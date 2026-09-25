@@ -180,5 +180,5 @@ try {
     }
 }
 
-echo "\n{$passes} passed, {$failures} failed.\n";
+echo "\nPassed: {$passes}, Failed: {$failures}\n";
 exit($failures > 0 ? 1 : 0);

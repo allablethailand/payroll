@@ -70,7 +70,10 @@ class PayrollController extends Controller {
                             // earning_breakdown/deduction_breakdown lines use 'amount';
                             // statutory_breakdown lines use 'employee_amount'/'employer_amount'
                             // (StatutoryCalculationEngine's own shape) -- mask whichever are present.
-                            foreach (['amount', 'employee_amount', 'employer_amount'] as $amountKey) {
+                            // 2026-09-18, tiny-C: 'computed_amount' (the engine figure an override
+                            // replaced) is a payroll figure like any other -- masking the live one
+                            // while leaving it readable would hand back the number being hidden.
+                            foreach (['amount', 'computed_amount', 'employee_amount', 'employer_amount'] as $amountKey) {
                                 if (array_key_exists($amountKey, $line)) {
                                     $line[$amountKey] = PermissionModel::MASK_VALUE;
                                 }
@@ -85,32 +88,174 @@ class PayrollController extends Controller {
         return $details;
     }
 
+    /** The audit actions whose free-text `note` carries a real payroll figure, written by
+     *  PayrollRunModel's own logAudit() calls. attendance_override_save is deliberately NOT here:
+     *  its note carries raw timesheet values (hours/days/minutes), unformatted, not a salary line. */
+    private const AUDIT_ACTIONS_WITH_MONEY_IN_NOTE = [
+        'add_manual_line', 'update_manual_line', 'remove_manual_line',
+        'line_override_save', 'line_override_remove',
+    ];
+
+    /** Exactly the shape number_format($x, 2) writes: comma-grouped, always 2 decimals. The
+     *  lookaround stops it biting into a longer digit run that merely contains that shape. */
+    private const AUDIT_NOTE_MONEY_PATTERN = '/(?<![\d.])-?\d{1,3}(?:,\d{3})*\.\d{2}(?!\d)/';
+
+    /**
+     * 2026-09-17: payroll-run.get's own `audit_log` was the last key on this response still serving
+     * real payroll figures unmasked. Every other key goes through a masker above; the audit notes
+     * never did -- and the actions listed above write the amount straight into that free-text note,
+     * so a reader with no salary_amount.view_payroll_process grant could read off the Action History
+     * tab the very figures the Detail table beside it had just hidden from them.
+     *
+     * TEMPORARY by design, until H4 moves these before/after figures into real columns: a number
+     * living INSIDE a sentence cannot go through maskMonetaryKeys() (that replaces a whole field
+     * value, and there is no field here), only through the shape number_format() writes. That is
+     * why this is ONE function called from ONE place instead of a pattern spread per action --
+     * once the sentence is rendered client-side from i18n over real columns, the field-level masker
+     * covers it and this goes away rather than growing.
+     */
+    private function maskAuditNote(array $auditLog, int $compId): array {
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), $compId);
+        if ($visibility['full']) {
+            return $auditLog;
+        }
+        foreach ($auditLog as &$entry) {
+            if (!in_array($entry['action'] ?? '', self::AUDIT_ACTIONS_WITH_MONEY_IN_NOTE, true)) {
+                continue;
+            }
+            if (($entry['note'] ?? null) === null) {
+                continue;
+            }
+            $entry['note'] = preg_replace(self::AUDIT_NOTE_MONEY_PATTERN, PermissionModel::MASK_VALUE, (string)$entry['note']);
+        }
+        unset($entry);
+        return $auditLog;
+    }
+
     /**
      * 2026-09-10, Batch 3A item 5: same masking convention as maskRunDetailRows()/maskAuditDiffLines()
      * (ReportsController's own copy, for the whole-run report) applied to employeeAdjustments()'s
      * combined overrides+manual-lines shape -- these are itemized payroll figures too, so anything
      * short of FULL salary_amount.view_payroll_process visibility must not see the real numbers here.
      */
+    /**
+     * 2026-09-16: the value-masking half of maskEmployeeAdjustments(), lifted out so the new
+     * line-override-history endpoint masks by exactly the same rule instead of growing a second
+     * copy of it -- both serve the same figures (original/current + every edit's own before/after),
+     * so they must never drift apart on who may see them. Masks in place, null stays null (there is
+     * nothing to hide about "no value").
+     */
+    private function maskOverrideDiffLine(array $line): array {
+        $line['original_value'] = $line['original_value'] !== null ? PermissionModel::MASK_VALUE : null;
+        $line['current_value'] = $line['current_value'] !== null ? PermissionModel::MASK_VALUE : null;
+        foreach ($line['edits'] as &$edit) {
+            $edit['old_value'] = $edit['old_value'] !== null ? PermissionModel::MASK_VALUE : null;
+            $edit['new_value'] = $edit['new_value'] !== null ? PermissionModel::MASK_VALUE : null;
+        }
+        unset($edit);
+        return $line;
+    }
+
+    /**
+     * 2026-09-16: every monetary key present on one line becomes 'XXXX'; a null stays null (there is
+     * nothing to hide about "no value", same rule as maskOverrideDiffLine() above) and every
+     * non-monetary key survives untouched -- who/when/item code/action/note are not salary data, and
+     * hiding them would leave the Adjustments table unreadable rather than merely figure-free.
+     * WHICH keys are monetary is the caller's business (it differs per response shape), the rule
+     * itself is not -- that is exactly why this exists instead of a third copy of the same loop.
+     */
+    private function maskMonetaryKeys(array $row, array $keys): array {
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $row) && $row[$key] !== null) {
+                $row[$key] = PermissionModel::MASK_VALUE;
+            }
+        }
+        return $row;
+    }
+
+    /** The money on one manualLinesForEmployee() row -- shared by the two endpoints that serve it. */
+    private const MANUAL_LINE_MONEY_KEYS = ['amount'];
+
+    /** The money on one syncDeductionLinesForEmployee() row; its `occurrences[]` sub-rows carry
+     *  their own `amount` and are masked alongside it (an installment breakdown adds up to the very
+     *  figure being hidden, so leaving it readable would hand the whole number straight back).
+     *  2026-09-18, 4a-1: `exempted_amount` joins them -- it is "what this deduction WOULD have been",
+     *  a real figure off this employee's own pay, and it arrived here the moment the read-only slip
+     *  started rendering from this endpoint. */
+    private const ADJUST_LINE_MONEY_KEYS = ['current_amount', 'override_amount', 'computed_amount', 'exempted_amount'];
+
     private function maskEmployeeAdjustments(array $data, int $compId): array {
         $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), $compId);
         if ($visibility['full']) {
             return $data;
         }
         foreach ($data['overrides'] as &$ov) {
-            $ov['original_value'] = $ov['original_value'] !== null ? PermissionModel::MASK_VALUE : null;
-            $ov['current_value'] = $ov['current_value'] !== null ? PermissionModel::MASK_VALUE : null;
-            foreach ($ov['edits'] as &$edit) {
-                $edit['old_value'] = $edit['old_value'] !== null ? PermissionModel::MASK_VALUE : null;
-                $edit['new_value'] = $edit['new_value'] !== null ? PermissionModel::MASK_VALUE : null;
-            }
-            unset($edit);
+            $ov = $this->maskOverrideDiffLine($ov);
         }
         unset($ov);
-        foreach ($data['manual_lines'] as &$line) {
-            $line['amount'] = PermissionModel::MASK_VALUE;
+        $data['manual_lines'] = $this->maskManualLines($data['manual_lines']);
+        return $data;
+    }
+
+    /** Unconditional -- the two callers decide WHETHER to mask, this decides WHAT. */
+    private function maskManualLines(array $lines): array {
+        foreach ($lines as &$line) {
+            $line = $this->maskMonetaryKeys($line, self::MANUAL_LINE_MONEY_KEYS);
         }
         unset($line);
-        return $data;
+        return $lines;
+    }
+
+    /**
+     * 2026-09-16: the Adjustments modal's "ปรับตัวเลข" rows carry the same itemized payroll figures
+     * the Detail page's own breakdown does, so they go through the same gate payroll-run.get's
+     * breakdown lines do (maskRunDetailRows(): anything short of FULL salary visibility, i.e.
+     * masked AND summary_only, sees no line-level figure). Only figures are hidden: `note` here is
+     * either StatutoryCalculationEngine's own reason code ('employee_not_enrolled' etc.) or text a
+     * user typed -- never a system-rendered amount -- and stays readable, exactly as the equivalent
+     * breakdown-line `note` does in payroll-run.get.
+     */
+    private function maskAdjustLines(array $lines): array {
+        foreach ($lines as &$line) {
+            $line = $this->maskMonetaryKeys($line, self::ADJUST_LINE_MONEY_KEYS);
+            if (!empty($line['occurrences']) && is_array($line['occurrences'])) {
+                foreach ($line['occurrences'] as &$occurrence) {
+                    $occurrence = $this->maskMonetaryKeys($occurrence, ['amount']);
+                }
+                unset($occurrence);
+            }
+        }
+        unset($line);
+        return $lines;
+    }
+
+    /**
+     * 2026-09-16: per-employee edit history for the Adjustments modal's own "ประวัติ" column -- the
+     * same lineOverrideAuditDiff() the whole-run Payroll Run Audit report uses, just scoped by the
+     * employee filter that method already took. Deliberately NOT served by the existing
+     * employee-adjustments endpoint: that one lists what still HAS an override row, so a line whose
+     * override was removed drops off it entirely -- which is exactly the line whose history a user
+     * needs to go back through. Read-only; every figure goes through the same mask as its sibling.
+     */
+    public function lineOverrideHistory() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = intval($_GET['run_id'] ?? 0);
+        $employeeId = intval($_GET['employee_id'] ?? 0);
+        if (!$compId || $runId <= 0 || $employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $data = $this->model->lineOverrideAuditDiff($runId, (int)$compId, $employeeId);
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), (int)$compId);
+        if (!$visibility['full']) {
+            foreach ($data['lines'] as &$line) {
+                $line = $this->maskOverrideDiffLine($line);
+            }
+            unset($line);
+        }
+        $data['history_start_date'] = PayrollRunModel::LINE_OVERRIDE_HISTORY_FEATURE_START_DATE;
+        $this->json(['status' => true, 'data' => $data]);
     }
 
     public function employeeAdjustments() {
@@ -124,6 +269,52 @@ class PayrollController extends Controller {
         }
         $data = $this->model->employeeAdjustments($runId, (int)$compId, $employeeId);
         $this->json(['status' => true, 'data' => $this->maskEmployeeAdjustments($data, (int)$compId)]);
+    }
+
+    /**
+     * 2026-09-19, H-backend: the trail for ONE line, newest first -- the same table lineOverrideHistory()
+     * above reads, asked the other way round. That one stays exactly as it is (grouped, oldest-first,
+     * overrides only) because the Adjustments table's History column is built on that shape; this one
+     * also serves the 2 writers that shape has never carried, the hand-added lines and the tri-state
+     * tax/SSO answer.
+     *
+     * Addressed by (line_type, item_code), or by (source_type=manual_line, source_id) for a row whose
+     * item_code is not unique on its own. Masking goes through maskMonetaryKeys() -- the same rule its
+     * siblings use, applied to this shape's own money keys; old_text/new_text are words, not figures,
+     * and stay readable for the same reason action/who/when do.
+     */
+    private const LINE_HISTORY_MONEY_KEYS = ['old_value', 'new_value'];
+
+    public function lineHistory() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = intval($_GET['run_id'] ?? 0);
+        $employeeId = intval($_GET['employee_id'] ?? 0);
+        if (!$compId || $runId <= 0 || $employeeId <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $rows = $this->model->lineHistoryRows(
+            $runId, (int)$compId, $employeeId,
+            isset($_GET['line_type']) ? (string)$_GET['line_type'] : null,
+            isset($_GET['item_code']) ? (string)$_GET['item_code'] : null,
+            isset($_GET['source_type']) ? (string)$_GET['source_type'] : null,
+            isset($_GET['source_id']) ? (int)$_GET['source_id'] : null
+        );
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), (int)$compId);
+        if (!$visibility['full']) {
+            $rows = array_map(fn(array $row): array => $this->maskMonetaryKeys($row, self::LINE_HISTORY_MONEY_KEYS), $rows);
+        }
+        // 2026-09-19, H-ui: the slip reads its History column from THIS endpoint now, so the 2 facts
+        // it used to get from lineOverrideHistory() ride along -- read-only, additive, and derived
+        // exactly as that sibling derives them (PayrollRunModel::lineOverrideAuditDiff()).
+        $run = $this->model->get($runId, (int)$compId);
+        $this->json(['status' => true, 'data' => [
+            'rows' => $rows,
+            'history_available' => $rows !== []
+                || ($run && (string)$run['period_start_date'] >= PayrollRunModel::LINE_OVERRIDE_HISTORY_FEATURE_START_DATE),
+            'history_start_date' => PayrollRunModel::LINE_OVERRIDE_HISTORY_FEATURE_START_DATE,
+        ]]);
     }
 
     public function index() {
@@ -287,7 +478,6 @@ class PayrollController extends Controller {
         // masking is applied last, right before the response goes out, so it can never accidentally
         // feed a masked value into an approval/permission decision.
         $row['details'] = $this->model->getDetails($id, (int)$compId);
-        $row['audit_log'] = $this->model->getAuditLog($id, (int)$compId);
         $row['approval_flow'] = $this->model->approvalFlow($id, (int)$compId);
         $row['can_approve_payroll'] = $this->model->canApprovePayroll($this->userId(), $this->isAdmin(), $row);
         $row['can_process_payroll'] = $this->model->canProcessPayroll($this->userId(), $this->isAdmin());
@@ -302,6 +492,80 @@ class PayrollController extends Controller {
         $row['details'] = $this->maskRunDetailRows($row['details'], (int)$compId);
         $row = $this->maskRunMonetaryFields($row, (int)$compId);
         $this->json(['status' => true, 'data' => $row]);
+    }
+
+    /** ServerSide DataTable feed for the Action History tab (#tb_run_audit_log), tiny round B --
+     *  same row shape/exclusion (`action != 'view_detail'`) as getAuditLog() (unmodified, still used
+     *  by tests/PHP consumers directly, just no longer folded into `.get()`'s own response -- see
+     *  tiny round B, 2026-09-24). Every row is run through maskAuditNote() before it ever leaves this
+     *  method -- a masked payroll figure inside a `note` must never be a paging/sort/search away
+     *  from being unmasked by a stale-permission cached response. */
+    public function auditLogList() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = intval($_POST['run_id'] ?? 0);
+        if (!$compId || $runId <= 0) {
+            $this->json(['draw' => 1, 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
+            return;
+        }
+        // Same comp-scope guard getAuditLog() itself uses (PayrollRunModel.php:740-742) -- a run id
+        // that exists but belongs to another company must read as "not found", not leak a 0-row vs
+        // a real empty-history run distinction to a caller who was never allowed to see it at all.
+        if (!$this->model->get($runId, (int)$compId)) {
+            $this->json(['draw' => intval($_POST['draw'] ?? 1), 'recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []]);
+            return;
+        }
+        $start = intval($_POST['start'] ?? 0);
+        // -1 = DataTables' own "All" length option (app.js's shared `lengthMenu`, confirmed in use
+        // app-wide this round, S4) -- passed through as-is, the model resolves it to "no LIMIT".
+        // Any other non-positive/missing value falls back to 50, matching app.js's own `pageLength`.
+        $lengthRaw = intval($_POST['length'] ?? 50);
+        $length = ($lengthRaw === -1 || $lengthRaw > 0) ? $lengthRaw : 50;
+        $search = (string)($_POST['search']['value'] ?? '');
+        $colIndex = isset($_POST['order'][0]['column']) ? (int)$_POST['order'][0]['column'] : 0;
+        $orderDir = isset($_POST['order'][0]['dir']) && $_POST['order'][0]['dir'] === 'asc' ? 'asc' : 'desc';
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $filters = [
+            'date_from' => (string)($_POST['date_from'] ?? ''),
+            'date_to' => (string)($_POST['date_to'] ?? ''),
+        ];
+        $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
+        $res = $this->model->getAuditLogPaged($runId, (int)$compId, $start, $length, $search, $colIndex, $orderDir, (string)$lang, $filters, $columnFilters);
+        $res['data'] = $this->maskAuditNote($res['data'], (int)$compId);
+        $this->json([
+            'draw' => intval($_POST['draw'] ?? 1),
+            'recordsTotal' => $res['recordsTotal'],
+            'recordsFiltered' => $res['recordsFiltered'],
+            'data' => $res['data'],
+        ]);
+    }
+
+    /** Distinct-values feed for #tb_run_audit_log's `mode:'server'` Excel column filters, same
+     *  shape as manualEmployeeColumnValues() (:662-684) -- `audit_action`/`audit_state` return RAW
+     *  enum values (never a translated label -- no server-side Thai i18n mechanism exists in this
+     *  app at all, see this round's own S1/S2 investigation notes; matches the same raw-value
+     *  convention AuditLogModel::list()/audit-log.js's own auditLogActionBadge() already use for
+     *  the unrelated generic audit_logs viewer -- client translates for display whenever a future
+     *  round wires this endpoint to the table). `audit_device_ip` is ip_address only, matching the
+     *  Excel filter's own actual filter value (detail.js:4277), not the combined device+IP display
+     *  cell. */
+    public function auditLogColumnValues() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $runId = intval($_POST['run_id'] ?? 0);
+        $column = (string)($_POST['column'] ?? '');
+        if (!$compId || $runId <= 0 || !$this->model->get($runId, (int)$compId)) {
+            $this->json(['status' => false, 'values' => []]);
+            return;
+        }
+        $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
+        $filters = [
+            'date_from' => (string)($_POST['date_from'] ?? ''),
+            'date_to' => (string)($_POST['date_to'] ?? ''),
+        ];
+        $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
+        $values = $this->model->auditLogColumnValues($runId, (int)$compId, $column, (string)$lang, $filters, $columnFilters);
+        $this->json(['status' => true, 'values' => $values]);
     }
 
     /** Feeds the Approval Timeline modal on the Approval Queue page -- that page's own list
@@ -453,7 +717,12 @@ class PayrollController extends Controller {
         $search = (string)($_POST['search']['value'] ?? '');
         $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
         $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
-        $res = $this->model->manualEmployeeOptions((int)$compId, $runId, $start, $length, $filters, $search, (string)$lang, $columnFilters);
+        // 2026-09-22, tiny-1: deliberately NOT part of $filters above -- those 4 are all
+        // "narrow the rows", this one replaces the membership rule the rows come from
+        // (PayrollRunModel::buildManualEmployeeWhere()). Absent = the picker behaves exactly as it
+        // always has. The string '0' must not read as true, hence the explicit comparison.
+        $missingOnly = isset($_POST['missing_only']) && !in_array((string)$_POST['missing_only'], ['', '0', 'false'], true);
+        $res = $this->model->manualEmployeeOptions((int)$compId, $runId, $start, $length, $filters, $search, (string)$lang, $columnFilters, $missingOnly);
         $this->json([
             'draw' => intval($_POST['draw'] ?? 1),
             'recordsTotal' => $res['total'],
@@ -479,7 +748,10 @@ class PayrollController extends Controller {
         $column = (string)($_POST['column'] ?? '');
         $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
         $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
-        $values = $this->model->manualEmployeeColumnValues((int)$compId, $runId, $filters, $column, (string)$lang, $columnFilters);
+        // Same flag the table itself was loaded with -- otherwise this dropdown would offer values
+        // no row in "missing only" mode can actually have (2026-09-22, tiny-1).
+        $missingOnly = isset($_POST['missing_only']) && !in_array((string)$_POST['missing_only'], ['', '0', 'false'], true);
+        $values = $this->model->manualEmployeeColumnValues((int)$compId, $runId, $filters, $column, (string)$lang, $columnFilters, $missingOnly);
         $this->json(['status' => true, 'values' => $values]);
     }
 
@@ -505,7 +777,10 @@ class PayrollController extends Controller {
         $search = (string)($_POST['search'] ?? '');
         $lang = $_SESSION['lang'] ?? ($_COOKIE['lang'] ?? 'th');
         $columnFilters = is_array($_POST['column_filters'] ?? null) ? $_POST['column_filters'] : [];
-        $ids = $this->model->manualEmployeeAllIds((int)$compId, $runId, $filters, $search, (string)$lang, $columnFilters);
+        // "Select All Matching" has to mean the same set the table in front of the user shows
+        // (2026-09-22, tiny-1).
+        $missingOnly = isset($_POST['missing_only']) && !in_array((string)$_POST['missing_only'], ['', '0', 'false'], true);
+        $ids = $this->model->manualEmployeeAllIds((int)$compId, $runId, $filters, $search, (string)$lang, $columnFilters, $missingOnly);
         $this->json(['status' => true, 'employee_ids' => $ids]);
     }
 
@@ -544,45 +819,88 @@ class PayrollController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json(['status' => true, 'data' => $this->model->manualLinesForEmployee((int)$compId, $runId, $employeeId)]);
+        $lines = $this->model->manualLinesForEmployee((int)$compId, $runId, $employeeId);
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), (int)$compId);
+        $this->json(['status' => true, 'data' => $visibility['full'] ? $lines : $this->maskManualLines($lines)]);
     }
 
     public function addManualLine() {
         if (!$this->requirePermission('payroll_run.add')) return;
         $compId = getCompId();
-        $data = json_decode(file_get_contents('php://input'), true);
-        $id = (is_array($data) && isset($data['id'])) ? (int)$data['id'] : 0;
-        $employeeId = (is_array($data) && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0;
-        // ped_type_id is optional now -- omitted (or 0) means a custom, not-in-the-catalog item
-        // instead (custom_item_name + custom_item_type), see PayrollRunModel::addManualLine()'s
-        // docblock. At least one of the two forms must be present, checked below.
-        $pedTypeIdRaw = (is_array($data) && isset($data['ped_type_id'])) ? (int)$data['ped_type_id'] : 0;
-        $pedTypeId = $pedTypeIdRaw > 0 ? $pedTypeIdRaw : null;
-        $amount = (is_array($data) && isset($data['amount']) && is_numeric($data['amount'])) ? (float)$data['amount'] : 0.0;
-        $note = (is_array($data) && isset($data['note'])) ? (string)$data['note'] : null;
-        $customItemName = (is_array($data) && isset($data['custom_item_name'])) ? (string)$data['custom_item_name'] : null;
-        $customItemType = (is_array($data) && isset($data['custom_item_type'])) ? (string)$data['custom_item_type'] : null;
-        $payeeEmployeeIdRaw = (is_array($data) && isset($data['payee_employee_id'])) ? (int)$data['payee_employee_id'] : 0;
-        $payeeEmployeeId = $payeeEmployeeIdRaw > 0 ? $payeeEmployeeIdRaw : null;
-        // 2026-08-31, same-day follow-up ("รายการหัก...ในหน้าทำรอบ...ให้เพิ่มเติมตรงที่หักไปที่ไหน") --
-        // see PayrollRunModel::addManualLine()'s own docblock for validation/defaulting.
-        $payeeType = (is_array($data) && !empty($data['payee_type'])) ? (string)$data['payee_type'] : null;
-        $includeInCashSummary = (is_array($data) && array_key_exists('include_in_cash_summary', $data)) ? (bool)$data['include_in_cash_summary'] : null;
-        // 2026-09-02, Deduction Destination & Third-Party Remittance -- only meaningful when
-        // payee_type='other_person'; PayrollRunModel::addManualLine()/PaymentDestinationModel
-        // itself validate the shape, this layer just passes it through untouched.
-        $destinationData = (is_array($data) && isset($data['destination']) && is_array($data['destination'])) ? $data['destination'] : null;
-        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
-        $isOther = (is_array($data) && !empty($data['is_other'])) ? true : null;
-        // 2026-09-10, Batch 3B item 3: only meaningful when payee_type='company'; PayrollRunModel::
-        // addManualLine() itself validates it belongs to this company/is required for that type.
-        $bankAccountIdRaw = (is_array($data) && isset($data['bank_account_id'])) ? (int)$data['bank_account_id'] : 0;
-        $bankAccountId = $bankAccountIdRaw > 0 ? $bankAccountIdRaw : null;
-        if (!$compId || $id <= 0 || $employeeId <= 0 || ($pedTypeId === null && ($customItemName === null || trim($customItemName) === ''))) {
+        $p = $this->manualLinePayload(json_decode(file_get_contents('php://input'), true));
+        if (!$compId || !$p['valid']) {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json($this->model->addManualLine($id, (int)$compId, $employeeId, $pedTypeId, $amount, $this->userId(), $this->isAdmin(), $note, $customItemName, $customItemType, $payeeEmployeeId, $payeeType, $includeInCashSummary, $destinationData, $isOther, $bankAccountId));
+        $this->json($this->model->addManualLine($p['id'], (int)$compId, $p['employee_id'], $p['ped_type_id'], $p['amount'], $this->userId(), $this->isAdmin(), $p['note'], $p['custom_item_name'], $p['custom_item_type'], $p['payee_employee_id'], $p['payee_type'], $p['include_in_cash_summary'], $p['destination'], $p['is_other'], $p['bank_account_id']));
+    }
+
+    /**
+     * 2026-09-16: edits one existing manual line. Gated exactly like addManualLine() above -- same
+     * permission, same payload, same model-side validation -- because it is the same write; only
+     * the row it lands on differs. `line_id` is checked against (run, employee) by the model, not
+     * here, so that check sits with the gates it belongs to.
+     */
+    public function updateManualLine() {
+        if (!$this->requirePermission('payroll_run.add')) return;
+        $compId = getCompId();
+        $p = $this->manualLinePayload(json_decode(file_get_contents('php://input'), true));
+        if (!$compId || !$p['valid'] || $p['line_id'] <= 0) {
+            $this->json(['status' => false, 'message' => 'Invalid ID.']);
+            return;
+        }
+        $result = $this->model->updateManualLine($p['id'], (int)$compId, $p['line_id'], $p['employee_id'], $p['ped_type_id'], $p['amount'], $this->userId(), $this->isAdmin(), $p['note'], $p['custom_item_name'], $p['custom_item_type'], $p['payee_employee_id'], $p['payee_type'], $p['include_in_cash_summary'], $p['destination'], $p['is_other'], $p['bank_account_id']);
+        if (!empty($result['status'])) {
+            $lines = $this->model->manualLinesForEmployee((int)$compId, $p['id'], $p['employee_id']);
+            $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), (int)$compId);
+            $result['manual_lines'] = $visibility['full'] ? $lines : $this->maskManualLines($lines);
+        }
+        $this->json($result);
+    }
+
+    /**
+     * 2026-09-16: the manual-line field set as it arrives on the wire, parsed once for both
+     * add-manual-line and update-manual-line -- editing a line takes exactly the fields adding it
+     * took, so the two endpoints read them the same way or they will drift apart the first time a
+     * field is added to one of them. `valid` covers only the shape checks this layer can make
+     * (ids present, one of the two item forms supplied); everything about what those values MEAN
+     * stays in PayrollRunModel::resolveManualLineInput(), the model-side twin of this method.
+     */
+    private function manualLinePayload($data): array {
+        $isArr = is_array($data);
+        // ped_type_id is optional -- omitted (or 0) means a custom, not-in-the-catalog item
+        // instead (custom_item_name + custom_item_type), see PayrollRunModel::addManualLine()'s
+        // docblock. At least one of the two forms must be present, checked as `valid` below.
+        $pedTypeIdRaw = ($isArr && isset($data['ped_type_id'])) ? (int)$data['ped_type_id'] : 0;
+        $payeeEmployeeIdRaw = ($isArr && isset($data['payee_employee_id'])) ? (int)$data['payee_employee_id'] : 0;
+        // 2026-09-10, Batch 3B item 3: only meaningful when payee_type='company'; PayrollRunModel
+        // itself validates it belongs to this company/is required for that type.
+        $bankAccountIdRaw = ($isArr && isset($data['bank_account_id'])) ? (int)$data['bank_account_id'] : 0;
+        $p = [
+            'id' => ($isArr && isset($data['id'])) ? (int)$data['id'] : 0,
+            'line_id' => ($isArr && isset($data['line_id'])) ? (int)$data['line_id'] : 0,
+            'employee_id' => ($isArr && isset($data['employee_id'])) ? (int)$data['employee_id'] : 0,
+            'ped_type_id' => $pedTypeIdRaw > 0 ? $pedTypeIdRaw : null,
+            'amount' => ($isArr && isset($data['amount']) && is_numeric($data['amount'])) ? (float)$data['amount'] : 0.0,
+            'note' => ($isArr && isset($data['note'])) ? (string)$data['note'] : null,
+            'custom_item_name' => ($isArr && isset($data['custom_item_name'])) ? (string)$data['custom_item_name'] : null,
+            'custom_item_type' => ($isArr && isset($data['custom_item_type'])) ? (string)$data['custom_item_type'] : null,
+            'payee_employee_id' => $payeeEmployeeIdRaw > 0 ? $payeeEmployeeIdRaw : null,
+            // 2026-08-31, same-day follow-up ("รายการหัก...ในหน้าทำรอบ...ให้เพิ่มเติมตรงที่หักไปที่ไหน") --
+            // see PayrollRunModel::addManualLine()'s own docblock for validation/defaulting.
+            'payee_type' => ($isArr && !empty($data['payee_type'])) ? (string)$data['payee_type'] : null,
+            'include_in_cash_summary' => ($isArr && array_key_exists('include_in_cash_summary', $data)) ? (bool)$data['include_in_cash_summary'] : null,
+            // 2026-09-02, Deduction Destination & Third-Party Remittance -- only meaningful when
+            // payee_type='other_person'; the model/PaymentDestinationModel validate the shape,
+            // this layer just passes it through untouched.
+            'destination' => ($isArr && isset($data['destination']) && is_array($data['destination'])) ? $data['destination'] : null,
+            // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
+            'is_other' => ($isArr && !empty($data['is_other'])) ? true : null,
+            'bank_account_id' => $bankAccountIdRaw > 0 ? $bankAccountIdRaw : null,
+        ];
+        $p['valid'] = $p['id'] > 0 && $p['employee_id'] > 0
+            && ($p['ped_type_id'] !== null || ($p['custom_item_name'] !== null && trim($p['custom_item_name']) !== ''));
+        return $p;
     }
 
     public function removeManualLine() {
@@ -616,9 +934,13 @@ class PayrollController extends Controller {
         // `run_settings` (item_options + excluded_item_codes, from the SAME source Run Settings'
         // own panel uses) additionally backs this tab's own item-exclusion checklist (2026-08-29
         // follow-up: "อยากให้มี List รายการและติ๊กเข้าออกได้เหมือนตอนที่ Set ทั้ง Template").
+        // 2026-09-16: `exemption`/`run_settings` carry no figure at all (tri-state flags, item
+        // codes and names), so only `data` needs the mask -- see maskAdjustLines().
+        $lines = $this->model->syncDeductionLinesForEmployee((int)$compId, $runId, $employeeId);
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'payroll_process', $this->isAdmin(), (int)$compId);
         $this->json([
             'status' => true,
-            'data' => $this->model->syncDeductionLinesForEmployee((int)$compId, $runId, $employeeId),
+            'data' => $visibility['full'] ? $lines : $this->maskAdjustLines($lines),
             'exemption' => $this->model->getEmployeeExemption($runId, (int)$compId, $employeeId),
             'run_settings' => $this->model->runSettingsGet($runId, (int)$compId)['data'] ?? null,
         ]);
@@ -702,7 +1024,15 @@ class PayrollController extends Controller {
             $this->json(['status' => false, 'data' => []]);
             return;
         }
-        $this->json(['status' => true, 'data' => $this->model->recurringDeductionDestinationsForEmployee($runId, (int)$compId, $employeeId)]);
+        // 2026-09-18, tiny-L3: `data` is untouched (same rows, same fields, same order -- the tab's
+        // editable cards read it). `eed_rows` rides along as a SEPARATE read-only list so the tab can
+        // also show the per-installment assignments whose destination lives on Employee Detail, in
+        // the same request the tab already makes.
+        $this->json([
+            'status' => true,
+            'data' => $this->model->recurringDeductionDestinationsForEmployee($runId, (int)$compId, $employeeId),
+            'eed_rows' => $this->model->earningDeductionDestinationsForEmployee($runId, (int)$compId, $employeeId),
+        ]);
     }
 
     public function recurringDeductionDestinationOverrideSave() {
@@ -942,7 +1272,19 @@ class PayrollController extends Controller {
             $this->json(['status' => false, 'message' => 'Invalid ID.']);
             return;
         }
-        $this->json(['status' => true, 'data' => $this->model->syncMissingEmployees($id, (int)$compId)]);
+        // 2026-09-22/23, tiny-1: `in_sync_not_participant`/`_count` are the mirror-image case `data`
+        // can never contain -- employees Origami DID send who never reached the run because they're
+        // marked as not paid through payroll. Returned regardless of run_purpose (unlike `data`,
+        // which is payroll-runs-only now). Backend sends both the count and the rows now; nothing
+        // renders the list yet -- see BACKLOG.md (UI is the next chunk).
+        $run = $this->model->get($id, (int)$compId);
+        $syncProcessId = ($run && $run['sync_process_id'] !== null) ? (int)$run['sync_process_id'] : null;
+        $this->json([
+            'status' => true,
+            'data' => $this->model->syncMissingEmployees($id, (int)$compId),
+            'in_sync_not_participant_count' => $this->model->syncMappedNotParticipantCount($id, (int)$compId),
+            'in_sync_not_participant' => $syncProcessId !== null ? $this->model->syncMappedNotParticipants($syncProcessId, (int)$compId) : [],
+        ]);
     }
 
     public function employeeCommentList() {

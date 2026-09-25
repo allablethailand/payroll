@@ -146,7 +146,6 @@ try {
         check('original_file_size is NULL for a sync batch', $rowSync['original_file_size'], null);
     }
 
-    echo "\n=== SUMMARY: {$passes} passed, {$failures} failed ===\n";
 } finally {
     $pdo->rollBack();
     foreach ($tmpFiles as $f) {
@@ -154,4 +153,5 @@ try {
     }
 }
 
+echo "\nPassed: {$passes}, Failed: {$failures}\n";
 exit($failures > 0 ? 1 : 0);

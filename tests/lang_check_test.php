@@ -46,6 +46,14 @@ foreach ($result['onlyIn'] as $lang => $missing) {
 
 check('overall: no lang-file problems found', $result['hasProblem'], false);
 
+// 2026-09-14, Round 3 "เก็บตกรอบ 6" item 1 follow-up -- informational only, NOT asserted (see
+// findSuspiciousTranslations()'s own docblock in check-lang.php for why this is a warning, not a
+// gate: several of these are legitimate intentionally-identical th/en values).
+if (!empty($result['suspicious'])) {
+    echo "\n  NOTE: " . count($result['suspicious']) . " key(s) have an EN value that is empty or\n";
+    echo "  identical to TH -- review with `php scripts/check-lang.php` (not a test failure).\n";
+}
+
 echo "\n--------------------------------------------------\n";
 echo "Passed: {$passes}, Failed: {$failures}\n";
 if ($failures > 0) {

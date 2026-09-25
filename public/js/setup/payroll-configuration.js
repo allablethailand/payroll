@@ -30,7 +30,7 @@ function statutoryReportTag(row) {
 // failure, none of which this hand-rolled version had) -- see that function's own docblock. The old
 // per-row `onclick="toggleItemStatus(id)"` handler is gone; app.js's shared delegated handler covers
 // it, this file only needs to know how to reload afterward.
-function statusBadge(row) {
+function pcRowStatusBadge(row) {
     return renderStatusToggleHtml(row.id, row.status === 'active', '/api/ped-type.toggle-status');
 }
 // Both tables share the same underlying catalog -- only one of them actually has any one row, but
@@ -101,7 +101,7 @@ function initEarningTypeTable() {
             }
         },
         columns: [
-            { data: null, orderable: false, render: (d, t, row) => statusBadge(row) },
+            { data: null, orderable: false, render: (d, t, row) => pcRowStatusBadge(row) },
             { data: 'item_code', render: d => `<code class="fw-bold text-dark">${d}</code>` },
             {
                 data: null,
@@ -179,7 +179,7 @@ function initDeductionTypeTable() {
             }
         },
         columns: [
-            { data: null, orderable: false, render: (d, t, row) => statusBadge(row) },
+            { data: null, orderable: false, render: (d, t, row) => pcRowStatusBadge(row) },
             { data: 'item_code', render: d => `<code class="fw-bold text-dark">${d}</code>` },
             {
                 data: null,

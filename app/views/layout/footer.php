@@ -37,6 +37,19 @@
 <script src="<?=BASE_URL?>/node_modules/select2/dist/js/select2.min.js"></script>
 <script src="<?=BASE_URL?>/node_modules/bootstrap-datepicker/dist/js/bootstrap-datepicker.min.js"></script>
 <script src="<?=BASE_URL?>/node_modules/bootstrap-datepicker/dist/locales/bootstrap-datepicker.th.min.js"></script>
+<!-- 2026-09-13, Round 2 item 9 -- flatpickr (time-only mode), chosen over styling the native
+     <input type="time"> because that control's own popup can't be restyled at all in most browsers
+     (closed shadow DOM) -- see docs/design/rules.md §14 for the full decision writeup. Loaded
+     globally here, same as bootstrap-datepicker right above it, since `.timepicker` fields can appear
+     on any page (initTimepicker(), public/js/input.js, mirrors initDatepicker() 1:1). This is the
+     one exception to Round 2's usual "ห้ามแตะหน้าจริง" (§13) explicitly approved by the user for this
+     item, the same way §13's own STATUS_MAP line was -- confined to these 2 lines only, not a general
+     go-ahead to edit footer.php further. The CSS `<link>` is placed HERE rather than in header.php's
+     own <head> (where every other vendor stylesheet in this app lives) because that's what was
+     approved -- functionally harmless since a flatpickr popup only ever appears after a user
+     interaction well past initial page paint, never at first render. -->
+<link rel="stylesheet" href="<?=BASE_URL?>/node_modules/flatpickr/dist/flatpickr.min.css">
+<script src="<?=BASE_URL?>/node_modules/flatpickr/dist/flatpickr.min.js"></script>
 <script src="<?=BASE_URL?>/node_modules/sortablejs/Sortable.min.js"></script>
 <script src="<?=BASE_URL?>/node_modules/intl-tel-input/dist/js/intlTelInputWithUtils.min.js"></script>
 <script src="<?=BASE_URL?>/node_modules/leaflet/dist/leaflet.js"></script>
@@ -50,6 +63,11 @@
 // lookups/`data-bs-target` work identically regardless of DOM position). See modals.php's own
 // docblock for the full investigation/rationale.
 include __DIR__ . '/modals.php';
+?>
+<?php
+// 2026-09-14, Phase Design Round 3 item 3c-1 follow-up -- full-page loading overlay, see that
+// partial's own docblock. Same "included once, unconditionally, right after modals.php" pattern.
+include __DIR__ . '/page-loader.php';
 ?>
 <!-- 2026-09-05, Backlog Phase 13 -- Help Drawer: a persistent trigger button (bottom-right, every
      page) + a slide-in right-side panel, NOT a Bootstrap modal (deliberately -- a drawer stays

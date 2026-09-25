@@ -42,34 +42,63 @@
 
 <!-- 2026-09-10, Batch 3A item 4 -- app-wide employee quick-view popup, opened by clicking ANY
      avatar rendered via app.js's own apvAvatarHtml(..., {employeeId}). Genuinely global (owned by
-     app.js itself, not any one page), same as #systemModal above. -->
+     app.js itself, not any one page), same as #systemModal above.
+
+     2026-09-14, Phase Design Round 3 item 3c-1 (docs/design/rules.md §9 "Quick-view พนักงาน") --
+     restyled per the pilot spec: modal-md, .emp-header-card as the first block (name/code/dept ·
+     position/status badge -- was previously duplicated below in plain text, now shown ONCE),
+     body is a 2-column x 3-row label/value grid of the 6 fields NOT already covered by the header
+     card (branch, employment type, hire date, payment method [+bank/masked account when transfer],
+     phone, email), footer trimmed to [Close] [Go to Full Profile] (outline-secondary + primary,
+     §4/§9). A missing field's value renders "-" rather than hiding its row, so the grid never
+     reflows -- see renderEmployeeQuickViewModal() (app.js) for the fill logic.
+
+     Same-day follow-up (explicit spacing fix): .row/.g-3/.col-6 (Bootstrap's own spacer scale --
+     g-3 is 1rem/16px -- doesn't line up with this app's --sp-* 4px-grid tokens at all) replaced
+     with .emp-quick-view-grid/-field/-label/-value, a plain CSS grid so column-gap (--sp-4) and
+     row-gap (--sp-3) can differ on purpose -- see style.css for the class definitions. -->
+     <!-- Also same-day: the TH|EN language switch that used to render between the title and ×
+     is gone -- app.js's global injection mechanism was removed app-wide (see that file's own
+     comment at the removal site), not just hidden here. -->
 <div class="modal fade" id="employeeQuickViewModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-md">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title text-secondary" data-i18n="emp_quick_view_title">Employee Info</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body text-center">
-                <div id="empQuickViewAvatar" class="d-flex justify-content-center mb-3"></div>
-                <div class="fw-bold fs-5" id="empQuickViewNameTh">-</div>
-                <div class="text-muted mb-3" id="empQuickViewNameEn">-</div>
-                <div class="row g-2 text-start small">
-                    <div class="col-6 text-muted" data-i18n="employee_no">Employee No.</div>
-                    <div class="col-6 fw-semibold" id="empQuickViewCode">-</div>
-                    <div class="col-6 text-muted" data-i18n="department">Department</div>
-                    <div class="col-6 fw-semibold" id="empQuickViewDepartment">-</div>
-                    <div class="col-6 text-muted" data-i18n="position">Position</div>
-                    <div class="col-6 fw-semibold" id="empQuickViewPosition">-</div>
-                    <div class="col-6 text-muted" data-i18n="branch">Branch</div>
-                    <div class="col-6 fw-semibold" id="empQuickViewBranch">-</div>
-                    <div class="col-6 text-muted" data-i18n="status">Status</div>
-                    <div class="col-6 fw-semibold" id="empQuickViewStatus">-</div>
+            <div class="modal-body">
+                <div id="empQuickViewHeaderCard"></div>
+                <div class="emp-quick-view-grid">
+                    <div class="emp-quick-view-field">
+                        <div class="emp-quick-view-label" data-i18n="branch">Branch</div>
+                        <div class="emp-quick-view-value" id="empQuickViewBranch">-</div>
+                    </div>
+                    <div class="emp-quick-view-field">
+                        <div class="emp-quick-view-label" data-i18n="employment_type">Employment Type</div>
+                        <div class="emp-quick-view-value" id="empQuickViewEmploymentType">-</div>
+                    </div>
+                    <div class="emp-quick-view-field">
+                        <div class="emp-quick-view-label" data-i18n="employment_date">Hire Date</div>
+                        <div class="emp-quick-view-value" id="empQuickViewHireDate">-</div>
+                    </div>
+                    <div class="emp-quick-view-field">
+                        <div class="emp-quick-view-label" data-i18n="emp_quick_view_payment_method">Payment Method</div>
+                        <div class="emp-quick-view-value" id="empQuickViewPaymentMethod">-</div>
+                    </div>
+                    <div class="emp-quick-view-field">
+                        <div class="emp-quick-view-label" data-i18n="mobile_no">Phone</div>
+                        <div class="emp-quick-view-value" id="empQuickViewPhone">-</div>
+                    </div>
+                    <div class="emp-quick-view-field">
+                        <div class="emp-quick-view-label" data-i18n="personal_email">Email</div>
+                        <div class="emp-quick-view-value" id="empQuickViewEmail">-</div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <a href="#" target="_blank" rel="noopener" class="btn btn-primary" id="empQuickViewGoToProfile"><i class="fa-solid fa-arrow-up-right-from-square me-1"></i><span data-i18n="go_to_employee_profile">Go to Employee Profile</span></a>
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <a href="#" target="_blank" rel="noopener" class="btn btn-primary" id="empQuickViewGoToProfile" data-i18n="go_to_employee_profile">Go to Employee Profile</a>
             </div>
         </div>
     </div>
@@ -2269,36 +2298,12 @@
                         <label class="label label-head bg-head-first rounded-2 text-white px-2 py-0">1</label>
                         <span data-i18n="sec_general_info">General Information</span>
                     </h6>
-                    <div class="mb-3">
-                        <!-- 2026-09-03, Manual Entry / Platform UX review Phase 6: redesigned from a
-                             plain btn-group -- see style.css's own docblock on .mode-select-group for
-                             why (short version: "Custom Item" vs "Other" used to look identical with
-                             no explanation, the per-button description below is the actual fix). -->
-                        <div class="mode-select-group" role="group" id="eedModeToggle">
-                            <button type="button" class="mode-select-btn active" data-mode="catalog">
-                                <i class="fa-solid fa-list"></i>
-                                <span class="mode-select-btn-title" data-i18n="manual_line_mode_catalog">From List</span>
-                                <span class="mode-select-btn-desc" data-i18n="mode_desc_catalog">Pick from your saved item types</span>
-                            </button>
-                            <button type="button" class="mode-select-btn" data-mode="custom">
-                                <i class="fa-solid fa-pen"></i>
-                                <span class="mode-select-btn-title" data-i18n="manual_line_mode_custom">Custom Item</span>
-                                <span class="mode-select-btn-desc" data-i18n="mode_desc_custom">One-time item with its own name</span>
-                            </button>
-                            <!-- 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 --
-                                 reuses #eedCustomFields' own free-text input verbatim (see
-                                 setEedMode()'s own docblock in detail.js); the only difference from
-                                 "Custom Item" is is_other=true sent on submit, which maps this specific
-                                 entry into the shared "Other Income"/"Other Deduction" aggregation
-                                 bucket instead of its own one-off report column -- see this button's
-                                 own description below, which is the whole point of this redesign. -->
-                            <button type="button" class="mode-select-btn" data-mode="other">
-                                <i class="fa-solid fa-circle-question"></i>
-                                <span class="mode-select-btn-title" data-i18n="manual_line_mode_other">Other</span>
-                                <span class="mode-select-btn-desc" data-i18n="mode_desc_other">Grouped into "Other Income/Deduction" on reports</span>
-                            </button>
-                        </div>
-                    </div>
+                    <!-- 2026-09-19, 4c: the 3-way "From List / Custom Item / Other" mode selector that
+                         used to sit above this row is gone. The picker itself is the choice now: its
+                         own pinned last option ("ระบุชื่อเอง") reveals the free-text field below, the
+                         same escape hatch the payroll slip's item picker already offers, and the
+                         "Other" mode became what it always was underneath -- a checkbox on that
+                         free-text item saying which report bucket it lands in. -->
                     <div class="row mb-3" id="eedCatalogFields">
                         <div class="col-sm-3 align-self-center">
                             <label class="form-label mb-1"><span data-i18n="item_name">Item</span> <span class="text-danger">*</span></label>
@@ -2315,6 +2320,15 @@
                             <input type="text" class="form-control" id="eed_custom_item_name" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
                         </div>
                         <input type="hidden" id="eed_custom_item_type" name="custom_item_type">
+                    </div>
+                    <div class="row mb-3 d-none" id="eedIsOtherWrapper">
+                        <div class="col-sm-3"></div>
+                        <div class="col-sm-9">
+                            <div class="form-check">
+                                <input type="checkbox" class="form-check-input" id="eed_is_other">
+                                <label class="form-check-label" for="eed_is_other" data-i18n="eed_is_other_label">Group into the "Other" total on reports</label>
+                            </div>
+                        </div>
                     </div>
                     <div class="row mb-3">
                         <div class="col-sm-3 align-self-center">
@@ -2499,72 +2513,53 @@
                         </div>
                     </div>
                     <!-- 2026-08-31, explicit request: "หักไปจ่ายใคร หรือจ่ายเข้าบัญชีบริษัท" -- widened
-                         from "always another employee" to a real 3-way choice (None/Employee/Company
-                         Account), same .btn-group toggle convention as #eedModeToggle above. See
-                         EmployeeEarningDeductionModel::save()'s own docblock for the payee_type
-                         schema.
-                         2026-08-31, same-day follow-up: 4th option "not_disbursed" -- "หักเพื่อไม่ทำ
-                         จ่ายเฉยๆ โดยเงินไม่ออกจากกองทุน" (withheld but no money moves anywhere at all,
-                         distinct from "none" above which still reduces the employee's own net pay --
-                         a real outflow from the fund, just untracked-by-payee). Never shows the
-                         Include-in-Cash-Summary checkbox below -- forced excluded at the model layer
-                         (EmployeeEarningDeductionModel::save()'s own comment), so offering it as a
-                         toggle here would be misleading. -->
+                         from "always another employee" to a real choice of destination. See
+                         EmployeeEarningDeductionModel::save()'s own docblock for the payee_type schema.
+                         2026-09-16: the flat list of payee_type values is now 3 destinations + one
+                         sub-question, shared with the other 3 payee pickers (partials/
+                         payee-destination.php + initPayeeDestination(), app.js). This modal's own 3
+                         sub-forms keep their ids and simply moved inside the component's callout. See
+                         docs/decisions/2026-09-16-payee-three-destinations.md. -->
                     <div class="row mb-3 d-none" id="eedPayeeWrapper">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-1" data-i18n="payee_type_label">Deducted Money Goes To</label>
-                        </div>
-                        <div class="col-sm-9">
-                            <div class="btn-group btn-group-sm flex-wrap" role="group" id="eedPayeeTypeToggle">
-                                <button type="button" class="btn btn-outline-brand active" data-payee-type="none"><span data-i18n="payee_type_none">Employee's Own Net Pay</span></button>
-                                <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
-                                <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
-                                <!-- 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 --
-                                     this modal never got the 'other_person' option when Phase 2 first
-                                     built the destination-picker flow (Phase 2 only touched Process
-                                     Detail's own manual-line modal) -- added now since "Other Deduction"
-                                     genuinely needs it, and it applies to any deduction here (catalog or
-                                     custom), same as the rest of this toggle. -->
-                                <button type="button" class="btn btn-outline-brand" data-payee-type="other_person"><span data-i18n="payee_type_other_person">Other Person / Third Party</span></button>
-                                <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Deducted, No Cash Movement (Write-off)</span></button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-3 d-none" id="eedPayeeEmployeeWrapper">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-1" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
-                        </div>
-                        <div class="col-sm-9">
-                            <select class="form-select select2-remote" id="eed_payee_employee_id" name="payee_employee_id" data-api="/api/employee.report_to.get" data-type="employee"></select>
-                        </div>
-                    </div>
-                    <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- WHICH of the
-                         company's own bank_accounts, mirroring #eedPayeeEmployeeWrapper's own
-                         shape/data-api reuse convention (api/payroll-cycle.bank-account.options
-                         already exists, unscoped by cycle -- see PayrollConfigurationController::
-                         bankAccountOptions()) -- no new endpoint needed. -->
-                    <div class="row mb-3 d-none" id="eedCompanyAccountWrapper">
-                        <div class="col-sm-3 align-self-center">
-                            <label class="form-label mb-1" data-i18n="payee_bank_account_label">Company Bank Account</label>
-                        </div>
-                        <div class="col-sm-9">
-                            <select class="form-select select2-remote" id="eed_bank_account_id" name="bank_account_id" data-api="/api/payroll-cycle.bank-account.options"></select>
-                        </div>
-                    </div>
-                    <div class="row g-2 align-items-end mb-3 d-none" id="eedDestinationWrapper">
                         <div class="col-sm-3"></div>
                         <div class="col-sm-9">
-                            <label class="form-label small text-muted mb-1" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
-                            <select class="form-select select2-remote" id="eed_destination_select" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
-                        </div>
-                        <div class="col-sm-9 offset-sm-3 mt-2" id="eedDestinationNewFields">
-                            <div class="row g-2">
-                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_account_name">Account Name</label><input type="text" class="form-control form-control-sm" id="eed_dest_account_name" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee"></div>
-                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_account_no">Account No.</label><input type="text" class="form-control form-control-sm" id="eed_dest_account_no" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890"></div>
-                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_bank">Bank</label><select class="form-select select2-remote" id="eed_dest_bank" data-api="/api/bank.get" data-type="bank"></select></div>
-                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_bank_branch">Branch</label><input type="text" class="form-control form-control-sm" id="eed_dest_bank_branch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch"></div>
-                                <div class="col-12"><div class="form-check"><input type="checkbox" class="form-check-input" id="eed_dest_save_for_reuse"><label class="form-check-label small" for="eed_dest_save_for_reuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label></div></div>
-                            </div>
+                            <?php ob_start(); ?>
+                                <div class="d-none" id="eedPayeeEmployeeWrapper">
+                                    <label class="form-label mb-1" for="eed_payee_employee_id" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
+                                    <select class="form-select select2-remote" id="eed_payee_employee_id" name="payee_employee_id" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                                    <!-- 2026-09-19, 4c round 2: the account summary box the slip's own 3 pickers have had since
+                                     tiny-L2 (renderPayeeEmployeeDetailRd/renderPayeeAccountDetailRd,
+                                     payee-descriptor.js). It was simply absent here, so this form named a
+                                     payee and then said nothing about where the money would land. -->
+                                    <div id="eedPayeeEmployeeDetail"></div>
+                                </div>
+                                <!-- 2026-09-10, Batch 3B item 3: WHICH of the company's own bank_accounts
+                                     (api/payroll-cycle.bank-account.options already exists, unscoped by
+                                     cycle -- see PayrollConfigurationController::bankAccountOptions()). -->
+                                <div class="d-none" id="eedCompanyAccountWrapper">
+                                    <label class="form-label mb-1" for="eed_bank_account_id" data-i18n="payee_bank_account_label">Company Bank Account</label>
+                                    <select class="form-select select2-remote" id="eed_bank_account_id" name="bank_account_id" data-api="/api/payroll-cycle.bank-account.options" data-placeholder-key="payee_record_no"></select>
+                                    <div id="eedBankAccountDetail"></div>
+                                </div>
+                                <div class="d-none" id="eedDestinationWrapper">
+                                    <label class="form-label mb-1" for="eed_destination_select" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
+                                    <select class="form-select select2-remote" id="eed_destination_select" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
+                                    <div id="eedDestinationDetail"></div>
+                                    <div class="mt-2" id="eedDestinationNewFields">
+                                        <div class="row g-2">
+                                            <div class="col-sm-6"><label class="form-label mb-1" for="eed_dest_account_name" data-i18n="destination_account_name">Account Name</label><input type="text" class="form-control form-control-sm" id="eed_dest_account_name" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee"></div>
+                                            <div class="col-sm-6"><label class="form-label mb-1" for="eed_dest_account_no" data-i18n="destination_account_no">Account No.</label><input type="text" class="form-control form-control-sm" id="eed_dest_account_no" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890"></div>
+                                            <div class="col-sm-6"><label class="form-label mb-1" for="eed_dest_bank" data-i18n="destination_bank">Bank</label><select class="form-select select2-remote" id="eed_dest_bank" data-api="/api/bank.get" data-type="bank"></select></div>
+                                            <div class="col-sm-6"><label class="form-label mb-1" for="eed_dest_bank_branch" data-i18n="destination_bank_branch">Branch</label><input type="text" class="form-control form-control-sm" id="eed_dest_bank_branch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch"></div>
+                                            <div class="col-12"><div class="form-check"><input type="checkbox" class="form-check-input" id="eed_dest_save_for_reuse"><label class="form-check-label" for="eed_dest_save_for_reuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label></div></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php
+                            $payee_slot = ob_get_clean();
+                            $payee_prefix = 'eed';
+                            include __DIR__ . '/../partials/payee-destination.php';
+                            ?>
                         </div>
                     </div>
                     <div class="row mb-3 d-none" id="eedIncludeCashSummaryWrapper">
@@ -2587,7 +2582,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     <button type="submit" class="btn btn-primary px-4" id="eedSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
@@ -2739,20 +2734,13 @@
                          Only one fee_base ever validates for this table (base_salary -- no
                          'principal_amount' equivalent), so this is a plain fixed label, not a
                          dropdown like #eedModal's own 2-option one. -->
-                    <div class="row mb-3">
+                    <!-- 2026-09-19, 4c round 1: the None/Fee toggle above this row is gone. It decided
+                         nothing the number itself does not say -- unlike #eedModal's own 3-state
+                         control, which writes a real `interest_type` enum, this table has no interest
+                         concept and exactly one fee_base, so "no fee" is simply an empty % field. -->
+                    <div class="row mb-3" id="erdFeeDetailWrapper">
                         <div class="col-sm-4 align-self-center">
                             <label class="form-label mb-1" data-i18n="fee_percent_label">Fee</label>
-                        </div>
-                        <div class="col-sm-8">
-                            <div class="btn-group btn-group-sm" role="group" id="erdFeeToggle">
-                                <button type="button" class="btn btn-outline-brand active" data-value="none"><span data-i18n="interest_none">None</span></button>
-                                <button type="button" class="btn btn-outline-brand" data-value="fee"><span data-i18n="fee_has">Fee</span></button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-3 d-none" id="erdFeeDetailWrapper">
-                        <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-1"><span data-i18n="fee_percent_label">Fee</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-8 d-flex align-items-center gap-2">
                             <div class="input-group input-group-sm" style="max-width:140px;">
@@ -2765,58 +2753,49 @@
                         </div>
                     </div>
                     <hr class="my-4 text-muted opacity-25">
-                    <!-- 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 6 -- same
-                         payee_type toggle convention as #eedModal's own #eedPayeeTypeToggle above,
-                         PLUS the 'other_person' option (a saved/new third-party bank account, via
-                         PaymentDestinationModel -- see that model's own docblock). This is the
-                         TEMPLATE-level default: inherited by every payroll run this recurring
+                    <!-- 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 6 -- the
+                         TEMPLATE-level destination: inherited by every payroll run this recurring
                          deduction is active in, unless that one run has its own override (Process
                          Detail's own "Recurring Deduction Destination" panel, this run only, never
                          written back here). -->
-                    <h6 class="text-secondary fw-bold mb-2"><span data-i18n="payee_type_label">Deducted Money Goes To</span></h6>
                     <div class="row mb-3">
-                        <div class="col-sm-4 align-self-center"></div>
+                        <div class="col-sm-4"></div>
                         <div class="col-sm-8">
-                            <div class="btn-group btn-group-sm flex-wrap" role="group" id="erdPayeeTypeToggle">
-                                <button type="button" class="btn btn-outline-brand active" data-payee-type="none"><span data-i18n="payee_type_none">Employee's Own Net Pay</span></button>
-                                <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
-                                <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
-                                <button type="button" class="btn btn-outline-brand" data-payee-type="other_person"><span data-i18n="payee_type_other_person">Other Person / Third Party</span></button>
-                                <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Deducted, No Cash Movement (Write-off)</span></button>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mb-3 d-none" id="erdPayeeEmployeeWrapper">
-                        <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-1" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
-                        </div>
-                        <div class="col-sm-8">
-                            <select class="form-select select2-remote" id="erd_payee_employee_id" data-api="/api/employee.report_to.get" data-type="employee"></select>
-                        </div>
-                    </div>
-                    <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- same as
-                         #eedCompanyAccountWrapper in the EED modal above. -->
-                    <div class="row mb-3 d-none" id="erdCompanyAccountWrapper">
-                        <div class="col-sm-4 align-self-center">
-                            <label class="form-label mb-1" data-i18n="payee_bank_account_label">Company Bank Account</label>
-                        </div>
-                        <div class="col-sm-8">
-                            <select class="form-select select2-remote" id="erd_bank_account_id" data-api="/api/payroll-cycle.bank-account.options"></select>
-                        </div>
-                    </div>
-                    <div class="row g-2 align-items-end mb-3 d-none" id="erdDestinationWrapper">
-                        <div class="col-12">
-                            <label class="form-label small text-muted mb-1" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
-                            <select class="form-select select2-remote" id="erd_destination_select" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
-                        </div>
-                        <div class="col-12 mt-2" id="erdDestinationNewFields">
-                            <div class="row g-2">
-                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_account_name">Account Name</label><input type="text" class="form-control form-control-sm" id="erd_dest_account_name" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee"></div>
-                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_account_no">Account No.</label><input type="text" class="form-control form-control-sm" id="erd_dest_account_no" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890"></div>
-                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_bank">Bank</label><select class="form-select select2-remote" id="erd_dest_bank" data-api="/api/bank.get" data-type="bank"></select></div>
-                                <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_bank_branch">Branch</label><input type="text" class="form-control form-control-sm" id="erd_dest_bank_branch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch"></div>
-                                <div class="col-12"><div class="form-check"><input type="checkbox" class="form-check-input" id="erd_dest_save_for_reuse"><label class="form-check-label small" for="erd_dest_save_for_reuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label></div></div>
-                            </div>
+                            <!-- 2026-09-16: same shared 3-destination picker as #eedModal above
+                                 (partials/payee-destination.php) -- this modal's own sub-forms keep
+                                 their ids and moved inside the component's callout. -->
+                            <?php ob_start(); ?>
+                                <div class="d-none" id="erdPayeeEmployeeWrapper">
+                                    <label class="form-label mb-1" for="erd_payee_employee_id" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
+                                    <select class="form-select select2-remote" id="erd_payee_employee_id" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                                    <div id="erdPayeeEmployeeDetail"></div>
+                                </div>
+                                <!-- 2026-09-10, Batch 3B item 3: same level-2 account picker as
+                                     #eedCompanyAccountWrapper in the EED modal above. -->
+                                <div class="d-none" id="erdCompanyAccountWrapper">
+                                    <label class="form-label mb-1" for="erd_bank_account_id" data-i18n="payee_bank_account_label">Company Bank Account</label>
+                                    <select class="form-select select2-remote" id="erd_bank_account_id" data-api="/api/payroll-cycle.bank-account.options" data-placeholder-key="payee_record_no"></select>
+                                    <div id="erdBankAccountDetail"></div>
+                                </div>
+                                <div class="d-none" id="erdDestinationWrapper">
+                                    <label class="form-label mb-1" for="erd_destination_select" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
+                                    <select class="form-select select2-remote" id="erd_destination_select" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
+                                    <div id="erdDestinationDetail"></div>
+                                    <div class="mt-2" id="erdDestinationNewFields">
+                                        <div class="row g-2">
+                                            <div class="col-sm-6"><label class="form-label mb-1" for="erd_dest_account_name" data-i18n="destination_account_name">Account Name</label><input type="text" class="form-control form-control-sm" id="erd_dest_account_name" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee"></div>
+                                            <div class="col-sm-6"><label class="form-label mb-1" for="erd_dest_account_no" data-i18n="destination_account_no">Account No.</label><input type="text" class="form-control form-control-sm" id="erd_dest_account_no" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890"></div>
+                                            <div class="col-sm-6"><label class="form-label mb-1" for="erd_dest_bank" data-i18n="destination_bank">Bank</label><select class="form-select select2-remote" id="erd_dest_bank" data-api="/api/bank.get" data-type="bank"></select></div>
+                                            <div class="col-sm-6"><label class="form-label mb-1" for="erd_dest_bank_branch" data-i18n="destination_bank_branch">Branch</label><input type="text" class="form-control form-control-sm" id="erd_dest_bank_branch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch"></div>
+                                            <div class="col-12"><div class="form-check"><input type="checkbox" class="form-check-input" id="erd_dest_save_for_reuse"><label class="form-check-label" for="erd_dest_save_for_reuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label></div></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php
+                            $payee_slot = ob_get_clean();
+                            $payee_prefix = 'erd';
+                            include __DIR__ . '/../partials/payee-destination.php';
+                            ?>
                         </div>
                     </div>
                     <hr class="my-4 text-muted opacity-25">
@@ -2854,7 +2833,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     <button type="submit" class="btn btn-primary px-4" id="erdSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
@@ -3590,14 +3569,15 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content border-0 shadow">
             <div class="modal-header">
-                <h5 class="modal-title text-danger" id="runErrorEmployeesModalLabel">
-                    <i class="fa-solid fa-triangle-exclamation me-1"></i><span data-i18n="incomplete_data">Incomplete data</span>
-                </h5>
+                <!-- 2026-09-21, 3e-2b: §9's "Header = ชื่อ + × เท่านั้น" -- the icon and the red title
+                     both said "something is wrong" a third and fourth time, over a list that is
+                     already nothing but reasons. Footer button is §4's Secondary tier. -->
+                <h5 class="modal-title text-secondary mb-0" id="runErrorEmployeesModalLabel" data-i18n="incomplete_data">Incomplete data</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" id="runErrorEmployeesModalBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>

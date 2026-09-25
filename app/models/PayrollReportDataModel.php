@@ -195,6 +195,22 @@ class PayrollReportDataModel {
                     (d.gross_amount - COALESCE(pp.gross_paid, 0)) AS gross_amount_due,
                     (d.total_deduction_amount - COALESCE(pp.deduction_paid, 0)) AS deduction_amount_due,
                     (d.net_amount - COALESCE(pp.net_paid, 0)) AS net_amount_due,
+                    -- 2026-09-25, real bug found and fixed (bank transfer export round B, see
+                    -- docs/decisions/2026-09-25-bank-transfer-export-paid-runs.md): net_amount_due
+                    -- above is the still-OWED delta, which is always 0 for every employee once a
+                    -- run has gone through markPaid() (the full amount is recorded as a
+                    -- payroll_run_payment_events row immediately) -- correct for what is left to
+                    -- pay but wrong for what was actually transferred, which is what a paid/
+                    -- locked run's bank transfer file needs to show instead. This is the SUM of
+                    -- every event recorded for this run+employee specifically at
+                    -- payment_method='bank_transfer' (markPaid() records ONE payment_method for
+                    -- the whole batch, so an employee never disbursed via transfer in ANY cycle of
+                    -- this run gets 0 here even if classified payment_method_code='transfer'/
+                    -- 'mixed' -- see BankTransferFileReport's own docblock), capped at d.net_amount
+                    -- so a data anomaly (more recorded than the run ever owed) can never inflate
+                    -- what a consumer sees. Purely additive -- every existing consumer of this
+                    -- method that doesn't read this new column is unaffected.
+                    LEAST(d.net_amount, COALESCE(pt.net_transferred, 0)) AS net_amount_paid_via_transfer,
                     r.run_purpose, r.include_base_salary,
                     (SELECT lo2.action FROM `payroll_run_line_overrides` lo2 WHERE lo2.run_id = d.run_id AND lo2.employee_id = d.employee_id AND lo2.item_code = :base_salary_code LIMIT 1) AS base_salary_override_action,
                     EXISTS(SELECT 1 FROM `payroll_run_item_exclusions` rie WHERE rie.run_id = d.run_id AND rie.item_code = :base_salary_code2) AS run_excludes_base_salary
@@ -212,11 +228,17 @@ class PayrollReportDataModel {
                         SUM(deduction_amount_paid) AS deduction_paid, SUM(net_amount_paid) AS net_paid
                     FROM `payroll_run_payment_events` WHERE run_id = :run_id_pp GROUP BY run_id, employee_id
                 ) pp ON pp.run_id = d.run_id AND pp.employee_id = d.employee_id
+                LEFT JOIN (
+                    SELECT run_id, employee_id, SUM(net_amount_paid) AS net_transferred
+                    FROM `payroll_run_payment_events`
+                    WHERE run_id = :run_id_pt AND payment_method = 'bank_transfer'
+                    GROUP BY run_id, employee_id
+                ) pt ON pt.run_id = d.run_id AND pt.employee_id = d.employee_id
                 WHERE d.run_id = :run_id
                 ORDER BY e.employee_no ASC";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([
-            ':run_id' => $runId, ':run_id_pp' => $runId,
+            ':run_id' => $runId, ':run_id_pp' => $runId, ':run_id_pt' => $runId,
             ':base_salary_code' => PayrollRunModel::BASE_SALARY_OVERRIDE_CODE,
             ':base_salary_code2' => PayrollRunModel::BASE_SALARY_OVERRIDE_CODE,
         ]);

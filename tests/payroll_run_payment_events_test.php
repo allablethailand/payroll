@@ -8,7 +8,11 @@
  * supplemental process into an already-paid run). Fixed by recording one payroll_run_payment_events
  * row per employee per markPaid() call (the DELTA actually disbursed that cycle, not the run's own
  * running total) and having BankTransferFileReport read the resulting *_amount_due (delta still
- * owed) instead of the raw net_amount column.
+ * owed) instead of the raw net_amount column. 2026-09-25, round B: for a paid/locked run
+ * specifically, the report now reads net_amount_paid_via_transfer (what was actually recorded as
+ * disbursed) instead of *_amount_due (always 0 once fully paid) -- see
+ * docs/decisions/2026-09-25-bank-transfer-export-paid-runs.md; this file's own last assertion
+ * block was updated to match.
  *
  * Not PHPUnit -- see tests/statutory_engine_test.php for why. Runs against the real dev DB inside a
  * transaction that is always rolled back.
@@ -205,17 +209,28 @@ try {
     $sumOfBothEventsForA = array_sum(array_column($employeeAEventsSecondCycle, 'net_amount_paid'));
     check('sum of BOTH of employee A\'s event rows equals their final total net_amount (deltas reconcile, nothing lost or double-counted)', $sumOfBothEventsForA, (float)$detailAMerged['net_amount']);
 
-    // Now that the 2nd cycle's own markPaid() has recorded that exact delta as paid, regenerating
-    // the SAME report correctly finds NOBODY still owed anything (both employees' due amounts are
-    // now 0) -- the existing "no valid accounts" exception doubles as "nothing left to pay" here,
-    // confirming the ledger genuinely settles rather than just not being checked again.
-    $threwAfterSettled = false;
-    try {
-        $report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'th'], 'csv');
-    } catch (LocalizedException $e) {
-        $threwAfterSettled = true;
-    }
-    checkTrue('after the 2nd markPaid() settles the delta, regenerating the report finds nobody still due', $threwAfterSettled);
+    // 2026-09-25, round B (see docs/decisions/2026-09-25-bank-transfer-export-paid-runs.md):
+    // markPaid() has already moved this run's state to 'paid' by this point -- this used to throw
+    // 'bank_transfer_no_valid_accounts' here (net_amount_due is 0 for everyone once fully paid,
+    // and the old code read net_amount_due even for a paid/locked run), which was the exact
+    // production bug that round confirmed and fixed: a paid/locked run's file now reads what was
+    // actually recorded as disbursed via bank_transfer (net_amount_paid_via_transfer, capped at
+    // net_amount) instead. Both employees were paid via 'bank_transfer' on both cycles here, so
+    // both now show their own full, final net_amount -- no longer "nothing left to pay", but "here
+    // is everything this run actually transferred", which is what a paid run's own file should mean.
+    $reportAfterSettled = $report->generate(['comp_id' => $compId, 'run_id' => $runId, 'language' => 'th'], 'csv');
+    checkTrue('no exception after the 2nd markPaid() -- a paid run\'s file reflects what was actually transferred', $reportAfterSettled !== null);
+    $linesAfterSettled = array_values(array_filter(explode("\r\n", $reportAfterSettled['content']), fn($l) => strpos($l, $bankAccountNoPlain) === 0));
+    check('paid-run file has 2 detail lines (both employees\' full transferred totals, not "nothing due")', count($linesAfterSettled), 2);
+    $totalAfterSettled = array_sum(array_map(fn($l) => (float)str_getcsv($l)[4], $linesAfterSettled));
+    check('sum of both lines equals A\'s post-merge total + B\'s original total', $totalAfterSettled, round((float)$detailAMerged['net_amount'] + (float)$detailBMerged['net_amount'], 2));
+    // 2026-09-25, same-round follow-up: the "already recorded as paid, verify before re-uploading"
+    // notice now fires for EVERY paid/locked run regardless of inclusion (not just when someone was
+    // excluded) -- but the exclusion breakdown itself must still be absent here (everyone who was
+    // ever paid via transfer is genuinely accounted for, nobody skipped).
+    $warningKeys = array_column($reportAfterSettled['warnings'] ?? [], 'key');
+    checkTrue('"already paid" notice fires (state=paid)', in_array('bank_transfer_already_paid_notice', $warningKeys, true));
+    checkTrue('no employees_excluded warning (nobody skipped)', !in_array('bank_transfer_employees_excluded', $warningKeys, true));
 
 } finally {
     $pdo->rollBack();

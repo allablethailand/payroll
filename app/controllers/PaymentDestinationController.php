@@ -24,11 +24,12 @@ class PaymentDestinationController extends Controller {
         $searchTerm = (string)($_POST['searchTerm'] ?? '');
         $limit = (int)($_POST['limit'] ?? 20);
         $rows = $this->model->listSaved((int)$compId, $searchTerm, $limit);
-        $items = array_map(static function (array $r): array {
-            $bankName = $r['bank_name_th'] ?? $r['bank_name_en'] ?? '';
-            $label = $r['account_name'] . ($bankName !== '' ? " ({$bankName})" : '');
-            return ['id' => (int)$r['id'], 'text_th' => $label, 'text_en' => $label];
-        }, $rows);
+        // 2026-09-15: the same 4 account fields every payee picker returns ride along, so the form
+        // can show a summary of the chosen destination. Masked number only -- listSaved() never
+        // hands back the real one. 2026-09-17, tiny-L2: the label and this whole shape are composed
+        // by the model's own optionItem(), which is what a form prefilling this picker from a stored
+        // id reads too -- what this endpoint returns is unchanged.
+        $items = array_map(static fn(array $r): array => PaymentDestinationModel::optionItem($r), $rows);
         $this->json(['status' => true, 'data' => ['items' => $items, 'total_count' => count($items)]]);
     }
 }

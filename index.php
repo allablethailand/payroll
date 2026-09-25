@@ -79,7 +79,13 @@
     $router->post('api/payroll-run.remove-employee', 'PayrollController@removeEmployee');
     $router->get('api/payroll-run.manual-lines', 'PayrollController@manualLinesForEmployee');
     $router->get('api/payroll-run.employee-adjustments', 'PayrollController@employeeAdjustments');
+    // 2026-09-16: read-only per-employee edit history, backing the Adjustments modal's "ประวัติ" column.
+    $router->get('api/payroll-run.line-override-history', 'PayrollController@lineOverrideHistory');
+    // 2026-09-19, H-backend: the same table read per LINE (newest first), covering the hand-added
+    // lines and the tri-state tax/SSO answer the endpoint above has never carried.
+    $router->get('api/payroll-run.line-history', 'PayrollController@lineHistory');
     $router->post('api/payroll-run.add-manual-line', 'PayrollController@addManualLine');
+    $router->post('api/payroll-run.update-manual-line', 'PayrollController@updateManualLine');
     $router->post('api/payroll-run.remove-manual-line', 'PayrollController@removeManualLine');
     $router->get('api/payroll-run.sync-lines-for-employee', 'PayrollController@syncLinesForEmployee');
     $router->post('api/payroll-run.line-override.save', 'PayrollController@lineOverrideSave');
@@ -109,6 +115,8 @@
     $router->get('api/payroll-run.employee-comment.list', 'PayrollController@employeeCommentList');
     $router->post('api/payroll-run.employee-comment.update', 'PayrollController@employeeCommentUpdate');
     $router->post('api/payroll-run.employee-comment.delete', 'PayrollController@employeeCommentDelete');
+    $router->post('api/payroll-run.audit-log.list', 'PayrollController@auditLogList');
+    $router->post('api/payroll-run.audit-log.column-values', 'PayrollController@auditLogColumnValues');
     $router->get('api/payroll-run.error-employees', 'PayrollController@errorEmployees');
     $router->get('api/payroll-run.sync-missing-employees', 'PayrollController@syncMissingEmployees');
     $router->post('api/payroll-run.submit', 'PayrollController@submit');

@@ -28,6 +28,32 @@ if ($userThemePref === 'dark') {
 } else {
     $htmlThemeAttr = ' data-bs-theme="light"';
 }
+
+// 2026-08-29, explicit request: "ให้ดึงรูปไปแสดงที่ header ด้วยครับ" -- the logged-in user's own profile
+// photo (employees.profile_photo_path) shown in the top-right nav dropdown, which previously always
+// hardcoded the generic placeholder (userNoImage.jpg) regardless of who was logged in. A direct,
+// lightweight query here (same inline-model-in-this-file convention as the $canView* menu gates
+// further down) rather than a full EmployeeModel::get() call, which pulls a lot more than 3 columns.
+// 2026-09-15, Round 3 (comment-list restyle): the SAME query now also supplies the logged-in user's
+// own display name, and the result is handed to JS as `window.SESSION_USER` in the script block
+// below -- which is why this block moved up here, ahead of that script (it used to sit further down,
+// next to the nav markup that consumes $navProfilePhotoPath, which is still its other consumer).
+// The comment COMPOSER (commentComposerHtml(), app.js) renders "who is writing" as an avatar + name
+// row, and no page had any client-side way to know either one before this: SESSION_EMPLOYEE_ID (an
+// id alone) was all JS ever got. One query, one injection, app-wide -- rather than each page that
+// needs it re-querying or re-injecting its own copy.
+$navProfilePhotoPath = null;
+$sessionUserNameTh = null;
+$sessionUserNameEn = null;
+$navUserId = (int)($_SESSION['user']['employee_id'] ?? 0);
+if ($navUserId > 0) {
+    $navUserStmt = Database::getInstance()->pdo->prepare("SELECT name_th, name_en, profile_photo_path FROM `employees` WHERE id = :id AND deleted_at IS NULL");
+    $navUserStmt->execute([':id' => $navUserId]);
+    $navUserRow = $navUserStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $navProfilePhotoPath = ($navUserRow['profile_photo_path'] ?? null) ?: null;
+    $sessionUserNameTh = ($navUserRow['name_th'] ?? null) ?: null;
+    $sessionUserNameEn = ($navUserRow['name_en'] ?? null) ?: null;
+}
 ?>
 <html lang="th"<?=$htmlThemeAttr?>>
 <head>
@@ -63,6 +89,9 @@ if ($userThemePref === 'dark') {
      Quill (snow theme -- the classic toolbar-on-top look), same node_modules-served convention as
      every other JS dependency in this project. -->
 <link rel="stylesheet" href="<?=BASE_URL?>/node_modules/quill/dist/quill.snow.css">
+<!-- tokens.css BEFORE style.css, and versioned like it -- see style.css's own top comment for the
+     real bug that came from loading it through an unversioned @import instead. -->
+<link rel="stylesheet" href="<?=asset('public/css/tokens.css')?>">
 <link rel="stylesheet" href="<?=asset('public/css/style.css')?>">
 <script>
     const BASE_URL = "<?=BASE_URL?>";
@@ -73,11 +102,35 @@ if ($userThemePref === 'dark') {
     // Per-language (not one shared number) so editing th.json doesn't force en.json's cache to bust
     // too, matching asset()'s own per-file granularity.
     const LANG_VERSION = { th: <?=assetVersion('public/lang/th.json')?>, en: <?=assetVersion('public/lang/en.json')?> };
+    // 2026-09-13, Phase Design Round 2 item 5 (docs/design/rules.md §5) -- app/config/status_map.php
+    // is the ONLY source of status label-key/tone data; this is the ONE exception to Round 2's own
+    // "ห้ามแตะหน้าจริง" rule, explicitly approved for this exact spot (the same place BASE_URL/
+    // LANG_VERSION already bridge PHP config to JS) specifically so JS never needs its own
+    // hand-kept copy of that file's data -- an earlier version of this DID duplicate the whole map as
+    // a JS literal in app.js, which was reverted in favor of this single-source approach the moment
+    // an in-scope way to inject it was made available. statusBadgeHtml() (app.js) reads
+    // `window.STATUS_MAP` with its own guard for a page that doesn't load this file at all (falls
+    // back to an empty map + a console.warn(), same as any other missing-entry case).
+    window.STATUS_MAP = <?=json_encode(loadStatusMap())?>;
     // 2026-08-29: the logged-in user's own employee id, exposed so a page editing an employee record
     // (Employee Detail) can tell whether it's currently editing the LOGGED-IN USER's own record --
     // used to live-refresh the nav profile photo (#navProfilePhoto above) right after a photo
     // upload, without waiting for the next full page navigation to re-render it server-side.
     const SESSION_EMPLOYEE_ID = <?=(int)($_SESSION['user']['employee_id'] ?? 0)?>;
+    // 2026-09-15, Round 3 (comment-list restyle) -- the logged-in user's own name/photo, for UI that
+    // has to show WHO is about to write something (the comment composer's own author row,
+    // commentComposerHtml() in app.js -- rules.md §6). Same single-source reasoning as
+    // window.STATUS_MAP right above: one server-side query (the one that already ran for the nav
+    // profile photo, widened by 2 columns, see the top of this file) injected once here, instead of
+    // every page that needs it inventing its own lookup. Name is per-language (th/en) so a caller
+    // picks whichever matches the language currently active in the browser, exactly like every other
+    // name in this app; either can be null for an employee record with only one of them filled in.
+    window.SESSION_USER = <?=json_encode([
+        'employee_id' => $navUserId,
+        'name_th' => $sessionUserNameTh,
+        'name_en' => $sessionUserNameEn,
+        'photo' => $navProfilePhotoPath,
+    ], JSON_UNESCAPED_UNICODE)?>;
     // 2026-08-30, Phase 7 (T037/T038/T039) -- session-guard.js's own idle-timer/heartbeat/popup
     // needs both of these: where to send the user once their session ends (Origami's own base URL,
     // not this app's /auth -- there is nothing to "log back into here" once the session is gone,
@@ -207,19 +260,6 @@ if ($compIdForOrigamiFlags > 0) {
 }
 $canViewReportsMenu = $canViewReportsGenerateMenu || $canViewAnnualIncomeSummaryMenu;
 
-// 2026-08-29, explicit request: "ให้ดึงรูปไปแสดงที่ header ด้วยครับ" -- the logged-in user's own profile
-// photo (employees.profile_photo_path) shown in the top-right nav dropdown, which previously always
-// hardcoded the generic placeholder (userNoImage.jpg) regardless of who was logged in. A direct,
-// lightweight query here (same inline-model-in-this-file convention as $canViewApprovalWorkflowMenu
-// just above) rather than a full EmployeeModel::get() call, which pulls a lot more than one column.
-$navProfilePhotoPath = null;
-$navUserId = (int)($_SESSION['user']['employee_id'] ?? 0);
-if ($navUserId > 0) {
-    $navPhotoStmt = Database::getInstance()->pdo->prepare("SELECT profile_photo_path FROM `employees` WHERE id = :id AND deleted_at IS NULL");
-    $navPhotoStmt->execute([':id' => $navUserId]);
-    $navProfilePhotoPath = $navPhotoStmt->fetchColumn() ?: null;
-}
-
 // 2026-09-07, explicit request: "ทางลัด วางอยู่ล่างเกินไป ใช้งานไม่สะดวกครับ...ปรับเป็นให้อยู่บน header ไปเลย
 // ให้เรียงอยู่ก่อนหน้า notification โดยให้ผู้ใช้เลือกได้ว่าจะโชว์ หรือไม่โชว์เมนูไหน เลือกได้ทั้งเมนู และ sub menu
 // แต่การแสดงผลต้องไม่ล้นจอ...ที่เหลือเป็นปุ่ม more" -- Quick Links moves out of the Dashboard's own
@@ -245,6 +285,10 @@ if ($compIdForOrigamiFlags > 0 && $navUserId > 0) {
 </head>
 <body>
 <script src="<?=BASE_URL?>/node_modules/jquery/dist/jquery.min.js"></script>
+<!-- 2026-09-19, 4c: the one payee-descriptor renderer, shared by the payroll slip and Employee
+     Detail's own permanent forms/tables (see the file's own docblock). Before app.js on purpose:
+     nothing in it runs at load, it only has to be DEFINED before any page script calls it. -->
+<script src="<?=asset('public/js/payee-descriptor.js')?>"></script>
 <script src="<?=asset('public/js/app.js')?>"></script>
 <script src="<?=asset('public/js/alert.js')?>"></script>
 <!-- 2026-09-04, Backlog Phase 11, T065 -- escapeHtml()/escapeAttr()/fmtNum(), replacing ~30
