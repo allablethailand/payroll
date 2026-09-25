@@ -796,8 +796,9 @@ class PayrollRunModel {
     }
 
     /** ServerSide DataTable source for #tb_run_audit_log (tiny round B) -- same row shape/exclusion
-     *  as getAuditLog() above (unmodified, still used by `.get()`), just paginated/sorted/filtered
-     *  server-side. Caller (PayrollController::auditLogList()) has already confirmed the run exists
+     *  as getAuditLog() above (unmodified -- still called directly by tests/other PHP consumers,
+     *  just no longer folded into `.get()`'s own response as of this same round), just paginated/
+     *  sorted/filtered server-side. Caller (PayrollController::auditLogList()) has already confirmed the run exists
      *  in this company before calling here, same guard getAuditLog() itself does at :740. This
      *  method never writes to `payroll_run_audit_logs` -- a read of the audit trail must never
      *  itself become an entry in it (unlike page navigation elsewhere, which does log a

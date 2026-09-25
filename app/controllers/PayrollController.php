@@ -478,7 +478,6 @@ class PayrollController extends Controller {
         // masking is applied last, right before the response goes out, so it can never accidentally
         // feed a masked value into an approval/permission decision.
         $row['details'] = $this->model->getDetails($id, (int)$compId);
-        $row['audit_log'] = $this->model->getAuditLog($id, (int)$compId);
         $row['approval_flow'] = $this->model->approvalFlow($id, (int)$compId);
         $row['can_approve_payroll'] = $this->model->canApprovePayroll($this->userId(), $this->isAdmin(), $row);
         $row['can_process_payroll'] = $this->model->canProcessPayroll($this->userId(), $this->isAdmin());
@@ -491,16 +490,14 @@ class PayrollController extends Controller {
         // 2026-08-31, explicit request: "สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX แต่ยังสามารถคำนวณ
         // เงินเดือน...ได้ตามสิทธิ์" -- see maskRunMonetaryFields()/maskRunDetailRows()'s own docblocks.
         $row['details'] = $this->maskRunDetailRows($row['details'], (int)$compId);
-        $row['audit_log'] = $this->maskAuditNote($row['audit_log'], (int)$compId);
         $row = $this->maskRunMonetaryFields($row, (int)$compId);
         $this->json(['status' => true, 'data' => $row]);
     }
 
     /** ServerSide DataTable feed for the Action History tab (#tb_run_audit_log), tiny round B --
-     *  same row shape/exclusion (`action != 'view_detail'`) as getAuditLog() (used by `.get()`
-     *  above), just paginated/sorted/filtered server-side instead of loaded whole. Not yet wired
-     *  to the frontend -- `.get()`'s own `audit_log` key is untouched this round. Every row is run
-     *  through maskAuditNote(), same as `.get()`'s own call at :494, before it ever leaves this
+     *  same row shape/exclusion (`action != 'view_detail'`) as getAuditLog() (unmodified, still used
+     *  by tests/PHP consumers directly, just no longer folded into `.get()`'s own response -- see
+     *  tiny round B, 2026-09-24). Every row is run through maskAuditNote() before it ever leaves this
      *  method -- a masked payroll figure inside a `note` must never be a paging/sort/search away
      *  from being unmasked by a stale-permission cached response. */
     public function auditLogList() {

@@ -6,8 +6,9 @@
  * reader with no salary_amount.view_payroll_process grant could read, off the Action History tab,
  * the very figures the Detail table beside it had just replaced with 'XXXX'.
  *
- * What this locks:
- *  1. the endpoint runs audit_log through maskAuditNote(), beside the maskers its siblings use;
+ * What this locks (2026-09-24, tiny round B: `.get()` stopped carrying `audit_log` at all -- see
+ * section 1 below -- so this protection now lives on auditLogList()/getAuditLogPaged() instead):
+ *  1. the surviving endpoint(s) run audit_log through maskAuditNote(), beside the maskers used elsewhere;
  *  2. maskAuditNote() is ONE function with ONE call site -- the whole point of doing it this way
  *     instead of a pattern repeated per action, and the thing that has to stay true;
  *  3. the rule, both ways: 'full' visibility gets the notes back byte-identical; anything less gets
@@ -75,16 +76,25 @@ const VIS_SUMMARY = ['full' => false, 'masked' => false, 'in_scope' => true, 'su
 
 echo "=== 1. the endpoint is wired, once ===\n";
 $controllerSrc = file_get_contents(__DIR__ . '/../app/controllers/PayrollController.php');
-checkTrue('payroll-run.get runs audit_log through maskAuditNote()',
-    strpos($controllerSrc, "\$row['audit_log'] = \$this->maskAuditNote(\$row['audit_log'], (int)\$compId);") !== false);
-checkTrue('it sits with the other maskers, after the model has filled the response',
-    strpos($controllerSrc, "maskRunDetailRows(\$row['details']") < strpos($controllerSrc, "maskAuditNote(\$row['audit_log']"));
-// 2026-09-24, tiny round B: a SECOND legitimate call site now exists (auditLogList(), the new
-// paginated history feed -- masks the same rows `.get()`'s own audit_log always has, just paged).
-// Checked by exact call-site string, not a raw substring count of the function name (that count
-// would now be wrong either way -- 2 real calls plus this file's own prose mentions of the name --
-// and wrongness in either direction is exactly what this test exists to catch). Still exactly ONE
-// definition: that half of the original guard still matters just as much with 2 call sites as with 1.
+// 2026-09-24, tiny round B: payroll-run.get() no longer carries audit_log at all (the masking
+// protection this section originally locked now lives in auditLogList(), checked in section 6
+// below) -- these 2 checks flip to asserting its ABSENCE from get()'s own source, not its presence.
+// Not methodBodySrc() (section 6's helper, defined below but hoisted) -- that one bounds to the
+// NEXT `public function` line, which would sweep in auditLogList()'s own preceding docblock (it
+// mentions `#tb_run_audit_log`/getAuditLog() in prose) and false-positive this check. Bounding to
+// get()'s own closing brace instead (4-space indent, unique to a top-level method body's end here).
+$getFnStart = strpos($controllerSrc, 'public function get() {');
+$getFnEnd = strpos($controllerSrc, "\n    }\n", $getFnStart);
+$getFnSrc = substr($controllerSrc, $getFnStart, $getFnEnd - $getFnStart);
+checkTrue('payroll-run.get\'s own source no longer references audit_log',
+    strpos($getFnSrc, 'audit_log') === false);
+checkTrue('payroll-run.get\'s own source no longer calls getAuditLog(',
+    strpos($getFnSrc, 'getAuditLog(') === false);
+// 2026-09-24, tiny round B: `.get()`'s own call site is gone now (checked by its absence above) --
+// auditLogList() (the paginated history feed) is the only legitimate call site left. Checked by
+// exact call-site string, not a raw substring count of the function name (that count would still be
+// wrong either way -- this file's own prose mentions of the name -- and wrongness in either
+// direction is exactly what this test exists to catch). Still exactly ONE definition.
 check('maskAuditNote is defined exactly once',
     substr_count($controllerSrc, 'private function maskAuditNote(array $auditLog, int $compId): array {'), 1);
 checkTrue('auditLogList() (the new paginated history feed) also runs its rows through maskAuditNote() before responding',
