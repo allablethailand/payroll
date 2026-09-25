@@ -1586,9 +1586,11 @@ callout/ปุ่ม warning ทั้งระบบ ต้องวัดห�
 2. ~~**`#tb_run_audit_log` แสดงแค่ `to_state` ไม่แสดง `from_state`**~~ — **ปิดแล้ว (3e-3b round B1,
    2026-09-23)**: `#auditLogDetailModal` (เปิดจากปุ่ม "ดูรายละเอียด" ท้ายแถว) render `from → to` เมื่อ
    2 ค่าต่างกัน ตารางเองยังคง `to_state` อย่างเดียวตามเดิม (ตัดสินใจรอบ A -- ไม่ใช่บั๊ก)
-3. **`api/payroll-run.get`'s `audit_log` หนักถึง 710 KB (run 752, 1571 แถว) ส่งทุก `loadRunDetail()`**
-   แม้ผู้ใช้ไม่ได้เปิดแท็บ Action History เลย — endpoint serverSide เฉพาะแท็บนี้ (รวมกับอีก 5 ตาราง audit
-   ดิบที่ยังเป็น client-side ทั้งระบบ) = งานรอบ 4
+3. ~~**`api/payroll-run.get`'s `audit_log` หนักถึง 710 KB (run 752, 1571 แถว) ส่งทุก `loadRunDetail()`**
+   แม้ผู้ใช้ไม่ได้เปิดแท็บ Action History เลย~~ — **ปิดแล้ว (tiny-2 round B, 2026-09-24/25)**: ตัด
+   `audit_log` ออกจาก `.get()` ทั้งหมด (แท็บ Action History เป็น serverSide DataTable ผ่าน
+   `api/payroll-run.audit-log.list` มาก่อนแล้วตั้งแต่ round B1 อยู่แล้ว ก้อนนี้แค่ปิดช่องที่ `.get()`
+   ยังส่งซ้ำอยู่) ดู `docs/decisions/2026-09-25-tiny2-get-audit-log-removal.md`
 4. **แถวเสีย `id=156711`** (`payroll_run_audit_logs`, run 461, action=`delete`) — `ip_address`/
    `user_agent` ทั้งคู่มีค่า `'2026-09-08 18:37:13'` (เป็น timestamp ไม่ใช่ ip/user-agent จริง) — บั๊กใน
    `PayrollRunModel::clientIp()`/`clientUserAgent()` (`:1676-1684`) หรือ caller ที่ยังไม่ยืนยันสาเหตุ ต้อง
@@ -1687,6 +1689,22 @@ true และปล่อยให้กลไกอื่น (1)/(2) จัด
 กับสิ่งที่พบใน c9 เลย เพราะ N1 ไม่มีการ switch ภาษา) — ยังไม่ได้ตรวจกับ `#tb_join_employees` — ถ้าทำต่อ
 ควรเริ่มจากจุดนี้ก่อนลองแก้โค้ดใหม่
 
+**tiny-2 รอบ C (2026-09-25) — o_history_dt's `c9` ได้ 4≠3 ครั้งเดียวในรอบวัด · สาเหตุยังไม่ทราบ
+(fail ใหม่ ไม่ใช่ N1=2/c9=3 ข้างบนที่ยืนยันแล้วว่าคงที่)**: ลำดับเต็มรอบแรกของ `o_history_dt.js` วัด
+`audit-log.list` request ตอนสลับภาษา th→en ได้ **4** ครั้ง (assertion ล็อกไว้ 3) — 3 รอบถัดมาวัดได้ 3
+ตรงทุกรอบ ไม่เกิดซ้ำ — ไม่มี URL/รายละเอียด request ที่ 4 หลงเหลือใน log (`c9()` log แค่ `.length`, ไม่
+log `collector.list` แต่ละรายการ) — **ยังไม่ทราบว่าเกี่ยวกับ tiny-2's การตัด `audit_log` ออกจาก `.get()`
+หรือไม่** (ไม่มีหลักฐานยืนยันหรือตัดขาดทั้งสองทาง) — **ถ้าเกิดซ้ำ ให้แก้ `c9()` ให้ log
+`collector.list` แบบละเอียด (url/seq/เวลา) ก่อนสรุปสาเหตุ** ไม่ใช่เดา — ดู `tmp-tiny2-roundC.md`/
+`docs/decisions/2026-09-25-tiny2-get-audit-log-removal.md`'s เอง "รอบวัด" section
+
+**tiny-2 รอบ C (2026-09-25) — docblock `Run:` ของ 2 ไฟล์ไม่ตรงกับ usage จริง**: `k4a2_manual_lines_
+in_table.js`'s docblock เขียน `<PHPSESSID> <runToken> <employeeId>` แต่ตัวสคริปต์เองต้องการ
+`<pedTypeId>` เพิ่มเป็นตัวที่ 4 (ไม่งั้น throw usage error ทันที) · `l6a_line_form.js`'s docblock เขียน
+แค่ `<PHPSESSID> <runToken>` แต่ต้องการ `<employeeId>` เพิ่มเป็นตัวที่ 3 เช่นกัน — พบระหว่างรันจริงรอบวัด
+tiny-2 (ยืนยันจาก error message ของสคริปต์เอง ไม่ใช่เดา) — แก้ docblock ให้ตรง usage จริงเมื่อมีงานแตะ
+ไฟล์เหล่านี้ครั้งถัดไป
+
 ## Audit Log detail modal: เวลาไม่แปลง timezone ต่างจากตาราง (7 ชั่วโมง)
 
 **Round B3, พบระหว่างวัดผลไม่ได้ตั้งใจแก้รอบนี้ (ไม่แตะโค้ด modal ตามที่สั่ง):**
@@ -1720,3 +1738,14 @@ HEAD=`9cdcbfc3`, ไม่มีงาน audit-log serverSide เลย) แล
   check เดียวกันทุกจุด `each totals figure ends on the block's own inset (+-1px), in both slips`
   (ค่าจริง `{"e":[12,12,12],"v":[12,12,12]}` เท่ากันทุกตัว แปลว่า assertion logic เองผิด ไม่ใช่ pixel
   จริงต่างกัน — ต้องอ่าน assertion ใน `tests/ui/k4a2_manual_lines_in_table.js` ว่า compare ผิดจุดไหน)
+
+## tiny-2 round B (2026-09-24): 3 จุดพบระหว่าง smoke test มือ (run 1014, dark) — ยังไม่ยืนยัน/แก้
+
+1. **ที่ 430 แถบแท็บไม่แสดงแท็บ "ประวัติ" ที่เปิดอยู่** — ยังไม่ยืนยันว่าเลื่อน (scroll) ดูได้จริงหรือไม่
+   ต้องตรวจ CSS ของแถบแท็บที่ 430 ว่าเลื่อนแนวนอนได้หรือถูกตัดทิ้งไปเลย
+2. **ปุ่มช่วยเหลือลอย (?) บัง pagination ที่ 1400 และบังเนื้อหาตารางที่ 430** — z-index/ตำแหน่งปุ่มลอย
+   ทับซ้อนกับส่วนล่างของ DataTable ในทั้ง 2 breakpoint
+3. **จอแคบ: ทั้ง `.dt-container` (length/search/info/paging) เลื่อนแนวนอนไปพร้อมตาราง** แทนที่จะเลื่อน
+   แค่ตัวตารางเอง (`table`/`tbody`) — ยังไม่รู้ว่าเกิดจาก `f0ef3876` (serverSide + lazy/stale ของรอบ
+   ก่อนหน้า) หรือเป็นพฤติกรรมเดิมของ `initSharedDataTable()` shared ที่มีอยู่ก่อนแล้ว ต้อง bisect ก่อน
+   สรุปสาเหตุ

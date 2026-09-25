@@ -322,7 +322,7 @@ async function cell4() {
     // this loop, not this round's to change) -- too race-prone for a real network round trip, so the
     // History pane's own turn through this loop additionally waits for that specific response before
     // moving on, the same `page.waitForResponse` mechanism the round's own helper convention uses
-    // elsewhere. `auditListJson` is read after the loop, once, for the TINY-2 comparison below.
+    // elsewhere. `auditListJson` is read after the loop, once, for the DB-reference comparison below.
     let auditListJson = null;
     for (const p of PANES) {
         if (p.pane === '#run-history-pane') {
@@ -377,15 +377,22 @@ async function cell4() {
     // OWN response (`auditListJson`, captured via `page.waitForResponse` during the tab-open loop
     // above), not from a synchronous `page.info()` read after a bare re-click (`page.info()` on a
     // serverSide table only reflects whatever the LAST response said, and re-clicking an already-
-    // active tab fires no new request to wait on at all). `.get()`'s own `audit_log` key is untouched
-    // by Round B1 (D6) -- still the full, unpaged array -- so it remains the correct TINY-2 reference.
+    // active tab fires no new request to wait on at all).
+    // 2026-09-24, tiny round B: `.get()` stopped carrying `audit_log` at all this round (see
+    // docs/decisions/2026-09-24-tiny2-get-audit-log-removal.md) -- the reference this cell compares
+    // `recordsTotal` against now comes from tests/ui/audit_log_ref_cli.php (a direct DB read, same
+    // row shape/exclusion as PayrollRunModel::getAuditLog()) instead of `.get()`'s own response, same
+    // replacement o_history_dt.js's own cells made. Also asserts `.get()`'s response no longer
+    // carries the `audit_log` key at all, closing the loop on this round's own removal.
     const runPayload = payloads['payroll-run.get'] || {};
-    // TINY-2: reference value read from `.get()`'s own (still-full, unpaged) `audit_log`.
-    const logs = (runPayload.data || {}).audit_log;
-    measured('history', { recordsTotal: auditListJson ? auditListJson.recordsTotal : null, logs: Array.isArray(logs) ? logs.length : null });
-    // TINY-2: comparison is against that same `.get().audit_log` reference.
-    if (auditListJson && Array.isArray(logs)) check('history: audit-log.list\'s own recordsTotal matches .get()\'s audit_log length', auditListJson.recordsTotal === logs.length, auditListJson.recordsTotal + ' vs ' + logs.length);
-    else console.log('  NOTE  history: audit-log.list response or .get().audit_log unavailable -- cannot compare');
+    check('c4: payroll-run.get response no longer carries an audit_log key',
+        !Object.prototype.hasOwnProperty.call(runPayload.data || {}, 'audit_log'), Object.keys(runPayload.data || {}));
+    const logs = require('child_process')
+        .execFileSync('php', [require('path').join(__dirname, 'audit_log_ref_cli.php'), '1015'], { encoding: 'utf8' });
+    const refCount = JSON.parse(logs).count;
+    measured('history', { recordsTotal: auditListJson ? auditListJson.recordsTotal : null, refCount });
+    if (auditListJson) check('history: audit-log.list\'s own recordsTotal matches the DB reference count', auditListJson.recordsTotal === refCount, auditListJson.recordsTotal + ' vs ' + refCount);
+    else console.log('  NOTE  history: audit-log.list response unavailable -- cannot compare');
     const rep = ctx.report();
     measured('c4 report', rep);
     check('c4: nothing was written', rep.blockedWrites === 0, rep.blockedWritePaths.join(','));

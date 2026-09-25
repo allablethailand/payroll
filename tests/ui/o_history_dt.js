@@ -24,8 +24,8 @@
  * -- are independent of the old threshold bug and still hold). c1/c5/c10/c11/c16 keep the fixture.
  * N3 uses run 29685 (2 non-view_detail rows, round A's own COUNT -- genuinely under the threshold).
  *
- *   c1  fixture run -- recordsTotal matches api/payroll-run.get's own audit_log (TINY-2), view_detail
- *       never shows in the server's own page-1 response
+ *   c1  fixture run -- recordsTotal matches the DB reference (tests/ui/audit_log_ref_cli.php, tiny
+ *       round B), view_detail never shows in the server's own page-1 response
  *   c2  filter "การกระทำ" to a real action off run 1014's own data -- request sends the RAW code,
  *       dropdown shows the translated label, visible rows match
  *   c3  2 filters at once (การกระทำ + ผู้ทำ, both raw in the request) off a real co-occurring row,
@@ -42,7 +42,7 @@
  *   c7  device/IP column -- fixture (both empty) renders '-', run 752's real rows show ip + filter
  *       (request sends the raw ip, dropdown shows it unchanged -- no formatValue on this key)
  *   c8  run 752 (read-only) -- SERVER paging: request 2 carries `start=pageLength`, page 2 differs
- *       from page 1, default sort is performed_at DESC, recordsTotal matches the TINY-2 reference
+ *       from page 1, default sort is performed_at DESC, recordsTotal matches the DB reference
  *   c9  th -> en -> th -- headers/labels follow langData; a column filter set before the switch is
  *       CLEARED by it (B1's own new behaviour, closing the "invisible stale filter -> 0 rows" gap);
  *       request count across the switch is measured and reported, not assumed
@@ -466,35 +466,31 @@ function auditLogFilterBarState(page) {
         };
     });
 }
-function capturePayrollGetPayloads(page) {
-    const payloads = [];
-    page.on('response', async (res) => {
-        if (res.url().indexOf('payroll-run.get') === -1) return;
-        try { payloads.push(await res.json()); } catch (e) { /* not json */ }
-    });
-    return payloads;
-}
-// TINY-2 (spec item 2): `.get()`'s own `audit_log` is untouched by Round B1 (D6) -- still the full,
-// unpaged array -- so it stays the correct reference to compute expected values against.
-function lastAuditLog(payloads) {
-    const last = payloads[payloads.length - 1];
-    return (last && last.data && Array.isArray(last.data.audit_log)) ? last.data.audit_log : null;
+// 2026-09-24, tiny round B: `api/payroll-run.get` stopped carrying a full `run.audit_log` array
+// (see docs/decisions/2026-09-24-tiny2-get-audit-log-removal.md) -- every TINY-2 cell below used to
+// capture that response (`capturePayrollGetPayloads`) and read it back (`lastAuditLog`) as its own
+// ground-truth reference. That reference now comes from `tests/ui/audit_log_ref_cli.php` instead --
+// a direct DB read, same row shape/exclusion as `PayrollRunModel::getAuditLog()` -- never from the
+// `audit-log.list` endpoint under test itself (that would be a tautology, not a test). Kept the name
+// `auditLogRef` (not `lastAuditLog`) since it no longer reads anything "last" out of captured
+// responses -- it is a synchronous, one-shot CLI call per run id.
+const AUDIT_LOG_REF_CLI = path.join(__dirname, 'audit_log_ref_cli.php');
+function auditLogRef(runId) {
+    const out = execFileSync('php', [AUDIT_LOG_REF_CLI, String(runId)], { encoding: 'utf8' });
+    return JSON.parse(out).rows;
 }
 
 /* ---------------- c1 ---------------- */
 async function c1() {
-    console.log('\n[c1] fixture run, 1400 th light -- recordsTotal matches audit_log (TINY-2), view_detail never shows');
+    console.log('\n[c1] fixture run, 1400 th light -- recordsTotal matches the DB reference, view_detail never shows');
     const ctx = await openContext({ sessionId, width: 1400, height: 950, lang: 'th', blockPaths: WRITE_PATHS });
-    const payloads = capturePayrollGetPayloads(ctx.page);
     await gotoRun(ctx, fixtureRunToken, 'th');
     const listJson = await openHistoryTab(ctx.page);
     const state = await historyState(ctx.page);
-    const logs = lastAuditLog(payloads); // TINY-2
+    const logs = auditLogRef(fixtureId);
     measured('c1 state', state);
-    measured('c1 audit_log.length (TINY-2 reference)', logs ? logs.length : null);
-    // TINY-2: recordsTotal from the new endpoint vs .get()'s still-full audit_log.
-    if (logs) check('c1: recordsTotal === audit_log.length (TINY-2)', state.recordsTotal === logs.length, state.recordsTotal + ' vs ' + logs.length);
-    else note('c1: .get() payload not captured -- cannot run the TINY-2 comparison');
+    measured('c1 DB reference row count', logs.length);
+    check('c1: recordsTotal === DB reference row count', state.recordsTotal === logs.length, state.recordsTotal + ' vs ' + logs.length);
     check('c1: no view_detail row in the server\'s own page-1 response',
         Array.isArray(listJson && listJson.data) && listJson.data.every((r) => r.action !== 'view_detail'),
         JSON.stringify(((listJson && listJson.data) || []).map((r) => r.action)));
@@ -508,13 +504,12 @@ async function c1() {
 async function c2() {
     console.log('\n[c2] filter "การกระทำ" to a real action off run 1014 -- request raw, dropdown translated, rows match');
     const ctx = await openContext({ sessionId, width: 1400, height: 950, lang: 'th', blockPaths: WRITE_PATHS });
-    const payloads = capturePayrollGetPayloads(ctx.page);
     await gotoRun(ctx, RUN_1014_TOKEN, 'th');
     await openHistoryTab(ctx.page);
-    const logs = lastAuditLog(payloads) || []; // TINY-2
-    if (!logs.length) { note('c2 skipped -- run 1014 has no audit rows (TINY-2 reference empty)'); await closeAll(); return; }
+    const logs = auditLogRef(RUN_1014_ID);
+    if (!logs.length) { note('c2 skipped -- run 1014 has no audit rows (DB reference empty)'); await closeAll(); return; }
     const wantAction = logs[0].action; // a REAL action this run's own data actually has, never assumed
-    const expectedCount = logs.filter((l) => l.action === wantAction).length; // TINY-2
+    const expectedCount = logs.filter((l) => l.action === wantAction).length;
     const open = await openFilterPanel(ctx.page, 'audit_action');
     const items = await filterPanelItems(ctx.page);
     const wantLabel = await ctx.page.evaluate((a) => auditActionLabelInfoRd(a).label, wantAction);
@@ -530,9 +525,9 @@ async function c2() {
     check('c2: value sent to the server is the RAW action code, never the label', JSON.stringify(sentRaw) === JSON.stringify([wantAction]), JSON.stringify(sentRaw));
     const state = await historyState(ctx.page);
     measured('c2 state', Object.assign({ wantAction, wantLabel, expectedCount }, state));
-    check('c2: filtered recordsDisplay matches audit_log rows with this action (TINY-2)',
+    check('c2: filtered recordsDisplay matches DB reference rows with this action',
         state.recordsDisplay === expectedCount, state.recordsDisplay + ' vs ' + expectedCount);
-    check('c2: server response recordsFiltered agrees (TINY-2)', !!apply.json && apply.json.recordsFiltered === expectedCount, apply.json && apply.json.recordsFiltered);
+    check('c2: server response recordsFiltered agrees', !!apply.json && apply.json.recordsFiltered === expectedCount, apply.json && apply.json.recordsFiltered);
     const cellTexts = await ctx.page.$$eval('#tb_run_audit_log tbody tr td:nth-child(3)', (tds) => tds.map((td) => td.textContent.trim()));
     check('c2: every visible row shows the same translated label text', cellTexts.length > 0 && cellTexts.every((t) => t === wantLabel), JSON.stringify(cellTexts));
     const rep = ctx.report();
@@ -545,12 +540,11 @@ async function c2() {
 async function c3() {
     console.log('\n[c3] 2 filters at once (การกระทำ + ผู้ทำ, both raw in the request) off a real co-occurring row, then clear both');
     const ctx = await openContext({ sessionId, width: 1400, height: 950, lang: 'th', blockPaths: WRITE_PATHS });
-    const payloads = capturePayrollGetPayloads(ctx.page);
     await gotoRun(ctx, RUN_1014_TOKEN, 'th');
     await openHistoryTab(ctx.page);
-    const logs = lastAuditLog(payloads) || []; // TINY-2
+    const logs = auditLogRef(RUN_1014_ID);
     if (!logs.length) { note('c3 skipped -- run 1014 has no audit rows'); await closeAll(); return; }
-    const fullCount = logs.length; // TINY-2
+    const fullCount = logs.length;
     // 2026-09-24, B2b round 1 real bug found and fixed: `logs[0]` can be a system-attributed row
     // (`performed_by` NULL -- no human actor, e.g. a cron/setup-script action) --
     // `personDisplayNameRd()` (detail.js) returns the truthy placeholder `'-'` for that case, not a
@@ -591,15 +585,15 @@ async function c3() {
         check('c3: actor value sent to server is the raw display name (identity -- no formatValue on this key)',
             JSON.stringify(sentActor) === JSON.stringify([wantActorName]), JSON.stringify(sentActor));
     }
-    const expectedBoth = logs.filter((l) => l.action === wantAction && l.performed_by === performerId).length; // TINY-2
+    const expectedBoth = logs.filter((l) => l.action === wantAction && l.performed_by === performerId).length;
     let state = await historyState(ctx.page);
     measured('c3 state (2 filters)', Object.assign({ expectedBoth }, state));
-    check('c3: 2 filters together match the same subset (TINY-2)', state.recordsDisplay === expectedBoth, state.recordsDisplay + ' vs ' + expectedBoth);
+    check('c3: 2 filters together match the same subset', state.recordsDisplay === expectedBoth, state.recordsDisplay + ' vs ' + expectedBoth);
     await clearColumnFilter(ctx.page, 'audit_action');
     await clearColumnFilter(ctx.page, 'audit_performed_by');
     state = await historyState(ctx.page);
     measured('c3 state (cleared)', state);
-    check('c3: clearing both filters restores the full count (TINY-2)', state.recordsDisplay === fullCount, state.recordsDisplay + ' vs ' + fullCount);
+    check('c3: clearing both filters restores the full count', state.recordsDisplay === fullCount, state.recordsDisplay + ' vs ' + fullCount);
     const rep = ctx.report();
     measured('c3 report', rep);
     check('c3: nothing was written', rep.blockedWrites === 0, rep.blockedWritePaths.join(','));
@@ -737,7 +731,6 @@ async function c6() {
 async function c7() {
     console.log('\n[c7] device/IP -- null-ip/ua rows render "-", run 752\'s real rows show ip (raw, unfiltered by formatValue)');
     const ctx = await openContext({ sessionId, width: 1400, height: 950, lang: 'th', blockPaths: WRITE_PATHS });
-    const payloads0 = capturePayrollGetPayloads(ctx.page);
     await gotoRun(ctx, fixtureRunToken, 'th');
     await openHistoryTab(ctx.page);
     const fixtureCells = await ctx.page.$$eval('#tb_run_audit_log tbody tr td:nth-child(6)', (tds) => tds.map((td) => td.textContent.trim()));
@@ -747,19 +740,19 @@ async function c7() {
     // (m3e2a..h_history_table), several of which perform real browser-driven writes on it, each
     // logging a real Playwright ip/user_agent. The true, mode-independent invariant this cell means
     // to prove is "a row with no ip/ua renders '-'", not "this run happens to have none" -- checked
-    // directly against the TINY-2 reference instead of assuming the run's own composition. Page 1's
+    // directly against the DB reference instead of assuming the run's own composition. Page 1's
     // own default order is `performed_at DESC` (same as the server default) with the rows this page
     // actually holds capped at bodyRowCount.
     // Mirrors the server's own default order exactly (`performed_at DESC, id DESC` --
     // PayrollRunModel::getAuditLogPaged()) so row `i` here really is DOM row `i` on page 1, including
     // ties (a plain performed_at-only sort would leave same-timestamp rows in an arbitrary/unstable
     // order, easy to hit when several rows land in the same second).
-    const logs0 = (lastAuditLog(payloads0) || []).slice().sort((a, b) =>
+    const logs0 = auditLogRef(fixtureId).slice().sort((a, b) =>
         a.performed_at !== b.performed_at ? (a.performed_at < b.performed_at ? 1 : -1) : (b.id - a.id));
     const page1Ref = logs0.slice(0, fixtureCells.length);
     measured('c7 fixture device/ip cells', fixtureCells);
-    measured('c7 fixture reference null-ip/ua count on page 1 (TINY-2)', page1Ref.filter((r) => !r.ip_address && !r.user_agent).length);
-    check('c7: every reference row with no ip/ua renders "-" (TINY-2)',
+    measured('c7 fixture reference null-ip/ua count on page 1', page1Ref.filter((r) => !r.ip_address && !r.user_agent).length);
+    check('c7: every reference row with no ip/ua renders "-"',
         fixtureCells.length > 0 && page1Ref.every((r, i) => (!r.ip_address && !r.user_agent) === (fixtureCells[i] === '-')),
         JSON.stringify({ fixtureCells, nullRows: page1Ref.map((r) => !r.ip_address && !r.user_agent) }));
     await closeAll();
@@ -767,10 +760,9 @@ async function c7() {
     // run 752: real ip diversity the fixture cannot offer -- unchanged reason from prior rounds,
     // independent of the (now-resolved) threshold bug.
     const ctx2 = await openContext({ sessionId, width: 1400, height: 950, lang: 'th', blockPaths: WRITE_PATHS });
-    const payloads2 = capturePayrollGetPayloads(ctx2.page);
     await gotoRun(ctx2, RUN_752_TOKEN, 'th');
     await openHistoryTab(ctx2.page);
-    const logs = lastAuditLog(payloads2) || []; // TINY-2
+    const logs = auditLogRef(RUN_752_ID);
     const withIp = logs.filter((l) => l.ip_address);
     const realCells = await ctx2.page.$$eval('#tb_run_audit_log tbody tr td:nth-child(6)', (tds) => tds.map((td) => td.textContent.trim()));
     measured('c7 run 752 device/ip cells', { withIpCount: withIp.length, sample: realCells.slice(0, 3) });
@@ -778,7 +770,7 @@ async function c7() {
         const distinctIps = Array.from(new Set(withIp.map((l) => l.ip_address)));
         measured('c7 distinct real ip values in run 752', distinctIps);
         const ip = distinctIps[0];
-        const expected = logs.filter((l) => l.ip_address === ip).length; // TINY-2
+        const expected = logs.filter((l) => l.ip_address === ip).length;
         const open = await openFilterPanel(ctx2.page, 'audit_device_ip');
         const items = await filterPanelItems(ctx2.page);
         const matchingItem = items.find((it) => it.raw === ip);
@@ -790,7 +782,7 @@ async function c7() {
             check('c7: value sent to server is the raw ip', JSON.stringify(sentIp) === JSON.stringify([ip]), JSON.stringify(sentIp));
             const state = await historyState(ctx2.page);
             measured('c7 filtered by ip=' + ip, state);
-            check('c7: filtering by an ip matches the rows carrying it (TINY-2)', state.recordsDisplay === expected, state.recordsDisplay + ' vs ' + expected);
+            check('c7: filtering by an ip matches the rows carrying it', state.recordsDisplay === expected, state.recordsDisplay + ' vs ' + expected);
         } else {
             // Only ONE distinct non-empty ip on offer -- checking it is indistinguishable from
             // "select all" under this component's own Excel semantics (checked === total -> stored
@@ -817,19 +809,18 @@ async function c7() {
 async function c8() {
     console.log('\n[c8] run 752 (read-only) -- SERVER paging: start=pageLength on page 2, page 2 differs, sort desc');
     const ctx = await openContext({ sessionId, width: 1400, height: 950, lang: 'th', blockPaths: WRITE_PATHS });
-    const payloads = capturePayrollGetPayloads(ctx.page);
     await gotoRun(ctx, RUN_752_TOKEN, 'th');
     const page1Json = await openHistoryTab(ctx.page);
-    const logs = lastAuditLog(payloads) || []; // TINY-2
+    const logs = auditLogRef(RUN_752_ID);
     const state1 = await historyState(ctx.page);
-    measured('c8 page 1 state', Object.assign({ serverLogCount: logs.length }, state1));
-    check('c8: recordsTotal matches audit_log.length (TINY-2)', state1.recordsTotal === logs.length, state1.recordsTotal + ' vs ' + logs.length);
+    measured('c8 page 1 state', Object.assign({ dbRefCount: logs.length }, state1));
+    check('c8: recordsTotal matches DB reference row count', state1.recordsTotal === logs.length, state1.recordsTotal + ' vs ' + logs.length);
     check('c8: page 1 body row count equals the page length', state1.bodyRowCount === state1.length, state1.bodyRowCount + ' vs ' + state1.length);
-    check('c8: server response for page 1 also agrees on recordsTotal (TINY-2)', !!page1Json && page1Json.recordsTotal === logs.length, page1Json && page1Json.recordsTotal);
+    check('c8: server response for page 1 also agrees on recordsTotal', !!page1Json && page1Json.recordsTotal === logs.length, page1Json && page1Json.recordsTotal);
     const page1Times = await ctx.page.$$eval('#tb_run_audit_log tbody tr td:nth-child(1)', (tds) => tds.map((td) => td.textContent.trim()));
     const maxServerTime = logs.slice().sort((a, b) => (a.performed_at < b.performed_at ? 1 : -1))[0].performed_at;
     measured('c8 page 1 first row time cell / server max performed_at', { firstCell: page1Times[0], maxServerTime });
-    check('c8: default sort is performed_at DESC (row 1 = the newest, TINY-2)', state1.firstRowTime === maxServerTime, state1.firstRowTime + ' vs ' + maxServerTime);
+    check('c8: default sort is performed_at DESC (row 1 = the newest)', state1.firstRowTime === maxServerTime, state1.firstRowTime + ' vs ' + maxServerTime);
     const page2 = await waitAuditList(ctx.page, () => ctx.page.evaluate(() => jQuery('#tb_run_audit_log').DataTable().page('next').draw('page')));
     const startParam = auditRequestParams(page2.request).get('start');
     measured('c8 page 2 request start param', startParam);
@@ -847,10 +838,9 @@ async function c8() {
 async function c9() {
     console.log('\n[c9] th -> en -> th -- labels follow langData; a stale column filter is CLEARED by the switch (B1)');
     const ctx = await openContext({ sessionId, width: 1400, height: 950, lang: 'th', blockPaths: WRITE_PATHS });
-    const payloads = capturePayrollGetPayloads(ctx.page);
     await gotoRun(ctx, RUN_1014_TOKEN, 'th');
     await openHistoryTab(ctx.page);
-    const logs = lastAuditLog(payloads) || []; // TINY-2
+    const logs = auditLogRef(RUN_1014_ID);
     const before = await ctx.page.evaluate(() => ({
         headers: Array.from(document.querySelectorAll('#tb_run_audit_log thead th')).map((th) => th.textContent.trim()),
         actionCell: (document.querySelector('#tb_run_audit_log tbody tr td:nth-child(3)') || {}).textContent,
@@ -861,10 +851,10 @@ async function c9() {
     let expectedNarrowed = 0;
     if (logs.length) {
         wantAction = logs[0].action;
-        expectedNarrowed = logs.filter((l) => l.action === wantAction).length; // TINY-2
+        expectedNarrowed = logs.filter((l) => l.action === wantAction).length;
         await applyColumnFilter(ctx.page, 'audit_action', [wantAction]);
         const narrowed = await historyState(ctx.page);
-        check('c9: column filter set before the switch really narrows (TINY-2, sanity)', narrowed.recordsDisplay === expectedNarrowed, narrowed.recordsDisplay + ' vs ' + expectedNarrowed);
+        check('c9: column filter set before the switch really narrows (sanity)', narrowed.recordsDisplay === expectedNarrowed, narrowed.recordsDisplay + ' vs ' + expectedNarrowed);
         filterSetBeforeSwitch = true;
     } else {
         note('c9: run 1014 has no audit rows -- skipping the stale-filter half, headers/labels half still runs');
@@ -1043,23 +1033,22 @@ async function c11() {
 async function c12() {
     console.log('\n[c12] date range on run 1014 -- ISO date_from/date_to in the request, inclusive both edges, matches reference');
     const ctx = await openContext({ sessionId, width: 1400, height: 950, lang: 'th', blockPaths: WRITE_PATHS });
-    const payloads = capturePayrollGetPayloads(ctx.page);
     await gotoRun(ctx, RUN_1014_TOKEN, 'th');
     await openHistoryTab(ctx.page);
-    const logs = lastAuditLog(payloads) || []; // TINY-2
+    const logs = auditLogRef(RUN_1014_ID);
     const dayCounts = {};
     logs.forEach((l) => { const d = String(l.performed_at).slice(0, 10); dayCounts[d] = (dayCounts[d] || 0) + 1; });
     const days = Object.keys(dayCounts);
     if (!days.length) { note('c12 skipped -- run 1014 has no audit rows'); await closeAll(); return; }
     const pickDay = days[0];
-    const expectedCount = dayCounts[pickDay]; // TINY-2
+    const expectedCount = dayCounts[pickDay];
     const r1 = await setAuditLogDate(ctx.page, 'auditLogDateFrom', toDisplayDateFromIso(pickDay));
     const r2 = await setAuditLogDate(ctx.page, 'auditLogDateTo', toDisplayDateFromIso(pickDay));
     check('c12: request carries date_from as ISO (inclusive lower edge)', auditRequestParams(r1.request).get('date_from') === pickDay, auditRequestParams(r1.request).get('date_from'));
     check('c12: request carries date_to as ISO (inclusive upper edge)', auditRequestParams(r2.request).get('date_to') === pickDay, auditRequestParams(r2.request).get('date_to'));
     const state = await historyState(ctx.page);
     measured('c12 state (single day)', Object.assign({ pickDay, expectedCount }, state));
-    check('c12: recordsDisplay matches rows on that exact day (TINY-2)', state.recordsDisplay === expectedCount, state.recordsDisplay + ' vs ' + expectedCount);
+    check('c12: recordsDisplay matches rows on that exact day', state.recordsDisplay === expectedCount, state.recordsDisplay + ' vs ' + expectedCount);
     // A day genuinely absent from run 1014's own real data (computed from the reference, not assumed).
     const absentDay = '2000-01-01';
     check('c12: the chosen "absent" day really is absent from the reference', !dayCounts[absentDay], dayCounts[absentDay]);
@@ -1129,12 +1118,11 @@ async function c13() {
 async function c14() {
     console.log('\n[c14] Clear Filter -- action column filter + date range + search box all clear in one click; request after has none of them');
     const ctx = await openContext({ sessionId, width: 1400, height: 950, lang: 'th', blockPaths: WRITE_PATHS });
-    const payloads = capturePayrollGetPayloads(ctx.page);
     await gotoRun(ctx, RUN_1014_TOKEN, 'th');
     await openHistoryTab(ctx.page);
-    const logs = lastAuditLog(payloads) || []; // TINY-2
+    const logs = auditLogRef(RUN_1014_ID);
     if (!logs.length) { note('c14 skipped -- run 1014 has no audit rows'); await closeAll(); return; }
-    const fullCount = logs.length; // TINY-2
+    const fullCount = logs.length;
     const day = String(logs[0].performed_at).slice(0, 10);
     const displayDay = toDisplayDateFromIso(day);
     const fromFieldLabel = await ctx.page.evaluate(() => document.querySelector('label[for="auditLogDateFrom"]').textContent.trim());
@@ -1151,11 +1139,11 @@ async function c14() {
     await setAuditLogDate(ctx.page, 'auditLogDateTo', displayDay);
     barState = await auditLogFilterBarState(ctx.page);
     const narrowedState = await historyState(ctx.page);
-    const expectedNarrowed = logs.filter((l) => String(l.performed_at).slice(0, 10) === day).length; // TINY-2
+    const expectedNarrowed = logs.filter((l) => String(l.performed_at).slice(0, 10) === day).length;
     measured('c14 bar state (2 fields set, same day)', Object.assign({ expectedNarrowed }, barState, narrowedState));
     check('c14: header shows (2)', barState.countVisible && barState.count === '2', JSON.stringify(barState));
     check('c14: 2 chips now', barState.chips.length === 2, JSON.stringify(barState.chips));
-    check('c14: narrowed to exactly that day\'s own rows (TINY-2)', narrowedState.recordsDisplay === expectedNarrowed, narrowedState.recordsDisplay + ' vs ' + expectedNarrowed);
+    check('c14: narrowed to exactly that day\'s own rows', narrowedState.recordsDisplay === expectedNarrowed, narrowedState.recordsDisplay + ' vs ' + expectedNarrowed);
 
     await waitAuditList(ctx.page, () => ctx.page.evaluate(() => {
         const chip = Array.from(document.querySelectorAll('#auditLogFilterBar .filter-bar-chip'))
@@ -1164,13 +1152,13 @@ async function c14() {
     }));
     barState = await auditLogFilterBarState(ctx.page);
     const afterRemoveState = await historyState(ctx.page);
-    const expectedToOnly = logs.filter((l) => String(l.performed_at).slice(0, 10) <= day).length; // TINY-2
+    const expectedToOnly = logs.filter((l) => String(l.performed_at).slice(0, 10) <= day).length;
     const fromFieldNowEmpty = (await ctx.page.evaluate(() => $('#auditLogDateFrom').val())) === '';
     measured('c14 bar state (after removing "From" chip)', Object.assign({ expectedToOnly, fromFieldNowEmpty }, barState, afterRemoveState));
     check('c14: header back to (1) after removing one chip', barState.countVisible && barState.count === '1', JSON.stringify(barState));
     check('c14: only the "To" chip remains', barState.chips.length === 1 && barState.chips[0].target === 'auditLogDateTo', JSON.stringify(barState.chips));
     check('c14: #auditLogDateFrom itself is empty after its own chip ×', fromFieldNowEmpty, fromFieldNowEmpty);
-    check('c14: recordsDisplay widens back out once the lower bound is gone (TINY-2)', afterRemoveState.recordsDisplay === expectedToOnly, afterRemoveState.recordsDisplay + ' vs ' + expectedToOnly);
+    check('c14: recordsDisplay widens back out once the lower bound is gone', afterRemoveState.recordsDisplay === expectedToOnly, afterRemoveState.recordsDisplay + ' vs ' + expectedToOnly);
 
     // Column filter + search + the remaining date field, all at once -- then the shared Clear button.
     const wantAction = logs[0].action;
@@ -1214,7 +1202,7 @@ async function c14() {
     const searchEmpty = await ctx.page.evaluate(() => jQuery('#tb_run_audit_log').DataTable().search() === '');
     const columnFiltersActive = await ctx.page.evaluate(() => hasActiveColumnFilters(jQuery('#tb_run_audit_log').DataTable()));
     measured('c14 state after Clear Filter', Object.assign({ fullCount, fieldsEmpty, searchEmpty, columnFiltersActive }, finalState, barState));
-    check('c14: recordsDisplay back to full count (TINY-2)', finalState.recordsDisplay === fullCount, finalState.recordsDisplay + ' vs ' + fullCount);
+    check('c14: recordsDisplay back to full count', finalState.recordsDisplay === fullCount, finalState.recordsDisplay + ' vs ' + fullCount);
     check('c14: both date fields empty', fieldsEmpty, fieldsEmpty);
     check('c14: search box empty', searchEmpty, searchEmpty);
     check('c14: no column filter left checked', columnFiltersActive === false, columnFiltersActive);
@@ -1230,10 +1218,9 @@ async function c14() {
 async function c15() {
     console.log('\n[c15] #auditLogDetailModal -- real click opens the RIGHT row; edge-case rows brought onto page 1, render correctly; no stacked .show');
     const ctx = await openContext({ sessionId, width: 1400, height: 950, lang: 'th', blockPaths: WRITE_PATHS });
-    const payloads = capturePayrollGetPayloads(ctx.page);
     await gotoRun(ctx, RUN_752_TOKEN, 'th');
     await openHistoryTab(ctx.page);
-    const logs = lastAuditLog(payloads) || []; // TINY-2, full reference set (unpaged)
+    const logs = auditLogRef(RUN_752_ID); // full reference set (unpaged)
     if (!logs.length) { note('c15 skipped -- run 752 has no audit rows'); await closeAll(); return; }
 
     // A REAL click on page 1's own first row -- proves dt.row($tr).data() wiring against WHATEVER is
@@ -1638,7 +1625,6 @@ async function n2() {
 async function n3() {
     console.log('\n[N3] search box -- shown past the threshold (1014), hidden under it (29685)');
     const ctx = await openContext({ sessionId, width: 1400, height: 950, lang: 'th', blockPaths: WRITE_PATHS });
-    const payloads = capturePayrollGetPayloads(ctx.page);
     await gotoRun(ctx, RUN_1014_TOKEN, 'th');
     const json1014 = await openHistoryTab(ctx.page);
     const visible1014 = await searchBoxVisible(ctx.page);
@@ -1747,10 +1733,9 @@ async function n5() {
 async function n6() {
     console.log('\n[N6] column-values scope -- a set date range is forwarded into a DIFFERENT column\'s own column-values request');
     const ctx = await openContext({ sessionId, width: 1400, height: 950, lang: 'th', blockPaths: WRITE_PATHS });
-    const payloads = capturePayrollGetPayloads(ctx.page);
     await gotoRun(ctx, RUN_1014_TOKEN, 'th');
     await openHistoryTab(ctx.page);
-    const logs = lastAuditLog(payloads) || [];
+    const logs = auditLogRef(RUN_1014_ID);
     if (!logs.length) { note('N6 skipped -- run 1014 has no audit rows'); await closeAll(); return; }
     const day = String(logs[0].performed_at).slice(0, 10);
     await setAuditLogDate(ctx.page, 'auditLogDateFrom', toDisplayDateFromIso(day));
