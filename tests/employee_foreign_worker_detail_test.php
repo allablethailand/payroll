@@ -157,7 +157,7 @@ try {
     check('province survives untouched', $afterMinimal['province'] ?? null, 'Mandalay');
 
     echo "\n" . ($failures === 0 ? "ALL TESTS PASSED (transaction rolled back, no data persisted)" : "SOME TESTS FAILED") . "\n";
-    echo "{$passes} passed, {$failures} failed.\n";
+    echo "\nPassed: {$passes}, Failed: {$failures}\n";
 } finally {
     $pdo->rollBack();
 }

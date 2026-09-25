@@ -1,0 +1,319 @@
+/* design:clean -- docs/design/rules.md §12, Round 2 item 8. Passes scripts/check-design.php with 0
+ * hits (rule #1's hex check is the one rule that deliberately does not apply to this file at all --
+ * it's the canonical SOURCE of those hex values, that's the entire point of this file existing). */
+/* Design tokens -- Origami Payroll Phase Design, Round 2 item 1 (docs/design/rules.md §1).
+ * Single source of color/spacing/type/shape for the whole app. Loaded before style.css via an
+ * @import at the top of style.css (not a <link> in layout/header.php -- round 2's own scope is
+ * limited to tokens.css/style.css/app.js/format-helpers.js/partials/status_map.php/components.php/
+ * lint script, not real page/layout templates; @import satisfies "โหลดก่อน style.css ทุกหน้า"
+ * without touching header.php at all). No hex/rgb literal anywhere else in the app is allowed to be
+ * NEW from this point forward (existing ones are round 4's migration job, tracked in docs/design/audit.md). */
+:root {
+  /* brand -- ใช้ได้ 3 ที่เท่านั้น: ปุ่มหลัก, tab ที่เลือก, step ปัจจุบัน (+ focus ring ตาม §3) */
+  --c-primary: #FF9900;
+  --c-primary-hover: #E68A00;
+  --c-primary-soft: #FFF4E0;        /* พื้นหลังอ่อนของ step/tab ปัจจุบัน เท่านั้น -- เคยลองขยายไปใช้กับแถว
+                                        notification ที่ยังไม่อ่านด้วย (2026-09-13, item 6d) แต่ถอนกลับ
+                                        วันเดียวกัน (อ่านดูเหลืองไป) — ตัดพื้นหลัง unread ออกทั้งหมดแทน */
+
+  /* neutral -- ทุกอย่างที่ไม่ใช่ brand/status */
+  --c-text: #1F2328;
+  --c-text-muted: #6B7280;
+  --c-text-faint: #9CA3AF;
+  --c-border: #E5E7EB;
+  --c-border-strong: #D1D5DB;
+  --c-bg: #FFFFFF;
+  --c-bg-rgb: 255, 255, 255;        /* 2026-09-14, page-loader backdrop -- mechanical RGB-triplet
+                                        decomposition of --c-bg itself (§12 lint rule 1's own
+                                        --bs-*-rgb exemption, same technique, just for this app's
+                                        own token instead of a Bootstrap one) -- needed because
+                                        `rgba()` can't take a hex custom property directly, and the
+                                        backdrop needs partial alpha (.85) while the ring/logo/text
+                                        drawn on top of it stay fully opaque -- a plain opacity on
+                                        the whole overlay would fade those out too. */
+  --c-bg-subtle: #F7F8FA;           /* แถบหัวตาราง, filter bar, พื้น modal footer */
+  --c-bg-hover: #F1F3F5;
+  --c-bg-hover-rgb: 241, 243, 245;  /* 2026-09-14, table row hover -- mechanical RGB-triplet
+                                        decomposition of --c-bg-hover itself, same exemption/
+                                        technique as --c-bg-rgb above -- needed because DataTables'
+                                        own bs5 CSS reads its row-hover box-shadow color from an
+                                        RGB-triplet variable (--dt-row-hover, rgba(var(...), .075)),
+                                        not a hex custom property. */
+
+  /* status -- ใช้เฉพาะ "สถานะที่ผู้ใช้ต้องตัดสินใจ/ระวัง" ไม่ใช้ตกแต่ง */
+  --c-danger: #D92D20;  --c-danger-soft: #FEE4E2;
+  --c-warning: #B54708; --c-warning-soft: #FEF0C7;
+  --c-success: #067647; --c-success-soft: #DCFAE6;
+  --c-info: #6B7280;    --c-info-soft: #F1F3F5;   /* "info" = เทา ไม่ใช่ฟ้า */
+
+  /* Decision-set solid buttons only (§4's documented exception, .btn-decision-*, 2026-09-13) --
+     NOT used anywhere else --c-success/-warning/-danger already are (badge/icon/callout border stay
+     on the plain token). 2 things a solid-fill button needs that the plain status token alone
+     doesn't give: (1) which text color actually READS on top of that fill, (2) a hover shade.
+     -on-fill: computed per THEME, not copy-pasted from the other theme's own value -- light mode's
+     3 status colors are all dark enough for white text (contrast ratios 4.83-5.78, real numbers
+     checked, not eyeballed), but dark mode's are the OPPOSITE (light accent colors meant for text-on-
+     dark-bg use, not fill-with-white-text use) -- white-on-dark-mode-warning is 1.86:1, white-on-
+     dark-mode-success is 1.74:1, white-on-dark-mode-danger is 2.79:1, ALL fail WCAG AA's 4.5:1 (found
+     while checking warning specifically as asked; success/danger turned out to have the exact same
+     problem, so fixed consistently rather than leaving 2 of 3 known-broken). Dark mode's own
+     `--c-text` is NOT the right substitute (it resolves to #E6E8EB, near-white, in dark mode --
+     using it literally would leave contrast just as broken) -- the dark value below is light mode's
+     own --c-text (#1F2328, genuinely dark) instead, verified 5.67-9.06:1 against all 3 dark-mode fills.
+     -hover: literal -8% (each RGB channel × 0.92, "เข้มขึ้น 8%") computed per theme's own base color --
+     darkening ALWAYS (not the lighter-on-hover convention --c-primary-hover uses in dark mode) since
+     that was the literal, explicit instruction here, not inferred from --c-primary's own pattern.
+
+     REVISED (2026-09-13, item 3a "เก็บตก" item 3, then corrected again same-day): `.btn-decision-
+     warning`'s fill switched from the plain `--c-warning` token to a NEW `--c-warning-fill` --
+     `--c-warning` itself (#B54708 light / #F5B14C dark) was tuned for TEXT/border/badge use, not a
+     solid-fill-with-readable-text button. FIRST fill value tried, #F5B400 (a bright yellow), needed
+     DARK text on top in both themes to pass 4.5:1 -- REPLACED with a darker amber, #D97706 (light) /
+     #C26A05 (dark), specifically so WHITE text (bold 600, matching all 3 `.btn-decision-*` buttons
+     uniformly, not just success/danger) passes WCAG's bold/large-text threshold (3:1, not the regular-
+     text 4.5:1): white on #D97706 measures 3.19:1, white on #C26A05 measures 3.92:1, both real numbers
+     checked, not eyeballed -- verified ≥3:1 as instructed. `--c-warning-on-fill` is `#fff` in BOTH
+     themes now, matching `--c-success-on-fill`'s own light-mode value.
+     `--c-success-on-fill`/`--c-danger-on-fill` are DELIBERATELY left AS THEY WERE (light `#fff`, dark
+     `#1F2328`) -- NOT flipped to white-in-dark-mode-too despite the "ทั้ง 3 เป็นขาวเหมือนกัน" (all 3
+     white, the same) instruction reading as if it wanted every theme uniform: white text on THEIR
+     dark-mode fills (`--c-success: #4ADE80` / `--c-danger: #F97066`, unchanged, not retuned to a
+     darker shade the way warning's fill just was) measures only 1.74:1/2.79:1 -- both still fail even
+     the RELAXED 3:1 bold-text threshold this same instruction just established for warning, a real
+     regression from the already-fixed 5.67-9.06:1 dark text currently gives them. Flagged rather than
+     silently applied -- if uniform white in dark mode across all 3 is genuinely wanted, success/danger
+     would need their OWN darker `-fill` values (the same treatment just given to warning), not just a
+     text-color flip on their current fill.
+     `--c-success-fill`/`--c-danger-fill` are pure ALIASES of `--c-success`/`--c-danger` (`var()`
+     indirection -- resolves per-theme automatically, no separate dark-mode redeclaration needed) added
+     purely for NAMING SYMMETRY across all 3 `.btn-decision-*` fills, their actual computed values never
+     diverge from the base status token (still true, unaffected by warning's own fill becoming a real,
+     divergent color). Bold 600 is now REQUIRED on `.btn-decision-*` (style.css) for the 3:1 threshold
+     to legitimately apply to warning at all -- WCAG's relaxed bold-text minimum only holds when the
+     text actually IS bold; this was the trigger for adding `font-weight:600` there (see its own
+     comment), not a separate, unrelated styling choice. */
+  /* ---- Layering (2026-09-16) -------------------------------------------------------------------
+     One ordered scale for everything that can float over the page, so "which of these two is on top"
+     is answered here instead of at each component. Values start from Bootstrap's own modal band
+     (1050/1055) because that is what the bundled bootstrap.css already ships; everything above it is
+     ours. Reserved bands, not a dense sequence -- a stacked modal needs room between itself and the
+     layer above it.
+       1045  ceiling for the PAGE itself (navbar, sticky table columns, help button, a select2 or
+             dropdown opened on the page) -- everything here must go UNDER a backdrop
+       1050  modal backdrop
+       1055  modal
+       1075  backdrop of a modal stacked on another modal
+       1085  that stacked modal
+       1090  overlay opened from INSIDE a modal (popover, select2, dropdown) -- must clear a stacked
+             modal, which is why one flat value for "select2" cannot serve both this and the page
+       1100  SweetAlert dialog  (must clear EVERY modal: it is what a modal asks a question with)
+       1110  SweetAlert toast   (must clear the dialog: a save inside a dialog-driven flow still
+                                 has to announce itself)
+     Real bug this fixed: `.swal2-container` shipped at 1060, which cleared a single modal (1055) by
+     5 and was BELOW a stacked one (1085) -- a confirm opened from the nested history modal rendered
+     underneath it, unreadable and unclickable (hit-tested, not eyeballed). */
+  --z-page: 1045;
+  --z-modal-backdrop: 1050;
+  --z-modal: 1055;
+  --z-modal-nested-backdrop: 1075;
+  --z-modal-nested: 1085;
+  --z-modal-overlay: 1090;
+  --z-swal: 1100;
+  --z-toast: 1110;
+
+  --c-success-on-fill: #fff;
+  --c-warning-on-fill: #fff;
+  --c-danger-on-fill: #fff;
+  --c-success-hover: #066D41;
+  --c-warning-hover: #A74107;
+  --c-danger-hover: #C8291D;
+  --c-success-fill: var(--c-success);
+  --c-warning-fill: #D97706;
+  --c-danger-fill: var(--c-danger);
+  --c-warning-fill-hover: #C86D06;
+  /* 2026-09-14, Round 3 Phase B -- 4th consumer of this "-fill/-on-fill" pattern, not a new one:
+     the Comments modal's tag picker (docs/design/rules.md §10/detail.js) needs a solid/selected
+     state for its "no tag" chip (tone 'neutral' in status_map.php), same "selected = filled tone"
+     interaction the 3 real tag tones already get by reusing THEIR OWN -fill/-on-fill pair above.
+     Alias of --c-text-muted (same "-fill = alias of the plain status token" shape success/danger
+     already use) -- light mode: white text on #6B7280 measures 4.84:1 (passes full AA, no bold
+     needed on THIS tone specifically, though the picker applies 600 to all 4 uniformly anyway to
+     match .btn-decision-*'s own "bold on all buttons uniformly" precedent). Dark mode's own
+     --c-text-muted (#9AA3AE) is too light for white text (2.55:1, fails even the relaxed 3:1 bold
+     threshold) -- same exact problem success/danger already had in dark mode, fixed the same way
+     (flip -on-fill to dark text instead of retuning the fill color): dark #1F2328 text on #9AA3AE
+     measures 6.19:1. */
+  --c-neutral-fill: var(--c-text-muted);
+  --c-neutral-on-fill: #fff;
+
+  /* type */
+  --font-sans: "Sarabun", system-ui, sans-serif;   /* ฟอนต์เดียวทั้งระบบ -- ตรงกับ layout/header.php's
+                                                       existing Google Fonts <link> อยู่แล้ว (round 1
+                                                       audit confirmed, ไม่ต้องแก้ header.php) */
+  --font-num: var(--font-sans);     /* ตัวเลข: เปิด font-variant-numeric: tabular-nums เสมอ */
+  /* 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "token --fs-* เปลี่ยนเป็นหน่วย rem ที่
+     อิง html font-size...เพื่อให้ทั้งหน้าย่อ/ขยายตามพร้อมกัน" -- real gap found: these tokens were
+     still plain `px` even though this app already has an established, working per-user Font Size
+     setting (S/M/L, html[data-font-size], style.css's own 2026-08-29 comment on `html, body { font-size:
+     12px }`) that ~65 OTHER hardcoded custom-component font-size rules were already converted to `rem`
+     for back then -- these §1 tokens were introduced LATER (Phase Design Round 2/3) and were never
+     folded into that same conversion, so anything sized via `var(--fs-*)` silently never scaled with
+     that setting at all. Converted using the SAME formula that earlier pass established (`px / 12`,
+     12px being the root's own "Medium"/default size) so Medium stays byte-identical to before (1rem ×
+     12px = 12px, matching --fs-xs's old literal value exactly) while Small/Large (10px/14px root) now
+     genuinely scale every one of these token consumers too, automatically, with no per-component
+     changes needed anywhere they're already used via var(). */
+  --fs-xs: 1rem; --fs-sm: 1.0833rem; --fs-base: 1.1667rem; --fs-md: 1.3333rem; --fs-lg: 1.6667rem; --fs-xl: 2rem;
+  --lh: 1.5;
+
+  /* space (4px grid) */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
+
+  /* shape */
+  --radius: 6px;                    /* ปุ่ม/input/การ์ดในหน้า */
+  --radius-lg: 12px;                /* 2026-09-13, notification card redesign -- surface ที่ "ลอย"
+                                        เหนือหน้า (dropdown/popover/toast/Swal popup + การ์ดต่อรายการ
+                                        ข้างในนั้น) มุมมนกว่า --radius ปกติเจตนา ให้ดูนุ่มกว่าองค์ประกอบ
+                                        ที่ฝังอยู่ในหน้าโดยตรง -- ค่าเดิม 10px ตอนเพิ่ม token นี้ครั้งแรก
+                                        ปรับเป็น 12px วันเดียวกันหลัง feedback "ยังแข็ง" (การ์ดต้องการ
+                                        ความมนขึ้นอีกระดับ ใช้ค่าเดียวกันทั้ง dropdown และการ์ดข้างใน
+                                        ไม่ใช่ 2 ค่าต่างกันซ้อนกัน -- มุมการ์ดข้างในโค้งกว่ากรอบนอกจะดูแปลก) */
+  --radius-pill: 999px;             /* badge เท่านั้น */
+  --shadow-modal: 0 8px 24px rgba(0, 0, 0, .12);   /* modal/dropdown ที่ต้องการความรู้สึก "หนักแน่น" --
+                                        เช่น modal ยืนยัน/แจ้งเตือนจริงจัง */
+  --shadow-soft: 0 12px 32px rgba(0, 0, 0, .10);   /* 2026-09-13 -- dropdown/popover ที่ต้องการความรู้สึก
+                                        นุ่มกว่า --shadow-modal (กระจายกว้างกว่า, ทึบน้อยกว่า) เช่น
+                                        notification -- คนละโทนกับ --shadow-modal เจตนา ไม่ใช่ค่าเดียว
+                                        ที่ปรับเผื่อทุกที่ */
+
+  /* chart -- 2026-09-13, Round 2 item 9. --chart-1 คือสีเดียวที่มีความหมาย "brand/primary series" (ใช้
+     ซ้ำ --c-primary ตรงๆ ไม่ประกาศค่าใหม่) --chart-2..5 เป็นเทาไล่ระดับล้วนๆ (ไม่ใช่สี, ไม่มีความหมาย
+     สถานะ) สำหรับ series รองที่ไม่ใช่ primary และไม่ใช่ danger/success สถานะจริง -- ใช้คู่กับ danger/
+     success ปกติของ §... (ตาราง status) เมื่อ series นั้นสื่อสถานะจริงเท่านั้น (ดู §ใหม่ "Chart") */
+  --chart-1: var(--c-primary);
+  --chart-2: #CBD5E1;
+  --chart-3: #94A3B8;
+  --chart-4: #64748B;
+  --chart-5: #334155;
+  --chart-grid: var(--c-border);
+}
+
+/* ==========================================================================
+   2026-09-14, Phase Design Round 3 item 3c-1 follow-up -- REAL BUG FOUND AND FIXED, found purely
+   by accident while verifying the new --c-bg-rgb token's dark-mode value for the page-loader: this
+   comment's own prose used to list several token-name wildcards separated by slashes, one of which
+   ended in an asterisk immediately before the next slash -- an asterisk directly followed by a
+   slash, with nothing between them, is how a CSS comment ENDS. That combination showing up INSIDE
+   this comment's own prose closed it early, right there mid-sentence -- everything from that point
+   through the NEXT such combination further down (this whole paragraph, the selector-convention
+   explanation, all of it) was then parsed as actual CSS, not a comment. Confirmed directly (not
+   guessed) by loading tokens.css standalone in a real browser and inspecting
+   `document.styleSheets[0].cssRules`: only 2 top-level rules ever existed -- `:root` and the
+   `@media (prefers-color-scheme: dark)` block -- the ENTIRE `[data-bs-theme="dark"] { ... }` rule
+   below was silently discarded by the parser's error recovery as unparseable garbage, on EVERY
+   page, since this file was first written (Round 2, this whole Phase Design initiative). Net
+   effect: an employee who explicitly chose "Dark" in Settings (`ui_theme='dark'`, stamped
+   server-side on `<html>` by header.php) got EVERY `--c-*` token's LIGHT value anyway -- every
+   component this entire initiative has built (buttons, badges, stat cards, modals, filter bars,
+   the page-loader this same round just added, all of it) -- only "System" dark mode (the
+   OS-preference media query, which sits safely after the corrupted rule) ever actually worked.
+   Fixed by rephrasing the list with commas so no token-name wildcard's trailing asterisk sits
+   directly before the next item's leading slash anywhere in this comment -- verified the fix
+   directly the same way the bug was confirmed (re-checked `cssRules.length` is now 3, the
+   `[data-bs-theme="dark"]` rule's text is present and correct). Grepped the rest of this file for
+   every other place that combination could occur -- confirmed this was the only one.
+   Dark mode (Round 2 item 1b, docs/design/rules.md §1's own decision this round: "token มี 2
+   ชุด light/dark ใน tokens.css เท่านั้น component ห้ามมี dark override ของตัวเอง"). Overrides ONLY the
+   --c-* color tokens above -- --sp-*, --fs-*, --radius*, --font-*, --lh, --shadow-modal (shadow value
+   unchanged in spirit, just re-tuned for a dark surface below) are NOT theme-dependent, untouched
+   here.
+   Selector convention is the EXACT one Backlog Phase 11 T069 already established for this app's own
+   --app-* tokens (style.css, search "3-state model") -- reused verbatim, not reinvented, so --c-*
+   and --app-* stay in lockstep under the same 2 real selectors / 3 logical states:
+   - [data-bs-theme="dark"]: explicit Dark choice (stamped server-side by layout/header.php)
+   - @media (prefers-color-scheme: dark) { :root:not([data-bs-theme="light"]) { ... } }: explicit
+     System choice on a dark-OS browser (header.php stamps nothing for this case, so the media query
+     is the only rule left to catch it) -- the :not([data-bs-theme="light"]) guard stops this from
+     ALSO firing for someone who explicitly chose Light on a dark-OS browser.
+   - Explicit Light choice, and "never configured" (2026-09-05 migration default), both get
+     data-bs-theme="light" stamped -- matches NEITHER selector below, correctly always light.
+   --c-primary itself is INTENTIONALLY UNCHANGED across themes (same "brand accent color stays
+   fixed, only its tint/shade pairing needs a dark-safe alternative" reasoning T069's own comment
+   already gives for --app-accent-soft-bg/-text -- confirmed consistent, not a new decision) --
+   only --c-primary-hover/--c-primary-soft get real dark-tuned values. */
+[data-bs-theme="dark"] {
+    --c-text: #E6E8EB;
+    --c-text-muted: #9AA3AE;
+    --c-text-faint: #6B7480;
+    --c-border: #2A2F36;
+    --c-border-strong: #3A414A;
+    --c-bg: #15181C;
+    --c-bg-rgb: 21, 24, 28;       /* mechanical decomposition of this block's own --c-bg -- see :root's comment */
+    --c-bg-subtle: #1C2026;
+    --c-bg-hover: #232830;
+    --c-bg-hover-rgb: 35, 40, 48;   /* mechanical decomposition of this block's own --c-bg-hover -- see :root's comment */
+    --c-primary-hover: #FFAD33;
+    --c-primary-soft: #3A2A10;
+    --c-danger: #F97066;      --c-danger-soft: #3B1A18;
+    --c-warning: #F5B14C;     --c-warning-soft: #3A2A12;
+    --c-success: #4ADE80;     --c-success-soft: #12301E;
+    --c-info: #9AA3AE;        --c-info-soft: #232830;
+    /* -on-fill/-hover for .btn-decision-* (see the light :root block's own comment for the full
+       contrast-check reasoning). success/danger keep dark text here (LIGHT MODE's own --c-text,
+       #1F2328 -- genuinely dark, not this theme's own near-white --c-text) since white fails on their
+       UNCHANGED dark-mode fills (1.74:1/2.79:1) -- warning's own fill was retuned darker instead
+       (#C26A05) specifically so it could go back to white/bold like the other 2 buttons visually read,
+       verified 3.92:1 against THIS darker value (not the original, brighter #E0A400 this replaced). */
+    --c-success-on-fill: #1F2328;
+    --c-warning-on-fill: #fff;
+    --c-danger-on-fill: #1F2328;
+    --c-neutral-on-fill: #1F2328;
+    --c-success-hover: #44CC76;
+    --c-warning-hover: #E1A346;
+    --c-danger-hover: #E5675E;
+    --c-warning-fill: #C26A05;
+    --c-warning-fill-hover: #B26205;
+    --shadow-modal: 0 8px 24px rgba(0, 0, 0, .6);
+    --shadow-soft: 0 12px 32px rgba(0, 0, 0, .5);
+    /* chart grays -- ramp inverted vs. light mode (light-to-dark becomes dark-to-light) so all 4
+       stay distinguishable against a dark --c-bg instead of the darkest 2 washing out near-black. */
+    --chart-2: #334155;
+    --chart-3: #64748B;
+    --chart-4: #94A3B8;
+    --chart-5: #CBD5E1;
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-bs-theme="light"]) {
+        --c-text: #E6E8EB;
+        --c-text-muted: #9AA3AE;
+        --c-text-faint: #6B7480;
+        --c-border: #2A2F36;
+        --c-border-strong: #3A414A;
+        --c-bg: #15181C;
+        --c-bg-rgb: 21, 24, 28;
+        --c-bg-subtle: #1C2026;
+        --c-bg-hover: #232830;
+        --c-bg-hover-rgb: 35, 40, 48;
+        --c-primary-hover: #FFAD33;
+        --c-primary-soft: #3A2A10;
+        --c-danger: #F97066;      --c-danger-soft: #3B1A18;
+        --c-warning: #F5B14C;     --c-warning-soft: #3A2A12;
+        --c-success: #4ADE80;     --c-success-soft: #12301E;
+        --c-info: #9AA3AE;        --c-info-soft: #232830;
+        --c-success-on-fill: #1F2328;
+        --c-warning-on-fill: #fff;
+        --c-danger-on-fill: #1F2328;
+        --c-neutral-on-fill: #1F2328;
+        --c-success-hover: #44CC76;
+        --c-warning-hover: #E1A346;
+        --c-danger-hover: #E5675E;
+        --c-warning-fill: #C26A05;
+        --c-warning-fill-hover: #B26205;
+        --shadow-modal: 0 8px 24px rgba(0, 0, 0, .6);
+        --shadow-soft: 0 12px 32px rgba(0, 0, 0, .5);
+        --chart-2: #334155;
+        --chart-3: #64748B;
+        --chart-4: #94A3B8;
+        --chart-5: #CBD5E1;
+    }
+}

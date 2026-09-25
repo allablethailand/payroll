@@ -246,6 +246,22 @@ class ReportsController extends Controller {
         header('Content-Type: ' . $result['mime_type']);
         header('Content-Disposition: ' . ($isPreview ? 'inline' : 'attachment') . '; filename="' . $result['file_name'] . '"');
         header('Content-Length: ' . strlen($result['content']));
+        // 2026-09-25, round B (bank transfer export, see
+        // docs/decisions/2026-09-25-bank-transfer-export-paid-runs.md): a report generator can
+        // optionally set a `warnings` list ({key, params} entries) on its return array to surface
+        // one or more NON-fatal advisories alongside a real file (e.g. a paid/locked run's own
+        // "already recorded as paid" caveat AND an exclusion breakdown, both at once) -- generate()
+        // streams raw file bytes directly (no JSON envelope to carry this in-band), so a response
+        // header is the least-invasive channel that doesn't change any other report's contract
+        // (this key/header is simply absent for every report that doesn't set it, same "unused key
+        // is ignored" tolerance the $context whitelist above already follows). rawurlencode() keeps
+        // the header value header-safe (ASCII, no CR/LF) -- public/js/app.js's generateReport() is
+        // the one client-side consumer, reads it, decodes it, and translates each entry through
+        // langData the same way translateApiError() already does for error_key/params, joining them
+        // into ONE modal.
+        if (!empty($result['warnings'])) {
+            header('X-Report-Warning: ' . rawurlencode(json_encode(['warnings' => $result['warnings']])));
+        }
         echo $result['content'];
         exit;
     }

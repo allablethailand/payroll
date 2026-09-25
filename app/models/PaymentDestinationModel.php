@@ -30,6 +30,86 @@ class PaymentDestinationModel {
         $this->db = $pdo ?? Database::getInstance()->pdo;
     }
 
+    /** The columns every option row of this catalog is built from -- one list, so a row fetched by
+     *  SEARCH and the same row fetched by ID cannot come back describing themselves differently. */
+    private const OPTION_COLUMNS = "pd.id, pd.account_name, mb.bank_name_th, mb.bank_name_en, pd.bank_branch,
+                pd.account_no, pd.key_version";
+
+    /**
+     * The ONE composer for a saved destination's picker label ("account name (bank)"), and the ONE
+     * mapper from a row to the option the picker's endpoint serves. 2026-09-17, tiny-L2: pulled out
+     * of PaymentDestinationController::options() so a form PREFILLING this picker from a stored id
+     * shows the identical text to the option the user would have picked by hand -- the same row
+     * reading two different ways in the same field is the bug this round is fixing (tiny-M's own
+     * docblock on PayrollCycleModel::bankAccountOptionLabel() says the same for company accounts).
+     *
+     * 2026-09-18, tiny-L5: the bank name is now the caller's to pick, and optionItem() picks a
+     * different one per language. It used to be Thai for BOTH -- `master_banks` carries a real
+     * English name for every one of its rows, so an English reader was shown a Thai bank name for
+     * no reason other than this composer taking both and using one. The destination's OWN name
+     * (`payment_destinations.account_name`) stays as stored in every language: that column has no
+     * English twin, and translating it here would be inventing one.
+     */
+    public static function optionLabel(?string $accountName, ?string $bankName): string {
+        $bankName = (string)($bankName ?? '');
+        return (string)$accountName . ($bankName !== '' ? " ({$bankName})" : '');
+    }
+
+    public static function optionItem(array $r): array {
+        // Empty counts as absent here, not as "a bank with no name": a blank column would otherwise
+        // drop the bank from that language's label entirely instead of falling back to the other.
+        $nonEmpty = static fn($v) => ($v === null || $v === '') ? null : (string)$v;
+        $bankTh = $nonEmpty($r['bank_name_th'] ?? null);
+        $bankEn = $nonEmpty($r['bank_name_en'] ?? null);
+        return [
+            'id' => (int)$r['id'],
+            // Each language takes its own bank name, and falls back to the other one rather than to
+            // a bankless label: a name in the wrong language still names the bank.
+            'text_th' => self::optionLabel($r['account_name'] ?? null, $bankTh ?? $bankEn),
+            'text_en' => self::optionLabel($r['account_name'] ?? null, $bankEn ?? $bankTh),
+            'account_name' => $r['account_name'],
+            'bank_name_th' => $r['bank_name_th'],
+            'bank_name_en' => $r['bank_name_en'],
+            'bank_branch' => $r['bank_branch'],
+            'account_no_masked' => $r['account_no_masked'] ?? null,
+        ];
+    }
+
+    /** Decrypt-then-mask, in place of the ciphertext: the plaintext never leaves this class. */
+    private static function maskOptionRow(array $r): array {
+        $r['account_no_masked'] = EncryptionService::maskAccountNo(
+            EncryptionService::decrypt($r['account_no'] ?? null, isset($r['key_version']) ? (int)$r['key_version'] : null)
+        );
+        unset($r['account_no'], $r['key_version']);
+        return $r;
+    }
+
+    /**
+     * The same option rows listSaved() serves, for a known set of ids instead of a search -- same
+     * label, same account fields, same shape (mirrors EmployeeModel::optionRowsByIds()). Deliberately
+     * NOT filtered by is_saved/status: a row something already POINTS AT has to be describable even
+     * when the picker would never offer it again (an ad-hoc is_saved = 0 destination, or one since
+     * deactivated). `is_saved` rides along so the caller can tell those apart.
+     */
+    public function optionRowsByIds(int $compId, array $ids): array {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn($id) => $id > 0)));
+        if (!$ids) {
+            return [];
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare("SELECT " . self::OPTION_COLUMNS . ", pd.is_saved
+            FROM `payment_destinations` pd
+            LEFT JOIN `master_banks` mb ON mb.id = pd.bank_id
+            WHERE pd.comp_id = ? AND pd.deleted_at IS NULL AND pd.id IN ({$in})");
+        $stmt->execute(array_merge([$compId], $ids));
+        $byId = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $r = self::maskOptionRow($r);
+            $byId[(int)$r['id']] = self::optionItem($r) + ['is_saved' => (int)$r['is_saved']];
+        }
+        return $byId;
+    }
+
     /** Select2-ajax-shaped list of SAVED destinations only (the reuse picker never offers a one-off
      *  ad-hoc row back, by design -- it was never meant to be found again). */
     public function listSaved(int $compId, string $search = '', int $limit = 20): array {
@@ -39,12 +119,15 @@ class PaymentDestinationModel {
             $where .= " AND account_name LIKE :search";
             $params[':search'] = '%' . $search . '%';
         }
-        $stmt = $this->db->prepare("SELECT pd.id, pd.account_name, mb.bank_name_th, mb.bank_name_en, pd.bank_branch
+        // 2026-09-15: account_no/key_version come along so the caller can show the MASKED number --
+        // the plaintext is decrypted here and immediately replaced by its masked form, exactly like
+        // the employee and company-account pickers do.
+        $stmt = $this->db->prepare("SELECT " . self::OPTION_COLUMNS . "
             FROM `payment_destinations` pd
             LEFT JOIN `master_banks` mb ON mb.id = pd.bank_id
             {$where} ORDER BY pd.account_name ASC LIMIT " . (int)$limit);
         $stmt->execute($params);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return array_map(static fn(array $r): array => self::maskOptionRow($r), $stmt->fetchAll(PDO::FETCH_ASSOC));
     }
 
     /** Full detail, account_no decrypted -- only ever called for display within this company's own

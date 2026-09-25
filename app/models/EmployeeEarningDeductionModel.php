@@ -1,7 +1,10 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/AuditLogModel.php';
+require_once __DIR__ . '/PayeeDescriptorTrait.php';
 class EmployeeEarningDeductionModel {
+    use PayeeDescriptorTrait;
+
     private $db;
     private AuditLogModel $auditLog;
     public function __construct() {
@@ -53,7 +56,10 @@ class EmployeeEarningDeductionModel {
         $sql .= " ORDER BY eed.effective_date DESC, eed.id DESC";
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // 2026-09-19, tiny-F: `payee` -- the same descriptor the run's own destination tabs read,
+        // from the same trait, so this list and that tab can never drift into 2 spellings of the
+        // same account. Additive: every column this method already returned is untouched.
+        return $this->attachPayeeDescriptor($stmt->fetchAll(PDO::FETCH_ASSOC), $compId);
     }
 
     public function get(int $id, int $compId): ?array {
@@ -81,7 +87,13 @@ class EmployeeEarningDeductionModel {
         $stmtInst = $this->db->prepare("SELECT * FROM `employee_earning_deduction_installments` WHERE assignment_id = :assignment_id ORDER BY installment_no ASC");
         $stmtInst->execute([':assignment_id' => $id]);
         $row['installments'] = $stmtInst->fetchAll(PDO::FETCH_ASSOC);
-        return $row;
+        // 2026-09-19, 4c round 2: `payee` here too, not only in list(). This is what the EDIT form
+        // reads, and without it that form had to invent its own label for the payee it was
+        // reopening -- which is exactly how the same employee came to read "CEO" in one place and
+        // "CEO - กฤษดา สาธุกิจชัย" in another. Read-only and additive: one more key on the row,
+        // from the same trait, nothing else changed.
+        $rows = $this->attachPayeeDescriptor([$row], $compId);
+        return $rows[0];
     }
 
     public function activeOptions(int $compId, string $search, int $page, int $limit, ?string $itemType = null, ?string $calculationMethod = null): array {

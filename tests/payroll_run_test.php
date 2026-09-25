@@ -444,12 +444,20 @@ try {
     // computed deduction line. Reuses $pulledRunId/$employeeFullId's already-computed LATE_DEDUCT
     // (31.25) and LEAVE_NO_PAY_DEDUCT (3000) lines from the section just above. ----------
     echo "=== Line overrides: override_amount on a sync-computed deduction line ===\n";
+    // 2026-09-18, tiny-C: captured BEFORE the override so `computed_amount` is checked against the
+    // figure the engine really produced, not against a number written into this test by hand.
+    $beforeOverrideDetails = $runModel->getDetails($pulledRunId, $compId);
+    $lateLineBeforeOverride = current(array_filter($beforeOverrideDetails[0]['deduction_breakdown'], fn($l) => $l['code'] === 'LATE_DEDUCT'));
+    $lateEngineAmount = (float)($lateLineBeforeOverride['amount'] ?? 0);
+    checkTrue('fixture: LATE_DEDUCT has an engine-computed amount before any override', $lateEngineAmount > 0);
+    check('a line with no override carries no computed_amount at all', array_key_exists('computed_amount', $lateLineBeforeOverride ?: []), false);
     $overrideRes = $runModel->lineOverrideSave($pulledRunId, $compId, $employeeFullId, 'LATE_DEDUCT', 'override_amount', 10.00, 'HR waived most of it', $adminUserId, true);
     checkTrue('lineOverrideSave() override_amount succeeds' . (empty($overrideRes['status']) ? " ({$overrideRes['message']})" : ''), $overrideRes['status']);
     $afterOverrideDetails = $runModel->getDetails($pulledRunId, $compId);
     $lateLineAfterOverride = current(array_filter($afterOverrideDetails[0]['deduction_breakdown'], fn($l) => $l['code'] === 'LATE_DEDUCT'));
     check('LATE_DEDUCT amount is now the overridden 10.00, not the computed 31.25', (float)($lateLineAfterOverride['amount'] ?? null), 10.0);
     checkTrue('overridden line note mentions the override', strpos($lateLineAfterOverride['note'] ?? '', 'override') !== false);
+    check('computed_amount keeps the engine figure the override replaced', (float)($lateLineAfterOverride['computed_amount'] ?? -1), $lateEngineAmount);
 
     echo "=== Line overrides: exclude a sync-computed deduction line entirely ===\n";
     $excludeRes = $runModel->lineOverrideSave($pulledRunId, $compId, $employeeFullId, 'LEAVE_NO_PAY_DEDUCT', 'exclude', null, null, $adminUserId, true);
@@ -469,6 +477,9 @@ try {
     check('UI-facing current_amount reflects the OVERRIDDEN 10.00 (current, post-override figure now, not the raw pre-override 31.25)', (float)($lateUiLine['current_amount'] ?? null), 10.0);
     check('UI-facing override_action reflects the active override', $lateUiLine['override_action'] ?? null, 'override_amount');
     check('UI-facing override_amount reflects the active override', (float)($lateUiLine['override_amount'] ?? null), 10.0);
+    check('UI-facing computed_amount is the engine figure the override replaced', (float)($lateUiLine['computed_amount'] ?? -1), $lateEngineAmount);
+    $baseUiLine = current(array_filter($syncLinesForUi, fn($l) => $l['code'] === PayrollRunModel::BASE_SALARY_OVERRIDE_CODE));
+    check('a row with no override of its own reports computed_amount as null, never absent', array_key_exists('computed_amount', $baseUiLine ?: []) ? $baseUiLine['computed_amount'] : 'MISSING', null);
     $leaveUiLine = current(array_filter($syncLinesForUi, fn($l) => $l['code'] === 'LEAVE_NO_PAY_DEDUCT'));
     checkTrue('excluded line is still listed for the UI (so it can be un-excluded), even though it has dropped out of the persisted breakdown entirely', $leaveUiLine !== false);
     check('excluded line reports override_action=exclude', $leaveUiLine['override_action'] ?? null, 'exclude');
@@ -547,6 +558,7 @@ try {
     $ssoLineAfterOverride = current(array_filter($ssoRowAfterOverride['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'));
     check('TH_SSO employee_amount is now exactly the overridden 123.45', (float)$ssoLineAfterOverride['employee_amount'], 123.45);
     check('note marks this as manually_overridden', $ssoLineAfterOverride['note'], 'manually_overridden');
+    check('the statutory line keeps the engine figure as computed_amount', (float)($ssoLineAfterOverride['computed_amount'] ?? -1), $ssoOriginalAmount);
     $pvdLineUnaffected = current(array_filter($ssoRowAfterOverride['statutory_breakdown'], fn($l) => $l['code'] === 'TH_PVD'));
     checkTrue('a DIFFERENT statutory item (TH_PVD) is completely untouched by the TH_SSO-specific override', $pvdLineUnaffected !== false && $pvdLineUnaffected['note'] !== 'manually_overridden');
 
@@ -555,15 +567,44 @@ try {
     checkTrue('syncDeductionLinesForEmployee() (Adjust Amounts modal) lists the TH_SSO statutory row', $ssoAdjustLine !== false);
     check('the listed row shows the active override action', $ssoAdjustLine['override_action'] ?? null, 'override_amount');
     check('the listed row shows the override amount', (float)($ssoAdjustLine['override_amount'] ?? -1), 123.45);
+    check('the listed statutory row carries the engine figure too', (float)($ssoAdjustLine['computed_amount'] ?? -1), $ssoOriginalAmount);
 
+    // 2026-09-18, tiny-C: base salary is the one overridable figure with no breakdown entry to hang
+    // `computed_amount` on -- it gets its own nullable column, and this is what proves the column is
+    // actually threaded through recalculate() and back out to the Adjustments row.
+    echo "=== Base salary override: the pre-override figure lands in base_salary_computed_amount ===\n";
+    $baseDetailStmt = $pdo->prepare("SELECT base_salary_amount, base_salary_computed_amount FROM `payroll_run_details` WHERE run_id = ? AND employee_id = ?");
+    $baseDetailStmt->execute([$pulledRunId, $employeeFullId]);
+    $baseBefore = $baseDetailStmt->fetch(PDO::FETCH_ASSOC);
+    $baseEngineAmount = (float)$baseBefore['base_salary_amount'];
+    check('no base-salary override yet -> the computed column stays NULL', $baseBefore['base_salary_computed_amount'], null);
+    $baseOverrideRes = $runModel->lineOverrideSave($pulledRunId, $compId, $employeeFullId, PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, 'override_amount', 777.00, 'tiny-C base salary', $adminUserId, true);
+    checkTrue('lineOverrideSave() on base salary succeeds' . (empty($baseOverrideRes['status']) ? " ({$baseOverrideRes['message']})" : ''), $baseOverrideRes['status']);
+    $baseDetailStmt->execute([$pulledRunId, $employeeFullId]);
+    $baseAfter = $baseDetailStmt->fetch(PDO::FETCH_ASSOC);
+    check('base_salary_amount is the overridden 777.00', (float)$baseAfter['base_salary_amount'], 777.0);
+    check('base_salary_computed_amount is the engine figure it replaced', (float)$baseAfter['base_salary_computed_amount'], $baseEngineAmount);
+    $baseAdjustLines = $runModel->syncDeductionLinesForEmployee($compId, $pulledRunId, $employeeFullId);
+    $baseAdjustRow = current(array_filter($baseAdjustLines, fn($l) => $l['code'] === PayrollRunModel::BASE_SALARY_OVERRIDE_CODE));
+    check('the Adjustments base-salary row serves that same figure as computed_amount', (float)($baseAdjustRow['computed_amount'] ?? -1), $baseEngineAmount);
+    $runModel->lineOverrideRemove($pulledRunId, $compId, $employeeFullId, PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, $adminUserId, true);
+    $baseDetailStmt->execute([$pulledRunId, $employeeFullId]);
+    $baseReset = $baseDetailStmt->fetch(PDO::FETCH_ASSOC);
+    check('removing the override clears the computed column back to NULL', $baseReset['base_salary_computed_amount'], null);
+    check('...and restores the engine figure as the real one', (float)$baseReset['base_salary_amount'], $baseEngineAmount);
+
+    // 2026-09-18, tiny-E: exclude is REFUSED on TH_PIT/TH_SSO -- it only ever zeroed the employee
+    // half while the employer contribution kept computing in full, so per-employee participation is
+    // decided by payroll_run_employee_exemptions' tri-state instead (see
+    // docs/decisions/2026-09-18-tiny-e-exemption-guard.md, tests/exemption_tri_state_test.php).
     $statutoryExcludeRes = $runModel->statutoryLineOverrideSave($pulledRunId, $compId, $employeeFullId, 'TH_SSO', 'exclude', null, null, $adminUserId, true);
-    checkTrue('statutoryLineOverrideSave(exclude) succeeds', $statutoryExcludeRes['status']);
+    check('statutoryLineOverrideSave(exclude) is refused on TH_SSO', $statutoryExcludeRes['status'], false);
     $ssoDetailsAfterExclude = $runModel->getDetails($pulledRunId, $compId);
     $ssoRowAfterExclude = current(array_filter($ssoDetailsAfterExclude, fn($d) => (int)$d['employee_id'] === $employeeFullId));
     $ssoLineAfterExclude = current(array_filter($ssoRowAfterExclude['statutory_breakdown'], fn($l) => $l['code'] === 'TH_SSO'));
-    checkTrue('the TH_SSO line STAYS in statutory_breakdown when excluded (unlike an earning/deduction exclude, which drops the line entirely)', $ssoLineAfterExclude !== false);
-    check('TH_SSO employee_amount is 0 when excluded', (float)$ssoLineAfterExclude['employee_amount'], 0.0);
-    check('note marks this as manually_excluded', $ssoLineAfterExclude['note'], 'manually_excluded');
+    checkTrue('the TH_SSO line is untouched by the refusal', $ssoLineAfterExclude !== false);
+    check('...and still carries the override_amount set just above', (float)$ssoLineAfterExclude['employee_amount'], 123.45);
+    check('...with its own note -- no exclusion was recorded', $ssoLineAfterExclude['note'], 'manually_overridden');
 
     $statutoryRemoveRes = $runModel->statutoryLineOverrideRemove($pulledRunId, $compId, $employeeFullId, 'TH_SSO', $adminUserId, true);
     checkTrue('statutoryLineOverrideRemove() succeeds', $statutoryRemoveRes['status']);
@@ -875,6 +916,43 @@ try {
     checkTrue('the manual earning line appears in their own breakdown', current(array_filter($manualRowAfterLine['earning_breakdown'], fn($l) => $l['code'] === 'CUSTOM:Manual Income')) !== false);
     check('gross_amount increased by exactly the manually-entered income (1000)', round((float)$manualRowAfterLine['gross_amount'] - $grossBeforeManualLine, 2), 1000.0);
 
+    // 2026-09-16: recalculate() now stamps the originating payroll_run_manual_lines.id onto every
+    // manual_line breakdown entry, so a consumer can get back to the source row without re-matching
+    // on item_code (two manual lines can legitimately share one code). Both of recalculate()'s own
+    // manual-line SELECTs do it -- this is the non-incentive one.
+    echo "=== recalculate(): manual_line breakdown entries carry manual_line_id ===\n";
+    $manualBreakdownLine = current(array_filter($manualRowAfterLine['earning_breakdown'], fn($l) => $l['code'] === 'CUSTOM:Manual Income'));
+    $realManualLineId = (int)$pdo->query("SELECT id FROM payroll_run_manual_lines WHERE run_id={$pulledRunId} AND employee_id={$employeeOptOutId} AND custom_item_name='Manual Income'")->fetchColumn();
+    check('the breakdown line points back at the real payroll_run_manual_lines row', $manualBreakdownLine['manual_line_id'] ?? null, $realManualLineId);
+
+    // The ONE case that matters for everything already persisted: breakdown JSON written before this
+    // key existed must still decode and render, with the key simply absent (reads as null) -- never a
+    // warning, never a dropped line. Simulated by writing back a pre-2026-09-16-shaped breakdown.
+    $legacyBreakdown = array_map(function (array $l): array { unset($l['manual_line_id']); return $l; }, $manualRowAfterLine['earning_breakdown']);
+    checkTrue('the simulated legacy breakdown genuinely has no manual_line_id key on any line',
+        array_reduce($legacyBreakdown, fn($carry, $l) => $carry && !array_key_exists('manual_line_id', $l), true));
+    $pdo->prepare("UPDATE payroll_run_details SET earning_breakdown = :bd WHERE run_id = :run_id AND employee_id = :employee_id")
+        ->execute([':bd' => json_encode($legacyBreakdown, JSON_UNESCAPED_UNICODE), ':run_id' => $pulledRunId, ':employee_id' => $employeeOptOutId]);
+    $legacyRow = current(array_filter($runModel->getDetails($pulledRunId, $compId), fn($d) => (int)$d['employee_id'] === $employeeOptOutId));
+    checkTrue('legacy breakdown JSON still decodes to an array', is_array($legacyRow['earning_breakdown'] ?? null));
+    $legacyLine = current(array_filter($legacyRow['earning_breakdown'], fn($l) => $l['code'] === 'CUSTOM:Manual Income'));
+    checkTrue('the legacy manual line is still listed, not dropped', is_array($legacyLine));
+    check('its manual_line_id reads as null, which is what every consumer must tolerate', $legacyLine['manual_line_id'] ?? null, null);
+    // (float) cast, not ===: json_encode(1000.0) writes "1000", which decodes back as an int -- a
+    // pre-existing round-trip fact of every breakdown ever persisted, not something this key changed.
+    check('every other field on the legacy line is untouched', [(float)($legacyLine['amount'] ?? 0), $legacyLine['source'] ?? null], [1000.0, 'manual_line']);
+    // syncDeductionLinesForEmployee() reads the same JSON for the Adjustments modal. 2026-09-16: a
+    // hand-added line is no longer offered for adjustment there at all (see that method's own comment
+    // -- an override is keyed by item_code, and two manual lines may share one). What this still
+    // pins is that the filter keys off `source`, which EVERY breakdown ever written has, and not off
+    // `manual_line_id`, which only today's do: a legacy line must be filtered just the same, never
+    // slip through as an adjustable row because one key happens to be missing.
+    $legacyAdjustCodes = array_column($runModel->syncDeductionLinesForEmployee($compId, $pulledRunId, $employeeOptOutId), 'code');
+    check('a legacy manual line (no manual_line_id) is filtered out of the Adjustments listing too',
+        in_array('CUSTOM:Manual Income', $legacyAdjustCodes, true), false);
+    checkTrue('and the listing is not simply empty -- calculated rows are still there',
+        in_array(PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, $legacyAdjustCodes, true));
+
     echo "=== rawSyncDataForEmployee(): full raw row for a synced employee, null for a manually-added one or a non-sync run ===\n";
     $rawSyncData = $runModel->rawSyncDataForEmployee($compId, $pulledRunId, $employeeFullId);
     checkTrue('rawSyncDataForEmployee() returns data for the genuinely-synced employee', $rawSyncData !== null);
@@ -896,9 +974,13 @@ try {
     checkTrue('before exemption: employee has a real (nonzero) SSO deduction on the sync-based run', $ssoBeforeExemption > 0);
 
     $defaultExemption = $runModel->getEmployeeExemption($pulledRunId, $compId, $employeeFullId);
+    // 2026-09-18, 4b: 2 read-only keys more -- what 'inherit' really resolves to here (run default,
+    // else the employee's own flag). This employee is enrolled and not tax-exempt, and the run has no
+    // calc default of its own, so both answer 'yes'.
     check('getEmployeeExemption() returns "inherit" defaults before anything is saved', $defaultExemption, [
         'tax_calculate_override' => 'inherit', 'sso_calculate_override' => 'inherit',
-        'exempt_tax' => false, 'exempt_sso' => false, 'note' => null,
+        'exempt_tax' => false, 'exempt_sso' => false,
+        'tax_inherit_effective' => 'yes', 'sso_inherit_effective' => 'yes', 'note' => null,
     ]);
 
     // 2026-08-29: exempt_tax=true/exempt_sso=true (booleans) widened to a bidirectional tri-state
@@ -913,9 +995,11 @@ try {
     check('after exempt_tax=true: TH_PIT is zeroed and flagged employee_tax_exempt (same engine note as the permanent tax_exempt flag)', [(float)($pitAfterExemption['employee_amount'] ?? -1), $pitAfterExemption['note'] ?? null], [0.0, 'employee_tax_exempt']);
 
     $savedExemption = $runModel->getEmployeeExemption($pulledRunId, $compId, $employeeFullId);
+    // The 2 derived keys answer what INHERIT would give, which the override does not change.
     check('getEmployeeExemption() reflects the saved row', $savedExemption, [
         'tax_calculate_override' => 'no', 'sso_calculate_override' => 'no',
-        'exempt_tax' => true, 'exempt_sso' => true, 'note' => 'requested by employee',
+        'exempt_tax' => true, 'exempt_sso' => true,
+        'tax_inherit_effective' => 'yes', 'sso_inherit_effective' => 'yes', 'note' => 'requested by employee',
     ]);
 
     $exemptionClearRes = $runModel->saveEmployeeExemption($pulledRunId, $compId, $employeeFullId, 'inherit', 'inherit', null, $adminUserId, true);
@@ -1037,6 +1121,12 @@ try {
     check('employee 1 net = 4500 (5000 earning - 500 manual deduction, statutory opted out)', (float)($emp1Detail['net_amount'] ?? -1), 4500.0);
     check('employee 1 statutory_breakdown is empty (compute_statutory=0)', $emp1Detail['statutory_breakdown'] ?? null, []);
     check('employee 1 calc_status is calculated (no more errors)', $emp1Detail['calc_status'] ?? null, 'calculated');
+    // recalculate()'s OTHER manual-line SELECT -- the incentive branch, where manual lines are the
+    // only source rather than an addition. Same stamp, so a consumer never has to know which branch
+    // built the row it is looking at.
+    $incentiveOtLine = current(array_filter($emp1Detail['earning_breakdown'], fn($l) => ($l['source'] ?? null) === 'manual_line'));
+    $incentiveOtLineId = (int)$pdo->query("SELECT id FROM payroll_run_manual_lines WHERE run_id={$incentiveRunId} AND employee_id={$employeeOptOutId} AND ped_type_id={$otPedTypeId}")->fetchColumn();
+    check('the incentive branch stamps manual_line_id too', $incentiveOtLine['manual_line_id'] ?? null, $incentiveOtLineId);
     check('employee 2 gross = 3000 (OT earning only)', (float)($emp2Detail['gross_amount'] ?? -1), 3000.0);
     check('employee 2 prorate_days is null (incentive runs never prorate)', $emp2Detail['prorate_days'], null);
 
@@ -1225,7 +1315,10 @@ try {
     // errorEmployeesForRun() lookup that backs the List page's "i" info button, then restores the
     // row so nothing downstream in this shared-fixture file sees a stray error.
     echo "=== List page 'incomplete data' indicator: error_employee_count + errorEmployeesForRun() ===\n";
-    $stmtForceError = $pdo->prepare("UPDATE `payroll_run_details` SET calc_status = 'error', calc_errors = 'no_rate_configured' WHERE run_id = :run_id AND employee_id = :employee_id");
+    // 2026-09-21, 3e-2b: the forced value carries an ADVISORY code alongside the blocking one, so
+    // the 2 new arrays below are split from something that really has both halves. A single blocking
+    // code would have let a split that returns everything in one bucket pass.
+    $stmtForceError = $pdo->prepare("UPDATE `payroll_run_details` SET calc_status = 'error', calc_errors = 'no_rate_configured, no_attendance_data_this_period' WHERE run_id = :run_id AND employee_id = :employee_id");
     $stmtForceError->execute([':run_id' => $runId, ':employee_id' => $employeeFullId]);
     $runsListAfterForcedError = $runModel->list($compId, ['state' => 'draft']);
     $thisRunAfterForcedError = current(array_filter($runsListAfterForcedError, fn($r) => (int)$r['id'] === $runId));
@@ -1233,7 +1326,14 @@ try {
     $errorEmployees = $runModel->errorEmployeesForRun($runId, $compId);
     check('errorEmployeesForRun() returns exactly 1 row', count($errorEmployees), 1);
     check('errorEmployeesForRun() row is the correct employee', (int)($errorEmployees[0]['employee_no'] ?? 0) > 0 || !empty($errorEmployees[0]['employee_no']), true);
-    check('errorEmployeesForRun() surfaces the calc_errors text for the "i" button detail view', $errorEmployees[0]['calc_errors'] ?? null, 'no_rate_configured');
+    check('errorEmployeesForRun() surfaces the calc_errors text for the "i" button detail view', $errorEmployees[0]['calc_errors'] ?? null, 'no_rate_configured, no_attendance_data_this_period');
+    // 2026-09-21, 3e-2b: the List page's modal renders the BLOCKING reasons only, as sentences, via
+    // the same client-side table the Detail page uses -- so this lookup has to hand it the same
+    // split getDetails() already does, not the raw string for the page to re-parse.
+    check('errorEmployeesForRun() row carries calc_blocking as an array', is_array($errorEmployees[0]['calc_blocking'] ?? null), true);
+    check('errorEmployeesForRun() row carries calc_warnings as an array', is_array($errorEmployees[0]['calc_warnings'] ?? null), true);
+    check('errorEmployeesForRun() calc_blocking holds only the blocking code', $errorEmployees[0]['calc_blocking'] ?? null, ['no_rate_configured']);
+    check('errorEmployeesForRun() calc_warnings holds only the advisory code', $errorEmployees[0]['calc_warnings'] ?? null, ['no_attendance_data_this_period']);
     check('errorEmployeesForRun() on a nonexistent run returns empty (same not-found guard as getDetails())', $runModel->errorEmployeesForRun(999999999, $compId), []);
     $stmtRestoreError = $pdo->prepare("UPDATE `payroll_run_details` SET calc_status = 'calculated', calc_errors = NULL WHERE run_id = :run_id AND employee_id = :employee_id");
     $stmtRestoreError->execute([':run_id' => $runId, ':employee_id' => $employeeFullId]);
@@ -1291,7 +1391,11 @@ try {
 
     $timeline = $runModel->employeeComments($runId, $compId, $employeeFullId);
     check('3 comments in the timeline (2 tagged + 1 untagged; the 2 rejected calls above never inserted)', count($timeline), 3);
-    check('timeline is oldest-first (chronological)', [$timeline[0]['tag'], $timeline[1]['tag'], $timeline[2]['tag']], ['in_progress', 'completed', null]);
+    // 2026-09-14, Round 3 item 3c-3, explicit instruction: "ล่าสุดบนสุด" (newest-first) -- REVERSES
+    // this assertion (was oldest-first/chronological) along with employeeComments()'s own ORDER BY
+    // (see that method's own docblock, app/models/PayrollRunModel.php). Add order was in_progress,
+    // completed, then the untagged one -- newest-first reads back untagged, completed, in_progress.
+    check('timeline is newest-first', [$timeline[0]['tag'], $timeline[1]['tag'], $timeline[2]['tag']], [null, 'completed', 'in_progress']);
     check('each comment records who posted it (created_by)', (int)($timeline[0]['created_by'] ?? 0), $adminUserId);
 
     $detailsWithCommentCount = $runModel->getDetails($runId, $compId);
@@ -4294,6 +4398,288 @@ try {
     $mixedRowFixed = null;
     foreach ($mixedDetailsFixed as $row) { if ((int)$row['employee_id'] === $mixedEmployeeId) { $mixedRowFixed = $row; break; } }
     check('mixed_payment_lines_mismatch clears once the lines genuinely sum to net pay', strpos((string)($mixedRowFixed['calc_errors'] ?? ''), 'mixed_payment_lines_mismatch') !== false, false);
+
+    // ==================== 2026-09-22, tiny-1: what "should have been in this run" means ==========
+    // The dev DB holds real company-1 employees alongside these fixtures, and most of them are
+    // cycle-unassigned -- so every assertion below compares a SET (an exact intersection with this
+    // file's own ids, or an exact before/after difference), never a raw count that real data moves.
+    echo "=== 2026-09-22, tiny-1: sync-missing criteria / missing_only picker / participant guard ===\n";
+    $t1Ids = static function (array $rows): array {
+        $ids = array_map(static fn($r) => (int)$r['id'], $rows);
+        sort($ids);
+        return $ids;
+    };
+    $t1Own = static function (array $ids, array $mine): array {
+        $hit = array_values(array_intersect($ids, $mine));
+        sort($hit);
+        return $hit;
+    };
+    // Its own employee, because every earlier fixture employee has since been pulled into
+    // $pulledRunId one way or another ($employeeFullId/$employeeMidId are in its sync payload,
+    // $employeeOptOutId was manually joined) -- this one is eligible by date, assigned to no
+    // cycle, in no payload and joined to nothing, which is exactly the case the banner is for.
+    $insEmp->execute([
+        ':comp_id' => $compId, ':employee_no' => 'TEST_TINY1_MISSING_' . uniqid(),
+        ':name_th' => 'ทดสอบ', ':surname_th' => 'ไม่มาในซิงค์', ':name_en' => 'Test', ':surname_en' => 'NotInSync',
+        ':email' => uniqid() . '@test.local', ':employment_date' => '2020-01-01', ':employment_end_date' => null,
+        ':employee_status_enum' => 'permanent',
+        ':base_salary' => 30000, ':salary_effective_date' => '2020-01-01',
+        ':sso_enrolled' => 1, ':pvd_enrolled' => 1, ':tax_exempt' => 0,
+    ]);
+    $t1MissingEmpId = (int)$pdo->lastInsertId();
+    // $pulledRunId is the sync-based run_purpose='payroll' run built above.
+    $t1MissingBefore = $t1Ids($runModel->syncMissingEmployees($pulledRunId, $compId));
+    check('tiny-1: an eligible employee the sync payload never sent is listed as missing, while those already in the run are not',
+        $t1Own($t1MissingBefore, [$t1MissingEmpId, $employeeMidId, $employeeOptOutId, $employeeFullId]), [$t1MissingEmpId]);
+
+    // The cycle rule, all 3 branches in one probe -- it MIRRORS recalculate()'s own cycle-branch
+    // eligibility query (PayrollRunModel, the `elseif ($run['cycle_id'] !== null)` block): an
+    // employee with no standing cycle is eligible for every cycle's run, one assigned elsewhere is
+    // eligible for none of this one's. A stricter rule here would hide employees recalculate()
+    // would have paid.
+    $t1OtherCycleRes = $cycleModel->save($compId, [
+        'cycle_name' => 'TEST_CYCLE_TINY1_' . uniqid(), 'payroll_frequency' => 'monthly',
+        'cutoff_day_of_month' => 20, 'payment_day_of_month' => 1,
+        'ot_cutoff_type' => 'same_as_attendance', 'bank_file_format_id' => 1, 'status' => 'active',
+    ], $adminUserId);
+    $t1SetCycle = $pdo->prepare("UPDATE `employees` SET cycle_id = :cycle_id WHERE id = :id");
+    $t1CycleProbe = [];
+    foreach ([null, $cycleId, (int)($t1OtherCycleRes['id'] ?? 0)] as $t1Probe) {
+        $t1SetCycle->execute([':cycle_id' => $t1Probe ?: null, ':id' => $t1MissingEmpId]);
+        $t1CycleProbe[] = in_array($t1MissingEmpId, $t1Ids($runModel->syncMissingEmployees($pulledRunId, $compId)), true);
+    }
+    $t1SetCycle->execute([':cycle_id' => null, ':id' => $t1MissingEmpId]);
+    check('tiny-1: cycle rule -- unassigned and same-cycle employees are listed, one assigned to another cycle is not',
+        $t1CycleProbe, [true, true, false]);
+
+    $runModel->joinEmployees($pulledRunId, $compId, [$t1MissingEmpId], $adminUserId, true);
+    $t1MissingAfterJoin = $t1Ids($runModel->syncMissingEmployees($pulledRunId, $compId));
+    check('tiny-1: joining the missing employee removes exactly them from the list, nobody else',
+        array_values(array_diff($t1MissingBefore, $t1MissingAfterJoin)), [$t1MissingEmpId]);
+
+    // removeManualEmployee() writes payroll_run_excluded_employees, and the WHERE excludes those
+    // rows -- somebody already decided about them, so they must NOT be offered back as "missing".
+    $runModel->removeManualEmployee($pulledRunId, $compId, $t1MissingEmpId, $adminUserId, true);
+    check('tiny-1: an employee removed from the run does NOT come back into the missing list (the exclusion is a decision)',
+        $t1Own($t1Ids($runModel->syncMissingEmployees($pulledRunId, $compId)), [$t1MissingEmpId]), []);
+
+    check('tiny-1: a run with no sync_process_id has no missing list at all',
+        $runModel->syncMissingEmployees($runId, $compId), []);
+
+    // A sync process this run can legally be incentive against: create() rejects run_purpose=
+    // incentive whenever a cycle is selected, and requires a cycle for a REGULAR sync process --
+    // so the only shape that reaches the gate is a supplemental process with no cycle.
+    $pdo->prepare("INSERT INTO payroll_sync_processes
+        (comp_id, origami_process_id, process_no, run_kind, origami_comp_code, origami_comp_name, frequency_type, schema_version, raw_payload)
+        VALUES (:comp_id, :origami_process_id, :process_no, 'supplemental', 'TESTCODE', 'Test Co.', 'monthly', 1, '{}')")
+        ->execute([':comp_id' => $compId, ':origami_process_id' => random_int(1000000, 9999999), ':process_no' => 'SYNCTEST_INC_' . uniqid()]);
+    $t1IncentiveProcessId = (int)$pdo->lastInsertId();
+    $insSyncItem->execute([':process_id' => $t1IncentiveProcessId, ':employee_id' => $employeeFullId, ':payroll_code' => 'INC_MAPPED', ':mapping_status' => 'mapped']);
+    $t1IncentiveRes = $runModel->create($compId, [
+        'run_purpose' => 'incentive', 'run_name' => 'TINY1_INCENTIVE_' . uniqid(),
+        'period_start_date' => (clone $today)->modify('first day of +9 months')->format('Y-m-d'),
+        'period_end_date' => (clone $today)->modify('last day of +9 months')->format('Y-m-d'),
+        'payment_date' => (clone $today)->modify('last day of +9 months')->format('Y-m-d'),
+        'sync_process_id' => $t1IncentiveProcessId,
+    ], $adminUserId, true);
+    check('tiny-1: a sync-based run whose purpose is not payroll has no missing list (nobody "should" be in a ค่าเที่ยว round)' . (empty($t1IncentiveRes['status']) ? " ({$t1IncentiveRes['message']})" : ''),
+        $runModel->syncMissingEmployees((int)($t1IncentiveRes['id'] ?? 0), $compId), []);
+
+    // $employeeUnpaidId (is_payroll_participant = 0) was mapped into $syncProcessId by the T021
+    // section above -- the exact case syncMissingEmployees() can never surface, since it excludes
+    // everyone present in the payload by definition.
+    $t1MissingRows = $runModel->syncMissingEmployees($pulledRunId, $compId);
+    check('tiny-1: every missing row carries the read-only photo fields, and the mapped-but-unpaid employee is counted separately',
+        [
+            count(array_filter($t1MissingRows, static fn($r) => array_key_exists('profile_photo_path', $r) && array_key_exists('profile_photo_thumbnail_path', $r))) === count($t1MissingRows),
+            $runModel->syncMappedNotParticipantCount($pulledRunId, $compId),
+            $runModel->syncMappedNotParticipantCount($runId, $compId),
+        ],
+        [true, 1, 0]);
+
+    // 2026-09-23, tiny sync-not-participant list: syncMappedNotParticipants() is the row-level
+    // counterpart to the count above -- resolve sync_process_id from the run first, same as the
+    // controller itself does, so this also proves the two can never disagree on what counts.
+    $t1PulledSyncProcessId = (int)($runModel->get($pulledRunId, $compId)['sync_process_id'] ?? 0);
+    $t1NotParticipantRows = $runModel->syncMappedNotParticipants($t1PulledSyncProcessId, $compId);
+    check('tiny: syncMappedNotParticipants() list length equals syncMappedNotParticipantCount() for the same process',
+        count($t1NotParticipantRows), $runModel->syncMappedNotParticipantCount($pulledRunId, $compId));
+    check('tiny: the row is the mapped-but-unpaid employee itself, carrying employee_no + all 4 name fields',
+        [
+            $t1Ids($t1NotParticipantRows),
+            array_key_exists('employee_no', $t1NotParticipantRows[0] ?? []),
+            array_key_exists('name_th', $t1NotParticipantRows[0] ?? []) && array_key_exists('surname_th', $t1NotParticipantRows[0] ?? []),
+            array_key_exists('name_en', $t1NotParticipantRows[0] ?? []) && array_key_exists('surname_en', $t1NotParticipantRows[0] ?? []),
+        ],
+        [[$employeeUnpaidId], true, true, true]);
+    // $t1IncentiveProcessId mapped $employeeFullId, who IS a participant -- a real process with
+    // nobody meeting the condition, so this must be [] and not null.
+    check('tiny: a process where nobody is mapped-but-unpaid returns [] not null',
+        $runModel->syncMappedNotParticipants($t1IncentiveProcessId, $compId), []);
+
+    // The picker's missing_only mode and the banner's own list are one definition
+    // (syncMissingEmployeeWhere()) -- a length big enough that pagination cannot hide the answer.
+    $t1PickerRows = $runModel->manualEmployeeOptions($compId, $pulledRunId, 0, 500, [], '', 'en', [], true);
+    $t1PickerIds = $t1Ids($t1PickerRows['data']);
+    $t1PickerAllIds = $runModel->manualEmployeeAllIds($compId, $pulledRunId, [], '', 'en', [], true);
+    sort($t1PickerAllIds);
+    check('tiny-1: manualEmployeeOptions(missing_only) and manualEmployeeAllIds(missing_only) return exactly the banner\'s own set',
+        [$t1PickerIds, $t1PickerAllIds], [$t1Ids($t1MissingRows), $t1Ids($t1MissingRows)]);
+
+    $t1JoinMixed = $runModel->joinEmployees($pulledRunId, $compId, [$employeeUnpaidId, $t1MissingEmpId], $adminUserId, true);
+    $t1AfterMixedJoin = array_map(static fn($d) => (int)$d['employee_id'], $runModel->getDetails($pulledRunId, $compId));
+    check('tiny-1: joinEmployees() skips an employee who is not paid through payroll, joins the rest, and names who it skipped',
+        [
+            !empty($t1JoinMixed['status']),
+            $t1JoinMixed['skipped_employee_ids'] ?? null,
+            $t1JoinMixed['joined_count'] ?? null,
+            in_array($employeeUnpaidId, $t1AfterMixedJoin, true),
+            in_array($t1MissingEmpId, $t1AfterMixedJoin, true),
+        ],
+        [true, [$employeeUnpaidId], 1, false, true]);
+
+    // ==================== 2026-09-24, tiny round B: api/payroll-run.audit-log.list +
+    // .audit-log.column-values + get()'s new cancelled_from_state ====================
+    // Real dev-DB run 1014 (18 non-view_detail rows as of round A's own measurement) is used
+    // throughout -- every expected value below is SELECTed live, never hardcoded, per this round's
+    // own spec. Real cancelled runs (271/294/310/1018, all comp_id=1) already exist, so no fixture
+    // is needed for the cancelled_from_state assertions either.
+    echo "\n=== 2026-09-24, tiny audit-list: audit-log.list / column-values / get() cancelled_from_state ===\n";
+    $auditRunId = 1014;
+    $auditCompStmt = $pdo->prepare("SELECT comp_id FROM payroll_runs WHERE id = :id");
+    $auditCompStmt->execute([':id' => $auditRunId]);
+    $auditCompId = (int)$auditCompStmt->fetchColumn();
+    checkTrue('tiny audit-list: fixture run 1014 really exists in this dev DB', $auditCompId > 0);
+
+    $auditExpectedTotalStmt = $pdo->prepare("SELECT COUNT(*) FROM payroll_run_audit_logs WHERE run_id = :id AND action != 'view_detail'");
+    $auditExpectedTotalStmt->execute([':id' => $auditRunId]);
+    $auditExpectedTotal = (int)$auditExpectedTotalStmt->fetchColumn();
+
+    $auditAllIdsStmt = $pdo->prepare("SELECT id FROM payroll_run_audit_logs WHERE run_id = :id AND action != 'view_detail' ORDER BY performed_at DESC, id DESC");
+    $auditAllIdsStmt->execute([':id' => $auditRunId]);
+    $auditAllIdsExpected = array_map('intval', $auditAllIdsStmt->fetchAll(PDO::FETCH_COLUMN));
+
+    $page1 = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 0, 'desc', 'th', [], []);
+    check('tiny audit-list: recordsTotal matches a direct COUNT (action != view_detail)', $page1['recordsTotal'], $auditExpectedTotal);
+    check('tiny audit-list: recordsFiltered equals recordsTotal with no filters applied', $page1['recordsFiltered'], $auditExpectedTotal);
+    checkTrue('tiny audit-list: no view_detail row ever appears in the result',
+        !in_array('view_detail', array_column($page1['data'], 'action'), true));
+    $page1Ids = array_map(static fn($r) => (int)$r['id'], $page1['data']);
+    check('tiny audit-list: default order (performed_at DESC, id DESC) exactly matches a direct SELECT', $page1Ids, $auditAllIdsExpected);
+
+    $controllerSrcForDraw = file_get_contents(__DIR__ . '/../app/controllers/PayrollController.php');
+    checkTrue('tiny audit-list: auditLogList() echoes draw as an int (DataTables contract)',
+        strpos($controllerSrcForDraw, "'draw' => intval(\$_POST['draw'] ?? 1),") !== false);
+
+    // -- paging: 2 pages of 10 concatenate to the exact same full id set, no dup/no gap --
+    $pageA = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, 10, '', 0, 'desc', 'th', [], []);
+    $pageB = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 10, 10, '', 0, 'desc', 'th', [], []);
+    $pagedIds = array_merge(array_map(static fn($r) => (int)$r['id'], $pageA['data']), array_map(static fn($r) => (int)$r['id'], $pageB['data']));
+    check('tiny audit-list: paging start=0,10/length=10 concatenated equals the full id set (no dup, no gap)', $pagedIds, $auditAllIdsExpected);
+    check('tiny audit-list: page A has exactly length=10 rows', count($pageA['data']), min(10, $auditExpectedTotal));
+
+    // -- order whitelist: every whitelisted a.* column, both directions, against a direct SELECT --
+    foreach (['performed_at' => 0, 'action' => 2, 'to_state' => 3, 'ip_address' => 5] as $colName => $colIdx) {
+        foreach (['asc', 'desc'] as $dir) {
+            $stmtOrder = $pdo->prepare("SELECT id FROM payroll_run_audit_logs WHERE run_id = :id AND action != 'view_detail' ORDER BY {$colName} " . strtoupper($dir) . ", id " . strtoupper($dir));
+            $stmtOrder->execute([':id' => $auditRunId]);
+            $expectedOrderIds = array_map('intval', $stmtOrder->fetchAll(PDO::FETCH_COLUMN));
+            $result = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', $colIdx, $dir, 'th', [], []);
+            $actualIds = array_map(static fn($r) => (int)$r['id'], $result['data']);
+            check("tiny audit-list: order whitelist col {$colIdx} ({$colName}) {$dir} matches ground truth", $actualIds, $expectedOrderIds);
+        }
+    }
+
+    // -- actor (col 1) sorts by the bilingual name column matching the caller's own language --
+    foreach (['th' => 'e.name_th', 'en' => 'e.name_en'] as $lang => $nameCol) {
+        foreach (['asc', 'desc'] as $dir) {
+            $stmtActor = $pdo->prepare("SELECT a.id FROM payroll_run_audit_logs a LEFT JOIN employees e ON e.id = a.performed_by WHERE a.run_id = :id AND a.action != 'view_detail' ORDER BY {$nameCol} " . strtoupper($dir) . ", a.id " . strtoupper($dir));
+            $stmtActor->execute([':id' => $auditRunId]);
+            $expectedActorIds = array_map('intval', $stmtActor->fetchAll(PDO::FETCH_COLUMN));
+            $resultActor = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 1, $dir, $lang, [], []);
+            $actualActorIds = array_map(static fn($r) => (int)$r['id'], $resultActor['data']);
+            check("tiny audit-list: order whitelist col 1 (actor, lang={$lang}) {$dir} matches ground truth", $actualActorIds, $expectedActorIds);
+        }
+    }
+
+    // -- out-of-whitelist column index falls back to the default order, no SQL error --
+    $outOfWhitelist = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 4, 'desc', 'th', [], []); // 4 = note, intentionally not orderable
+    $outOfWhitelistIds = array_map(static fn($r) => (int)$r['id'], $outOfWhitelist['data']);
+    check('tiny audit-list: an out-of-whitelist column index (4, note) falls back to the default order, no SQL error', $outOfWhitelistIds, $auditAllIdsExpected);
+    $outOfRange = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 999, 'asc', 'th', [], []);
+    checkTrue('tiny audit-list: a column index far outside any real column (999) does not throw', is_array($outOfRange['data']));
+
+    // -- search: note + actor name + ip_address, LIKE, bound (not action/to_state per spec) --
+    // 2 rows really do match (verified live) -- 'reopen's note has "Correcting payment_date...",
+    // 'approve's re-approval note has "...correcting payment_date..." lower-case (MySQL LIKE is
+    // case-insensitive under this column's own utf8mb4_unicode_ci collation).
+    $searchResult = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, 'Correcting payment_date', 0, 'desc', 'th', [], []);
+    check('tiny audit-list: search matches both real note substrings (case-insensitive LIKE)', $searchResult['recordsFiltered'], 2);
+    $noMatchResult = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, 'ZZZ_NO_SUCH_TEXT_ZZZ', 0, 'desc', 'th', [], []);
+    check('tiny audit-list: a non-matching search returns recordsFiltered=0', $noMatchResult['recordsFiltered'], 0);
+    check('tiny audit-list: recordsTotal is unaffected by search (still the full run count)', $noMatchResult['recordsTotal'], $auditExpectedTotal);
+
+    // -- date range on performed_at, inclusive both boundaries (>= from 00:00:00, < to+1 day) --
+    $dateSame = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 0, 'desc', 'th', ['date_from' => '2026-09-08', 'date_to' => '2026-09-08'], []);
+    check('tiny audit-list: date_from=date_to=2026-09-08 includes every row (all 18 rows are that day)', $dateSame['recordsFiltered'], $auditExpectedTotal);
+    $dateAfter = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 0, 'desc', 'th', ['date_from' => '2026-09-09'], []);
+    check('tiny audit-list: date_from the day after excludes everything (inclusive lower bound confirmed)', $dateAfter['recordsFiltered'], 0);
+    $dateBefore = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 0, 'desc', 'th', ['date_to' => '2026-09-07'], []);
+    check('tiny audit-list: date_to the day before excludes everything (inclusive upper bound confirmed)', $dateBefore['recordsFiltered'], 0);
+
+    // -- column_filters: audit_action IN (...), bound --
+    $filteredByAction = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, -1, '', 0, 'desc', 'th', [], ['audit_action' => ['approve']]);
+    check('tiny audit-list: column_filters audit_action=[approve] matches a direct COUNT (2 real approve rows on this run)', $filteredByAction['recordsFiltered'], 2);
+    checkTrue('tiny audit-list: every row column_filters returned really has action=approve',
+        count($filteredByAction['data']) > 0 && count(array_filter($filteredByAction['data'], fn($r) => $r['action'] === 'approve')) === count($filteredByAction['data']));
+
+    // -- comp scope / nonexistent run / zero-audit run --
+    $wrongComp = $runModel->getAuditLogPaged($auditRunId, 999999, 0, -1, '', 0, 'desc', 'th', [], []);
+    check('tiny audit-list: the same run id under a company it does not belong to returns empty (no 2nd real company exists in this dev DB to test with instead)', [$wrongComp['recordsTotal'], $wrongComp['data']], [0, []]);
+    $noSuchRun = $runModel->getAuditLogPaged(999999999, $auditCompId, 0, -1, '', 0, 'desc', 'th', [], []);
+    check('tiny audit-list: a run id that does not exist at all returns empty, not a throw', [$noSuchRun['recordsTotal'], $noSuchRun['data']], [0, []]);
+
+    // No real run with zero audit rows exists in this dev DB (create() always logs a 'create' row
+    // first, per PayrollRunModel's own docblock at getAuditLog() -- confirmed by this round's own
+    // S6 investigation) -- a bare INSERT bypassing create() is used instead, same rolled-back
+    // transaction as every other fixture in this file, to reach a state the model's own public API
+    // cannot produce but the SQL itself must still handle correctly (e.g. a pre-audit-log-era row).
+    $zeroAuditStmt = $pdo->prepare("INSERT INTO payroll_runs (comp_id, run_name, period_start_date, period_end_date, payment_date, state) VALUES (:comp_id, 'tiny audit-list zero-audit fixture', '2099-01-01', '2099-01-31', '2099-02-05', 'draft')");
+    $zeroAuditStmt->execute([':comp_id' => $auditCompId]);
+    $zeroAuditRunId = (int)$pdo->lastInsertId();
+    $zeroAuditResult = $runModel->getAuditLogPaged($zeroAuditRunId, $auditCompId, 0, -1, '', 0, 'desc', 'th', [], []);
+    check('tiny audit-list: a real run with genuinely zero audit rows returns recordsTotal=0, data=[]', [$zeroAuditResult['recordsTotal'], $zeroAuditResult['data']], [0, []]);
+
+    // -- start/length regression guard: bound as int, never string-concatenated --
+    $zeroLength = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 0, 0, '', 0, 'desc', 'th', [], []);
+    checkTrue('tiny audit-list: length=0 does not throw (LIMIT 0, valid SQL, empty data)', $zeroLength['data'] === []);
+    check('tiny audit-list: length=0 still reports the correct recordsTotal/recordsFiltered', [$zeroLength['recordsTotal'], $zeroLength['recordsFiltered']], [$auditExpectedTotal, $auditExpectedTotal]);
+    $hugeStart = $runModel->getAuditLogPaged($auditRunId, $auditCompId, 100000, 10, '', 0, 'desc', 'th', [], []);
+    checkTrue('tiny audit-list: an out-of-range start does not throw, returns empty data', $hugeStart['data'] === []);
+
+    // -- column-values: distinct values match a direct SELECT DISTINCT exactly --
+    $stmtDistinctAction = $pdo->prepare("SELECT DISTINCT action FROM payroll_run_audit_logs WHERE run_id = :id AND action != 'view_detail' ORDER BY action ASC");
+    $stmtDistinctAction->execute([':id' => $auditRunId]);
+    $expectedActions = $stmtDistinctAction->fetchAll(PDO::FETCH_COLUMN);
+    $actualActions = $runModel->auditLogColumnValues($auditRunId, $auditCompId, 'audit_action', 'th', [], []);
+    check('tiny audit-list: column-values(audit_action) exactly matches a direct SELECT DISTINCT', $actualActions, $expectedActions);
+    $unknownColumn = $runModel->auditLogColumnValues($auditRunId, $auditCompId, 'not_a_real_key', 'th', [], []);
+    check('tiny audit-list: column-values() for an unmapped key returns empty, not an error', $unknownColumn, []);
+
+    // -- get(): existing keys untouched, plus the new cancelled_from_state --
+    $beforeKeysRun = $runModel->get($auditRunId, $auditCompId);
+    checkTrue('tiny audit-list: get() still returns a row for run 1014', is_array($beforeKeysRun));
+    checkTrue('tiny audit-list: get() still has remittance_count (the column immediately after the new subquery)', array_key_exists('remittance_count', $beforeKeysRun));
+    checkTrue('tiny audit-list: get()\'s own core fields (id/run_name/state) are untouched',
+        (int)$beforeKeysRun['id'] === $auditRunId && is_string($beforeKeysRun['run_name']) && is_string($beforeKeysRun['state']));
+    checkTrue('tiny audit-list: get() gained the new cancelled_from_state key', array_key_exists('cancelled_from_state', $beforeKeysRun));
+    check('tiny audit-list: get() on a run that was never cancelled (1014) returns cancelled_from_state = null', $beforeKeysRun['cancelled_from_state'], null);
+
+    $cancelledRun = $runModel->get(1018, 1);
+    $stmtCancelledGroundTruth = $pdo->prepare("SELECT from_state FROM payroll_run_audit_logs WHERE run_id = :id AND action = 'cancel' ORDER BY id DESC LIMIT 1");
+    $stmtCancelledGroundTruth->execute([':id' => 1018]);
+    $expectedCancelledFromState = $stmtCancelledGroundTruth->fetchColumn();
+    check('tiny audit-list: get() on a real cancelled run (1018) matches list():142\'s own subquery exactly', $cancelledRun['cancelled_from_state'], $expectedCancelledFromState);
 
 } finally {
     $pdo->rollBack();

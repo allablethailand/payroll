@@ -175,9 +175,9 @@ try {
         checkTrue('custom item delete: logged as a status->deleted update row', count($customDeleteRows) > 0);
     }
 
-    echo "\n=== SUMMARY: {$passes} passed, {$failures} failed ===\n";
 } finally {
     $pdo->rollBack();
 }
 
+echo "\nPassed: {$passes}, Failed: {$failures}\n";
 exit($failures > 0 ? 1 : 0);

@@ -81,6 +81,13 @@ function initTableDragScroll(tableSelector, extraWrapClasses) {
     $wrap.data('tbl-drag-scroll-bound', true);
 
     const el = $wrap[0];
+    // 2026-09-15: the frozen columns' own right-hand shadow is the "there is more table behind this"
+    // cue, so it only makes sense once the table HAS been scrolled -- this class is what the CSS
+    // keys that shadow off, and it covers thead/tbody/tfoot at once because it lives on the shared
+    // scroller, not on the cells.
+    const syncScrolled = () => $wrap.toggleClass('tbl-scrolled-x', el.scrollLeft > 0);
+    $wrap.on('scroll', syncScrolled);
+    syncScrolled();
     let dragging = false;
     let moved = false;
     let startX = 0;
@@ -136,8 +143,12 @@ function initStickyColumns(tableSelector, options = {}) {
     // scrolled away with the rest of the row instead of staying pinned under its own header. Same
     // colspan guard as the body above -- most tables on this pattern have no <tfoot> at all, in which
     // case this is just an empty, harmless no-op.
+    // 2026-09-15, real bug: a `<tfoot>` row is written with `<th>` cells in this app (Payroll Detail's
+    // own totals row is 14 `<th>`s), so counting/selecting only `> td` skipped the footer entirely and
+    // its frozen columns scrolled away while head and body stayed put. Both tags count, both are
+    // styled.
     const $firstFootRow = $table.find('> tfoot > tr').first();
-    const footHasRealColumns = $firstFootRow.length > 0 && $firstFootRow.find('> td').length === totalCols;
+    const footHasRealColumns = $firstFootRow.length > 0 && $firstFootRow.find('> td, > th').length === totalCols;
 
     $table.find('.tbl-sticky-col')
         .removeClass('tbl-sticky-col tbl-sticky-col-edge-left tbl-sticky-col-edge-right')
@@ -149,7 +160,7 @@ function initStickyColumns(tableSelector, options = {}) {
     function styleColumn(colIndex, cssProps, isEdge, edgeClass) {
         let $cells = $table.find(`> thead > tr > th:nth-child(${colIndex})`);
         if (bodyHasRealColumns) $cells = $cells.add($table.find(`> tbody > tr > td:nth-child(${colIndex})`));
-        if (footHasRealColumns) $cells = $cells.add($table.find(`> tfoot > tr > td:nth-child(${colIndex})`));
+        if (footHasRealColumns) $cells = $cells.add($table.find(`> tfoot > tr > td:nth-child(${colIndex}), > tfoot > tr > th:nth-child(${colIndex})`));
         $cells.addClass('tbl-sticky-col').css(cssProps);
         if (isEdge) $cells.addClass(edgeClass);
     }

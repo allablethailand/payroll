@@ -1,0 +1,33 @@
+# สลิปดู/สลิปแก้ = ตารางเดียว (4a-1, 2026-09-18)
+
+หน้าดูเคยมี renderer ของตัวเอง (`breakdownViewSlipHtml` + `breakdownLineRowsRd` + `statutoryRowsRd`, layout 2 คอลัมน์) คนละตัวกับตารางที่ใช้แก้ — บรรทัดเดียวกันจึงอ่านได้คนละแบบใน 2 หน้าจอที่ห่างกัน 1 คลิก
+
+**เลือก B1: หน้าดูเรียก `api/payroll-run.sync-lines-for-employee` ตัวเดียวกับหน้าแก้** ไม่ใช่ enrich `getDetails()` เพราะ **แถวที่ถูก exclude ไม่มีอยู่ใน breakdown JSON เลย** (recalculate ตัดทิ้ง) สลิปที่ render จาก JSON นั้นจึงแสดงแถวพวกนั้นไม่ได้ในทางหลักการ จะทำได้ต้องเขียน `syncDeductionLinesForEmployee()` ซ้ำอีกตัว (ผิดกฎ mirror-copy) — endpoint นี้ SELECT ล้วน ไม่มี recalc side-effect, `requireViewAccess()` เหมือนกัน, mask เข้มกว่า
+
+ราคา: **+2 request ต่อการเปิดสลิปหน้าดู** (lines + history) — วัดจริง `blockedRecalculates` 1/page-load เท่าเดิมกับ tiny-C
+
+PHP แตะเท่าที่จำเป็น: row builder ส่ง passthrough 5 field ที่หน้าดูเคยอ่านจาก JSON (`formula`, `is_exempted`, `exempted_amount`, `is_custom`, `is_other`) + `note` ของ earning/deduction ที่เคย hardcode `null` — ไม่มีการคำนวณ/ลำดับ/จำนวนแถวเปลี่ยน — `exempted_amount` เข้า `ADJUST_LINE_MONEY_KEYS` (เป็นยอดเงินจริงของคนนั้น)
+
+**ลบทิ้ง**: renderer หน้าดู 3 ตัว + `payslipEmptyRowRd` + ปุ่ม "?" (`formulaButtonRd` + CSS) + collapse "แสดง n แถวที่ซ่อน" + บรรทัด "ยืนยันแล้ว — ยกเลิกการยืนยันก่อนแก้" + lang key 5 ตัว (net −189 บรรทัด)
+
+**วัดได้** (8 cell th/en × light/dark × 1400/430, 176 assertion): 2 โหมด rows 8/8 · หัวกลุ่ม 3/3 · หน้าดู `col-check`/`lo-action-cell`/switch/ดินสอ = 0 ใน DOM · `d-none` = 0 · ยอดรวม 3 แถวตัวเลขตรงกัน · `-` ในช่องว่าง = 0 · ปุ่ม "?" = 0 · ลำดับ tag ต่อแถวตรงกัน · 430 sticky ยังทำงาน
+
+## 4a-2 (2026-09-18): manual line เข้าตาราง
+
+**การ์ด `.ml-mount` ถูกลบทั้งก้อน** — รายการที่เพิ่มเองกลายเป็น **แถวของตารางเดียวกัน** ใน 2 กลุ่มใหม่ (`manual_earning`/`manual_deduction`, ต่อท้ายภาครัฐ ก่อน `other`) แปลง row shape ฝั่ง JS ด้วย `manualLineToTableRowRd()` **ไม่แตะ PHP เลย** — ไม่เลือกทาง "เลิกกรอง `source='manual_line'` ใน `syncDeductionLinesForEmployee()`" เพราะยังต้องเรียก endpoint `manual-lines` อยู่ดี (ฟอร์มแก้ prefill จาก `ped_type_id`/`destination_*` ที่ breakdown JSON ไม่มี) แล้วยังเปิดช่องให้ `lineOverrideSave()` เขียน override ทับ item_code ที่ manual line 2 แถวใช้ร่วมกันได้
+
+`override_action` **ต้องไม่ถูกเซ็ต** ในตัวแปลง — มันคือสิ่งที่ทำให้แถวขึ้น tag "ระบบ: x" ซึ่งเป็นการอ้างยอดที่ระบบคำนวณทั้งที่รายการนี้ไม่เคยมี · `note` ของ manual ไปเป็น `override_note` (ได้ tag "หมายเหตุ: …" ใต้ tag ปลายทาง = ลำดับเดียวกับการ์ดเดิม)
+
+**ยอดรวม 3 แถวกลับเป็น `<tr>` ท้ายตาราง** ทั้ง 2 โหมด (`.lo-totals-block`/`#breakdownNetSummary` ถูกลบ) — `mode` ตัดสินแค่ `colspan` เท่านั้น ตัวเลข/ป้ายเหมือนกันทุกตัว
+
+**แถว skipped ไม่ render เลย ทั้ง 2 โหมด** (กลับคำตัดสิน 18c ที่ให้เหลือ badge เหตุผลตัวเดียว) — แถวที่ไม่มีผลต่อยอดรวมใดเลยไม่ควรกินพื้นที่ของสลิป: badge ที่อธิบายว่าทำไมยอดเป็น 0 ก็ยังใช้ 1 แถวเท่าเดิม · กรองที่ `renderLineOverrideTableRd()` ไม่ใช่ที่ row builder · แถวที่มี override รายคนยังแสดงเสมอ (`lineOverrideIsSkippedRd()`) — badge `payroll_statutory_skip` ไม่มีผู้เรียกใน JS อีกแล้ว (entry ใน `status_map.php` + lang คงไว้)
+
+**ลิงก์ "เพิ่มรายการ" อยู่ในแถวหัวกลุ่ม manual ชิดขวา** 1 ตัว/กลุ่ม (โหมดแก้เท่านั้น) — ไม่ใช่แถวแยกท้ายกลุ่มอีกต่อไป: แถวนั้นพูดซ้ำสิ่งที่หัวกลุ่มเหนือมันบอกไปแล้ว และกินอีก 1 แถว · หัวกลุ่มยังเป็น 1 `<tr>` colspan เต็ม (flex ในเซลล์) · กลุ่ม manual ที่ว่างยัง render หัวกลุ่มไว้ เพราะลิงก์บนหัวคือทางเข้าเดียวที่เหลือ
+
+**ลบทิ้ง**: `payslipViewHtml()`/`payslipNetSummaryHtml()` (app.js, ไม่เหลือผู้เรียก) + `manualLineTagHtml`/`manualLineListItemHtml`/`manualLineRowActionsHtml`/`manualLineAddButtonHtml`/`manualLineEmptyColumnHtml`/`renderBreakdownManualLinesRd`/`loadBreakdownManualLinesRd`/`renderBreakdownNetSummaryRd`/`manualLineHostForMountRd` + CSS `.payslip-view*`/`.payslip-summary*`/`.manual-line-amount*`/`.manual-line-actions*` (**เก็บ `.payslip-line-head/-name/-note/-tag/-tag-warn`** ตารางใช้อยู่) + lang 5 คีย์ + `tests/breakdown_slip_render_test.js` ทั้งไฟล์
+
+**tag ใต้บรรทัดแสดงเต็ม wrap ได้ ไม่ย่อ ไม่มี `title`** — ที่ 430px ไม่มี hover ให้ใช้เลย การย่อจึงเท่ากับตัดเหตุผลของยอดทิ้งบนอุปกรณ์ที่คนดูสลิปจริง (วัดแล้ว: tag ยาวสุด 151 ตัวอักษร, 14 tag ไม่มีตัวไหน clipped/ellipsis/nowrap, `--fs-xs` = 12px เท่าเดิม)
+
+**Playwright วัดบน fixture run/emp 28 ของ `tests/ui/mksession.php` เป็นหลัก** — seed ของที่จะวัดเอง แล้วลบคืนทุก cell จบด้วย `--cleanup`; run 752 ใช้เฉพาะเมื่อต้องการข้อมูลถาวรที่ fixture สร้างให้ไม่ได้
+
+บั๊กจริงที่เจอจากการวัด: `lineOverridePublishStickyOffsetRd()` return ทิ้งเมื่อไม่มี `th.col-check` → หน้าดูที่ 430px ไม่ publish `--lo-sticky-left-2` คอลัมน์ชื่อจึงไม่ถูก pin — แก้เป็น 0px เมื่อไม่มีคอลัมน์นำหน้า

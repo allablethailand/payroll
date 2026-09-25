@@ -153,7 +153,11 @@ try {
     $rowBeforeOverride = current(array_filter($listBeforeOverride, fn($r) => $r['recurring_id'] === $recurringOtherPersonId));
     checkTrue('recurringDeductionDestinationsForEmployee() lists the row before any override', $rowBeforeOverride !== false);
     check('no override present yet', $rowBeforeOverride['override'], null);
-    check('template_payee_type reflects the template default', $rowBeforeOverride['template_payee_type'] ?? null, 'other_person');
+    // 2026-09-17, tiny-L2: template default and run override are 2 sub-arrays of one shape now
+    // (PayrollRunModel::payeeDestinationDescriptor()), and every label in them is the one that
+    // value's own picker shows -- the flat `template_*` keys and the single-language `*_label` keys
+    // they replaced are gone on purpose.
+    check('the template default is reported under `template`', $rowBeforeOverride['template']['payee_type'] ?? null, 'other_person');
 
     // 2026-09-10, Batch 3B item 3: bank_account_id is mandatory now for a 'company' override too.
     $overrideRes = $runModel->recurringDeductionDestinationOverrideSave($runId, $compId, $recurringOtherPersonId, ['payee_type' => 'company', 'bank_account_id' => $bankAccountId], $userId, true);
@@ -175,8 +179,12 @@ try {
     checkTrue('recurringDeductionDestinationsForEmployee() now reports an active override', $rowAfterOverride['override'] !== null);
     check('override payee_type reported correctly', $rowAfterOverride['override']['payee_type'] ?? null, 'company');
     check('override bank_account_id reported correctly', $rowAfterOverride['override']['bank_account_id'] ?? null, $bankAccountId);
-    check('override bank_account_label resolved for display', $rowAfterOverride['override']['bank_account_label'] ?? null, 'RDD Test Account');
-    check('template_payee_type in the same response STILL shows the template\'s own default (other_person), for comparison', $rowAfterOverride['template_payee_type'] ?? null, 'other_person');
+    checkTrue('override bank account label resolved for display, and names the account',
+        strpos((string)($rowAfterOverride['override']['bank_account_label_th'] ?? ''), 'RDD Test Account') !== false);
+    check('the override label is the picker own option, byte for byte',
+        $rowAfterOverride['override']['bank_account_label_th'] ?? null,
+        (new PayrollCycleModel($pdo))->bankAccountOptionRowsByIds($compId, [$bankAccountId])[$bankAccountId]['text_th'] ?? null);
+    check('template_payee_type in the same response STILL shows the template\'s own default (other_person), for comparison', $rowAfterOverride['template']['payee_type'] ?? null, 'other_person');
 
     echo "=== PayrollRunModel::recurringDeductionDestinationOverrideRemove(): reverts to template ===\n";
     $removeRes = $runModel->recurringDeductionDestinationOverrideRemove($runId, $compId, $recurringOtherPersonId, $userId, true);

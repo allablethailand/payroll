@@ -115,6 +115,21 @@ class BankTransferFileReport implements ReportGeneratorInterface {
         if (empty($details)) {
             throw new LocalizedException('This payroll run has no calculated employees yet. Recalculate it first.', 'run_no_calculated_employees');
         }
+        // 2026-09-25, real bug found and fixed (round B, see
+        // docs/decisions/2026-09-25-bank-transfer-export-paid-runs.md): once a run is paid/locked,
+        // net_amount_due (still-OWED) is 0 for everyone by design -- this report needs "what was
+        // actually recorded as disbursed via bank transfer for this run" instead. Overridden HERE,
+        // once, before grouping/rendering -- every downstream read of $d['net_amount_due'] (plain-
+        // transfer inclusion check, mixed-line percent/fixed split, generic-fallback/configured
+        // amount columns) picks this up for free with zero further changes. An approved run is
+        // completely untouched (net_amount_due stays exactly as PayrollReportDataModel computed
+        // it), so R2 (byte-identical approved-run output) holds.
+        if (in_array($run['state'], ['paid', 'locked'], true)) {
+            foreach ($details as &$d) {
+                $d['net_amount_due'] = $d['net_amount_paid_via_transfer'] ?? 0;
+            }
+            unset($d);
+        }
 
         $bankFileFormatId = isset($run['bank_file_format_id']) ? (int)$run['bank_file_format_id'] : 0;
         $fields = [];
@@ -199,8 +214,14 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             // employee with payment_method_id still NULL (never assigned one) falls back to
             // 'transfer' above, same "unset = bank/transfer" default the old payment_type enum had.
         }
+        // 2026-09-25, real bug found and fixed (round B, R3): no candidate at all (e.g. every
+        // employee is cash-classified, or every mixed employee's own transfer lines are empty/
+        // unreconciled) used to throw here immediately. Per the confirmed requirement, a bank
+        // transfer file export must NEVER error just because nobody ends up in it -- a synthetic
+        // empty group makes the SAME per-group render path below produce a valid (empty-per-
+        // format) file instead, with zero duplicated rendering logic.
         if (empty($groups)) {
-            throw new LocalizedException('No employees with a valid bank account were found to include in the transfer file.', 'bank_transfer_no_valid_accounts');
+            $groups['__none__'] = ['bank_account_id' => null, 'details' => []];
         }
 
         // Suffix/split-filename only makes sense once there's genuinely more than one group -- the
@@ -215,31 +236,72 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             if (!$isMultiAccount) {
                 $companyBankAccount['label'] = '';
             }
-            try {
-                if ($isConfigured) {
-                    $files[] = $this->renderConfigured($group['details'], $fields, $config, $run, $company, $runId, $compId, $language, $companyBankAccount);
-                } else {
-                    $files[] = $this->renderGenericFallback($group['details'], $runId, $companyBankAccount['label'], $mixedReconciliationWarnings, $run['bank_transfer_file_code']);
-                }
-            } catch (LocalizedException $e) {
-                // 2026-09-02: a group where every employee happens to be missing bank details
-                // (rare, but possible) is skipped rather than failing the WHOLE multi-account
-                // export -- each per-employee skip is already surfaced (warning-comment-row for
-                // the generic fallback, silent exclusion for a configured format, same as before
-                // this round), only the top-level "nothing at all was included" case below is a
-                // hard failure.
-                if ($e->getErrorKey() !== 'bank_transfer_no_valid_accounts') {
-                    throw $e;
-                }
+            if ($isConfigured) {
+                $files[] = $this->renderConfigured($group['details'], $fields, $config, $run, $company, $runId, $compId, $language, $companyBankAccount);
+            } else {
+                $files[] = $this->renderGenericFallback($group['details'], $runId, $companyBankAccount['label'], $mixedReconciliationWarnings, $run['bank_transfer_file_code']);
             }
         }
-        if (empty($files)) {
-            throw new LocalizedException('No employees with a valid bank account were found to include in the transfer file.', 'bank_transfer_no_valid_accounts');
+        // 2026-09-25, round B: both render methods now ALWAYS return a file (see their own
+        // docblocks) -- 'no valid accounts' is no longer thrown by either one, so this branch and
+        // the per-group try/catch that used to guard it were removed; $files is never empty here.
+        $result = count($files) === 1 ? $files[0] : $this->bundleFiles($files, $runId);
+
+        // R3: tell the caller HOW MANY employees ended up excluded and why, broken down by the real
+        // gate that excluded them, WITHOUT touching the file's own bytes (approved-run output must
+        // stay byte-identical, R2) -- ReportsController surfaces this as a response header
+        // (generate() streams the file content directly, so there's no JSON envelope to carry a
+        // warning in-band; a header is the least-invasive channel that doesn't change any other
+        // report's contract, see docs/decisions/2026-09-25-bank-transfer-export-paid-runs.md).
+        //
+        // 2026-09-25, follow-up (same round): a SINGLE warning_key/params pair was no longer enough
+        // once two independent advisories can both apply to the same download at once (a paid/
+        // locked run's own "already recorded as paid, verify before re-uploading" notice, R1 below,
+        // ALONGSIDE the exclusion breakdown, R3) -- $result['warnings'] is now a LIST of
+        // {key, params} entries instead, each translated and shown together in ONE modal
+        // (public/js/app.js's generateReport()). A report that sets nothing here (every report
+        // except this one, today) is completely unaffected.
+        $skipNoAccount = 0;
+        $skipNoAmount = 0;
+        $includedCount = 0;
+        foreach ($files as $f) {
+            $skipNoAccount += $f['skip_no_account'] ?? 0;
+            $skipNoAmount += $f['skip_no_amount'] ?? 0;
+            $includedCount += $f['included_count'] ?? 0;
         }
-        if (count($files) === 1) {
-            return $files[0];
+        $skipReconciliation = count($mixedReconciliationWarnings);
+        $totalSkipped = $skipNoAccount + $skipNoAmount + $skipReconciliation;
+        $warnings = [];
+        // R1: a paid/locked run's numbers are what was already recorded as disbursed, not a fresh
+        // "about to pay" preview -- re-downloading/re-uploading this file risks a real double
+        // transfer, so this fires EVERY time for that state, independent of whether anyone was
+        // excluded (even a perfectly clean file with 100% inclusion still needs this caveat).
+        if (in_array($run['state'], ['paid', 'locked'], true)) {
+            $warnings[] = ['key' => 'bank_transfer_already_paid_notice', 'params' => ['included' => $includedCount]];
         }
-        return $this->bundleFiles($files, $runId);
+        if ($includedCount === 0 && $totalSkipped === 0) {
+            // R3 follow-up: nobody was even a bank-transfer/mixed CANDIDATE (every employee resolved
+            // to cash/check at the classification stage in generate()'s own grouping loop above, or
+            // a mixed employee with zero transfer lines configured -- see that loop's own comments)
+            // -- the per-reason breakdown below would be all zeros in this case, which read as
+            // broken/uninformative rather than as an explanation, so this gets its own dedicated
+            // message instead of the generic one. count($details) is exactly right here: if this
+            // branch is reached, NOT ONE row in $details was included or skip-counted, so every one
+            // of them is this "no bank-transfer setup at all" case.
+            $warnings[] = ['key' => 'bank_transfer_no_bank_employees', 'params' => ['total' => count($details)]];
+        } elseif ($totalSkipped > 0) {
+            $warnings[] = ['key' => 'bank_transfer_employees_excluded', 'params' => [
+                'included' => $includedCount,
+                'no_account' => $skipNoAccount,
+                'no_amount' => $skipNoAmount,
+                'reconciliation' => $skipReconciliation,
+                'total_skipped' => $totalSkipped,
+            ]];
+        }
+        if (!empty($warnings)) {
+            $result['warnings'] = $warnings;
+        }
+        return $result;
     }
 
     /** Zips 2+ per-account files together -- only reached when a run genuinely has employees
@@ -335,10 +397,17 @@ class BankTransferFileReport implements ReportGeneratorInterface {
         $lines = ['เลขที่บัญชี,ชื่อบัญชี,ธนาคาร,รหัสธนาคาร,จำนวนเงิน,หมายเหตุ'];
         $skipped = $extraWarnings;
         $total = 0.0;
+        // 2026-09-25, round B: split out from the (unchanged) $skipped/$total logic above/below --
+        // see generate()'s own docblock on why these are returned separately rather than folded
+        // into $skipped (which stays byte-identical to its pre-round-B shape/wording for R2).
+        $skipNoAccount = 0;
+        $skipNoAmount = 0;
+        $includedCount = 0;
         foreach ($details as $d) {
             $accountNo = $this->decryptEmployeeField($d, 'bank_account_no');
             if (empty($accountNo) || empty($d['bank_code'])) {
                 $skipped[] = $d['employee_no'];
+                $skipNoAccount++;
                 continue;
             }
             // 2026-08-31: net_amount_due (not the plain net_amount column) -- the DELTA still owed
@@ -347,12 +416,17 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             // run's first-ever payment, where this is byte-identical to net_amount). An employee
             // with nothing new to disburse this cycle (e.g. untouched by whatever merge triggered
             // this reopen+repay) is skipped entirely -- see PayrollReportDataModel::getRunDetails()'s
-            // own docblock on these columns.
+            // own docblock on these columns. For a paid/locked run, this is already the amount
+            // recorded as paid via bank transfer (see generate()'s own override), not the due
+            // amount -- 0 here means "nothing was ever recorded as transferred for this employee
+            // in this run", not "nothing left to pay".
             $amount = (float)($d['net_amount_due'] ?? $d['net_amount']);
             if ($amount <= 0) {
+                $skipNoAmount++;
                 continue;
             }
             $total += $amount;
+            $includedCount++;
             $lines[] = implode(',', [
                 $this->csvField($accountNo),
                 $this->csvField($d['bank_account_name'] ?? ''),
@@ -373,9 +447,13 @@ class BankTransferFileReport implements ReportGeneratorInterface {
         if (!empty($fileCode)) {
             array_unshift($lines, '# เลขที่ไฟล์: ' . $fileCode);
         }
-        if ($total <= 0) {
-            throw new LocalizedException('No employees with a valid bank account were found to include in the transfer file.', 'bank_transfer_no_valid_accounts');
-        }
+        // 2026-09-25, real bug found and fixed (round B, R3): used to throw
+        // 'bank_transfer_no_valid_accounts' here when $total<=0 (nobody qualified) -- confirmed
+        // requirement is to always return a real file instead (empty of detail rows is a valid CSV
+        // shape: header row + whatever warning comment rows already apply above), and let the
+        // caller surface HOW MANY/WHY via generate()'s own warning_key/warning_params instead of
+        // failing the whole download. See this class's own top-of-file docblock reference to
+        // docs/decisions/2026-09-25-bank-transfer-export-paid-runs.md.
 
         // 2026-08-29, explicit bug report: "excel csv...ไม่รองรับภาษาไทย" -- plain UTF-8 CSV with no
         // BOM opens correctly in most tools, but Microsoft Excel (the overwhelmingly common way
@@ -390,6 +468,9 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             'content' => "\xEF\xBB\xBF" . implode("\r\n", $lines) . "\r\n",
             'file_name' => "BankTransfer_Run{$runId}{$suffixPart}.csv",
             'mime_type' => 'text/csv',
+            'skip_no_account' => $skipNoAccount,
+            'skip_no_amount' => $skipNoAmount,
+            'included_count' => $includedCount,
         ];
     }
 
@@ -445,29 +526,37 @@ class BankTransferFileReport implements ReportGeneratorInterface {
         }
 
         $included = [];
-        $skippedCount = 0;
+        // 2026-09-25, round B: split from one combined $skippedCount into per-reason counters,
+        // returned to generate() (see this method's own return, and generate()'s own aggregation)
+        // instead of being silently discarded -- was previously never surfaced anywhere at all for
+        // a configured format (see this class's own top-of-file docblock, pre-round-B wording).
+        $skipNoAccount = 0;
+        $skipNoAmount = 0;
         $total = 0.0;
         // 2026-09-02: same removal as renderGenericFallback()'s own copy of this filter -- see that
         // method's own comment. generate() already decided inclusion for every row in $details.
         foreach ($details as $d) {
             $accountNo = $this->decryptEmployeeField($d, 'bank_account_no');
             if (empty($accountNo) || empty($d['bank_code'])) {
-                $skippedCount++;
+                $skipNoAccount++;
                 continue;
             }
             // 2026-08-31: net_amount_due, same delta reasoning as renderGenericFallback() above --
-            // skip an employee with nothing new to disburse this payment cycle.
+            // skip an employee with nothing new to disburse this payment cycle. For a paid/locked
+            // run, this is already the amount recorded as paid via bank transfer (see generate()'s
+            // own override), not the due amount.
             $dueAmount = (float)($d['net_amount_due'] ?? $d['net_amount']);
             if ($dueAmount <= 0) {
-                $skippedCount++;
+                $skipNoAmount++;
                 continue;
             }
             $total += $dueAmount;
             $included[] = $d;
         }
-        if (empty($included)) {
-            throw new LocalizedException('No employees with a valid bank account were found to include in the transfer file.', 'bank_transfer_no_valid_accounts');
-        }
+        // 2026-09-25, real bug found and fixed (round B, R3): used to throw
+        // 'bank_transfer_no_valid_accounts' here when $included was empty -- see
+        // renderGenericFallback()'s own matching comment; a configured format renders its header/
+        // trailer rows (if any) with zero detail rows instead, a valid shape for that format too.
 
         $isFixedWidth = ($config['delimiter_type'] ?? 'delimited') === 'fixed_width';
         $delimiterChar = (string)($config['delimiter_char'] ?? ',');
@@ -562,6 +651,9 @@ class BankTransferFileReport implements ReportGeneratorInterface {
             'content' => $content,
             'file_name' => "BankTransfer_Run{$runId}{$suffixPart}.{$extension}",
             'mime_type' => $isFixedWidth ? 'text/plain' : 'text/csv',
+            'skip_no_account' => $skipNoAccount,
+            'skip_no_amount' => $skipNoAmount,
+            'included_count' => count($included),
         ];
     }
 

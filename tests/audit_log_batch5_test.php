@@ -218,9 +218,9 @@ try {
     $ectDeleteRow = current(array_filter(auditRowsFor($pdo, $compId, 'employment_certificate_templates', $ectId), fn($r) => $r['field_name'] === 'status' && $r['new_value'] === 'deleted'));
     checkTrue('delete logged as a status->deleted update row', $ectDeleteRow !== false);
 
-    echo "\n=== SUMMARY: {$passes} passed, {$failures} failed ===\n";
 } finally {
     $pdo->rollBack();
 }
 
+echo "\nPassed: {$passes}, Failed: {$failures}\n";
 exit($failures > 0 ? 1 : 0);

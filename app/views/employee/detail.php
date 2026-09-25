@@ -1464,10 +1464,10 @@
                             <table class="table table-sm align-middle mb-0">
                                 <thead>
                                     <tr>
-                                        <th data-i18n="ot_scope">OT Type</th>
-                                        <th data-i18n="calculation_method">Calculation Method</th>
-                                        <th data-i18n="rate">Rate</th>
-                                        <th data-i18n="calculation_base">Base</th>
+                                        <th><span data-i18n="ot_scope">OT Type</span></th>
+                                        <th><span data-i18n="calculation_method">Calculation Method</span></th>
+                                        <th><span data-i18n="rate">Rate</span></th>
+                                        <th><span data-i18n="calculation_base">Base</span></th>
                                     </tr>
                                 </thead>
                                 <tbody id="otRateOverridesBody"></tbody>
@@ -1695,11 +1695,11 @@
             <table class="table table-bordered table-sm align-middle" id="tableRecurringEarning" style="width:100%">
                 <thead>
                     <tr>
-                        <th data-i18n="item_name">Item</th>
-                        <th data-i18n="amount" style="width:130px;">Amount</th>
-                        <th data-i18n="effective_date" style="width:110px;">Effective Date</th>
-                        <th data-i18n="suspend_period" style="width:170px;">Suspend Period</th>
-                        <th data-i18n="col_status" style="width:100px;">Status</th>
+                        <th><span data-i18n="item_name">Item</span></th>
+                        <th style="width:130px;"><span data-i18n="amount">Amount</span></th>
+                        <th style="width:110px;"><span data-i18n="effective_date">Effective Date</span></th>
+                        <th style="width:170px;"><span data-i18n="suspend_period">Suspend Period</span></th>
+                        <th style="width:100px;"><span data-i18n="col_status">Status</span></th>
                         <th style="width:90px;"></th>
                     </tr>
                 </thead>
@@ -1714,15 +1714,19 @@
                 <label class="label label-head bg-head-first rounded-2 text-white">4</label>
                 <span data-i18n="recurring_deductions">Recurring Deductions</span>
             </h6>
+            <!-- 2026-09-19, 4c: "as of today" above the plan (renderStandingSummary(),
+                 detail.js) -- a table of standing items says what is planned, never what is
+                 true right now. Counted from the whole response, not the page on screen. -->
+            <div class="standing-summary text-secondary small mb-1" id="recurringDeductionSummary"></div>
             <p class="text-secondary small mb-3" data-i18n="recurring_deductions_hint">*Fixed monthly deductions (uniform fee, locker fee, etc.) that recur every payroll run until suspended or removed.</p>
             <table class="table table-bordered table-sm align-middle" id="tableRecurringDeduction" style="width:100%">
                 <thead>
                     <tr>
-                        <th data-i18n="item_name">Item</th>
-                        <th data-i18n="amount" style="width:130px;">Amount</th>
-                        <th data-i18n="effective_date" style="width:110px;">Effective Date</th>
-                        <th data-i18n="suspend_period" style="width:170px;">Suspend Period</th>
-                        <th data-i18n="col_status" style="width:100px;">Status</th>
+                        <th><span data-i18n="item_name">Item</span></th>
+                        <th style="width:130px;"><span data-i18n="amount">Amount</span></th>
+                        <th style="width:110px;"><span data-i18n="effective_date">Effective Date</span></th>
+                        <th style="width:170px;"><span data-i18n="suspend_period">Suspend Period</span></th>
+                        <th style="width:100px;"><span data-i18n="col_status">Status</span></th>
                         <th style="width:90px;"></th>
                     </tr>
                 </thead>
@@ -1980,28 +1984,30 @@
             </div>
             <div class="tab-content" id="eedSubTabsContent">
                 <div class="tab-pane fade show active" id="eedEarningSub-pane" role="tabpanel" aria-labelledby="eedEarningSub-tab" tabindex="0">
+                    <div class="standing-summary text-secondary small mb-2" id="eedEarningSummary"></div>
                     <table class="table table-bordered table-sm align-middle" id="tableEarning" style="width:100%">
                         <thead>
                             <tr>
-                                <th data-i18n="item_name">Item</th>
-                                <th data-i18n="amount" style="width:150px;">Amount</th>
-                                <th data-i18n="installment_progress" style="width:110px;">Installments</th>
-                                <th data-i18n="effective_date" style="width:110px;">Effective Date</th>
-                                <th data-i18n="col_status" style="width:100px;">Status</th>
+                                <th><span data-i18n="item_name">Item</span></th>
+                                <th style="width:150px;"><span data-i18n="amount">Amount</span></th>
+                                <th style="width:110px;"><span data-i18n="installment_progress">Installments</span></th>
+                                <th style="width:110px;"><span data-i18n="effective_date">Effective Date</span></th>
+                                <th style="width:100px;"><span data-i18n="col_status">Status</span></th>
                                 <th style="width:130px;"></th>
                             </tr>
                         </thead>
                     </table>
                 </div>
                 <div class="tab-pane fade" id="eedDeductionSub-pane" role="tabpanel" aria-labelledby="eedDeductionSub-tab" tabindex="0">
+                    <div class="standing-summary text-secondary small mb-2" id="eedDeductionSummary"></div>
                     <table class="table table-bordered table-sm align-middle" id="tableDeduction" style="width:100%">
                         <thead>
                             <tr>
-                                <th data-i18n="item_name">Item</th>
-                                <th data-i18n="amount" style="width:150px;">Amount</th>
-                                <th data-i18n="installment_progress" style="width:110px;">Installments</th>
-                                <th data-i18n="effective_date" style="width:110px;">Effective Date</th>
-                                <th data-i18n="col_status" style="width:100px;">Status</th>
+                                <th><span data-i18n="item_name">Item</span></th>
+                                <th style="width:150px;"><span data-i18n="amount">Amount</span></th>
+                                <th style="width:110px;"><span data-i18n="installment_progress">Installments</span></th>
+                                <th style="width:110px;"><span data-i18n="effective_date">Effective Date</span></th>
+                                <th style="width:100px;"><span data-i18n="col_status">Status</span></th>
                                 <th style="width:130px;"></th>
                             </tr>
                         </thead>
@@ -2013,11 +2019,11 @@
                     <table class="table table-bordered table-sm align-middle mb-4" id="tableSyncTransactionLog" style="width:100%">
                         <thead>
                             <tr>
-                                <th data-i18n="pay_period">Pay Period</th>
-                                <th data-i18n="item_name">Item</th>
-                                <th data-i18n="col_status" style="width:100px;">Type</th>
-                                <th data-i18n="amount" style="width:150px;">Amount</th>
-                                <th data-i18n="remark">Remark</th>
+                                <th><span data-i18n="pay_period">Pay Period</span></th>
+                                <th><span data-i18n="item_name">Item</span></th>
+                                <th style="width:100px;"><span data-i18n="col_status">Type</span></th>
+                                <th style="width:150px;"><span data-i18n="amount">Amount</span></th>
+                                <th><span data-i18n="remark">Remark</span></th>
                             </tr>
                         </thead>
                     </table>
@@ -2025,11 +2031,11 @@
                     <table class="table table-bordered table-sm align-middle" id="tableScheduledItemOccurrence" style="width:100%">
                         <thead>
                             <tr>
-                                <th data-i18n="applied_date">Applied Date</th>
-                                <th data-i18n="item_name">Item</th>
-                                <th data-i18n="installment_progress" style="width:110px;">Installment #</th>
-                                <th data-i18n="amount" style="width:150px;">Amount</th>
-                                <th data-i18n="reference">Reference / Run</th>
+                                <th><span data-i18n="applied_date">Applied Date</span></th>
+                                <th><span data-i18n="item_name">Item</span></th>
+                                <th style="width:110px;"><span data-i18n="installment_progress">Installment #</span></th>
+                                <th style="width:150px;"><span data-i18n="amount">Amount</span></th>
+                                <th><span data-i18n="reference">Reference / Run</span></th>
                             </tr>
                         </thead>
                     </table>
@@ -2508,10 +2514,10 @@
                     <table class="table table-bordered table-sm" id="tableDocumentList">
                         <thead>
                             <tr>
-                                <th data-i18n="file_name">File Name</th>
-                                <th data-i18n="document_type" style="width:200px;">Type</th>
-                                <th data-i18n="uploaded_date" style="width:150px;">Uploaded</th>
-                                <th data-i18n="source" style="width:120px;">Source</th>
+                                <th><span data-i18n="file_name">File Name</span></th>
+                                <th style="width:200px;"><span data-i18n="document_type">Type</span></th>
+                                <th style="width:150px;"><span data-i18n="uploaded_date">Uploaded</span></th>
+                                <th style="width:120px;"><span data-i18n="source">Source</span></th>
                                 <th style="width:100px;"></th>
                             </tr>
                         </thead>
@@ -2570,20 +2576,20 @@
                 <table class="table table-bordered table-sm w-100" id="tableLoginHistory">
                     <thead>
                         <tr>
-                            <th data-i18n="login_at">Login At</th>
-                            <th data-i18n="logout_at">Logout At</th>
-                            <th data-i18n="ip_address">IP Address</th>
-                            <th data-i18n="location">Location</th>
-                            <th data-i18n="timezone">Timezone</th>
-                            <th data-i18n="device">Device</th>
-                            <th data-i18n="operating_system">OS</th>
-                            <th data-i18n="browser">Browser</th>
+                            <th><span data-i18n="login_at">Login At</span></th>
+                            <th><span data-i18n="logout_at">Logout At</span></th>
+                            <th><span data-i18n="ip_address">IP Address</span></th>
+                            <th><span data-i18n="location">Location</span></th>
+                            <th><span data-i18n="timezone">Timezone</span></th>
+                            <th><span data-i18n="device">Device</span></th>
+                            <th><span data-i18n="operating_system">OS</span></th>
+                            <th><span data-i18n="browser">Browser</span></th>
                             <!-- 2026-08-30, Phase 7 (T037/T038) -- surfaces the new is_active/ended_reason
                                  columns (employee_login_logs) so this audit table actually shows whether a
                                  session is still active and, if not, WHY it ended (new device login /
                                  switched to Origami / idle timeout) -- appended at the end (not inserted
                                  among the existing columns) so no existing column's sort index shifts. -->
-                            <th data-i18n="status">Status</th>
+                            <th><span data-i18n="status">Status</span></th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -2633,10 +2639,10 @@
                 <table class="table table-bordered align-middle" id="tablePermissionOverrides">
                     <thead class="table-light">
                         <tr>
-                            <th data-i18n="permission">Permission</th>
-                            <th class="text-center" style="width:120px;" data-i18n="inherited">Inherited</th>
-                            <th class="text-center" style="width:280px;" data-i18n="override">Override</th>
-                            <th class="text-center" style="width:220px;" data-i18n="scope">Scope</th>
+                            <th><span data-i18n="permission">Permission</span></th>
+                            <th class="text-center" style="width:120px;"><span data-i18n="inherited">Inherited</span></th>
+                            <th class="text-center" style="width:280px;"><span data-i18n="override">Override</span></th>
+                            <th class="text-center" style="width:220px;"><span data-i18n="scope">Scope</span></th>
                         </tr>
                     </thead>
                     <tbody id="permissionOverridesTableBody"></tbody>

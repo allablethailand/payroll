@@ -16,7 +16,7 @@ function refreshEmployeeFormBaseline() {
 // form (mirrors company-profile.js's own .cancel-company-profile reference implementation -- AJAX
 // re-fetch + repopulate, not a hard page reload) -- deliberately does NOT re-run
 // loadEmployeeIfEditing()'s one-time side effects (loadAllChildTables()/loadDocumentList()/
-// activateEmployeeTabFromHash()), since those already ran once and child-table data wasn't part of
+// activateTabFromHash('#employeeTabs')), since those already ran once and child-table data wasn't part of
 // what the user was editing on this form. A brand-new, not-yet-saved employee has nothing on the
 // server to revert to -- per the playbook's own "reset to blank/default" rule for that case, a full
 // page reload IS the reset (an unsaved new-employee form has no persisted data to lose).
@@ -1195,7 +1195,7 @@ function loadEmployeeIfEditing() {
         // 2026-08-30, real bug found and fixed (explicit report: "เข้าใช้งานใน tab ที่เป็น data
         // table refresh แล้ว data table ไม่ทำงาน") -- a brand-new employee (this branch) has
         // nothing async to wait for, so the URL-hash tab restore is safe to run immediately.
-        activateEmployeeTabFromHash();
+        activateTabFromHash('#employeeTabs');
         refreshEmployeeFormBaseline();
         return;
     }
@@ -1242,13 +1242,24 @@ function loadEmployeeIfEditing() {
             // showed up before hash-restore existed. Moved here, after currentEmployeeId is
             // definitely set (or the fetch has definitely failed), so restoring a DataTable-
             // bearing tab on refresh now sees the same state a real click always would.
-            activateEmployeeTabFromHash();
+            activateTabFromHash('#employeeTabs');
         },
         error: function () {
             showWarning(langData['load_employee_failed'] || 'Failed to load employee data.');
-            activateEmployeeTabFromHash();
+            activateTabFromHash('#employeeTabs');
         }
     });
+}
+// 2026-09-19, 4c: `/employees/{employee_no}#earningDeduction-tab` -- a deep link from anywhere that
+// names a destination this page owns (the payroll slip's read-only payee block is the first) lands on
+// the tab that thing is on, not on tab 1 of 10 with the reader left to find it. Only ever a tab button
+// that really exists on this page; an unknown hash is ignored, never an error.
+function openTabFromHash() {
+    const hash = (window.location.hash || '').replace('#', '');
+    if (!hash) return;
+    const el = document.getElementById(hash);
+    if (!el || !el.matches('[data-bs-toggle="tab"]')) return;
+    bootstrap.Tab.getOrCreateInstance(el).show();
 }
 $(function () {
     if (typeof initSelect2 === 'function') {
@@ -1259,6 +1270,7 @@ $(function () {
     }
     loadStatutoryRateDefaultsHint();
     initMobileIti();
+    openTabFromHash();
     $('input[name="employee_type_radio"]').on('change', function () {
         const type = $(this).val();
         $('#employee_type').val(type);
@@ -1472,8 +1484,8 @@ $(function () {
 
 // 2026-08-29, explicit request: "ในหน้า Employee Detail ก็อยากให้คลิกที่ Tab ไหน ถ้า Refresh ให้อยู่ที่ Tab
 // นั้น" -- same URL-hash + history.replaceState mechanism already built for Payroll Process
-// Detail/List (payroll/detail.js's own activateTabFromHash()/shown.bs.tab handler) -- persist
-// whichever tab is active across a refresh instead of always resetting to Employee Info.
+// Detail/List -- persist whichever tab is active across a refresh instead of always resetting to
+// Employee Info.
 // 2026-09-07: also re-runs the tab-bar overflow layout below on every tab switch (whichever tab just
 // became active must never be one of the ones tucked into "More").
 $(document).on('shown.bs.tab', '#employeeTabs button[data-bs-toggle="tab"]', function (e) {
@@ -1482,14 +1494,10 @@ $(document).on('shown.bs.tab', '#employeeTabs button[data-bs-toggle="tab"]', fun
     }
     layoutEmployeeTabs();
 });
-function activateEmployeeTabFromHash() {
-    const hash = (location.hash || '').replace('#', '');
-    if (!hash) return;
-    const $btn = $('#' + CSS.escape(hash));
-    if ($btn.length && $btn.attr('data-bs-toggle') === 'tab' && $btn.closest('#employeeTabs').length) {
-        bootstrap.Tab.getOrCreateInstance($btn[0]).show();
-    }
-}
+// 2026-09-13, §1 follow-up: the restore function itself (was activateEmployeeTabFromHash(), a
+// near-verbatim copy of Employee List's own version and Payroll Detail's own unscoped version) moved
+// to app.js's shared activateTabFromHash(containerSelector) -- see that function's own docblock (incl.
+// a real focus-ring bug fixed there too). Every call site below now passes '#employeeTabs' directly.
 
 /* ==================== Employee Detail tab-bar overflow ("More" dropdown) ====================
  * 2026-09-07, explicit request: "อยากให้ปรับส่วนของ tab ให้ดูสวยขึ้น และถ้าเลยจอการแสดงผลให้ขึ้น more กับ
@@ -2536,6 +2544,43 @@ function initChildTables() {
         });
     });
 }
+/* ---------- "As of today", above every standing-item table (2026-09-19, 4c) ----------
+   A standing item is a plan, and a table of plans answers "what is in the plan" but never "what is
+   true right now" -- a row dated next month, a row on hold and a row that has finished paying all
+   read the same at a glance. These 3 numbers are the ones a person actually opens this tab to ask,
+   counted against TODAY and against the whole set the tab loaded, never the page the table happens
+   to be showing or what a column filter has narrowed it to.
+   Deliberately not "this run": a run has a pay period and this page has none, so nothing here can
+   honestly say whether an item falls inside one (see BACKLOG). */
+function standingSummaryCounts(rows, kind) {
+    // Local date, not toISOString(): that is UTC, and in +07 it rolls the date over at 07:00 --
+    // an item starting today would read as "not started yet" for the first 7 hours of its day.
+    const n = new Date();
+    const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
+    let notStarted = 0, suspended = 0, ended = 0;
+    (rows || []).forEach(function (row) {
+        if (row.effective_date && row.effective_date > today) notStarted++;
+        if (kind === 'recurring' ? !!row.is_suspended_now : row.status === 'paused') suspended++;
+        if (kind !== 'recurring') {
+            const total = parseInt(row.total_installments || 0, 10);
+            const current = parseInt(row.current_installment || 0, 10);
+            if (row.status === 'completed' || row.status === 'cancelled' || (total > 0 && current >= total)) ended++;
+        }
+    });
+    return { notStarted: notStarted, suspended: suspended, ended: ended };
+}
+// Quiet on purpose (rules.md §0.1): none of the 3 is a thing to act on, they are context for the
+// table under them, so they are text-muted like every other count in this app and carry no colour.
+function renderStandingSummary(mountSelector, rows, kind) {
+    const c = standingSummaryCounts(rows, kind);
+    const cell = (key, fallback, n) =>
+        `<span class="me-3"><span data-i18n="${key}">${langData[key] || fallback}</span> <strong>${n}</strong></span>`;
+    $(mountSelector).html(
+        cell('standing_not_started', 'Not started yet', c.notStarted)
+        + cell('standing_suspended', 'On hold', c.suspended)
+        + (kind === 'recurring' ? '' : cell('standing_ended', 'Finished', c.ended))
+    );
+}
 function eedStatusBadge(row) {
     const map = {
         active: { cls: 'bg-success-subtle text-success', key: 'active', fallback: 'Active' },
@@ -2549,29 +2594,36 @@ function eedStatusBadge(row) {
 function eedActionButtons(row) {
     const notStarted = Number(row.current_installment) === 0;
     const isOpen = row.status === 'active' || row.status === 'paused';
-    // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
-    // ".btn-circle-action" section) replace the old adjacent .btn-group/border-start convention
-    // this section previously followed (2026-08-21).
-    let html = '<div class="d-flex gap-1 justify-content-center">';
-    // View is always available, Edit only while nothing has been paid yet (2026-08-20, explicit
-    // request: "Status ของแต่ละงวดการจ่าย...จ่ายแล้วหรือรอจ่าย") -- once current_installment > 0
+    // 2026-09-23, ปุ่มแถว EED B1 (rules.md §7 L1573-1580, demo components.php:1060-1094): ≤3 ปุ่ม
+    // วงกลม .btn-icon เดียวกันหมด ไม่มีสีต่อ action -- ที่เหลือ (Edit/Delete, เฉพาะตอนยังไม่เริ่มงวด)
+    // พับเข้า ⋮ เดียว, ลบอยู่ล่างสุดคั่นเส้น text-danger ตาม demo. View is always available (2026-08-20,
+    // explicit request: "Status ของแต่ละงวดการจ่าย...จ่ายแล้วหรือรอจ่าย") -- once current_installment > 0
     // save() permanently blocks edits (see EmployeeEarningDeductionModel::save()), so this is the
     // only way to see the per-installment paid/pending schedule for an assignment already in
     // progress or finished. Same modal, populateEedForm(row, true) just disables everything.
-    html += `<button type="button" class="btn btn-link btn-circle-action text-info btn-view-eed" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>`;
-    if (isOpen && notStarted) {
-        html += `<button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-eed" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>`;
-    }
+    let html = '<div class="d-flex gap-1 justify-content-center">';
+    html += `<button type="button" class="btn btn-icon btn-view-eed" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>`;
     if (isOpen) {
         if (row.status === 'active') {
-            html += `<button type="button" class="btn btn-link btn-circle-action text-warning btn-eed-status" data-id="${row.id}" data-status="paused" title="${langData['pause_item'] || 'Pause'}"><i class="fa-solid fa-pause"></i></button>`;
+            html += `<button type="button" class="btn btn-icon btn-eed-status" data-id="${row.id}" data-status="paused" title="${langData['pause_item'] || 'Pause'}"><i class="fa-solid fa-pause"></i></button>`;
         } else {
-            html += `<button type="button" class="btn btn-link btn-circle-action text-success btn-eed-status" data-id="${row.id}" data-status="active" title="${langData['resume_item'] || 'Resume'}"><i class="fa-solid fa-play"></i></button>`;
+            html += `<button type="button" class="btn btn-icon btn-eed-status" data-id="${row.id}" data-status="active" title="${langData['resume_item'] || 'Resume'}"><i class="fa-solid fa-play"></i></button>`;
         }
-        html += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-eed-status" data-id="${row.id}" data-status="cancelled" title="${langData['cancel_item'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
-    }
-    if (isOpen && notStarted) {
-        html += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-eed" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
+        html += `<button type="button" class="btn btn-icon btn-eed-status" data-id="${row.id}" data-status="cancelled" title="${langData['cancel_item'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
+        if (notStarted) {
+            // <button class="dropdown-item">, not demo's <a href="#"> -- same real precedent already
+            // in this app (reports/index.js's .btn-cycle-matrix-print dropdown item) so a click never
+            // jumps the page to "#" the way an un-prevented <a> would; class/data-* the delegated
+            // .btn-edit-eed/.btn-delete-eed handlers (below, unchanged) read stay identical either way.
+            html += `<div class="dropdown">
+                <button type="button" class="btn btn-icon dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="${langData['action_more'] || 'More'}" aria-label="${langData['action_more'] || 'More'}"><i class="fa-solid fa-ellipsis-vertical"></i></button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><button type="button" class="dropdown-item btn-edit-eed" data-id="${row.id}"><i class="fa-solid fa-pen-to-square me-2"></i>${langData['edit'] || 'Edit'}</button></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><button type="button" class="dropdown-item text-danger btn-delete-eed" data-id="${row.id}"><i class="fa-solid fa-trash-can me-2"></i>${langData['delete'] || 'Delete'}</button></li>
+                </ul>
+            </div>`;
+        }
     }
     html += '</div>';
     return html;
@@ -2605,6 +2657,13 @@ function eedAmountSummary(row) {
 // Item-name cell no longer shows the earning/deduction word (2026-08-19: the two tables are split by
 // type now, so it would just repeat the table's own heading on every row) -- shows the "Custom" badge
 // instead when the row has no ped_type_id (custom item, see EmployeeEarningDeductionModel::save()).
+// 2026-09-19, 4c: two changes, both to stop this cell saying things its own way.
+//   - the item CODE is no longer printed under the name (rules.md §5/§6 -- an internal code is not a
+//     label). It is still SEARCHABLE: the column's `filter` renderer below returns it, so typing
+//     EARLY_LEAVE_DEDUCT still narrows the table to that row, it just is not read out on every row.
+//   - "where the money goes" is the shared descriptor tag every other surface uses
+//     (payeeDescriptorHtmlRd(), payee-descriptor.js) instead of this cell's own 4 hand-written
+//     branches, each with an icon of its own naming what the text right after it already named.
 function eedItemNameCell(row) {
     const label = escapeHtml((currentLang === 'th' ? row.item_name_th : row.item_name_en) || '');
     // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- distinct badge for an
@@ -2616,33 +2675,12 @@ function eedItemNameCell(row) {
         : (row.is_other
             ? ` <span class="badge bg-info-subtle text-info">${langData['manual_line_other_badge'] || 'Other'}</span>`
             : ` <span class="badge bg-secondary-subtle text-secondary">${langData['manual_line_custom_badge'] || 'Custom'}</span>`);
-    const codeLine = row.item_code ? escapeHtml(row.item_code) : '';
-    // 2026-08-31: payee_type widened beyond "always another employee" -- 'company' has no
-    // payee_employee_id at all (see EmployeeEarningDeductionModel::save()'s own docblock), so this
-    // now branches on payee_type first rather than assuming a non-null payee_employee_id.
-    let payeeTag = '';
-    if (row.payee_type === 'employee' && row.payee_employee_id) {
-        payeeTag = `<div class="text-muted small"><i class="fa-solid fa-arrow-right-arrow-left me-1"></i>${langData['payee_transfer_tag'] || 'Paid to'} ${escapeHtml(row.payee_employee_no || ('#' + row.payee_employee_id))}</div>`;
-    } else if (row.payee_type === 'company') {
-        // 2026-09-10, Batch 3B item 3: shows WHICH bank account now; a legacy row saved before this
-        // column existed (bank_account_id still null) renders a "needs review" warning instead of
-        // silently looking identical to a fully-specified row -- new UI pattern, no existing
-        // "ต้องตรวจ" row-flag convention found anywhere else in this codebase to reuse.
-        payeeTag = row.bank_account_id
-            ? `<div class="text-muted small"><i class="fa-solid fa-building me-1"></i>${langData['payee_type_company'] || 'Company Account'} - ${escapeHtml(row.bank_account_name || '')}</div>`
-            : `<div class="small text-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['payee_bank_account_needs_review'] || 'Company Account -- bank account not specified, needs review'}</div>`;
-    } else if (row.payee_type === 'other_person') {
-        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- real gap found
-        // while adding 'other_person' to this modal: this cell already tagged 'employee'/'company'/
-        // 'not_disbursed' but had no branch at all for 'other_person', so a deduction already routed
-        // to a third party (possible via the backend since Phase 1/4, just never reachable through
-        // THIS modal's own UI until this round) would have shown no payee tag whatsoever here.
-        payeeTag = `<div class="text-muted small"><i class="fa-solid fa-building-columns me-1"></i>${escapeHtml(row.destination_account_name || (langData['payee_type_other_person'] || 'Other Person / Third Party'))}</div>`;
-    } else if (row.payee_type === 'not_disbursed') {
-        // 2026-08-31, same-day follow-up.
-        payeeTag = `<div class="text-muted small"><i class="fa-solid fa-ban me-1"></i>${langData['payee_type_not_disbursed'] || 'Not Disbursed'}</div>`;
-    }
-    return `<div><strong>${label}</strong>${badge}</div><div class="text-muted small">${codeLine}</div>${payeeTag}`;
+    return `<div><strong>${label}</strong>${badge}</div>${payeeDescriptorHtmlRd(row.payee)}`;
+}
+// What this row can be FOUND by, as opposed to what it says: the name in both languages plus the
+// catalog code the cell above deliberately no longer prints.
+function eedItemSearchText(row) {
+    return [row.item_name_th, row.item_name_en, row.item_code].filter(Boolean).join(' ');
 }
 // Progress bar instead of plain "N/M" text (2026-08-20, table redesign request) -- reuses the same
 // .progress/.progress-bar component already used for the profile completeness bar elsewhere on this
@@ -2662,7 +2700,7 @@ function eedInstallmentProgressCell(row) {
 }
 function eedTableColumns() {
     return [
-        { data: null, render: (d, t, row) => eedItemNameCell(row) },
+        { data: null, render: { display: (d, t, row) => eedItemNameCell(row), sort: (d, t, row) => (currentLang === 'th' ? row.item_name_th : row.item_name_en) || '', filter: (d, t, row) => eedItemSearchText(row) } },
         { data: null, className: 'text-end', render: (d, t, row) => eedAmountSummary(row) },
         { data: null, className: 'text-center', render: (d, t, row) => eedInstallmentProgressCell(row) },
         // 2026-08-29, real bug found via a system-wide table audit: sort-safety fix -- plain
@@ -2681,7 +2719,7 @@ let tbEarning, tbDeduction;
 // Datatable") -- per-employee item count is always small, matching this project's client-side
 // DataTable convention. Add button injected into .dt-search via initComplete, same as every other
 // DataTable in this app. Filtered server-side by item_type (EmployeeEarningDeductionModel::list()).
-function initEedTable(tableSelector, itemType, addBtnClass, addLangKey, addLangFallback) {
+function initEedTable(tableSelector, itemType, addBtnClass, addLangKey, addLangFallback, summarySelector) {
     return $(tableSelector).DataTable({
         responsive: true,
         // 2026-08-29: deferLoading:0 -- see tbRecurringEarning's own comment on this exact race
@@ -2694,7 +2732,13 @@ function initEedTable(tableSelector, itemType, addBtnClass, addLangKey, addLangF
         ajax: {
             url: `${BASE_URL}/api/employee.earning-deduction.list`,
             data: function (d) { d.employee_id = currentEmployeeId; d.item_type = itemType; },
-            dataSrc: 'data'
+            // The summary above the table is counted from the SAME payload the table draws, so the
+            // two can never disagree, and from the whole of it -- not the page, not the filter.
+            dataSrc: function (json) {
+                const rows = (json && json.data) || [];
+                renderStandingSummary(summarySelector, rows, 'eed');
+                return rows;
+            }
         },
         columns: eedTableColumns(),
         pageLength: pageLength,
@@ -3008,44 +3052,94 @@ function applyEedInterestVisibility() {
         setEedPayeeType('none');
     }
 }
-// 2026-08-31, explicit request: "หักไปจ่ายใคร หรือจ่ายเข้าบัญชีบริษัท ให้ติ๊กเพิ่มได้ว่า รวมไปใน cashlink
-// หรือแยก cash link" -- single source of truth for the payee-type toggle's own dependent field
-// visibility (employee picker only for 'employee', the cash-summary checkbox for either non-'none'
-// choice), mirroring setEedChargeType()'s own toggle-button + dependent-fields pattern.
+// 2026-09-16: the picker is the shared component (initPayeeDestination(), app.js + partials/
+// payee-destination.php) -- 3 destinations and the "record it?" sub-question, mapped onto
+// `payee_type` in one place. This callback keeps only what belongs to THIS form: the `.required`
+// flags validateEedForm() reads, clearing the fields of whichever branch was left, and the
+// cash-summary checkbox that only means anything once the money is routed somewhere.
+$(function () {
+    initPayeeDestination('eed', {
+        employeeWrap: '#eedPayeeEmployeeWrapper',
+        companyWrap: '#eedCompanyAccountWrapper',
+        companyAccount: '#eed_bank_account_id',
+        externalWrap: '#eedDestinationWrapper',
+        onChange: function (payeeType, dest) {
+            $('#eed_payee_employee_id').toggleClass('required', dest === 'employee');
+            if (dest !== 'employee') {
+                $('#eed_payee_employee_id').val(null).trigger('change');
+            }
+            // 2026-09-19, 4c: never `.required` and never pre-filled -- empty IS an answer here
+            // ("ไม่บันทึก", payee_type NULL). Cleared only when the SEGMENT leaves company_retained,
+            // not whenever it happens to be empty, or clearing it would fight the user's own clear.
+            // 2026-09-19, 4c fix: only when there is really something to clear. A `.val(null)`
+            // on an already-empty box still fires `change`, and this box's change is now a
+            // payee answer -- see PAYEE_DEST_SYNCING (app.js) for what that cost.
+            if (dest !== 'company_retained' && $('#eed_bank_account_id').val()) {
+                $('#eed_bank_account_id').val(null).trigger('change');
+            }
+            // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
+            if (dest !== 'external') {
+                $('#eed_destination_select').val(null).trigger('change');
+                $('#eed_dest_account_name, #eed_dest_account_no, #eed_dest_bank_branch').val('');
+                $('#eed_dest_bank').val(null).trigger('change');
+                $('#eed_dest_save_for_reuse').prop('checked', false);
+                $('#eedDestinationNewFields').removeClass('d-none');
+            } else {
+                // Manual Entry / Platform UX review Phase 7 -- see applyFirstSavedDestinationDefault()'s
+                // own docblock in app.js. No-op if populateEedForm() is about to (or just did) set a
+                // real saved destination for an existing record -- that guard lives in the helper.
+                applyFirstSavedDestinationDefault('#eed_destination_select', '#eedDestinationNewFields');
+            }
+            $('#eedIncludeCashSummaryWrapper').toggleClass('d-none', payeeType === 'none');
+        },
+    });
+});
+/* ---------- The 3 payee pickers of #eedModal / #recurringDeductionModal (2026-09-19, 4c round 2) ----
+   Reopening a saved row used to build its own label for the payee it was putting back -- `employee_no`
+   ("CEO") in this form, "ชื่อ สกุล (CEO)" in the other, against the "CEO - กฤษดา สาธุกิจชัย" the picker's
+   own endpoint serves -- and showed no account under it at all, while the slip's identical pickers
+   showed both. Both now go through the SAME pair the slip uses (payee-descriptor.js): the row's own
+   descriptor becomes the pinned option, and its data fills the summary box. Nothing is composed here. */
+const PAYEE_FORM_BOXES = {
+    eed: { employee: '#eedPayeeEmployeeDetail', bank: '#eedBankAccountDetail', destination: '#eedDestinationDetail' },
+    erd: { employee: '#erdPayeeEmployeeDetail', bank: '#erdBankAccountDetail', destination: '#erdDestinationDetail' },
+};
+function clearPayeeFormBoxes(prefix) {
+    const b = PAYEE_FORM_BOXES[prefix];
+    $(b.employee).empty();
+    $(b.bank).empty();
+    $(b.destination).empty();
+}
+// Puts a saved row's own 3 destinations back into the 3 pickers: the label the endpoint would have
+// shown, and the account summary under it. `payee` is the descriptor every list()/get() now carries.
+function applyPayeeFormRow(prefix, payee) {
+    const b = PAYEE_FORM_BOXES[prefix];
+    clearPayeeFormBoxes(prefix);
+    if (!payee || !payee.payee_type) return;
+    const pinned = payeeRowPinnedOptionsRd(payee);
+    if (pinned.payeeEmployee && pinRowOptionRd(`#${prefix}_payee_employee_id`, pinned.payeeEmployee)) {
+        renderPayeeEmployeeDetailRd(b.employee, pinned.payeeEmployee.data);
+    }
+    if (pinned.bankAccount && pinRowOptionRd(`#${prefix}_bank_account_id`, pinned.bankAccount)) {
+        renderPayeeAccountDetailRd(b.bank, pinned.bankAccount.data);
+    }
+    if (pinned.destination && pinRowOptionRd(`#${prefix}_destination_select`, pinned.destination)) {
+        renderPayeeAccountDetailRd(b.destination, pinned.destination.data);
+    }
+}
+// A hand-picked option fills the same box the same way -- the endpoint hands the picker exactly the
+// fields payeeDetailFromOption() reads, so neither path composes anything of its own.
+['eed', 'erd'].forEach(function (prefix) {
+    const b = PAYEE_FORM_BOXES[prefix];
+    $(document).on('select2:select', `#${prefix}_payee_employee_id`, (e) => renderPayeeEmployeeDetailRd(b.employee, e.params.data || {}));
+    $(document).on('select2:clear', `#${prefix}_payee_employee_id`, () => renderPayeeEmployeeDetailRd(b.employee, null));
+    $(document).on('select2:select', `#${prefix}_bank_account_id`, (e) => renderPayeeAccountDetailRd(b.bank, e.params.data));
+    $(document).on('select2:clear', `#${prefix}_bank_account_id`, () => renderPayeeAccountDetailRd(b.bank, null));
+    $(document).on('select2:select', `#${prefix}_destination_select`, (e) => renderPayeeAccountDetailRd(b.destination, e.params.data));
+    $(document).on('select2:clear', `#${prefix}_destination_select`, () => renderPayeeAccountDetailRd(b.destination, null));
+});
 function setEedPayeeType(type) {
-    $('#eedPayeeTypeToggle button').removeClass('active').filter(`[data-payee-type="${type}"]`).addClass('active');
-    $('#eedPayeeEmployeeWrapper').toggleClass('d-none', type !== 'employee');
-    $('#eed_payee_employee_id').toggleClass('required', type === 'employee');
-    if (type !== 'employee') {
-        $('#eed_payee_employee_id').val(null).trigger('change');
-    }
-    // 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- mandatory (see
-    // EmployeeEarningDeductionModel::save()'s own docblock), same required-toggle convention as
-    // #eed_payee_employee_id above.
-    $('#eedCompanyAccountWrapper').toggleClass('d-none', type !== 'company');
-    $('#eed_bank_account_id').toggleClass('required', type === 'company');
-    if (type !== 'company') {
-        $('#eed_bank_account_id').val(null).trigger('change');
-    }
-    // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- same destination
-    // sub-form pattern as #erdDestinationWrapper (Phase 6)/#manualLineDestinationWrapper (Phase 2).
-    $('#eedDestinationWrapper').toggleClass('d-none', type !== 'other_person');
-    if (type !== 'other_person') {
-        $('#eed_destination_select').val(null).trigger('change');
-        $('#eed_dest_account_name, #eed_dest_account_no, #eed_dest_bank_branch').val('');
-        $('#eed_dest_bank').val(null).trigger('change');
-        $('#eed_dest_save_for_reuse').prop('checked', false);
-        $('#eedDestinationNewFields').removeClass('d-none');
-    } else {
-        // Manual Entry / Platform UX review Phase 7 -- see applyFirstSavedDestinationDefault()'s
-        // own docblock in app.js. No-op if populateEedForm() is about to (or just did) set a real
-        // saved destination for an existing record -- that guard lives inside the helper itself.
-        applyFirstSavedDestinationDefault('#eed_destination_select', '#eedDestinationNewFields');
-    }
-    // 2026-08-31, same-day follow-up: 'not_disbursed' never shows this checkbox -- forced excluded
-    // at the model layer (EmployeeEarningDeductionModel::save()'s own comment), a toggle here would
-    // be misleading since unchecking/checking it would have no actual effect.
-    $('#eedIncludeCashSummaryWrapper').toggleClass('d-none', type === 'none' || type === 'not_disbursed');
+    setPayeeDestination('eed', type);
 }
 // Catalog vs custom item toggle (2026-08-19, explicit request). #eed_ped_type_id stays required only
 // in catalog mode, the custom pair only in custom mode -- validateEedForm() already skips anything
@@ -3058,45 +3152,59 @@ function setEedPayeeType(type) {
 // repeated here). This is the TEMPLATE-level payee/destination (employee_recurring_deductions);
 // a specific payroll run can still override it for itself only, via that run's own Manage Items
 // modal -- never written back to this form.
+$(function () {
+    initPayeeDestination('erd', {
+        employeeWrap: '#erdPayeeEmployeeWrapper',
+        companyWrap: '#erdCompanyAccountWrapper',
+        companyAccount: '#erd_bank_account_id',
+        externalWrap: '#erdDestinationWrapper',
+        onChange: function (payeeType, dest) {
+            $('#erd_payee_employee_id').toggleClass('required', dest === 'employee');
+            if (dest !== 'employee') {
+                $('#erd_payee_employee_id').val(null).trigger('change');
+            }
+            // 2026-09-19, 4c: never `.required` and never pre-filled -- empty IS an answer here
+            // ("ไม่บันทึก", payee_type NULL). Cleared only when the SEGMENT leaves company_retained,
+            // not whenever it happens to be empty, or clearing it would fight the user's own clear.
+            if (dest !== 'company_retained' && $('#erd_bank_account_id').val()) {
+                $('#erd_bank_account_id').val(null).trigger('change');
+            }
+            if (dest !== 'external') {
+                $('#erd_destination_select').val(null).trigger('change');
+                $('#erd_dest_account_name, #erd_dest_account_no, #erd_dest_bank_branch').val('');
+                $('#erd_dest_bank').val(null).trigger('change');
+                $('#erd_dest_save_for_reuse').prop('checked', false);
+                $('#erdDestinationNewFields').removeClass('d-none');
+            } else {
+                // Manual Entry / Platform UX review Phase 7 -- see applyFirstSavedDestinationDefault()'s
+                // own docblock in app.js.
+                applyFirstSavedDestinationDefault('#erd_destination_select', '#erdDestinationNewFields');
+            }
+        },
+    });
+});
 function setErdPayeeType(type) {
-    $('#erdPayeeTypeToggle button').removeClass('active').filter(`[data-payee-type="${type}"]`).addClass('active');
-    $('#erdPayeeEmployeeWrapper').toggleClass('d-none', type !== 'employee');
-    $('#erd_payee_employee_id').toggleClass('required', type === 'employee');
-    if (type !== 'employee') {
-        $('#erd_payee_employee_id').val(null).trigger('change');
-    }
-    // 2026-09-10, Batch 3B item 3: same level-2 as setEedPayeeType() above.
-    $('#erdCompanyAccountWrapper').toggleClass('d-none', type !== 'company');
-    $('#erd_bank_account_id').toggleClass('required', type === 'company');
-    if (type !== 'company') {
-        $('#erd_bank_account_id').val(null).trigger('change');
-    }
-    $('#erdDestinationWrapper').toggleClass('d-none', type !== 'other_person');
-    if (type !== 'other_person') {
-        $('#erd_destination_select').val(null).trigger('change');
-        $('#erd_dest_account_name, #erd_dest_account_no, #erd_dest_bank_branch').val('');
-        $('#erd_dest_bank').val(null).trigger('change');
-        $('#erd_dest_save_for_reuse').prop('checked', false);
-        $('#erdDestinationNewFields').removeClass('d-none');
-    } else {
-        // Manual Entry / Platform UX review Phase 7 -- see setEedPayeeType()'s own comment above /
-        // applyFirstSavedDestinationDefault()'s own docblock in app.js.
-        applyFirstSavedDestinationDefault('#erd_destination_select', '#erdDestinationNewFields');
-    }
+    setPayeeDestination('erd', type);
 }
-// 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- a 3rd mode, "Other"
-// ('other'), reuses #eedCustomFields' own free-text #eed_custom_item_name input VERBATIM (no new
-// DOM) -- the only difference from plain "Custom Item" is that submit() below additionally sends
-// is_other=true, which PayrollRunModel::resolveManualLineRow() uses to derive a FIXED
-// OTHER_INCOME/OTHER_DEDUCTION aggregation code instead of a per-name CUSTOM: one (see that
-// method's own docblock) -- the employee-typed label itself ("ค่าปรับผิดสัญญาจ้าง" etc.) is
-// unchanged and still shown as-is everywhere a custom item's name already shows.
-function setEedMode(mode) {
-    $('#eedModeToggle button').removeClass('active').filter(`[data-mode="${mode}"]`).addClass('active');
-    $('#eedCatalogFields').toggleClass('d-none', mode !== 'catalog');
-    $('#eedCustomFields').toggleClass('d-none', mode === 'catalog');
-    $('#eed_ped_type_id').toggleClass('required', mode === 'catalog');
-    $('#eed_custom_item_name').toggleClass('required', mode !== 'catalog');
+/* 2026-09-19, 4c: the item picker IS the mode. Its pinned last option (the same
+   `manual_line_item_custom_option` the payroll slip's own item picker pins) means "not in the
+   catalog": choosing it reveals the free-text name field right under the select, and the checkbox
+   under THAT is the old "Other" mode -- which never was a third kind of item, only a flag saying
+   which report bucket this one-off name is counted in. Three controls became one picker plus the
+   one question that actually differed. */
+const EED_CUSTOM_OPTION_ID = '__custom__';
+function eedIsCustomItem() {
+    return $('#eed_ped_type_id').val() === EED_CUSTOM_OPTION_ID;
+}
+// The form's own shape follows the picker, and only the picker -- called after every change to it,
+// from a user pick and from populateEedForm()'s pre-select alike.
+function applyEedItemMode() {
+    const custom = eedIsCustomItem();
+    $('#eedCustomFields').toggleClass('d-none', !custom);
+    $('#eedIsOtherWrapper').toggleClass('d-none', !custom);
+    $('#eed_ped_type_id').addClass('required');
+    $('#eed_custom_item_name').toggleClass('required', custom);
+    if (!custom) $('#eed_is_other').prop('checked', false);
 }
 // Toggles the whole modal between editable (Add / not-yet-started Edit) and read-only (View, for an
 // assignment that already has paid/skipped installments -- save() permanently blocks editing those,
@@ -3105,7 +3213,7 @@ function setEedReadOnly(readOnly) {
     eedReadOnly = readOnly;
     // #eedModal select already covers #eed_fee_base (a plain <select>, select2-static-initialized) --
     // no separate handling needed, same as every other select2 field in this modal.
-    $('#eedModal .required, #eedModal select, #eedModal input, #eedModal textarea, #eedModeToggle button, #eedInterestToggle button, #eedInterestTypeToggle button')
+    $('#eedModal .required, #eedModal select, #eedModal input, #eedModal textarea, #eedInterestToggle button, #eedInterestTypeToggle button')
         .prop('disabled', readOnly);
     $('#eedSaveBtn').toggleClass('d-none', readOnly);
 }
@@ -3150,9 +3258,10 @@ function refreshEedModalTitleLanguage() {
 function resetEedForm(context) {
     $('#eedForm')[0].reset();
     $('#eed_id').val('');
-    setEedMode('catalog');
     setEedReadOnly(false);
     $('#eed_ped_type_id').attr('data-type', context || '').val(null).trigger('change');
+    $('#eed_is_other').prop('checked', false);
+    applyEedItemMode();
     // #eed_custom_item_type is the fixed session type regardless of catalog/custom mode (2026-08-21
     // -- see the markup comment above #eedCustomFields); plain hidden field now, no select2 left on
     // it to notify.
@@ -3172,6 +3281,12 @@ function resetEedForm(context) {
     // same way #report_to_id already excludes self elsewhere (data-exclude-id, read fresh on every
     // ajax search by initSelect2's shared 'ajax' mode).
     $('#eed_payee_employee_id').attr('data-exclude-id', currentEmployeeId || '').val(null).trigger('change');
+    // 2026-09-19, 4c: cleared here, by the reset itself. The picker's own onChange only clears it
+    // when the destination SEGMENT leaves "retained by company" -- a fresh open never leaves that
+    // segment, so without this line the previous row's account would still be sitting in it, and
+    // an account sitting in it now MEANS payee_type='company'.
+    $('#eed_bank_account_id').val(null).trigger('change');
+    clearPayeeFormBoxes('eed');
     $('#eed_include_in_cash_summary').prop('checked', true);
     setEedPayeeType('none');
     applyEedInterestVisibility();
@@ -3185,17 +3300,20 @@ function populateEedForm(row, readOnly) {
     // either way, not just in the custom branch.
     $('#eed_custom_item_type').val(row.item_type);
     if (row.ped_type_id) {
-        setEedMode('catalog');
         const label = (currentLang === 'th' ? row.item_name_th : row.item_name_en) || '';
+        // Pre-selected with the code still on the label: stripCodePrefix takes it off for display and
+        // keeps it as the option's own title, exactly as an option fetched from the endpoint gets.
         const opt = new Option(`[${row.item_code}] ${label}`, row.ped_type_id, true, true);
         $('#eed_ped_type_id').empty().append(opt).trigger('change');
     } else {
-        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- row.is_other picks
-        // which mode button re-activates; the free-text field itself is populated identically
-        // either way (see setEedMode()'s own docblock -- "Other" reuses #eedCustomFields verbatim).
-        setEedMode(row.is_other ? 'other' : 'custom');
+        // 2026-09-19, 4c: a custom row re-opens on the picker's own pinned option, and `is_other` --
+        // which used to pick between two look-alike mode buttons -- is the checkbox under it.
+        const pinnedLabel = langData['manual_line_item_custom_option'] || 'Custom name';
+        $('#eed_ped_type_id').empty().append(new Option(pinnedLabel, EED_CUSTOM_OPTION_ID, true, true)).trigger('change');
         $('#eed_custom_item_name').val(row.item_name_th || row.item_name_en || '');
+        $('#eed_is_other').prop('checked', !!row.is_other);
     }
+    applyEedItemMode();
     // Same datepicker-state-desync bug/fix as populateEmployeeForm() above -- this modal's date
     // field is initialized once (empty) on page load, so a plain .val() here would leave the
     // widget's internal `dates` empty until re-synced.
@@ -3206,30 +3324,21 @@ function populateEedForm(row, readOnly) {
     $('#eed_notes').val(row.notes || '');
     $('#eed_external_reference_no').val(row.external_reference_no || '');
     if (row.payee_type === 'employee' && row.payee_employee_id) {
-        const payeeLabel = row.payee_employee_no || `#${row.payee_employee_id}`;
-        $('#eed_payee_employee_id').empty().append(new Option(payeeLabel, row.payee_employee_id, true, true)).trigger('change');
         setEedPayeeType('employee');
+        applyPayeeFormRow('eed', row.payee);
     } else if (row.payee_type === 'company') {
         setEedPayeeType('company');
-        // 2026-09-10, Batch 3B item 3: pre-select the saved bank account, same new-Option pattern
-        // as the destination_id branch below (an ajax-mode select2 has no <option> to fall back on
-        // for a non-search-result value). row.bank_account_id is null for legacy data saved before
-        // this column existed -- leaves the field genuinely empty in that case, not a guess.
-        if (row.bank_account_id) {
-            const bankAccOpt = new Option(row.bank_account_name || '', row.bank_account_id, true, true);
-            $('#eed_bank_account_id').empty().append(bankAccOpt).trigger('change');
-        }
+        // row.bank_account_id is null for legacy data saved before this column existed -- the field
+        // is then genuinely empty, which is a real answer here now ("ไม่บันทึก"), not a guess.
+        applyPayeeFormRow('eed', row.payee);
     } else if (row.payee_type === 'other_person' && row.destination_id) {
         setEedPayeeType('other_person');
-        const destOpt = new Option(row.destination_account_name || '', row.destination_id, true, true);
-        $('#eed_destination_select').empty().append(destOpt).trigger('change');
+        applyPayeeFormRow('eed', row.payee);
         $('#eedDestinationNewFields').addClass('d-none');
-    } else if (row.payee_type === 'not_disbursed') {
-        // 2026-08-31, same-day follow-up -- without this branch an existing not_disbursed row
-        // would silently fall into the 'else' below and reset to 'none' every time it's reopened.
-        $('#eed_payee_employee_id').val(null).trigger('change');
-        setEedPayeeType('not_disbursed');
     } else {
+        // 2026-09-16: a legacy 'not_disbursed' row lands here on purpose -- that choice is no longer
+        // offered, and "retained by company / no record" is what it always computed as anyway. The
+        // stored value is untouched until the admin actually saves this form again.
         $('#eed_payee_employee_id').val(null).trigger('change');
         setEedPayeeType('none');
     }
@@ -3270,7 +3379,7 @@ function validateEedForm() {
     return firstInvalid;
 }
 function collectEedFormData() {
-    const mode = $('#eedModeToggle button.active').data('mode') || 'catalog';
+    const custom = eedIsCustomItem();
     // amount_mode is always 'custom_per_installment' now (2026-08-20) -- the modal always shows
     // the editable per-installment table (auto-filled by the preview endpoint, hand-editable
     // after), whether interest is on or not, so save()'s existing custom_per_installment path
@@ -3288,7 +3397,8 @@ function collectEedFormData() {
         interest_type: interestType,
         notes: $('#eed_notes').val().trim(),
         external_reference_no: $('#eed_external_reference_no').val().trim(),
-        payee_type: $('#eedPayeeTypeToggle button.active').data('payee-type') || 'none',
+        // The UI's own 3 destinations map onto `payee_type` here, one place, right before submit.
+        payee_type: payeeDestinationType('eed'),
         payee_employee_id: $('#eed_payee_employee_id').val() || undefined,
         include_in_cash_summary: $('#eed_include_in_cash_summary').is(':checked')
     };
@@ -3301,13 +3411,12 @@ function collectEedFormData() {
         data.fee_percent = feePercent;
         data.fee_base = feeBase;
     }
-    if (mode === 'custom' || mode === 'other') {
+    if (custom) {
         data.custom_item_name = $('#eed_custom_item_name').val().trim();
         data.custom_item_type = $('#eed_custom_item_type').val();
-        // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- see setEedMode()'s
-        // own docblock: "Other" reuses the exact same custom-item fields, this flag is the only
-        // difference sent to the backend.
-        if (mode === 'other') {
+        // The one thing that ever differed between the old "Custom Item" and "Other" modes: which
+        // report bucket this name is counted in (PayrollRunModel::resolveManualLineRow()).
+        if ($('#eed_is_other').is(':checked')) {
             data.is_other = true;
         }
     } else {
@@ -3333,8 +3442,8 @@ function collectEedFormData() {
 }
 let tbSyncTransactionLog, tbScheduledItemOccurrence;
 function initEedUI() {
-    tbEarning = initEedTable('#tableEarning', 'earning', 'btn-add-earning', 'add_earning_item', 'Earning');
-    tbDeduction = initEedTable('#tableDeduction', 'deduction', 'btn-add-deduction', 'add_deduction_item', 'Deduction');
+    tbEarning = initEedTable('#tableEarning', 'earning', 'btn-add-earning', 'add_earning_item', 'Earning', '#eedEarningSummary');
+    tbDeduction = initEedTable('#tableDeduction', 'deduction', 'btn-add-deduction', 'add_deduction_item', 'Deduction', '#eedDeductionSummary');
     // 2026-09-04, T051 -- same deferLoading:0 pattern, read-only, no Add button.
     tbSyncTransactionLog = initSyncTransactionLogTable();
     tbScheduledItemOccurrence = initScheduledItemOccurrenceTable();
@@ -3358,12 +3467,20 @@ function initEedUI() {
         if (tbScheduledItemOccurrence) tbScheduledItemOccurrence.columns.adjust();
     });
     if (typeof initSelect2 === 'function') {
-        initSelect2('#eed_ped_type_id', { mode: 'ajax' });
+        // 2026-09-19, 4c: same two options the payroll slip's own item picker uses -- the pinned
+        // "not in the catalog" escape hatch, and stripCodePrefix taking the endpoint's "[CODE] " off
+        // the LABEL only (it becomes the option's title; searching still matches the code,
+        // server-side). See initSelect2()'s own docblocks for both, input.js.
+        initSelect2('#eed_ped_type_id', {
+            mode: 'ajax',
+            stripCodePrefix: true,
+            pinnedOption: { id: EED_CUSTOM_OPTION_ID, key: 'manual_line_item_custom_option', fallback: 'Custom name' },
+        });
         // Initialized once here, not per-modal-open (2026-08-21 bug fix precedent from the
         // Attendance Deduction rate_unit dropdown: re-initializing a select2 field every time a
         // modal opens can leave stale state/duplicate options behind -- matches #eed_ped_type_id's
         // own established once-at-page-load pattern directly above).
-        initSelect2('#eed_payee_employee_id', { mode: 'ajax', allowClear: true });
+        initSelect2('#eed_payee_employee_id', { mode: 'ajax', allowClear: true, stripCodePrefix: 'dash' });
         // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7.
         initSelect2('#eed_destination_select', { mode: 'ajax', allowClear: true });
         // 2026-09-03, Platform UX review Phase 4.
@@ -3424,11 +3541,8 @@ function initEedUI() {
             // already this form's own starting state.
         }
     });
-    $(document).on('click', '#eedModeToggle button', function () {
-        setEedMode($(this).data('mode'));
-    });
-    $(document).on('click', '#eedPayeeTypeToggle button', function () {
-        setEedPayeeType($(this).data('payee-type'));
+    $(document).on('change', '#eed_ped_type_id', function () {
+        applyEedItemMode();
     });
     $(document).on('select2:select', '#eed_destination_select', function () {
         $('#eedDestinationNewFields').addClass('d-none');
@@ -3522,7 +3636,7 @@ function initEedUI() {
         }
         // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 7 -- same either/or
         // check as the Process Detail manual-line flow's own #manualLineDestinationWrapper (Phase 2).
-        if ($('#eedPayeeTypeToggle button.active').data('payee-type') === 'other_person' && !$('#eed_destination_select').val()) {
+        if (payeeDestinationType('eed') === 'other_person' && !$('#eed_destination_select').val()) {
             const hasNewFields = $('#eed_dest_account_name').val().trim() && $('#eed_dest_account_no').val().trim() && $('#eed_dest_bank').val();
             if (!hasNewFields) {
                 showWarning(langData['destination_required_message'] || 'Select a saved destination, or fill in account name, account number, and bank.');
@@ -4104,10 +4218,20 @@ function initRecurringDeductionUI() {
         ajax: {
             url: `${BASE_URL}/api/employee.recurring-deduction.list`,
             data: function (d) { d.employee_id = currentEmployeeId; },
-            dataSrc: 'data'
+            dataSrc: function (json) {
+                const rows = (json && json.data) || [];
+                renderStandingSummary('#recurringDeductionSummary', rows, 'recurring');
+                return rows;
+            }
         },
         columns: [
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.item_name_th : row.item_name_en) || '') },
+            // 2026-09-19, 4c: same name + shared descriptor tag as the EED tables above, and the
+            // catalog code searchable but not printed -- one shape for every standing-item table.
+            { data: null, render: {
+                display: (d, t, row) => `<div>${escapeHtml((currentLang === 'th' ? row.item_name_th : row.item_name_en) || '')}</div>${payeeDescriptorHtmlRd(row.payee)}`,
+                sort: (d, t, row) => (currentLang === 'th' ? row.item_name_th : row.item_name_en) || '',
+                filter: (d, t, row) => eedItemSearchText(row),
+            } },
             { data: 'amount', className: 'text-end', render: { display: (d, t, row) => Number(d || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + recurringDeductionFeeSubLabel(row), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
             { data: 'effective_date', render: { display: d => toDisplayDate(d), sort: d => d || '', filter: d => d || '' } },
             { data: null, render: (d, t, row) => recurringDeductionSuspendPeriodCell(row) },
@@ -4156,7 +4280,7 @@ function initRecurringDeductionUI() {
         // 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 6 -- allowClear override
         // on top of the generic '.select2-remote' sweep above (same "explicit follow-up call only
         // for non-default options" precedent #eed_payee_employee_id's own comment documents).
-        initSelect2('#erd_payee_employee_id', { mode: 'ajax', allowClear: true });
+        initSelect2('#erd_payee_employee_id', { mode: 'ajax', allowClear: true, stripCodePrefix: 'dash' });
         initSelect2('#erd_destination_select', { mode: 'ajax', allowClear: true });
     }
     $(document).on('select2:select', '#erd_ped_type_id', function (e) {
@@ -4167,12 +4291,6 @@ function initRecurringDeductionUI() {
         if (item.calculation_method === 'fixed_amount' && parseFloat(item.fixed_amount) > 0) {
             $amount.val(parseFloat(item.fixed_amount));
         }
-    });
-    $(document).on('click', '#erdFeeToggle button', function () {
-        setErdFeeOn($(this).data('value') === 'fee');
-    });
-    $(document).on('click', '#erdPayeeTypeToggle button', function () {
-        setErdPayeeType($(this).data('payee-type'));
     });
     $(document).on('select2:select', '#erd_destination_select', function () {
         $('#erdDestinationNewFields').addClass('d-none');
@@ -4222,7 +4340,10 @@ function initRecurringDeductionUI() {
             showWarning(langData['suspend_period_both_required'] || 'Enter both a suspend start date and end date, or leave both blank.');
             return;
         }
-        const feeOn = $('#erdFeeToggle button.active').data('value') === 'fee';
+        // 2026-09-19, 4c round 1: the % field IS the answer -- empty means no fee. There is nothing
+        // for a None/Fee toggle to decide here that the number does not already say (this table has
+        // one fee_base and no interest concept at all, unlike #eedModal's real `interest_type` enum).
+        const feePercent = ($('#erd_fee_percent').val() || '').toString().trim();
         const payload = {
             id: $('#erd_id').val() || undefined,
             employee_id: currentEmployeeId,
@@ -4233,11 +4354,11 @@ function initRecurringDeductionUI() {
             suspended_to: suspendedTo || undefined,
             notes: $('#erd_notes').val().trim()
         };
-        if (feeOn) {
-            payload.fee_percent = $('#erd_fee_percent').val();
+        if (feePercent !== '') {
+            payload.fee_percent = feePercent;
             payload.fee_base = $('#erd_fee_base').val();
         }
-        const payeeType = $('#erdPayeeTypeToggle button.active').data('payee-type') || 'none';
+        const payeeType = payeeDestinationType('erd');
         if (payeeType !== 'none') {
             payload.payee_type = payeeType;
             if (payeeType === 'employee') {
@@ -4319,20 +4440,14 @@ function initRecurringDeductionUI() {
         });
     });
 }
-// 2026-08-31, mirrors setEedChargeType()'s own 2-choice-relevant slice (this table only ever has
-// None/Fee, no Interest -- see the markup comment above #erdFeeDetailWrapper).
-function setErdFeeOn(on) {
-    $('#erdFeeToggle button').removeClass('active').filter(`[data-value="${on ? 'fee' : 'none'}"]`).addClass('active');
-    $('#erdFeeDetailWrapper').toggleClass('d-none', !on);
-    $('#erd_fee_percent').toggleClass('required', on);
-}
 function resetRecurringDeductionForm() {
     $('#recurringDeductionForm')[0].reset();
     $('#erd_id').val('');
     $('#erd_ped_type_id').val(null).trigger('change');
     $('.is-invalid', '#recurringDeductionModal').removeClass('is-invalid');
-    setErdFeeOn(false);
     $('#erd_fee_percent').val('');
+    $('#erd_bank_account_id').val(null).trigger('change'); // see resetEedForm()'s own note
+    clearPayeeFormBoxes('erd');
     setErdPayeeType('none');
     $('#recurringDeductionModalLabel span').attr('data-i18n', 'add_recurring_deduction').text(langData['add_recurring_deduction'] || 'Add Recurring Deduction');
 }
@@ -4349,23 +4464,16 @@ function populateRecurringDeductionForm(row) {
     $('#erd_suspended_to').val(row.suspended_to ? toDisplayDate(row.suspended_to) : '');
     $('#erd_suspended_to').datepicker('update');
     $('#erd_notes').val(row.notes || '');
-    const hasFee = !!row.fee_percent;
-    setErdFeeOn(hasFee);
-    $('#erd_fee_percent').val(hasFee ? row.fee_percent : '');
-    const payeeType = row.payee_type || 'none';
-    setErdPayeeType(payeeType);
-    if (payeeType === 'employee' && row.payee_employee_id) {
-        const payeeLabel = (currentLang === 'th' ? `${row.payee_name_th || ''} ${row.payee_surname_th || ''}` : `${row.payee_name_en || ''} ${row.payee_surname_en || ''}`).trim();
-        const payeeOpt = new Option(`${payeeLabel} (${row.payee_employee_no || ''})`, row.payee_employee_id, true, true);
-        $('#erd_payee_employee_id').empty().append(payeeOpt).trigger('change');
-    } else if (payeeType === 'other_person' && row.destination_id) {
-        const destOpt = new Option(row.destination_account_name || '', row.destination_id, true, true);
-        $('#erd_destination_select').empty().append(destOpt).trigger('change');
+    // A row saved with a fee re-opens showing it; one without opens with the field empty, which is
+    // the same thing the form says for "no fee" on a fresh add.
+    $('#erd_fee_percent').val(row.fee_percent ? row.fee_percent : '');
+    // A stored value this picker cannot show (a legacy 'not_disbursed') opens on "retained by
+    // company / no record", which is what it always computed as -- see setPayeeDestination().
+    setErdPayeeType(row.payee_type);
+    const payeeType = payeeDestinationType('erd');
+    applyPayeeFormRow('erd', row.payee);
+    if (payeeType === 'other_person' && row.destination_id) {
         $('#erdDestinationNewFields').addClass('d-none');
-    } else if (payeeType === 'company' && row.bank_account_id) {
-        // 2026-09-10, Batch 3B item 3: same pre-select pattern as populateEedForm()'s own company branch.
-        const bankAccOpt = new Option(row.bank_account_name || '', row.bank_account_id, true, true);
-        $('#erd_bank_account_id').empty().append(bankAccOpt).trigger('change');
     }
     $('#recurringDeductionModalLabel span').attr('data-i18n', 'edit_recurring_deduction').text(langData['edit_recurring_deduction'] || 'Edit Recurring Deduction');
 }

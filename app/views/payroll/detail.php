@@ -1,79 +1,73 @@
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <a href="<?=BASE_URL?>/payroll-process" class="bc-parent text-decoration-none" data-i18n="payroll_process">Payroll Process</a>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" id="bcRunName">-</span>
-        </h5>
-    </nav>
-    <!-- .page-header-card rollout (2026-08-21 origin, see payroll/index.php's own comment) --
-         payroll/detail.php was a real, previously-missed gap (T063 design audit, 2026-09-04):
-         one of the highest-traffic pages in the app had no standard page header at all. This is
-         the STATIC identity header (icon + generic title/description, matching every other
-         top-level page) -- the .card-surface block right below it is UNCHANGED, still the
-         dynamic run-specific content (run name/status badge/action buttons), not replaced by
-         this. #runDetailTabs further down the page is a separate, deliberately-exempted
-         component (its own bespoke polish CSS, unrelated to this page header) -- not touched. -->
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon"><i class="fa-solid fa-file-invoice-dollar"></i></div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="payroll_run_detail_title">Payroll Run Detail</h5>
-            <p class="page-header-card-desc" data-i18n="payroll_run_detail_description">Review, calculate, and manage this payroll run from draft through approval, payment, and closing.</p>
-        </div>
-    </div>
+    <!-- 2026-09-13, Phase Design Round 3 item 3a (Payroll Detail pilot, rules.md §2) -- page-header.php
+         replaces the OLD 3-piece header (a plain `.payroll-breadcrumb` <h5>, a separate STATIC
+         `.page-header-card` identity block, and a bespoke run-name/status/export-buttons row) with
+         ONE shared component. Real consequences of this, not just a markup swap:
+         - The static identity header's own generic title/description
+           (payroll_run_detail_title/_description) is GONE -- $title is now the run's own name (a
+           real value, not a category label), matching the decided spec "H1 = ชื่อรอบ". The 2 i18n
+           keys themselves are left in th.json/en.json (harmless if unused; not deleted, in case a
+           future page still wants that generic wording).
+         - $title/breadcrumb-current/description/actions are all UNKNOWN at server-render time (this
+           page's real data loads via api/payroll-run.get, not server-side PHP) -- every one of them
+           starts as a placeholder here and gets filled by renderRunHeader()/renderRunHeaderActions()
+           (detail.js) once that fetch resolves, via the stable ids page-header.php now documents
+           its own docblock (#phBreadcrumbCurrent/#phTitle/#phTitleBadge/#phDescription/#phActions).
+         - The state-dependent action buttons that used to render INSIDE the process-timeline itself
+           (timelineStepActionsHtml(), now renderRunHeaderActions()) moved here instead -- confirmed
+           decision: "stepper เป็น 'สถานะ' ล้วน ไม่มีปุ่มฝังอีก" (§2/§6, applies to every future page with
+           a stepper, not just this one). #btnExportRunRegister/#btnPreviewRunRegisterPdf (unchanged
+           ids/click handlers, both delegated on `document`) now live inside the header's own
+           "ส่งออก ▾" secondary dropdown instead of as 2 standalone buttons.
+         - Breadcrumb's old non-link "Home" crumb (`.bc-root`, icon+label, never a real link) has NO
+           equivalent icon slot in page-header.php (§2: "ไม่มีไอคอนหน้า" applies to breadcrumbs too, not
+           just page titles) -- rendered here as a plain, non-clickable label only, matching every
+           other real page's own breadcrumb convention already established elsewhere in the app
+           (page-header.php was never designed with a "Home" icon crumb in mind to begin with; no
+           other Round-4 candidate page's breadcrumb has one either, confirmed via grep). -->
+    <?php
+    $title = '-';
+    // 2026-09-13, §2 REVISED (supersedes the previous "crumb สุดท้าย = ชนิดหน้า" decision entirely, not
+    // just this page's own use of it) -- the last crumb is now the entity's own CODE (here, the run's
+    // `run_code`), not a generic static page-type label -- $title (the H1) is the run's own DISPLAY
+    // NAME instead. Both are unknowable until api/payroll-run.get resolves (same as before), so this
+    // crumb is a placeholder here too now, filled in by renderRunHeader() (detail.js) alongside $title
+    // -- see that function's own comment for the exact fallback chain on each.
+    $breadcrumb = [
+        ['label' => 'Payroll', 'href' => null, 'i18n' => 'payroll'],
+        ['label' => 'Payroll Process', 'href' => BASE_URL . '/payroll-process', 'i18n' => 'payroll_process'],
+        ['label' => '-', 'href' => null],
+    ];
+    // $primary_action/$secondary_actions/$overflow_actions deliberately omitted (null/empty) --
+    // entirely state-dependent, unknowable until api/payroll-run.get resolves. renderRunHeaderActions()
+    // (detail.js) populates #phActions via renderPageHeaderActions() (app.js) once it does, and again
+    // after every state-changing action (submit/approve/reject/mark paid/lock/reopen/...).
+    $description = null;
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
 
     <!-- 2026-09-09, explicit request: "ตรง Timeline ในหน้า Process Detail เอา card-surface mb-4 ออกครับ" --
          was the same .card-surface treatment every other content block on this page uses; removed
-         here specifically, per this explicit request, leaving a plain unstyled wrapper. -->
+         here specifically, per this explicit request, leaving a plain unstyled wrapper.
+         2026-09-13, Round 3 item 3a: #rejectReasonBox/#cancelReasonBox (were siblings of the old
+         run-name heading) moved to sit here instead, directly under the stepper -- page-header.php
+         has no slot for an inline reason/warning box (nor should it grow one just for this; a status
+         reason belongs with the status stepper below the title, not the page identity above it). -->
     <div>
-        <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
-            <div>
-                <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <h5 class="fw-bold mb-0" id="runNameHeading">-</h5>
-                    <span id="runStateBadge"></span>
-                </div>
-                <div class="text-danger small mt-2 d-none" id="rejectReasonBox"></div>
-                <div class="text-muted small mt-2 d-none" id="cancelReasonBox"></div>
-            </div>
-            <!-- 2026-08-29, same-day follow-up: "ตรงปุ่มออกรายงาน ให้ปรับเป็นเพิ่มอีก Tab ก่อน Action
-                 History" -- the dropdown button that used to sit here (renderRunReportsButtons())
-                 moved into its own "Reports" tab (#run-reports-pane) instead. The List page's own
-                 row dropdown (public/js/payroll/index.js) is UNCHANGED, still a dropdown there --
-                 this request was specifically about the Detail page. -->
-            <!-- 2026-09-09, real bug found and fixed (explicit report: "ปุ่ม Export Excel และ pdf ตอนนี้
-                 ไม่ติดกัน อยากให้อยู่ติดกันและไปอยู่ขวาสุด") -- both buttons used to be direct children
-                 of the SAME outer `justify-content-between` flex container as the run-name/badge div
-                 above them, making `justify-content-between` distribute all 3 items (name-div, Excel,
-                 PDF) with equal space between EACH of them, instead of grouping the two buttons
-                 together at the far right. Wrapped them in their own `d-flex gap-2` group so the
-                 outer flex only ever sees 2 items again (name-div, button-group) -- now the whole
-                 group moves to the right edge as one unit, with the 2 buttons touching via gap-2
-                 inside it. -->
-            <div class="d-flex gap-2">
-            <!-- 2026-08-31, same-day follow-up, explicit request: "ปุ่ม Export Excel ไม่ควรไปรวมอยู่ใน
-                 รายงาน ย้ายไปอยู่กับ Timeline ดูตรงการจัดตำแหน่งให้หน่อยครับ ขอสวยๆ" -- this slot sat empty
-                 since the dropdown above it was removed; reused here for PAYROLL_REGISTER's own
-                 dedicated one-click export (this run's employee-by-employee register), directly
-                 above the Timeline it now sits with instead of buried as one row among the
-                 statutory/payment reports in the Reports tab. -->
-            <button type="button" class="btn btn-outline-success btn-sm" id="btnExportRunRegister">
-                <i class="fa-solid fa-file-excel me-1"></i><span data-i18n="export_excel">Export Excel</span>
-            </button>
-            <!-- 2026-09-02, explicit request: "เพิ่มให้ Export เป็น PDF ได้ด้วย...การ Export กดแล้ว แสดง
-                 ตัวอย่าง แล้วค่อยเลือกจะ Download ภาษาไทยหรือภาษาอังกฤษ" -- deliberately additive next to
-                 the Excel button above (unchanged, still a direct one-click download) rather than
-                 replacing it -- Excel stays the quick-download path, this opens the SAME
-                 #reportPreviewModal every other report on this page already uses (PDF preview +
-                 Thai/English download buttons), reused as-is with report_code=PAYROLL_REGISTER. -->
-            <button type="button" class="btn btn-outline-danger btn-sm" id="btnPreviewRunRegisterPdf">
-                <i class="fa-solid fa-file-pdf me-1"></i><span data-i18n="export_pdf">Export PDF</span>
-            </button>
-            </div>
-        </div>
-        <div class="process-timeline-wrap" id="runProcessTimeline"></div>
-        <div id="nextStepBanner" class="next-step-banner"></div>
+        <div class="text-danger small mb-2 d-none" id="rejectReasonBox"></div>
+        <div class="text-muted small mb-2 d-none" id="cancelReasonBox"></div>
+        <!-- 2026-09-13, Round 3 item 3a follow-up fix -- `.process-timeline-wrap` (card border/
+             background/padding) removed: a real miss caught in review, this page's own stepper still
+             looked like the OLD bespoke `.process-timeline` design (card-wrapped) even after
+             renderProcessTimeline() (detail.js) was fixed to call the real status-stepper.php/
+             renderStatusStepper() component, which is explicitly card-free (§6). No wrapper class at
+             all now -- #runProcessTimeline is just a plain container renderStatusStepper() fills. -->
+        <div id="runProcessTimeline"></div>
+        <!-- §15, item B (2026-09-13): a real callout.php-shaped box (not a page-specific banner class
+             anymore) -- renderRunHeader() (detail.js) sets both its class (`callout callout-{tone}`,
+             via calloutHtml()) and its content, or leaves it `d-none` with empty content when the
+             current state's map entry gives back no text at all. -->
+        <div id="nextStepBanner" class="d-none"></div>
     </div>
 
     <!-- 2026-09-09, explicit request: "ส่วน Card Summary ให้ย้ายไปไว้ด้านบน Tab ใต้ Timeline ของรอบ" --
@@ -89,55 +83,112 @@
          table+footer but left these more prominent cards showing the stale, unfiltered total. Now
          recomputed from the table's own currently-VISIBLE (filtered) rows on every draw -- see
          updateSummaryCardsFromTable() in detail.js. -->
-    <?php // mt-4 here, not on #nextStepBanner: detail.js overwrites its class attr ?>
+    <!-- 2026-09-13, Round 3 item 3a -- markup switched from the old colored-edge `.stat-card`/
+         `.stat-card-{tone}` classes to stat-card.php's plain `.stat`/`.stat-head`/`.stat-icon`/
+         `.stat-value`/`.stat-footer`/`.stat-sub` shape (§2: "ไม่มีขอบสี, ไอคอนเดี่ยวสีเดียว"). NOT
+         rendered via an `include stat-card.php` loop, though -- confirmed gap, reported separately:
+         that partial replaces a card's ENTIRE content from one `$stat` array per render, but these 4
+         values update INDIVIDUALLY and live (updateSummaryCardsFromTable(), on every table redraw,
+         NOT a full page reload) via direct `.text()` calls on each value's own stable id -- forcing
+         that through a whole-array re-render would mean either rebuilding all 4 array literals in JS
+         just to change one number, or adding several id-passthrough params to the partial for a
+         single, narrow caller. Hand-written here with the EXACT SAME CSS classes the partial itself
+         outputs instead, so the visual result is identical either way -- ids preserved unchanged,
+         `.num` added to each value span per §8 ("ตัวเลขทุกที่ใช้ .num") -- the OLD markup never had it
+         on these 3 money values, `fmtNum()`'s own tabular-nums alignment was simply missing here
+         before. `mt-4`/`mb-4` here = --sp-5 (item A.1: callout->stat and stat->tabs are both --sp-5 --
+         Bootstrap's own 4-scale spacer happens to equal that token exactly, 1.5rem = 24px = --sp-5, so
+         no bespoke class was needed here).
+         2026-09-13, item D -- `.money-gross`/`.money-deduction`/`.money-net` (§8) added to the 3 money
+         values below (Employees isn't a money value, gets neither). -->
     <div class="row g-3 mt-4 mb-4" id="runSummaryCards">
         <div class="col-6 col-md-3">
-            <div class="stat-card stat-card-info">
-                <div class="stat-card-icon"><i class="fa-solid fa-users"></i></div>
-                <div>
-                    <div class="stat-card-label" data-i18n="table_employee_count">Employees</div>
-                    <div class="stat-card-value" id="infoEmployeeCount">-</div>
-                    <div class="stat-card-sub" id="infoPaymentBreakdown"></div>
+            <div class="stat">
+                <div class="stat-head">
+                    <div class="stat-label" data-i18n="table_employee_count">Employees</div>
+                    <i class="fa-solid fa-users stat-icon"></i>
+                </div>
+                <div class="stat-value num" id="infoEmployeeCount">-</div>
+                <div class="stat-footer">
+                    <span class="stat-sub" id="infoPaymentBreakdown"></span>
                 </div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="stat-card stat-card-success">
-                <div class="stat-card-icon"><i class="fa-solid fa-sack-dollar"></i></div>
-                <div>
-                    <div class="stat-card-label" data-i18n="table_gross_amount">Gross</div>
-                    <div class="stat-card-value" id="infoGross">-</div>
+            <div class="stat">
+                <div class="stat-head">
+                    <div class="stat-label" data-i18n="table_gross_amount">Gross</div>
+                    <i class="fa-solid fa-sack-dollar stat-icon"></i>
                 </div>
+                <div class="stat-value num money-gross" id="infoGross">-</div>
+                <div class="stat-footer stat-footer-empty"></div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="stat-card stat-card-danger">
-                <div class="stat-card-icon"><i class="fa-solid fa-minus"></i></div>
-                <div>
-                    <div class="stat-card-label" data-i18n="table_deduction_amount">Deductions</div>
-                    <div class="stat-card-value" id="infoDeduction">-</div>
+            <div class="stat">
+                <div class="stat-head">
+                    <div class="stat-label" data-i18n="table_deduction_amount">Deductions</div>
+                    <i class="fa-solid fa-minus stat-icon"></i>
                 </div>
+                <div class="stat-value num money-deduction" id="infoDeduction">-</div>
+                <div class="stat-footer stat-footer-empty"></div>
             </div>
         </div>
         <div class="col-6 col-md-3">
-            <div class="stat-card stat-card-primary">
-                <div class="stat-card-icon"><i class="fa-solid fa-hand-holding-dollar"></i></div>
-                <div>
-                    <div class="stat-card-label" data-i18n="table_net_pay">Net Pay</div>
-                    <div class="stat-card-value" id="infoNet">-</div>
+            <div class="stat">
+                <div class="stat-head">
+                    <div class="stat-label" data-i18n="table_net_pay">Net Pay</div>
+                    <i class="fa-solid fa-hand-holding-dollar stat-icon"></i>
                 </div>
+                <div class="stat-value num money-net" id="infoNet">-</div>
+                <div class="stat-footer stat-footer-empty"></div>
             </div>
         </div>
     </div>
 
-    <div class="alert alert-danger small d-none" id="validationErrorsBanner"></div>
+    <!-- 2026-09-20, 3e-1 round 1 (rules.md 15): every run-level announcement in this header region is
+         a callout now, not a solid `.alert` tile -- the "next step" box right above (#nextStepBanner)
+         has been one since 3a, and two boxes that say the same KIND of thing must not be two
+         different shapes. Left border carries the tone; the copy, the ids and every handler below are
+         untouched. JS toggles `d-none` on these (not attr('class')), so the tone class can live here
+         in the markup. -->
+    <!-- 2026-09-21, 3e-2a: the 4 run-level boxes below were siblings with no spacing of their own --
+         two that happened to be visible at once rendered as ONE box with a 2-coloured left edge, and the last one sat flush against the tab bar. The
+         wrapper owns the rhythm (column flex + gap), NOT .callout, which is shared with every other
+         page. A `d-none` child is display:none, so it is not a flex item at all and its gap
+         disappears with it -- nothing here reserves space for a box that is not on screen, and a run
+         with no banners keeps exactly the spacing it had before this wrapper existed. ids, classes,
+         tone classes and every handler are untouched. -->
+    <div class="rd-run-banners">
+    <div class="callout callout-danger d-none" id="validationErrorsBanner"></div>
     <!-- 2026-08-30 (Phase 8, T041): reconciliation warning for a sync-based run -- employees who
          would normally be expected in payroll but weren't in this Origami sync payload and nobody
          manually joined them either. Advisory only (alert-warning, not alert-danger) -- never blocks
          submit, just a prompt to verify before doing so. See PayrollRunModel::syncMissingEmployees(). -->
-    <div class="alert alert-warning small d-none d-flex justify-content-between align-items-center flex-wrap gap-2" id="syncMissingEmployeesBanner">
-        <span id="syncMissingEmployeesBannerText"></span>
-        <button type="button" class="btn btn-sm btn-outline-dark" id="syncMissingEmployeesViewBtn" data-i18n="view_list">View List</button>
+    <div class="callout callout-warning d-none" id="syncMissingEmployeesBanner">
+        <!-- The flex row moves INSIDE the callout: `calloutHtml()`/callout.php own the box (padding,
+             radius, left border), the caller owns what sits in it -- the same "caller-authored
+             content" contract the partial documents. No shared component changed. The button is
+             `btn-sm` neutral (rules.md 4): it opens a list, it is not the decision on this screen. -->
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span id="syncMissingEmployeesBannerText"></span>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="syncMissingEmployeesViewBtn" data-i18n="view_list">View List</button>
+        </div>
+    </div>
+    <!-- 2026-09-23, B1: the mirror-image case `#syncMissingEmployeesBanner` above can never contain --
+         employees Origami DID send in this run's sync payload but who never reached the run because
+         they're marked not a payroll participant. See PayrollRunModel::syncMappedNotParticipants().
+         `neutral` tone (rules.md §15 has no `info` tone -- confirmed with the user 2026-09-23): this
+         is advisory information, not a warning, and using `warning` here would read as the same
+         severity as the missing-employees box right above it, which is a real reconciliation concern
+         while this one is just a fact about roster setup -- see docs/decisions/2026-09-23-sync-not-
+         participant-banner.md. Same caller-authored-content contract as the box above, no shared
+         component changed. -->
+    <div class="callout callout-neutral d-none" id="syncNotParticipantBanner">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span id="syncNotParticipantBannerText"></span>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="syncNotParticipantViewBtn" data-i18n="view_list">View List</button>
+        </div>
     </div>
     <!-- 2026-09-01, explicit request: "ตอนดึงมาทำรอบหรือเพิ่มรอบใหม่ ให้มี radio เลือกว่า เปิดรอบใหม่ หรือ
          อ้างอิงถึงรอบ" -- shown whenever this run was created with "อ้างอิงถึงรอบ" ticked
@@ -147,21 +198,43 @@
          when ready -- folds this run's resolved amounts into the target and soft-deletes this one
          (same mechanics/confirmation dance as the Pending-Pull table's own "Merge into Target"
          action, see PayrollRunModel::performRunMerge()'s own docblock). -->
-    <div class="alert alert-info small d-none d-flex justify-content-between align-items-center flex-wrap gap-2" id="mergeTargetBanner">
-        <span id="mergeTargetBannerText"></span>
-        <button type="button" class="btn btn-sm btn-primary" id="btnMergeIntoTarget"><i class="fa-solid fa-code-merge me-1"></i><span data-i18n="btn_merge_sync">Merge into Target</span></button>
+    <!-- Same conversion as the 2 boxes above. `alert-info` was also the last BLUE surface in this
+         region (rules.md 3: blue is not used) -- this box announces the next step for a run that was
+         created against a merge target, so `primary` is its tone, the same one #nextStepBanner uses
+         for "still moving forward". #btnMergeIntoTarget keeps its own look for now (it is a real
+         primary action, and its icon is a separate rules.md 4 question -- see BACKLOG).
+         2026-09-21, 3e-2b: `primary` -> `neutral`. This box states a FACT about how the run was
+         created (it has a merge target), and the thing to do about it is the button inside it --
+         which is already the orange one. An orange left edge behind an orange button is the same
+         signal twice, and it left #nextStepBanner, the box that really does say "this is the next
+         step", competing with it for the one meaning primary carries (§15/§0.1). -->
+    <div class="callout callout-neutral d-none" id="mergeTargetBanner">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <span id="mergeTargetBannerText"></span>
+            <button type="button" class="btn btn-sm btn-primary" id="btnMergeIntoTarget"><i class="fa-solid fa-code-merge me-1"></i><span data-i18n="btn_merge_sync">Merge into Target</span></button>
+        </div>
     </div>
     <!-- 2026-09-06: the "future cycle" merge-target form -- no button here at all (there is
          nothing to merge into yet), just a status line; see renderMergeTargetBanner()'s own
          docblock for how this and #mergeTargetBanner above stay mutually exclusive. -->
-    <div class="alert alert-warning small d-none" id="mergeTargetWaitingBanner">
-        <i class="fa-solid fa-hourglass-half me-1"></i><span id="mergeTargetWaitingBannerText"></span>
+    <!-- The icon goes with the `.alert` (rules.md 15: a callout has no icon, the left border is the
+         signal). renderMergeTargetBanner() still swaps this box between its warning and danger tone,
+         now by swapping `callout-warning`/`callout-danger` instead of `alert-*`. -->
+    <div class="callout callout-warning d-none" id="mergeTargetWaitingBanner">
+        <span id="mergeTargetWaitingBannerText"></span>
+    </div>
     </div>
 
+    <!-- 2026-09-13, Round 3 item 3a (§6: "Tabs ไม่มีไอคอน") -- icons stripped from the 5 tab buttons
+         that still had one (Details/Employee Breakdown/Cash Payments/Bank Account Assignment/Third-
+         Party Remittance/Action History; Reports already had none, see its own 2026-09-09 comment
+         below). Labels/ids/data-bs-target/tab-pane CONTENT are all untouched -- every tab still
+         opens exactly as before (§0.7: this round only touches how the tab BAR looks, not what's
+         inside any tab-pane other than Employee Breakdown's own, done separately in 3b/3c). -->
     <ul class="nav nav-tabs" id="runDetailTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary active" id="run-details-tab" data-bs-toggle="tab" data-bs-target="#run-details-pane" type="button" role="tab" aria-controls="run-details-pane" aria-selected="true">
-                <i class="fa-solid fa-circle-info me-1"></i><span data-i18n="tab_run_details">Details</span>
+                <span data-i18n="tab_run_details">Details</span>
             </button>
         </li>
         <!-- 2026-09-09, explicit request: "แยก Employee และการคำนวณไว้อีก Tab ครับ...ใน Tab แรกจะเป็นการ
@@ -174,7 +247,7 @@
              needed. -->
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary" id="run-employee-tab" data-bs-toggle="tab" data-bs-target="#run-employee-pane" type="button" role="tab" aria-controls="run-employee-pane" aria-selected="false">
-                <i class="fa-solid fa-users me-1"></i><span data-i18n="employee_breakdown">Employee Breakdown</span>
+                <span data-i18n="employee_breakdown">Employee Breakdown</span>
             </button>
         </li>
         <!-- 2026-08-29, same-day follow-up: "ตรงปุ่มออกรายงาน ให้ปรับเป็นเพิ่มอีก Tab ก่อน Action History
@@ -204,7 +277,7 @@
              report's own docblock on why both exist). -->
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary" id="run-cash-tab" data-bs-toggle="tab" data-bs-target="#run-cash-pane" type="button" role="tab" aria-controls="run-cash-pane" aria-selected="false">
-                <i class="fa-solid fa-money-bill-wave me-1"></i><span data-i18n="tab_cash_payments">Cash Payments</span>
+                <span data-i18n="tab_cash_payments">Cash Payments</span>
             </button>
         </li>
         <!-- 2026-09-02, multi-bank-account payroll, explicit request: "ในหน้า Detail ก็สามารถเลือกได้ว่าใครจะ
@@ -216,7 +289,7 @@
              as Cash Payments/Remittance right beside it. -->
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary" id="run-bank-account-tab" data-bs-toggle="tab" data-bs-target="#run-bank-account-pane" type="button" role="tab" aria-controls="run-bank-account-pane" aria-selected="false">
-                <i class="fa-solid fa-building-columns me-1"></i><span data-i18n="tab_bank_account_assignment">Bank Account Assignment</span>
+                <span data-i18n="tab_bank_account_assignment">Bank Account Assignment</span>
             </button>
         </li>
         <!-- 2026-09-02, Deduction Destination & Third-Party Remittance -- deduction lines routed to
@@ -227,16 +300,22 @@
              numbers are final). -->
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary" id="run-remittance-tab" data-bs-toggle="tab" data-bs-target="#run-remittance-pane" type="button" role="tab" aria-controls="run-remittance-pane" aria-selected="false">
-                <i class="fa-solid fa-money-bill-transfer me-1"></i><span data-i18n="tab_remittance">Third-Party Remittance</span>
+                <span data-i18n="tab_remittance">Third-Party Remittance</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link text-secondary" id="run-history-tab" data-bs-toggle="tab" data-bs-target="#run-history-pane" type="button" role="tab" aria-controls="run-history-pane" aria-selected="false">
-                <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="tab_action_history">Action History</span>
+                <span data-i18n="tab_action_history">Action History</span>
             </button>
         </li>
     </ul>
-    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5" id="runDetailTabsContent">
+    <!-- 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "ตัด card/ขอบที่ครอบ .tab-content
+         ของ Detail ออกทุก tab" -- `border-top-0 bg-white rounded-bottom` (the utility-class half of the
+         card look, its other half was a #runDetailTabsContent CSS rule in style.css, also retired)
+         dropped; only `mb-5` (bottom margin before whatever follows this tab group) stays, unrelated
+         to the card styling itself. See style.css's own comment on #runDetailTabsContent/the per-pane
+         padding rules that replace this for the full reasoning + §6's new rule. -->
+    <div class="tab-content mb-5" id="runDetailTabsContent">
         <div class="tab-pane fade show active" id="run-details-pane" role="tabpanel" aria-labelledby="run-details-tab" tabindex="0">
           <!-- 2026-09-09, explicit request: "ใน Tab Information เอา หัวข้อออกมาไว้นอก detail-section ครับ" --
                the section heading (numbered badge + title + any header-row action button) now sits
@@ -308,7 +387,7 @@
                  2026-08-29, explicit request: "เพิ่มให้สามารถเลือกเอาเงินเดือนออกจากการคำนวณได้ หรือค่าอื่นๆที่ไม่
                  นำมาคำนวณ ทั้ง template เลย...และต้องกำหนดได้ด้วยว่าคำนวณภาษี ไม่คำนวณภาษี ส่งประกันสังคมไหม
                  กำหนดแบบทั้งหมด และรายบุคคลได้" -- whole-run defaults (a per-employee override lives in
-                 each row's own "Items" button -> "Tax & SSO" tab instead, see manageLinesModal).
+                 each row's own "ตั้งค่ารายบุคคล" button -> "Tax & SSO" tab instead).
                  2026-08-29, same-day follow-up: "ในหน้า Process Detail แบบ View Mode จะต้องบอกรายละเอียด
                  ของการตั้งค่ารอบด้วยครับ" -- was hidden entirely once a run left draft; now ALWAYS
                  visible, read-only (every control disabled + Save hidden) once the run is no longer
@@ -346,7 +425,7 @@
                                 </div>
                                 <div class="form-check form-check-inline m-0">
                                     <input class="form-check-input" type="radio" name="runCalcTax" id="runCalcTaxYes" value="yes">
-                                    <label class="form-check-label small text-success fw-semibold" for="runCalcTaxYes"><i class="fa-solid fa-check me-1"></i><span data-i18n="run_calc_tax_yes">Calculate for Everyone</span></label>
+                                    <label class="form-check-label small fw-semibold" for="runCalcTaxYes"><i class="fa-solid fa-check me-1"></i><span data-i18n="run_calc_tax_yes">Calculate for Everyone</span></label>
                                 </div>
                                 <div class="form-check form-check-inline m-0">
                                     <input class="form-check-input" type="radio" name="runCalcTax" id="runCalcTaxNo" value="no">
@@ -363,7 +442,7 @@
                                 </div>
                                 <div class="form-check form-check-inline m-0">
                                     <input class="form-check-input" type="radio" name="runCalcSso" id="runCalcSsoYes" value="yes">
-                                    <label class="form-check-label small text-success fw-semibold" for="runCalcSsoYes"><i class="fa-solid fa-check me-1"></i><span data-i18n="run_calc_sso_yes">Send for Everyone</span></label>
+                                    <label class="form-check-label small fw-semibold" for="runCalcSsoYes"><i class="fa-solid fa-check me-1"></i><span data-i18n="run_calc_sso_yes">Send for Everyone</span></label>
                                 </div>
                                 <div class="form-check form-check-inline m-0">
                                     <input class="form-check-input" type="radio" name="runCalcSso" id="runCalcSsoNo" value="no">
@@ -417,23 +496,20 @@
              directly in the tab-pane's own padding, matching the Cash Payments/Bank Account
              Assignment/Third-Party Remittance tabs, none of which ever used .detail-section either. -->
         <div class="tab-pane fade" id="run-employee-pane" role="tabpanel" aria-labelledby="run-employee-tab" tabindex="0">
-            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
-                <h6 class="text-secondary fw-bold mb-0">
-                    <span data-i18n="employee_breakdown">Employee Breakdown</span>
-                    <!-- 2026-08-29, explicit request: "ตอน View Mode...อยากให้ปรับให้ดูเป็น View อยากเดียว
-                         ...จะได้ดูแตกต่างจากตอนสร้างและแก้ไข" -- shown whenever currentRun.state !== 'draft'
-                         (applyRunDetailViewMode() in detail.js), the one always-visible cue that this
-                         run's Employee Breakdown is read-only, on top of the individual controls
-                         (checkboxes, bulk bar, Verify/Lock, Manage Items) that already disable/hide
-                         themselves per-control. -->
-                    <span class="badge bg-secondary-subtle text-secondary ms-2 d-none" id="runDetailViewModeBadge"><i class="fa-solid fa-eye me-1"></i><span data-i18n="view_mode">View Mode</span></span>
-                </h6>
-                <!-- 2026-09-09, explicit request: "ย้ายปุ่มคำนวณใหม่...มาแสดงต่อ แสดง 50 รายการ" -- #btnRecalculate
-                     no longer renders here; it's injected into the Employee table's own `.dt-length`
-                     (initRunDetailTable()'s initComplete in detail.js), next to the "Show 50 entries"
-                     control, same as the Join Employees button living in `.dt-search` on the other
-                     side of that same row. -->
-            </div>
+            <!-- 2026-09-13, Round 3 item 3b, explicit instruction: "ตัดหัวข้อซ้ำออก (tab บอกแล้ว)" -- the
+                 "Employee Breakdown" h6 heading was a duplicate of the tab button's own label right
+                 above it; removed entirely. #btnRecalculate itself is NOT here -- injected into the
+                 Employee table's own `.dt-length` (initRunDetailTable()'s initComplete in detail.js),
+                 next to "Show 50 entries", same as the Join Employees button.
+                 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "ตัด callout 'โหมดดูอย่างเดียว'
+                 ออกทั้งหมด (สถานะรอบ + ปุ่มที่หายไปบอกอยู่แล้ว)" -- the callout this comment used to
+                 describe (#runDetailViewModeCallout, added earlier this same round replacing an even
+                 older badge) is gone entirely now, not replaced by anything -- the run's own status
+                 (stepper/badge in the page header) plus each individual control's own per-control
+                 disable/hide (checkboxes, bulk bar, Verify/Lock, Manage Items all already gate on
+                 currentRun.state !== 'draft' on their own) already say "this is read-only" without a
+                 redundant banner repeating it. applyRunDetailViewMode() in detail.js no longer touches
+                 any callout -- see that function's own comment. -->
             <!-- 2026-08-31, explicit request: "ต้องการให้มี Block เตือนว่า...ให้กดคำนวณใหม่ทุกครั้ง...และเพิ่ม
                  Function ให้มี checkbox ติ๊กว่าคำนวณอัตโนมัติหลังจากที่แก้ไขข้อมูลทันที...แต่ถ้าติ๊กคำนวณอัตโนมัติ
                  Recommend ให้กดจะไม่แสดง" -- the checkbox itself (persisted per-run, see
@@ -441,74 +517,68 @@
                  never ambiguous; the reminder banner beneath toggles with it (renderRecalcReminder()
                  in detail.js) -- hidden while auto-recalculate is on, shown otherwise. Draft-only
                  (recalculate() itself is only ever meaningful for a draft run), same visibility gate
-                 as #runRecalculateButtonWrap's own buttons. -->
-            <div class="d-flex align-items-center gap-2 mb-2 d-none" id="autoRecalculateWrap">
-                <div class="form-check form-switch mb-0">
-                    <input class="form-check-input" type="checkbox" id="chkAutoRecalculate">
-                    <label class="form-check-label small text-secondary" for="chkAutoRecalculate" data-i18n="auto_recalculate_label">Automatically recalculate right after editing data</label>
+                 as #runRecalculateButtonWrap's own buttons.
+                 2026-09-13, Round 3 item 3b, 3rd placement this round (reported in the task response
+                 each time) -- tried "right of the filter-bar header" (via filter-bar.php's own new
+                 $header_extra_html slot) and "under the table" before this; user's own explicit final
+                 choice is back HERE, its original spot: its own standalone line, left-aligned, above
+                 the filter-bar. filter-bar.php's $header_extra_html slot itself is NOT removed (kept,
+                 documented, unused by this page now) -- it's a genuine reusable capability of that
+                 shared component now, independent of whether this ONE page ends up using it. -->
+            <!-- 2026-09-14, Round 3 "เก็บตกรอบ 6", explicit instruction: new shared component
+                 `setting-row.php`/`settingRowHtml()` (§9/§11) -- supersedes the previous 2 "เก็บตก"
+                 rounds' own page-local attempts at this exact shape (a static switch + a separate
+                 #recalcReminderBanner div, styled/positioned by hand each round). #autoRecalculateWrap
+                 stays as the OUTER draft-only show/hide wrapper (renderSectionButtons() in detail.js,
+                 unchanged gating) but is now EMPTY here -- the switch + label + state-dependent
+                 description all come from ONE settingRowHtml() call in detail.js instead (the run's own
+                 auto_recalculate value isn't known at PHP-render time, same reason #nextStepBanner right
+                 above this tab is also JS-rendered into an empty shell rather than included via PHP
+                 directly). See setting-row.php's own docblock for the full component spec. -->
+            <div class="d-none" id="autoRecalculateWrap"></div>
+            <!-- 2026-09-13, Round 3 item 3b: #noDetailsYet (a standalone "no employees yet" block
+                 outside the table, manually toggled by initRunDetailTable() itself) is retired --
+                 initSharedDataTable()'s own `emptyState` option (§6) now renders this INSIDE the
+                 table's own tbody instead, auto-picking between this "genuinely no data yet" copy and
+                 a "filtered to zero results" variant depending on WHY the table is empty (see
+                 initRunDetailTable()'s own emptyState config in detail.js) -- the table itself no
+                 longer hides as a whole when there's nothing to show, it shows its own empty-state row
+                 with the toolbar/filters still usable above it, same as every other table using this
+                 option. -->
+            <!-- 2026-09-13, Round 3 item 3b, explicit instruction: "checkbox วิธีจ่าย + segmented แหล่งที่มา
+                 ย้ายเข้า filter-bar.php (2 ช่อง select)" -- the independent Bank/Cash checkboxes AND the
+                 Source radio-pill group both retired in favor of ONE shared filter-bar.php panel (§6)
+                 holding real `<select>` fields (this app's own mandatory Select2 convention, CLAUDE.md
+                 -- initSelect2(...), wired in initRunDetailFilterBarOnce() in detail.js).
+                 2026-09-23, 3e-3b round B1, มติ ข: the Department and Payment Method selects that used
+                 to live here are REMOVED outright, not just hidden (see docs/decisions for the field
+                 ids/full analysis) -- rules.md §7's own rule, added the same round ("คอลัมน์ที่เป็นค่าจากลิสต์ปิด
+                 ... ใช้ column filter ของตัวเองอยู่แล้ว ห้ามทำ select ซ้ำไว้ข้างบนอีก"), applies exactly to
+                 both: #tb_run_detail's own column-header Excel filter already covers department (column
+                 index 3) and payment_method_code (index 4) -- see initRunDetailTable()'s own
+                 `columnFilters` option in detail.js. #rdSourceFilter stays (the ONLY field left in this
+                 bar) because data_source has NO column of its own to filter on anymore (the column
+                 itself was retired 2026-09-11, Batch 3C item 7 -- see registerDataSourceSearchFilter()'s
+                 own comment in detail.js) -- exactly the "สิ่งที่คอลัมน์-header checklist ทำไม่ได้" case
+                 rules.md §7 still allows a filter-bar field for. #rdDataSourceFilterWrap keeps its id (the
+                 Source field's own column div) so its existing run-level visibility toggle in
+                 initRunDetailTable() (a run that never brings base salary into the calculation) still
+                 works unchanged -- 2026-09-23 round B1 follow-up: that same condition now also hides the
+                 WHOLE #runDetailFilterBar (not just this one field) when it's false, since this field is
+                 the bar's only remaining content -- see initRunDetailTable()'s own comment in detail.js. -->
+            <?php
+            ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-lg-2" id="rdDataSourceFilterWrap">
+                    <label class="form-label small mb-1" for="rdSourceFilter" data-i18n="table_source">Source</label>
+                    <select class="form-select select2-static" id="rdSourceFilter" data-option-keys="filter_all,data_source_sync,data_source_manual" data-option-values="all,sync,manual"></select>
                 </div>
             </div>
-            <div class="alert alert-warning small d-none align-items-center gap-2 mb-3" id="recalcReminderBanner">
-                <i class="fa-solid fa-triangle-exclamation"></i>
-                <span data-i18n="recalc_reminder_message">If you've edited employee data or anything related to these numbers, click "Recalculate" every time to keep this run up to date.</span>
-            </div>
-            <div id="noDetailsYet" class="text-center text-secondary py-4 d-none">
-                <i class="fa-solid fa-calculator fa-2x mb-3 text-secondary opacity-50"></i>
-                <span data-i18n="no_details_yet">No employees calculated yet. Click "Recalculate" to compute this run.</span>
-            </div>
-            <!-- 2026-08-31, explicit request: "ก่อนตารางพนักงาน ให้มี checkbox ขึ้นมาเพื่อให้เลือกกรองข้อมูล
-                 พนักงานที่รับผ่านบัญชี และเงินสดครับ" -- confirmed via AskUserQuestion: 2 independent
-                 checkboxes (not a 3-way radio), both checked by default (= show everyone); unticking
-                 one hides that group. Filters #tb_run_detail client-side against its own
-                 payment_method_code column (see registerPaymentMethodSearchFilter() in detail.js) --
-                 purely a view filter, changes nothing about the underlying data.
-                 2026-09-09, explicit follow-up: "วิธีจ่ายเงิน ตัดออกครับ ไม่ใช่การตั้งค่า แต่ให้เพิ่มเป็น filter
-                 ใน Tab employee" -- this had briefly moved to the "Details" tab (as its own numbered
-                 section) in the same day's earlier tab-split round; moved back here, right above the
-                 table it actually filters, since it's a view filter, not a saved run setting. The
-                 checkbox ids are unchanged either way -- the Summary Cards above the tabs
-                 (#runSummaryCards) still update live from this filter regardless of which tab it
-                 lives on (see updateSummaryCardsFromTable()'s own docblock in detail.js). -->
-            <!-- 2026-09-02, same-day follow-up: "ให้เลือกทั้งหมดได้ด้วย" -- filterPaymentAll is a plain
-                 select-all checkbox (checks/unchecks both Bank and Cash together, see
-                 syncPaymentMethodAllCheckbox() in detail.js), NOT a 3rd filter state of its own --
-                 the actual filtering still only ever reads filterPaymentBank/filterPaymentCash (same
-                 registerPaymentMethodSearchFilter() as before), so this stays a pure client-side
-                 .draw() with no ajax/reload either way. -->
-            <div class="d-flex align-items-center gap-3 mb-2" id="paymentMethodFilterWrap">
-                <span class="small text-muted" data-i18n="table_payment_method">Payment Method</span>
-                <div class="form-check form-check-inline m-0">
-                    <input class="form-check-input" type="checkbox" id="filterPaymentAll" checked>
-                    <label class="form-check-label small fw-semibold" for="filterPaymentAll" data-i18n="filter_all">All</label>
-                </div>
-                <div class="form-check form-check-inline m-0">
-                    <input class="form-check-input" type="checkbox" id="filterPaymentBank" checked>
-                    <label class="form-check-label small" for="filterPaymentBank" data-i18n="table_payment_bank">Bank Transfer</label>
-                </div>
-                <div class="form-check form-check-inline m-0">
-                    <input class="form-check-input" type="checkbox" id="filterPaymentCash" checked>
-                    <label class="form-check-label small" for="filterPaymentCash" data-i18n="table_payment_cash">Cash</label>
-                </div>
-            </div>
-            <!-- 2026-09-11, Batch 3C item 7, explicit instruction: "ตัดคอลัมน์ แหล่งที่มา ออก (ย้ายไปเป็น
-                 filter pill 'ที่มา: ทั้งหมด/Sync/เพิ่มเอง' เหนือตาราง)" -- 3 mutually-exclusive states, so a
-                 radio-pill group (same .btn-check/btn-group idiom payroll/index.js's own
-                 .sync-item-filter-radio uses) rather than the independent-checkbox shape
-                 #paymentMethodFilterWrap above uses for its own genuinely-independent Bank/Cash
-                 states. Hidden entirely (d-none, toggled in initRunDetailTable()) for the same
-                 run-level condition that used to hide the old Source COLUMN -- see
-                 registerDataSourceSearchFilter()'s own comment in detail.js. -->
-            <div class="d-flex align-items-center gap-2 mb-2" id="rdDataSourceFilterWrap">
-                <span class="small text-muted" data-i18n="table_source">Source</span>
-                <div class="btn-group" role="group" aria-label="employee data source filter">
-                    <input type="radio" class="btn-check rd-data-source-filter-radio" name="rdDataSourceFilter" id="rdSourceFilterAll" value="all" autocomplete="off" checked>
-                    <label class="btn btn-outline-secondary btn-sm" for="rdSourceFilterAll" data-i18n="filter_all">All</label>
-                    <input type="radio" class="btn-check rd-data-source-filter-radio" name="rdDataSourceFilter" id="rdSourceFilterSync" value="sync" autocomplete="off">
-                    <label class="btn btn-outline-secondary btn-sm" for="rdSourceFilterSync" data-i18n="data_source_sync">Sync</label>
-                    <input type="radio" class="btn-check rd-data-source-filter-radio" name="rdDataSourceFilter" id="rdSourceFilterManual" value="manual" autocomplete="off">
-                    <label class="btn btn-outline-secondary btn-sm" for="rdSourceFilterManual" data-i18n="data_source_manual">Manual</label>
-                </div>
-            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'runDetailFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <!-- 2026-08-29, explicit request: "สามารถมี checkbox เลือกได้ทีละหลายคนในการ Verify" -- Lock
                  retired 2026-08-31 (Verify itself now freezes recalculation).
                  2026-09-09, explicit follow-up across 3 rounds -- final layout: "เอาคำนวณใหม่ไปวางต่อ
@@ -539,29 +609,83 @@
             <table class="table table-hover table-border align-middle w-100 rd-detail-table-flush" id="tb_run_detail">
                 <thead class="table-light text-secondary">
                     <tr>
-                        <th class="text-center"><input type="checkbox" class="form-check-input" id="runDetailSelectAll"></th>
-                        <!-- 2026-09-02, explicit request: "ตารางพนักงาน แยก code และชื่อคนละ Column Code
+                        <!-- 2026-09-13, Round 3 item 3b (§7): `col-check` marker class -- initSharedDataTable()'s
+                             own DT_MARKER_CLASSES auto-derives this column's `columnDefs` (fixed-width,
+                             centered, not orderable/searchable) from this class alone. -->
+                        <th class="col-check"><input type="checkbox" class="form-check-input" id="runDetailSelectAll"></th>
+                        <!-- 2026-09-14, Round 3 "เก็บตกรอบ 7", REAL root cause found and fixed (explicit
+                             report: Employee Code/Name/Base Salary/Gross/Deductions/Net Pay stayed Thai
+                             on th->en, while Department/Payment Method/Calculation/Verify-Lock -- the 4
+                             columns table-column-filter.js's own initExcelColumnFilters() rebuilds --
+                             translated fine). Confirmed directly from the installed DataTables source
+                             (node_modules/datatables.net/js/dataTables.js, the header-detection routine
+                             every `<th>` passes through at construction): it ALWAYS moves a header
+                             cell's existing child nodes into a fresh `<span class="dt-column-title">`
+                             wrapper (`.append(cell.childNodes)`), for every column, sortable or not --
+                             not just the 4 that initExcelColumnFilters() also happens to touch. A plain
+                             `<th data-i18n="key">Label</th>` therefore ends up as `<th data-i18n="key">
+                             <div class="dt-column-header"><span class="dt-column-title">Label</span>...
+                             </div></th>` after DataTables runs -- the `<th>` now has a child ELEMENT, so
+                             app.js's own updateText() sweep (its own documented child-guard, added
+                             2026-09-13 for a different but related bug) correctly refuses to `.text()`
+                             it (that would destroy the wrapper DataTables just built) and just warns
+                             instead, while `data-i18n` is left stranded on the outer `<th>`, nowhere
+                             near the actual visible text node 2 levels deeper. The 4 tcf-managed columns
+                             only ever looked fine because initExcelColumnFilters() empties and fully
+                             rebuilds the `<th>` itself, incidentally moving `data-i18n` onto a genuine
+                             leaf span of its own in the process -- not because this table's markup
+                             pattern was actually correct. Fixed at the true source, for EVERY column
+                             here uniformly (not just the 4): `data-i18n` now lives on a plain inner
+                             `<span>`, never the `<th>` itself. DataTables' own wrapping still moves that
+                             span deeper (into `.dt-column-title`), but the span is still a genuine leaf
+                             wherever it ends up, so updateText()'s plain `$(root).find('[data-i18n]')`
+                             sweep (which searches descendants, not just direct attributes) finds and
+                             updates it correctly regardless of nesting depth. table-column-filter.js's
+                             own initExcelColumnFilters() updated to match (looks for `data-i18n` on a
+                             descendant now, not just the `<th>` attribute, so Department/Payment Method/
+                             Calculation/Verify-Lock keep translating too) -- see that file's own
+                             docblock. detail.js's old page-specific "defensive re-sync" backstop (added
+                             2026-09-14 "เก็บตกรอบ 6" while this exact bug was still unsolved) is removed
+                             below in favor of this real fix; `dt.columns.adjust()` after the sweep
+                             replaces it instead, since header content changing width on a language
+                             switch is the only thing that still needs a page-specific hook.
+                             2026-09-02, explicit request: "ตารางพนักงาน แยก code และชื่อคนละ Column Code
                              อยู่ก่อน" -- was one combined 2-line cell (name bold on top, code muted
                              underneath); split into its own Code column, placed before Name. -->
-                        <th class="text-nowrap" data-i18n="employee_no">Employee Code</th>
-                        <th class="text-nowrap" data-i18n="table_employee_name">Name</th>
+                        <th class="text-nowrap"><span data-i18n="employee_no">Employee Code</span></th>
+                        <th class="text-nowrap"><span data-i18n="table_employee_name">Name</span></th>
                         <!-- 2026-09-11, Batch 3C item 7, explicit instruction: "เพิ่มคอลัมน์ แผนก ถัดจากชื่อ"
                              -- replaces the old "Source" column in this same slot (see the filter pill
                              above the table instead, #rdDataSourceFilterWrap). -->
-                        <th class="text-nowrap" data-i18n="department">Department</th>
+                        <th class="text-nowrap"><span data-i18n="department">Department</span></th>
                         <!-- 2026-09-02, explicit request: "ในตารางพนักงานให้เพิ่ม Column รับเงินผ่านบัญชี หรือ
                              เงินสด" -- was only visible on the separate "Payment Method Summary" tab;
-                             now also its own column here on the main Details table. -->
-                        <th class="text-center text-nowrap" data-i18n="table_payment_method">Payment Method</th>
-                        <th class="text-end text-nowrap" data-i18n="table_base_salary">Base Salary</th>
-                        <th class="text-end text-nowrap" data-i18n="table_gross_amount">Gross</th>
-                        <th class="text-end text-nowrap" data-i18n="table_deduction_amount">Deductions</th>
-                        <th class="text-end text-nowrap" data-i18n="table_net_pay">Net Pay</th>
-                        <th class="text-nowrap" data-i18n="table_calculation">Calculation</th>
-                        <th class="text-center text-nowrap" data-i18n="table_verify_lock">Verify / Lock</th>
+                             now also its own column here on the main Details table.
+                             2026-09-13, Round 3 item 3b follow-up, explicit instruction: "badge = ซ้าย"
+                             (§7) -- was text-center (a leftover from before this column routed through
+                             statusBadgeHtml()); left-aligned now, matching every other badge column. -->
+                        <th class="text-nowrap"><span data-i18n="table_payment_method">Payment Method</span></th>
+                        <!-- 2026-09-13, Round 3 item 3b (§7/§8): `col-money` marker on all 4 money
+                             columns -- DT_MARKER_CLASSES auto-applies `num col-money` (tabular-nums,
+                             right-align) to each; Gross/Deductions/Net's OWN `.money-gross`/
+                             `.money-deduction`/`.money-net` color class is set directly in detail.js's
+                             own `columns:` config instead (see that file's own comment -- concatenates
+                             with, doesn't replace, this marker's className). Base Salary carries no
+                             money-color class -- §8 only covers gross/deduction/net, not the base
+                             figure itself. -->
+                        <th class="col-money text-nowrap"><span data-i18n="table_base_salary">Base Salary</span></th>
+                        <th class="col-money text-nowrap"><span data-i18n="table_gross_amount">Gross</span></th>
+                        <th class="col-money text-nowrap"><span data-i18n="table_deduction_amount">Deductions</span></th>
+                        <th class="col-money text-nowrap"><span data-i18n="table_net_pay">Net Pay</span></th>
+                        <th class="text-nowrap"><span data-i18n="table_calculation">Calculation</span></th>
+                        <!-- 2026-09-13, Round 3 item 3b follow-up, explicit instruction: "badge = ซ้าย"
+                             (§7) -- was text-center. -->
+                        <th class="text-nowrap"><span data-i18n="table_verify_lock">Verify / Lock</span></th>
                         <!-- 2026-08-27, explicit request: blank out any "Action(s)" header, matches
-                             the empty-header convention every other Actions column already uses. -->
-                        <th class="text-center"></th>
+                             the empty-header convention every other Actions column already uses.
+                             2026-09-13, Round 3 item 3b (§7): `col-actions` marker class (fixed-width,
+                             right-aligned, not orderable/searchable via DT_MARKER_CLASSES). -->
+                        <th class="col-actions"></th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -579,6 +703,26 @@
                      of a plain "verified/total" count text, and the Calculation column (previously
                      blank in the footer) gets the same "calculated/total" treatment via the new
                      rdFootCalcStatus id. -->
+                <!-- 2026-09-13, Round 3 item 3b, explicit instruction: "แถวรวมท้ายตาราง (footer) ใช้ .num
+                     ตัวหนา สีเงินเดียวกับคอลัมน์" -- each money total now carries `.num` (tabular digits) +
+                     `fw-bold` + the SAME `.money-gross`/`.money-deduction`/`.money-net` class its own
+                     column uses (§8: the color/weight lives on the number itself, not a wrapping badge)
+                     -- Base Salary's own footer total stays plain `.num.fw-bold` with no money-color
+                     class, matching its column (§8 doesn't cover it). Text content itself is still set
+                     by footerCallback() in detail.js -- only the static class list changed here.
+                     2026-09-13, Round 3 "เก็บตก" item 3, real bug found and fixed (explicit report:
+                     "ตรวจสอบแล้ว 1/1" ไม่ชิดซ้ายตามคอลัมน์) -- `#rdFootVerifyLock`'s own hardcoded
+                     `text-center` (removed) was overriding DataTables' own default left-aligned
+                     footer cell (`!important` on Bootstrap's `.text-center` utility beats the
+                     library's plain `text-align:left`) -- its own column ("Verify / Lock") is a badge
+                     column, left per §7, matching its `<thead>` `<th>` right above it (no `.text-
+                     center` there either). `applyTfootMarkerClasses()` (app.js, new this round) now
+                     mirrors any §7 marker class from a column's own `<thead>` `<th>` onto its `<tfoot>`
+                     cell automatically for every `initSharedDataTable()` caller -- this specific
+                     column has no marker class upstream (it's not money/date/checkbox/etc, just a
+                     plain left-aligned badge column), so simply deleting the wrong hardcoded class was
+                     enough here; the new helper exists so a FUTURE table's marker-classed footer cells
+                     never need a page to hand-guess the right class at all. -->
                 <tfoot class="table-light text-secondary">
                     <tr>
                         <th></th>
@@ -586,12 +730,12 @@
                         <th></th>
                         <th></th>
                         <th></th>
-                        <th class="text-end" id="rdFootBaseSalary"></th>
-                        <th class="text-end" id="rdFootGross"></th>
-                        <th class="text-end" id="rdFootDeduction"></th>
-                        <th class="text-end" id="rdFootNet"></th>
+                        <th class="num fw-bold" id="rdFootBaseSalary"></th>
+                        <th class="num fw-bold money-gross" id="rdFootGross"></th>
+                        <th class="num fw-bold money-deduction" id="rdFootDeduction"></th>
+                        <th class="num fw-bold money-net" id="rdFootNet"></th>
                         <th id="rdFootCalcStatus"></th>
-                        <th class="text-center" id="rdFootVerifyLock"></th>
+                        <th id="rdFootVerifyLock"></th>
                         <th></th>
                     </tr>
                 </tfoot>
@@ -600,78 +744,92 @@
         </div>
 
         <!-- 2026-08-29, explicit request: "ใส่ Comment ได้ของแต่ละคน กดแล้วเปิดเป็น Modal ให้ใส่ Comment
-             เรื่อยๆ เป็น Timeline...ให้มีใส่ tag ได้ว่า กำลังดำเนินการ ดำเนินการเสร็จแล้ว มีข้อผิดพลาด" -- own
-             dedicated .apv-comment-* card design now (see renderEmployeeCommentTimeline()'s own
-             docblock in detail.js), not the shared .apv-stage used elsewhere on this page.
-             2026-08-29 same-day follow-up ("ช่วยปรับปรุง Design ทั้ง Form และ List ให้หน่อยครับ ย้าย Form
-             มาไว้ Footer เพื่อถ้า Comment เยอะๆให้ค้างอยู่กับที่ แล้วใน Body ก็เลื่อนได้") -- the form (Tag
-             picker + textarea) moved from the (scrollable) modal-body into the (fixed)
-             modal-footer, alongside .modal-dialog-scrollable (already present) doing the rest: the
-             list above keeps scrolling internally while this form + the action buttons stay pinned
-             in view the whole time, even with a long comment history. -->
-        <div class="modal fade" id="employeeCommentModal" data-footer="none" tabindex="-1" aria-hidden="true">
+             เรื่อยๆ เป็น Timeline...ให้มีใส่ tag ได้ว่า กำลังดำเนินการ ดำเนินการเสร็จแล้ว มีข้อผิดพลาด"
+             2026-09-14, Round 3 item 3c-3, explicit instruction: the list itself was first migrated
+             onto the shared Timeline component (renderTimeline(), app.js) instead of its own bespoke
+             .apv-comment-* markup.
+             2026-09-14, Round 3 (later same day): moved OFF Timeline onto a dedicated
+             renderCommentList() (app.js -- see renderEmployeeCommentListFromCache()'s own docblock in
+             detail.js) instead -- a comment's own avatar+2-line shape (with inline-edit) fits that
+             new, purpose-built component far better than continuing to stretch Timeline's
+             dot-and-connecting-line event-log shape to cover it too. See rules.md §6's own "Comment
+             list" section for exactly where the line between the 2 components sits now.
+             `data-dirty-guard data-dirty-guard-tone="warning"` (§9, app.js's own generic mechanism --
+             this modal is its first real caller): typing in the compose textarea/picking a tag, OR
+             having an inline edit open, then closing this modal any way (×/Esc/backdrop) prompts via
+             showConfirm() with the 'warning' tone (not the mechanism's own 'danger' default) before
+             discarding it -- see detail.js's own refreshDirtyGuard() call sites for exactly when the
+             baseline re-captures (entering/leaving inline edit, successful save/add).
+             2026-09-14, Round 3 item 3c-4 (review follow-up): the 2026-08-29 "form lives in the
+             footer, pinned while the list scrolls" layout was reverted -- the compose form moved back
+             into the (scrollable) modal-body.
+             2026-09-15, Round 3 (comment-list restyle), explicit instruction: the compose form moved
+             again, this time ABOVE the list (composer first, newest comment right below it) and onto
+             the shared composer component (commentComposerHtml(), app.js -- see #employeeCommentComposer
+             below), and the footer lost its own submit button entirely: the composer owns its own
+             [บันทึก] button now, so the footer is just [ปิด] (rules.md §6/§9, still rendered through
+             modalFooterButtonsHtml()). -->
+        <div class="modal fade" id="employeeCommentModal" data-footer="none" data-dirty-guard data-dirty-guard-tone="warning" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-dialog-scrollable">
                 <div class="modal-content">
                     <div class="modal-header">
-                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
-                             ชื่อ modal ไม่มีชื่อพนักงานซ้ำ" -- #employeeCommentModalEmployeeName
-                             removed, the employee's name now shows once, inside the new header card
-                             in the body. -->
-                        <h5 class="modal-title text-secondary"><i class="fa-solid fa-comments me-2 text-brand"></i><span data-i18n="employee_comment_timeline_title">Comments</span></h5>
+                        <!-- 2026-09-14, Round 3 item 3c-4, explicit instruction: header = title + ×
+                             only, icon removed (matches every other modal already migrated to this
+                             rule this round). -->
+                        <!-- 2026-09-15, explicit instruction, item 3: the title carries the live comment
+                             count ("คอมเมนต์ (N)") -- built in JS from the `{count}` template key
+                             `employee_comment_timeline_title_count` (detail.js's own
+                             updateEmployeeCommentTitle(), re-run on every add/delete AND on a live
+                             language switch), so NO `data-i18n` here: the generic sweep would
+                             overwrite it with the countless label the moment the language changed. -->
+                        <h5 class="modal-title text-secondary" id="employeeCommentModalTitle">Comments</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
                     <div class="modal-body">
                         <!-- 2026-09-11, Batch 3C item 8, explicit instruction: employeeHeaderCardHtml()
                              (app.js) as the first block in modal-body. -->
                         <div id="employeeCommentHeaderCard"></div>
-                        <div id="employeeCommentTimeline" class="apv-comment-list"></div>
-                        <div id="employeeCommentEmpty" class="text-center text-muted small py-3 d-none" data-i18n="employee_comment_timeline_empty">No comments yet.</div>
-                    </div>
-                    <div class="modal-footer apv-comment-footer flex-column align-items-stretch">
+                        <!-- 2026-09-15, Round 3 (comment-list restyle), explicit instruction: the
+                             COMPOSER moves to the TOP (right under the employee header card, above
+                             the list) and is no longer static markup here at all -- detail.js
+                             renders the shared commentComposerHtml() (app.js, rules.md §6) into this
+                             empty div on every modal open. One composer component now serves both
+                             this box and an inline edit of an existing comment (§0.4's "ซ้ำ = shared":
+                             the static markup that used to live here and detail.js's own inline-edit
+                             form were 2 hand-kept copies of the same shape, and had already drifted).
+                             Why JS-rendered and not a PHP partial: the composer's own author row
+                             shows WHO is writing (avatar + name of the logged-in user), which the
+                             list's own items also need, and both come from the same window.SESSION_USER
+                             + apvAvatarHtml() pair on the client -- a PHP twin would duplicate that
+                             for no second caller (same reasoning renderCommentList() itself has no
+                             PHP partner). -->
+                        <div id="employeeCommentComposer"></div>
                         <!-- 2026-08-29, explicit follow-up request: "ถ้าการดำเนินเสร็จแล้ว Comment ดูได้เท่านั้น
-                             ไม่สามารถเพิ่ม แก้ไข ลบได้" -- shown instead of the form below once
+                             ไม่สามารถเพิ่ม แก้ไข ลบได้" -- shown INSTEAD of the composer above once
                              commentsReadOnlyRd() (detail.js) is true, i.e. the run has reached a
                              genuinely finished state (paid/locked/cancelled -- see
                              PayrollRunModel::COMMENT_LOCKED_STATES's own docblock for why that's a
-                             different, narrower cutoff than this page's general View Mode). -->
-                        <div id="employeeCommentReadOnlyNotice" class="text-center text-muted small py-2 d-none"><i class="fa-solid fa-lock me-1"></i><span data-i18n="employee_comment_read_only">This payroll run has finished processing. Comments are view-only.</span></div>
-                        <div id="employeeCommentFormArea">
-                        <!-- 2026-08-29, explicit request: "ตรงใส่ Comment Tag ให้กดเลือกเป็น radio" -- was a
-                             select2-static dropdown, now Bootstrap's btn-check/btn-outline-* radio-as-
-                             button component (real <input type="radio"> underneath, styled as a
-                             segmented toggle) so each tag's own color is visible without opening a
-                             dropdown first. -->
-                        <!-- 2026-08-29, same-day follow-up: "ตรงเลือก Tag ปรับให้สวยขึ้นอีกได้ไหมครับ" --
-                             was a plain Bootstrap btn-check/btn-outline-* segmented toggle (flat
-                             outline colors unrelated to the list's own tag colors); now icon+label
-                             pill chips that share the EXACT same gradient palette as
-                             employeeCommentTagBadge()/EMPLOYEE_COMMENT_TAG_META in detail.js, so the
-                             picker and the rendered tag pill below it visually agree. Same
-                             btn-check/radio ids/values/name -- zero JS changes needed, only the
-                             <label> classes/content changed. -->
-                        <div class="mb-2">
-                            <label class="form-label small text-muted mb-1" data-i18n="employee_comment_tag">Tag</label>
-                            <div class="apv-comment-tag-picker" id="employeeCommentTagGroup">
-                                <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagNone" value="" checked>
-                                <label class="apv-comment-tag-option apv-comment-tag-opt-none" for="employeeCommentTagNone"><i class="fa-solid fa-comment-slash"></i><span data-i18n="employee_comment_tag_none">No tag</span></label>
-                                <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagInProgress" value="in_progress">
-                                <label class="apv-comment-tag-option apv-comment-tag-opt-in_progress" for="employeeCommentTagInProgress"><i class="fa-solid fa-hourglass-half"></i><span data-i18n="employee_comment_tag_in_progress">In Progress</span></label>
-                                <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagCompleted" value="completed">
-                                <label class="apv-comment-tag-option apv-comment-tag-opt-completed" for="employeeCommentTagCompleted"><i class="fa-solid fa-check"></i><span data-i18n="employee_comment_tag_completed">Completed</span></label>
-                                <input type="radio" class="btn-check" name="employeeCommentTag" id="employeeCommentTagError" value="error">
-                                <label class="apv-comment-tag-option apv-comment-tag-opt-error" for="employeeCommentTagError"><i class="fa-solid fa-triangle-exclamation"></i><span data-i18n="employee_comment_tag_error">Error</span></label>
-                            </div>
-                        </div>
-                        <div class="mb-2">
-                            <textarea class="form-control form-control-sm" id="employeeCommentText" rows="2" data-i18n="employee_comment_placeholder" placeholder="Write a comment..."></textarea>
-                        </div>
-                        </div>
-                        <div class="d-flex justify-content-end gap-2">
-                            <button type="button" class="btn btn-primary btn-sm" id="btnAddEmployeeComment"><i class="fa-solid fa-plus me-1"></i><span id="btnAddEmployeeCommentLabel" data-i18n="employee_comment_add">Add Comment</span></button>
-                            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnCancelEditEmployeeComment" data-i18n="cancel">Cancel</button>
-                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal" data-i18n="close">Close</button>
-                        </div>
+                             different, narrower cutoff than this page's general View Mode). Exactly
+                             one of the two is ever visible, which is why both carry the same `--sp-6`
+                             gap down to the list (style.css). -->
+                        <div id="employeeCommentReadOnlyNotice" class="text-center text-muted small d-none"><i class="fa-solid fa-lock me-1"></i><span data-i18n="employee_comment_read_only">This payroll run has finished processing. Comments are view-only.</span></div>
+                        <!-- 2026-09-14, Round 3: one container -- renderEmployeeCommentListFromCache()
+                             (detail.js) renders EITHER the shared comment list (renderCommentList(),
+                             app.js) OR the shared empty-state (emptyStateHtml()) into this same div,
+                             which is why the empty state appears right under the composer, where the
+                             first comment would otherwise be. No card wrapper around it (explicit
+                             instruction -- "ไม่มี card ครอบ tab-content"). -->
+                        <div id="employeeCommentList"></div>
                     </div>
+                    <!-- 2026-09-14, Round 3 item 3c-4: "footer คงที่ตลอด" -- a plain empty shell here,
+                         populated once via modalFooterButtonsHtml() (app.js, from detail.js's own
+                         .btn-comment-employee click handler).
+                         2026-09-15, Round 3 (comment-list restyle), explicit instruction: it holds
+                         exactly ONE button now, [ปิด] -- the submit button moved into the composer box
+                         itself (#employeeCommentComposer above), right next to the text it submits, so
+                         there is no longer any footer button whose label/enabled state has to track
+                         the view-only/editing state at all. -->
+                    <div class="modal-footer" id="employeeCommentModalFooter"></div>
                 </div>
             </div>
         </div>
@@ -692,24 +850,37 @@
                  .reports-period-bar's own visual language (icon-circle + gradient bar) in a
                  warning/amber tone instead of the brand-orange "pick a context" one, since this is
                  informational, not an action to take. -->
-            <div class="reports-not-ready-banner mb-3 d-none" id="runReportsNotReadyBanner">
-                <div class="reports-not-ready-banner-icon"><i class="fa-solid fa-hourglass-half"></i></div>
-                <div class="reports-not-ready-banner-body">
-                    <div class="reports-not-ready-banner-title" data-i18n="reports_not_ready_title">Reports Not Available Yet</div>
-                    <div class="reports-not-ready-banner-hint" data-i18n="reports_available_after_approval">Reports are available once this run is approved.</div>
-                </div>
+            <!-- 2026-09-20, 3e-1: the bespoke `.reports-not-ready-banner` (icon-circle + gradient bar,
+                 4 CSS rules of its own) is retired HERE for the shared callout (§15/§11) -- the CSS
+                 itself stays, because `app/views/reports/index.php:126,158` still uses it and that
+                 page is not in this round; deleting it now would break a page nobody touched. --
+                 this block is an announcement standing NEXT TO content the user can still see (the
+                 report list is right below it, rows and all, just disabled), which is exactly what a
+                 callout is for; an empty-state would claim there is nothing here. Tone `neutral`
+                 (not the old amber): "approve the run first" is a standing fact about where this run
+                 is in its own lifecycle, not something to act on in this tab (§0.1). -->
+            <div class="mb-3 d-none" id="runReportsNotReadyBanner">
+                <?php
+                $text = '<b><span data-i18n="reports_not_ready_title">Reports Not Available Yet</span></b> <span data-i18n="reports_available_after_approval">Reports are available once this run is approved.</span>';
+                $tone = 'neutral';
+                include __DIR__ . '/../partials/callout.php';
+                ?>
             </div>
-            <div id="runReportsNotReady" class="text-center text-secondary py-4 d-none">
-                <i class="fa-solid fa-file-export fa-2x mb-3 text-secondary opacity-50"></i>
-                <span data-i18n="reports_available_after_approval">Reports are available once this run is approved.</span>
+            <div id="runReportsNotReady" class="d-none">
+                <?php
+                $icon = 'fa-solid fa-file-export'; $action = null; $text_id = null;
+                $title = 'Reports Not Available Yet'; $title_i18n = 'reports_not_ready_title';
+                $text = 'Reports are available once this run is approved.'; $text_i18n = 'reports_available_after_approval';
+                include __DIR__ . '/../partials/empty-state.php';
+                ?>
             </div>
             <div class="table-responsive">
                 <table class="table table-hover align-middle w-100 d-none" id="tb_run_reports">
                     <thead class="table-light text-secondary">
                         <tr>
-                            <th data-i18n="report_name">Report</th>
-                            <th class="text-center" data-i18n="download_count">Downloaded</th>
-                            <th data-i18n="last_downloaded_at">Last Downloaded</th>
+                            <th><span data-i18n="report_name">Report</span></th>
+                            <th class="text-center"><span data-i18n="download_count">Downloaded</span></th>
+                            <th><span data-i18n="last_downloaded_at">Last Downloaded</span></th>
                             <th class="text-center"></th>
                         </tr>
                     </thead>
@@ -719,40 +890,42 @@
         </div>
 
         <div class="tab-pane fade" id="run-cash-pane" role="tabpanel" aria-labelledby="run-cash-tab" tabindex="0">
-            <div id="runCashNotReady" class="text-center text-secondary py-4 d-none">
-                <i class="fa-solid fa-money-bill-wave fa-2x mb-3 text-secondary opacity-50"></i>
-                <span id="runCashNotReadyMessage" data-i18n="reports_available_after_approval">Reports are available once this run is approved.</span>
+            <!-- 2026-09-20, 3e-1: the hand-written "not ready" block (centred text + a fa-2x icon)
+                 is the shared empty-state (§6/§11) -- 32px `--c-text-faint` icon, title + one line.
+                 The wrapper keeps `#runCashNotReady` because that is what loadRunCashTab() toggles,
+                 and `$text_id` keeps `#runCashNotReadyMessage` on the line that same function
+                 replaces with a server error message on a failed load. Same 3 lines below for Bank
+                 Account Assignment and Third-Party Remittance. -->
+            <div id="runCashNotReady" class="d-none">
+                <?php
+                $icon = 'fa-solid fa-money-bill-wave'; $action = null; $text_id = 'runCashNotReadyMessage';
+                $title = 'Reports Not Available Yet'; $title_i18n = 'reports_not_ready_title';
+                $text = 'Reports are available once this run is approved.'; $text_i18n = 'reports_available_after_approval';
+                include __DIR__ . '/../partials/empty-state.php';
+                ?>
             </div>
             <div id="runCashContent" class="d-none">
+                <!-- 2026-09-20, 3e-1: `.stat-card`/`.stat-card-{tone}` (coloured edge + icon tile)
+                     replaced by `stat-card.php` (§2: plain card, no tone colour, optional flat icon).
+                     `value_id` (§2's own planned field, implemented this round) keeps the ids
+                     loadRunCashTab() writes the numbers into. -->
                 <div class="row g-3 mb-4">
                     <div class="col-6 col-md-3">
-                        <div class="stat-card stat-card-info h-100">
-                            <div class="stat-card-icon"><i class="fa-solid fa-money-bill-wave"></i></div>
-                            <div>
-                                <div class="stat-card-label" data-i18n="total_cash_payment">Total Cash</div>
-                                <div class="stat-card-value" id="runCashTotalCash">-</div>
-                            </div>
-                        </div>
+                        <?php $stat = ['label' => 'Total Cash', 'label_i18n' => 'total_cash_payment', 'value' => '-', 'value_id' => 'runCashTotalCash', 'icon' => 'fa-solid fa-money-bill-wave', 'value_class' => 'money-net']; include __DIR__ . '/../partials/stat-card.php'; ?>
                     </div>
                     <div class="col-6 col-md-3">
-                        <div class="stat-card stat-card-primary h-100">
-                            <div class="stat-card-icon"><i class="fa-solid fa-building-columns"></i></div>
-                            <div>
-                                <div class="stat-card-label" data-i18n="total_bank_payment">Total Bank Transfer</div>
-                                <div class="stat-card-value" id="runCashTotalBank">-</div>
-                            </div>
-                        </div>
+                        <?php $stat = ['label' => 'Total Bank Transfer', 'label_i18n' => 'total_bank_payment', 'value' => '-', 'value_id' => 'runCashTotalBank', 'icon' => 'fa-solid fa-building-columns', 'value_class' => 'money-net']; include __DIR__ . '/../partials/stat-card.php'; ?>
                     </div>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle w-100" id="tb_run_cash">
                         <thead class="table-light text-secondary">
                             <tr>
-                                <th data-i18n="employee_no">Employee No.</th>
-                                <th data-i18n="employee">Employee</th>
-                                <th class="text-end" data-i18n="amount">Amount</th>
-                                <th class="text-center" data-i18n="status">Status</th>
-                                <th data-i18n="table_paid_at">Paid At</th>
+                                <th><span data-i18n="employee_no">Employee No.</span></th>
+                                <th><span data-i18n="employee">Employee</span></th>
+                                <th class="col-money"><span data-i18n="amount">Amount</span></th>
+                                <th class="text-center"><span data-i18n="status">Status</span></th>
+                                <th><span data-i18n="table_paid_at">Paid At</span></th>
                                 <th class="text-center"></th>
                             </tr>
                         </thead>
@@ -764,25 +937,30 @@
 
         <!-- 2026-09-02, multi-bank-account payroll -- see the tab button's own comment above. -->
         <div class="tab-pane fade" id="run-bank-account-pane" role="tabpanel" aria-labelledby="run-bank-account-tab" tabindex="0">
-            <div id="runBankAccountNotReady" class="text-center text-secondary py-4 d-none">
-                <i class="fa-solid fa-building-columns fa-2x mb-3 text-secondary opacity-50"></i>
-                <span id="runBankAccountNotReadyMessage" data-i18n="reports_available_after_approval">Reports are available once this run is approved.</span>
+            <div id="runBankAccountNotReady" class="d-none">
+                <?php
+                $icon = 'fa-solid fa-building-columns'; $action = null; $text_id = 'runBankAccountNotReadyMessage';
+                $title = 'Reports Not Available Yet'; $title_i18n = 'reports_not_ready_title';
+                $text = 'Reports are available once this run is approved.'; $text_i18n = 'reports_available_after_approval';
+                include __DIR__ . '/../partials/empty-state.php';
+                ?>
             </div>
             <div id="runBankAccountContent" class="d-none">
                 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
                     <div class="text-muted small" data-i18n="bank_account_assignment_hint">Which of the company's own settlement accounts pays each employee this run. Leave unassigned to use the employee's own default or the pay cycle/company default.</div>
-                    <button type="button" class="btn btn-outline-success btn-sm" id="btnExportRunBankAccountSummary">
-                        <i class="fa-solid fa-file-excel me-1"></i><span data-i18n="export_excel">Export Excel</span>
-                    </button>
+                    <!-- 2026-09-20, 3e-1 (§4): a text button carries no icon, and `btn-outline-success`
+                         said nothing `btn-outline-secondary` does not (§12 rule 3). Same for
+                         #btnExportRunRemittance below. id/handler unchanged. -->
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnExportRunBankAccountSummary"><span data-i18n="export_excel">Export Excel</span></button>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle w-100" id="tb_run_bank_account">
                         <thead class="table-light text-secondary">
                             <tr>
-                                <th data-i18n="employee_no">Employee No.</th>
-                                <th data-i18n="employee">Employee</th>
-                                <th data-i18n="bank_account">Bank Account</th>
-                                <th class="text-center" data-i18n="bank_account_source">Source</th>
+                                <th><span data-i18n="employee_no">Employee No.</span></th>
+                                <th><span data-i18n="employee">Employee</span></th>
+                                <th><span data-i18n="bank_account">Bank Account</span></th>
+                                <th class="text-center"><span data-i18n="bank_account_source">Source</span></th>
                                 <th class="text-center"></th>
                             </tr>
                         </thead>
@@ -801,64 +979,42 @@
              Success / Mark as Failed (with a reason, retry-able back to pending). Same layout
              convention as the Cash Payments tab right above (not-ready state + stat cards + table). -->
         <div class="tab-pane fade" id="run-remittance-pane" role="tabpanel" aria-labelledby="run-remittance-tab" tabindex="0">
-            <div id="runRemittanceNotReady" class="text-center text-secondary py-4 d-none">
-                <i class="fa-solid fa-money-bill-transfer fa-2x mb-3 text-secondary opacity-50"></i>
-                <span id="runRemittanceNotReadyMessage" data-i18n="reports_available_after_approval">Reports are available once this run is approved.</span>
+            <div id="runRemittanceNotReady" class="d-none">
+                <?php
+                $icon = 'fa-solid fa-money-bill-transfer'; $action = null; $text_id = 'runRemittanceNotReadyMessage';
+                $title = 'Reports Not Available Yet'; $title_i18n = 'reports_not_ready_title';
+                $text = 'Reports are available once this run is approved.'; $text_i18n = 'reports_available_after_approval';
+                include __DIR__ . '/../partials/empty-state.php';
+                ?>
             </div>
             <div id="runRemittanceContent" class="d-none">
                 <div class="d-flex justify-content-end mb-3">
-                    <button type="button" class="btn btn-outline-success btn-sm" id="btnExportRunRemittance">
-                        <i class="fa-solid fa-file-excel me-1"></i><span data-i18n="export_excel">Export Excel</span>
-                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnExportRunRemittance"><span data-i18n="export_excel">Export Excel</span></button>
                 </div>
                 <div class="row g-3 mb-4">
                     <div class="col-6 col-md-3">
-                        <div class="stat-card stat-card-warning h-100">
-                            <div class="stat-card-icon"><i class="fa-solid fa-hourglass-half"></i></div>
-                            <div>
-                                <div class="stat-card-label" data-i18n="remittance_status_pending">Pending</div>
-                                <div class="stat-card-value" id="runRemittanceTotalPending">-</div>
-                            </div>
-                        </div>
+                        <?php $stat = ['label' => 'Pending', 'label_i18n' => 'remittance_status_pending', 'value' => '-', 'value_id' => 'runRemittanceTotalPending', 'icon' => 'fa-solid fa-hourglass-half', 'value_class' => 'money-net']; include __DIR__ . '/../partials/stat-card.php'; ?>
                     </div>
                     <div class="col-6 col-md-3">
-                        <div class="stat-card stat-card-primary h-100">
-                            <div class="stat-card-icon"><i class="fa-solid fa-paper-plane"></i></div>
-                            <div>
-                                <div class="stat-card-label" data-i18n="remittance_status_transferred">Transferred</div>
-                                <div class="stat-card-value" id="runRemittanceTotalTransferred">-</div>
-                            </div>
-                        </div>
+                        <?php $stat = ['label' => 'Transferred', 'label_i18n' => 'remittance_status_transferred', 'value' => '-', 'value_id' => 'runRemittanceTotalTransferred', 'icon' => 'fa-solid fa-paper-plane', 'value_class' => 'money-net']; include __DIR__ . '/../partials/stat-card.php'; ?>
                     </div>
                     <div class="col-6 col-md-3">
-                        <div class="stat-card stat-card-success h-100">
-                            <div class="stat-card-icon"><i class="fa-solid fa-circle-check"></i></div>
-                            <div>
-                                <div class="stat-card-label" data-i18n="remittance_status_success">Success</div>
-                                <div class="stat-card-value" id="runRemittanceTotalSuccess">-</div>
-                            </div>
-                        </div>
+                        <?php $stat = ['label' => 'Success', 'label_i18n' => 'remittance_status_success', 'value' => '-', 'value_id' => 'runRemittanceTotalSuccess', 'icon' => 'fa-solid fa-circle-check', 'value_class' => 'money-net']; include __DIR__ . '/../partials/stat-card.php'; ?>
                     </div>
                     <div class="col-6 col-md-3">
-                        <div class="stat-card stat-card-danger h-100">
-                            <div class="stat-card-icon"><i class="fa-solid fa-circle-xmark"></i></div>
-                            <div>
-                                <div class="stat-card-label" data-i18n="remittance_status_failed">Failed</div>
-                                <div class="stat-card-value" id="runRemittanceTotalFailed">-</div>
-                            </div>
-                        </div>
+                        <?php $stat = ['label' => 'Failed', 'label_i18n' => 'remittance_status_failed', 'value' => '-', 'value_id' => 'runRemittanceTotalFailed', 'icon' => 'fa-solid fa-circle-xmark', 'value_class' => 'money-net']; include __DIR__ . '/../partials/stat-card.php'; ?>
                     </div>
                 </div>
                 <div class="table-responsive">
                     <table class="table table-hover align-middle w-100" id="tb_run_remittance">
                         <thead class="table-light text-secondary">
                             <tr>
-                                <th data-i18n="remittance_destination">Destination</th>
-                                <th data-i18n="remittance_destination_type">Type</th>
-                                <th class="text-center" data-i18n="remittance_employee_count">Employees</th>
-                                <th class="text-end" data-i18n="amount">Amount</th>
-                                <th class="text-center" data-i18n="status">Status</th>
-                                <th data-i18n="remittance_transferred_at">Transferred At</th>
+                                <th><span data-i18n="remittance_destination">Destination</span></th>
+                                <th><span data-i18n="remittance_destination_type">Type</span></th>
+                                <th class="text-center"><span data-i18n="remittance_employee_count">Employees</span></th>
+                                <th class="col-money"><span data-i18n="amount">Amount</span></th>
+                                <th class="text-center"><span data-i18n="status">Status</span></th>
+                                <th><span data-i18n="remittance_transferred_at">Transferred At</span></th>
                                 <th class="text-center"></th>
                             </tr>
                         </thead>
@@ -899,7 +1055,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="button" class="btn btn-primary" id="btnSaveBankAccountAssign" data-i18n="save">Save</button>
                     </div>
                 </div>
@@ -918,10 +1074,10 @@
                             <table class="table table-sm align-middle w-100">
                                 <thead class="table-light text-secondary">
                                     <tr>
-                                        <th data-i18n="employee_no">Employee No.</th>
-                                        <th data-i18n="employee">Employee</th>
-                                        <th data-i18n="item">Item</th>
-                                        <th class="text-end" data-i18n="amount">Amount</th>
+                                        <th><span data-i18n="employee_no">Employee No.</span></th>
+                                        <th><span data-i18n="employee">Employee</span></th>
+                                        <th><span data-i18n="item">Item</span></th>
+                                        <th class="num col-money"><span data-i18n="amount">Amount</span></th>
                                     </tr>
                                 </thead>
                                 <tbody id="remittanceBreakdownTableBody"></tbody>
@@ -929,7 +1085,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     </div>
                 </div>
             </div>
@@ -950,7 +1106,7 @@
                         <input type="file" class="form-control" id="remittanceEvidenceFile" accept=".jpg,.jpeg,.png,.pdf">
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="button" class="btn btn-primary" id="btnConfirmMarkTransferred" data-i18n="confirm">Confirm</button>
                     </div>
                 </div>
@@ -971,7 +1127,7 @@
                         <textarea class="form-control" id="remittanceFailedNote" rows="3" data-i18n="remittance_failed_note_placeholder" placeholder="e.g., Bank rejected — incorrect account number"></textarea>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="button" class="btn btn-danger" id="btnConfirmMarkFailed" data-i18n="confirm">Confirm</button>
                     </div>
                 </div>
@@ -1011,7 +1167,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light me-auto" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                        <button type="button" class="btn btn-outline-secondary me-auto" data-bs-dismiss="modal" data-i18n="close">Close</button>
                         <button type="button" class="btn btn-outline-secondary btn-report-download" data-language="th"><img src="<?=BASE_URL?>/public/flags/th.png" width="16" height="16" alt="TH" class="me-1"><span data-i18n="language_th">Thai</span></button>
                         <button type="button" class="btn btn-primary btn-report-download" data-language="en"><img src="<?=BASE_URL?>/public/flags/gb.png" width="16" height="16" alt="EN" class="me-1"><span data-i18n="language_en">English</span></button>
                     </div>
@@ -1074,13 +1230,13 @@
                             <table class="table table-sm align-middle w-100" id="tb_report_history">
                                 <thead class="table-light text-secondary small">
                                     <tr>
-                                        <th data-i18n="downloaded_at">Date/Time</th>
-                                        <th data-i18n="downloaded_by">By</th>
-                                        <th data-i18n="language">Language</th>
-                                        <th data-i18n="device">Device</th>
-                                        <th data-i18n="browser">Browser</th>
+                                        <th><span data-i18n="downloaded_at">Date/Time</span></th>
+                                        <th><span data-i18n="downloaded_by">By</span></th>
+                                        <th><span data-i18n="language">Language</span></th>
+                                        <th><span data-i18n="device">Device</span></th>
+                                        <th><span data-i18n="browser">Browser</span></th>
                                         <th>IP</th>
-                                        <th data-i18n="source">Source</th>
+                                        <th><span data-i18n="source">Source</span></th>
                                     </tr>
                                 </thead>
                                 <tbody></tbody>
@@ -1088,27 +1244,82 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- 2026-08-27, explicit request: "ในหน้า Process Detail Tab Action History ปรับจากตารางเป็น
-             Timeline สวยๆ" -- was a plain DataTable (5 columns: Date/Time, Action, Status Change,
-             Performed By, Note). Replaced with a vertical icon+connector-line timeline. 2026-08-29
-             briefly redesigned into a boustrophedon/snake grid (explicit request), then reverted the
-             SAME day back to vertical, briefly gaining a "View Detail" button+modal in that same
-             round -- REMOVED again same-day per explicit follow-up ("หน้า ประวัติการดำเนินการ Detail
-             ไม่เยอะไม่ต้องมีปุ่มกดดูก็ได้ครับ แสดงใน timeline ได้เลย"): every field that modal used to show
-             (state change, note, IP/user-agent) is now rendered directly in each card instead. See
-             renderAuditHistoryTimelineRd()/auditHistoryRowHtmlRd()'s own docblock in detail.js. -->
+        <!-- 2026-09-22, 3e-3 round B1, explicit instruction/user confirmation (2026-09-22): the
+             vertical icon+connector-line Timeline (2026-08-27 -- 2026-08-29 history, see git log) is
+             replaced with a real DataTable -- rules.md §6 now allows this for a feed that grows
+             unbounded (run 752 in dev carries 1571 rows; Timeline's own spec is for a feed short
+             enough to show in full). Column headers carry NO `data-i18n` here, unlike every other
+             `<th>` on this page -- every column's content is language-bound at render time
+             (actor name/action label/state badge), so `columns[].title` is set from langData in JS
+             at construction instead (initAuditLogTableRd(), detail.js) and kept in sync on a live
+             switch by refreshAuditLogTableLanguage(). Empty state (both "no rows yet" and "filtered
+             to zero") is the table's own `emptyState`/`dtRenderEmptyState()` (§6), not a static
+             `empty-state.php` block -- same pattern tb_run_detail already uses.
+             2026-09-22, round B2: the `.rd-audit-log-wrap` marker this div carried was a test-only
+             hook (no CSS of its own) for m3e1_tabs_shared.js's own c13 anchor selector -- removed
+             along with that selector once it turned out to be the wrong kind of anchor for that
+             check (an ancestor of the table, not a sibling block beside it -- see that file's own
+             docblock on the fix). No consumer left anywhere (grep confirmed), so the dead class goes
+             too rather than staying as markup with no meaning (rules.md §0.3). -->
         <div class="tab-pane fade" id="run-history-pane" role="tabpanel" aria-labelledby="run-history-tab" tabindex="0">
-            <div id="noAuditYet" class="text-center text-secondary py-4 d-none">
-                <i class="fa-solid fa-clock-rotate-left fa-2x mb-3 text-secondary opacity-50"></i>
-                <span data-i18n="no_history_yet">No action has been taken on this request yet.</span>
+            <!-- 2026-09-23, 3e-3b round B4: date-range filter for `performed_at` -- the ONE column
+                 the header checklists (table-column-filter.js) can't reach. Round B1/B2 used
+                 `.station-filter` (reports/index.php), B3 replaced it with a plain flex row on the
+                 theory that rules.md §6 named no box at all -- BOTH wrong: §6 (rules.md:846-877)
+                 DOES name one decided component, `.filter-bar` (this exact partial, `design:clean`),
+                 already in real use on THIS SAME PAGE for #tb_run_detail's own filter fields
+                 (Department/Payment Method/Source, above). Byte-identical include here: same
+                 `$id`/`$filter_fields_html` contract, same `row g-2`/`col-lg-2` grid, only the field
+                 markup itself differs (2 bare `.form-control.datepicker` inputs instead of selects --
+                 no icon/input-group addon, matching this app's OWN dominant datepicker convention,
+                 employee/detail.php: 18 bare fields, 0 with an icon addon -- opens on focus). No
+                 `$pageKey` set, matching #runDetailFilterBar exactly (that bar doesn't persist its
+                 collapse state either -- initFilterBar()'s own viewport-width fallback runs every
+                 load for both). initFilterBar()'s own `clearAllFields()` only ever resets `<select>`
+                 fields (app.js, confirmed by reading it) -- a real gap for a date-input filter bar,
+                 not a page-specific choice -- so detail.js supplements the shared `.filter-bar-clear`
+                 button (never a 2nd button of our own) with its own delegated handler for these 2
+                 fields specifically; see that handler's own comment for the reasoning. -->
+            <?php
+            ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-lg-2">
+                    <label class="form-label small mb-1" for="auditLogDateFrom" data-i18n="date_from">From</label>
+                    <input type="text" class="form-control datepicker" id="auditLogDateFrom" autocomplete="off">
+                </div>
+                <div class="col-lg-2">
+                    <label class="form-label small mb-1" for="auditLogDateTo" data-i18n="date_to">To</label>
+                    <input type="text" class="form-control datepicker" id="auditLogDateTo" autocomplete="off">
+                </div>
             </div>
-            <div id="run_audit_timeline" class="apv-history-timeline"></div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'auditLogFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
+            <div class="callout callout-warning d-none mt-2" id="auditLogDateRangeInvalidCallout" data-i18n="date_range_invalid">Start date must not be later than end date.</div>
+            <div class="table-responsive mt-2">
+                <table class="table table-hover align-middle w-100" id="tb_run_audit_log">
+                    <thead class="table-light text-secondary">
+                        <tr>
+                            <th class="text-nowrap"></th>
+                            <th class="text-nowrap"></th>
+                            <th class="text-nowrap"></th>
+                            <th class="text-nowrap"></th>
+                            <th></th>
+                            <th class="text-nowrap"></th>
+                            <th class="text-nowrap"></th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -1118,435 +1329,27 @@
          #btnEditRun's own click handler (detail.js) now populates that ONE shared modal directly --
          see app.js's "Payroll Run form (shared Create/Edit)" section. -->
 
-    <!-- Manage Payment Items Modal: per-employee ad-hoc earning/deduction lines (item + amount),
-         picked one at a time. For an Incentive/Other Payment run these are the ONLY items counted
-         (no base salary/standing PED/attendance bonus); for any other run they're an additive
-         adjustment on top of the normal calculation (2026-08-19, explicit request) -- see
-         PayrollRunModel::recalculate()'s $isIncentive branch vs. the manual-lines block appended
-         to the normal branch. #manageLinesHint's wording switches between the two accordingly. -->
-    <div class="modal fade" id="manageLinesModal" data-footer="view" data-bs-backdrop="static" tabindex="-1" aria-labelledby="manageLinesModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
-            <div class="modal-content border-0 shadow">
-                <div class="modal-header">
-                    <div>
-                        <h5 class="modal-title text-secondary mb-0" id="manageLinesModalLabel">
-                            <i class="fa-solid fa-list-check me-1"></i><span data-i18n="manage_items_title">Manage Payment Items</span>
-                        </h5>
-                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
-                             ชื่อ modal ไม่มีชื่อพนักงานซ้ำ" -- #manageLinesEmployeeName removed, the
-                             employee's name now shows once, inside the new header card in the body. -->
-                        <div class="text-muted small" id="manageLinesHint"></div>
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <!-- 2026-09-11, Batch 3C item 8, explicit instruction: employeeHeaderCardHtml()
-                         (app.js) as the first block in modal-body. -->
-                    <div id="manageLinesHeaderCard"></div>
-                    <!-- 2026-08-21, explicit request ("Modal Manage Payment Items อยากให้ปรับรูปแบบให้
-                         ใช้งานง่ายขึ้น") -- was 5 sections stacked in one long scroll (heaviest on a
-                         sync-based run, which showed all 5). Split into tabs, same nav-tabs/tab-content
-                         idiom already used elsewhere in this app (e.g. Setup & Rules' 5-tab layout) --
-                         Tab 1 is the core content relevant on every run; Tabs 2/3 are sync-only, their
-                         <li> hidden/shown by openManageLinesModal() the same way the sections' d-none
-                         used to be toggled, and reset to Tab 1 every time the modal opens. -->
-                    <ul class="nav nav-tabs" role="tablist">
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link active" id="manageLinesItemsTab" data-bs-toggle="tab" data-bs-target="#manageLinesItemsPane" type="button" role="tab">
-                                <i class="fa-solid fa-list-check me-1"></i><span data-i18n="manage_items_tab_items">Payment Items</span>
-                            </button>
-                        </li>
-                        <li class="nav-item d-none" id="manageLinesAttendanceTabWrap" role="presentation">
-                            <button class="nav-link" id="manageLinesAttendanceTab" data-bs-toggle="tab" data-bs-target="#manageLinesAttendancePane" type="button" role="tab">
-                                <i class="fa-solid fa-calendar-check me-1"></i><span data-i18n="manage_items_tab_attendance">Attendance Data</span>
-                            </button>
-                        </li>
-                        <!-- 2026-08-29, generalized from sync-only (explicit request: "ในหน้าทำจ่าย
-                             น่าจะเปิดให้แก้ไขตัวเลขได้...ทุกค่าเลย") -- no longer toggled d-none for a
-                             non-sync run, see detail.js's own openManageLinesModal()-equivalent
-                             comment on why. -->
-                        <li class="nav-item" id="manageLinesSyncOverrideTabWrap" role="presentation">
-                            <button class="nav-link" id="manageLinesSyncOverrideTab" data-bs-toggle="tab" data-bs-target="#manageLinesSyncOverridePane" type="button" role="tab">
-                                <i class="fa-solid fa-sliders me-1"></i><span data-i18n="manage_items_tab_adjustments">Deduction Adjustments</span>
-                            </button>
-                        </li>
-                        <!-- 2026-08-29, explicit request: "กำหนดได้สำหรับพนักงานรายบุคคล ติ๊กเอาหรือไม่เอา...
-                             และต้องกำหนดได้ด้วยว่าคำนวณภาษี ไม่คำนวณภาษี ส่งประกันสังคมไหม" -- moved here
-                             (universal, every draft-run employee row) from the sync-only Raw Sync Data
-                             modal's own "This Run's Settings" card, which only ever opened for a
-                             data_source='sync' row. -->
-                        <!-- 2026-09-02, Deduction Destination & Third-Party Remittance, Phase 6 --
-                             per-run override of which account a recurring deduction (Employee
-                             Detail's own "Recurring Deductions" section) is routed to, without
-                             touching that employee's own saved template. Always shown (a run with no
-                             recurring deductions for this employee just shows the empty state, same
-                             convention as "Deduction Adjustments" above). -->
-                        <li class="nav-item" id="manageLinesRecurringDestTabWrap" role="presentation">
-                            <button class="nav-link" id="manageLinesRecurringDestTab" data-bs-toggle="tab" data-bs-target="#manageLinesRecurringDestPane" type="button" role="tab">
-                                <i class="fa-solid fa-money-bill-transfer me-1"></i><span data-i18n="manage_items_tab_recurring_dest">Recurring Deduction Destination</span>
-                            </button>
-                        </li>
-                        <li class="nav-item" id="manageLinesCalcTabWrap" role="presentation">
-                            <button class="nav-link" id="manageLinesCalcTab" data-bs-toggle="tab" data-bs-target="#manageLinesCalcPane" type="button" role="tab">
-                                <i class="fa-solid fa-file-invoice-dollar me-1"></i><span data-i18n="manage_items_tab_calc">Tax &amp; SSO</span>
-                            </button>
-                        </li>
-                    </ul>
-                    <div class="tab-content border border-top-0 rounded-bottom p-3">
-                        <div class="tab-pane fade show active" id="manageLinesItemsPane" role="tabpanel">
-                            <div class="add-manual-line-card border rounded-3 p-3 bg-light bg-opacity-50 mb-4">
-                                <div class="mb-2">
-                                    <!-- 2026-09-03, Manual Entry / Platform UX review Phase 6: same
-                                         redesign as #eedModal's own mode toggle (see that markup's own
-                                         comment + style.css's .mode-select-group docblock) -- these are
-                                         the only 2 places this exact "choose from list / specify
-                                         manually / other" pattern exists in the app. -->
-                                    <div class="mode-select-group" role="group" id="manualLineModeToggle">
-                                        <button type="button" class="mode-select-btn active" data-mode="catalog">
-                                            <i class="fa-solid fa-list"></i>
-                                            <span class="mode-select-btn-title" data-i18n="manual_line_mode_catalog">From List</span>
-                                            <span class="mode-select-btn-desc" data-i18n="mode_desc_catalog">Pick from your saved item types</span>
-                                        </button>
-                                        <button type="button" class="mode-select-btn" data-mode="custom">
-                                            <i class="fa-solid fa-pen"></i>
-                                            <span class="mode-select-btn-title" data-i18n="manual_line_mode_custom">Custom Item</span>
-                                            <span class="mode-select-btn-desc" data-i18n="mode_desc_custom">One-time item with its own name</span>
-                                        </button>
-                                        <!-- 2026-09-02, Deduction Destination & Third-Party Remittance,
-                                             Phase 7 -- reuses #manualLineCustomFields' own free-text
-                                             input verbatim, same as #eedModal's own "Other" mode (see
-                                             that modal's markup comment); is_other=true is the only
-                                             difference sent on submit. -->
-                                        <button type="button" class="mode-select-btn" data-mode="other">
-                                            <i class="fa-solid fa-circle-question"></i>
-                                            <span class="mode-select-btn-title" data-i18n="manual_line_mode_other">Other</span>
-                                            <span class="mode-select-btn-desc" data-i18n="mode_desc_other">Grouped into "Other Income/Deduction" on reports</span>
-                                        </button>
-                                    </div>
-                                </div>
-                                <div class="row g-2 align-items-end" id="manualLineCatalogFields">
-                                    <div class="col-12">
-                                        <label class="form-label small text-muted mb-1" data-i18n="select_item_placeholder">Select an income/deduction item</label>
-                                        <select class="form-select select2-remote" id="manualLineItemSelect" data-api="/api/employee.earning-deduction.options"></select>
-                                    </div>
-                                </div>
-                                <div class="row g-2 align-items-end d-none" id="manualLineCustomFields">
-                                    <div class="col-sm-8">
-                                        <label class="form-label small text-muted mb-1" data-i18n="modal_custom_item_name">Item Name</label>
-                                        <input type="text" class="form-control" id="manualLineCustomName" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
-                                    </div>
-                                    <div class="col-sm-4">
-                                        <label class="form-label small text-muted mb-1" data-i18n="modal_item_type">Type</label>
-                                        <select class="form-select select2-static" id="manualLineCustomType" data-option-keys="breakdown_earnings,table_deduction_amount" data-option-values="earning,deduction"></select>
-                                    </div>
-                                </div>
-                                <div class="row g-2 align-items-end mt-1">
-                                    <div class="col-sm-6">
-                                        <label class="form-label small text-muted mb-1" data-i18n="modal_amount">Amount</label>
-                                        <input type="number" class="form-control" id="manualLineAmount" min="0.01" step="0.01" placeholder="0.00">
-                                    </div>
-                                    <div class="col-sm-6">
-                                        <label class="form-label small text-muted mb-1" data-i18n="modal_comment">Comment</label>
-                                        <input type="text" class="form-control" id="manualLineComment" maxlength="255" data-i18n="modal_comment_placeholder" placeholder="e.g. August OT shortfall top-up">
-                                    </div>
-                                </div>
-                                <!-- Transfer-to-payee (2026-08-21, explicit request: "หักเพื่อไปจ่ายให้ใคร
-                                     โดยเลือกพนักงานได้ว่าจะหักของคนนี้ไปให้คนนี้") -- only meaningful when
-                                     the item being added is a deduction, toggled alongside the existing
-                                     earning/deduction type preview (updateManualLineTypePreviewRd() in
-                                     detail.js).
-                                     2026-08-31, same-day follow-up: widened to the SAME 4-way
-                                     None/Employee/Company/Not-Disbursed payee_type toggle Employee
-                                     Detail's own #eedPayeeTypeToggle already has (this modal never had
-                                     any payee-routing concept beyond the bare employee picker until
-                                     now). Employee picker reuses /api/employee.report_to.get
-                                     (data-exclude-id set to the employee this modal is currently
-                                     managing) rather than a new endpoint. -->
-                                <div class="row g-2 align-items-end mt-1 d-none" id="manualLinePayeeTypeWrapper">
-                                    <div class="col-12">
-                                        <label class="form-label small text-muted mb-1" data-i18n="payee_type_label">Deducted Money Goes To</label>
-                                        <div class="btn-group btn-group-sm flex-wrap" role="group" id="manualLinePayeeTypeToggle">
-                                            <button type="button" class="btn btn-outline-brand active" data-payee-type="none"><span data-i18n="payee_type_none">Employee's Own Net Pay</span></button>
-                                            <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
-                                            <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
-                                            <!-- 2026-09-02, Deduction Destination & Third-Party Remittance -->
-                                            <button type="button" class="btn btn-outline-brand" data-payee-type="other_person"><span data-i18n="payee_type_other_person">Other Person / Third Party</span></button>
-                                            <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Deducted, No Cash Movement (Write-off)</span></button>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row g-2 align-items-end mt-1 d-none" id="manualLinePayeeWrapper">
-                                    <div class="col-12">
-                                        <label class="form-label small text-muted mb-1" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
-                                        <select class="form-select select2-remote" id="manualLinePayeeEmployee" data-api="/api/employee.report_to.get" data-type="employee"></select>
-                                    </div>
-                                </div>
-                                <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- same
-                                     as Employee Detail's own #eedCompanyAccountWrapper. -->
-                                <div class="row g-2 align-items-end mt-1 d-none" id="manualLineCompanyAccountWrapper">
-                                    <div class="col-12">
-                                        <label class="form-label small text-muted mb-1" data-i18n="payee_bank_account_label">Company Bank Account</label>
-                                        <select class="form-select select2-remote" id="manualLineBankAccount" data-api="/api/payroll-cycle.bank-account.options"></select>
-                                    </div>
-                                </div>
-                                <!-- 2026-09-02, Deduction Destination & Third-Party Remittance -- pick an
-                                     existing SAVED destination, or leave blank and fill the new-account
-                                     fields below (which create a one-off or, with the checkbox, a new
-                                     saved destination -- see PaymentDestinationModel::resolveOrCreate()).
-                                     This is metadata attached to the deduction line only -- it never
-                                     affects Net Pay or the calculation itself (see this feature's own
-                                     "Calculation vs Disbursement layer" design note). -->
-                                <div class="row g-2 align-items-end mt-1 d-none" id="manualLineDestinationWrapper">
-                                    <div class="col-12">
-                                        <label class="form-label small text-muted mb-1" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
-                                        <select class="form-select select2-remote" id="manualLineDestinationSelect" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
-                                    </div>
-                                    <div class="col-12 mt-2" id="manualLineDestinationNewFields">
-                                        <div class="row g-2">
-                                            <div class="col-sm-6">
-                                                <label class="form-label small text-muted mb-1" data-i18n="destination_account_name">Account Name</label>
-                                                <input type="text" class="form-control form-control-sm" id="manualLineDestAccountName" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee">
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <label class="form-label small text-muted mb-1" data-i18n="destination_account_no">Account No.</label>
-                                                <input type="text" class="form-control form-control-sm" id="manualLineDestAccountNo" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890">
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <label class="form-label small text-muted mb-1" data-i18n="destination_bank">Bank</label>
-                                                <select class="form-select select2-remote" id="manualLineDestBank" data-api="/api/bank.get" data-type="bank"></select>
-                                            </div>
-                                            <div class="col-sm-6">
-                                                <label class="form-label small text-muted mb-1" data-i18n="destination_bank_branch">Branch</label>
-                                                <input type="text" class="form-control form-control-sm" id="manualLineDestBankBranch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch">
-                                            </div>
-                                            <div class="col-12">
-                                                <div class="form-check">
-                                                    <input type="checkbox" class="form-check-input" id="manualLineDestSaveForReuse">
-                                                    <label class="form-check-label small" for="manualLineDestSaveForReuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="row g-2 align-items-end mt-1 d-none" id="manualLineIncludeCashSummaryWrapper">
-                                    <div class="col-12">
-                                        <div class="form-check">
-                                            <input type="checkbox" class="form-check-input" id="manualLineIncludeCashSummary" checked>
-                                            <label class="form-check-label small" for="manualLineIncludeCashSummary" data-i18n="include_in_cash_summary_label">Include in Cash Payment Summary Report</label>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div id="manualLineTypePreview" class="small mt-2 d-none"></div>
-                                <div class="text-end mt-2">
-                                    <button type="button" class="btn btn-primary" id="btnAddManualLine"><i class="fa-solid fa-plus me-1"></i><span data-i18n="add_item">Item</span></button>
-                                </div>
-                            </div>
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <div class="ped-type-panel border rounded-3 p-3 h-100 d-flex flex-column">
-                                        <h6 class="text-success fw-bold mb-2"><i class="fa-solid fa-arrow-trend-up me-1"></i><span data-i18n="breakdown_earnings">Income</span></h6>
-                                        <ul class="list-group list-group-flush flex-grow-1" id="manualLinesEarningList"></ul>
-                                        <div class="d-flex justify-content-between fw-bold text-success border-top pt-2 mt-1">
-                                            <span data-i18n="manual_line_subtotal_label">Total</span><span id="manualLinesEarningTotal">0.00</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="ped-type-panel border rounded-3 p-3 h-100 d-flex flex-column">
-                                        <h6 class="text-danger fw-bold mb-2"><i class="fa-solid fa-arrow-trend-down me-1"></i><span data-i18n="table_deduction_amount">Deductions</span></h6>
-                                        <ul class="list-group list-group-flush flex-grow-1" id="manualLinesDeductionList"></ul>
-                                        <div class="d-flex justify-content-between fw-bold text-danger border-top pt-2 mt-1">
-                                            <span data-i18n="manual_line_subtotal_label">Total</span><span id="manualLinesDeductionTotal">0.00</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="d-flex justify-content-between align-items-center border-top pt-2 mt-3">
-                                <span class="fw-bold text-secondary" data-i18n="manual_line_net_total">Net Adjustment</span>
-                                <span class="fw-bold fs-6" id="manualLinesNetTotal">0.00</span>
-                            </div>
-                        </div>
-                        <!-- Attendance Data (from Sync) (2026-08-21, explicit request: "ต้องการแก้ตัวเลขดิบ
-                             ที่ Sync มา ไม่ใช่แค่ยอดเงิน") -- corrects the RAW numbers Origami sent (late
-                             minutes, absent days, unpaid leave days, OT hours, trip allowance), which then
-                             recompute through the normal calculation on Recalculate. Distinct from "Sync
-                             Deduction Adjustments" (next tab), which overrides the resulting BAHT amount
-                             instead -- both can be used together. Only shown on a sync-based run
-                             (currentRun.sync_process_id, tab wrapper toggled in JS). One combined Save
-                             (not per-field) since all 7 fields are one conceptual "corrected timesheet"
-                             record, matching payroll_run_sync_item_overrides' one-row-per-employee shape. -->
-                        <div class="tab-pane fade" id="manageLinesAttendancePane" role="tabpanel">
-                            <p class="text-muted small mb-2" data-i18n="attendance_data_hint">Correct the raw attendance numbers, for this run only -- amounts recompute from your correction.</p>
-                            <div class="table-responsive">
-                                <table class="table table-sm align-middle mb-2">
-                                    <thead class="table-light text-secondary small">
-                                        <tr>
-                                            <th data-i18n="attendance_data_field">Field</th>
-                                            <th class="text-end" data-i18n="attendance_data_synced">Synced</th>
-                                            <th style="width:140px;" data-i18n="attendance_data_correction">Correction</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="attendanceDataRows"></tbody>
-                                </table>
-                            </div>
-                            <div class="text-end">
-                                <button type="button" class="btn btn-sm btn-outline-secondary me-1" id="btnResetAttendanceData"><i class="fa-solid fa-rotate-left me-1"></i><span data-i18n="attendance_data_reset_all">Reset All to Synced</span></button>
-                                <button type="button" class="btn btn-sm btn-primary" id="btnSaveAttendanceData"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
-                            </div>
-                        </div>
-                        <!-- Sync Deduction Adjustments (2026-08-21, explicit request: "ต้องการปรับค่า สาย
-                             ขาดงาน ลาไม่รับเงิน หรือยกเว้นไม่ให้หัก") -- only shown on a sync-based run
-                             (currentRun.sync_process_id set, tab wrapper toggled in JS), lists the
-                             employee's currently sync-computed deduction lines with an inline
-                             override/exclude/reset control per line. Per-run only (confirmed choice),
-                             not a standing setting. -->
-                        <div class="tab-pane fade" id="manageLinesSyncOverridePane" role="tabpanel">
-                            <!-- 2026-08-29, explicit follow-up request: "อยากให้มี List รายการและติ๊กเข้าออก
-                                 ได้เหมือนตอนที่ Set ทั้ง Template" -- a checklist for THIS employee only,
-                                 same visual/interaction pattern as the run-wide "Run Settings" panel's own
-                                 checklist (base salary + full catalog, tick to exclude, one Save button)
-                                 instead of having to open each item's row individually below. Backed by
-                                 the SAME payroll_run_line_overrides 'exclude' mechanism as the per-row
-                                 list further down -- this is just a faster, bulk way to set it, not a
-                                 separate concern. An item already excluded by the run-level default (Run
-                                 Settings panel) shows pre-checked and disabled here, since there's no
-                                 "force this one item back in" action distinct from typing a specific
-                                 override amount in the per-row list below (see
-                                 PayrollRunModel::recalculate()'s own docblock on this known,
-                                 accepted simplification). -->
-                            <div class="border rounded-3 p-3 bg-light bg-opacity-50 mb-3">
-                                <h6 class="text-secondary fw-bold mb-1"><i class="fa-solid fa-list-check me-1"></i><span data-i18n="employee_item_exclusion_title">Exclude from This Employee's Calculation</span></h6>
-                                <div class="text-muted small mb-2" data-i18n="employee_item_exclusion_hint">Ticked items are left out of this employee's calculation for this run. Greyed-out items are already excluded by this run's own Run Settings default.</div>
-                                <div id="empItemExclusionChecklist"></div>
-                                <div class="text-end mt-2">
-                                    <button type="button" class="btn btn-sm btn-primary" id="btnSaveEmpItemExclusion"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
-                                </div>
-                            </div>
-                            <hr>
-                            <p class="text-muted small mb-2" data-i18n="sync_line_override_hint">Override the computed amount, or exclude it entirely, for this run only.</p>
-                            <div id="syncLineOverrideList"></div>
-                        </div>
-                        <div class="tab-pane fade" id="manageLinesRecurringDestPane" role="tabpanel">
-                            <p class="text-muted small mb-2" data-i18n="recurring_dest_override_hint">Override which account a recurring deduction is routed to, for this payroll run only -- the employee's own saved default is never changed.</p>
-                            <div id="recurringDestOverrideList"></div>
-                            <div class="border rounded-3 p-3 bg-light bg-opacity-50 mt-3 d-none" id="recurringDestEditorCard">
-                                <input type="hidden" id="recurringDestEditorRecurringId">
-                                <div class="fw-bold text-dark small mb-2" id="recurringDestEditorItemName"></div>
-                                <div class="btn-group btn-group-sm flex-wrap mb-2" role="group" id="recurringDestPayeeTypeToggle">
-                                    <button type="button" class="btn btn-outline-brand" data-payee-type="employee"><span data-i18n="payee_type_employee">Another Employee</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-payee-type="company"><span data-i18n="payee_type_company">Company Account</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-payee-type="other_person"><span data-i18n="payee_type_other_person">Other Person / Third Party</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-payee-type="not_disbursed"><span data-i18n="payee_type_not_disbursed">Deducted, No Cash Movement (Write-off)</span></button>
-                                </div>
-                                <div class="row g-2 align-items-end d-none" id="recurringDestEmployeeWrapper">
-                                    <div class="col-12">
-                                        <label class="form-label small text-muted mb-1" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
-                                        <select class="form-select select2-remote" id="recurringDestPayeeEmployeeSelect" data-api="/api/employee.report_to.get" data-type="employee"></select>
-                                    </div>
-                                </div>
-                                <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company' -- same
-                                     as Employee Detail's own #eedCompanyAccountWrapper. -->
-                                <div class="row g-2 align-items-end d-none" id="recurringDestCompanyAccountWrapper">
-                                    <div class="col-12">
-                                        <label class="form-label small text-muted mb-1" data-i18n="payee_bank_account_label">Company Bank Account</label>
-                                        <select class="form-select select2-remote" id="recurringDestBankAccountSelect" data-api="/api/payroll-cycle.bank-account.options"></select>
-                                    </div>
-                                </div>
-                                <div class="row g-2 align-items-end d-none" id="recurringDestDestinationWrapper">
-                                    <div class="col-12">
-                                        <label class="form-label small text-muted mb-1" data-i18n="destination_saved_label">Select a Saved Destination (optional)</label>
-                                        <select class="form-select select2-remote" id="recurringDestDestinationSelect" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
-                                    </div>
-                                    <div class="col-12 mt-2" id="recurringDestDestinationNewFields">
-                                        <div class="row g-2">
-                                            <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_account_name">Account Name</label><input type="text" class="form-control form-control-sm" id="recurringDestAccountName" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee"></div>
-                                            <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_account_no">Account No.</label><input type="text" class="form-control form-control-sm" id="recurringDestAccountNo" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890"></div>
-                                            <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_bank">Bank</label><select class="form-select select2-remote" id="recurringDestBank" data-api="/api/bank.get" data-type="bank"></select></div>
-                                            <div class="col-sm-6"><label class="form-label small mb-1" data-i18n="destination_bank_branch">Branch</label><input type="text" class="form-control form-control-sm" id="recurringDestBankBranch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch"></div>
-                                            <div class="col-12"><div class="form-check"><input type="checkbox" class="form-check-input" id="recurringDestSaveForReuse"><label class="form-check-label small" for="recurringDestSaveForReuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label></div></div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="text-end mt-2">
-                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="btnCancelRecurringDestEdit" data-i18n="cancel">Cancel</button>
-                                    <button type="button" class="btn btn-sm btn-primary" id="btnSaveRecurringDestOverride" data-i18n="save">Save</button>
-                                </div>
-                            </div>
-                        </div>
-                        <!-- 2026-08-29: per-employee, per-run tax/SSO calculation override -- see
-                             PayrollRunModel::saveEmployeeExemption()'s own docblock. "Follow Run
-                             Default" (inherit) is the initial state for every employee until this run's
-                             own "Run Settings" panel and/or this control are actually touched. -->
-                        <div class="tab-pane fade" id="manageLinesCalcPane" role="tabpanel">
-                            <p class="text-muted small mb-3" data-i18n="employee_calc_override_hint">Set whether tax/SSO is calculated for this employee, for this run only -- overrides this run's own default (Run Settings panel) for this one person.</p>
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold small mb-1" data-i18n="run_exemption_tax">Tax Calculation</label>
-                                <div class="d-flex flex-wrap gap-3" id="empCalcTaxGroup">
-                                    <div class="form-check form-check-inline m-0">
-                                        <input class="form-check-input" type="radio" name="empCalcTax" id="empCalcTaxInherit" value="inherit" checked>
-                                        <label class="form-check-label small text-secondary" for="empCalcTaxInherit"><i class="fa-solid fa-arrow-rotate-left me-1"></i><span data-i18n="calc_override_inherit">Follow Run Default</span></label>
-                                    </div>
-                                    <div class="form-check form-check-inline m-0">
-                                        <input class="form-check-input" type="radio" name="empCalcTax" id="empCalcTaxYes" value="yes">
-                                        <label class="form-check-label small text-success fw-semibold" for="empCalcTaxYes"><i class="fa-solid fa-check me-1"></i><span data-i18n="calc_override_yes">Calculate</span></label>
-                                    </div>
-                                    <div class="form-check form-check-inline m-0">
-                                        <input class="form-check-input" type="radio" name="empCalcTax" id="empCalcTaxNo" value="no">
-                                        <label class="form-check-label small text-danger fw-semibold" for="empCalcTaxNo"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="calc_override_no">Don't Calculate</span></label>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-semibold small mb-1" data-i18n="run_exemption_sso">SSO Contribution</label>
-                                <div class="d-flex flex-wrap gap-3" id="empCalcSsoGroup">
-                                    <div class="form-check form-check-inline m-0">
-                                        <input class="form-check-input" type="radio" name="empCalcSso" id="empCalcSsoInherit" value="inherit" checked>
-                                        <label class="form-check-label small text-secondary" for="empCalcSsoInherit"><i class="fa-solid fa-arrow-rotate-left me-1"></i><span data-i18n="calc_override_inherit">Follow Run Default</span></label>
-                                    </div>
-                                    <div class="form-check form-check-inline m-0">
-                                        <input class="form-check-input" type="radio" name="empCalcSso" id="empCalcSsoYes" value="yes">
-                                        <label class="form-check-label small text-success fw-semibold" for="empCalcSsoYes"><i class="fa-solid fa-check me-1"></i><span data-i18n="sso_override_yes">Send</span></label>
-                                    </div>
-                                    <div class="form-check form-check-inline m-0">
-                                        <input class="form-check-input" type="radio" name="empCalcSso" id="empCalcSsoNo" value="no">
-                                        <label class="form-check-label small text-danger fw-semibold" for="empCalcSsoNo"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="sso_override_no">Don't Send</span></label>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="text-end">
-                                <button type="button" class="btn btn-sm btn-primary" id="btnSaveEmpCalcOverride"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Breakdown Modal: per-employee itemized view for one payroll_run_details row, split into
-         clearly-labeled Earnings / Deductions / Statutory sections so it's unambiguous which line
-         is income and which is a deduction (the main table only shows totals). -->
+    <!-- Breakdown Modal: per-employee itemized view for one payroll_run_details row. 2026-09-18,
+         4a-1/4a-2: ONE table (renderLineOverrideTableRd(), payroll/detail.js) in both modes -- every
+         line grouped by what it is (base salary / income / deductions / statutory / the 2 hand-added
+         groups), then Gross/Total Deductions/Net Pay as its last 3 rows. `mode: 'view'` decides only
+         which columns exist at all. See docs/decisions/2026-09-18-slip-single-place.md.
+         2026-09-14, Round 3 item 3c-2: header reduced to title + × only (§9 "Header = ชื่อ + ×
+         เท่านั้น") -- #breakdownEmployeeName was already removed (2026-09-11, employee name lives in
+         the header card below instead); the icon and the pinned Net-Pay footer are now also gone --
+         Net Pay moved into the payslip summary itself, and the footer reverts to the plain [Close]
+         `data-footer="view"` auto-injects (app.js's own show.bs.modal handler). -->
     <div class="modal fade" id="runDetailBreakdownModal" data-footer="view" tabindex="-1" aria-labelledby="runDetailBreakdownModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <!-- 2026-09-22, slip2-b: `modal-xl`, not `modal-lg`. Two reasons, and the rule already said
+             both: §9 reserves `modal-xl` for a dialog that CARRIES A TABLE, which this one does; and
+             the line form that opens on top of it stays `modal-lg`, so the child is now 340px
+             narrower than its parent instead of exactly as wide (measured: 800 vs 800 before, 1140
+             vs 800 after) and reads as a window on top rather than a replacement of the one below.
+             Below `lg` both collapse to the same full width, so nothing changes at 430. -->
+        <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
-                    <div>
-                        <h5 class="modal-title text-secondary mb-0" id="runDetailBreakdownModalLabel">
-                            <i class="fa-solid fa-list-check me-1"></i><span data-i18n="breakdown_title">Calculation Breakdown</span>
-                        </h5>
-                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
-                             ชื่อ modal ไม่มีชื่อพนักงานซ้ำ" -- #breakdownEmployeeName removed, the
-                             employee's name now shows once, inside the new header card in the body. -->
-                        <!-- 2026-09-06, explicit request: display Origami's opt-in TOTAL_DAYS
-                             item_values entry (calendar-based day count) when present -- hidden
-                             entirely for a run/employee with no data (cycle-based/off-cycle run, or
-                             a sync run whose admin never ticked this Report Item on), see
-                             PayrollRunModel::getDetails()'s own docblock. -->
-                        <div class="text-muted small d-none" id="breakdownTotalDays"></div>
-                    </div>
+                    <h5 class="modal-title text-secondary mb-0" id="runDetailBreakdownModalLabel" data-i18n="breakdown_title">Calculation Breakdown</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
@@ -1556,90 +1359,39 @@
                          renderBreakdownModal() in detail.js) so this card doesn't get wiped along
                          with it. -->
                     <div id="breakdownHeaderCard"></div>
+                    <!-- 2026-09-21, 3e-2b: what Origami sent for this employee, read-only, opened
+                         from the disclosure button in the header card's own right slot above.
+                         Static sibling for the same reason that card is one (#breakdownModalBody's
+                         content is replaced wholesale on every open), and a PANEL rather than a
+                         second modal: the slip must stay the one open modal. Filled/emptied by
+                         renderBreakdownModal()/the toggle handler in detail.js -- hidden and empty
+                         on every open, so it can never carry the previous employee's payload. -->
+                    <div id="rawSyncPanel" class="rd-sync-panel d-none"></div>
+                    <!-- 2026-09-16: the calculation notes for this row (calc_blocking as danger
+                         callouts, calc_warnings as warning ones -- see renderBreakdownModal()). The
+                         table cell itself only shows the count now, so this is where the full text
+                         is read. Static sibling of #breakdownModalBody for the same reason the
+                         header card above is one: that div's content is replaced wholesale on every
+                         open. -->
+                    <div id="breakdownCalcNotes" class="rd-calc-notes"></div>
+                    <!-- 2026-09-06, explicit request: display Origami's opt-in TOTAL_DAYS
+                         item_values entry (calendar-based day count) when present -- hidden
+                         entirely for a run/employee with no data (cycle-based/off-cycle run, or a
+                         sync run whose admin never ticked this Report Item on), see
+                         PayrollRunModel::getDetails()'s own docblock. Moved out of the modal-header
+                         2026-09-14 (§9) -- still ≤1 line, right under the header card. -->
+                    <div class="text-muted small mb-2 d-none" id="breakdownTotalDays"></div>
                     <div id="breakdownModalBody"></div>
                 </div>
-                <!-- Net Pay pinned in the footer (2026-08-20, explicit request) -- with
-                     modal-dialog-scrollable above, the body scrolls internally while this stays
-                     visible, so a long Earnings/Deductions/Statutory list never pushes it out of
-                     view.
-                     2026-09-09, explicit request: "ย้ายยอดจ่ายสุทธิ มาต่อกัน Net Pay...ไปอยู่ขวาสุด" --
-                     was `justify-content-between` (label pinned at the footer's LEFT edge, value at
-                     the RIGHT edge, spread across the whole footer width); now `justify-content-end`
-                     + `gap-2` groups label+value together as one unit at the far right instead. -->
-                <div class="modal-footer d-flex justify-content-end align-items-center gap-2">
-                    <span class="fw-bold text-secondary" data-i18n="table_net_pay">Net Pay</span>
-                    <span class="fw-bold fs-5" id="breakdownModalNetPay"></span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Employee Adjustments viewer (2026-09-10, Batch 3A item 5, explicit request: replace the
-         fa-sliders icon with a "ปรับแล้ว N" badge + view-only modal listing item/old value/new
-         value/who/when -- sourced from PayrollRunModel::employeeAdjustments(), no new table, no
-         editing here. -->
-    <div class="modal fade" id="empAdjustmentsModal" data-footer="view" tabindex="-1" aria-labelledby="empAdjustmentsModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content border-0 shadow">
-                <div class="modal-header">
-                    <div>
-                        <h5 class="modal-title text-secondary mb-0" id="empAdjustmentsModalLabel">
-                            <i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="emp_adjustments_modal_title">Adjusted Items</span>
-                        </h5>
-                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
-                             ชื่อ modal ไม่มีชื่อพนักงานซ้ำ" -- #empAdjustmentsEmployeeName removed, the
-                             employee's name now shows once, inside the new header card in the body. -->
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <!-- 2026-09-11, Batch 3C item 8, explicit instruction: employeeHeaderCardHtml()
-                         (app.js) as the first block in modal-body. -->
-                    <div id="empAdjustmentsHeaderCard"></div>
-                    <div class="fw-semibold small text-uppercase text-muted mb-1" data-i18n="emp_adjustments_overrides_section">Overridden Items</div>
-                    <div id="empAdjustmentsOverrideList" class="mb-3"></div>
-                    <div class="fw-semibold small text-uppercase text-muted mb-1" data-i18n="emp_adjustments_manual_lines_section">Added Items</div>
-                    <div id="empAdjustmentsManualLineList"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Raw Sync Data viewer (2026-08-21, explicit request: "ดูข้อมูลดิบได้...เพื่อทำการ Recheck
-         ข้อมูลย้อนหลังได้") -- read-only, shows exactly what Origami sent for this employee
-         (PayrollRunModel::RAW_SYNC_DATA_FIELDS -- payroll/attendance fields only, deliberately
-         excludes encrypted PII columns also on that row, see that const's own docblock). Only
-         opened for a row with data_source='sync' -- a manually-added employee on a sync run has no
-         sync row to show here at all. -->
-    <div class="modal fade" id="rawSyncDataModal" data-footer="view" tabindex="-1" aria-labelledby="rawSyncDataModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-            <div class="modal-content border-0 shadow">
-                <div class="modal-header">
-                    <div>
-                        <h5 class="modal-title text-secondary mb-0" id="rawSyncDataModalLabel">
-                            <i class="fa-solid fa-file-code me-1"></i><span data-i18n="raw_sync_data_title">Raw Sync Data</span>
-                        </h5>
-                        <!-- 2026-09-11, Batch 3C item 8, explicit instruction: "modal-header เหลือแค่
-                             ชื่อ modal ไม่มีชื่อพนักงานซ้ำ" -- #rawSyncDataEmployeeName removed, the
-                             employee's name now shows once, inside the new header card in the body. -->
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <!-- 2026-09-11, Batch 3C item 8, explicit instruction: employeeHeaderCardHtml()
-                         (app.js) as the first block in modal-body. -->
-                    <div id="rawSyncDataHeaderCard"></div>
-                    <!-- 2026-08-29: the per-run tax/SSO Settings card that used to live here moved to
-                         the "Tax & SSO" tab of the universal Manage Items modal (this modal's own
-                         Items button, .btn-manage-manual-lines) -- it needed to be reachable for
-                         EVERY employee, not just sync-sourced rows this modal only ever opens for
-                         (see manageLinesModal's own manageLinesCalcPane). This viewer is read-only
-                         again, matching its original single purpose. -->
-                    <div id="rawSyncDataModalBody"></div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
-                </div>
+                <!-- 2026-09-17, D3: this modal used to have NO footer element, so app.js's own
+                     `data-footer="view"` fallback injected a bare [Close] on first open. It owns one
+                     now because "คืนค่าระบบทั้งหมด" moved here with the line-override table: §9's
+                     footer LEFT slot is where that button already lived (it came from the per-employee
+                     settings modal, deleted 4b),
+                     and it is still neither this modal's main action nor its way out. Filled per open
+                     by renderBreakdownFooterRd() (detail.js) -- read-only rows get [ปิด] alone, i.e.
+                     exactly what the fallback used to inject. -->
+                <div class="modal-footer" id="breakdownModalFooter"></div>
             </div>
         </div>
     </div>
@@ -1656,14 +1408,23 @@
             <div class="modal-content border-0 shadow">
                 <div class="modal-header">
                     <div>
+                        <!-- 2026-09-22, n: the title's own `data-i18n` is SWAPPED at runtime (this
+                             one modal serves 2 modes, see applyJoinEmployeesModeRd() in detail.js).
+                             It lives on this leaf span, never on the <h5>, so app.js's generic sweep
+                             keeps owning it after the swap and cannot wipe the icon beside it. -->
                         <h5 class="modal-title text-secondary mb-0" id="joinEmployeesModalLabel">
-                            <i class="fa-solid fa-user-plus me-1"></i><span data-i18n="join_employees_title">Join Employees</span>
+                            <i class="fa-solid fa-user-plus me-1"></i><span id="joinEmployeesModalTitleText" data-i18n="join_employees_title">Join Employees</span>
                         </h5>
                         <div class="text-muted small" id="joinEmployeesHint"></div>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <!-- 2026-09-22, n: `missing` mode only -- one neutral sentence saying what this
+                         narrowed list is (rules.md 15: tone carries the meaning, no icon). Neutral,
+                         not warning: the banner that opens this already carries the warning, and
+                         repeating it here would make the same fact shout twice. -->
+                    <div class="callout callout-neutral d-none mb-3" id="joinEmployeesMissingCallout" data-i18n="sync_missing_pull_hint">These are the employees expected in this run but absent from the Origami sync -- pick who you need and pull them in from here.</div>
                     <div class="row g-2 mb-3">
                         <div class="col-sm-3">
                             <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
@@ -1708,12 +1469,18 @@
                         <thead class="table-light text-secondary">
                             <tr>
                                 <th><input type="checkbox" id="joinSelectAll" title="Select all on this page"></th>
-                                <th data-i18n="table_code">Code</th>
-                                <th data-i18n="table_name">Name</th>
-                                <th data-i18n="department">Department</th>
-                                <th data-i18n="team">Team</th>
-                                <th data-i18n="position">Position</th>
-                                <th data-i18n="payroll_cycle">Payroll Schedule</th>
+                                <th><span data-i18n="table_code">Code</span></th>
+                                <th><span data-i18n="table_name">Name</span></th>
+                                <th><span data-i18n="department">Department</span></th>
+                                <th><span data-i18n="team">Team</span></th>
+                                <th><span data-i18n="position">Position</span></th>
+                                <th><span data-i18n="payroll_cycle">Payroll Schedule</span></th>
+                                <!-- Column 7, `missing` mode only (DataTables column visibility, see
+                                     detail.js). Deliberately unlabelled: it is an action column (7).
+                                     If it ever needs a label, the `data-i18n` goes on a <span> leaf
+                                     inside, never on this <th> -- m3e1_tabs_shared.js's c12 asserts
+                                     `#joinEmployeesModal th[data-i18n]` is 0. -->
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -1722,10 +1489,13 @@
                 <div class="modal-footer d-flex justify-content-between align-items-center">
                     <div class="text-muted small" id="joinSelectedCount">0 <span data-i18n="bulk_pull_selected_label">selected</span></div>
                     <div>
+                        <!-- The label span carries an id because `missing` mode rewrites it with a
+                             {count} template and drops its `data-i18n` while that lasts -- see
+                             renderJoinPrimaryLabelRd() in detail.js for why the marker has to go. -->
                         <button type="button" class="btn btn-primary" id="btnJoinSelected" disabled>
-                            <i class="fa-solid fa-user-plus me-1"></i><span data-i18n="action_join_employees">Join Employees</span>
+                            <i class="fa-solid fa-user-plus me-1"></i><span id="btnJoinSelectedLabel" data-i18n="action_join_employees">Join Employees</span>
                         </button>
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     </div>
                 </div>
             </div>
@@ -1750,9 +1520,14 @@
                         <label class="form-label mb-1" data-i18n="approve_note_label">Note (optional)</label>
                         <textarea class="form-control" id="run_approve_note" rows="3" data-i18n="approve_note_placeholder" placeholder="Any comment for this approval..."></textarea>
                     </div>
+                    <!-- 2026-09-13, decision-set follow-up (§4 exception, rules.md §4): was plain
+                         Bootstrap `.btn-success` -- a real §4 violation (banned everywhere per §12
+                         lint rule 3) found while wiring this up, not limited to the header buttons
+                         that opened this modal. `.btn-decision-success` matches #btnApproveRunHeader's
+                         own tone so the color stays consistent from trigger to actual confirmation. -->
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                        <button type="submit" class="btn btn-success"><span data-i18n="approval_confirm_approve">Confirm Approve</span></button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="submit" class="btn btn-decision-success"><span data-i18n="approval_confirm_approve">Confirm Approve</span></button>
                     </div>
                 </form>
             </div>
@@ -1772,9 +1547,12 @@
                         <label class="form-label mb-1"><span data-i18n="reject_reason_label">Reject Reason</span> <span class="text-danger">*</span></label>
                         <textarea class="form-control required" id="run_reject_reason" rows="3" data-i18n="reject_reason_placeholder" placeholder="Explain what needs to be fixed before resubmitting..."></textarea>
                     </div>
+                    <!-- 2026-09-13, decision-set follow-up: was plain Bootstrap `.btn-danger` -- same
+                         §4-violation note as the Approve modal above; `.btn-decision-danger` (outline,
+                         not solid) matches #btnRejectRunHeader's own tone. -->
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                        <button type="submit" class="btn btn-danger"><span data-i18n="approval_confirm_reject">Confirm Reject</span></button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="submit" class="btn btn-decision-danger"><span data-i18n="approval_confirm_reject">Confirm Reject</span></button>
                     </div>
                 </form>
             </div>
@@ -1794,9 +1572,12 @@
                         <label class="form-label mb-1"><span data-i18n="request_info_reason_label">What information is needed?</span> <span class="text-danger">*</span></label>
                         <textarea class="form-control required" id="run_request_info_reason" rows="3" data-i18n="request_info_reason_placeholder" placeholder="Explain what additional information is needed before this can be decided..."></textarea>
                     </div>
+                    <!-- 2026-09-13, decision-set follow-up: was plain `.btn-primary` (orange, no
+                         warning signal at all before this) -- `.btn-decision-warning` (outline) now
+                         matches #btnRequestInfoRunHeader's own tone. -->
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                        <button type="submit" class="btn btn-primary"><span data-i18n="approval_confirm_request_info">Confirm</span></button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="submit" class="btn btn-decision-warning"><span data-i18n="approval_confirm_request_info">Confirm</span></button>
                     </div>
                 </form>
             </div>
@@ -1836,7 +1617,7 @@
                         </div>
                     </div>
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                         <button type="submit" class="btn btn-primary"><span data-i18n="action_mark_paid">Mark as Paid</span></button>
                     </div>
                 </form>
@@ -1863,8 +1644,238 @@
                 <div class="modal-body" id="runTimelineModalBody"></div>
                 <div class="modal-footer justify-content-between">
                     <div id="runTimelineModalActions" class="d-flex flex-wrap gap-2"></div>
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2026-09-23, 3e-3b round B1: read-only detail for ONE #tb_run_audit_log row (opened via
+         openAuditLogDetailRd(), detail.js -- entry comes from dt.row($tr).data(), never a live
+         re-fetch). rules.md §9 "modal record-only" -- data-footer="view" same as #runTimelineModal
+         above, no primary action (backend has no edit/delete for an audit row), never opened on top
+         of another modal. -->
+    <div class="modal fade" id="auditLogDetailModal" data-footer="view" tabindex="-1" aria-labelledby="auditLogDetailModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary mb-0" id="auditLogDetailModalLabel" data-i18n="audit_detail_title">Action Detail</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="auditLogDetailModalBody"></div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2026-09-23, B1: read-only roster for #syncNotParticipantBanner above (opened via the
+         syncNotParticipantViewBtn click handler, detail.js -- rows come from the SAME response the
+         banner already holds, never a live re-fetch). rules.md §9 "modal record-only" -- data-footer
+         ="view" same as #auditLogDetailModal above, footer has only [Close], no primary action (this
+         screen has nothing to change -- the fix is on the employee's own Payroll Participation
+         card). Each row is its own link to the employee's profile in a new tab. -->
+    <div class="modal fade" id="syncNotParticipantModal" data-footer="view" tabindex="-1" aria-labelledby="syncNotParticipantModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary mb-0" id="syncNotParticipantModalLabel" data-i18n="sync_not_participant_modal_title">Employees not set as payroll participants</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small mb-3" data-i18n="sync_not_participant_modal_hint">Change this on the Payroll Participation card on the employee's own page.</p>
+                    <div id="syncNotParticipantModalList"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2026-09-16, D2 ("สลิปที่แก้ได้" -- the added-by-hand block works for real): the add/edit
+         form for one manual line, as a nested modal (§1's --z-modal-nested scale, applied by
+         app.js's own stacked-modal handler -- nothing here sets a z-index). This is the ONLY copy
+         of that form in the app: the "Payment Items" tab used to carry it inline and now opens
+         this same modal through the + on its own column heads, exactly like the Calculation
+         Breakdown modal's "Added manually" block does (§0.4 -- markup that appears in 2 places is
+         one partial/one node, never a second copy). Every field below keeps its own id, so every
+         handler that already read them (detail.js's payee picker wiring, the mode toggle, the
+         money input) keeps working unchanged.
+         Footer is built by modalFooterButtonsHtml() on each open (detail.js) -- the primary
+         button's LABEL differs between adding and editing, which is a build-time difference, not
+         a `disabled`/`d-none` one. -->
+    <!-- 2026-09-18, tiny-L6a: this is now the ONE form for editing any line of a run, not just a
+         hand-added one -- the pencil on a calculated row opens it too, and the sections it shows are
+         decided per open from the line's own `source` (rules.md §9, "ฟอร์มเดียวกันที่เปิดได้จาก 2 ที่
+         ขึ้นไป = modal ซ้อน 1 ตัว มาร์กอัปชุดเดียว"). Every field keeps its id, so every handler that
+         already read them keeps working. `data-dirty-guard` opts it into app.js's own generic
+         close-while-dirty confirm (§9): the form is fully prefilled BEFORE .show(), so the baseline
+         that handler takes at `shown.bs.modal` is the real one. -->
+    <div class="modal fade" id="manualLineFormModal" data-footer="form" data-dirty-guard data-dirty-guard-tone="warning" data-bs-backdrop="static" tabindex="-1" aria-labelledby="manualLineFormModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-secondary mb-0" id="manualLineFormModalLabel" data-i18n="manual_line_form_add_earning">Add additional pay</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body form-compact">
+                    <!-- A refused save says why HERE and leaves the form open (the modal is where the
+                         values that were refused still are) -- calloutHtml(msg, 'danger'), §15. -->
+                    <div id="manualLineFormError" class="d-none"></div>
+                    <!-- Outside `.manual-line-form` on purpose: that block's own spacing rules key
+                         off its FIRST CHILD, and a hidden input sitting in that slot would push the
+                         first visible row down by one gap. -->
+                    <input type="hidden" id="manualLineCustomType" value="earning">
+                    <div id="manualLineFormFields" class="manual-line-form">
+                    <!-- 2026-09-17, R1b: the 3-mode segmented picker (From List / Custom Item /
+                         Other) is gone. "Which item is this" was being asked twice -- once as a mode,
+                         then again as the field the mode revealed -- and 2 of the 3 modes led to the
+                         same single text box. It is now ONE select: the catalog rows for the column
+                         that was pressed, plus a pinned last option ("Other (enter a name)") under a
+                         divider. Picking that one reveals the name box below and nothing else; the
+                         old `other` mode has no way in from the UI any more (the enum still exists
+                         server-side, unused-from-here like `not_disbursed`).
+                         See docs/decisions/2026-09-17-manual-line-item-picker.md. -->
+                    <div class="row g-2 align-items-end manual-line-form-row">
+                        <!-- The catalog picker filters itself to the chosen type through the
+                             `data-type` attribute this endpoint already honours (input.js re-reads it
+                             on every search, see its own docblock) -- the same wiring #eedModal's own
+                             catalog picker uses. Its label no longer swaps per type: the modal title
+                             ("Add additional pay"/"Add deduction") already says which side this is. -->
+                        <!-- 2026-09-18, tiny-L6a: hidden for a calculated line -- which item it is
+                             was answered by the row whose pencil was pressed, and the header says so.
+                             The amount column then takes the whole row rather than sitting as a
+                             third of one with nothing beside it. -->
+                        <div class="col-lg-8" id="manualLineItemCol">
+                            <label class="form-label" for="manualLineItemSelect" data-i18n="manual_line_item_label">Item</label>
+                            <select class="form-select select2-remote" id="manualLineItemSelect" data-api="/api/employee.earning-deduction.options" data-type="earning"></select>
+                        </div>
+                        <div class="col-lg-4" id="manualLineAmountCol">
+                            <label class="form-label" for="manualLineAmount" data-i18n="modal_amount">Amount</label>
+                            <!-- 8: money-input + initMoneyInputs() (comma/2-decimal on blur, raw
+                                 value mirrored to data-raw-value) instead of a bare number
+                                 field -- read back through parseMoneyInput() in detail.js. -->
+                            <input type="text" class="form-control money-input" id="manualLineAmount" inputmode="decimal" placeholder="0.00">
+                            <!-- The figure the engine itself produced, as context under the field
+                                 that replaces it (rules.md §9: ค่าระบบเป็น context, ค่าจริงคือตัวที่อ่าน).
+                                 Absent entirely when this line has no recorded calculated value. -->
+                            <p class="manual-line-field-hint d-none" id="manualLineComputedHint"></p>
+                        </div>
+                    </div>
+                    <!-- Only reachable by picking the pinned "Other" option above, and full-width on
+                         its own row rather than swapped into the picker's column: the picker stays
+                         visible so the choice that opened this box can be changed back. -->
+                    <div class="row g-2 d-none" id="manualLineCustomFields">
+                        <div class="col-12">
+                            <label class="form-label" for="manualLineCustomName" data-i18n="modal_custom_item_name">Item Name</label>
+                            <input type="text" class="form-control" id="manualLineCustomName" maxlength="150" data-i18n="modal_custom_item_name_placeholder" placeholder="e.g. Uniform deposit refund">
+                        </div>
+                    </div>
+                    <div class="row g-2 manual-line-note-row">
+                        <div class="col-12">
+                            <label class="form-label" for="manualLineComment" data-i18n="modal_comment">Comment</label>
+                            <textarea class="form-control" id="manualLineComment" rows="2" maxlength="255" data-i18n="modal_comment_placeholder" placeholder="e.g. August OT shortfall top-up"></textarea>
+                        </div>
+                    </div>
+                    <!-- Transfer-to-payee (2026-08-21) -- only meaningful when the item being
+                         added is a deduction, toggled by syncManualLineTypeDependentsRd() in
+                         detail.js.
+                         The choice is a segmented control (the confirmed "segmented that is a
+                         form's primary choice" exception in rules.md 4 -- selected one is
+                         `.btn-primary`), with one gray line under it saying what the chosen
+                         routing actually DOES, and every per-choice sub-form indented inside
+                         ONE callout block so it reads as belonging to the chosen option. -->
+                    <div class="manual-line-payee-block d-none" id="manualLinePayeeTypeWrapper">
+                        <!-- 2026-09-16: the choice is 3 destinations (what happens to the
+                             money) with one sub-question under the first, not a flat list of
+                             payee_type values -- shared markup/behaviour with the other 3
+                             payee pickers, see partials/payee-destination.php and
+                             docs/decisions/2026-09-16-payee-three-destinations.md.
+                             The 3 sub-forms below are this tab's own (they keep their ids,
+                             and the component only shows/hides them). -->
+                        <?php ob_start(); ?>
+                            <div class="d-none" id="manualLinePayeeWrapper">
+                                <label class="form-label" for="manualLinePayeeEmployee" data-i18n="payee_employee_label">Payee Employee (transfer to)</label>
+                                <select class="form-select select2-remote" id="manualLinePayeeEmployee" data-api="/api/employee.report_to.get" data-type="employee"></select>
+                                <div id="manualLinePayeeEmployeeDetail"></div>
+                            </div>
+                            <!-- 2026-09-10, Batch 3B item 3: level-2 for payee_type='company'. -->
+                            <div class="d-none" id="manualLineCompanyAccountWrapper">
+                                <label class="form-label" for="manualLineBankAccount" data-i18n="payee_bank_account_label">Company Bank Account</label>
+                                <select class="form-select select2-remote" id="manualLineBankAccount" data-api="/api/payroll-cycle.bank-account.options" data-placeholder-key="payee_record_no"></select>
+                                <div id="manualLineBankAccountDetail"></div>
+                            </div>
+                            <!-- 2026-09-02, Deduction Destination and Third-Party Remittance.
+                                 2026-09-15: the old "pick a saved one OR leave blank and fill
+                                 the fields below" pairing is now an explicit 2-way segmented
+                                 choice -- the two paths were never meant to be filled at the
+                                 same time. The saved half disappears entirely (with a gray
+                                 line in its place) for a company that has none yet. -->
+                            <div class="d-none" id="manualLineDestinationWrapper">
+                                <!-- 2026-09-15: with nothing saved yet there is no choice to
+                                     offer, so the whole segmented row (and the "none saved"
+                                     line that used to stand in for it) is absent and the
+                                     new-destination form is simply what this block IS. -->
+                                <div class="segmented d-none" id="manualLineDestModeToggle">
+                                    <input type="radio" name="manualLineDestMode" id="manualLineDestModeSaved" value="saved" checked>
+                                    <label for="manualLineDestModeSaved" data-i18n="destination_mode_saved">Choose a saved destination</label>
+                                    <input type="radio" name="manualLineDestMode" id="manualLineDestModeNew" value="new">
+                                    <label for="manualLineDestModeNew" data-i18n="destination_mode_new">Enter a new one</label>
+                                </div>
+                                <div id="manualLineDestSavedFields">
+                                    <label class="form-label" for="manualLineDestinationSelect" data-i18n="destination_saved_pick_label">Saved destination</label>
+                                    <select class="form-select select2-remote" id="manualLineDestinationSelect" data-api="/api/payment-destination.options" data-type="payment_destination" allow-clear="true"></select>
+                                    <div id="manualLineDestinationDetail"></div>
+                                </div>
+                                <div class="d-none" id="manualLineDestinationNewFields">
+                                    <div class="row g-2">
+                                        <div class="col-sm-6">
+                                            <label class="form-label" for="manualLineDestAccountName" data-i18n="destination_account_name">Account Name</label>
+                                            <input type="text" class="form-control" id="manualLineDestAccountName" data-i18n="destination_account_name_placeholder" placeholder="e.g., Somchai Jaidee">
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <label class="form-label" for="manualLineDestAccountNo" data-i18n="destination_account_no">Account No.</label>
+                                            <input type="text" class="form-control" id="manualLineDestAccountNo" data-i18n="destination_account_no_placeholder" placeholder="e.g., 1234567890">
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <label class="form-label" for="manualLineDestBank" data-i18n="destination_bank">Bank</label>
+                                            <select class="form-select select2-remote" id="manualLineDestBank" data-api="/api/bank.get" data-type="bank"></select>
+                                        </div>
+                                        <div class="col-sm-6">
+                                            <label class="form-label" for="manualLineDestBankBranch" data-i18n="destination_bank_branch">Branch</label>
+                                            <input type="text" class="form-control" id="manualLineDestBankBranch" data-i18n="destination_bank_branch_placeholder" placeholder="e.g., Central World Branch">
+                                        </div>
+                                        <div class="col-12">
+                                            <div class="form-check">
+                                                <input type="checkbox" class="form-check-input" id="manualLineDestSaveForReuse">
+                                                <label class="form-check-label" for="manualLineDestSaveForReuse" data-i18n="destination_save_for_reuse">Save this destination for reuse next time</label>
+                                            </div>
+                                            <p class="manual-line-field-hint" data-i18n="destination_save_for_reuse_hint">Saved destinations are shared across the whole company; any employee can pick them.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php
+                        $payee_slot = ob_get_clean();
+                        $payee_prefix = 'manualLine';
+                        include __DIR__ . '/../partials/payee-destination.php';
+                        ?>
+                    </div>
+                    <!-- 2026-09-18, tiny-L6a: a standing per-installment assignment's destination
+                         belongs to the assignment itself and is changed on Employee Detail, not per
+                         run -- there is no per-run override table for it. So it is stated here, in
+                         the same descriptor every other surface uses, with the link to where it CAN
+                         be changed, instead of a control that would not write anywhere. -->
+                    <div class="manual-line-payee-block d-none" id="manualLinePayeeReadonly">
+                        <label class="form-label payee-dest-label" data-i18n="payee_type_label">Send deducted amount to</label>
+                        <p class="payee-dest-desc" id="manualLinePayeeReadonlyText"></p>
+                        <a href="#" target="_blank" rel="noopener" id="manualLinePayeeReadonlyLink" class="btn btn-link p-0" data-i18n="line_form_payee_open_employee">Change it on the employee's own page</a>
+                    </div>
+                    </div>
+                </div>
+                <div class="modal-footer" id="manualLineFormFooter"></div>
             </div>
         </div>
     </div>

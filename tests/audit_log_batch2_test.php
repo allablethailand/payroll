@@ -297,9 +297,9 @@ try {
         checkTrue('ApprovalWorkflow delete: logged as a status->deleted update row', count($wfDeleteRows) > 0);
     }
 
-    echo "\n=== SUMMARY: {$passes} passed, {$failures} failed ===\n";
 } finally {
     $pdo->rollBack();
 }
 
+echo "\nPassed: {$passes}, Failed: {$failures}\n";
 exit($failures > 0 ? 1 : 0);

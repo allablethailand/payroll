@@ -168,8 +168,9 @@ function frequencyLabelPr(freq) {
    bug: a static per-step label that never reflected done-vs-current-vs-not-yet). This widget calls
    it with `showDates:false` (confirmed with the user -- this column already sits next to its own
    "Last Updated" date, no need for a 2nd date under every dot) -- row.cancelled_from_state
-   (PayrollRunModel::list()'s own subquery column) is read directly by runLifecycleSteps() itself
-   as the fallback when a row has no full audit_log (list() rows never do, only get() does). */
+   (PayrollRunModel::list()'s own subquery column) is read directly by runLifecycleSteps() itself;
+   tiny round B (2026-09-24) gave `.get()` the same column and dropped its own full audit_log, so
+   this is now the only source either page reads, not a list()-only fallback anymore. */
 // Quick shortcut buttons (2026-08-22) -- deliberately only for a zero-extra-input transition:
 // Submit (draft) and Lock (paid) both call the EXACT SAME existing endpoints detail.js already
 // uses, no new backend/business logic at all. pending_approval has no shortcut here on purpose --
@@ -339,15 +340,23 @@ function renderRunErrorEmployeesModal(rows) {
     if (!rows.length) {
         return `<p class="text-muted mb-0">${langData['no_data_found'] || 'No data found.'}</p>`;
     }
-    const items = rows.map(r => {
+    // 2026-09-21, 3e-2b: the reasons are SENTENCES now, from format-helpers.js's own
+    // calcErrorItemsRd() -- the very same helper the Detail page's slip callouts and Calculation-
+    // column popovers use, so the same row reads identically wherever it is opened (rules.md §5.2:
+    // a machine code is never text on screen; it rides along in `data-code` so it stays findable
+    // when someone reports a row). Blocking codes only: this modal exists to answer "why does this
+    // run say N employees are incomplete", and an advisory note is not one of those reasons.
+    // One person = one block separated by a rule, not a bordered card each (§0.3 -- the border said
+    // nothing the separator does not).
+    const items = rows.map((r, i) => {
         const name = currentLang === 'th'
             ? escapeHtml(`${r.name_th || ''} ${r.surname_th || ''}`.trim())
             : escapeHtml(`${r.name_en || r.name_th || ''} ${r.surname_en || r.surname_th || ''}`.trim());
-        const errors = (r.calc_errors || '').split(',').map(s => s.trim()).filter(Boolean);
-        const errorList = errors.length
-            ? `<ul class="mb-0 ps-3 small text-danger">${errors.map(e => `<li>${escapeHtml(e)}</li>`).join('')}</ul>`
+        const blocking = calcErrorItemsRd(r.calc_blocking);
+        const errorList = blocking.length
+            ? `<ul class="mb-0 ps-3 small">${blocking.map(it => `<li data-code="${escapeAttr(it.code)}">${escapeHtml(it.message)}</li>`).join('')}</ul>`
             : `<span class="small text-muted">${langData['no_details'] || 'No further details.'}</span>`;
-        return `<div class="border rounded-3 p-2 mb-2">
+        return `<div class="run-error-employee${i === rows.length - 1 ? ' run-error-employee-last' : ''}">
             <div class="fw-semibold">${escapeHtml(r.employee_no)} - ${name}</div>
             ${errorList}
         </div>`;
@@ -389,7 +398,7 @@ $(document).on('click', '.btn-view-run-errors', function (e) {
 // eye icon, the only other action already pointing at the Detail page for a non-draft run) now
 // doubles as the "export report" shortcut for every non-draft state -- icon swaps to a download
 // icon and the link's own hash targets the Detail page's Reports tab id directly
-// (payroll/detail.js's activateTabFromHash(), same mechanism a manual tab click + refresh
+// (app.js's shared activateTabFromHash(), same mechanism a manual tab click + refresh
 // persists through). Not gated to only approved/paid/locked here -- the Reports tab itself always
 // shows its row set now (2026-08-29 "แต่ยังกดไม่ได้" fix, see loadRunReportsTab()'s own docblock),
 // just with actions disabled until ready, so landing there early is a feature, not a dead end.
@@ -582,8 +591,14 @@ function initPayrollRunTable() {
                     const mainLine = preApprovalStates.includes(row.state)
                         ? escapeHtml(`${langData['verify_status_verified'] || 'Verified'} ${verified}/${total}`)
                         : escapeHtml(String(total));
+                    // 2026-09-21, 3e-2b: the pill goes through the shared countBadgeHtml() (§5) with
+                    // a `{n}` label instead of a badge span written out by hand here -- it stands
+                    // alone in this cell, so the bare number would not say what it counts, and the
+                    // 2 icons it used to wear said nothing the words do not (§0.3). Still the same
+                    // `<button>`, same id-less `.btn-view-run-errors` + `data-id` handler as before.
+                    const errorLabel = langData['run_error_employee_count'] || '{n} with errors';
                     const errorHtml = errors
-                        ? `<div class="mt-1"><button type="button" class="badge rounded-pill bg-danger-subtle text-danger border-0 btn-view-run-errors" data-id="${row.id}" title="${langData['incomplete_data'] || 'Incomplete data'}"><i class="fa-solid fa-triangle-exclamation me-1"></i>${errors}<i class="fa-solid fa-circle-info ms-1"></i></button></div>`
+                        ? `<div class="mt-1"><button type="button" class="btn btn-link p-0 border-0 align-baseline btn-view-run-errors" data-id="${row.id}" title="${escapeAttr(langData['incomplete_data'] || 'Incomplete data')}">${countBadgeHtml(errors, { tone: 'danger', label: errorLabel })}</button></div>`
                         : '';
                     return `<div class="fw-semibold">${mainLine}</div>${errorHtml}`;
                 },
@@ -1312,7 +1327,7 @@ function renderSyncDetail(data) {
 
 // 2026-08-29, same-day follow-up: "อยากให้เลือก Station ไหนอยู่ ถ้า Refresh แล้ว ให้อยู่ Station เดิม" --
 // persisted the exact same way Process Detail's own active-tab persistence works (URL hash +
-// history.replaceState, see payroll/detail.js's own activateTabFromHash()/shown.bs.tab handler) so
+// history.replaceState, see app.js's shared activateTabFromHash()/shown.bs.tab handler) so
 // a browser refresh keeps whichever station card was selected instead of always resetting to Draft.
 function showStation(state, opts) {
     currentStation = state;

@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/EmployeeModel.php';
+require_once __DIR__ . '/PayeeDescriptorTrait.php';
 require_once __DIR__ . '/../services/StatutoryCalculationEngine.php';
 require_once __DIR__ . '/../services/ThPitCalculator.php';
 require_once __DIR__ . '/../services/SyncPayResolver.php';
@@ -37,6 +38,8 @@ require_once __DIR__ . '/PvdEmployerRateLadderModel.php';
  * state and never need a permission check.
  */
 class PayrollRunModel {
+    use PayeeDescriptorTrait;
+
     private PDO $db;
     private StatutoryCalculationEngine $engine;
     private ThPitCalculator $thPitCalculator;
@@ -290,6 +293,13 @@ class PayrollRunModel {
                     -- payment counts (already derivable from `r.details`' own payment_method_code
                     -- per employee, no new field needed there), remittances live in their own table
                     -- with nothing reachable from getDetails() at all, so this needs a real count.
+                    -- 2026-09-24, tiny round B: same subquery list() already carries at :142 (now
+                    -- shifted further down by this round's own additions) -- runLifecycleCancelledFromState()
+                    -- (app.js) falls back to this column when `run.audit_log`'s own last 'cancel'
+                    -- entry isn't available; `.get()` never selected it before, only `list()` did,
+                    -- a real gap this round's own S6/B2 investigation found (dormant today since
+                    -- `.get()` still carries `audit_log` in full, unchanged this round).
+                    (SELECT from_state FROM `payroll_run_audit_logs` WHERE run_id = r.id AND action = 'cancel' ORDER BY id DESC LIMIT 1) AS cancelled_from_state,
                     (SELECT COUNT(*) FROM `payroll_remittances` pr WHERE pr.run_id = r.id) AS remittance_count
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
@@ -366,6 +376,26 @@ class PayrollRunModel {
                     (SELECT COUNT(*) FROM `payroll_run_manual_lines` pml WHERE pml.run_id = d.run_id AND pml.employee_id = d.employee_id) AS manual_line_count,
                     (SELECT 1 FROM `payroll_run_employee_exemptions` ex WHERE ex.run_id = d.run_id AND ex.employee_id = d.employee_id
                         AND (ex.tax_calculate_override != 'inherit' OR ex.sso_calculate_override != 'inherit') LIMIT 1) AS has_calc_override,
+                    -- 2026-09-16: one count for EVERY per-employee adjustment this run can carry
+                    -- for this employee, across all 5 tables below -- shown as the count badge on the
+                    -- row. 2026-09-17 (D3): the badge moved from the settings modal's own button to
+                    -- the Calculation Breakdown one, which is where the first 2 of these tables are
+                    -- edited now; the figure itself is unchanged. line_override_count/manual_line_count
+                    -- above stay as they are (employeeAdjustments()'s viewer still lists those 2
+                    -- specifically); this is the wider was-this-employee-touched-at-all figure.
+                    -- payroll_run_item_exclusions is deliberately NOT part of it: that table is
+                    -- keyed by run+item_code with no employee_id at all (a run-wide setting), so it
+                    -- cannot be attributed to one employee.
+                    (
+                        (SELECT COUNT(*) FROM `payroll_run_manual_lines` aml WHERE aml.run_id = d.run_id AND aml.employee_id = d.employee_id)
+                        + (SELECT COUNT(*) FROM `payroll_run_line_overrides` alo WHERE alo.run_id = d.run_id AND alo.employee_id = d.employee_id)
+                        + (SELECT COUNT(*) FROM `payroll_run_sync_item_overrides` aso WHERE aso.run_id = d.run_id AND aso.employee_id = d.employee_id)
+                        + (SELECT COUNT(*) FROM `payroll_run_recurring_deduction_overrides` ardo
+                            JOIN `employee_recurring_deductions` erd ON erd.id = ardo.recurring_id
+                            WHERE ardo.run_id = d.run_id AND erd.employee_id = d.employee_id)
+                        + (SELECT COUNT(*) FROM `payroll_run_employee_exemptions` aex WHERE aex.run_id = d.run_id AND aex.employee_id = d.employee_id
+                            AND (aex.exempt_tax = 1 OR aex.exempt_sso = 1 OR aex.tax_calculate_override != 'inherit' OR aex.sso_calculate_override != 'inherit'))
+                    ) AS adjustment_count,
                     -- 2026-08-29, explicit follow-up request: base salary excluded should show as a
                     -- red 'not calculated' label instead of 0 in the employee table -- effective
                     -- exclusion state for base salary specifically, same per-employee-override-wins-
@@ -416,6 +446,14 @@ class PayrollRunModel {
             $row['line_override_count'] = (int)$row['line_override_count'];
             $row['manual_line_count'] = (int)$row['manual_line_count'];
             $row['has_calc_override'] = !empty($row['has_calc_override']);
+            $row['adjustment_count'] = (int)$row['adjustment_count'];
+            // 2026-09-16: calc_errors stays exactly as stored; these 2 are the same string split by
+            // ADVISORY_CALC_ERROR_CODES/_PREFIXES so the table can show advisory notes as a
+            // "N คำเตือน" badge and blocking ones as the red 'error' state, without every reader
+            // re-deriving which is which.
+            $split = self::splitCalcErrors($row['calc_errors'] ?? null);
+            $row['calc_warnings'] = $split['warnings'];
+            $row['calc_blocking'] = $split['blocking'];
             // 2026-09-10, real gap found and fixed (confirmed business rule): this used to check
             // only the per-employee override + Run Settings item-exclusion -- it had NO awareness
             // at all of an incentive run's own include_base_salary=0 toggle, which zeroes
@@ -438,6 +476,29 @@ class PayrollRunModel {
             unset($row['base_salary_override_action'], $row['run_excludes_base_salary']);
             $row['total_days'] = $totalDaysByEmployee[(int)$row['employee_id']] ?? null;
         }
+        unset($row);
+        // 2026-09-18, tiny-L4: every earning/deduction line gains the ONE payee descriptor
+        // (enrichLinePayee()), so the read-only slip stops re-branching on the 4 raw payee columns
+        // and stops printing a bare employee_no where a name + account belongs. Enrichment only --
+        // the persisted JSON itself is never rewritten. Statutory lines are skipped: they have no
+        // payee concept at all. ONE lookup for the whole run (payeeLookupForLines()), built from
+        // every line of every employee at once, so this page's query count does not grow with it.
+        $allLineGroups = [];
+        foreach ($rows as $row) {
+            $allLineGroups[] = $row['earning_breakdown'];
+            $allLineGroups[] = $row['deduction_breakdown'];
+        }
+        $payeeLookup = $this->payeeLookupForLines($compId, $allLineGroups);
+        foreach ($rows as &$row) {
+            foreach (['earning_breakdown', 'deduction_breakdown'] as $field) {
+                foreach ($row[$field] as $i => $line) {
+                    if (is_array($line)) {
+                        $row[$field][$i] = $this->enrichLineInstallment($this->enrichLinePayee($line, $payeeLookup), $payeeLookup);
+                    }
+                }
+            }
+        }
+        unset($row);
         return $rows;
     }
 
@@ -452,29 +513,113 @@ class PayrollRunModel {
      * anything) -- returns who's missing so an admin at cutoff can tell "Origami hasn't sent
      * everyone yet" apart from "this really is everyone this period" before submitting for approval.
      * Returns [] for any run that isn't sync-based (nothing to reconcile against for a cycle-based
-     * or off-cycle run, whose membership rules are different).
-     * @return array<int,array{id:int,employee_no:string,name_th:string,surname_th:string,name_en:string,surname_en:string}>
+     * or off-cycle run, whose membership rules are different) and, since 2026-09-22, for any run
+     * whose run_purpose isn't 'payroll' -- see syncMissingEmployeeWhere() below, which owns both
+     * of those rules and the WHERE itself now.
+     * @return array<int,array{id:int,employee_no:string,name_th:string,surname_th:string,name_en:string,surname_en:string,profile_photo_path:?string,profile_photo_thumbnail_path:?string}>
      */
     public function syncMissingEmployees(int $runId, int $compId): array {
         $run = $this->get($runId, $compId);
-        if (!$run || $run['sync_process_id'] === null) {
+        [$where, $params] = $this->syncMissingEmployeeWhere($run ?: [], $runId, $compId);
+        if ($where === null) {
             return [];
         }
-        $stmt = $this->db->prepare("SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en
+        // profile_photo_path/_thumbnail_path are read-only additions (2026-09-22, tiny-1) so the
+        // caller can render the same avatar every other employee list on this page already does
+        // (apvPersonLineHtml) instead of a bare code+name line.
+        $stmt = $this->db->prepare("SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en,
+                e.profile_photo_path, e.profile_photo_thumbnail_path
             FROM `employees` e
-            WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 1
+            WHERE {$where}
+            ORDER BY e.employee_no ASC");
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
+     * The ONE definition of "should have been in this run but isn't" (2026-09-22, tiny-1) -- the
+     * WHERE fragment + params, so syncMissingEmployees() above and the Join Employees picker's own
+     * `missing_only` mode (buildManualEmployeeWhere()) can never drift apart. Returns [null, []]
+     * when this run has no such list at all, which the callers turn into "no rows":
+     *  - no sync_process_id: nothing to reconcile against (a cycle-based/off-cycle run's membership
+     *    rules are different), same early return this method has always had.
+     *  - run_purpose !== 'payroll' (2026-09-22): an incentive/off-cycle-purpose run's membership is
+     *    whatever items were actually sent/picked for it -- there is no set of employees who
+     *    "should" be in a ค่าเที่ยว round, so the whole question is meaningless there. Before this,
+     *    run 29685 (incentive, 3 sync items) claimed 25 employees were missing: every payroll
+     *    participant in the company who simply had no trip allowance that month.
+     * The `e.cycle_id IS NULL OR e.cycle_id = :cycle_id` branch deliberately MIRRORS
+     * recalculate()'s own cycle-branch eligibility query (see its long comment at the
+     * `$stmtEmp = ...` in the `elseif ($run['cycle_id'] !== null)` branch): an employee with no
+     * standing cycle is eligible for every cycle's run, so they genuinely can be missing from one.
+     * The two must change together -- a stricter rule here would hide exactly the employees
+     * recalculate() would have paid.
+     * @return array{0:?string,1:array<string,mixed>}
+     */
+    private function syncMissingEmployeeWhere(array $run, int $runId, int $compId): array {
+        if (empty($run) || $run['sync_process_id'] === null || ($run['run_purpose'] ?? 'payroll') !== 'payroll') {
+            return [null, []];
+        }
+        $where = "e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 1
             AND e.employment_date <= :period_end
             AND (e.employment_end_date IS NULL OR e.employment_end_date >= :period_start)
             AND (e.cycle_id IS NULL OR e.cycle_id = :cycle_id)
             AND NOT EXISTS (SELECT 1 FROM `payroll_sync_items` psi WHERE psi.process_id = :process_id AND psi.employee_id = e.id AND psi.mapping_status = 'mapped')
             AND NOT EXISTS (SELECT 1 FROM `payroll_run_manual_employees` pme WHERE pme.run_id = :run_id AND pme.employee_id = e.id)
-            AND NOT EXISTS (SELECT 1 FROM `payroll_run_excluded_employees` pex WHERE pex.run_id = :run_id2 AND pex.employee_id = e.id)
-            ORDER BY e.employee_no ASC");
-        $stmt->execute([
+            AND NOT EXISTS (SELECT 1 FROM `payroll_run_excluded_employees` pex WHERE pex.run_id = :run_id2 AND pex.employee_id = e.id)";
+        return [$where, [
             ':comp_id' => $compId, ':period_end' => $run['period_end_date'], ':period_start' => $run['period_start_date'],
             ':cycle_id' => $run['cycle_id'], ':process_id' => $run['sync_process_id'],
             ':run_id' => $runId, ':run_id2' => $runId,
-        ]);
+        ]];
+    }
+
+    /**
+     * The OTHER half of the same reconciliation question (2026-09-22, tiny-1): how many employees
+     * Origami DID send in this run's sync payload but who never reached the run because they are
+     * marked is_payroll_participant = 0. syncMissingEmployees() above can never surface these --
+     * it excludes anyone present in the payload by definition -- so without this count a mapped
+     * employee silently dropped by the unpaid-staff filter is invisible everywhere in the app.
+     * Deliberately NOT behind the run_purpose gate: "the payload contained someone we did not
+     * calculate" is a real fact about the sync regardless of what the run is for. 0 when the run
+     * isn't sync-based at all.
+     */
+    public function syncMappedNotParticipantCount(int $runId, int $compId): int {
+        $run = $this->get($runId, $compId);
+        if (!$run || $run['sync_process_id'] === null) {
+            return 0;
+        }
+        $stmt = $this->db->prepare("SELECT COUNT(DISTINCT e.id)
+            FROM `employees` e
+            JOIN `payroll_sync_items` psi ON psi.employee_id = e.id AND psi.process_id = :process_id AND psi.mapping_status = 'mapped'
+            WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 0");
+        $stmt->execute([':process_id' => $run['sync_process_id'], ':comp_id' => $compId]);
+        return (int)$stmt->fetchColumn();
+    }
+
+    /**
+     * The row-level counterpart to syncMappedNotParticipantCount() above (2026-09-23, tiny sync-
+     * not-participant list) -- same FROM/JOIN/WHERE, but returns who they are instead of how many.
+     * Uses the same key names as syncMissingEmployees()'s own `data` shape (id/employee_no/name_th/
+     * surname_th/name_en/surname_en) so a future UI can render both lists with one row template.
+     * `id` is the raw employees.id, unencoded, matching that same `data` shape -- IdCodec is only
+     * ever used for the run's own route id (see PayrollController::detail()), never an employee id.
+     * A new method rather than widening the count query: the count is a scalar a banner already
+     * consumes as an int, and this list has its own consumer coming later -- keeping them apart
+     * means neither one's contract can break the other's caller.
+     * Takes $processId directly (not $runId) because what this answers is "who did this sync
+     * payload mention", which is a property of the process, not of any one run built from it -- the
+     * caller resolves sync_process_id from the run first, same as syncMappedNotParticipantCount()
+     * does internally. No run_purpose/state gate, matching that method exactly.
+     * @return array<int,array{id:int,employee_no:string,name_th:string,surname_th:string,name_en:string,surname_en:string}>
+     */
+    public function syncMappedNotParticipants(int $processId, int $compId): array {
+        $stmt = $this->db->prepare("SELECT DISTINCT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en
+            FROM `employees` e
+            JOIN `payroll_sync_items` psi ON psi.employee_id = e.id AND psi.process_id = :process_id AND psi.mapping_status = 'mapped'
+            WHERE e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 0
+            ORDER BY e.employee_no ASC");
+        $stmt->execute([':process_id' => $processId, ':comp_id' => $compId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
@@ -513,6 +658,12 @@ class PayrollRunModel {
      * separate, narrow, on-demand lookup (not part of list()'s own per-row query) so viewing the
      * whole List doesn't have to fetch every erroring employee for every run up front -- only the
      * one run the admin actually clicked "i" on.
+     *
+     * 2026-09-21, 3e-2b: each row now also carries `calc_blocking`/`calc_warnings`, split by the SAME
+     * splitCalcErrors() getDetails() uses for the Detail page's own table -- so the List's modal
+     * shows the blocking reasons only, and shows them through the same client-side sentence table
+     * (calcErrorItemsRd) the Detail page renders, instead of printing the raw codes. `calc_errors`
+     * stays exactly as it was: it is the raw audit value, and nothing that reads it had to change.
      */
     public function errorEmployeesForRun(int $runId, int $compId): array {
         if (!$this->get($runId, $compId)) {
@@ -525,7 +676,14 @@ class PayrollRunModel {
                 ORDER BY e.employee_no ASC";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':run_id' => $runId]);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        foreach ($rows as &$row) {
+            $split = self::splitCalcErrors($row['calc_errors'] ?? null);
+            $row['calc_blocking'] = $split['blocking'];
+            $row['calc_warnings'] = $split['warnings'];
+        }
+        unset($row);
+        return $rows;
     }
 
     /**
@@ -603,6 +761,187 @@ class PayrollRunModel {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
+    /** Column index -> real SQL column whitelist for auditLogList()'s ORDER BY, same shape as
+     *  EmployeeLoginLogModel::listForCompany()'s own `$sortColumns` (:331) -- an out-of-whitelist
+     *  index is simply absent from this array, never reaches raw SQL. Actor (index 1) sorts by the
+     *  bilingual name column matching the caller's own language, same resolution
+     *  manualEmployeeFilterExprMap() already uses elsewhere in this class ($lang param). Note
+     *  (index 4) and the view-detail button (index 6) are intentionally absent -- not orderable
+     *  client-side either (detail.js:4271,4283). */
+    private function auditLogSortColumns(string $lang): array {
+        return [
+            0 => 'a.performed_at',
+            1 => ($lang === 'en' ? 'e.name_en' : 'e.name_th'),
+            2 => 'a.action',
+            3 => 'a.to_state',
+            5 => 'a.ip_address',
+        ];
+    }
+
+    /** column_filters key -> real SQL column whitelist, tiny round B -- `audit_action`/`audit_state`
+     *  deliberately map to the RAW enum columns (never a translated label): no server-side Thai
+     *  i18n mechanism exists in this app (statusEnLabelFallback(), helpers.php:251-259, loads
+     *  en.json only, by deliberate design -- see this round's own S1/S2 notes), and this matches
+     *  the same raw-value convention AuditLogModel::list()/audit-log.js's own auditLogActionBadge()
+     *  already use for the unrelated generic audit_logs viewer. `audit_device_ip` maps to
+     *  ip_address only, matching the Excel filter's own actual filter value (detail.js:4277), not
+     *  the combined device+IP display cell -- user_agent is never filterable through this key. */
+    private function auditLogFilterColumns(string $lang): array {
+        return [
+            'audit_performed_by' => ($lang === 'en' ? 'e.name_en' : 'e.name_th'),
+            'audit_action' => 'a.action',
+            'audit_state' => 'a.to_state',
+            'audit_device_ip' => 'a.ip_address',
+        ];
+    }
+
+    /** ServerSide DataTable source for #tb_run_audit_log (tiny round B) -- same row shape/exclusion
+     *  as getAuditLog() above (unmodified -- still called directly by tests/other PHP consumers,
+     *  just no longer folded into `.get()`'s own response as of this same round), just paginated/
+     *  sorted/filtered server-side. Caller (PayrollController::auditLogList()) has already confirmed the run exists
+     *  in this company before calling here, same guard getAuditLog() itself does at :740. This
+     *  method never writes to `payroll_run_audit_logs` -- a read of the audit trail must never
+     *  itself become an entry in it (unlike page navigation elsewhere, which does log a
+     *  'view_detail' row -- deliberately not replicated here, this is a paging/filter API, not a
+     *  page view). */
+    public function getAuditLogPaged(int $runId, int $compId, int $start, int $length, string $search, int $colIndex, string $orderDir, string $lang, array $filters, array $columnFilters): array {
+        // Same comp-scope guard getAuditLog() itself uses at :740-742 -- kept here too (not just in
+        // the controller) so this method stays safe to call directly, same self-contained contract
+        // getAuditLog() already has.
+        if (!$this->get($runId, $compId)) {
+            return ['recordsTotal' => 0, 'recordsFiltered' => 0, 'data' => []];
+        }
+        $sortColumns = $this->auditLogSortColumns($lang);
+        $sortColumn = $sortColumns[$colIndex] ?? 'a.performed_at';
+        $orderDir = strtoupper($orderDir) === 'ASC' ? 'ASC' : 'DESC';
+        $filterColumns = $this->auditLogFilterColumns($lang);
+
+        $joins = "FROM `payroll_run_audit_logs` a LEFT JOIN `employees` e ON e.id = a.performed_by";
+        $where = "a.run_id = :run_id AND a.action != 'view_detail'";
+        $params = [':run_id' => $runId];
+
+        $totalStmt = $this->db->prepare("SELECT COUNT(*) {$joins} WHERE {$where}");
+        $totalStmt->execute($params);
+        $recordsTotal = (int)$totalStmt->fetchColumn();
+
+        if (!empty($filters['date_from'])) {
+            $where .= " AND a.performed_at >= :date_from";
+            $params[':date_from'] = $filters['date_from'] . ' 00:00:00';
+        }
+        if (!empty($filters['date_to'])) {
+            // Inclusive of the whole end day: strictly less than the day AFTER date_to, rather than
+            // `<= date_to 23:59:59`, so a `performed_at` with sub-second precision this column
+            // doesn't actually have is never a future footgun (2026-09-24, explicit spec).
+            $where .= " AND a.performed_at < DATE_ADD(:date_to, INTERVAL 1 DAY)";
+            $params[':date_to'] = $filters['date_to'];
+        }
+        if ($search !== '') {
+            $where .= " AND (a.note LIKE :search OR e.name_th LIKE :search OR e.name_en LIKE :search OR a.ip_address LIKE :search)";
+            $params[':search'] = "%{$search}%";
+        }
+        $paramIdx = 0;
+        foreach ($columnFilters as $col => $values) {
+            if (!isset($filterColumns[$col]) || !is_array($values) || empty($values)) {
+                continue;
+            }
+            $values = array_values(array_filter($values, fn($v) => $v !== null && $v !== ''));
+            if (empty($values)) {
+                continue;
+            }
+            $placeholders = [];
+            foreach ($values as $v) {
+                $paramIdx++;
+                $ph = ":cf{$paramIdx}";
+                $placeholders[] = $ph;
+                $params[$ph] = (string)$v;
+            }
+            $where .= " AND {$filterColumns[$col]} IN (" . implode(', ', $placeholders) . ")";
+        }
+
+        $countStmt = $this->db->prepare("SELECT COUNT(*) {$joins} WHERE {$where}");
+        $countStmt->execute($params);
+        $recordsFiltered = (int)$countStmt->fetchColumn();
+
+        // `id` is always the final tie-break (same direction as the primary sort) -- a stable order
+        // across pages regardless of how many rows share the same performed_at/action/to_state/
+        // ip_address value (2026-09-24, explicit spec: "ต้องมี id เป็น tie-break ท้ายทุก order").
+        $dataStmt = $this->db->prepare(
+            "SELECT a.*, e.name_th AS performed_by_name_th, e.name_en AS performed_by_name_en,
+                    e.profile_photo_path AS performed_by_profile_photo_path
+             {$joins} WHERE {$where}
+             ORDER BY {$sortColumn} {$orderDir}, a.id {$orderDir}
+             LIMIT :limit OFFSET :offset"
+        );
+        foreach ($params as $k => $v) {
+            $dataStmt->bindValue($k, $v);
+        }
+        // length === -1 = DataTables' own "All" option (app.js's shared lengthMenu, confirmed in
+        // use app-wide this round, S4) -- no LIMIT at all rather than a magic-number ceiling, since
+        // the worst real run on record (round A, run 752) is ~3,612 rows, not a runaway size.
+        if ($length === -1) {
+            $dataStmt->bindValue(':limit', $recordsFiltered > 0 ? $recordsFiltered : 1, PDO::PARAM_INT);
+            $dataStmt->bindValue(':offset', 0, PDO::PARAM_INT);
+        } else {
+            $dataStmt->bindValue(':limit', $length, PDO::PARAM_INT);
+            $dataStmt->bindValue(':offset', $start, PDO::PARAM_INT);
+        }
+        $dataStmt->execute();
+
+        return ['recordsTotal' => $recordsTotal, 'recordsFiltered' => $recordsFiltered, 'data' => $dataStmt->fetchAll(PDO::FETCH_ASSOC)];
+    }
+
+    /** Distinct-values feed for #tb_run_audit_log's `mode:'server'` Excel column filters, same
+     *  shape/scope-by-other-filters pattern as manualEmployeeColumnValues() (:5230-5244). Raw
+     *  values only (see auditLogFilterColumns()'s own docblock for why `audit_action`/`audit_state`
+     *  are never translated here). */
+    public function auditLogColumnValues(int $runId, int $compId, string $column, string $lang, array $filters, array $columnFilters): array {
+        if (!$this->get($runId, $compId)) {
+            return [];
+        }
+        $filterColumns = $this->auditLogFilterColumns($lang);
+        if (!isset($filterColumns[$column])) {
+            return [];
+        }
+        $expr = $filterColumns[$column];
+        $joins = "FROM `payroll_run_audit_logs` a LEFT JOIN `employees` e ON e.id = a.performed_by";
+        $where = "a.run_id = :run_id AND a.action != 'view_detail'";
+        $params = [':run_id' => $runId];
+
+        if (!empty($filters['date_from'])) {
+            $where .= " AND a.performed_at >= :date_from";
+            $params[':date_from'] = $filters['date_from'] . ' 00:00:00';
+        }
+        if (!empty($filters['date_to'])) {
+            $where .= " AND a.performed_at < DATE_ADD(:date_to, INTERVAL 1 DAY)";
+            $params[':date_to'] = $filters['date_to'];
+        }
+        $paramIdx = 0;
+        foreach ($columnFilters as $col => $values) {
+            if ($col === $column || !isset($filterColumns[$col]) || !is_array($values) || empty($values)) {
+                continue;
+            }
+            $values = array_values(array_filter($values, fn($v) => $v !== null && $v !== ''));
+            if (empty($values)) {
+                continue;
+            }
+            $placeholders = [];
+            foreach ($values as $v) {
+                $paramIdx++;
+                $ph = ":cf{$paramIdx}";
+                $placeholders[] = $ph;
+                $params[$ph] = (string)$v;
+            }
+            $where .= " AND {$filterColumns[$col]} IN (" . implode(', ', $placeholders) . ")";
+        }
+
+        $sql = "SELECT DISTINCT {$expr} AS value {$joins}
+                WHERE {$where} AND {$expr} IS NOT NULL AND {$expr} != ''
+                ORDER BY value ASC LIMIT 500";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return array_column($stmt->fetchAll(PDO::FETCH_ASSOC), 'value');
+    }
+
     /** Raw view_detail rows for a run -- see getAuditLog()'s own docblock for why those are kept
      *  out of that method. Used by the item-10 audit/analysis report, not the Detail page itself. */
     public function getViewLog(int $runId, int $compId): array {
@@ -662,7 +1001,7 @@ class PayrollRunModel {
                     sp.run_kind AS sync_run_kind, sp.process_subject AS sync_process_subject,
                     submitter.name_th AS submitted_by_name_th, submitter.name_en AS submitted_by_name_en,
                     r.submitted_at, r.approved_at, r.paid_at,
-                    (SELECT COUNT(*) FROM `payroll_run_line_override_history` WHERE run_id = r.id) AS edit_count
+                    (SELECT COUNT(*) FROM `payroll_run_line_override_history` WHERE run_id = r.id AND source_type = 'override') AS edit_count
                 FROM `payroll_runs` r
                 LEFT JOIN `payroll_cycles` c ON c.id = r.cycle_id
                 LEFT JOIN `payroll_sync_processes` sp ON sp.id = r.sync_process_id
@@ -711,7 +1050,12 @@ class PayrollRunModel {
         }
         $historyAvailable = (string)$run['period_start_date'] >= self::LINE_OVERRIDE_HISTORY_FEATURE_START_DATE;
 
-        $where = "WHERE h.run_id = :run_id";
+        // 2026-09-19, H-backend: this method answers "what was OVERRIDDEN on this line", which is a
+        // narrower question than what the table now holds. Hand-added lines and the tri-state answer
+        // have their own endpoint (lineHistoryRows()); letting them in here would change both the
+        // Payroll Run Audit report's row list and the Adjustments column's edit count, from a round
+        // that deliberately does not touch the UI.
+        $where = "WHERE h.run_id = :run_id AND h.source_type = 'override'";
         $params = [':run_id' => $runId];
         if ($employeeId !== null) {
             $where .= " AND h.employee_id = :employee_id";
@@ -767,6 +1111,72 @@ class PayrollRunModel {
         unset($g);
 
         return ['history_available' => $historyAvailable, 'lines' => array_values($groups)];
+    }
+
+    /**
+     * 2026-09-19, H-backend: the per-LINE trail, newest first -- one flat list of what happened to
+     * one thing, as opposed to lineOverrideAuditDiff() above, which groups a whole run (or a whole
+     * employee) into ORIGINAL -> edits -> CURRENT chains and only ever looks at overrides. Both read
+     * the same table; neither can answer the other's question, which is why this is a second method
+     * and not a widened first one -- that endpoint's shape and ordering are relied on as they are.
+     *
+     * Addressed either by the line (`line_type` + `item_code`, which is how an override or the
+     * tri-state answer is identified) or by the row (`source_type='manual_line'` + `source_id`,
+     * because two manual lines on one employee can share an item_code). A caller that gives neither
+     * gets everything recorded for that employee on that run, which is what the full-history view
+     * would want.
+     */
+    public function lineHistoryRows(int $runId, int $compId, int $employeeId, ?string $lineType = null, ?string $itemCode = null, ?string $sourceType = null, ?int $sourceId = null): array {
+        if (!$this->get($runId, $compId)) {
+            return [];
+        }
+        $where = "WHERE h.run_id = :run_id AND h.employee_id = :employee_id";
+        $params = [':run_id' => $runId, ':employee_id' => $employeeId];
+        if ($sourceType !== null && $sourceType !== '') {
+            $where .= " AND h.source_type = :source_type";
+            $params[':source_type'] = $sourceType;
+        }
+        if ($sourceId !== null && $sourceId > 0) {
+            $where .= " AND h.source_id = :source_id";
+            $params[':source_id'] = $sourceId;
+        }
+        if ($lineType !== null && $lineType !== '') {
+            $where .= " AND h.line_type = :line_type";
+            $params[':line_type'] = $lineType;
+        }
+        if ($itemCode !== null && $itemCode !== '') {
+            $where .= " AND h.item_code = :item_code";
+            $params[':item_code'] = $itemCode;
+        }
+        // LEFT JOIN, not JOIN: changed_by has no foreign key of its own, and a name that cannot be
+        // resolved must not drop the entry it belongs to.
+        $stmt = $this->db->prepare("SELECT h.id, h.action, h.source_type, h.source_id, h.line_type, h.item_code,
+                h.old_value, h.old_value_text, h.new_value, h.new_value_text, h.note, h.changed_by, h.changed_at,
+                u.name_th AS changed_by_name_th, u.name_en AS changed_by_name_en
+            FROM `payroll_run_line_override_history` h
+            LEFT JOIN `employees` u ON u.id = h.changed_by
+            {$where}
+            ORDER BY h.id DESC");
+        $stmt->execute($params);
+        return array_map(static function (array $r): array {
+            return [
+                'id' => (int)$r['id'],
+                'action' => $r['action'],
+                'source_type' => $r['source_type'],
+                'source_id' => $r['source_id'] !== null ? (int)$r['source_id'] : null,
+                'line_type' => $r['line_type'],
+                'item_code' => $r['item_code'],
+                'old_value' => $r['old_value'] !== null ? (float)$r['old_value'] : null,
+                'new_value' => $r['new_value'] !== null ? (float)$r['new_value'] : null,
+                'old_text' => $r['old_value_text'],
+                'new_text' => $r['new_value_text'],
+                'note' => $r['note'],
+                'changed_by' => (int)$r['changed_by'],
+                'changed_by_name_th' => $r['changed_by_name_th'],
+                'changed_by_name_en' => $r['changed_by_name_en'],
+                'changed_at' => $r['changed_at'],
+            ];
+        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
     }
 
     /* ==================== EMPLOYEE VERIFY / COMMENTS (2026-08-29, Lock retired 2026-08-31) ====================
@@ -909,6 +1319,65 @@ class PayrollRunModel {
     public const BASE_SALARY_OVERRIDE_CODE = '__base_salary__';
 
     /**
+     * 2026-09-16: the advisory/blocking split of `payroll_run_details.calc_errors`, lifted verbatim
+     * out of recalculate()'s own inline exclusion list (where it had lived since 2026-09-02) so BOTH
+     * writers and readers resolve it from one place. Behaviour is unchanged -- same codes, same
+     * prefixes, same resulting calc_status.
+     *
+     * "Advisory" = a note the admin should read and may need to act on, but which must NOT flip
+     * calc_status to 'error' or block submit(): the run still pays out using a documented safe
+     * default. Everything NOT listed here is blocking (missing_base_salary/no_rate_configured/
+     * profile_incomplete/...). Each entry's own reasoning lives at its push site in recalculate().
+     */
+    public const ADVISORY_CALC_ERROR_CODES = [
+        'daily_salary_no_shift_pattern',
+        'salary_type_hourly_not_supported',
+        'hourly_salary_no_attendance_data',
+        'no_attendance_data_this_period',
+        'ot_not_calculated_ineligible',
+        'mixed_payment_lines_mismatch',
+    ];
+    /** Advisory codes that carry a ":value" suffix, so they can never exact-match the list above. */
+    public const ADVISORY_CALC_ERROR_PREFIXES = [
+        'working_days_fallback_with_attendance_deduction:',
+        'transfer_payee_not_in_run:',
+    ];
+
+    public static function isAdvisoryCalcError(string $code): bool
+    {
+        if (in_array($code, self::ADVISORY_CALC_ERROR_CODES, true)) {
+            return true;
+        }
+        foreach (self::ADVISORY_CALC_ERROR_PREFIXES as $prefix) {
+            if (strpos($code, $prefix) === 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Splits a stored `calc_errors` string ("code, code:value, ...") into the 2 lists the Employee
+     * Breakdown table renders separately: `warnings` (advisory, a "N คำเตือน" badge) and `blocking`
+     * (what actually made calc_status 'error'). Raw codes are returned unchanged -- translating them
+     * is the client's job (detail.js's own calcErrorMessageRd()).
+     */
+    public static function splitCalcErrors(?string $calcErrors): array
+    {
+        $codes = array_values(array_filter(array_map('trim', explode(',', (string)$calcErrors)), static fn($c) => $c !== ''));
+        $warnings = [];
+        $blocking = [];
+        foreach ($codes as $code) {
+            if (self::isAdvisoryCalcError($code)) {
+                $warnings[] = $code;
+            } else {
+                $blocking[] = $code;
+            }
+        }
+        return ['warnings' => $warnings, 'blocking' => $blocking];
+    }
+
+    /**
      * 2026-09-10, real gap found and fixed (confirmed business rule): the single source of truth
      * for "is base salary effectively excluded from this employee's calculation for a reason,
      * not genuinely zero" -- shared between getDetails() (below, backs the on-screen Employee
@@ -986,7 +1455,18 @@ class PayrollRunModel {
         $this->db->prepare("INSERT INTO `payroll_run_employee_comments` (run_id, employee_id, tag, comment, created_by)
                 VALUES (:run_id, :employee_id, :tag, :comment, :created_by)")
             ->execute([':run_id' => $runId, ':employee_id' => $employeeId, ':tag' => $tag, ':comment' => $comment, ':created_by' => $userId]);
-        return ['status' => true, 'message' => 'Saved successfully.', 'id' => (int)$this->db->lastInsertId()];
+        $newId = (int)$this->db->lastInsertId();
+        // 2026-09-14, Round 3 item 3c-3, explicit instruction: "ส่งแล้ว append เข้า timeline ทันทีโดยไม่
+        // reload" -- widened this response (was just {status,message,id}) to include the full new row,
+        // same shape employeeComments() itself returns (same JOIN), so the client can render it through
+        // the exact same item-mapping code a normal list fetch uses, no 2nd request/special-casing.
+        $stmtNew = $this->db->prepare("SELECT c.*, e.name_th AS created_by_name_th, e.name_en AS created_by_name_en,
+                e.profile_photo_path AS created_by_photo
+            FROM `payroll_run_employee_comments` c
+            LEFT JOIN `employees` e ON e.id = c.created_by
+            WHERE c.id = :id");
+        $stmtNew->execute([':id' => $newId]);
+        return ['status' => true, 'message' => 'Saved successfully.', 'id' => $newId, 'comment' => $stmtNew->fetch(PDO::FETCH_ASSOC)];
     }
 
     /** 2026-08-29, explicit follow-up: "สามารถแก้ไข Comment และลบ Comment ได้ด้วย". Not restricted to
@@ -1019,7 +1499,18 @@ class PayrollRunModel {
         if ($stmt->rowCount() === 0) {
             return ['status' => false, 'message' => 'Record not found.'];
         }
-        return ['status' => true, 'message' => 'Saved successfully.'];
+        // 2026-09-14, Round 3 item 3c-4, explicit instruction (inline edit-in-place): widened the same
+        // way employeeCommentAdd() already was -- the client needs the SERVER's own real updated_at
+        // (for the "(edited)" marker) to patch its in-memory cache without a 2nd list refetch;
+        // guessing it client-side from the browser's own clock would risk a timezone/clock-skew
+        // mismatch against what a later real refetch would show.
+        $stmtNew = $this->db->prepare("SELECT c.*, e.name_th AS created_by_name_th, e.name_en AS created_by_name_en,
+                e.profile_photo_path AS created_by_photo
+            FROM `payroll_run_employee_comments` c
+            LEFT JOIN `employees` e ON e.id = c.created_by
+            WHERE c.id = :id");
+        $stmtNew->execute([':id' => $commentId]);
+        return ['status' => true, 'message' => 'Saved successfully.', 'comment' => $stmtNew->fetch(PDO::FETCH_ASSOC)];
     }
 
     /** Hard delete -- see this table's own migration docblock for why (a lightweight reminder note,
@@ -1043,17 +1534,26 @@ class PayrollRunModel {
         return ['status' => true, 'message' => 'Deleted successfully.'];
     }
 
-    /** Oldest-first (a chronological timeline read top-to-bottom), unlike the run-level audit log
-     *  which reads newest-last too -- kept consistent with that same convention. */
+    /** 2026-09-14, Round 3 item 3c-3, explicit instruction: "ล่าสุดบนสุด" (newest-first) -- REVERSES
+     *  this method's own prior convention (was `ORDER BY c.id ASC`, oldest-first, deliberately kept
+     *  consistent with the run-level audit log's own oldest-first-read convention at the time). That
+     *  older reasoning doesn't hold for THIS explicit request -- a per-employee comment thread reads
+     *  more naturally with the latest note on top (same convention `.apv-comment-list` already used
+     *  visually before this round, just now backed by the query order instead of client-side
+     *  reversal). The run-level audit log itself is UNTOUCHED -- still oldest-first, that convention
+     *  was never asked to change. `created_by_photo` added to the SELECT (a plain widen, no schema/
+     *  logic change) so the shared timeline component (renderTimeline(), app.js) can render a real
+     *  avatar photo instead of always falling back to an initial-letter circle. */
     public function employeeComments(int $runId, int $compId, int $employeeId): array {
         if (!$this->get($runId, $compId)) {
             return [];
         }
-        $stmt = $this->db->prepare("SELECT c.*, e.name_th AS created_by_name_th, e.name_en AS created_by_name_en
+        $stmt = $this->db->prepare("SELECT c.*, e.name_th AS created_by_name_th, e.name_en AS created_by_name_en,
+                e.profile_photo_path AS created_by_photo
             FROM `payroll_run_employee_comments` c
             LEFT JOIN `employees` e ON e.id = c.created_by
             WHERE c.run_id = :run_id AND c.employee_id = :employee_id
-            ORDER BY c.id ASC");
+            ORDER BY c.id DESC");
         $stmt->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
@@ -3162,10 +3662,10 @@ class PayrollRunModel {
             $this->db->prepare("DELETE FROM `payroll_run_details` WHERE run_id = :id")->execute([':id' => $id]);
 
             $insStmt = $this->db->prepare("INSERT INTO `payroll_run_details`
-                (run_id, employee_id, base_salary_amount, prorate_days, prorate_total_days,
+                (run_id, employee_id, base_salary_amount, base_salary_computed_amount, prorate_days, prorate_total_days,
                  earning_breakdown, deduction_breakdown, statutory_breakdown,
                  gross_amount, taxable_gross_amount, total_deduction_amount, net_amount, employer_cost_amount, calc_status, calc_errors, data_source)
-                VALUES (:run_id, :employee_id, :base_salary_amount, :prorate_days, :prorate_total_days,
+                VALUES (:run_id, :employee_id, :base_salary_amount, :base_salary_computed_amount, :prorate_days, :prorate_total_days,
                  :earning_breakdown, :deduction_breakdown, :statutory_breakdown,
                  :gross_amount, :taxable_gross_amount, :total_deduction_amount, :net_amount, :employer_cost_amount, :calc_status, :calc_errors, :data_source)");
 
@@ -3600,7 +4100,7 @@ class PayrollRunModel {
                     // additive on top of the standing items above when include_standing_items is on,
                     // or the ONLY source when it's off (today's original/default incentive-run
                     // behavior, unchanged).
-                    $stmtLines = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
+                    $stmtLines = $this->db->prepare("SELECT pml.id, pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
                             pml.payee_type, pml.destination_id, pml.bank_account_id,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `payroll_run_manual_lines` pml
@@ -3612,6 +4112,11 @@ class PayrollRunModel {
                         $resolved = $this->resolveManualLineRow($line);
                         $entry = [
                             'source' => 'manual_line',
+                            // 2026-09-16: which payroll_run_manual_lines row this breakdown line came
+                            // from, so a consumer can get back to it without re-matching on item code
+                            // (two manual lines can share one code). Breakdown JSON written before
+                            // today has no such key at all -- every reader must treat it as optional.
+                            'manual_line_id' => (int)$line['id'],
                             'code' => $resolved['code'],
                             'name_th' => $resolved['name_th'],
                             'name_en' => $resolved['name_en'],
@@ -3778,7 +4283,7 @@ class PayrollRunModel {
                     // one-off earning/deduction for a single employee without it affecting anyone
                     // else or needing a whole separate off-cycle run). Contrast with the $isIncentive
                     // branch above, where manual lines are the ONLY source instead of an addition.
-                    $stmtAdj = $this->db->prepare("SELECT pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
+                    $stmtAdj = $this->db->prepare("SELECT pml.id, pml.ped_type_id, pml.amount, pml.note, pml.custom_item_name, pml.custom_item_type, pml.is_other, pml.payee_employee_id,
                             pml.payee_type, pml.destination_id, pml.bank_account_id,
                             pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type
                         FROM `payroll_run_manual_lines` pml
@@ -3789,6 +4294,7 @@ class PayrollRunModel {
                         $resolvedAdj = $this->resolveManualLineRow($adj);
                         $line = [
                             'source' => 'manual_line',
+                            'manual_line_id' => (int)$adj['id'],
                             'code' => $resolvedAdj['code'],
                             'name_th' => $resolvedAdj['name_th'],
                             'name_en' => $resolvedAdj['name_en'],
@@ -3884,6 +4390,11 @@ class PayrollRunModel {
                             continue;
                         }
                         if ($override !== null && $override['action'] === 'override_amount') {
+                            // 2026-09-18, tiny-C: the engine's own figure, kept on the line it is
+                            // being replaced on, so the Adjustments table can show what the system
+                            // calculated next to what it was changed to. Only written where an
+                            // override really replaced something -- absent means "nothing to compare".
+                            $line['computed_amount'] = (float)($line['amount'] ?? 0);
                             $line['amount'] = (float)$override['override_amount'];
                             $overrideNote = $override['note'] ? " (override: {$override['note']})" : ' (manually overridden)';
                             $line['note'] = trim(($line['note'] ?? '') . $overrideNote);
@@ -3905,9 +4416,13 @@ class PayrollRunModel {
                 // action) always wins over the run-level default below; with no override at all,
                 // the run-level default zeroes it for everyone.
                 $baseSalaryOverride = $overridesByEmployeeAndCode[$employeeId][self::BASE_SALARY_OVERRIDE_CODE] ?? null;
+                // 2026-09-18, tiny-C: base salary is the one figure with no breakdown entry to carry
+                // a `computed_amount` on -- it goes to its own column instead (see that migration).
+                $baseSalaryComputed = null;
                 if ($baseSalaryOverride !== null && $baseSalaryOverride['action'] === 'exclude') {
                     $effectiveBase = 0.0;
                 } elseif ($baseSalaryOverride !== null && $baseSalaryOverride['action'] === 'override_amount') {
+                    $baseSalaryComputed = $effectiveBase;
                     $effectiveBase = (float)$baseSalaryOverride['override_amount'];
                 } elseif ($baseSalaryOverride === null && in_array(strtoupper(self::BASE_SALARY_OVERRIDE_CODE), $runItemExclusionCodesUpper, true)) {
                     $effectiveBase = 0.0;
@@ -3916,6 +4431,7 @@ class PayrollRunModel {
                 $perEmployeeData[$employeeId] = [
                     'emp' => $emp,
                     'effectiveBase' => $effectiveBase,
+                    'baseSalaryComputed' => $baseSalaryComputed,
                     'prorateDays' => $prorateDays,
                     'prorateTotalDays' => $prorateTotalDays,
                     'earningLines' => $earningLines,
@@ -3994,6 +4510,7 @@ class PayrollRunModel {
                     $insStmt->execute([
                         ':run_id' => $id, ':employee_id' => $employeeId,
                         ':base_salary_amount' => $preserved['base_salary_amount'],
+                        ':base_salary_computed_amount' => $preserved['base_salary_computed_amount'] ?? null,
                         ':prorate_days' => $preserved['prorate_days'],
                         ':prorate_total_days' => $preserved['prorate_total_days'],
                         ':earning_breakdown' => $preserved['earning_breakdown'],
@@ -4019,6 +4536,7 @@ class PayrollRunModel {
 
                 $pdata = $perEmployeeData[$employeeId];
                 $effectiveBase = $pdata['effectiveBase'];
+                $baseSalaryComputed = $pdata['baseSalaryComputed'] ?? null; // ?? null: a verified-preserved row never sets it
                 $prorateDays = $pdata['prorateDays'];
                 $prorateTotalDays = $pdata['prorateTotalDays'];
                 $earningLines = array_merge($pdata['earningLines'], $transferCreditsByPayee[$employeeId] ?? []);
@@ -4376,6 +4894,9 @@ class PayrollRunModel {
                             $statutoryResult['items'][$sIdx]['employee_amount'] = 0.0;
                             $statutoryResult['items'][$sIdx]['note'] = 'manually_excluded';
                         } else {
+                            // 2026-09-18, tiny-C: same `computed_amount` the earning/deduction lines
+                            // carry, on the key statutory lines keep their money in.
+                            $statutoryResult['items'][$sIdx]['computed_amount'] = (float)($sItemForOverride['employee_amount'] ?? 0);
                             $statutoryResult['items'][$sIdx]['employee_amount'] = (float)$statutoryOverride['override_amount'];
                             $statutoryResult['items'][$sIdx]['note'] = 'manually_overridden';
                         }
@@ -4464,14 +4985,10 @@ class PayrollRunModel {
                 // making it blocking would have broken that entire, already-accepted-as-a-known-
                 // limitation code path. Kept as a visible Remark (still useful: tells an admin exactly
                 // which event's amount used the fallback divisor) without ever blocking submit().
-                $blockingErrors = array_filter(
-                    array_diff($errors, ['daily_salary_no_shift_pattern', 'salary_type_hourly_not_supported', 'hourly_salary_no_attendance_data', 'no_attendance_data_this_period', 'ot_not_calculated_ineligible', 'mixed_payment_lines_mismatch']),
-                    static fn($e) => strpos((string)$e, 'working_days_fallback_with_attendance_deduction:') !== 0
-                        // 2026-09-02, Deduction Destination & Third-Party Remittance -- see this
-                        // error's own push site (the transfer-credit pass above) for why this is
-                        // now advisory, not blocking.
-                        && strpos((string)$e, 'transfer_payee_not_in_run:') !== 0
-                );
+                // 2026-09-16: the list itself moved to ADVISORY_CALC_ERROR_CODES/_PREFIXES (top of
+                // this class) so the table that READS calc_errors can split the same way -- the
+                // codes, the prefixes and the resulting calc_status are unchanged.
+                $blockingErrors = array_filter($errors, static fn($e) => !self::isAdvisoryCalcError((string)$e));
                 $calcStatus = empty($blockingErrors) ? 'calculated' : 'error';
                 if ($calcStatus === 'error') {
                     $anyError = true;
@@ -4481,6 +4998,7 @@ class PayrollRunModel {
                     ':run_id' => $id,
                     ':employee_id' => $employeeId,
                     ':base_salary_amount' => $effectiveBase,
+                    ':base_salary_computed_amount' => $baseSalaryComputed,
                     ':prorate_days' => $prorateDays,
                     ':prorate_total_days' => $prorateTotalDays,
                     ':earning_breakdown' => json_encode($earningLines, JSON_UNESCAPED_UNICODE),
@@ -4566,6 +5084,8 @@ class PayrollRunModel {
      *    cycle-only run in the first place), and if NOTHING in the request qualifies, the call fails.
      * Either way, any exclusion row for the ids actually being joined is cleared, so a previously
      * -removed synced/cycle-automatic employee comes back correctly on the recalculate() below.
+     * Ids with is_payroll_participant = 0 are skipped and reported back in `skipped_employee_ids`
+     * (2026-09-22, tiny-1 -- see that guard's own comment below).
      * @param int[] $employeeIds
      */
     public function joinEmployees(int $id, int $compId, array $employeeIds, int $userId, bool $isAdmin): array {
@@ -4587,6 +5107,23 @@ class PayrollRunModel {
         $validIds = array_map('intval', $stmtValid->fetchAll(PDO::FETCH_COLUMN));
         if (empty($validIds)) {
             return ['status' => false, 'message' => 'None of the selected employees belong to this company.'];
+        }
+
+        // 2026-09-22, tiny-1: is_payroll_participant = 0 ("staff only, not paid through payroll")
+        // is already enforced by manualEmployeeOptions()'s own picker WHERE and by recalculate()'s
+        // 3 eligibility branches -- but NOT here, so a request naming such an employee (any caller
+        // that didn't come through the picker) wrote a payroll_run_manual_employees row that
+        // recalculate() then silently ignored forever: a membership row that looks joined and never
+        // is. They're SKIPPED rather than failing the whole call, so a bulk "join these 20" isn't
+        // lost to one ineligible id; the caller is told which ones via skipped_employee_ids below.
+        $participantPlaceholders = implode(',', array_fill(0, count($validIds), '?'));
+        $stmtParticipant = $this->db->prepare("SELECT id FROM `employees` WHERE is_payroll_participant = 1 AND id IN ({$participantPlaceholders})");
+        $stmtParticipant->execute($validIds);
+        $participantIds = array_map('intval', $stmtParticipant->fetchAll(PDO::FETCH_COLUMN));
+        $skippedIds = array_values(array_diff($validIds, $participantIds));
+        $validIds = array_values(array_intersect($validIds, $participantIds));
+        if (empty($validIds)) {
+            return ['status' => false, 'message' => 'None of the selected employees are paid through payroll.'];
         }
 
         $isPureCycleRun = $run['cycle_id'] !== null && $run['sync_process_id'] === null;
@@ -4621,6 +5158,7 @@ class PayrollRunModel {
 
         $recalcRes = $this->recalculate($id, $compId, $userId, $isAdmin);
         $recalcRes['joined_count'] = count($validIds);
+        $recalcRes['skipped_employee_ids'] = $skippedIds;
         return $recalcRes;
     }
 
@@ -4718,11 +5256,27 @@ class PayrollRunModel {
         return $whereSql;
     }
 
-    private function buildManualEmployeeWhere(int $compId, int $runId, array $filters): array {
+    private function buildManualEmployeeWhere(int $compId, int $runId, array $filters, bool $missingOnly = false): array {
         $run = $this->get($runId, $compId);
         $isPureCycleRun = $run && $run['cycle_id'] !== null && $run['sync_process_id'] === null;
 
-        if ($isPureCycleRun) {
+        // 2026-09-22, tiny-1: the picker opened FROM the "not in this sync" banner offers exactly
+        // the employees that banner counted -- so it REPLACES the membership WHERE below entirely
+        // rather than AND-ing onto it. Same fragment, same params, one definition
+        // (syncMissingEmployeeWhere()), so the picker's rows and the banner's number can never
+        // disagree. Note this set deliberately does NOT include employees this run has excluded
+        // (the default branch below does surface them, as the undo path for Remove) -- somebody
+        // already decided about those, and the banner is about people nobody has decided about.
+        // The per-field filters (department/team/position/cycle) and column_filters still append
+        // below; their param names don't collide with this fragment's.
+        if ($missingOnly) {
+            [$missingWhere, $missingParams] = $this->syncMissingEmployeeWhere($run ?: [], $runId, $compId);
+            if ($missingWhere === null) {
+                return ['1 = 0', []];
+            }
+            $where = $missingWhere;
+            $params = $missingParams;
+        } elseif ($isPureCycleRun) {
             // 2026-08-21, explicit request ("พนักงานทุกคน สามารถลบข้อมูลออกจากรอบได้..."): a
             // cycle-based run's membership is fully automatic by employment date -- the only thing
             // this picker can ever offer here is "re-include a previously-removed employee" (see
@@ -4779,13 +5333,13 @@ class PayrollRunModel {
         return [$where, $params];
     }
 
-    public function manualEmployeeOptions(int $compId, int $runId, int $start, int $length, array $filters, string $search, string $lang = 'th', array $columnFilters = []): array {
+    public function manualEmployeeOptions(int $compId, int $runId, int $start, int $length, array $filters, string $search, string $lang = 'th', array $columnFilters = [], bool $missingOnly = false): array {
         $deptCol = $lang === 'en' ? 'department_name_en' : 'department_name_th';
         $posiCol = $lang === 'en' ? 'position_name_en' : 'position_name_th';
         $teamCol = $lang === 'en' ? 'team_name_en' : 'team_name_th';
         $filterExprMap = $this->manualEmployeeFilterExprMap($lang);
 
-        [$baseWhere, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters);
+        [$baseWhere, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters, $missingOnly);
 
         // Both COUNT queries need the same JOINs as the main data query below -- column_filters
         // (2026-08-27) can filter on a JOINed display-name column (e.g. d.department_name_th), not
@@ -4814,7 +5368,10 @@ class PayrollRunModel {
                     CONCAT(e.name_th, ' ', e.surname_th) AS name_th, CONCAT(e.name_en, ' ', e.surname_en) AS name_en,
                     COALESCE(d.{$deptCol}, '') AS department, COALESCE(tm.{$teamCol}, '') AS team, COALESCE(p.{$posiCol}, '') AS position,
                     COALESCE(c.cycle_name, '') AS cycle_name,
-                    e.employment_date
+                    e.employment_date,
+                    -- 2026-09-22, tiny-1: read-only, so this picker's rows can carry the same
+                    -- avatar every other employee list in the app renders (apvPersonLineHtml).
+                    e.profile_photo_path, e.profile_photo_thumbnail_path
                 " . self::MANUAL_EMPLOYEE_JOINS . "
                 WHERE {$whereSql}
                 ORDER BY e.employee_no ASC
@@ -4839,8 +5396,8 @@ class PayrollRunModel {
      *  -- 2026-08-27 -- so "select all matching" also honors whatever Excel-style filters are
      *  currently checked, not just the pre-existing department/team/position/cycle dropdowns)
      *  -- just id-only, unpaginated. */
-    public function manualEmployeeAllIds(int $compId, int $runId, array $filters, string $search, string $lang = 'th', array $columnFilters = []): array {
-        [$whereSql, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters);
+    public function manualEmployeeAllIds(int $compId, int $runId, array $filters, string $search, string $lang = 'th', array $columnFilters = [], bool $missingOnly = false): array {
+        [$whereSql, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters, $missingOnly);
         if ($search !== '') {
             $whereSql .= " AND (e.employee_no LIKE :search1 OR e.name_th LIKE :search2 OR e.surname_th LIKE :search3 OR e.name_en LIKE :search4 OR e.surname_en LIKE :search5)";
             for ($i = 1; $i <= 5; $i++) {
@@ -4858,13 +5415,13 @@ class PayrollRunModel {
      *  EmployeeModel::listColumnValues()'s own docblock for why. Also respects this run's own
      *  membership WHERE (buildManualEmployeeWhere()) -- the dropdown only ever offers values that
      *  could actually appear in the picker's own rows, same as every other table in this rollout. */
-    public function manualEmployeeColumnValues(int $compId, int $runId, array $filters, string $column, string $lang, array $columnFilters): array {
+    public function manualEmployeeColumnValues(int $compId, int $runId, array $filters, string $column, string $lang, array $columnFilters, bool $missingOnly = false): array {
         $exprMap = $this->manualEmployeeFilterExprMap($lang);
         if (!isset($exprMap[$column])) {
             return [];
         }
         $expr = $exprMap[$column];
-        [$whereSql, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters);
+        [$whereSql, $params] = $this->buildManualEmployeeWhere($compId, $runId, $filters, $missingOnly);
         $whereSql = $this->applyManualEmployeeColumnFilters($whereSql, $params, $columnFilters, $exprMap, $column);
         $sql = "SELECT DISTINCT {$expr} AS value " . self::MANUAL_EMPLOYEE_JOINS . "
                 WHERE {$whereSql} AND {$expr} IS NOT NULL AND {$expr} != ''
@@ -4954,29 +5511,46 @@ class PayrollRunModel {
     }
 
     /**
-     * Adds one earning/deduction line for one employee on this run, then recalculates immediately
-     * (same as joinEmployees()). For an 'incentive' run this is the only source of pay per explicit
-     * request (2026-08-19: "pick item + enter the amount separately per person" -- not one flat
-     * amount applied to everyone); for any other run it's an additive one-off adjustment on top of
-     * the normal calculation.
+     * 2026-09-19, H-backend: the history row for a hand-added line. Until today add/edit/remove wrote
+     * only a free-text payroll_run_audit_logs note, which cannot be read back as a from/to pair --
+     * and `edit` never recorded the old amount at all, so "what was this before" had no answer.
+     * That note stays exactly as it was; this is written alongside it, not instead of it.
      *
-     * Two mutually-exclusive ways to specify the item (2026-08-19, explicit request: "ระบุ item ได้
-     * เอง ว่าจะจ่ายเพิ่มหรือหักจากอะไร" -- let the admin type their own item too):
-     *   - $pedTypeId set: a catalog payroll_earning_deduction_types item (existing behavior).
-     *   - $pedTypeId null: a free-text $customItemName + explicit $customItemType('earning'/
-     *     'deduction') -- for a genuine one-off that isn't worth creating a standing catalog entry
-     *     for. Whichever $customItemName/$customItemType are passed are IGNORED when $pedTypeId is
-     *     set (not an error -- the catalog item wins, matching how a frontend toggle between the
-     *     two modes would only ever send one side populated anyway).
+     * `source_id` is the payroll_run_manual_lines PK, which is the row's real identity: two manual
+     * lines on one employee can share one item_code (recalculate()'s own breakdown carries
+     * `manual_line_id` for the same reason). `item_code` is what resolveManualLineRow() resolves --
+     * the exact key the slip and the Adjustments table already address this row by, including the
+     * 'CUSTOM:' / OTHER_INCOME / OTHER_DEDUCTION forms -- so a history row can be matched to a
+     * visible line without a second mapping.
+     *
+     * An edit that leaves the amount alone (a renamed label, a re-pointed destination) records
+     * nothing: historyIsNoOp() sees the same figure on both sides. That is a known gap, listed in
+     * BACKLOG.md as "history ปลายทาง/ชื่อ manual line" rather than half-solved here.
      */
-    public function addManualLine(int $id, int $compId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, bool $isAdmin, ?string $note = null, ?string $customItemName = null, ?string $customItemType = null, ?int $payeeEmployeeId = null, ?string $payeeType = null, ?bool $includeInCashSummary = null, ?array $destinationData = null, ?bool $isOther = null, ?int $bankAccountId = null): array {
-        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
-            return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
+    private function recordManualLineHistory(int $runId, int $employeeId, int $lineId, array $row, string $action, ?float $oldAmount, ?float $newAmount, int $userId): void {
+        $resolved = $this->resolveManualLineRow($row);
+        $this->recordLineOverrideHistory($runId, $employeeId, 'earning_deduction', (string)$resolved['code'], $action,
+            $oldAmount, $newAmount, $userId, $row['note'] ?? null, 'manual_line', $lineId);
+    }
+
+    /** The ':column' => value map PDO wants, out of resolveManualLineInput()'s column => value
+     *  fields plus whatever the caller binds on top (INSERT and UPDATE bind different extras). */
+    private function manualLineParams(array $fields, array $extra): array {
+        foreach ($fields as $column => $value) {
+            $extra[':' . $column] = $value;
         }
-        [$run, $err] = $this->assertManualLinesEditable($id, $compId, $employeeId);
-        if ($err !== null) {
-            return ['status' => false, 'message' => $err];
-        }
+        return $extra;
+    }
+
+    /**
+     * 2026-09-16: everything addManualLine() checks between "is this run still editable" and its
+     * own INSERT, lifted out verbatim so updateManualLine() gates an edit by exactly the same
+     * rules rather than growing a second copy of them -- editing a line must never be able to
+     * reach a state adding that same line would have refused. Returns either a refusal (the same
+     * {status:false,message} shape both callers hand straight back) or the resolved column values
+     * ready to write, plus the employee_no/item label both callers put in their audit note.
+     */
+    private function resolveManualLineInput(int $compId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, ?string $note, ?string $customItemName, ?string $customItemType, ?int $payeeEmployeeId, ?string $payeeType, ?bool $includeInCashSummary, ?array $destinationData, ?bool $isOther, ?int $bankAccountId): array {
         if ($amount <= 0) {
             return ['status' => false, 'message' => 'Amount must be greater than 0.'];
         }
@@ -5083,16 +5657,61 @@ class PayrollRunModel {
         // Same "forced 0 for not_disbursed, otherwise honor the caller (default included)" rule as
         // EmployeeEarningDeductionModel::save()'s own include_in_cash_summary comment.
         $includeInCashSummaryVal = $payeeType === 'not_disbursed' ? 0 : ($includeInCashSummary === false ? 0 : 1);
+        return [
+            'status' => true,
+            'employee_no' => $employeeNo,
+            'item_label' => $itemLabel,
+            'fields' => [
+                'ped_type_id' => $pedTypeId,
+                'custom_item_name' => $customItemName,
+                'custom_item_type' => $customItemType,
+                'is_other' => $isOtherFlag ? 1 : 0,
+                'amount' => $amount,
+                'note' => $note,
+                'payee_employee_id' => $payeeEmployeeId,
+                'payee_type' => $payeeType,
+                'destination_id' => $destinationId,
+                'bank_account_id' => $bankAccountId,
+                'include_in_cash_summary' => $includeInCashSummaryVal,
+            ],
+        ];
+    }
+
+    /**
+     * Adds one earning/deduction line for one employee on this run, then recalculates immediately
+     * (same as joinEmployees()). For an 'incentive' run this is the only source of pay per explicit
+     * request (2026-08-19: "pick item + enter the amount separately per person" -- not one flat
+     * amount applied to everyone); for any other run it's an additive one-off adjustment on top of
+     * the normal calculation.
+     *
+     * Two mutually-exclusive ways to specify the item (2026-08-19, explicit request: "ระบุ item ได้
+     * เอง ว่าจะจ่ายเพิ่มหรือหักจากอะไร" -- let the admin type their own item too):
+     *   - $pedTypeId set: a catalog payroll_earning_deduction_types item (existing behavior).
+     *   - $pedTypeId null: a free-text $customItemName + explicit $customItemType('earning'/
+     *     'deduction') -- for a genuine one-off that isn't worth creating a standing catalog entry
+     *     for. Whichever $customItemName/$customItemType are passed are IGNORED when $pedTypeId is
+     *     set (not an error -- the catalog item wins, matching how a frontend toggle between the
+     *     two modes would only ever send one side populated anyway).
+     */
+    public function addManualLine(int $id, int $compId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, bool $isAdmin, ?string $note = null, ?string $customItemName = null, ?string $customItemType = null, ?int $payeeEmployeeId = null, ?string $payeeType = null, ?bool $includeInCashSummary = null, ?array $destinationData = null, ?bool $isOther = null, ?int $bankAccountId = null): array {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
+        }
+        [$run, $err] = $this->assertManualLinesEditable($id, $compId, $employeeId);
+        if ($err !== null) {
+            return ['status' => false, 'message' => $err];
+        }
+        $resolved = $this->resolveManualLineInput($compId, $employeeId, $pedTypeId, $amount, $userId, $note, $customItemName, $customItemType, $payeeEmployeeId, $payeeType, $includeInCashSummary, $destinationData, $isOther, $bankAccountId);
+        if (!$resolved['status']) {
+            return $resolved;
+        }
+        $fields = $resolved['fields'];
 
         $this->db->prepare("INSERT INTO `payroll_run_manual_lines`
                 (run_id, employee_id, ped_type_id, custom_item_name, custom_item_type, is_other, amount, note, payee_employee_id, payee_type, destination_id, bank_account_id, include_in_cash_summary, created_by)
             VALUES (:run_id, :employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :is_other, :amount, :note, :payee_employee_id, :payee_type, :destination_id, :bank_account_id, :include_in_cash_summary, :created_by)")
-            ->execute([
-                ':run_id' => $id, ':employee_id' => $employeeId, ':ped_type_id' => $pedTypeId,
-                ':custom_item_name' => $customItemName, ':custom_item_type' => $customItemType, ':is_other' => $isOtherFlag ? 1 : 0,
-                ':amount' => $amount, ':note' => $note, ':payee_employee_id' => $payeeEmployeeId,
-                ':payee_type' => $payeeType, ':destination_id' => $destinationId, ':bank_account_id' => $bankAccountId, ':include_in_cash_summary' => $includeInCashSummaryVal, ':created_by' => $userId,
-            ]);
+            ->execute($this->manualLineParams($fields, [':run_id' => $id, ':employee_id' => $employeeId, ':created_by' => $userId]));
+        $newLineId = (int)$this->db->lastInsertId();
 
         // 2026-08-21, explicit request ("ต้องเก็บ Log ว่าใครแก้ไขข้อมูลอะไรไปเมื่อไหร่") -- addManualLine()/
         // removeManualLine() were the only mutating PayrollRunModel methods with no audit trail at
@@ -5100,7 +5719,58 @@ class PayrollRunModel {
         // payroll_run_audit_logs, so the affected employee/item/amount go into the existing
         // free-text `note`, same as recalculate()'s own "N employee(s) calculated" note.
         $this->logAudit($id, 'draft', 'draft', 'add_manual_line', $userId,
-            "Employee {$employeeNo}: added \"{$itemLabel}\" amount " . number_format($amount, 2) . ($note ? " (note: {$note})" : ''));
+            "Employee {$resolved['employee_no']}: added \"{$resolved['item_label']}\" amount " . number_format($fields['amount'], 2) . ($fields['note'] ? " (note: {$fields['note']})" : ''));
+        $this->recordManualLineHistory($id, $employeeId, $newLineId, $fields + ['item_code' => $resolved['item_label']], 'add', null, (float)$fields['amount'], $userId);
+
+        return $this->recalculate($id, $compId, $userId, $isAdmin);
+    }
+
+    /**
+     * 2026-09-16: edits one existing manual line in place -- the same fields, the same validation
+     * (resolveManualLineInput()) and the same gate as adding that very line fresh, followed by the
+     * same immediate recalculate(). Editing must never reach a state adding could not, so there is
+     * deliberately no looser path here.
+     *
+     * The row is located by (line_id, run_id, employee_id) TOGETHER, never by line_id alone: the
+     * run/verified gates above were evaluated for $employeeId, so a line id belonging to a different
+     * employee (or a different run) has to be a refusal rather than an edit those gates never
+     * actually covered.
+     */
+    public function updateManualLine(int $id, int $compId, int $lineId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, bool $isAdmin, ?string $note = null, ?string $customItemName = null, ?string $customItemType = null, ?int $payeeEmployeeId = null, ?string $payeeType = null, ?bool $includeInCashSummary = null, ?array $destinationData = null, ?bool $isOther = null, ?int $bankAccountId = null): array {
+        if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
+            return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
+        }
+        [$run, $err] = $this->assertManualLinesEditable($id, $compId, $employeeId);
+        if ($err !== null) {
+            return ['status' => false, 'message' => $err];
+        }
+        // 2026-09-19, H-backend: `amount` joins the existence check rather than getting a SELECT of
+        // its own -- the history row's "from" is the figure this UPDATE is about to overwrite, and
+        // after it runs there is nowhere left to read it.
+        $stmtLine = $this->db->prepare("SELECT id, amount FROM `payroll_run_manual_lines`
+            WHERE id = :line_id AND run_id = :run_id AND employee_id = :employee_id");
+        $stmtLine->execute([':line_id' => $lineId, ':run_id' => $id, ':employee_id' => $employeeId]);
+        $beforeLine = $stmtLine->fetch(PDO::FETCH_ASSOC);
+        if (!$beforeLine) {
+            return ['status' => false, 'message' => 'Record not found.'];
+        }
+        $resolved = $this->resolveManualLineInput($compId, $employeeId, $pedTypeId, $amount, $userId, $note, $customItemName, $customItemType, $payeeEmployeeId, $payeeType, $includeInCashSummary, $destinationData, $isOther, $bankAccountId);
+        if (!$resolved['status']) {
+            return $resolved;
+        }
+        $fields = $resolved['fields'];
+
+        // Every resolved column is written, including the ones this edit left at null (a line
+        // switched away from payee_type='other_person' must lose its destination_id, not keep a
+        // stale one) -- which is exactly why the SET list is derived from $fields itself.
+        $set = implode(', ', array_map(fn(string $column): string => "`{$column}` = :{$column}", array_keys($fields)));
+        $this->db->prepare("UPDATE `payroll_run_manual_lines` SET {$set}
+            WHERE id = :line_id AND run_id = :run_id AND employee_id = :employee_id")
+            ->execute($this->manualLineParams($fields, [':line_id' => $lineId, ':run_id' => $id, ':employee_id' => $employeeId]));
+
+        $this->logAudit($id, 'draft', 'draft', 'update_manual_line', $userId,
+            "Employee {$resolved['employee_no']}: updated \"{$resolved['item_label']}\" amount " . number_format($fields['amount'], 2) . ($fields['note'] ? " (note: {$fields['note']})" : ''));
+        $this->recordManualLineHistory($id, $employeeId, $lineId, $fields + ['item_code' => $resolved['item_label']], 'edit', (float)$beforeLine['amount'], (float)$fields['amount'], $userId);
 
         return $this->recalculate($id, $compId, $userId, $isAdmin);
     }
@@ -5527,7 +6197,8 @@ class PayrollRunModel {
         // Fetched BEFORE the delete (2026-08-21, explicit request: audit log needs to say what was
         // removed, which is no longer readable once the row is gone) -- same reasoning as
         // addManualLine()'s new logAudit() call just above this method.
-        $stmtLine = $this->db->prepare("SELECT pml.employee_id, pml.amount, pml.custom_item_name, pt.item_code, e.employee_no
+        $stmtLine = $this->db->prepare("SELECT pml.employee_id, pml.amount, pml.note, pml.custom_item_name, pml.ped_type_id,
+                pml.custom_item_type, pml.is_other, pt.item_code, e.employee_no
             FROM `payroll_run_manual_lines` pml
             LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
             JOIN `employees` e ON e.id = pml.employee_id
@@ -5548,6 +6219,7 @@ class PayrollRunModel {
         $itemLabel = $lineInfo['item_code'] ?? $lineInfo['custom_item_name'];
         $this->logAudit($id, 'draft', 'draft', 'remove_manual_line', $userId,
             "Employee {$lineInfo['employee_no']}: removed \"{$itemLabel}\" amount " . number_format((float)$lineInfo['amount'], 2));
+        $this->recordManualLineHistory($id, (int)$lineInfo['employee_id'], $lineId, $lineInfo, 'delete', (float)$lineInfo['amount'], null, $userId);
 
         return $this->recalculate($id, $compId, $userId, $isAdmin);
     }
@@ -5564,22 +6236,54 @@ class PayrollRunModel {
                 pml.payee_type, pml.destination_id, pml.bank_account_id, pml.include_in_cash_summary, pml.created_by, pml.created_at,
                 pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type, payee.employee_no AS payee_employee_no,
                 pd.account_name AS destination_account_name,
-                ba.account_name AS bank_account_name,
+                pd.bank_branch AS destination_bank_branch, pd.is_saved AS destination_is_saved,
+                pd.account_no AS destination_account_no, pd.key_version AS destination_key_version,
+                dbank.bank_name_th AS destination_bank_name_th, dbank.bank_name_en AS destination_bank_name_en,
+                ba.account_name AS bank_account_name, ba.branch_name AS bank_account_branch,
+                ba.account_no AS bank_account_no, ba.key_version AS bank_account_key_version,
+                babank.bank_name_th AS bank_account_bank_name_th, babank.bank_name_en AS bank_account_bank_name_en,
                 creator.name_th AS created_by_name_th, creator.name_en AS created_by_name_en
             FROM `payroll_run_manual_lines` pml
             LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
             LEFT JOIN `employees` payee ON payee.id = pml.payee_employee_id
             LEFT JOIN `payment_destinations` pd ON pd.id = pml.destination_id
+            LEFT JOIN `master_banks` dbank ON dbank.id = pd.bank_id
             LEFT JOIN `bank_accounts` ba ON ba.id = pml.bank_account_id
+            LEFT JOIN `master_banks` babank ON babank.id = ba.bank_id
             LEFT JOIN `employees` creator ON creator.id = pml.created_by
             JOIN `payroll_runs` r ON r.id = pml.run_id AND r.comp_id = :comp_id
             WHERE pml.run_id = :run_id AND pml.employee_id = :employee_id
             ORDER BY pml.id ASC");
         $stmt->execute([':comp_id' => $compId, ':run_id' => $runId, ':employee_id' => $employeeId]);
-        return array_map(function (array $row): array {
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // 2026-09-17, tiny-M round 3: the payee employee's own option row (label + that employee's
+        // receiving account), fetched through EmployeeModel's OWN option builder so a prefilled
+        // picker reads identically to the option the user would have chosen -- one lookup for every
+        // line on this employee, not one per line.
+        $payeeOptions = (new EmployeeModel($this->db))->optionRowsByIds(
+            $compId,
+            array_map(static fn(array $r) => (int)($r['payee_employee_id'] ?? 0), $rows)
+        );
+        // 2026-09-18, tiny-L4: this endpoint's rows are rendered by the SAME client helper the slip's
+        // own lines are, so they carry the same `payee` descriptor -- built here rather than glued
+        // together again in JS out of the 10 flat fields below (which stay, untouched: the edit form
+        // prefills its 3 pickers from them). One lookup per request, alongside $payeeOptions above.
+        $payeeLookup = $this->payeeLookupForLines($compId, [$rows]);
+        return array_map(function (array $row) use ($payeeOptions, $payeeLookup): array {
             $resolved = $this->resolveManualLineRow($row);
-            return [
+            $payeeOption = $payeeOptions[(int)($row['payee_employee_id'] ?? 0)] ?? null;
+            $bankAccountMasked = $row['bank_account_id'] !== null
+                ? EncryptionService::maskAccountNo(EncryptionService::decrypt(
+                    $row['bank_account_no'] ?? null,
+                    $row['bank_account_key_version'] !== null ? (int)$row['bank_account_key_version'] : null
+                ))
+                : null;
+            return $this->enrichLineInstallment($this->enrichLinePayee([
                 'id' => (int)$row['id'],
+                // 2026-09-16, D2: the catalog item's own id, so the edit form can put the line's item
+                // back INTO its picker (a select2-remote has no options of its own to match on -- see
+                // prefillManualLineFormRd(), payroll/detail.js). Read-only field, nothing else changed.
+                'ped_type_id' => $row['ped_type_id'] !== null ? (int)$row['ped_type_id'] : null,
                 'amount' => (float)$row['amount'],
                 'note' => $row['note'],
                 'item_code' => $resolved['code'],
@@ -5590,18 +6294,57 @@ class PayrollRunModel {
                 'is_other' => $resolved['is_other'],
                 'payee_employee_id' => $row['payee_employee_id'] !== null ? (int)$row['payee_employee_id'] : null,
                 'payee_employee_no' => $row['payee_employee_no'],
+                // 2026-09-17, tiny-M round 3: same 3 destinations, same treatment -- the label comes
+                // from the picker's own builder (never re-composed here) and the payee's account
+                // rides along masked, so the edit form can describe the choice without a 2nd lookup.
+                'payee_employee_label_th' => $payeeOption['text_th'] ?? null,
+                'payee_employee_label_en' => $payeeOption['text_en'] ?? null,
+                'payee_employee_account_name' => $payeeOption['account_name'] ?? null,
+                'payee_employee_bank_name_th' => $payeeOption['bank_name_th'] ?? null,
+                'payee_employee_bank_name_en' => $payeeOption['bank_name_en'] ?? null,
+                'payee_employee_bank_branch' => $payeeOption['bank_branch'] ?? null,
+                'payee_employee_account_no_masked' => $payeeOption['account_no_masked'] ?? null,
+                'payee_employee_has_bank_account' => $payeeOption !== null ? (bool)$payeeOption['has_bank_account'] : null,
                 'payee_type' => $row['payee_type'],
                 'destination_id' => $row['destination_id'] !== null ? (int)$row['destination_id'] : null,
                 'destination_account_name' => $row['destination_account_name'],
+                // 2026-09-17, tiny-M: the same 4 account fields every payee picker's own options
+                // endpoint already hands back (PaymentDestinationController::options()), so the edit
+                // form can describe the destination this line points at without a second lookup --
+                // and `destination_is_saved`, because a line may point at an ad-hoc destination the
+                // saved-only picker can never offer back. Read-only: nothing here reaches a write
+                // path. The number is MASKED through the same 2 shared primitives listSaved() uses
+                // (decrypt -> maskAccountNo); the plaintext never leaves this method.
+                'destination_bank_name_th' => $row['destination_bank_name_th'],
+                'destination_bank_name_en' => $row['destination_bank_name_en'],
+                'destination_bank_branch' => $row['destination_bank_branch'],
+                'destination_account_no_masked' => $row['destination_id'] !== null
+                    ? EncryptionService::maskAccountNo(EncryptionService::decrypt(
+                        $row['destination_account_no'] ?? null,
+                        $row['destination_key_version'] !== null ? (int)$row['destination_key_version'] : null
+                    ))
+                    : null,
+                'destination_is_saved' => $row['destination_is_saved'] !== null ? (int)$row['destination_is_saved'] : null,
                 'bank_account_id' => $row['bank_account_id'] !== null ? (int)$row['bank_account_id'] : null,
                 'bank_account_name' => $row['bank_account_name'],
+                'bank_account_bank_name_th' => $row['bank_account_bank_name_th'],
+                'bank_account_bank_name_en' => $row['bank_account_bank_name_en'],
+                'bank_account_branch' => $row['bank_account_branch'],
+                'bank_account_no_masked' => $bankAccountMasked,
+                // Built by PayrollCycleModel's own option-label composer, not restated here.
+                'bank_account_label_th' => $row['bank_account_id'] !== null
+                    ? PayrollCycleModel::bankAccountOptionLabel($row['bank_account_bank_name_th'], $bankAccountMasked, $row['bank_account_name'])
+                    : null,
+                'bank_account_label_en' => $row['bank_account_id'] !== null
+                    ? PayrollCycleModel::bankAccountOptionLabel($row['bank_account_bank_name_en'], $bankAccountMasked, $row['bank_account_name'])
+                    : null,
                 'include_in_cash_summary' => (int)$row['include_in_cash_summary'],
                 'created_by' => $row['created_by'] !== null ? (int)$row['created_by'] : null,
                 'created_by_name_th' => $row['created_by_name_th'],
                 'created_by_name_en' => $row['created_by_name_en'],
                 'created_at' => $row['created_at'],
-            ];
-        }, $stmt->fetchAll(PDO::FETCH_ASSOC));
+            ], $payeeLookup), $payeeLookup);
+        }, $rows);
     }
 
     /**
@@ -5764,17 +6507,57 @@ class PayrollRunModel {
      * item_code, or one of ATTENDANCE_OVERRIDE_FIELDS for attendance) -- NEVER the
      * statutoryOverrideCode()-wrapped sentinel, which exists only to keep the OVERRIDE table's own
      * key space collision-free and has no reason to leak into a human-facing report.
+     *
+     * 2026-09-19, H-backend: $sourceType/$sourceId widen this to the 2 other writers that had no
+     * before/after record at all (the tri-state exemption answer, and hand-added manual lines);
+     * $oldText/$newText carry a non-numeric pair ('inherit'/'yes'/'no') in place of the decimals.
+     * A row uses one pair or the other, never both.
+     *
+     * The 2 suppression rules live HERE, not in each caller: attendanceOverrideSave()/
+     * attendanceOverrideRemove() already had both inline (a diff-tolerance skip and a
+     * "nothing was overridden" skip) while every other writer had neither, so one line could be
+     * recorded as edited-to-the-same-value and another could not. Generalized rather than copied,
+     * which also means a future writer gets them by existing.
      */
-    private function recordLineOverrideHistory(int $runId, int $employeeId, string $lineType, string $itemCode, string $action, ?float $oldValue, ?float $newValue, int $userId, ?string $note = null): void {
+    private const HISTORY_VALUE_EPSILON = 0.005;
+
+    /** 'nothing was there' is only a reason to skip on an action that undoes something. */
+    private const HISTORY_REVERT_ACTIONS = ['restore', 'delete'];
+
+    private function recordLineOverrideHistory(int $runId, int $employeeId, string $lineType, string $itemCode, string $action, ?float $oldValue, ?float $newValue, int $userId, ?string $note = null, string $sourceType = 'override', ?int $sourceId = null, ?string $oldText = null, ?string $newText = null): void {
+        if ($this->historyIsNoOp($action, $oldValue, $newValue, $oldText, $newText)) {
+            return;
+        }
+        // varchar(100), and a custom manual line's code is 'CUSTOM:' + a varchar(150) label.
+        $itemCode = mb_substr($itemCode, 0, 100);
         $this->db->prepare("INSERT INTO `payroll_run_line_override_history`
-                (run_id, employee_id, line_type, item_code, action, old_value, new_value, note, changed_by)
-            VALUES (:run_id, :employee_id, :line_type, :item_code, :action, :old_value, :new_value, :note, :changed_by)")
+                (run_id, employee_id, line_type, source_type, source_id, item_code, action, old_value, old_value_text, new_value, new_value_text, note, changed_by)
+            VALUES (:run_id, :employee_id, :line_type, :source_type, :source_id, :item_code, :action, :old_value, :old_text, :new_value, :new_text, :note, :changed_by)")
             ->execute([
                 ':run_id' => $runId, ':employee_id' => $employeeId, ':line_type' => $lineType,
+                ':source_type' => $sourceType, ':source_id' => $sourceId,
                 ':item_code' => $itemCode, ':action' => $action,
-                ':old_value' => $oldValue, ':new_value' => $newValue,
+                ':old_value' => $oldValue, ':old_text' => $oldText,
+                ':new_value' => $newValue, ':new_text' => $newText,
                 ':note' => $note, ':changed_by' => $userId,
             ]);
+    }
+
+    /** True when this edit changed nothing worth a history row: the same figure (or the same word)
+     *  on both sides, or an undo of something that was never there in the first place. One side
+     *  null and the other not IS a change -- that is how a first override, and a revert back to the
+     *  computed figure, both look. */
+    private function historyIsNoOp(string $action, ?float $oldValue, ?float $newValue, ?string $oldText, ?string $newText): bool {
+        if ($oldValue === null && $newValue === null && $oldText === null && $newText === null) {
+            return true;
+        }
+        if ($oldValue !== null && $newValue !== null && abs($oldValue - $newValue) < self::HISTORY_VALUE_EPSILON) {
+            return true;
+        }
+        if ($oldText !== null && $newText !== null && $oldText === $newText) {
+            return true;
+        }
+        return in_array($action, self::HISTORY_REVERT_ACTIONS, true) && $oldValue === null && $oldText === null;
     }
 
     public function lineOverrideSave(int $runId, int $compId, int $employeeId, string $itemCode, string $action, ?float $overrideAmount, ?string $note, int $userId, bool $isAdmin, string $historyLineType = 'earning_deduction', ?string $historyItemCode = null): array {
@@ -5873,6 +6656,12 @@ class PayrollRunModel {
         if ($run['state'] !== 'draft') {
             return ['status' => false, 'message' => 'Only a draft payroll run can have its earning/deduction items adjusted.'];
         }
+        // 2026-09-18, 4a-1: real gap -- lineOverrideSave() has refused a verified employee since
+        // 2026-08-31, this path never did, so "back to the calculated value" could still move a
+        // verified employee's figures. Same guard, same wording as every other entry point.
+        if ($this->isEmployeeVerifiedForRun($runId, $employeeId)) {
+            return ['status' => false, 'message' => 'This employee is verified for this run and cannot be edited. Unverify first.'];
+        }
 
         $stmtEmp = $this->db->prepare("SELECT employee_no FROM `employees` WHERE id = :id AND comp_id = :comp_id AND deleted_at IS NULL");
         $stmtEmp->execute([':id' => $employeeId, ':comp_id' => $compId]);
@@ -5910,12 +6699,129 @@ class PayrollRunModel {
      * trigger), only the item_code differs. See recalculate()'s own statutory block for where
      * this is actually applied during calculation.
      */
+    /** The 2 statutory items whose participation is decided per-employee by
+     *  payroll_run_employee_exemptions' tri-state (tax_calculate_override/sso_calculate_override),
+     *  not by an exclusion row -- see docs/decisions/2026-09-18-tiny-e-exemption-guard.md. */
+    private const TRI_STATE_STATUTORY_CODES = ['TH_PIT', 'TH_SSO'];
+
     public function statutoryLineOverrideSave(int $runId, int $compId, int $employeeId, string $statutoryItemCode, string $action, ?float $overrideAmount, ?string $note, int $userId, bool $isAdmin): array {
+        // An exclusion row only zeroes the EMPLOYEE half and leaves the employer contribution
+        // computing in full, so it never meant what "do not send SSO/tax for this person" has to
+        // mean. saveEmployeeExemption()'s tri-state is the one surface for that, and it reaches the
+        // engine's own $employeeFlags. override_amount stays allowed on both codes.
+        if ($action === 'exclude' && in_array(strtoupper(trim($statutoryItemCode)), self::TRI_STATE_STATUTORY_CODES, true)) {
+            return ['status' => false, 'message' => 'Tax and SSO participation is set per employee by the tax/SSO setting for this run, not by excluding the line.'];
+        }
         return $this->lineOverrideSave($runId, $compId, $employeeId, $this->statutoryOverrideCode($statutoryItemCode), $action, $overrideAmount, $note, $userId, $isAdmin, 'statutory', $statutoryItemCode);
     }
 
     public function statutoryLineOverrideRemove(int $runId, int $compId, int $employeeId, string $statutoryItemCode, int $userId, bool $isAdmin): array {
         return $this->lineOverrideRemove($runId, $compId, $employeeId, $this->statutoryOverrideCode($statutoryItemCode), $userId, $isAdmin, 'statutory', $statutoryItemCode);
+    }
+
+    /**
+     * The row-selection clause recalculate() applies to standing PED assignments, verbatim (see
+     * earningDeductionDestinationsForEmployee() for why it is a copy and what locks it).
+     * The trailing OR-group is $pedRestrictSql in its permanently-unrestricted form -- both restrict
+     * id lists in recalculate() are hard-coded empty, so $buildTypeCondition() always falls through
+     * to its "no rows = unrestricted" branch, which is the form spelled out here.
+     */
+    private const EED_ASSIGNMENT_WHERE_SQL = "eed.employee_id = :employee_id AND eed.status = 'active' AND eed.deleted_at IS NULL"
+        . " AND eed.effective_date <= :period_end"
+        . " AND (pt.is_sync_only = 1 OR COALESCE(pt.item_type, eed.custom_item_type) = 'earning' OR COALESCE(pt.item_type, eed.custom_item_type) = 'deduction')";
+
+    /**
+     * 2026-09-18, tiny-L3 -- READ-ONLY companion to recurringDeductionDestinationsForEmployee()
+     * below: the per-installment assignments (employee_earning_deductions -- Employee Detail's own
+     * "Payment Items"/EED section) that this run's calculation will route somewhere, so the
+     * Recurring Deduction Destination tab stops looking empty for an employee whose deduction
+     * destinations all live in that OTHER table. Reported for real: EM009's Breakdown listed 4 EED
+     * deductions while this tab showed nothing at all, because the tab only ever read recurring
+     * deductions.
+     *
+     * Nothing here is editable: an EED row's destination belongs to the assignment itself and is
+     * changed on Employee Detail (hence `employee_detail_url`), not per run -- there is no
+     * per-run override table for it, and this method deliberately does not create one.
+     *
+     * The WHERE clause is character-for-character the one recalculate()'s own PED-assignment SELECT
+     * uses (its non-incentive branch, "PED assignments: pick the earliest pending installment per
+     * assignment"), including $pedRestrictSql's permanently-unrestricted form and the "first pending
+     * installment per assignment only" rule -- copied rather than shared because generalising it
+     * would mean editing recalculate(), which this round is explicitly not allowed to touch;
+     * tests/eed_dest_payload_test.php asserts the two clauses are still the same string.
+     * ONE filter is added on top, in PHP so the SQL stays comparable: a row with no payee_type at
+     * all has no destination to show and is left out (it is not "routed" anywhere yet).
+     */
+    public function earningDeductionDestinationsForEmployee(int $runId, int $compId, int $employeeId): array {
+        $run = $this->get($runId, $compId);
+        if (!$run) {
+            return [];
+        }
+        $stmt = $this->db->prepare("SELECT eed.id AS assignment_id, i.id AS installment_id, i.installment_no, i.amount,
+                eed.ped_type_id, eed.custom_item_name, eed.custom_item_type, eed.is_other, eed.total_installments,
+                eed.payee_employee_id, eed.payee_type, eed.destination_id, eed.bank_account_id,
+                pt.item_code, pt.item_name_th, pt.item_name_en, pt.item_type, pt.calculation_method
+            FROM `employee_earning_deductions` eed
+            LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = eed.ped_type_id
+            JOIN `employee_earning_deduction_installments` i ON i.assignment_id = eed.id AND i.status = 'pending'
+            WHERE " . self::EED_ASSIGNMENT_WHERE_SQL . "
+            ORDER BY eed.id ASC, i.installment_no ASC");
+        $stmt->execute([':employee_id' => $employeeId, ':period_end' => $run['period_end_date']]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $destIds = [];
+        $payeeEmpIds = [];
+        $bankAccountIds = [];
+        foreach ($rows as $r) {
+            if (!empty($r['destination_id'])) { $destIds[] = (int)$r['destination_id']; }
+            if (!empty($r['payee_employee_id'])) { $payeeEmpIds[] = (int)$r['payee_employee_id']; }
+            if (!empty($r['bank_account_id'])) { $bankAccountIds[] = (int)$r['bank_account_id']; }
+        }
+        require_once __DIR__ . '/PaymentDestinationModel.php';
+        require_once __DIR__ . '/PayrollCycleModel.php';
+        $payeeRows = (new EmployeeModel($this->db))->optionRowsByIds($compId, $payeeEmpIds);
+        $destRows = (new PaymentDestinationModel($this->db))->optionRowsByIds($compId, $destIds);
+        $bankRows = (new PayrollCycleModel($this->db))->bankAccountOptionRowsByIds($compId, $bankAccountIds);
+
+        // 2026-09-19, tiny-F: the detail route takes employee_no, not employees.id -- the link this
+        // method built pointed at a route parameter of the wrong kind and 404'd on arrival.
+        $noStmt = $this->db->prepare("SELECT employee_no FROM `employees` WHERE id = :id AND comp_id = :comp_id");
+        $noStmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $employeeNo = $noStmt->fetchColumn();
+
+        $result = [];
+        $seen = [];
+        foreach ($rows as $r) {
+            $assignmentId = (int)$r['assignment_id'];
+            if (isset($seen[$assignmentId])) {
+                continue; // only the first (earliest) pending installment per assignment
+            }
+            $seen[$assignmentId] = true;
+            if ($r['payee_type'] === null) {
+                continue; // nothing routed anywhere -- this tab has nothing to say about it
+            }
+            $resolved = $this->resolveManualLineRow($r);
+            $result[] = [
+                'assignment_id' => $assignmentId,
+                'installment_id' => (int)$r['installment_id'],
+                'item_code' => $resolved['code'],
+                'item_name_th' => $resolved['name_th'],
+                'item_name_en' => $resolved['name_en'],
+                'item_type' => $resolved['item_type'],
+                // A custom item has no catalog row, so no calculation_method -- null, never invented.
+                'calculation_method' => $r['calculation_method'],
+                'installment_no' => (int)$r['installment_no'],
+                'total_installments' => (int)$r['total_installments'],
+                'is_installment_plan' => (int)$r['total_installments'] > 1,
+                'amount' => (float)$r['amount'],
+                // SAME shape, SAME builder as the recurring rows' template/override -- one client-side
+                // summary helper reads both.
+                'destination' => $this->payeeDestinationDescriptor($r, $payeeRows, $destRows, $bankRows),
+                'readonly' => true,
+                'employee_detail_url' => $employeeNo !== false ? BASE_URL . '/employees/' . rawurlencode((string)$employeeNo) : null,
+            ];
+        }
+        return $result;
     }
 
     /**
@@ -5925,7 +6831,8 @@ class PayrollRunModel {
      * (EmployeeRecurringDeductionModel::activeForPeriod()), each carrying both the TEMPLATE's own
      * default payee (from employee_recurring_deductions, unaffected by anything below) and this
      * run's own override (if one exists) so the UI can show "currently routed to X (overridden from
-     * the template's own Y)" without a second round trip.
+     * the template's own Y)" without a second round trip. 2026-09-17, tiny-L2: both of those are one
+     * `template`/`override` sub-array of the SAME shape (payeeDestinationDescriptor()).
      */
     public function recurringDeductionDestinationsForEmployee(int $runId, int $compId, int $employeeId): array {
         $run = $this->get($runId, $compId);
@@ -5948,80 +6855,166 @@ class PayrollRunModel {
         $destIds = [];
         $payeeEmpIds = [];
         $bankAccountIds = [];
-        foreach ($recRows as $r) {
+        foreach (array_merge($recRows, array_values($overridesByRecurringId)) as $r) {
             if (!empty($r['destination_id'])) { $destIds[] = (int)$r['destination_id']; }
             if (!empty($r['payee_employee_id'])) { $payeeEmpIds[] = (int)$r['payee_employee_id']; }
             if (!empty($r['bank_account_id'])) { $bankAccountIds[] = (int)$r['bank_account_id']; }
         }
-        foreach ($overridesByRecurringId as $ov) {
-            if (!empty($ov['destination_id'])) { $destIds[] = (int)$ov['destination_id']; }
-            if (!empty($ov['payee_employee_id'])) { $payeeEmpIds[] = (int)$ov['payee_employee_id']; }
-            if (!empty($ov['bank_account_id'])) { $bankAccountIds[] = (int)$ov['bank_account_id']; }
-        }
-        $destLabels = [];
-        if (!empty($destIds)) {
-            $destIds = array_values(array_unique($destIds));
-            $ph = implode(',', array_fill(0, count($destIds), '?'));
-            $stmtDest = $this->db->prepare("SELECT pd.id, pd.account_name, mb.bank_name_th, mb.bank_name_en
-                FROM `payment_destinations` pd LEFT JOIN `master_banks` mb ON mb.id = pd.bank_id WHERE pd.id IN ({$ph})");
-            $stmtDest->execute($destIds);
-            foreach ($stmtDest->fetchAll(PDO::FETCH_ASSOC) as $d) {
-                $destLabels[(int)$d['id']] = trim(($d['account_name'] ?? '') . ($d['bank_name_th'] ? ' - ' . $d['bank_name_th'] : ''));
-            }
-        }
-        // 2026-09-10, Batch 3B item 3: same label-lookup pattern as $destLabels above, for the new
-        // 'company' level-2 (WHICH of the company's own bank_accounts).
-        $bankAccountLabels = [];
-        if (!empty($bankAccountIds)) {
-            $bankAccountIds = array_values(array_unique($bankAccountIds));
-            $ph3 = implode(',', array_fill(0, count($bankAccountIds), '?'));
-            $stmtBa = $this->db->prepare("SELECT id, account_name FROM `bank_accounts` WHERE id IN ({$ph3})");
-            $stmtBa->execute($bankAccountIds);
-            foreach ($stmtBa->fetchAll(PDO::FETCH_ASSOC) as $ba) {
-                $bankAccountLabels[(int)$ba['id']] = $ba['account_name'];
-            }
-        }
-        $payeeLabels = [];
-        if (!empty($payeeEmpIds)) {
-            $payeeEmpIds = array_values(array_unique($payeeEmpIds));
-            $ph2 = implode(',', array_fill(0, count($payeeEmpIds), '?'));
-            $stmtEmp = $this->db->prepare("SELECT id, employee_no, name_th, surname_th FROM `employees` WHERE id IN ({$ph2})");
-            $stmtEmp->execute($payeeEmpIds);
-            foreach ($stmtEmp->fetchAll(PDO::FETCH_ASSOC) as $e) {
-                $payeeLabels[(int)$e['id']] = trim(($e['name_th'] ?? '') . ' ' . ($e['surname_th'] ?? '')) . ' (' . $e['employee_no'] . ')';
-            }
-        }
+        // 2026-09-17, tiny-L2: all 3 destinations are looked up through the SAME builder their own
+        // picker endpoint uses (EmployeeModel/PaymentDestinationModel/PayrollCycleModel each own
+        // theirs) instead of the 3 private label compositions that used to sit here -- those spelled
+        // the same row differently from the picker in all 3 cases ("name (EM001)" vs "EM001 - name",
+        // account_name alone vs "bank . masked (name)", "name - bankTh" vs "name (bank)"), so the
+        // card, its editor and the dropdown disagreed about the account they were all describing.
+        require_once __DIR__ . '/PaymentDestinationModel.php';
+        require_once __DIR__ . '/PayrollCycleModel.php';
+        $payeeRows = (new EmployeeModel($this->db))->optionRowsByIds($compId, $payeeEmpIds);
+        $destRows = (new PaymentDestinationModel($this->db))->optionRowsByIds($compId, $destIds);
+        $bankRows = (new PayrollCycleModel($this->db))->bankAccountOptionRowsByIds($compId, $bankAccountIds);
 
         $result = [];
         foreach ($recRows as $r) {
             $recurringId = (int)$r['recurring_id'];
             $override = $overridesByRecurringId[$recurringId] ?? null;
-            $templateDestId = $r['destination_id'] !== null ? (int)$r['destination_id'] : null;
-            $templatePayeeEmpId = $r['payee_employee_id'] !== null ? (int)$r['payee_employee_id'] : null;
-            $templateBankAccountId = !empty($r['bank_account_id']) ? (int)$r['bank_account_id'] : null;
             $result[] = [
                 'recurring_id' => $recurringId,
                 'item_code' => $r['item_code'], 'item_name_th' => $r['item_name_th'], 'item_name_en' => $r['item_name_en'],
-                'template_payee_type' => $r['payee_type'],
-                'template_payee_employee_id' => $templatePayeeEmpId,
-                'template_payee_label' => $templatePayeeEmpId !== null ? ($payeeLabels[$templatePayeeEmpId] ?? null) : null,
-                'template_destination_id' => $templateDestId,
-                'template_destination_label' => $templateDestId !== null ? ($destLabels[$templateDestId] ?? null) : null,
-                'template_bank_account_id' => $templateBankAccountId,
-                'template_bank_account_label' => $templateBankAccountId !== null ? ($bankAccountLabels[$templateBankAccountId] ?? null) : null,
-                'override' => $override ? [
-                    'payee_type' => $override['payee_type'],
-                    'payee_employee_id' => $override['payee_employee_id'] !== null ? (int)$override['payee_employee_id'] : null,
-                    'payee_label' => $override['payee_employee_id'] !== null ? ($payeeLabels[(int)$override['payee_employee_id']] ?? null) : null,
-                    'destination_id' => $override['destination_id'] !== null ? (int)$override['destination_id'] : null,
-                    'destination_label' => $override['destination_id'] !== null ? ($destLabels[(int)$override['destination_id']] ?? null) : null,
-                    'bank_account_id' => !empty($override['bank_account_id']) ? (int)$override['bank_account_id'] : null,
-                    'bank_account_label' => !empty($override['bank_account_id']) ? ($bankAccountLabels[(int)$override['bank_account_id']] ?? null) : null,
-                    'note' => $override['note'],
-                ] : null,
+                // Template default and this run's override are the SAME shape, built by the same
+                // method -- the card shows one against the other, and the editor opens on whichever
+                // is in force, so any field one of them carries the other has to carry too.
+                'template' => $this->payeeDestinationDescriptor($r, $payeeRows, $destRows, $bankRows),
+                'override' => $override
+                    ? $this->payeeDestinationDescriptor($override, $payeeRows, $destRows, $bankRows) + ['note' => $override['note']]
+                    : null,
             ];
         }
         return $result;
+    }
+
+    /**
+     * 2026-09-18, tiny-L4: the ONE lookup set every payee-bearing read path shares. Collects the
+     * employee/destination/bank-account ids referenced by however many line arrays it is given and
+     * resolves each kind in a SINGLE query through that kind's own picker builder -- one lookup per
+     * REQUEST, never one per line (which is what a naive per-row descriptor would have cost the
+     * payroll-run detail page: 3 queries x every line x every employee in the run).
+     *
+     * @param array<int,array<int,array>> $lineGroups any number of arrays of rows, each row
+     *        carrying payee_employee_id/destination_id/bank_account_id (absent keys are fine)
+     * @return array{payees:array,destinations:array,banks:array} keyed by id, ready for enrichLinePayee()
+     */
+    public function payeeLookupForLines(int $compId, array $lineGroups): array {
+        $payeeIds = [];
+        $destIds = [];
+        $bankIds = [];
+        $installmentIds = [];
+        foreach ($lineGroups as $lines) {
+            if (!is_array($lines)) {
+                continue;
+            }
+            foreach ($lines as $line) {
+                if (!is_array($line)) {
+                    continue;
+                }
+                if (!empty($line['payee_employee_id'])) { $payeeIds[] = (int)$line['payee_employee_id']; }
+                if (!empty($line['destination_id'])) { $destIds[] = (int)$line['destination_id']; }
+                if (!empty($line['bank_account_id'])) { $bankIds[] = (int)$line['bank_account_id']; }
+                if (!empty($line['installment_id'])) { $installmentIds[] = (int)$line['installment_id']; }
+            }
+        }
+        if (!$payeeIds && !$destIds && !$bankIds && !$installmentIds) {
+            return ['payees' => [], 'destinations' => [], 'banks' => [], 'installments' => []];
+        }
+        require_once __DIR__ . '/PaymentDestinationModel.php';
+        require_once __DIR__ . '/PayrollCycleModel.php';
+        return [
+            'payees' => $payeeIds ? (new EmployeeModel($this->db))->optionRowsByIds($compId, $payeeIds) : [],
+            'destinations' => $destIds ? (new PaymentDestinationModel($this->db))->optionRowsByIds($compId, $destIds) : [],
+            'banks' => $bankIds ? (new PayrollCycleModel($this->db))->bankAccountOptionRowsByIds($compId, $bankIds) : [],
+            'installments' => $installmentIds ? $this->installmentRowsByIds($compId, $installmentIds) : [],
+        ];
+    }
+
+    /**
+     * 2026-09-18, tiny-L5: "which instalment, out of how many" for a SET of instalment ids, in one
+     * query -- the same id-set shape the 3 payee lookups above have, and for the same reason: a
+     * persisted line carries only the instalment's id, and the 2 numbers a reader needs sit in 2
+     * different tables (the instalment's own position; the plan's length, on its assignment). It is
+     * the SAME pair earningDeductionDestinationsForEmployee() already reads to decide
+     * is_installment_plan -- resolved once per request here instead of once per line.
+     * Company-scoped through the assignment's own employee, like every other lookup here.
+     */
+    private function installmentRowsByIds(int $compId, array $ids): array {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn($id) => $id > 0)));
+        if (!$ids) {
+            return [];
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare("SELECT i.id, i.installment_no, eed.total_installments
+                FROM `employee_earning_deduction_installments` i
+                JOIN `employee_earning_deductions` eed ON eed.id = i.assignment_id AND eed.deleted_at IS NULL
+                JOIN `employees` e ON e.id = eed.employee_id AND e.comp_id = ?
+                WHERE i.id IN ({$in})");
+        $stmt->execute(array_merge([$compId], $ids));
+        $byId = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $byId[(int)$r['id']] = [
+                'installment_no' => (int)$r['installment_no'],
+                'total_installments' => (int)$r['total_installments'],
+            ];
+        }
+        return $byId;
+    }
+
+    /**
+     * 2026-09-18, tiny-L4: adds `payee` -- the SAME descriptor shape the recurring-destination card
+     * and the EED destination tab already read (payeeDestinationDescriptor()) -- to one persisted
+     * breakdown/manual line, so every surface that shows "where this money goes" reads one object
+     * built in one place instead of re-branching on the 4 raw columns itself.
+     *
+     * Read-side only: the row's own payee_type/payee_employee_id/destination_id/bank_account_id are
+     * left exactly as they were persisted, and nothing here writes anywhere. A line with no
+     * payee_type at all is not routed anywhere, so its `payee` is null rather than an empty
+     * descriptor -- "nothing to say" and "routed, but to what?" are different answers.
+     *
+     * $lookup MUST come from payeeLookupForLines() (see that method: no query is made here, by
+     * design). The empty default keeps the one-row call shape usable from a test/one-off; every id
+     * then resolves to nothing, which the descriptor reports honestly as missing:true.
+     */
+    public function enrichLinePayee(array $row, array $lookup = []): array {
+        if (empty($row['payee_type'])) {
+            $row['payee'] = null;
+            return $row;
+        }
+        $row['payee'] = $this->payeeDestinationDescriptor(
+            $row,
+            $lookup['payees'] ?? [],
+            $lookup['destinations'] ?? [],
+            $lookup['banks'] ?? []
+        );
+        return $row;
+    }
+
+    /**
+     * 2026-09-18, tiny-L5: adds `installment` -- {n, total} -- to one persisted line that came out
+     * of an instalment plan, so "งวด 2/12" can be shown beside the line without any surface counting
+     * instalments for itself. Paired with enrichLinePayee() rather than folded into it: they answer
+     * 2 different questions about the same row, and a line can carry either, both or neither.
+     *
+     * null in all 4 of the cases that are not a plan: no instalment_id at all (a manual line, base
+     * salary, a statutory item), an id whose row is gone (its assignment was deleted), a one-off
+     * assignment (total = 1 -- "งวด 1/1" is noise on every ordinary deduction, not information),
+     * and a lookup that was never given one.
+     *
+     * $lookup MUST come from payeeLookupForLines() -- no query is made here, by the same rule.
+     */
+    public function enrichLineInstallment(array $row, array $lookup = []): array {
+        $row['installment'] = null;
+        $id = !empty($row['installment_id']) ? (int)$row['installment_id'] : 0;
+        $found = $id > 0 ? ($lookup['installments'][$id] ?? null) : null;
+        if ($found !== null && $found['total_installments'] > 1) {
+            $row['installment'] = ['n' => $found['installment_no'], 'total' => $found['total_installments']];
+        }
+        return $row;
     }
 
     /**
@@ -6186,7 +7179,7 @@ class PayrollRunModel {
         if (!$run) {
             return [];
         }
-        $stmtDetail = $this->db->prepare("SELECT base_salary_amount, earning_breakdown, deduction_breakdown, statutory_breakdown
+        $stmtDetail = $this->db->prepare("SELECT base_salary_amount, base_salary_computed_amount, earning_breakdown, deduction_breakdown, statutory_breakdown
             FROM `payroll_run_details` WHERE run_id = :run_id AND employee_id = :employee_id");
         $stmtDetail->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
         $detail = $stmtDetail->fetch(PDO::FETCH_ASSOC);
@@ -6203,7 +7196,10 @@ class PayrollRunModel {
         $attachOverride = function (array $row) use ($overrides): array {
             $ov = $overrides[$row['code']] ?? null;
             $row['override_action'] = $ov['action'] ?? null;
-            $row['override_amount'] = $ov['override_amount'] !== null ? (float)$ov['override_amount'] : null;
+            // `?? null` first: a row with no override at all has $ov === null, and reading a key off
+            // null is a PHP 8 warning on every single line of every open of this modal (found while
+            // adding item_type -- pre-existing, not a behaviour change: the value was, and stays, null).
+            $row['override_amount'] = ($ov['override_amount'] ?? null) !== null ? (float)$ov['override_amount'] : null;
             $row['override_note'] = $ov['note'] ?? null;
             return $row;
         };
@@ -6213,41 +7209,108 @@ class PayrollRunModel {
         $attachStatutoryOverride = function (array $row) use ($overrides): array {
             $ov = $overrides[$this->statutoryOverrideCode($row['code'])] ?? null;
             $row['override_action'] = $ov['action'] ?? null;
-            $row['override_amount'] = $ov['override_amount'] !== null ? (float)$ov['override_amount'] : null;
+            // `?? null` first: a row with no override at all has $ov === null, and reading a key off
+            // null is a PHP 8 warning on every single line of every open of this modal (found while
+            // adding item_type -- pre-existing, not a behaviour change: the value was, and stays, null).
+            $row['override_amount'] = ($ov['override_amount'] ?? null) !== null ? (float)$ov['override_amount'] : null;
             $row['override_note'] = $ov['note'] ?? null;
             return $row;
         };
 
+        // 2026-09-18, tiny-L4: the read-only provenance every row carries from here on -- WHICH
+        // stored thing produced this line, and where its money is routed. All of it already exists
+        // in the persisted breakdown JSON; this endpoint simply stopped dropping it on the floor.
+        // Keys are ALWAYS present (null when the line has no such origin), the same "the client
+        // never has to special-case a missing key" rule `note`/`override_note` above already follow
+        // -- a caller reading `recurring_id` on a PED line gets null, not undefined.
+        // Deliberately NOT a write surface: nothing downstream may send these back.
+        $attachSource = static function (array $row, array $line): array {
+            $intOrNull = static fn($v) => ($v === null || $v === '') ? null : (int)$v;
+            $row['source'] = $line['source'] ?? null;
+            $row['recurring_id'] = $intOrNull($line['recurring_id'] ?? null);
+            $row['assignment_id'] = $intOrNull($line['assignment_id'] ?? null);
+            $row['installment_id'] = $intOrNull($line['installment_id'] ?? null);
+            $row['manual_line_id'] = $intOrNull($line['manual_line_id'] ?? null);
+            $row['payee_type'] = $line['payee_type'] ?? null;
+            $row['payee_employee_id'] = $intOrNull($line['payee_employee_id'] ?? null);
+            $row['payee_employee_no'] = $line['payee_employee_no'] ?? null;
+            $row['destination_id'] = $intOrNull($line['destination_id'] ?? null);
+            $row['bank_account_id'] = $intOrNull($line['bank_account_id'] ?? null);
+            // 2026-09-18, 4a-1: the 5 read-only facts the read-only slip used to read straight off
+            // the persisted breakdown JSON. This endpoint is now the ONE payload BOTH slips render
+            // from (docs/decisions/2026-09-18-slip-single-place.md), so anything one of them showed
+            // has to arrive here too. Passthrough only -- no figure is computed, reordered or added.
+            $row['formula'] = $line['formula'] ?? null;
+            $row['is_exempted'] = !empty($line['is_exempted']);
+            $row['exempted_amount'] = isset($line['exempted_amount']) ? (float)$line['exempted_amount'] : null;
+            $row['is_custom'] = !empty($line['is_custom']);
+            $row['is_other'] = !empty($line['is_other']);
+            return $row;
+        };
+
         $seenCodes = [self::BASE_SALARY_OVERRIDE_CODE => true];
-        $rows = [$attachOverride([
+        $rows = [$attachSource($attachOverride([
             'code' => self::BASE_SALARY_OVERRIDE_CODE,
             'name_th' => 'เงินเดือนพื้นฐาน', 'name_en' => 'Base Salary',
             'current_amount' => $detail['base_salary_amount'] !== null ? (float)$detail['base_salary_amount'] : 0.0,
+            // 2026-09-18, tiny-C: what the engine computed before an override replaced it. ALWAYS
+            // present, null when there is nothing to compare against (no override, or a run last
+            // calculated before this was persisted at all) -- same "the client never has to
+            // special-case a missing key" rule `note`/`override_note` follow.
+            'computed_amount' => ($detail['base_salary_computed_amount'] ?? null) !== null ? (float)$detail['base_salary_computed_amount'] : null,
+            // 2026-09-16: `item_type` is a READ-ONLY grouping hint for the Adjustments modal's own
+            // single table (base_salary / earning / deduction / statutory / other). It is derived
+            // here, never stored: for these rows it is simply WHICH breakdown column the row came
+            // out of, which only this method knows -- the response used to flatten earning and
+            // deduction into one indistinguishable `line_type: 'earning_deduction'`.
+            'item_type' => 'base_salary',
+            // Only statutory lines carry an engine note (see the statutory loop below); every other
+            // row shape reports null so the client never has to special-case a missing key.
+            'note' => null,
             // 2026-08-31, same-day follow-up (item 9a): lets the frontend route Save/Reset to the
             // right endpoint (api/payroll-run.line-override.* vs .statutory-line-override.*)
             // without having to pattern-match item codes client-side.
             'line_type' => 'earning_deduction',
-        ])];
-        foreach (['earning_breakdown', 'deduction_breakdown'] as $col) {
+        ]), [])];
+        foreach (['earning_breakdown' => 'earning', 'deduction_breakdown' => 'deduction'] as $col => $itemType) {
             $lines = $detail[$col] !== null ? json_decode((string)$detail[$col], true) : [];
             foreach ((is_array($lines) ? $lines : []) as $line) {
                 if (empty($line['code'])) {
                     continue; // a line with no code has nothing lineOverrideSave() could ever target
                 }
+                // 2026-09-16: a line somebody added by hand is NOT adjustable here. It has its own
+                // surface (the Adjustments modal's Payment Items tab) where it is edited and removed
+                // as the row it really is, and an override keyed by item_code could not target it
+                // even in principle -- two manual lines are allowed to share one item_code, so an
+                // override on that code has no single line to mean. Filtered server-side, once, so
+                // every caller of this endpoint agrees on it (both mount points of the table, and
+                // anything added later) instead of each one remembering to exclude them.
+                // NOT added to $seenCodes on purpose: that set exists to stop the fallback loop below
+                // from re-listing a line this loop already emitted, and this one was never emitted.
+                // The fallback only ever lists codes carrying an 'exclude' override, which by
+                // definition are NOT in this breakdown, so the two cannot collide here.
+                if (($line['source'] ?? null) === 'manual_line') {
+                    continue;
+                }
                 $seenCodes[$line['code']] = true;
-                $rows[] = $attachOverride([
+                $rows[] = $attachSource($attachOverride([
                     'code' => $line['code'],
                     'name_th' => $line['name_th'] ?? $line['code'],
                     'name_en' => $line['name_en'] ?? $line['code'],
                     'current_amount' => isset($line['amount']) ? (float)$line['amount'] : 0.0,
+                    'computed_amount' => isset($line['computed_amount']) ? (float)$line['computed_amount'] : null,
                     'line_type' => 'earning_deduction',
+                    'item_type' => $itemType,
+                    // 2026-09-18, 4a-1: the line's own note, not a hardcoded null -- the read-only
+                    // slip explained a line from it (explainLineNoteRd()), and now renders from here.
+                    'note' => $line['note'] ?? null,
                     // 2026-08-31: SyncPayResolver's own raw Origami item_code, when this line came
                     // through the generic item_values loop -- see that method's own comment on why
                     // this can genuinely differ from 'code' above (the CUSTOM: fallback especially).
                     // Absent for base salary/manual/attendance-derived (OT/trip/etc) lines, which
                     // never set it -- the occurrence-enrichment step below falls back to 'code' then.
                     'sync_item_code' => $line['sync_item_code'] ?? null,
-                ]);
+                ]), $line);
             }
         }
         // 2026-08-31, same-day follow-up (item 9a): statutory rows, same shape as earning/deduction
@@ -6262,13 +7325,23 @@ class PayrollRunModel {
                 continue;
             }
             $seenCodes[$this->statutoryOverrideCode($line['code'])] = true;
-            $rows[] = $attachStatutoryOverride([
+            $rows[] = $attachSource($attachStatutoryOverride([
                 'code' => $line['code'],
                 'name_th' => $line['name_th'] ?? $line['code'],
                 'name_en' => $line['name_en'] ?? $line['code'],
                 'current_amount' => isset($line['employee_amount']) ? (float)$line['employee_amount'] : 0.0,
+                'computed_amount' => isset($line['computed_amount']) ? (float)$line['computed_amount'] : null,
                 'line_type' => 'statutory',
-            ]);
+                'item_type' => 'statutory',
+                // 2026-09-16: StatutoryCalculationEngine writes WHY a line came out at 0 into the
+                // breakdown itself ('employee_not_enrolled'/'employee_tax_exempt'/'disabled' =
+                // deliberately skipped for this employee; 'no_rate_configured'/'no_rate_ever_
+                // configured'/'unrecognized_calc_base' = something is not set up; 'manually_
+                // overridden'/'manually_excluded' = someone already acted on it). Passed straight
+                // through, read-only, so the Adjustments table can tell those 3 groups apart -- it
+                // hides only the first, and must never hide the second.
+                'note' => $line['note'] ?? null,
+            ]), $line);
         }
         // An 'exclude' override drops its line out of the persisted breakdown entirely (that's the
         // whole point of excluding it), so the loops above never see it -- but the UI still needs to
@@ -6279,11 +7352,55 @@ class PayrollRunModel {
         // this fallback (seenCodes above is keyed by the WRAPPED code for them, always populated by
         // the statutory loop just above regardless of exclude state) -- letting a wrapped
         // '__statutory_..__' code fall through here would create a garbled duplicate row.
+        // 2026-09-16: these rows are not in any breakdown (that is why they are here), so their
+        // `item_type` cannot come from a column the way every row above gets it -- looked up in the
+        // company's own catalog by item_code instead, falling back to 'other' for a code with no
+        // catalog row at all (a retired item, or the reserved base-salary sentinel's siblings). The
+        // catalog query only runs when there is actually something to look up.
+        $fallbackCodes = [];
         foreach ($overrides as $code => $ov) {
             if (isset($seenCodes[$code]) || $ov['action'] !== 'exclude' || (str_starts_with($code, '__statutory_') && str_ends_with($code, '__'))) {
                 continue;
             }
-            $rows[] = $attachOverride(['code' => $code, 'name_th' => $code, 'name_en' => $code, 'current_amount' => 0.0, 'line_type' => 'earning_deduction']);
+            $fallbackCodes[] = $code;
+        }
+        // 2026-09-16: an item the RUN turned off (Run Settings) drops out of the breakdown on the
+        // next recalculate exactly like a personally-excluded one does, but has no override row to
+        // be found by the loop above -- so its row used to appear before a recalculate and vanish
+        // after it, for the same unchanged setting. Listed here too, so the Adjustments table shows
+        // it as the (disabled) row it is, in both states.
+        $stmtRunExcluded = $this->db->prepare("SELECT item_code FROM `payroll_run_item_exclusions` WHERE run_id = :run_id");
+        $stmtRunExcluded->execute([':run_id' => $runId]);
+        foreach ($stmtRunExcluded->fetchAll(PDO::FETCH_COLUMN) as $runExcludedCode) {
+            if (isset($seenCodes[$runExcludedCode]) || in_array($runExcludedCode, $fallbackCodes, true)) {
+                continue;
+            }
+            $fallbackCodes[] = $runExcludedCode;
+        }
+        $catalogTypeByCode = [];
+        if (!empty($fallbackCodes)) {
+            $placeholders = implode(',', array_fill(0, count($fallbackCodes), '?'));
+            $stmtTypes = $this->db->prepare("SELECT item_code, item_type, item_name_th, item_name_en
+                FROM `payroll_earning_deduction_types` WHERE comp_id = ? AND item_code IN ({$placeholders})");
+            $stmtTypes->execute(array_merge([$compId], $fallbackCodes));
+            foreach ($stmtTypes->fetchAll(PDO::FETCH_ASSOC) as $catalogRow) {
+                $catalogTypeByCode[$catalogRow['item_code']] = $catalogRow;
+            }
+        }
+        foreach ($fallbackCodes as $code) {
+            $catalog = $catalogTypeByCode[$code] ?? null;
+            $rows[] = $attachSource($attachOverride([
+                'code' => $code,
+                'name_th' => $catalog['item_name_th'] ?? $code,
+                'name_en' => $catalog['item_name_en'] ?? $code,
+                'current_amount' => 0.0,
+                // An excluded line is dropped from the breakdown entirely, so there is no persisted
+                // engine figure for it -- deliberately left unanswered rather than guessed (BACKLOG).
+                'computed_amount' => null,
+                'line_type' => 'earning_deduction',
+                'item_type' => $catalog['item_type'] ?? 'other',
+                'note' => null,
+            ]), []);
         }
 
         // 2026-08-31, same-day follow-up (Origami's `scheduled_item_occurrences[]` proposal, per-
@@ -6319,6 +7436,15 @@ class PayrollRunModel {
             }
             unset($row);
         }
+
+        // 2026-09-18, tiny-L4: the same `payee` descriptor the read-only slip gets, on the editable
+        // table's rows too -- one builder, one shape, so the 2 views of the same line can no longer
+        // describe its destination differently. One lookup for this employee's whole response.
+        $payeeLookup = $this->payeeLookupForLines($compId, [$rows]);
+        foreach ($rows as &$row) {
+            $row = $this->enrichLineInstallment($this->enrichLinePayee($row, $payeeLookup), $payeeLookup);
+        }
+        unset($row);
 
         return $rows;
     }
@@ -6441,12 +7567,11 @@ class PayrollRunModel {
             // report with no-op noise). $values[$field]===null means "this call leaves the field
             // following synced/import data" -- same reading as recorded 'restore', consistent with
             // attendanceOverrideRemove()'s own action value below.
+            // 2026-09-19, H-backend: the "unchanged, skip" test that used to sit inline here is now
+            // historyIsNoOp(), which every writer goes through -- same rule, one copy.
             foreach (self::ATTENDANCE_OVERRIDE_FIELDS as $field) {
                 $oldFieldValue = $existingRow && $existingRow[$field] !== null ? (float)$existingRow[$field] : null;
                 $newFieldValue = $values[$field];
-                if ($oldFieldValue === $newFieldValue || ($oldFieldValue !== null && $newFieldValue !== null && abs($oldFieldValue - $newFieldValue) < 0.005)) {
-                    continue; // unchanged, nothing to record
-                }
                 $this->recordLineOverrideHistory($runId, $employeeId, 'attendance', $field,
                     $newFieldValue !== null ? 'override' : 'restore', $oldFieldValue, $newFieldValue, $userId, $note);
             }
@@ -6491,6 +7616,8 @@ class PayrollRunModel {
 
         // One 'restore' row per field that genuinely HAD an override (skip fields that were never
         // touched) -- new_value is the real synced/import figure it reverted to, not a guess.
+        // 2026-09-19, H-backend: historyIsNoOp() would refuse an empty revert anyway, but this stays
+        // -- it is what keeps $existingRow[$field] from being read off `false` and cast to 0.00.
         $syncedAfter = $this->attendanceDataForEmployee($compId, $runId, $employeeId)['synced'] ?? [];
         foreach (self::ATTENDANCE_OVERRIDE_FIELDS as $field) {
             if (!$existingRow || $existingRow[$field] === null) {
@@ -6623,6 +7750,13 @@ class PayrollRunModel {
      * (2026-08-29_13_payroll_run_calc_exclusions.sql) for the backfill. Both the old derived
      * boolean keys AND the new tri-state keys are returned so nothing else reading the old shape
      * breaks.
+     *
+     * 2026-09-18, 4b: 2 read-only keys more -- `tax_inherit_effective`/`sso_inherit_effective`, what
+     * 'inherit' really resolves to for THIS employee on THIS run (run default, else the employee's
+     * own permanent flag -- the same precedence recalculate() applies, minus the override itself).
+     * The slip's own TH_PIT/TH_SSO switch has to show the effective answer while the stored value is
+     * 'inherit', and has to name it in the "System: ..." tag while it is not, and neither is
+     * derivable from the lines: an override replaces the note the flag would have produced.
      */
     public function getEmployeeExemption(int $runId, int $compId, int $employeeId): array {
         $stmt = $this->db->prepare("SELECT tax_calculate_override, sso_calculate_override, note FROM `payroll_run_employee_exemptions`
@@ -6631,11 +7765,24 @@ class PayrollRunModel {
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         $taxOverride = $row['tax_calculate_override'] ?? 'inherit';
         $ssoOverride = $row['sso_calculate_override'] ?? 'inherit';
+
+        $stmtDefaults = $this->db->prepare("SELECT tax_calculate_default, sso_calculate_default FROM `payroll_run_calc_settings` WHERE run_id = :run_id");
+        $stmtDefaults->execute([':run_id' => $runId]);
+        $defaults = $stmtDefaults->fetch(PDO::FETCH_ASSOC) ?: [];
+        $taxDefault = $defaults['tax_calculate_default'] ?? 'use_employee_setting';
+        $ssoDefault = $defaults['sso_calculate_default'] ?? 'use_employee_setting';
+        $stmtFlags = $this->db->prepare("SELECT tax_exempt, sso_enrolled FROM `employees` WHERE id = :id AND comp_id = :comp_id");
+        $stmtFlags->execute([':id' => $employeeId, ':comp_id' => $compId]);
+        $flags = $stmtFlags->fetch(PDO::FETCH_ASSOC) ?: [];
+
         return [
             'tax_calculate_override' => $taxOverride,
             'sso_calculate_override' => $ssoOverride,
             'exempt_tax' => $taxOverride === 'no',
             'exempt_sso' => $ssoOverride === 'no',
+            // 'tax_exempt' is the negative of "calculate tax", 'sso_enrolled' the positive of "send SSO".
+            'tax_inherit_effective' => in_array($taxDefault, ['yes', 'no'], true) ? $taxDefault : (empty($flags['tax_exempt']) ? 'yes' : 'no'),
+            'sso_inherit_effective' => in_array($ssoDefault, ['yes', 'no'], true) ? $ssoDefault : (empty($flags['sso_enrolled']) ? 'no' : 'yes'),
             'note' => $row['note'] ?? null,
         ];
     }
@@ -6685,6 +7832,13 @@ class PayrollRunModel {
         $own = !$this->db->inTransaction();
         try {
             if ($own) { $this->db->beginTransaction(); }
+            // 2026-09-19, H-backend: read BEFORE the write -- this is the only place the answer this
+            // call is replacing still exists, and both branches below destroy it. Absent row means
+            // both halves are at their default, which is exactly what 'inherit' says.
+            $stmtBefore = $this->db->prepare("SELECT tax_calculate_override, sso_calculate_override FROM `payroll_run_employee_exemptions`
+                WHERE run_id = :run_id AND employee_id = :employee_id");
+            $stmtBefore->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
+            $before = $stmtBefore->fetch(PDO::FETCH_ASSOC) ?: [];
             if ($taxCalculateOverride === 'inherit' && $ssoCalculateOverride === 'inherit') {
                 $this->db->prepare("DELETE FROM `payroll_run_employee_exemptions` WHERE run_id = :run_id AND employee_id = :employee_id")
                     ->execute([':run_id' => $runId, ':employee_id' => $employeeId]);
@@ -6710,6 +7864,20 @@ class PayrollRunModel {
                 $summary = implode(', ', $summaryParts);
                 $this->logAudit($runId, 'draft', 'draft', 'employee_exemption_save', $userId,
                     "Employee {$employeeNo}: {$summary} for this run." . ($note ? " (note: {$note})" : ''));
+            }
+            // 2026-09-19, H-backend: until today this surface wrote nothing but the free-text audit
+            // note above, so "who turned this person's SSO off, and what was it before" had no
+            // structured answer anywhere. One row per HALF that actually moved (the panel always
+            // submits both), keyed by the bare statutory code the rest of this table already uses --
+            // never the statutoryOverrideCode() sentinel, which belongs to the override table alone.
+            $halves = array_combine(self::TRI_STATE_STATUTORY_CODES, [
+                ['column' => 'tax_calculate_override', 'new' => $taxCalculateOverride],
+                ['column' => 'sso_calculate_override', 'new' => $ssoCalculateOverride],
+            ]);
+            foreach ($halves as $code => $half) {
+                $this->recordLineOverrideHistory($runId, $employeeId, 'statutory', $code, 'exemption_change',
+                    null, null, $userId, $note, 'exemption', null,
+                    (string)($before[$half['column']] ?? 'inherit'), $half['new']);
             }
             if ($own) { $this->db->commit(); }
         } catch (PDOException $e) {

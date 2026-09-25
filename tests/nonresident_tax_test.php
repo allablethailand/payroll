@@ -170,7 +170,7 @@ try {
     check('B\'s base_amount is the taxable gross itself (not an annualized/allowance-reduced figure, same as the run-level flat-rate branch)', (float)($pitBOn['base_amount'] ?? -1), 50000.0);
 
     echo "\n" . ($failures === 0 ? "ALL TESTS PASSED (transaction rolled back, no data persisted)" : "SOME TESTS FAILED") . "\n";
-    echo "{$passes} passed, {$failures} failed.\n";
+    echo "\nPassed: {$passes}, Failed: {$failures}\n";
 } finally {
     $pdo->rollBack();
 }

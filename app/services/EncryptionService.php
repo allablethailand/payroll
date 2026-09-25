@@ -108,6 +108,20 @@ class EncryptionService {
      * HMAC-SHA256 of a normalized plaintext, for exact-match lookup columns (e.g. id_card_no_hash).
      * Deterministic (same input -> same output) unlike encrypt(), which uses a random IV each time.
      */
+    /** Display form of an account number: everything but the last 4 digits replaced by bullets.
+     *  Extracted 2026-09-15 from EmployeeModel::quickView()'s own inline copy so the payee pickers
+     *  (employee / company account / saved destination) can all mask identically instead of each
+     *  repeating the formula -- there is exactly one shape of masked account number in this app.
+     *  Takes the PLAINTEXT number; callers decrypt first, and must never hand the plaintext itself
+     *  to a response. */
+    public static function maskAccountNo(?string $plaintext): ?string {
+        if ($plaintext === null || $plaintext === '') {
+            return null;
+        }
+        $len = strlen($plaintext);
+        return $len > 4 ? str_repeat('•', $len - 4) . substr($plaintext, -4) : $plaintext;
+    }
+
     public static function hash(?string $plaintext): ?string {
         if ($plaintext === null || $plaintext === '') {
             return null;

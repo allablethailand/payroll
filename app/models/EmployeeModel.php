@@ -562,19 +562,49 @@ class EmployeeModel {
     /** Batch 3A item 4 -- lightweight lookup for the app.js quick-view modal opened by clicking an
      *  employee avatar (Process List's Created/Updated By, Process Detail's employee table, the
      *  Approval Timeline modal). Deliberately NOT the full get() (that method decrypts/returns many
-     *  fields no quick-view popup needs, keyed by employee_no not id besides). */
+     *  fields no quick-view popup needs, keyed by employee_no not id besides).
+     *
+     * 2026-09-14, Phase Design Round 3 item 3c-1 -- quick-view's body grid grew from the 3 fields
+     * already covered by emp-header-card (name/code/department/position/status) to 6 NEW fields:
+     * employment_type_name_th/en (structure_employment_types join), employment_date, mobile_no,
+     * personal_email (all plain columns, no new logic), and payment_method_name_th/en +
+     * bank_name_th/en + a MASKED bank_account_no (only ever the last-4-digits form leaves this
+     * method -- the decrypted full number is never returned to the controller/JSON response, same
+     * "mask before it leaves the server" precedent as PayrollController::maskRunMonetaryFields()/
+     * PayslipTemplateRenderer's own bank-account masking). Bank account resolves through the
+     * employee's own `default_bank_account_id` (the same field the Employee Detail Salary tab
+     * edits, per EmployeePaymentMethodModel's own docblock) -- NOT the full run-time precedence
+     * chain PayrollRunEmployeeBankAccountModel::resolveForRun() uses (cycle/run overrides), since
+     * this modal opens with no run context on several of its call sites (Process List, Approval
+     * Timeline) and must render identically everywhere. */
     public function quickView(int $compId, int $employeeId): ?array {
         $sql = "SELECT e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en,
                     e.profile_photo_path, e.employee_status,
+                    e.employment_date, e.mobile_no, e.personal_email,
                     d.department_name_th, d.department_name_en,
                     p.position_name_th, p.position_name_en,
-                    b.branch_name_th, b.branch_name_en
+                    b.branch_name_th, b.branch_name_en,
+                    et.employment_type_name_th, et.employment_type_name_en,
+                    mpm.code AS payment_method_code, mpm.name_th AS payment_method_name_th, mpm.name_en AS payment_method_name_en,
+                    dmb.bank_name_th, dmb.bank_name_en,
+                    dba.account_no AS bank_account_no_enc, dba.key_version AS bank_account_key_version
                 " . self::LIST_JOINS . "
+                LEFT JOIN `structure_employment_types` et ON e.employment_type_id = et.id
+                LEFT JOIN `master_payment_methods` mpm ON e.payment_method_id = mpm.id
+                LEFT JOIN `bank_accounts` dba ON e.default_bank_account_id = dba.id
+                LEFT JOIN `master_banks` dmb ON dba.bank_id = dmb.id
                 WHERE e.id = :id AND e.comp_id = :comp_id AND e.deleted_at IS NULL";
         $stmt = $this->db->prepare($sql);
         $stmt->execute([':id' => $employeeId, ':comp_id' => $compId]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row ?: null;
+        if (!$row) {
+            return null;
+        }
+        $row['bank_account_no_masked'] = EncryptionService::maskAccountNo(
+            EncryptionService::decrypt($row['bank_account_no_enc'] ?? null, isset($row['bank_account_key_version']) ? (int)$row['bank_account_key_version'] : null)
+        );
+        unset($row['bank_account_no_enc'], $row['bank_account_key_version']);
+        return $row;
     }
 
     /** Maps this list's DataTables column keys to their real SQL expression -- shared by list()'s
@@ -1969,6 +1999,36 @@ class EmployeeModel {
     // $payrollParticipantsOnly rather than baked into $where unconditionally -- the one caller that
     // DOES need it is the Payment Voucher report's own employee picker (Reports > Annual Reports),
     // wired via #reportsPreviewEmployeeSelect's `data-payroll-participants-only="1"` (see input.js).
+    /** The ONE definition of an employee picker option's label ("EM001 - ชื่อ นามสกุล"). 2026-09-17,
+     *  tiny-M round 3: shared with optionRowsByIds() below so a form that PREFILLS such a picker
+     *  from a stored id shows the same text as the option the user would have picked by hand --
+     *  before this, a prefill wrote the employee_no alone and the same row read 2 different ways. */
+    private const OPTION_LABEL_SELECT = "CONCAT(employee_no, ' - ', name_th, ' ', surname_th) AS text_th,
+                    CONCAT(employee_no, ' - ', name_en, ' ', surname_en) AS text_en";
+
+    /**
+     * The same option rows reportToOptions() serves, for a known set of ids instead of a search --
+     * same label, same payout-account fields, same shape. For prefilling a picker with a value that
+     * is already stored (so no search term would reliably return it).
+     */
+    public function optionRowsByIds(int $compId, array $ids): array {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn($id) => $id > 0)));
+        if (!$ids) {
+            return [];
+        }
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare("SELECT id, " . self::OPTION_LABEL_SELECT . "
+            FROM `employees` WHERE comp_id = ? AND deleted_at IS NULL AND id IN ({$in})");
+        $stmt->execute(array_merge([$compId], $ids));
+        $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $this->attachPayoutAccountToOptions($items);
+        $byId = [];
+        foreach ($items as $item) {
+            $byId[(int)$item['id']] = $item;
+        }
+        return $byId;
+    }
+
     public function reportToOptions(int $compId, ?int $excludeId, string $search, int $page, int $limit, bool $payrollParticipantsOnly = false): array {
         $offset = ($page - 1) * $limit;
         $where = "comp_id = :comp_id AND deleted_at IS NULL";
@@ -1990,9 +2050,7 @@ class EmployeeModel {
         $totalStmt->execute($params);
         $totalCount = (int)$totalStmt->fetchColumn();
 
-        $sql = "SELECT id,
-                    CONCAT(employee_no, ' - ', name_th, ' ', surname_th) AS text_th,
-                    CONCAT(employee_no, ' - ', name_en, ' ', surname_en) AS text_en
+        $sql = "SELECT id, " . self::OPTION_LABEL_SELECT . "
                 FROM `employees` WHERE {$where} ORDER BY name_th ASC LIMIT :limit OFFSET :offset";
         $stmt = $this->db->prepare($sql);
         foreach ($params as $key => $val) {
@@ -2002,8 +2060,48 @@ class EmployeeModel {
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
         $items = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $this->attachPayoutAccountToOptions($items);
 
         return ['items' => $items, 'total_count' => $totalCount];
+    }
+
+    /** 2026-09-15: adds each option's OWN receiving account (the one a transfer routed to this
+     *  employee is actually paid into) to the picker's option data -- masked number only, plus a
+     *  plain has_bank_account so a caller can tell "no account on file" apart from "not loaded".
+     *  Done as a second lookup keyed by the ids just returned rather than as a JOIN on the query
+     *  above, whose WHERE clause is written against unqualified columns (`id`, `name_th`, ...) that
+     *  a join to master_banks would make ambiguous. */
+    private function attachPayoutAccountToOptions(array &$items): void {
+        if (!$items) {
+            return;
+        }
+        $ids = array_map(static fn($r) => (int)$r['id'], $items);
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->db->prepare("SELECT e.id, e.bank_account_name, e.bank_branch, e.bank_account_no, e.key_version,
+                mb.bank_name_th, mb.bank_name_en
+            FROM `employees` e
+            LEFT JOIN `master_banks` mb ON mb.id = e.bank_id
+            WHERE e.id IN ({$in})");
+        $stmt->execute($ids);
+        $byId = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $masked = EncryptionService::maskAccountNo(
+                EncryptionService::decrypt($r['bank_account_no'] ?? null, isset($r['key_version']) ? (int)$r['key_version'] : null)
+            );
+            $byId[(int)$r['id']] = [
+                'account_name' => $r['bank_account_name'],
+                'bank_branch' => $r['bank_branch'],
+                'bank_name_th' => $r['bank_name_th'],
+                'bank_name_en' => $r['bank_name_en'],
+                'account_no_masked' => $masked,
+                'has_bank_account' => ($masked !== null && $masked !== ''),
+            ];
+        }
+        foreach ($items as &$item) {
+            $extra = $byId[(int)$item['id']] ?? ['account_name' => null, 'bank_branch' => null, 'bank_name_th' => null, 'bank_name_en' => null, 'account_no_masked' => null, 'has_bank_account' => false];
+            $item = array_merge($item, $extra);
+        }
+        unset($item);
     }
 
     private function isEmployeeNoDuplicate(int $compId, string $employeeNo, ?int $excludeId): bool {

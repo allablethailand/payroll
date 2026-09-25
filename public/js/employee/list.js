@@ -49,20 +49,16 @@ if (typeof watchTabDirty === 'function') {
     });
 }
 // 2026-08-30, explicit request: "/payroll/employees กดเลือก Tab ไหน Refresh แล้วให้อยู่ tab เดิม" --
-// same URL-hash + history.replaceState mechanism already built for Employee Detail's own #employeeTabs
-// (detail.js's activateEmployeeTabFromHash()/shown.bs.tab handler), applied here to this page's
-// top-level #employeeTopTabs instead. A tab switch replaces the URL hash (no new history entry, no
-// page reload) with that tab button's own id; a hash present on load re-shows that same tab via
-// Bootstrap's own Tab API, which also correctly re-fires shown.bs.tab so each tab's own lazy-init
-// (DataTable init, station counts, etc.) still runs exactly as it would on a real click.
-function activateEmployeeTopTabFromHash() {
-    const hash = (location.hash || '').replace('#', '');
-    if (!hash) return;
-    const $btn = $('#' + CSS.escape(hash));
-    if ($btn.length && $btn.attr('data-bs-toggle') === 'tab' && $btn.closest('#employeeTopTabs').length) {
-        bootstrap.Tab.getOrCreateInstance($btn[0]).show();
-    }
-}
+// same URL-hash + history.replaceState mechanism already built for Employee Detail's own #employeeTabs,
+// applied here to this page's top-level #employeeTopTabs instead. A tab switch replaces the URL hash
+// (no new history entry, no page reload) with that tab button's own id; a hash present on load
+// re-shows that same tab via Bootstrap's own Tab API, which also correctly re-fires shown.bs.tab so
+// each tab's own lazy-init (DataTable init, station counts, etc.) still runs exactly as it would on a
+// real click.
+// 2026-09-13, §1 follow-up: the restore function itself (was activateEmployeeTopTabFromHash(), a
+// near-verbatim copy of Employee Detail's own version and Payroll Detail's own unscoped version) moved
+// to app.js's shared activateTabFromHash(containerSelector) -- see that function's own docblock (incl.
+// a real focus-ring bug fixed there too). This page's own call below just passes its container scope.
 $(document).on('shown.bs.tab', '#employeeTopTabs button[data-bs-toggle="tab"]', function (e) {
     if (history.replaceState) {
         history.replaceState(null, '', '#' + e.target.id);
@@ -91,7 +87,7 @@ $(document).ready(function () {
     }
     updateClearEmployeeFilterVisibility();
     refreshEmployeeStationCounts();
-    activateEmployeeTopTabFromHash();
+    activateTabFromHash('#employeeTopTabs');
     initRcMobileIti();
     });
 });

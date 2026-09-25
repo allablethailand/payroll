@@ -108,6 +108,25 @@ try {
     check('row 3 old_value is the override that was just removed (27000.00)', round((float)$h3[2]['old_value'], 2), 27000.00);
     check('row 3 new_value is back to the original computed base salary (30000.00)', round((float)$h3[2]['new_value'], 2), 30000.00);
 
+    // ---------- a verified employee is frozen for BOTH write paths ----------
+    // 2026-09-18, 4a-1: lineOverrideSave() has refused a verified employee since 2026-08-31;
+    // lineOverrideRemove() ("back to the calculated value") never did, so the freeze had a hole in
+    // it that the read-only slip's own history list could walk straight through.
+    echo "=== a verified employee cannot be edited through EITHER path ===
+";
+    $verifyRes = $runModel->setEmployeeVerified($runId, $compId, $employeeId, true, $userId, true);
+    checkTrue('fixture: employee verified' . (empty($verifyRes['status']) ? " ({$verifyRes['message']})" : ''), $verifyRes['status']);
+    $blockedSave = $runModel->lineOverrideSave($runId, $compId, $employeeId, PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, 'override_amount', 31000.00, null, $userId, true);
+    checkTrue('save is refused while verified', empty($blockedSave['status']));
+    $blockedRemove = $runModel->lineOverrideRemove($runId, $compId, $employeeId, PayrollRunModel::BASE_SALARY_OVERRIDE_CODE, $userId, true);
+    checkTrue('restore is refused while verified', empty($blockedRemove['status']));
+    check('both refusals say the same thing', $blockedRemove['message'], $blockedSave['message']);
+    $hBlocked = $historyForRun();
+    check('a refused write writes no history row', count($hBlocked), count($h3));
+    // Put the fixture back: every assertion after this one runs on an unverified employee, and the
+    // positive path is what the whole rest of this file already exercises.
+    $runModel->setEmployeeVerified($runId, $compId, $employeeId, false, $userId, true);
+
     // ---------- statutory override: bare item_code, line_type=statutory ----------
     echo "=== statutory (TH_SSO): line_type + bare item_code (not the wrapped sentinel) ===\n";
     $statRes = $runModel->statutoryLineOverrideSave($runId, $compId, $employeeId, 'TH_SSO', 'override_amount', 111.11, null, $userId, true);
