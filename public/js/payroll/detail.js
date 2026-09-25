@@ -1742,8 +1742,9 @@ $(document).on('click', '#btnSaveRunSettings', function () {
    page's own Timeline modal (public/js/payroll/approval.js/style.css), duplicated rather than
    shared (same reasoning as that file's own comments -- this page reuses `currentRun`/
    `auditActionLabel()` already loaded via loadRunDetail() instead of a second AJAX call, since
-   PayrollController::get() now returns approval_flow/can_approve_payroll/can_process_payroll
-   alongside the audit_log it already returned). Approve/Reject/Request Info only render from
+   PayrollController::get() returns approval_flow/can_approve_payroll/can_process_payroll
+   alongside its other fields -- audit_log is no longer one of them, tiny round B, 2026-09-24).
+   Approve/Reject/Request Info only render from
    pending_approval; Revert/Undo now also renders from an already-decided state
    (approved/rejected/need_info), all gated on run.can_approve_payroll (server-checked via
    PayrollRunModel::canApprovePayroll(), not just a state gate) -- this page used to show no action
@@ -4016,9 +4017,10 @@ document.addEventListener('keydown', function (e) {
 // rules.md §6 now carries a line for this
 // exact case ("feed ที่โตไม่จำกัด = DataTable, Timeline = feed สั้นที่ตัดยอดได้"): run 752 in dev alone
 // carries 1571 rows (round A's own COUNT), far past anything a card-per-row list can show without
-// its own pagination, which is exactly what DataTables already does for free. Same data source as
-// before (payroll-run.get's own `audit_log`, PayrollRunModel::getAuditLog() -- unmodified, backend
-// untouched), same tab, same call site (loadRunDetail()) -- only the renderer changed.
+// its own pagination, which is exactly what DataTables already does for free. At the time, same
+// data source as before (payroll-run.get's own `audit_log`), same tab, same call site
+// (loadRunDetail()) -- only the renderer changed; see the Round B1 (D5)/tiny round B comments below
+// (2026-09-24) for the 2 rounds that moved this off `.get()`'s response entirely.
 // Column titles are NOT static `<th>` text here, unlike every other table on this page -- every
 // column's content is language-bound at RENDER time (auditActionLabel()/statusBadgeHtml()/the
 // actor's own th/en name), so `columns[].title` is set from langData in JS at construction, and

@@ -4230,17 +4230,12 @@ const RUN_LIFECYCLE_BRANCH_INFO = {
     need_info: { icon: 'fa-circle-info', labelKey: 'step_approval_need_info' },
     cancelled: { icon: 'fa-ban', labelKey: 'state_cancelled' },
 };
-// A cancelled run's own audit_log always ends with the 'cancel' action -- its from_state (the last
-// state it actually sat in right before being cancelled) says how far up the spine to mark done.
-// List rows don't carry the full audit_log (only run.get() does, see runLifecycleSteps()'s own
-// `showDates` param below), so PayrollRunModel::list() precomputes the same fact into a
-// `cancelled_from_state` column instead -- this reads whichever of the two is present.
+// A cancelled run's from_state (the last state it actually sat in right before being cancelled)
+// says how far up the spine to mark done. Both List's own `payroll_runs.list()` query and
+// `.get()` (PayrollRunModel.php:302) precompute this into a `cancelled_from_state` column --
+// 2026-09-24, tiny round B: `.get()` no longer carries the full audit_log this could fall back to
+// reading directly (see that round's own decisions doc), so this column is now the only source.
 function runLifecycleCancelledFromState(run) {
-    const log = run.audit_log;
-    if (log && log.length) {
-        const last = log[log.length - 1];
-        if (last && last.action === 'cancel') return last.from_state;
-    }
     return run.cancelled_from_state || 'draft';
 }
 function computeRunLifecycleProgress(run) {
@@ -4270,28 +4265,15 @@ function computeRunLifecycleProgress(run) {
     const idx = RUN_LIFECYCLE_STEPS.findIndex(s => s.key === state);
     return { reachedIdx: idx, branch: null };
 }
-// Reads the LAST matching audit_log entry so a re-approve after a revert-then-redo cycle shows the
-// latest occurrence, not a stale earlier one. Same action codes AUDIT_ACTION_LABEL_KEYS above
-// already maps (markPaid, not mark_paid).
-// 2026-09-10, Batch 3A item 3, real bug caught before shipping: this is called by MORE than just
-// Detail's own full spine now -- the Approval Timeline modal's Paid/Locked stages (this same item)
-// need a date on ALL 3 pages that open it, but List/Approval Queue's copies fetch the run via
-// api/payroll-run.approval-timeline, whose own audit_log was intentionally stripped in item 1 (its
-// "History" section was cut) -- with no fallback this would have silently shown NO date there,
-// a regression from the old apvPaidStageHtmlPr/Ap's own `run.paid_at` read. Falls back to the
-// run's own timestamp column (step.dateField) whenever audit_log isn't present -- correct in the
-// common case (no revert-then-redo for that step) and never reached at all for List's own 5-step
-// spine above, which still passes showDates:false.
-const RUN_LIFECYCLE_AUDIT_ACTIONS = { pending_approval: 'submit', approved: 'approve', paid: 'markPaid', locked: 'lock' };
+// 2026-09-24, tiny round B: used to read the LAST matching audit_log entry first (so a re-approve
+// after a revert-then-redo cycle showed the latest occurrence, not a stale earlier one), falling
+// back to the run's own timestamp column (step.dateField) only when audit_log wasn't present (e.g.
+// the Approval Timeline modal's own api/payroll-run.approval-timeline, whose audit_log was already
+// stripped separately). `.get()` no longer carries audit_log at all now (see that round's own
+// decisions doc), so the column is the only source left -- every caller already gets this same
+// value either way, since revert()/reopen() always clear the column in the same instant they'd have
+// invalidated the old audit-log read (see PayrollRunModel::revert()/reopen()).
 function runLifecycleStepDate(run, step) {
-    if (step.key === 'draft') return run.created_at || null;
-    const action = RUN_LIFECYCLE_AUDIT_ACTIONS[step.key];
-    const log = run.audit_log;
-    if (log && log.length) {
-        for (let i = log.length - 1; i >= 0; i--) {
-            if (log[i].action === action) return log[i].performed_at || null;
-        }
-    }
     return run[step.dateField] || null;
 }
 // The one function both pages call. `options.showDates` (Detail: true, List: false) is the ONLY

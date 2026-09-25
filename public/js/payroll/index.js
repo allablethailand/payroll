@@ -168,8 +168,9 @@ function frequencyLabelPr(freq) {
    bug: a static per-step label that never reflected done-vs-current-vs-not-yet). This widget calls
    it with `showDates:false` (confirmed with the user -- this column already sits next to its own
    "Last Updated" date, no need for a 2nd date under every dot) -- row.cancelled_from_state
-   (PayrollRunModel::list()'s own subquery column) is read directly by runLifecycleSteps() itself
-   as the fallback when a row has no full audit_log (list() rows never do, only get() does). */
+   (PayrollRunModel::list()'s own subquery column) is read directly by runLifecycleSteps() itself;
+   tiny round B (2026-09-24) gave `.get()` the same column and dropped its own full audit_log, so
+   this is now the only source either page reads, not a list()-only fallback anymore. */
 // Quick shortcut buttons (2026-08-22) -- deliberately only for a zero-extra-input transition:
 // Submit (draft) and Lock (paid) both call the EXACT SAME existing endpoints detail.js already
 // uses, no new backend/business logic at all. pending_approval has no shortcut here on purpose --
