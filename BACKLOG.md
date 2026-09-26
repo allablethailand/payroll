@@ -1653,50 +1653,115 @@ callout/ปุ่ม warning ทั้งระบบ ต้องวัดห�
 
 ---
 
-## Audit Log serverSide (Round B4): N1=2, c9=3 ล็อกเป็นค่าที่รู้แล้ว, root cause ของ c9 เจอแล้ว (แก้ไม่ได้รอบนี้)
+## Audit Log serverSide: c9=2 ยืนยันแล้วจริง (dtlang round C, 2026-09-25) — N1 ยังเปิดอยู่
 
-`tests/ui/o_history_dt.js` — N1 (คลิกแท็บ History ครั้งแรก) และ c9 (เปลี่ยนภาษาระหว่างมี column filter
-ค้าง) — assertion **ล็อกเป็นค่าที่วัดได้จริงแล้ว** (N1=2, c9=3, ดูโค้ดใน `n1()`/`c9()` เอง) แทนเพดานเดิม
-— ถ้าเกินค่านี้ในอนาคตเทสต้อง fail ไม่ใช่ปล่อยผ่านเงียบๆ
+`tests/ui/o_history_dt.js` — c9 (เปลี่ยนภาษาระหว่างมี column filter ค้าง): root cause ของ request ที่ 3
+(`refreshAllDataTablesLanguage()`'s เอง `table.draw(false)` ไม่เช็ค visible, `public/js/app.js`) **แก้
+แล้วจริงในรอบ dtlang B**, **ยืนยันด้วยการวัดจริงแล้วในรอบ dtlang C ว่าได้ 2 ครบ 7/7 รอบที่มี diagnostic
+log** (session run 45453 ×1, run 45454 ×3 [c9b วินิจฉัย], run 45455 ×3 [full2 ลำดับเต็ม]) — assertion คง
+`=== 2` — ดู `docs/decisions/2026-09-25-dtlang-visible-double-fetch.md` สำหรับรายละเอียดเต็ม (I1/I2,
+เหตุที่ `#tb_notification` ต้องแก้คู่กัน, ลำดับเวลาที่แยกกลไกได้จาก payload จริง)
 
-**Round B4 ตรวจสมมติฐานของที่ปรึกษา** ("filter-bar แจ้ง onChange ตอนสร้าง/ตอน relabel ภาษา แล้ว
-onChange ของตารางนี้สั่ง reload ไม่ดูว่าค่าเปลี่ยนไหม") **ด้วยหลักฐานตรง ไม่ใช่เชื่อ — สรุปว่าเท็จ**:
-- `initFilterBar()`'s เอง call ตอนสร้าง (`public/js/app.js:1638`, `refresh();`) เรียกแค่ `refresh()`
-  เฉยๆ ไม่เคยเรียก `options.onChange` เลย — `onChange` ถูกเรียกจาก `scheduleNotify()`'s debounced
-  timer เท่านั้น (`public/js/app.js:1589-1594`) ซึ่งผูกกับ event `'change'` จริงบน field เท่านั้น
-  (`public/js/app.js:1597`)
-- ไม่มีจุดไหนใน `initAuditLogTableRd()`/`refreshAuditLogTableLanguage()` (`public/js/payroll/
-  detail.js`) ที่ trigger `'change'` บน `#auditLogDateFrom`/`#auditLogDateTo` เองเลย — grep ยืนยันแล้ว
-  0 hit
-- N1 ไม่เกี่ยวภาษาเลย (ไม่มีการ switch ภาษาในเคสนี้) จึงตัดสมมติฐานทิ้งได้เต็มที่สำหรับ N1 — root cause
-  ของ N1 **ยังไม่พบ** หลังตรวจ 2 รอบ (B3+B4) — เคยลองแก้ (`auditLogSkipNextRefreshRd` flag,
-  `detail.js`, Round B3) แล้ว **ไม่ได้ผล + ทำ N2 พัง** — revert ทิ้งแล้ว ไม่ลองอีกรอบนี้ตามกฎ "หยุดสืบ"
+**ความผิดปกติ c9=1 ของ session run 45451 (3/3 รอบ, ก่อนมี diagnostic logging) — จำลองซ้ำไม่ได้ ยังไม่
+คลี่คลาย แต่ไม่กระทบการยืนยัน 2 ว่าเป็นค่าถูกต้อง** — session นั้นถูกใช้ไปแล้ว ไม่สามารถย้อนตรวจได้อีก —
+**ถ้าเกิดซ้ำอีกในอนาคต ให้ดู log พวกนี้ก่อนสรุปสาเหตุ** (เพิ่มไว้ถาวรใน `tests/ui/o_history_dt.js`'s
+`c9()`/`collectAuditListResponses()` แล้ว ไม่ต้องเพิ่มเอง):
+- `c9 diag BEFORE/AFTER switch (iDraw/hasActiveColumnFilters)` — ถ้า `iDraw` delta = 1 (ไม่ใช่ 2) แปลว่า
+  มีกลไกหนึ่งไม่ได้ถูกเรียกจริง (ไม่ใช่แค่ response หาย) เพราะ `iDraw` เพิ่มที่จุด dispatch เอง
+  (`_fnAjaxUpdate()`, `node_modules/datatables.net/js/dataTables.js:4313-4320`) ไม่ใช่ตอนได้ response
+- `dispatchedCount` เทียบกับ `list.length` — ถ้าเท่ากันทั้งคู่แต่ต่ำกว่า `iDraw` delta ที่คาด แปลว่า
+  กลไกหนึ่งไม่เคยถูกเรียกเลย (ไม่ใช่ถูก abort) — ถ้า `dispatchedCount` สูงกว่า `list.length` ให้ดู `failed`
+  (ค่าไม่ว่างแปลว่ามี request ถูก abort จริง)
+- `nonEmptySearchOrFilterParams` ของ request ที่รอด — บอกได้ว่า request นั้นมาจากกลไกไหน (มี
+  `column_filters[audit_action][]` = มาก่อน filter ถูกเคลียร์ = `reloadAllTablesForLanguageChange()`,
+  ไม่มี = มาหลัง = `clearColumnFilters()`)
+- ถ้า log ทั้งหมดนี้ยังตอบไม่ได้ ขั้นต่อไปคือ trace ชั่วคราวแบบ Round B3 (ห่อ `$.ajax`/XHR ชั่วคราว)
 
-**Root cause ของ c9's เอง request ที่ 3 เจอแล้วจริง** (คนละกลไกกับที่ปรึกษาเดา, พบจากการอ่านโค้ดตรง
-ไม่ใช่เดา): `refreshAllDataTablesLanguage()`'s เอง inner loop (`public/js/app.js:4911-4944`,
-โดยเฉพาะ `table.draw(false)` ที่บรรทัด `4944`) วนทุก DataTable บนหน้าผ่าน `$.fn.dataTable.tables()`
-**โดยไม่เช็ค visibility เลย** (ต่างจาก `reloadAllTablesForLanguageChange()`'s เอง `{visible:true}`
-filter) — ตารางนี้เป็น `serverSide:true` ทำให้ `.draw()` reload จริงทุกครั้ง ไม่ว่าจะ visible หรือไม่ —
-รวมเป็น 3 reload mechanism อิสระต่อกันที่แตะตารางเดียวกันในการ switch ภาษาครั้งเดียว: (1)
-`reloadAllTablesForLanguageChange()` ถ้า visible, (2) `refreshAuditLogTableLanguage()`'s เอง
-`clearColumnFilters()` ถ้ามี filter ค้าง, (3) `refreshAllDataTablesLanguage()`'s เอง unconditional
-`table.draw(false)` — **ไม่แก้รอบนี้เพราะห้ามแตะ `app.js`** (ข้อห้ามของ B4) — ถ้าทำต่อ: (a) แก้จุดนี้
-กระทบทุกตารางในแอปที่เป็น `serverSide` ไม่ใช่แค่ตารางนี้ ต้องตรวจสอบ `#tb_join_employees`/ตารางอื่นๆ
-ด้วยก่อนแก้ (b) แนวทางที่เป็นไปได้: ข้าม `.draw(false)` สำหรับตารางที่ `settings().oFeatures.bServerSide`
-true และปล่อยให้กลไกอื่น (1)/(2) จัดการแทน หรือเช็ค visibility เหมือน (1)
+**ข้อเสนอเพิ่ม (2026-09-25, ยังไม่ implement)**: `c9()` ใช้ run 1014 คงที่เสมอ (`RUN_1014_ID`,
+`tests/ui/o_history_dt.js:119`, ไม่ผูกกับ session — ยืนยันแล้วว่าไม่ใช่ปัญหา "select-all → null" ของ
+`table-column-filter.js:376` เพราะข้อมูลจริงของ run 1014 มี distinct `audit_action` 9 ค่า ไม่ใช่ 1 —
+ดู `docs/decisions/2026-09-25-dtlang-visible-double-fetch.md`'s เอง "ชี้แจงเพิ่ม" section) — แต่ **เผื่อ
+future-proof ถ้า run 1014's เอง data เปลี่ยนไปวันหลัง (เช่น ถูกแก้/ลบแถวจน distinct action เหลือ 1) หรือ
+เปลี่ยนไปใช้ run อื่น**: เสนอเพิ่ม log ใน `c9()` ก่อนตั้ง filter — จำนวนค่า distinct ของ `audit_action` ใน
+`logs` (จาก `auditLogRef(RUN_1014_ID)` ที่มีอยู่แล้ว) + ผล `hasActiveColumnFilters()` ก่อนสลับภาษา (มี
+diagnostic ใกล้เคียงอยู่แล้วที่ `diagBefore`, แค่ยังไม่ log จำนวน distinct action) — ถ้าจำนวน distinct = 1
+ในอนาคต จะเห็นจาก log ทันทีว่าเข้าเงื่อนไข select-all โดยไม่ต้องสงสัยแบบรอบนี้อีก
 
-สมมติฐาน DataTables 2.x serverSide init เอง (จาก B3) **ยังไม่ตัดทิ้ง** สำหรับ N1 โดยเฉพาะ (ไม่เกี่ยว
-กับสิ่งที่พบใน c9 เลย เพราะ N1 ไม่มีการ switch ภาษา) — ยังไม่ได้ตรวจกับ `#tb_join_employees` — ถ้าทำต่อ
-ควรเริ่มจากจุดนี้ก่อนลองแก้โค้ดใหม่
+**N1 (คลิกแท็บ History ครั้งแรก, 2 requests) ยังเปิดอยู่ ไม่เกี่ยวกับ fix รอบนี้** (N1 ไม่มีการ switch
+ภาษาเลย, root cause คนละกลไกกับ c9) — ยังไม่พบ root cause หลังตรวจ 3 รอบ (B3/B4/dtlang-B ไม่ได้แตะ) —
+เคยลองแก้ (`auditLogSkipNextRefreshRd` flag, Round B3) แล้วไม่ได้ผล+ทำ N2 พัง, revert ทิ้งแล้ว — งาน
+เทียบ flow กับ `#tb_join_employees` (serverSide ตัวอื่นที่มีอยู่ก่อน) ที่ตั้งใจไว้ตั้งแต่รอบ A2 **ยังไม่ได้
+ทำ** — แยกเป็นก้อนของตัวเองต่อไป (ต้อง trace ที่แก้โค้ด/รัน UI จริง)
 
-**tiny-2 รอบ C (2026-09-25) — o_history_dt's `c9` ได้ 4≠3 ครั้งเดียวในรอบวัด · สาเหตุยังไม่ทราบ
-(fail ใหม่ ไม่ใช่ N1=2/c9=3 ข้างบนที่ยืนยันแล้วว่าคงที่)**: ลำดับเต็มรอบแรกของ `o_history_dt.js` วัด
-`audit-log.list` request ตอนสลับภาษา th→en ได้ **4** ครั้ง (assertion ล็อกไว้ 3) — 3 รอบถัดมาวัดได้ 3
-ตรงทุกรอบ ไม่เกิดซ้ำ — ไม่มี URL/รายละเอียด request ที่ 4 หลงเหลือใน log (`c9()` log แค่ `.length`, ไม่
-log `collector.list` แต่ละรายการ) — **ยังไม่ทราบว่าเกี่ยวกับ tiny-2's การตัด `audit_log` ออกจาก `.get()`
-หรือไม่** (ไม่มีหลักฐานยืนยันหรือตัดขาดทั้งสองทาง) — **ถ้าเกิดซ้ำ ให้แก้ `c9()` ให้ log
-`collector.list` แบบละเอียด (url/seq/เวลา) ก่อนสรุปสาเหตุ** ไม่ใช่เดา — ดู `tmp-tiny2-roundC.md`/
-`docs/decisions/2026-09-25-tiny2-get-audit-log-removal.md`'s เอง "รอบวัด" section
+**tiny-2 รอบ C (2026-09-25) — o_history_dt's `c9` เคยได้ 4≠3 ครั้งเดียวในรอบวัด (ก่อน fix นี้) · สาเหตุ
+ยังไม่ทราบ**: ลำดับเต็มรอบแรกของ `o_history_dt.js` วัด `audit-log.list` request ตอนสลับภาษา th→en ได้
+**4** ครั้ง (ตอนนั้น assertion ล็อกไว้ 3) — 3 รอบถัดมาวัดได้ 3 ตรงทุกรอบ ไม่เกิดซ้ำ — **แก้แล้วรอบ
+dtlang-B**: `c9()` log ทุก entry ของ `collector.list` (seq/ms/draw param/url) ก่อน assert แล้ว (เดิม log
+แค่ `.length`) — ถ้า flake แบบนี้เกิดซ้ำอีกในอนาคต (ไม่ว่าจะยังเทียบกับ 2 หรือค่าอื่น) จะมี log พอสืบทันที
+ไม่ต้อง reproduce live ก่อน — ดู `tmp-tiny2-roundC.md`/
+`docs/decisions/2026-09-25-tiny2-get-audit-log-removal.md`'s เอง "รอบวัด" section สำหรับบริบทเดิม
+
+## o_history_dt's c4: page.goto networkidle timeout — พบครั้งเดียว (2026-09-25, dtlang round C full2)
+
+`o_history_dt.js`'s cell `c4` (ค้นหาข้อความที่ไม่มีจริงเพื่อดู empty state) เจอ `page.goto: Timeout
+30000ms exceeded` (รอ `waitUntil: 'networkidle'`, `tests/ui/o_history_dt.js`'s `gotoRun()`) **1 ครั้ง**
+ระหว่างรันลำดับเต็มซ้ำ (`full2`) รอบ 2 ของ 3 — เกิดก่อนถึง c9 เสมอ ไม่เกี่ยวกับ column filter/language
+switch/dtlang เลย ลักษณะเหมือน network/server-load timeout ทั่วไปจากการรัน script ต่อกันหลายตัวใน
+session เดียว — **รันซ้ำครั้งเดียวหลังจากนั้นผ่านปกติทันที (181/0)** — **บันทึกเป็น "พบครั้งเดียว"
+ไม่ใช่ known flake** (ยังไม่มีหลักฐานว่าเกิดซ้ำได้ ไม่ควรเพิ่มเข้ารายชื่อ known fail จนกว่าจะเจออีก)
+
+## dtlang เรื่อง H (2026-09-25): ตาราง serverSide ที่ซ่อนอยู่ยิง request ทิ้งตอนสลับภาษา — ออกแบบแล้ว ยังไม่แก้
+
+`refreshAllDataTablesLanguage()`'s เอง `table.draw(false)` (`public/js/app.js`, หลัง dtlang round B's
+เอง guard) ยังคง draw ตารางที่ `serverSide:true` **และซ่อนอยู่** เหมือนเดิมทุกไบต์ (round B แก้เฉพาะ
+visible+serverSide) — ยิง ajax request จริงทิ้งเปล่าทุกครั้งที่สลับภาษาขณะตารางนั้นถูกซ่อน (แท็บไม่ active/
+modal ปิดอยู่) — ไม่ใช่บั๊ก correctness (ไม่มีใครเห็นผลลัพธ์ที่ผิด) แค่สิ้นเปลือง request
+
+**ทางแก้ที่ออกแบบไว้แล้ว** (รอบ A2, ยังไม่ implement): opt-in ผ่าน callback เก็บบน `table.settings()[0]`
+— `registerLangHiddenSkip(table, callback)` (helper ใหม่ใน `app.js`) หรือ option `onLangHiddenSkip` ของ
+`initSharedDataTable()` — ใน `refreshAllDataTablesLanguage()`'s loop: ถ้าตารางซ่อน+serverSide+มี
+callback ลงทะเบียนไว้ → เรียก callback แทน `draw()` (ตารางที่ opt-in ต้องมี "reload-on-show" ของตัวเองอยู่
+แล้วเป็นเงื่อนไขก่อน) — ตารางที่**ไม่**ลงทะเบียน (`settings._langHiddenSkipCb` เป็น `undefined`) เดินทาง
+เดิมทุกไบต์ (`draw()` เหมือนเดิม)
+
+**ตัวที่ opt-in ได้จริง 5 ตัว** (ยืนยัน reload-on-show แบบไม่มีเงื่อนไข/มีเงื่อนไขแล้ว, รอบ A2):
+- `#tb_run_audit_log` (`public/js/payroll/detail.js:7715-7723`, `shown.bs.tab` บน `#run-history-tab`) —
+  **ต้องตั้ง `auditLogTableStaleRd = true` เป็น callback จริง** (reload มีเงื่อนไข ไม่ใช่ unconditional)
+- `#tb_join_employees` (`detail.js:7175-7192`/`7252-7256`, ทุกครั้งที่เปิด modal) — callback ว่างพอ
+- `#tb_employee_recheck` (`public/js/employee/list.js:933-935`/`842-846`) — callback ว่างพอ
+- `#tb_deduction_type` (`public/js/setup/payroll-configuration.js:471-475`/`161-165`) — callback ว่างพอ
+- `#tableLoginHistory` (`public/js/employee/detail.js:1798-1800`/`1719-1724`) — callback ว่างพอ
+
+**ยังไม่มี UI test วัดกรณี "ซ่อนตารางไว้ตอนสลับภาษา แล้วเปิดกลับมาทีหลัง" เลยสักตาราง** — ต้องเขียนใหม่
+ก่อนแก้จริง เพื่อพิสูจน์ว่า opt-in แล้วภาษายังถูกต้องตอนกลับมาโชว์ — priority ต่ำกว่า c9 (ไม่มี test ที่
+fail อยู่ตอนนี้จากเรื่องนี้) — แนะนำแยกก้อน ไม่รวมกับงานอื่น
+
+## dtlang: `structureTables` loop ใน `refreshAllTables()` — instance กำพร้าสะสม, สูงสุด ~7 request/สลับภาษา [อนุมาน]
+
+`refreshAllTables()`'s เอง `structureTables` loop (`public/js/app.js` ประมาณ 4874-4881, เลขบรรทัดขยับ
+ได้จากการแก้รอบ dtlang-B — หาใหม่จากโค้ดจริงก่อนแก้) วนทุก key ใน `structureTables{}` แล้ว
+`.rows().invalidate().draw(false)` **โดยไม่เช็ค visible/attached เลย** — Company Profile →
+Organizational Structure sub-tab ทั้ง 7 ตัว (`branch`/`role`/`department`/`position`/`rank`/`team` ผ่าน
+`initStructureTable()`, `public/js/setup/company-profile.js:743-750` + `bank_account`,
+`company-profile.js:486-488`) เป็น `serverSide:true` ทุกตัว
+
+**พบเพิ่มเติม (สำคัญกว่าที่คิดตอนแรก)**: sub-tab เหล่านี้ไม่ใช่ Bootstrap tab (`shown.bs.tab`) — เป็น pill
+click ที่ `$structureContent.html($('#tmpl-xxx-pane').html())` **แทนที่ DOM ทั้งก้อน** ทุกครั้งที่คลิก
+เปลี่ยน (`company-profile.js:649-688`) และ `initStructureTable()` (`company-profile.js:743-747`) ไม่เคย
+`.destroy()` ตารางเก่าก่อนเลย — ตาราง sub-tab ที่เคยเปิดแล้วสลับออกกลายเป็น **instance กำพร้า** (detached
+จาก DOM แต่ยังอยู่ใน DataTables' internal registry + `structureTables{}`) ไม่ใช่แค่ "ซ่อนด้วย CSS" — การ
+แก้เรื่อง H (opt-in) ข้างบนอาจใช้ callback mechanism เดียวกันได้ แต่ปัญหารากที่แท้จริงคือ
+`initStructureTable()` ไม่ destroy ตารางเก่า ซึ่งเป็นคนละประเด็นจาก dtlang (ต้องตัดสินว่าจะแก้รวมกันหรือ
+แยกเป็นเรื่องที่ 3)
+
+**จำนวน request โดยประมาณ** [อนุมาน, ยังไม่ได้รันยืนยัน]: page load = 0 (`structureTables={}` เริ่มว่าง) —
+สลับภาษา = 1 request ต่อ sub-tab ที่เคยถูกคลิกเปิดมาแล้วในเซสชันนั้น (ไม่ว่าจะ active อยู่ตอนนี้หรือ
+กำพร้าไปแล้ว) — กรณีเลวร้ายสุดคลิกครบทั้ง 7 ก่อนสลับภาษา = **~7 request เพิ่มจาก loop นี้ตัวเดียว**
+
+## dtlang N1: อัปเดตสถานะ
+
+ดูหัวข้อ "Audit Log serverSide" ด้านบน (รวมเข้าที่เดียวกันแล้ว, dtlang round B 2026-09-25) — แยกเป็นก้อน
+ของตัวเอง (trace เทียบ `#tb_join_employees`) ยังไม่ได้ทำ
 
 **tiny-2 รอบ C (2026-09-25) — docblock `Run:` ของ 2 ไฟล์ไม่ตรงกับ usage จริง**: `k4a2_manual_lines_
 in_table.js`'s docblock เขียน `<PHPSESSID> <runToken> <employeeId>` แต่ตัวสคริปต์เองต้องการ
