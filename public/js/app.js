@@ -4946,12 +4946,50 @@ function refreshAllDataTablesLanguage() {
         _refreshingAllDataTablesLanguage = false;
     }
 }
+// 2026-09-25, dtlang V-fix (docs/decisions/2026-09-25-dtlang-visible-double-fetch.md) -- pure, no
+// jQuery/DataTables dependency, so it's node-testable on its own (see
+// tests/dtlang_visible_serverside_skip_test.js) the same way tests/run_lifecycle_date_test.js
+// extracts a couple of app.js's own pure functions by brace-matching.
+//
+// WHY this is safe to skip (I1): every REAL language switch goes through changeLanguage(), which
+// always does `await loadLang(lang)` THEN calls reloadAllTablesForLanguageChange() unconditionally,
+// right after -- that function already re-fetches/redraws every table
+// `$.fn.dataTable.tables({visible:true})` finds, INCLUDING
+// serverSide ones (its own `table.ajax.url()` branch always true for a serverSide table). Grepping
+// every caller of `applyLanguage()` (not just `refreshAllTables()`/this function) turned up several
+// OTHER call sites (reports/index.js, setup/changelog.js, setup/setup-guide.js,
+// setup/terms-and-conditions.js, setup/help-drawer.js) that call `applyLanguage()` with no args after
+// injecting fresh DOM -- none of them change `currentLang`/`langData` first, so this function's own
+// skip below never runs against an ACTUAL language change on those paths either; nothing depends on
+// this draw() to pick up a new language there.
+//
+// WHY a visible+serverSide table specifically (I2): a serverSide table's chrome (search/length/info/
+// pagination labels) is set ONCE at construction via its own `language:` option -- this function's
+// `$.extend(...)` above already keeps `settings.oLanguage` correct regardless of whether `draw()`
+// below runs, but the actual re-RENDER of that chrome needs a draw. Skipping it here is only safe
+// because every serverSide table in this app, as of this round, either (a) waits on
+// `window.langReady` before constructing (so `getTableLang()` at construction time already reads the
+// correct, resolved `langData`), or (b) is lazily constructed on a user click/modal-open, which can
+// only ever happen after page load has long finished -- confirmed by grep across all 11 serverSide
+// tables in the app (see the decision doc). `#tb_notification` used to be the one exception
+// (constructed without waiting on `langReady`) -- fixed alongside this change, see
+// app/views/notification/index.php's own comment (that view file, not notifications.js, is where the
+// eager construction call actually lived). If a FUTURE serverSide table is ever built without waiting on
+// `langReady` and without a following `reloadAllTablesForLanguageChange()` call, it will show stale
+// English DataTables chrome on first paint -- this is the first place to look.
+function dtlangShouldSkipVisibleServerSideDraw(settings, isVisible) {
+    return !!(settings && settings.oFeatures && settings.oFeatures.bServerSide && isVisible);
+}
 function _refreshAllDataTablesLanguageInner() {
     const lang = getTableLang();
     // $.fn.dataTable.tables() (no `{api:true}`) returns a plain array of <table> DOM nodes -- the
     // DataTables-documented way to iterate every table on the page one at a time. `{api:true}`
     // instead wraps ALL of them into a single multi-table Api context (no per-table `.every()`), so
     // that form doesn't fit what this needs.
+    // dtlang V-fix: same "visible" definition reloadAllTablesForLanguageChange() already uses,
+    // snapshotted once here so every table in this loop is checked against the same set (not
+    // re-queried per node).
+    const visibleTableNodes = new Set($.fn.dataTable.tables({ visible: true }));
     $.each($.fn.dataTable.tables(), function (i, node) {
         const table = $(node).DataTable();
         const settings = table.settings()[0];
@@ -4979,7 +5017,15 @@ function _refreshAllDataTablesLanguageInner() {
                 sPrevious: lang.paginate.previous,
             },
         });
-        table.draw(false);
+        // dtlang V-fix, 2026-09-25: a visible serverSide table's own draw() here is a real ajax
+        // re-fetch -- reloadAllTablesForLanguageChange() already re-fetches every visible table
+        // (including this one) right after this whole function returns, on the ONE real caller path
+        // that matters (changeLanguage()). See dtlangShouldSkipVisibleServerSideDraw()'s own docblock
+        // above for I1/I2. A hidden serverSide table, and every client-side table (visible or not),
+        // are UNCHANGED -- still drawn here exactly as before.
+        if (!dtlangShouldSkipVisibleServerSideDraw(settings, visibleTableNodes.has(node))) {
+            table.draw(false);
+        }
 
         const $wrapper = $(table.table().container());
         // NOT `lang.search || 'Search'`: the label is deliberately an EMPTY string now (getTableLang(),
