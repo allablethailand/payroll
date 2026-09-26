@@ -71,6 +71,74 @@ foreach ($mustBeCleanAndPassing as $rel) {
     check("$rel has 0 lint hits", array_sum($info['countsByRule']), 0);
 }
 
+// Round 4, `--all` flag: designLintFormatUnmarkedSection() is a pure function, so exercise it against
+// a SYNTHETIC fixture -- not the real app's own current hit counts, which change every time someone
+// fixes a lint hit (that would make this test flaky/misleading, per the standing rule not to bind
+// design lint tests to today's real numbers). Fixture: 22 unmarked files with a hit (more than the
+// top-20 cutoff, with strictly descending totals so ordering/truncation is deterministic) + 3 with a
+// clean sweep (0 hits on every rule).
+function designLintFixtureCounts(int $rule, int $n): array {
+    $c = array_fill(1, 8, 0);
+    $c[$rule] = $n;
+    return $c;
+}
+$fixtureRoot = '/fake/root';
+$fixtureUnmarked = [];
+for ($i = 1; $i <= 22; $i++) {
+    $path = $fixtureRoot . '/file' . str_pad((string) $i, 2, '0', STR_PAD_LEFT) . '.php';
+    $fixtureUnmarked[$path] = [
+        'type' => 'view', 'clean' => false, 'hits' => [],
+        'countsByRule' => designLintFixtureCounts(3, 23 - $i), // descending: 22, 21, ..., 1
+    ];
+}
+for ($i = 1; $i <= 3; $i++) {
+    $path = $fixtureRoot . '/clean-ish' . $i . '.php';
+    $fixtureUnmarked[$path] = ['type' => 'view', 'clean' => false, 'hits' => [], 'countsByRule' => array_fill(1, 8, 0)];
+}
+
+$defaultOutput = designLintFormatUnmarkedSection($fixtureUnmarked, $fixtureRoot, false);
+$allOutput = designLintFormatUnmarkedSection($fixtureUnmarked, $fixtureRoot, true);
+
+check('default mode: header says "top 20"', str_contains($defaultOutput, 'top 20 by total hit count'), true);
+check('default mode: shows exactly 20 file-with-hit lines', preg_match_all('/^  \/fake\/root\/file\d+\.php:/m', $defaultOutput), 20);
+// NOTE: the pre-existing (unchanged) `$shown++ >= $limit` check increments $shown once more on the
+// breaking iteration, so "N more" is always 1 LOWER than the true remaining count (22-20=2 here, but
+// the loop's own $shown ends at 21, not 20) -- a real quirk that predates this round. This round's
+// contract is "no-flag output byte-identical to before", so it's preserved as-is, not fixed here.
+check('default mode: cuts off with a "more file(s)" line (pre-existing off-by-one label kept as-is)', str_contains($defaultOutput, '  ... 1 more file(s) with hits not shown'), true);
+check('default mode: does NOT print the 0-hits section at all', str_contains($defaultOutput, 'unmarked files with 0 hits'), false);
+
+check('--all mode: header says "all files"', str_contains($allOutput, 'reported, not failed -- all files'), true);
+check('--all mode: shows all 22 file-with-hit lines (no top-20 cut)', preg_match_all('/^  \/fake\/root\/file\d+\.php:/m', $allOutput), 22);
+check('--all mode: no "more file(s)" line', str_contains($allOutput, 'more file(s)'), false);
+check('--all mode: "(all shown)" line present', str_contains($allOutput, '  (all shown)'), true);
+check('--all mode: 0-hits section header shows count 3', str_contains($allOutput, 'unmarked files with 0 hits (3)'), true);
+check('--all mode: 0-hits section lists exactly the 3 zero-hit files', preg_match_all('/^  \/fake\/root\/clean-ish\d\.php$/m', $allOutput), 3);
+
+$fixtureExpectedTotal = 0;
+foreach ($fixtureUnmarked as $info) {
+    $fixtureExpectedTotal += array_sum($info['countsByRule']);
+}
+preg_match_all('/#3=(\d+)/', $allOutput, $allRuleMatches);
+$fixtureSumFromAllOutput = array_sum(array_map('intval', $allRuleMatches[1]));
+check('--all mode: sum of per-file hit counts in the printed lines equals the fixture\'s true total (253)', $fixtureSumFromAllOutput, $fixtureExpectedTotal);
+
+// Integration-level structural invariant against the REAL app (not numeric, so it can't go flaky when
+// someone fixes a lint hit): every scanned file falls into exactly one of the 3 groups `--all` prints.
+$markedFiles = array_filter($result['files'], fn($f) => $f['clean']);
+$unmarkedFiles = array_filter($result['files'], fn($f) => !$f['clean']);
+$realUnmarkedWithHit = 0;
+$realUnmarkedZeroHit = 0;
+foreach ($unmarkedFiles as $info) {
+    if (array_sum($info['countsByRule']) > 0) $realUnmarkedWithHit++;
+    else $realUnmarkedZeroHit++;
+}
+check(
+    'real app: design:clean + unmarked-with-hit + unmarked-0-hit groups add up to Files scanned',
+    count($markedFiles) + $realUnmarkedWithHit + $realUnmarkedZeroHit,
+    count($result['files'])
+);
+
 echo "\n--------------------------------------------------\n";
 echo "Passed: {$passes}, Failed: {$failures}\n";
 if ($failures > 0) {
