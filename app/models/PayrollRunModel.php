@@ -2399,100 +2399,111 @@ class PayrollRunModel {
         // ensureSeeded() inside generateNext() makes that self-healing on the very next call too).
         $runCode = (new DocumentNumberingModel($this->db))->generateNext($compId, 'PAYROLL_RUN');
 
-        $stmt = $this->db->prepare("INSERT INTO `payroll_runs`
-            (comp_id, run_code, cycle_id, sync_process_id, merge_target_run_id, merge_target_cycle_id, merge_target_period_start_date, merge_target_period_end_date, run_purpose, compute_statutory, include_base_salary, include_standing_items, include_attendance_pay, use_flat_tax_rate, run_name, period_start_date, period_end_date, payment_date, state, notes, auto_recalculate, created_by)
-            VALUES (:comp_id, :run_code, :cycle_id, :sync_process_id, :merge_target_run_id, :merge_target_cycle_id, :merge_target_period_start_date, :merge_target_period_end_date, :run_purpose, :compute_statutory, :include_base_salary, :include_standing_items, :include_attendance_pay, :use_flat_tax_rate, :run_name, :start, :end, :pay_date, 'draft', :notes, :auto_recalculate, :created_by)");
-        $stmt->execute([
-            ':comp_id' => $compId, ':run_code' => $runCode, ':cycle_id' => $cycleId, ':sync_process_id' => $syncProcessId,
-            ':merge_target_run_id' => $mergeTargetRunId,
-            ':merge_target_cycle_id' => $mergeTargetCycleId,
-            ':merge_target_period_start_date' => $mergeTargetPeriodStart,
-            ':merge_target_period_end_date' => $mergeTargetPeriodEnd,
-            ':run_purpose' => $runPurpose, ':compute_statutory' => $computeStatutory,
-            ':include_base_salary' => $includeBaseSalary, ':include_standing_items' => $includeStandingItems,
-            ':include_attendance_pay' => $includeAttendancePay, ':use_flat_tax_rate' => $useFlatTaxRate,
-            ':run_name' => $runName,
-            ':start' => $start, ':end' => $end, ':pay_date' => $payDate,
-            ':notes' => $notes, ':auto_recalculate' => $autoRecalculate, ':created_by' => $userId,
-        ]);
-        $runId = (int)$this->db->lastInsertId();
-        $this->logAudit($runId, null, 'draft', 'create', $userId);
-        $result = ['status' => true, 'message' => 'Created successfully.', 'id' => $runId];
-        if ($syncSummary !== null) {
-            $result['sync_summary'] = $syncSummary;
-        }
-        if (!empty($createSkippedFields)) {
-            $result['skipped_fields'] = $createSkippedFields;
-        }
-        // A Pending-Pull run's membership is fixed by the sync payload itself (see recalculate()'s
-        // sync_process_id branch) -- there's no "pick who's in it" step for the admin to do first,
-        // unlike a normal cycle-based run where Recalculate is a deliberate review checkpoint. Left
-        // uncalculated here, the run would sit at employee_count=0 on the list until someone opened
-        // it and clicked Recalculate manually, which reads as "the pull didn't bring employees in"
-        // rather than "an extra step is needed". Calling it right away makes the count accurate the
-        // moment the run appears in the list. Best-effort: if this fails for some reason the run
-        // still exists as a normal draft, just still at 0 until a manual Recalculate.
-        if ($syncProcessId !== null) {
-            $calcResult = $this->recalculate($runId, $compId, $userId, $isAdmin);
-            if (!empty($calcResult['status'])) {
+        // Run row + auto-recalculate + merge bookkeeping are one unit: a failure after the INSERT used to leave a 0-employee draft behind while the caller saw an error.
+        $ownTransaction = !$this->db->inTransaction();
+        try {
+            if ($ownTransaction) { $this->db->beginTransaction(); }
+            $stmt = $this->db->prepare("INSERT INTO `payroll_runs`
+                (comp_id, run_code, cycle_id, sync_process_id, merge_target_run_id, merge_target_cycle_id, merge_target_period_start_date, merge_target_period_end_date, run_purpose, compute_statutory, include_base_salary, include_standing_items, include_attendance_pay, use_flat_tax_rate, run_name, period_start_date, period_end_date, payment_date, state, notes, auto_recalculate, created_by)
+                VALUES (:comp_id, :run_code, :cycle_id, :sync_process_id, :merge_target_run_id, :merge_target_cycle_id, :merge_target_period_start_date, :merge_target_period_end_date, :run_purpose, :compute_statutory, :include_base_salary, :include_standing_items, :include_attendance_pay, :use_flat_tax_rate, :run_name, :start, :end, :pay_date, 'draft', :notes, :auto_recalculate, :created_by)");
+            $stmt->execute([
+                ':comp_id' => $compId, ':run_code' => $runCode, ':cycle_id' => $cycleId, ':sync_process_id' => $syncProcessId,
+                ':merge_target_run_id' => $mergeTargetRunId,
+                ':merge_target_cycle_id' => $mergeTargetCycleId,
+                ':merge_target_period_start_date' => $mergeTargetPeriodStart,
+                ':merge_target_period_end_date' => $mergeTargetPeriodEnd,
+                ':run_purpose' => $runPurpose, ':compute_statutory' => $computeStatutory,
+                ':include_base_salary' => $includeBaseSalary, ':include_standing_items' => $includeStandingItems,
+                ':include_attendance_pay' => $includeAttendancePay, ':use_flat_tax_rate' => $useFlatTaxRate,
+                ':run_name' => $runName,
+                ':start' => $start, ':end' => $end, ':pay_date' => $payDate,
+                ':notes' => $notes, ':auto_recalculate' => $autoRecalculate, ':created_by' => $userId,
+            ]);
+            $runId = (int)$this->db->lastInsertId();
+            $this->logAudit($runId, null, 'draft', 'create', $userId);
+            $result = ['status' => true, 'message' => 'Created successfully.', 'id' => $runId];
+            if ($syncSummary !== null) {
+                $result['sync_summary'] = $syncSummary;
+            }
+            if (!empty($createSkippedFields)) {
+                $result['skipped_fields'] = $createSkippedFields;
+            }
+            // A Pending-Pull run's membership is fixed by the sync payload itself (see recalculate()'s
+            // sync_process_id branch) -- there's no "pick who's in it" step for the admin to do first,
+            // unlike a normal cycle-based run where Recalculate is a deliberate review checkpoint. Left
+            // uncalculated here, the run would sit at employee_count=0 on the list until someone opened
+            // it and clicked Recalculate manually, which reads as "the pull didn't bring employees in"
+            // rather than "an extra step is needed". Calling it right away makes the count accurate the
+            // moment the run appears in the list. A failure here rolls the whole create back (was
+            // best-effort, which left a 0-employee draft behind alongside a success/failure mismatch).
+            if ($syncProcessId !== null) {
+                $calcResult = $this->recalculate($runId, $compId, $userId, $isAdmin);
+                if (empty($calcResult['status'])) {
+                    throw new RuntimeException((string)($calcResult['message'] ?? 'Calculation failed.'));
+                }
                 $result['employee_count'] = $calcResult['employee_count'];
                 $result['has_validation_errors'] = $calcResult['has_validation_errors'];
             }
-        }
 
-        // 2026-09-06: unified "waiting merge target just became available" detection -- covers BOTH
-        // the pre-existing Origami-attribution case (a supplemental process attributed
-        // tax_treatment='merge' to THIS SAME Origami process, by origami_process_id -- only possible
-        // when THIS run itself was pulled from a regular sync process) AND the new manual/future-
-        // cycle case just added (any OTHER off-cycle run whose merge_target_cycle_id+period exactly
-        // matches THIS run's own cycle_id+period -- true regardless of whether THIS run came from a
-        // normal "Add", a Pull-to-Run, or a Bulk Pull, since all 3 paths go through this one create()
-        // method and all 3 can equally be "the round someone else was waiting for"). Confirmed via
-        // AskUserQuestion: never auto-merged silently either way -- only ever surfaced here for the
-        // admin to confirm, merging changes the target's own gross pay/tax. Each item carries its own
-        // `type` so the caller knows which merge endpoint applies (`mergeSupplementalIntoRun()` for
-        // 'sync', `mergeIntoExistingRun()` for 'manual').
-        $pendingMergesReady = [];
-        // Deliberately excludes a supplemental pull itself (!$syncIsSupplemental) -- a supplemental
-        // process is never a valid merge TARGET, only a source.
-        if ($syncProcessId !== null && !$syncIsSupplemental && $syncOrigamiProcessId !== null) {
-            $stmtPendingMerge = $this->db->prepare("SELECT id, process_no, process_subject FROM `payroll_sync_processes`
-                WHERE comp_id = :comp_id AND run_kind = 'supplemental' AND status = 'pending'
-                  AND merged_into_run_id IS NULL AND attribution_tax_treatment = 'merge'
-                  AND attribution_target_origami_process_id = :target_origami_id");
-            $stmtPendingMerge->execute([':comp_id' => $compId, ':target_origami_id' => $syncOrigamiProcessId]);
-            foreach ($stmtPendingMerge->fetchAll(PDO::FETCH_ASSOC) as $sp) {
-                $pendingMergesReady[] = ['id' => (int)$sp['id'], 'label' => $sp['process_subject'] ?: $sp['process_no'], 'type' => 'sync'];
+            // 2026-09-06: unified "waiting merge target just became available" detection -- covers BOTH
+            // the pre-existing Origami-attribution case (a supplemental process attributed
+            // tax_treatment='merge' to THIS SAME Origami process, by origami_process_id -- only possible
+            // when THIS run itself was pulled from a regular sync process) AND the new manual/future-
+            // cycle case just added (any OTHER off-cycle run whose merge_target_cycle_id+period exactly
+            // matches THIS run's own cycle_id+period -- true regardless of whether THIS run came from a
+            // normal "Add", a Pull-to-Run, or a Bulk Pull, since all 3 paths go through this one create()
+            // method and all 3 can equally be "the round someone else was waiting for"). Confirmed via
+            // AskUserQuestion: never auto-merged silently either way -- only ever surfaced here for the
+            // admin to confirm, merging changes the target's own gross pay/tax. Each item carries its own
+            // `type` so the caller knows which merge endpoint applies (`mergeSupplementalIntoRun()` for
+            // 'sync', `mergeIntoExistingRun()` for 'manual').
+            $pendingMergesReady = [];
+            // Deliberately excludes a supplemental pull itself (!$syncIsSupplemental) -- a supplemental
+            // process is never a valid merge TARGET, only a source.
+            if ($syncProcessId !== null && !$syncIsSupplemental && $syncOrigamiProcessId !== null) {
+                $stmtPendingMerge = $this->db->prepare("SELECT id, process_no, process_subject FROM `payroll_sync_processes`
+                    WHERE comp_id = :comp_id AND run_kind = 'supplemental' AND status = 'pending'
+                      AND merged_into_run_id IS NULL AND attribution_tax_treatment = 'merge'
+                      AND attribution_target_origami_process_id = :target_origami_id");
+                $stmtPendingMerge->execute([':comp_id' => $compId, ':target_origami_id' => $syncOrigamiProcessId]);
+                foreach ($stmtPendingMerge->fetchAll(PDO::FETCH_ASSOC) as $sp) {
+                    $pendingMergesReady[] = ['id' => (int)$sp['id'], 'label' => $sp['process_subject'] ?: $sp['process_no'], 'type' => 'sync'];
+                }
             }
-        }
-        if ($cycleId !== null) {
-            // 2026-09-07: was an exact `merge_target_period_start_date = :start AND
-            // merge_target_period_end_date = :end` match against THIS new run's own period -- now
-            // matches by PAYMENT MONTH instead (this run's own $payDate against the waiting target's
-            // stored merge_target_period_start_date, whose year/month stands in for "target month" --
-            // see findActiveRunForCyclePaymentMonth()'s own docblock for the full reasoning, same
-            // change applied here for the auto-detect path since a run can arrive via Add/Pull/Bulk
-            // Pull in any order relative to when the future-target was set up).
-            $stmtFutureMerge = $this->db->prepare("SELECT id, run_name FROM `payroll_runs`
-                WHERE comp_id = :comp_id AND state = 'draft' AND deleted_at IS NULL
-                  AND merge_target_run_id IS NULL AND merge_target_cycle_id = :cycle_id
-                  AND YEAR(merge_target_period_start_date) = YEAR(:pay_date) AND MONTH(merge_target_period_start_date) = MONTH(:pay_date)");
-            $stmtFutureMerge->execute([':comp_id' => $compId, ':cycle_id' => $cycleId, ':pay_date' => $payDate]);
-            foreach ($stmtFutureMerge->fetchAll(PDO::FETCH_ASSOC) as $fm) {
-                // Resolve immediately into the plain, already-fully-tested merge_target_run_id case
-                // -- see resolveMergeTargetSpec()'s own docblock for why this is the right moment,
-                // and why it means zero new merge-execution code path from here on.
-                $this->db->prepare("UPDATE `payroll_runs` SET merge_target_run_id = :target_id,
-                        merge_target_cycle_id = NULL, merge_target_period_start_date = NULL, merge_target_period_end_date = NULL,
-                        updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = :id")->execute([':target_id' => $runId, ':updated_by' => $userId, ':id' => $fm['id']]);
-                $pendingMergesReady[] = ['id' => (int)$fm['id'], 'label' => $fm['run_name'], 'type' => 'manual', 'target_run_id' => $runId];
+            if ($cycleId !== null) {
+                // 2026-09-07: was an exact `merge_target_period_start_date = :start AND
+                // merge_target_period_end_date = :end` match against THIS new run's own period -- now
+                // matches by PAYMENT MONTH instead (this run's own $payDate against the waiting target's
+                // stored merge_target_period_start_date, whose year/month stands in for "target month" --
+                // see findActiveRunForCyclePaymentMonth()'s own docblock for the full reasoning, same
+                // change applied here for the auto-detect path since a run can arrive via Add/Pull/Bulk
+                // Pull in any order relative to when the future-target was set up).
+                $stmtFutureMerge = $this->db->prepare("SELECT id, run_name FROM `payroll_runs`
+                    WHERE comp_id = :comp_id AND state = 'draft' AND deleted_at IS NULL
+                      AND merge_target_run_id IS NULL AND merge_target_cycle_id = :cycle_id
+                      AND YEAR(merge_target_period_start_date) = YEAR(:pay_date) AND MONTH(merge_target_period_start_date) = MONTH(:pay_date)");
+                $stmtFutureMerge->execute([':comp_id' => $compId, ':cycle_id' => $cycleId, ':pay_date' => $payDate]);
+                foreach ($stmtFutureMerge->fetchAll(PDO::FETCH_ASSOC) as $fm) {
+                    // Resolve immediately into the plain, already-fully-tested merge_target_run_id case
+                    // -- see resolveMergeTargetSpec()'s own docblock for why this is the right moment,
+                    // and why it means zero new merge-execution code path from here on.
+                    $this->db->prepare("UPDATE `payroll_runs` SET merge_target_run_id = :target_id,
+                            merge_target_cycle_id = NULL, merge_target_period_start_date = NULL, merge_target_period_end_date = NULL,
+                            updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = :id")->execute([':target_id' => $runId, ':updated_by' => $userId, ':id' => $fm['id']]);
+                    $pendingMergesReady[] = ['id' => (int)$fm['id'], 'label' => $fm['run_name'], 'type' => 'manual', 'target_run_id' => $runId];
+                }
             }
+            if (!empty($pendingMergesReady)) {
+                $result['pending_merges_ready'] = $pendingMergesReady;
+            }
+            if ($ownTransaction) { $this->db->commit(); }
+            return $result;
+        } catch (Throwable $e) {
+            if ($ownTransaction && $this->db->inTransaction()) { $this->db->rollBack(); }
+            error_log('PayrollRunModel::create failed: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            return ['status' => false, 'message' => $e instanceof RuntimeException ? $e->getMessage() : 'Database operation failed.'];
         }
-        if (!empty($pendingMergesReady)) {
-            $result['pending_merges_ready'] = $pendingMergesReady;
-        }
-        return $result;
     }
 
     /**
@@ -5037,6 +5048,7 @@ class PayrollRunModel {
             return ['status' => true, 'message' => 'Calculated successfully.', 'employee_count' => count($employees), 'has_validation_errors' => $anyError];
         } catch (PDOException $e) {
             if ($ownTransaction) { $this->db->rollBack(); }
+            error_log('PayrollRunModel::recalculate run ' . $id . ' failed: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
     }
