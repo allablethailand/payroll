@@ -245,3 +245,8 @@ has_bank_id:1, has_account_no:1` ทั้งคู่) — ไม่เกี�
 `run_all --compare baseline-tiny2.json` ยังคงเป็น **7,964/2** เหมือนที่รายงานรอบ B (ก้อนนี้ไม่แตะโค้ด PHP เลย
 จึงไม่ต้องรันซ้ำ) — **หลัง commit รอบนี้ต้องเก็บ baseline ใหม่** (`baseline-tiny2.json` ยังชี้ค่าก่อน round B/C
 อยู่ — 7,866/2 เดิม) มิฉะนั้นรอบถัดไปจะเห็น diff ปลอมจากไฟล์เทส 2 ไฟล์ที่เพิ่ม/แก้ไปแล้วในรอบ B
+
+### ยืนยันบน production 25-09
+
+รอบ Incentive (id 4) export ได้ 11 คน ยอดรวม 5,195.00 พร้อมคำเตือนบันทึกจ่ายแล้ว — migration tiny-C +
+H-backend รันบน production แล้ว (ผู้ใช้ยืนยัน)
