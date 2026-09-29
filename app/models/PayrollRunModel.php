@@ -3112,6 +3112,23 @@ class PayrollRunModel {
         ];
     }
 
+    /** Absent/empty item_master (older payloads) counts as OT selected, keeping the old behaviour. */
+    private function syncProcessHasOtItem(int $processId, int $compId): bool {
+        $stmt = $this->db->prepare("SELECT raw_payload FROM `payroll_sync_processes` WHERE id = :id AND comp_id = :comp_id");
+        $stmt->execute([':id' => $processId, ':comp_id' => $compId]);
+        $payload = json_decode((string)$stmt->fetchColumn(), true);
+        $itemMaster = is_array($payload) && is_array($payload['item_master'] ?? null) ? $payload['item_master'] : [];
+        if (empty($itemMaster)) {
+            return true;
+        }
+        foreach ($itemMaster as $item) {
+            if (in_array(strtoupper(trim((string)($item['item_code'] ?? ''))), ['OT', 'OVERTIME'], true)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public function recalculate(int $id, int $compId, int $userId, bool $isAdmin): array {
         if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to calculate this payroll run.'];
@@ -3355,6 +3372,15 @@ class PayrollRunModel {
             foreach ($stmtSyncItems->fetchAll(PDO::FETCH_ASSOC) as $psi) {
                 $psi['item_values'] = $psi['item_values'] !== null ? json_decode((string)$psi['item_values'], true) : [];
                 $syncItemsByEmployee[(int)$psi['employee_id']] = $psi; // last row wins if duplicates exist
+            }
+            // Origami (2026-09-29) no longer zeroes OT hours when OT isn't ticked for the process.
+            if (!$this->syncProcessHasOtItem((int)$run['sync_process_id'], $compId)) {
+                foreach ($syncItemsByEmployee as &$otRow) {
+                    foreach (['ot_mins', 'ot_req_hrs', 'ot_req_working_day_hrs', 'ot_req_weekend_hrs', 'ot_req_holiday_hrs'] as $otCol) {
+                        $otRow[$otCol] = 0;
+                    }
+                }
+                unset($otRow);
             }
         } elseif ($run['cycle_id'] !== null) {
             // 2026-08-30 (Phase 5, T032, explicit request: "ถ้าข้อมูล match กับพนักงาน/งวดที่ถูกต้อง
