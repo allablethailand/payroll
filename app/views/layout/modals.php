@@ -458,6 +458,41 @@
     </div>
 </div>
 
+<div class="modal fade" id="monthlyEmployeesModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-secondary" id="monthlyEmployeesModalTitle">-</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-end mb-2">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnMonthlySlipZip">
+                        <i class="fa-solid fa-file-zipper me-1"></i><span data-i18n="download_all_slips_zip">Download All Slips (ZIP)</span>
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle w-100" id="tb_monthly_employees">
+                        <thead class="table-light text-secondary small">
+                            <tr>
+                                <th><span data-i18n="table_employee_name">Name</span></th>
+                                <th class="text-end"><span data-i18n="table_gross_amount">Gross</span></th>
+                                <th class="text-end"><span data-i18n="table_deduction_amount">Deductions</span></th>
+                                <th class="text-end"><span data-i18n="table_net_amount">Net Total</span></th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="cycleReportHistoryModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">

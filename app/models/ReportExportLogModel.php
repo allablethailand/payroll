@@ -157,4 +157,21 @@ class ReportExportLogModel {
         $stmt->execute($params);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
+
+    /** Monthly Report slip download audit row; year is C.E. (payment_date's year), unlike report_export_logs' B.E. */
+    public function logSlipDownload(int $compId, ?int $userId, string $downloadType, ?int $targetEmployeeId, int $year, int $month, ?string $ipAddress, ?string $userAgent): void {
+        $stmt = $this->db->prepare("INSERT INTO `report_download_logs`
+            (comp_id, user_id, download_type, target_employee_id, target_year, target_month, ip_address, user_agent)
+            VALUES (:comp_id, :user_id, :download_type, :target_employee_id, :target_year, :target_month, :ip_address, :user_agent)");
+        $stmt->execute([
+            ':comp_id' => $compId,
+            ':user_id' => $userId,
+            ':download_type' => $downloadType,
+            ':target_employee_id' => $targetEmployeeId,
+            ':target_year' => $year,
+            ':target_month' => $month,
+            ':ip_address' => $ipAddress !== null && $ipAddress !== '' ? substr($ipAddress, 0, 45) : null,
+            ':user_agent' => $userAgent !== null && $userAgent !== '' ? substr($userAgent, 0, 500) : null,
+        ]);
+    }
 }
