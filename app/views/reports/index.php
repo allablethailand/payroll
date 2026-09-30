@@ -98,36 +98,24 @@
                  themselves are entirely JS-driven (public/js/reports/index.js's own
                  renderCycleMatrixTable()) since which reports apply can vary per run (TH_PND1 needs
                  taxable employees, TH_SSO110 needs SSO-active ones) -- no static <thead> here. -->
-            <div class="station-filter" id="cycleReportPeriodBar">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="cycleReportPeriodBarToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="text-muted small mb-2" data-i18n="reports_cycle_hint">Each row is a completed payroll run -- click a report's icon to preview and download it for that run.</div>
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_from">From</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="cycleReportDateFrom" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_to">To</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="cycleReportDateTo" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                    </div>
+            <div class="text-muted small mb-2" data-i18n="reports_cycle_hint">Each row is a completed payroll run -- click a report's icon to preview and download it for that run.</div>
+            <?php
+            ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="cycleReportDateFrom" data-i18n="date_from">From</label>
+                    <input type="text" class="form-control datepicker" id="cycleReportDateFrom" autocomplete="off">
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="cycleReportDateTo" data-i18n="date_to">To</label>
+                    <input type="text" class="form-control datepicker" id="cycleReportDateTo" autocomplete="off">
                 </div>
             </div>
-            <div class="station-filter-clear-row d-none" id="cycleReportFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCycleReportClearFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
-            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'cycleReportFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="reports-not-ready-banner mb-3 d-none" id="cycleReportsNoRunBanner">
                 <div class="reports-not-ready-banner-icon"><i class="fa-solid fa-calendar-xmark"></i></div>
                 <div class="reports-not-ready-banner-body">
@@ -145,18 +133,14 @@
                  input (any year, including ones with zero data); now .station-filter (matching the
                  system standard) with a dropdown populated from ReportsController::availableYears()
                  (only years with a real, usable-state run). -->
-            <div class="station-filter" id="annualReportPeriodBar">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="annualReportPeriodBarToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="text-muted small mb-2" data-i18n="reports_annual_hint">Select the year, then click Generate on whichever annual reports you need.</div>
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar me-1 text-muted"></i><span data-i18n="period_year">Year</span></label>
-                            <select class="form-select form-select-sm select2-native" id="reportsPeriodYear"></select>
-                        </div>
+            <!-- 2026-09-30, filter-bar.php migration: the year is a required period (no "not filtered"
+                 value), so it sits above the page as a plain select instead of inside a filter-bar. -->
+            <div id="annualReportPeriodBar" class="mb-3">
+                <div class="text-muted small mb-2" data-i18n="reports_annual_hint">Select the year, then click Generate on whichever annual reports you need.</div>
+                <div class="row g-2">
+                    <div class="col-6 col-md-4 col-lg-2">
+                        <label class="form-label small mb-1" for="reportsPeriodYear" data-i18n="period_year">Year</label>
+                        <select class="form-select select2-native" id="reportsPeriodYear"></select>
                     </div>
                 </div>
             </div>
@@ -191,18 +175,10 @@
             <div class="text-center text-secondary py-4 d-none" id="noReports_annual"><span data-i18n="no_reports_available">No reports are registered in this category yet.</span></div>
         </div>
         <div class="tab-pane fade" id="monthly-pane" role="tabpanel" aria-labelledby="monthly-tab" tabindex="0">
-            <div class="station-filter" id="monthlyReportPeriodBar">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="monthlyReportPeriodBarToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar me-1 text-muted"></i><span data-i18n="period_year">Year</span></label>
-                            <select class="form-select form-select-sm select2-native" id="monthlyReportYear"></select>
-                        </div>
-                    </div>
+            <div id="monthlyReportPeriodBar" class="row g-2 mb-3">
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="monthlyReportYear" data-i18n="period_year">Year</label>
+                    <select class="form-select select2-native" id="monthlyReportYear"></select>
                 </div>
             </div>
             <div class="table-responsive">
@@ -228,39 +204,27 @@
                  express. Restyled the report-type filter into the same .station-filter component used
                  everywhere else in this app (per the same-day "ปรับ Design Filter ให้เป็นรูปแบบที่กำหนดไว้
                  ของระบบ" request) alongside the new date range. -->
-            <div class="station-filter mb-2" id="exportHistoryStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="exportHistoryStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-file-lines me-1 text-muted"></i><span data-i18n="filter_report_type">Report Type</span></label>
-                            <select class="form-select select2-static" id="filter_export_report_type" data-option-keys="report_type_statutory,report_type_payment,report_type_internal" data-option-values="statutory,payment,internal"></select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="exportHistoryDateFrom" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="exportHistoryDateTo" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                    </div>
+            <?php
+            ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="filter_export_report_type" data-i18n="filter_report_type">Report Type</label>
+                    <select class="form-select select2-static" id="filter_export_report_type" data-option-keys="filter_all,report_type_statutory,report_type_payment,report_type_internal" data-option-values="all,statutory,payment,internal"></select>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="exportHistoryDateFrom" data-i18n="filter_date_from">From</label>
+                    <input type="text" class="form-control datepicker" id="exportHistoryDateFrom" autocomplete="off">
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="exportHistoryDateTo" data-i18n="filter_date_to">To</label>
+                    <input type="text" class="form-control datepicker" id="exportHistoryDateTo" autocomplete="off">
                 </div>
             </div>
-            <div class="station-filter-clear-row d-none" id="exportHistoryFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnExportHistoryClearFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
-            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'exportHistoryFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="table-responsive">
                 <table class="table table-hover table-border align-middle w-100" id="tb_export_history">
                     <thead class="table-light text-secondary">

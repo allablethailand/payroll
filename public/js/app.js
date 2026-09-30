@@ -1560,7 +1560,10 @@ function initFilterBar(bar, options) {
     // is what scheduleNotify() (below) is listening for either kind of field on.
     function resetField($field) {
         if (!$field.is('select')) {
-            $field.val('').trigger('change');
+            $field.val('');
+            // A datepicker keeps its own date state; without update() a later click-away re-fills the field.
+            if ($field.hasClass('datepicker') && typeof $field.datepicker === 'function') $field.datepicker('update');
+            $field.trigger('change');
             return;
         }
         resetSelect($field);

@@ -550,20 +550,6 @@ $(document).on('click', '.btn-cycle-matrix-print', function () {
     }
     openReportsPreview(params, reportLabel(col));
 });
-function updateCycleReportFilterVisibility() {
-    const active = !!($('#cycleReportDateFrom').val() || $('#cycleReportDateTo').val());
-    $('#cycleReportFilterClearRow').toggleClass('d-none', !active);
-}
-$(document).on('changeDate', '#cycleReportDateFrom, #cycleReportDateTo', function () {
-    updateCycleReportFilterVisibility();
-    loadCycleRunsMatrix();
-});
-$(document).on('click', '#btnCycleReportClearFilter', function () {
-    $('#cycleReportDateFrom').val('').datepicker('update');
-    $('#cycleReportDateTo').val('').datepicker('update');
-    updateCycleReportFilterVisibility();
-    loadCycleRunsMatrix();
-});
 
 // 2026-08-30, explicit request: "filter ปีให้เลือกจากปีที่มีข้อมูลจริง" -- was a free-typed number
 // input defaulting to the current B.E. year regardless of whether any data actually existed for it;
@@ -588,16 +574,6 @@ function loadAvailableYears() {
 $(document).on('change', '#reportsPeriodYear', function () {
     const year = $(this).val();
     if (year) loadAnnualReportCounts(year);
-});
-$(document).on('click', '#cycleReportPeriodBarToggle', function () {
-    const $filter = $('#cycleReportPeriodBar').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('click', '#annualReportPeriodBarToggle', function () {
-    const $filter = $('#annualReportPeriodBar').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
 });
 
 /* ---------- Pay Slip roster picker (2026-08-29, explicit request: "ปรับให้ขึ้นเป็นรายชื่อพนักงานมาเลย และ
@@ -798,7 +774,8 @@ function initExportHistoryTable() {
             url: `${BASE_URL}/api/report.export-logs`,
             dataSrc: 'data',
             data: function (d) {
-                d.report_type = $('#filter_export_report_type').val() || '';
+                const reportType = $('#filter_export_report_type').val();
+                d.report_type = reportType === 'all' ? '' : (reportType || '');
                 d.date_from = toIsoDateReports($('#exportHistoryDateFrom').val());
                 d.date_to = toIsoDateReports($('#exportHistoryDateTo').val());
             }
@@ -835,29 +812,6 @@ function initExportHistoryTable() {
     });
 }
 
-$(document).on('change', '#filter_export_report_type', function () {
-    if (tb_export_history) tb_export_history.ajax.reload(null, true);
-});
-$(document).on('click', '#exportHistoryStationFilterToggle', function () {
-    const $filter = $('#exportHistoryStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-function updateExportHistoryClearFilterVisibility() {
-    const active = !!($('#filter_export_report_type').val() || $('#exportHistoryDateFrom').val() || $('#exportHistoryDateTo').val());
-    $('#exportHistoryFilterClearRow').toggleClass('d-none', !active);
-}
-$(document).on('change', '#exportHistoryDateFrom, #exportHistoryDateTo', function () {
-    updateExportHistoryClearFilterVisibility();
-    if (tb_export_history) tb_export_history.ajax.reload(null, true);
-});
-$(document).on('change', '#filter_export_report_type', updateExportHistoryClearFilterVisibility);
-$(document).on('click', '#btnExportHistoryClearFilter', function () {
-    $('#filter_export_report_type').val(null).trigger('change');
-    $('#exportHistoryDateFrom, #exportHistoryDateTo').val('');
-    updateExportHistoryClearFilterVisibility();
-    if (tb_export_history) tb_export_history.ajax.reload(null, true);
-});
 
 // Monthly Report tab: year dropdown reuses api/report.available-years, table = 12 fixed month rows.
 function loadMonthlySummary(year) {
@@ -930,11 +884,6 @@ $(document).on('change', '#monthlyReportYear', function () {
     const year = $(this).val();
     if (year) loadMonthlySummary(year);
 });
-$(document).on('click', '#monthlyReportPeriodBarToggle', function () {
-    const $filter = $('#monthlyReportPeriodBar').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
 
 $(document).ready(function () {
     (window.langReady || Promise.resolve()).then(function () {
@@ -942,7 +891,7 @@ $(document).ready(function () {
     loadCycleRunsMatrix();
     loadAvailableYears();
     if (typeof initSelect2 === 'function') {
-        initSelect2('#filter_export_report_type', { mode: 'static', allowClear: true });
+        initSelect2('#filter_export_report_type', { mode: 'static' });
     }
     if (typeof initDatepicker === 'function') {
         initDatepicker('#cycleReportDateFrom');
@@ -950,6 +899,10 @@ $(document).ready(function () {
         initDatepicker('#exportHistoryDateFrom');
         initDatepicker('#exportHistoryDateTo');
     }
+    initFilterBar('#cycleReportFilterBar', { onChange: loadCycleRunsMatrix });
+    initFilterBar('#exportHistoryFilterBar', {
+        onChange: function () { if (tb_export_history) tb_export_history.ajax.reload(null, true); },
+    });
     $('button[data-bs-toggle="tab"]').on('shown.bs.tab', function (e) {
         const tabId = $(e.target).attr('id');
         if (tabId === 'monthly-tab' && !$('#monthlyReportYear').children().length) {

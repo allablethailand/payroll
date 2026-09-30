@@ -30,10 +30,6 @@ function toIsoDateRa(displayVal) {
     const [dd, mm, yyyy] = parts;
     return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 }
-function updateRunAuditClearFilterVisibility() {
-    const hasFilter = !!($('#runAuditFilterDateFrom').val() || $('#runAuditFilterDateTo').val());
-    $('#runAuditFilterClearRow').toggleClass('d-none', !hasFilter);
-}
 function updateRunAuditStationCounts(rows) {
     const counts = { all: rows.length, draft: 0, pending_approval: 0, approved: 0, paid: 0, locked: 0, rejected: 0, need_info: 0, cancelled: 0 };
     rows.forEach(row => { if (counts[row.state] !== undefined) counts[row.state]++; });
@@ -60,18 +56,6 @@ $(document).on('click', '.station-card', function () {
     $('.station-card').removeClass('active');
     $(this).addClass('active');
     if (runAuditTable) runAuditTable.draw();
-});
-$(document).on('click', '#runAuditStationFilterToggle', function () {
-    const $filter = $('#runAuditStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('changeDate', '#runAuditFilterDateFrom, #runAuditFilterDateTo', function () {
-    updateRunAuditClearFilterVisibility();
-    if (runAuditTable) runAuditTable.ajax.reload(null, true);
-});
-$(document).on('click', '#runAuditClearDateFilter', function () {
-    $('#runAuditFilterDateFrom, #runAuditFilterDateTo').datepicker('clearDates');
 });
 
 function initRunAuditTable() {
@@ -209,6 +193,9 @@ $(document).ready(function () {
         initDatepicker('#runAuditFilterDateFrom');
         initDatepicker('#runAuditFilterDateTo');
     }
+    initFilterBar('#runAuditFilterBar', {
+        onChange: function () { if (runAuditTable) runAuditTable.ajax.reload(null, true); },
+    });
     registerRunAuditStationSearchFilter();
     initRunAuditTable();
     });
