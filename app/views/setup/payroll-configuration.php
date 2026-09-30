@@ -438,7 +438,7 @@
                     </div>
                 </div>
                 <div class="d-flex justify-content-end gap-2">
-                    <button type="button" class="btn btn-light border btn-sm" id="btnCancelPayrollPolicies"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span></button>
+                    <button type="button" class="btn btn-outline-secondary border btn-sm" id="btnCancelPayrollPolicies"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span></button>
                     <button type="button" class="btn btn-primary btn-sm" id="btnSavePayrollPolicies"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
                 </div>
             </div>

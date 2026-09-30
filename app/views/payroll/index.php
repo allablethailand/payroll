@@ -213,7 +213,7 @@
                     <iframe id="runRegisterPdfPreviewFrame" class="d-none" style="width:100%; height:70vh; border:0;" title="Payroll Register preview"></iframe>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light me-auto" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary me-auto" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     <button type="button" class="btn btn-outline-secondary btn-run-register-pdf-download" data-language="th"><img src="<?=BASE_URL?>/public/flags/th.png" width="16" height="16" alt="TH" class="me-1"><span data-i18n="language_th">Thai</span></button>
                     <button type="button" class="btn btn-primary btn-run-register-pdf-download" data-language="en"><img src="<?=BASE_URL?>/public/flags/gb.png" width="16" height="16" alt="EN" class="me-1"><span data-i18n="language_en">English</span></button>
                 </div>

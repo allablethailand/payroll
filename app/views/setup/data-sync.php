@@ -48,7 +48,7 @@
           </div>
           <span class="small text-muted ms-2" id="dsSyncAllProgressLabel">0%</span>
         </div>
-        <button type="button" class="btn btn-outline-brand" id="btnSyncAllMasterData">
+        <button type="button" class="btn btn-outline-secondary" id="btnSyncAllMasterData">
           <i class="fa-solid fa-rotate me-1"></i><span data-i18n="sync_all">Sync All</span>
         </button>
       </div>

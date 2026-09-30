@@ -103,7 +103,7 @@ function dsRenderCards(statusData) {
                             <button type="button" class="btn btn-link btn-sm p-0 ds-view-history-btn" data-entity-type="${type}">
                                 <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="data_sync_view_history">History</span>
                             </button>
-                            <button type="button" class="btn btn-outline-brand btn-sm ds-sync-one-btn" data-entity-type="${type}">
+                            <button type="button" class="btn btn-outline-secondary btn-sm ds-sync-one-btn" data-entity-type="${type}">
                                 <i class="fa-solid fa-rotate me-1"></i><span data-i18n="sync_now">Sync Now</span>
                             </button>
                         </div>

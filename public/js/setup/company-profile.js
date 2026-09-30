@@ -1209,7 +1209,7 @@ $(document).on('click', '.btn-open-modal', function (e) {
     $('#systemModal .modal-body').html(bodyHtml);
     $('#systemModal .modal-footer').html(`
         <button type="button" class="btn btn-primary" id="btnSubmitModalForm" data-i18n="save">Save</button>
-        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
     `);
     if (typeof initSelect2 === 'function') {
         initSelect2('#systemModal .select2-remote', { mode: 'ajax' });
@@ -1390,7 +1390,7 @@ function bffRenderFormatList(defaultFormatId) {
                 : `<span class="badge bg-warning-subtle text-warning" data-i18n="draft_not_verified">DRAFT — not verified</span>`)
             : `<span class="badge bg-secondary-subtle text-secondary" data-i18n="using_default_template">Using default template</span>`;
         const $item = $(`
-            <button type="button" class="btn btn-light text-start bff-format-item ${isActive ? 'active border-warning' : ''}" data-id="${f.id}">
+            <button type="button" class="btn btn-outline-secondary text-start bff-format-item ${isActive ? 'active border-warning' : ''}" data-id="${f.id}">
                 <div class="d-flex justify-content-between align-items-center">
                     <span class="fw-semibold small">${escapeHtml(bffFormatLabel(f))}</span>
                     ${isDefault ? `<i class="fa-solid fa-star text-warning ms-1" title="${langData['default'] || 'Default'}"></i>` : ''}

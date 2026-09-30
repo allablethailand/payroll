@@ -181,7 +181,7 @@ function buildStepEditHtml(step, index) {
                 </div>
 
                 <div class="d-flex justify-content-end gap-2 mt-3">
-                    <button type="button" class="btn btn-light btn-sm awf-step-cancel-btn">${langData['cancel'] || 'Cancel'}</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm awf-step-cancel-btn">${langData['cancel'] || 'Cancel'}</button>
                     <button type="button" class="btn btn-primary btn-sm awf-step-save-btn"><i class="fa-solid fa-check me-1"></i>${langData['save'] || 'Save'}</button>
                 </div>
             </div>

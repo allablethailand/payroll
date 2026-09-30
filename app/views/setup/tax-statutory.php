@@ -163,7 +163,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end gap-2">
-                <button type="button" class="btn btn-light border" id="nonresidentTaxCancelBtn">
+                <button type="button" class="btn btn-outline-secondary border" id="nonresidentTaxCancelBtn">
                     <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
                 </button>
                 <button type="button" class="btn btn-primary" id="nonresidentTaxSaveBtn">

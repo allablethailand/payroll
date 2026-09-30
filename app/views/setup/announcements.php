@@ -135,7 +135,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light border" data-bs-dismiss="modal"><span data-i18n="cancel">Cancel</span></button>
+                <button type="button" class="btn btn-outline-secondary border" data-bs-dismiss="modal"><span data-i18n="cancel">Cancel</span></button>
                 <button type="button" class="btn btn-primary" id="annSaveBtn"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
             </div>
         </div>

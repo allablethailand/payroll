@@ -182,13 +182,13 @@
                              -- see toggleShiftWorkDay() in setup-rules.js. Defaults to Mon-Fri active for a
                              brand-new shift, matching the DB column defaults. -->
                         <div class="btn-group btn-group-sm" role="group" id="shiftWorkDaysToggle">
-                            <button type="button" class="btn btn-outline-brand active" data-day="monday"><span data-i18n="day_mon_short">Mon</span></button>
-                            <button type="button" class="btn btn-outline-brand active" data-day="tuesday"><span data-i18n="day_tue_short">Tue</span></button>
-                            <button type="button" class="btn btn-outline-brand active" data-day="wednesday"><span data-i18n="day_wed_short">Wed</span></button>
-                            <button type="button" class="btn btn-outline-brand active" data-day="thursday"><span data-i18n="day_thu_short">Thu</span></button>
-                            <button type="button" class="btn btn-outline-brand active" data-day="friday"><span data-i18n="day_fri_short">Fri</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-day="saturday"><span data-i18n="day_sat_short">Sat</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-day="sunday"><span data-i18n="day_sun_short">Sun</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-day="monday"><span data-i18n="day_mon_short">Mon</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-day="tuesday"><span data-i18n="day_tue_short">Tue</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-day="wednesday"><span data-i18n="day_wed_short">Wed</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-day="thursday"><span data-i18n="day_thu_short">Thu</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-day="friday"><span data-i18n="day_fri_short">Fri</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-day="saturday"><span data-i18n="day_sat_short">Sat</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-day="sunday"><span data-i18n="day_sun_short">Sun</span></button>
                         </div>
                     </div>
                     <div class="col-12">
@@ -204,7 +204,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveShift(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -248,7 +248,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveWorkLocation(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -316,7 +316,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveHoliday(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -420,7 +420,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveLeave(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -525,7 +525,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveOt(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -619,7 +619,7 @@
                     <button type="button" class="btn btn-primary d-none" id="btnApplyHolidaySync">
                         <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="holidaySyncSelectedCount">0</span>)
                     </button>
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>
@@ -652,7 +652,7 @@
                 </table>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>

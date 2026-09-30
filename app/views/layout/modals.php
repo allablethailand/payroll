@@ -120,7 +120,7 @@
             </div>
             <div class="modal-body" id="aisCellDetailBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -141,7 +141,7 @@
             </div>
             <div class="modal-body" id="aisAnnualDetailBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -230,7 +230,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="btnSaveUserSettings" data-i18n="save">Save</button>
             </div>
         </div>
@@ -256,7 +256,7 @@
                 <div id="quickLinksCustomizeList"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="btnSaveQuickLinks" data-i18n="save">Save</button>
             </div>
         </div>
@@ -341,7 +341,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -449,7 +449,7 @@
                     </div>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     <button type="button" class="btn btn-outline-primary reports-preview-download-btn" data-language="th"><img src="<?=asset('public/flags/th.png')?>" width="16" height="16" alt="TH" class="me-1"><span data-i18n="language_th">Thai</span></button>
                     <button type="button" class="btn btn-primary reports-preview-download-btn" data-language="en"><img src="<?=asset('public/flags/gb.png')?>" width="16" height="16" alt="EN" class="me-1"><span data-i18n="language_en">English</span></button>
                 </div>
@@ -487,7 +487,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -536,7 +536,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -641,7 +641,7 @@
                     <button type="button" class="btn btn-primary d-none" id="btnApplyEmployeeSync">
                         <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="syncSelectedCount">0</span>)
                     </button>
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>
@@ -661,7 +661,7 @@
                 <div id="syncLogCards"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -722,7 +722,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -761,7 +761,7 @@
                     <div class="text-secondary small" id="documentNumberingPreview"></div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
                 </div>
             </form>
@@ -942,7 +942,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 </div>
             </form>
         </div>
@@ -1077,8 +1077,8 @@
                                      Interest/Fee toggle (employee/detail.js's #eedInterestToggle) -- not a
                                      new pattern. -->
                                 <div class="btn-group btn-group-sm" role="group" id="pedTaxTreatmentToggle" data-ped-segmented="tax_treatment">
-                                    <button type="button" class="btn btn-outline-brand" data-value="taxable" data-i18n-title="taxable" title="Taxable"><span data-i18n="ped_tax_treatment_taxable_short">Taxable</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="non_taxable" data-i18n-title="non_taxable" title="Tax-exempt"><span data-i18n="ped_tax_treatment_exempt_short">Tax Exempt</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="taxable" data-i18n-title="taxable" title="Taxable"><span data-i18n="ped_tax_treatment_taxable_short">Taxable</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="non_taxable" data-i18n-title="non_taxable" title="Tax-exempt"><span data-i18n="ped_tax_treatment_exempt_short">Tax Exempt</span></button>
                                 </div>
                             </div>
                         </div>
@@ -1106,8 +1106,8 @@
                             <div class="col-sm-9">
                                 <input type="hidden" id="tax_deduction_impact" name="tax_deduction_impact">
                                 <div class="btn-group btn-group-sm" role="group" id="pedTaxDeductionImpactToggle" data-ped-segmented="tax_deduction_impact">
-                                    <button type="button" class="btn btn-outline-brand" data-value="before_tax" data-i18n-title="impact_before_tax" title="Deduct before tax (reduces taxable income)"><span data-i18n="ped_impact_before_tax_short">Before Tax</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="after_tax" data-i18n-title="impact_after_tax" title="Deduct after tax (reduces net pay only)"><span data-i18n="ped_impact_after_tax_short">After Tax</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="before_tax" data-i18n-title="impact_before_tax" title="Deduct before tax (reduces taxable income)"><span data-i18n="ped_impact_before_tax_short">Before Tax</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="after_tax" data-i18n-title="impact_after_tax" title="Deduct after tax (reduces net pay only)"><span data-i18n="ped_impact_after_tax_short">After Tax</span></button>
                                 </div>
                             </div>
                         </div>
@@ -1121,8 +1121,8 @@
                                      Interest/Fee toggle's own none-state already uses) is a real 3rd choice
                                      here, not a placeholder. -->
                                 <div class="btn-group btn-group-sm" role="group" id="pedStatutoryReportToggle" data-ped-segmented="statutory_report_code">
-                                    <button type="button" class="btn btn-outline-brand active" data-value=""><span data-i18n="interest_none">None</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="TH_SLF" data-i18n-title="statutory_report_th_slf" title="Student Loan Fund (กยศ.)"><span data-i18n="ped_statutory_slf_short">SLF</span></button>
+                                    <button type="button" class="btn btn-outline-secondary active" data-value=""><span data-i18n="interest_none">None</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="TH_SLF" data-i18n-title="statutory_report_th_slf" title="Student Loan Fund (กยศ.)"><span data-i18n="ped_statutory_slf_short">SLF</span></button>
                                 </div>
                             </div>
                         </div>
@@ -1164,8 +1164,8 @@
                             <div class="col-sm-3">
                                 <input type="hidden" id="default_fee_base" name="default_fee_base">
                                 <div class="btn-group btn-group-sm" role="group" id="pedDefaultFeeBaseToggle" data-ped-segmented="default_fee_base">
-                                    <button type="button" class="btn btn-outline-brand" data-value="principal_amount" data-i18n-title="fee_base_option_principal" title="Principal Amount"><span data-i18n="ped_fee_base_principal_short">From Principal</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="base_salary" data-i18n-title="fee_base_option_base_salary" title="Base Salary"><span data-i18n="ped_fee_base_salary_short">From Base Salary</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="principal_amount" data-i18n-title="fee_base_option_principal" title="Principal Amount"><span data-i18n="ped_fee_base_principal_short">From Principal</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="base_salary" data-i18n-title="fee_base_option_base_salary" title="Base Salary"><span data-i18n="ped_fee_base_salary_short">From Base Salary</span></button>
                                 </div>
                             </div>
                         </div>
@@ -1173,7 +1173,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 </div>
             </form>
         </div>
@@ -1225,7 +1225,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="btnSaveAttendanceDeductionAssign"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -1359,7 +1359,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary px-4" onclick="saveAttendanceDeductionRule()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -1389,7 +1389,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary px-4" data-i18n="submit_request">Submit Request</button>
                 </div>
             </form>
@@ -1418,7 +1418,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary px-4" data-i18n="submit_request">Submit Request</button>
                 </div>
             </form>
@@ -1604,7 +1604,7 @@
                                 </div>
                             </div>
                             <div class="d-flex justify-content-between mt-4">
-                                <button type="button" class="btn btn-outline-brand d-none" id="srPromoteItemBtn">
+                                <button type="button" class="btn btn-outline-secondary d-none" id="srPromoteItemBtn">
                                     <i class="fa-solid fa-arrow-up-from-bracket me-1"></i><span data-i18n="sr_promote_item_btn">Promote to System Default</span>
                                 </button>
                                 <button type="submit" class="btn btn-primary ms-auto"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
@@ -1639,7 +1639,7 @@
                                     <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="srPullFromMasterBtn">
                                         <i class="fa-solid fa-cloud-arrow-down me-1"></i><span data-i18n="sr_pull_from_master_btn">Pull from Master</span>
                                     </button>
-                                    <button type="button" class="btn btn-sm btn-outline-brand" id="srAddRateVersionBtn">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="srAddRateVersionBtn">
                                         <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_bracket_version">Add Rate Version</span>
                                     </button>
                                 </div>
@@ -1809,10 +1809,10 @@
                  id) -- see showSrHistoryEditView()'s own toggle. View mode (srViewCurrentVersion())
                  hides this whole footer entirely via .sr-modal-readonly (style.css). -->
             <div class="modal-footer d-none" id="srHistoryModalFooter">
-                <button type="button" class="btn btn-outline-brand d-none me-auto" id="srPromoteVersionBtn">
+                <button type="button" class="btn btn-outline-secondary d-none me-auto" id="srPromoteVersionBtn">
                     <i class="fa-solid fa-arrow-up-from-bracket me-1"></i><span data-i18n="sr_promote_version_btn">Promote to System Default</span>
                 </button>
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 <button type="submit" form="srRateVersionForm" class="btn btn-primary" id="srRateVersionSaveBtn">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
@@ -1852,7 +1852,7 @@
                  markup here -- nothing to keep in sync if that form's fields ever change. -->
             <div class="modal-body" id="srAddVersionModalBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <!-- Submits the SAME #srRateVersionForm via the HTML5 `form` attribute (works
                      regardless of that form's current DOM parent) -- a second SUBMIT TRIGGER for
                      one shared form, not a second copy of it. #srRateVersionSaveBtn (the original,
@@ -1915,7 +1915,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveAttendance(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -1969,7 +1969,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveLeave(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -2016,7 +2016,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveOvertime(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -2032,7 +2032,7 @@
                 <p class="text-muted small mb-0"><span data-i18n="delete_confirm_question">Delete</span> "<span id="manualEntryDeleteTargetName"></span>"?<br><span data-i18n="delete_irreversible_note">This action cannot be undone.</span></p>
             </div>
             <div class="modal-footer border-0 justify-content-center pb-4">
-                <button class="btn btn-light px-3" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary px-3" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-danger px-3" onclick="confirmManualEntryDelete()"><i class="fa-solid fa-trash me-1"></i><span data-i18n="delete">Delete</span></button>
             </div>
         </div>
@@ -2094,7 +2094,7 @@
             </div>
             <div class="modal-footer">
                 <span class="text-muted small me-auto" data-i18n="bulk_entry_footer_hint">Add or import as many rows as you like, then Save once.</span>
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary px-4" id="btnBulkEntrySaveAll"><i class="fa-solid fa-check me-1"></i><span data-i18n="bulk_entry_save_all">Save All</span></button>
             </div>
         </div>
@@ -2170,11 +2170,11 @@
                 </div>
             </div>
             <div class="modal-footer" id="bulkImportAttachFooter">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary px-4" id="btnBulkImportRunPreview"><i class="fa-solid fa-file-import me-1"></i><span data-i18n="bulk_import_run">Import</span></button>
             </div>
             <div class="modal-footer d-none" id="bulkImportReviewFooter">
-                <button type="button" class="btn btn-light me-auto" id="btnBulkImportBack"><i class="fa-solid fa-arrow-left me-1"></i><span data-i18n="back">Back</span></button>
+                <button type="button" class="btn btn-outline-secondary me-auto" id="btnBulkImportBack"><i class="fa-solid fa-arrow-left me-1"></i><span data-i18n="back">Back</span></button>
                 <button type="button" class="btn btn-outline-primary" id="btnBulkImportLoadToGrid"><i class="fa-solid fa-table-cells me-1"></i><span data-i18n="bulk_import_load_to_grid">Load into Grid to Edit</span></button>
                 <button type="button" class="btn btn-success px-4" id="btnBulkImportSaveDirect"><i class="fa-solid fa-check me-1"></i><span data-i18n="bulk_import_save_direct">Save Directly</span></button>
             </div>
@@ -2199,7 +2199,7 @@
                 </div>
             </div>
             <div class="modal-footer border-0">
-                <button class="btn btn-light px-3" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button class="btn btn-outline-secondary px-3" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -2223,7 +2223,7 @@
                     <textarea class="form-control" id="approve_note" name="note" rows="3" data-i18n="approve_note_placeholder" placeholder="Any comment for this approval..."></textarea>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-success"><span data-i18n="approval_confirm_approve">Confirm Approve</span></button>
                 </div>
             </form>
@@ -2248,7 +2248,7 @@
                     <textarea class="form-control required" id="reject_reason" name="reason" rows="3" data-i18n="reject_reason_placeholder" placeholder="Explain what needs to be fixed before resubmitting..."></textarea>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-danger"><span data-i18n="approval_confirm_reject">Confirm Reject</span></button>
                 </div>
             </form>
@@ -2273,7 +2273,7 @@
                     <textarea class="form-control required" id="request_info_reason" name="reason" rows="3" data-i18n="request_info_reason_placeholder" placeholder="Explain what additional information is needed before this can be decided..."></textarea>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary"><span data-i18n="approval_confirm_request_info">Confirm</span></button>
                 </div>
             </form>
@@ -2298,7 +2298,7 @@
             </div>
             <div class="modal-footer justify-content-between">
                 <div id="approvalTimelineModalActions" class="d-flex flex-wrap gap-2"></div>
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -2408,9 +2408,9 @@
                             </div>
                             <div class="col-sm-9">
                                 <div class="btn-group btn-group-sm" role="group" id="eedInterestToggle">
-                                    <button type="button" class="btn btn-outline-brand active" data-value="none"><span data-i18n="interest_none">None</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="interest"><span data-i18n="interest_has">Interest</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="fee"><span data-i18n="fee_has">Fee</span></button>
+                                    <button type="button" class="btn btn-outline-secondary active" data-value="none"><span data-i18n="interest_none">None</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="interest"><span data-i18n="interest_has">Interest</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="fee"><span data-i18n="fee_has">Fee</span></button>
                                 </div>
                             </div>
                         </div>
@@ -2421,8 +2421,8 @@
                             <div class="col-sm-9">
                                 <div class="d-flex align-items-center flex-wrap gap-2">
                                     <div class="btn-group btn-group-sm" role="group" id="eedInterestTypeToggle">
-                                        <button type="button" class="btn btn-outline-brand active" data-value="fixed"><span data-i18n="interest_fixed">Flat</span></button>
-                                        <button type="button" class="btn btn-outline-brand" data-value="reducing_balance"><span data-i18n="interest_reducing_balance">Reducing Balance</span></button>
+                                        <button type="button" class="btn btn-outline-secondary active" data-value="fixed"><span data-i18n="interest_fixed">Flat</span></button>
+                                        <button type="button" class="btn btn-outline-secondary" data-value="reducing_balance"><span data-i18n="interest_reducing_balance">Reducing Balance</span></button>
                                     </div>
                                     <div class="input-group input-group-sm" style="max-width:180px;">
                                         <input type="number" step="0.01" min="0.01" class="form-control" id="eed_interest_rate" name="interest_rate" placeholder="0.00">
@@ -2449,7 +2449,7 @@
                                         <select class="form-select form-select-sm select2-static" style="max-width:170px;" id="eedRateHelperFrequency"
                                                 data-option-keys="rate_helper_freq_monthly,rate_helper_freq_semi_monthly,rate_helper_freq_bi_weekly,rate_helper_freq_weekly"
                                                 data-option-values="12,24,26,52"></select>
-                                        <button type="button" class="btn btn-outline-brand btn-sm" id="eedRateHelperApply" data-i18n="rate_helper_apply">Use this rate</button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="eedRateHelperApply" data-i18n="rate_helper_apply">Use this rate</button>
                                         <span class="small text-muted" id="eedRateHelperResult"></span>
                                     </div>
                                 </div>
@@ -2605,7 +2605,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     <button type="submit" class="btn btn-primary px-4" id="eedSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
@@ -2693,7 +2693,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary px-4" id="ereSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
@@ -2856,7 +2856,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     <button type="submit" class="btn btn-primary px-4" id="erdSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
@@ -2876,8 +2876,8 @@
                 <p class="text-muted small mt-2 mb-0" data-i18n="draw_signature_hint">Draw with your mouse or finger, then click Save.</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" id="empSignaturePadClearBtn"><i class="fa-solid fa-eraser me-1"></i><span data-i18n="clear">Clear</span></button>
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" id="empSignaturePadClearBtn"><i class="fa-solid fa-eraser me-1"></i><span data-i18n="clear">Clear</span></button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="empSignaturePadSaveBtn"><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -2897,7 +2897,7 @@
                 <p class="text-muted small mt-2 mb-0" data-i18n="map_pin_hint">Click anywhere on the map, or drag the marker, to set the location.</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="empMapPinSaveBtn"><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -2985,7 +2985,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="bffFieldSaveBtn"><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -3016,8 +3016,8 @@
                 <p class="text-muted small mt-2 mb-0" data-i18n="draw_signature_hint">Draw with your mouse or finger, then click Save.</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" id="cpSignaturePadClearBtn"><i class="fa-solid fa-eraser me-1"></i><span data-i18n="clear">Clear</span></button>
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" id="cpSignaturePadClearBtn"><i class="fa-solid fa-eraser me-1"></i><span data-i18n="clear">Clear</span></button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="cpSignaturePadSaveBtn"><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -3088,7 +3088,7 @@
                     <button type="button" class="btn btn-primary d-none" id="btnApplyOrgStructureSync">
                         <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="orgSyncSelectedCount">0</span>)
                     </button>
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>
@@ -3120,7 +3120,7 @@
                 </table>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -3140,7 +3140,7 @@
                 <div class="text-center text-muted py-4"><i class="fa-solid fa-spinner fa-spin me-1"></i> <span data-i18n="loading">Loading...</span></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -3160,7 +3160,7 @@
                 <div id="bulkPullRows"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="btnBulkPullSubmit"><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -3536,7 +3536,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary"><span data-i18n="save">Save</span></button>
                 </div>
             </form>
@@ -3560,7 +3560,7 @@
                     <textarea class="form-control required" id="cancel_reason" name="reason" rows="3" data-i18n="cancel_reason_placeholder" placeholder="Explain why this payroll run is being cancelled..."></textarea>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-danger"><span data-i18n="confirm_cancel_run">Confirm Cancellation</span></button>
                 </div>
             </form>
@@ -3582,7 +3582,7 @@
             </div>
             <div class="modal-body" id="runWorkflowModalBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -3819,9 +3819,9 @@
                             <label class="form-label mb-1" data-i18n="payment_type">Payment Type</label>
                             <div class="btn-group d-block" role="group" aria-label="Payment type" id="rcPaymentTypeRadioGroup">
                                 <input type="radio" class="btn-check" name="rc_payment_type_radio" id="rc_payment_bank" value="transfer" checked>
-                                <label class="btn btn-outline-brand" for="rc_payment_bank" data-i18n="bank">Bank</label>
+                                <label class="btn btn-outline-secondary" for="rc_payment_bank" data-i18n="bank">Bank</label>
                                 <input type="radio" class="btn-check" name="rc_payment_type_radio" id="rc_payment_cash" value="cash">
-                                <label class="btn btn-outline-brand" for="rc_payment_cash" data-i18n="cash">Cash</label>
+                                <label class="btn btn-outline-secondary" for="rc_payment_cash" data-i18n="cash">Cash</label>
                             </div>
                             <div class="form-text text-warning d-none" id="rcPaymentMethodOtherNote" data-i18n="recheck_payment_method_edit_in_profile">This employee uses Check/Mixed payment -- edit it from the full Employee Detail page.</div>
                             <input type="hidden" name="payment_method_id" id="rc_payment_type" value="">
@@ -3888,9 +3888,9 @@
                             <label class="form-label d-block mb-1"><span data-i18n="ot_rate_source">OT Rate Source</span></label>
                             <div class="btn-group d-block" role="group">
                                 <input type="radio" class="btn-check" name="rc_ot_rate_source_radio" id="rc_ot_rate_source_default" value="default" checked>
-                                <label class="btn btn-outline-brand" for="rc_ot_rate_source_default" data-i18n="ot_rate_source_default">Use Company Default</label>
+                                <label class="btn btn-outline-secondary" for="rc_ot_rate_source_default" data-i18n="ot_rate_source_default">Use Company Default</label>
                                 <input type="radio" class="btn-check" name="rc_ot_rate_source_radio" id="rc_ot_rate_source_custom" value="custom">
-                                <label class="btn btn-outline-brand" for="rc_ot_rate_source_custom" data-i18n="ot_rate_source_custom">Set Individually per OT Type</label>
+                                <label class="btn btn-outline-secondary" for="rc_ot_rate_source_custom" data-i18n="ot_rate_source_custom">Set Individually per OT Type</label>
                             </div>
                         </div>
                     </div>
@@ -3948,7 +3948,7 @@
                     </a>
                     <div>
                         <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
-                        <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     </div>
                 </div>
             </form>
@@ -4008,7 +4008,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary px-4" id="eawSaveBtn"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -4101,7 +4101,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary px-4" id="btnSaveProbationSet"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
             </div>
         </div>

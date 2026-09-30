@@ -358,7 +358,7 @@
     </div>
     <div class="text-end">
         <button type="button" class="btn btn-primary save-company-profile"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
-        <button type="button" class="btn btn-light cancel-company-profile" data-i18n="cancel">Cancel</button>
+        <button type="button" class="btn btn-outline-secondary cancel-company-profile" data-i18n="cancel">Cancel</button>
     </div>
     </div>
 </template>

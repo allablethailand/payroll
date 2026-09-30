@@ -377,9 +377,9 @@
                 <div>
                     <div class="btn-group d-block" role="group" aria-label="Payroll participation">
                         <input type="radio" class="btn-check" name="is_payroll_participant_radio" id="payroll_participant_yes" value="1" checked>
-                        <label class="btn btn-outline-brand" for="payroll_participant_yes" data-i18n="payroll_participant_yes">Pays Salary</label>
+                        <label class="btn btn-outline-secondary" for="payroll_participant_yes" data-i18n="payroll_participant_yes">Pays Salary</label>
                         <input type="radio" class="btn-check" name="is_payroll_participant_radio" id="payroll_participant_no" value="0">
-                        <label class="btn btn-outline-brand" for="payroll_participant_no" data-i18n="payroll_participant_no">No Salary</label>
+                        <label class="btn btn-outline-secondary" for="payroll_participant_no" data-i18n="payroll_participant_no">No Salary</label>
                     </div>
                     <input type="hidden" name="is_payroll_participant" id="is_payroll_participant" value="1">
                 </div>
@@ -395,9 +395,9 @@
                 <div class="col-sm-4 mt-3">
                     <div class="btn-group d-block" role="group" aria-label="Employee type">
                         <input type="radio" class="btn-check" name="employee_type_radio" id="type_domestic" value="domestic" checked>
-                        <label class="btn btn-outline-brand" for="type_domestic" data-i18n="domestic">Domestic</label>
+                        <label class="btn btn-outline-secondary" for="type_domestic" data-i18n="domestic">Domestic</label>
                         <input type="radio" class="btn-check" name="employee_type_radio" id="type_foreigner" value="foreigner">
-                        <label class="btn btn-outline-brand" for="type_foreigner" data-i18n="foreigner">Foreigner</label>
+                        <label class="btn btn-outline-secondary" for="type_foreigner" data-i18n="foreigner">Foreigner</label>
                     </div>
                     <input type="hidden" name="employee_type" id="employee_type" value="domestic">
                 </div>
@@ -433,11 +433,11 @@
                 <div class="col-sm-4 mt-3">
                     <div class="btn-group d-block" role="group" aria-label="Gender">
                         <input type="radio" class="btn-check" name="gender_radio" id="gender_male" value="male" checked>
-                        <label class="btn btn-outline-brand" for="gender_male" data-i18n="male">Male</label>
+                        <label class="btn btn-outline-secondary" for="gender_male" data-i18n="male">Male</label>
                         <input type="radio" class="btn-check" name="gender_radio" id="gender_female" value="female">
-                        <label class="btn btn-outline-brand" for="gender_female" data-i18n="female">Female</label>
+                        <label class="btn btn-outline-secondary" for="gender_female" data-i18n="female">Female</label>
                         <input type="radio" class="btn-check" name="gender_radio" id="gender_other" value="other">
-                        <label class="btn btn-outline-brand" for="gender_other" data-i18n="other">Other</label>
+                        <label class="btn btn-outline-secondary" for="gender_other" data-i18n="other">Other</label>
                     </div>
                     <input type="hidden" name="gender" id="gender" value="male">
                 </div>
@@ -848,7 +848,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-5">
-                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                <button type="button" class="btn btn-outline-secondary border btn-cancel-employee-tab">
                     <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
                 </button>
                 <button type="button" class="btn btn-primary" id="btnNextContact">
@@ -1086,7 +1086,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-5">
-                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                <button type="button" class="btn btn-outline-secondary border btn-cancel-employee-tab">
                     <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
                 </button>
                 <button type="button" class="btn btn-primary" id="btnNextEmployment">
@@ -1446,9 +1446,9 @@
                         <div class="col-sm-4 mt-3">
                             <div class="btn-group d-block" role="group" id="otRateSourceRadioGroup">
                                 <input type="radio" class="btn-check" name="ot_rate_source_radio" id="ot_rate_source_default" value="default" checked>
-                                <label class="btn btn-outline-brand" for="ot_rate_source_default" data-i18n="ot_rate_source_default">Use Company Default</label>
+                                <label class="btn btn-outline-secondary" for="ot_rate_source_default" data-i18n="ot_rate_source_default">Use Company Default</label>
                                 <input type="radio" class="btn-check" name="ot_rate_source_radio" id="ot_rate_source_custom" value="custom">
-                                <label class="btn btn-outline-brand" for="ot_rate_source_custom" data-i18n="ot_rate_source_custom">Set Individually per OT Type</label>
+                                <label class="btn btn-outline-secondary" for="ot_rate_source_custom" data-i18n="ot_rate_source_custom">Set Individually per OT Type</label>
                             </div>
                         </div>
                         <div class="col-sm-2 mt-3 ot-rate-set-picker-toggle">
@@ -1477,7 +1477,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-5">
-                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                <button type="button" class="btn btn-outline-secondary border btn-cancel-employee-tab">
                     <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
                 </button>
                 <button type="button" class="btn btn-primary" id="btnNextSalary">
@@ -1671,7 +1671,7 @@
                     <div class="col-12 mt-3">
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <label class="form-label mb-1" data-i18n="mixed_payment_lines">Payment Lines</label>
-                            <button type="button" class="btn btn-sm btn-outline-brand" id="btnAddPaymentMethodLine">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnAddPaymentMethodLine">
                                 <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_line">Add Line</span>
                             </button>
                         </div>
@@ -1939,7 +1939,7 @@
                 <p class="text-secondary small mb-0" data-i18n="probation_base_salary_ratio_override_hint">Leave off to use this company's own Probation Pay Conditions default (set in Payroll Configuration > Payroll Policies). Only applies while this employee's Employment Status is Probation.</p>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-5">
-                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                <button type="button" class="btn btn-outline-secondary border btn-cancel-employee-tab">
                     <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
                 </button>
                 <button type="button" class="btn btn-primary" id="btnNextSocial">
@@ -2079,8 +2079,8 @@
                              #sso_enrolled change listener (toggles #ssoDetailFields) both need zero
                              changes -- see the toggle wiring in detail.js. -->
                         <div class="btn-group btn-group-sm" role="group" id="ssoEnrolledToggle">
-                            <button type="button" class="btn btn-outline-brand" data-value="no"><span data-i18n="no">No</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="yes"><span data-i18n="yes">Yes</span></button>
                         </div>
                         <input type="checkbox" class="d-none" name="sso_enrolled" id="sso_enrolled">
                     </div>
@@ -2160,8 +2160,8 @@
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="enrolled_in_pvd">Enrolled in Provident Fund</span></label>
                         <div class="btn-group btn-group-sm" role="group" id="pvdEnrolledToggle">
-                            <button type="button" class="btn btn-outline-brand" data-value="no"><span data-i18n="no">No</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="yes"><span data-i18n="yes">Yes</span></button>
                         </div>
                         <input type="checkbox" class="d-none" name="pvd_enrolled" id="pvd_enrolled">
                     </div>
@@ -2267,7 +2267,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-5">
-                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                <button type="button" class="btn btn-outline-secondary border btn-cancel-employee-tab">
                     <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
                 </button>
                 <button type="button" class="btn btn-primary" id="btnNextFamily">
@@ -2301,8 +2301,8 @@
                     </div>
                     <div class="col-sm-9">
                         <div class="btn-group btn-group-sm" role="group" id="hasSpouseToggle">
-                            <button type="button" class="btn btn-outline-brand" data-value="no"><span data-i18n="no">No</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="yes"><span data-i18n="yes">Yes</span></button>
                         </div>
                         <input type="checkbox" class="d-none" name="has_spouse" id="has_spouse">
                     </div>
@@ -2346,8 +2346,8 @@
                     </div>
                     <div class="col-sm-9">
                         <div class="btn-group btn-group-sm" role="group" id="hasChildrenToggle">
-                            <button type="button" class="btn btn-outline-brand active" data-value="no"><span data-i18n="no">No</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="yes"><span data-i18n="yes">Yes</span></button>
                         </div>
                     </div>
                 </div>
@@ -2391,8 +2391,8 @@
                     </div>
                     <div class="col-sm-9">
                         <div class="btn-group btn-group-sm" role="group" id="useFatherToggle">
-                            <button type="button" class="btn btn-outline-brand active" data-value="no"><span data-i18n="no">No</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="yes"><span data-i18n="yes">Yes</span></button>
                         </div>
                     </div>
                 </div>
@@ -2421,8 +2421,8 @@
                     </div>
                     <div class="col-sm-9">
                         <div class="btn-group btn-group-sm" role="group" id="useMotherToggle">
-                            <button type="button" class="btn btn-outline-brand active" data-value="no"><span data-i18n="no">No</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="yes"><span data-i18n="yes">Yes</span></button>
                         </div>
                     </div>
                 </div>
@@ -2446,7 +2446,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-4">
-                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                <button type="button" class="btn btn-outline-secondary border btn-cancel-employee-tab">
                     <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
                 </button>
                 <button type="button" class="btn btn-primary" id="btnNextDocuments">

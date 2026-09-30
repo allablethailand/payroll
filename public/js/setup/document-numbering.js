@@ -84,7 +84,7 @@ function renderDocumentNumberingCards() {
                         <div class="fw-bold mb-2">${escapeAttr(formatDocNumberPreview(row))}</div>
                         ${notWiredBadge}
                         <div class="d-flex justify-content-end mt-2">
-                            <button type="button" class="btn btn-outline-brand btn-sm btn-edit-doc-numbering" data-code="${row.document_type_code}">
+                            <button type="button" class="btn btn-outline-secondary btn-sm btn-edit-doc-numbering" data-code="${row.document_type_code}">
                                 <i class="fa-solid fa-pen me-1"></i><span data-i18n="edit">Edit</span>
                             </button>
                         </div>
