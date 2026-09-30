@@ -56,7 +56,8 @@ trait MonthlyPayslipLayoutTrait {
         $deduct = array_map(fn($s) => [$s[0], 0.0], self::$MONTHLY_DEDUCTION_SLOTS);
         $income[0][1] = (float)$detail['base_salary_amount'];
 
-        $place = function (array &$rows, array $slots, string $haystackCode, string $haystackName, float $amount): void {
+        $otherNames = ['income' => [], 'deduct' => []];
+        $place = function (array &$rows, array $slots, string $haystackCode, string $haystackName, float $amount, string $side) use (&$otherNames): void {
             $catchAll = count($slots) - 1;
             foreach ($slots as $i => [$label, $pattern]) {
                 if ($pattern === null || $pattern === 'catch_all') continue;
@@ -66,17 +67,27 @@ trait MonthlyPayslipLayoutTrait {
                 }
             }
             $rows[$catchAll][1] += $amount;
+            if ($haystackName !== '' && !in_array($haystackName, $otherNames[$side], true)) {
+                $otherNames[$side][] = $haystackName;
+            }
         };
         foreach ($detail['earning_breakdown'] as $line) {
-            $place($income, self::$MONTHLY_INCOME_SLOTS, (string)($line['code'] ?? ''), (string)($line['name_th'] ?? ''), (float)($line['amount'] ?? 0));
+            $place($income, self::$MONTHLY_INCOME_SLOTS, (string)($line['code'] ?? ''), (string)($line['name_th'] ?? ''), (float)($line['amount'] ?? 0), 'income');
         }
         foreach ($detail['deduction_breakdown'] as $line) {
-            $place($deduct, self::$MONTHLY_DEDUCTION_SLOTS, (string)($line['code'] ?? ''), (string)($line['name_th'] ?? ''), (float)($line['amount'] ?? 0));
+            $place($deduct, self::$MONTHLY_DEDUCTION_SLOTS, (string)($line['code'] ?? ''), (string)($line['name_th'] ?? ''), (float)($line['amount'] ?? 0), 'deduct');
         }
         foreach ($detail['statutory_breakdown'] as $item) {
             $amount = (float)($item['employee_amount'] ?? 0);
             if ($amount > 0) {
-                $place($deduct, self::$MONTHLY_DEDUCTION_SLOTS, (string)($item['code'] ?? ''), (string)($item['name_th'] ?? ''), $amount);
+                $place($deduct, self::$MONTHLY_DEDUCTION_SLOTS, (string)($item['code'] ?? ''), (string)($item['name_th'] ?? ''), $amount, 'deduct');
+            }
+        }
+        // "อื่นๆ (name, name)" -- falls back to plain "อื่นๆ" when the names would not fit the column.
+        foreach ([['income', &$income], ['deduct', &$deduct]] as [$side, &$rows]) {
+            $label = 'อื่นๆ (' . implode(', ', $otherNames[$side]) . ')';
+            if ($otherNames[$side] && mb_strlen($label) <= 30) {
+                $rows[count($rows) - 1][0] = $label;
             }
         }
         return [$income, $deduct];
