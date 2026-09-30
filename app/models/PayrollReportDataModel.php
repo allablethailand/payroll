@@ -108,6 +108,64 @@ class PayrollReportDataModel {
         return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
     }
 
+    /** Per-month run count + totals for runs paid in the given calendar year (same payment_date anchor as availableReportYears). */
+    public function monthlySummary(int $compId, int $year, array $allowedStates): array {
+        $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
+        $sql = "SELECT MONTH(r.payment_date) AS m, COUNT(*) AS run_count,
+                       (SELECT COUNT(DISTINCT d.employee_id) FROM `payroll_run_details` d JOIN `payroll_runs` r2 ON r2.id = d.run_id
+                         WHERE r2.comp_id = r.comp_id AND r2.deleted_at IS NULL AND YEAR(r2.payment_date) = YEAR(r.payment_date)
+                           AND MONTH(r2.payment_date) = MONTH(r.payment_date) AND r2.state IN ({$placeholders})) AS employee_count,
+                       SUM(r.total_gross_amount) AS gross, SUM(r.total_deduction_amount) AS deduction, SUM(r.total_net_amount) AS net
+                FROM `payroll_runs` r
+                WHERE r.comp_id = ? AND r.deleted_at IS NULL AND YEAR(r.payment_date) = ? AND r.state IN ({$placeholders})
+                GROUP BY MONTH(r.payment_date)";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array_merge($allowedStates, [$compId, $year], $allowedStates));
+        $byMonth = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $byMonth[(int)$row['m']] = $row;
+        }
+        $out = [];
+        for ($m = 1; $m <= 12; $m++) {
+            $r = $byMonth[$m] ?? null;
+            $out[] = ['month' => $m, 'run_count' => (int)($r['run_count'] ?? 0), 'employee_count' => (int)($r['employee_count'] ?? 0), 'gross' => (float)($r['gross'] ?? 0),
+                      'deduction' => (float)($r['deduction'] ?? 0), 'net' => (float)($r['net'] ?? 0)];
+        }
+        return $out;
+    }
+
+    /** Per-employee totals (summed across that month's runs) for the Monthly Report's "view list" modal. */
+    public function monthlyEmployees(int $compId, int $year, int $month, array $allowedStates): array {
+        $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
+        $sql = "SELECT e.id AS employee_id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en,
+                       SUM(d.gross_amount) AS gross, SUM(d.total_deduction_amount) AS deduction, SUM(d.net_amount) AS net
+                FROM `payroll_run_details` d
+                JOIN `payroll_runs` r ON r.id = d.run_id
+                JOIN `employees` e ON e.id = d.employee_id
+                WHERE r.comp_id = ? AND r.deleted_at IS NULL AND YEAR(r.payment_date) = ? AND MONTH(r.payment_date) = ?
+                  AND r.state IN ({$placeholders})
+                GROUP BY e.id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en
+                ORDER BY e.employee_no";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array_merge([$compId, $year, $month], $allowedStates));
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /** (run_id, employee_id) pairs to slip for a month -- one employee, or all when $employeeId is null. */
+    public function monthlySlipTargets(int $compId, int $year, int $month, array $allowedStates, ?int $employeeId = null): array {
+        $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
+        $sql = "SELECT r.id AS run_id, d.employee_id
+                FROM `payroll_run_details` d
+                JOIN `payroll_runs` r ON r.id = d.run_id
+                WHERE r.comp_id = ? AND r.deleted_at IS NULL AND YEAR(r.payment_date) = ? AND MONTH(r.payment_date) = ?
+                  AND r.state IN ({$placeholders})" . ($employeeId !== null ? ' AND d.employee_id = ?' : '') . "
+                ORDER BY d.employee_id, r.id";
+        $params = array_merge([$compId, $year, $month], $allowedStates, $employeeId !== null ? [$employeeId] : []);
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     /** Runs actually PAID (payment_date) within the given calendar year, usable states only.
      *  2026-09-10: was YEAR(period_start_date) -- see availableReportYears()'s own docblock above
      *  for why payment_date is the correct anchor for "which year does this run belong to". */

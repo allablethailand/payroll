@@ -468,6 +468,9 @@
     $router->get('api/report.cycle-runs-matrix', 'ReportsController@cycleRunsMatrix');
     $router->get('api/report.deduction-types-for-run', 'ReportsController@deductionTypesForRun');
     $router->get('api/report.available-years', 'ReportsController@availableYears');
+    $router->get('api/report.monthly-summary', 'ReportsController@monthlySummary');
+    $router->get('api/report.monthly-employees', 'ReportsController@monthlyEmployees');
+    $router->get('api/report.monthly-slip', 'ReportsController@monthlySlip');
     $router->get('api/report.annual-summary', 'ReportsController@annualReportsSummary');
     $router->get('api/report.generate', 'ReportsController@generate');
     $router->get('api/report.export-logs', 'ReportsController@exportLogs');

@@ -84,6 +84,16 @@
 </div>
 <script>
 $(document).ready(function () {
-    if (typeof notifPageTableInit === 'function') notifPageTableInit();
+    // 2026-09-25, dtlang round B -- was calling notifPageTableInit() directly, unlike every other
+    // standalone-page DataTable in the app (e.g. public/js/employee/login-history.js's own
+    // `(window.langReady || Promise.resolve()).then(...)` wrap). That let #tb_notification construct
+    // before loadLang()'s own fetch resolved, so its `language: getTableLang()` option (notifications.js)
+    // could capture the English fallback strings instead of the real ones -- see
+    // docs/decisions/2026-09-25-dtlang-visible-double-fetch.md for why this now matters: this page's
+    // table is visible from first paint (no tab hides it), so app.js's own language-switch guard no
+    // longer re-draws it as a safety net once #tb_notification is already constructed and visible.
+    (window.langReady || Promise.resolve()).then(function () {
+        if (typeof notifPageTableInit === 'function') notifPageTableInit();
+    });
 });
 </script>

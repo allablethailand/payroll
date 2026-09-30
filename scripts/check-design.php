@@ -64,7 +64,10 @@
  * only the block at the very bottom, guarded to run when this file is executed DIRECTLY (not when
  * required), prints the human-readable report and sets the process exit code.
  *
- * Usage: php scripts/check-design.php
+ * Usage: php scripts/check-design.php [--all]
+ *   --all (round 4, design inventory prep): "unmarked files with hits" lists every file instead of
+ *   the top 20 (no "... N more" line), plus a new "unmarked files with 0 hits" section right after
+ *   it. Totals/summary/exit code are unchanged. Without it, output is byte-identical to before.
  * Exit code: 0 if no `design:clean`-marked file has any hit, 1 if any does.
  */
 
@@ -490,9 +493,71 @@ function designLintRun(string $root): array {
     return $result;
 }
 
+/**
+ * Renders the "unmarked files with hits" section (top-20, or every file when $showAllFiles) plus,
+ * only when $showAllFiles, an "unmarked files with 0 hits" section right after it. Extracted (round
+ * 4, `--all` flag) as its own pure function so tests/design_lint_test.php can assert the
+ * top-20-cutoff / `--all` / 0-hit behavior against synthetic $unmarkedFiles data instead of the real
+ * app's own ever-changing lint counts -- same reasoning as every rule function above being pure.
+ * $unmarkedFiles must already be the non-design:clean subset of designLintRun()['files'] (that's what
+ * the CLI block below passes in) -- this function doesn't re-filter by 'clean' itself.
+ */
+function designLintFormatUnmarkedSection(array $unmarkedFiles, string $root, bool $showAllFiles): string {
+    $out = '';
+    if ($showAllFiles) {
+        $out .= "\n-- unmarked files with hits (reported, not failed -- all files) --\n";
+    } else {
+        $out .= "\n-- unmarked files with hits (reported, not failed -- top 20 by total hit count) --\n";
+    }
+    $unmarkedTotals = [];
+    foreach ($unmarkedFiles as $path => $info) {
+        $total = array_sum($info['countsByRule']);
+        if ($total > 0) $unmarkedTotals[$path] = $total;
+    }
+    arsort($unmarkedTotals);
+    $shown = 0;
+    $shownLimit = $showAllFiles ? count($unmarkedTotals) : 20;
+    foreach ($unmarkedTotals as $path => $total) {
+        if ($shown++ >= $shownLimit) break;
+        $rel = str_replace('\\', '/', str_replace($root . DIRECTORY_SEPARATOR, '', $path));
+        $info = $unmarkedFiles[$path];
+        $parts = [];
+        foreach ($info['countsByRule'] as $rule => $n) {
+            if ($n > 0) $parts[] = "#$rule=$n";
+        }
+        $out .= "  $rel: $total (" . implode(', ', $parts) . ")\n";
+    }
+    if ($showAllFiles) {
+        $out .= "  (all shown)\n";
+    } else {
+        $remaining = count($unmarkedTotals) - $shown;
+        $out .= $remaining > 0 ? "  ... $remaining more file(s) with hits not shown\n" : "  (all shown)\n";
+    }
+    if ($showAllFiles) {
+        // Files that WERE scanned (unmarked, so a hit would have been reported above) but have 0
+        // hits at all -- round 4's inventory needs this set too (Files scanned = clean + with-hits +
+        // this list), and there was no way to see it before `--all` existed.
+        $unmarkedZeroHit = array_filter(
+            $unmarkedFiles,
+            fn($info) => array_sum($info['countsByRule']) === 0
+        );
+        ksort($unmarkedZeroHit);
+        $out .= "\n-- unmarked files with 0 hits (" . count($unmarkedZeroHit) . ") --\n";
+        foreach ($unmarkedZeroHit as $path => $info) {
+            $rel = str_replace('\\', '/', str_replace($root . DIRECTORY_SEPARATOR, '', $path));
+            $out .= "  $rel\n";
+        }
+    }
+    return $out;
+}
+
 if (php_sapi_name() === 'cli' && isset($argv[0]) && realpath($argv[0]) === __FILE__) {
     $root = dirname(__DIR__);
     $result = designLintRun($root);
+    // `--all` (round 4, design inventory prep): the only other flag this CLI block understands. Any
+    // other argument is silently ignored -- $argv was never parsed at all before this, so an unknown
+    // flag falls through to the exact same default behavior it always had.
+    $showAllFiles = in_array('--all', $argv, true);
 
     echo "=== docs/design/rules.md §12 lint (lenient mode) ===\n\n";
 
@@ -517,26 +582,7 @@ if (php_sapi_name() === 'cli' && isset($argv[0]) && realpath($argv[0]) === __FIL
         echo "\n";
     }
 
-    echo "\n-- unmarked files with hits (reported, not failed -- top 20 by total hit count) --\n";
-    $unmarkedTotals = [];
-    foreach ($unmarkedFiles as $path => $info) {
-        $total = array_sum($info['countsByRule']);
-        if ($total > 0) $unmarkedTotals[$path] = $total;
-    }
-    arsort($unmarkedTotals);
-    $shown = 0;
-    foreach ($unmarkedTotals as $path => $total) {
-        if ($shown++ >= 20) break;
-        $rel = str_replace('\\', '/', str_replace($root . DIRECTORY_SEPARATOR, '', $path));
-        $info = $result['files'][$path];
-        $parts = [];
-        foreach ($info['countsByRule'] as $rule => $n) {
-            if ($n > 0) $parts[] = "#$rule=$n";
-        }
-        echo "  $rel: $total (" . implode(', ', $parts) . ")\n";
-    }
-    $remaining = count($unmarkedTotals) - $shown;
-    echo $remaining > 0 ? "  ... $remaining more file(s) with hits not shown\n" : "  (all shown)\n";
+    echo designLintFormatUnmarkedSection($unmarkedFiles, $root, $showAllFiles);
 
     echo "\n-- app-wide totals per rule --\n";
     foreach (DESIGN_RULE_LABELS as $rule => $label) {

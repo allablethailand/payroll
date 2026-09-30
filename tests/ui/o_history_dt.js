@@ -272,15 +272,37 @@ async function waitForNextAuditDraw(page, timeoutMs) {
  *  cleared state). `seq` is stamped from a 'request' listener (`page.on('request', ...)` fires in
  *  send order, always, unlike 'response') so a caller that cares about "the last request actually
  *  sent" can sort/pick by `seq` instead of array position -- existing callers (N1/N2/c9, which only
- *  ever read `.list.length`) are unaffected, this is purely additive. */
+ *  ever read `.list.length`) are unaffected, this is purely additive.
+ *
+ *  2026-09-25, dtlang round B, real gap found while adding detailed logging to c9() so a future flake
+ *  (like the isolated 4th request seen once on 2026-09-25, BACKLOG.md) can be diagnosed from ITS OWN
+ *  log instead of needing to be reproduced live again: `seq` alone said WHICH order requests were sent
+ *  in but not HOW FAR APART, which matters for telling "2 near-simultaneous mechanisms" apart from "one
+ *  genuinely late straggler". `ms` (elapsed since `collectAuditListResponses(page)` itself was called,
+ *  stamped in the SAME 'request' listener that already stamps `seq`, same send-order guarantee) is
+ *  purely additive -- existing callers reading only `.list.length`/`.seq` are unaffected.
+ *
+ *  2026-09-25, dtlang round C, diagnostic gap found measuring c9 after the app.js V-fix landed: `.list`
+ *  only ever grows from a 'response' event, so it cannot distinguish "only 1 request was ever
+ *  dispatched" from "2 were dispatched and the 2nd was aborted before it got a response" -- both look
+ *  identical (1 entry, seq:0) from `.list` alone. `dispatchedCount` (the final `seqCounter` value,
+ *  i.e. how many matching 'request' events fired at all, regardless of what happened after) and
+ *  `failed` (a matching 'requestfailed' event -- Playwright's own event for a request that was
+ *  aborted/errored before a response ever arrived, which a plain 'response' listener never sees at
+ *  all) close that gap. Both purely additive on the returned object -- existing callers reading only
+ *  `.list`/`.stop` are unaffected. */
 function collectAuditListResponses(page) {
     const list = [];
+    const failed = [];
+    const collectorStartedAt = Date.now();
     let seqCounter = 0;
     const seqByRequest = new Map();
+    const msByRequest = new Map();
     const requestHandler = (req) => {
         if (req.url().indexOf('/api/payroll-run.audit-log.list') === -1) return;
         if (req.method() !== 'POST') return;
         seqByRequest.set(req, seqCounter++);
+        msByRequest.set(req, Date.now() - collectorStartedAt);
     };
     const handler = async (res) => {
         if (res.url().indexOf('/api/payroll-run.audit-log.list') === -1) return;
@@ -288,11 +310,38 @@ function collectAuditListResponses(page) {
         let json = null;
         try { json = await res.json(); } catch (e) { /* not json */ }
         const req = res.request();
-        list.push({ url: res.url(), request: req, json, seq: seqByRequest.has(req) ? seqByRequest.get(req) : -1 });
+        list.push({
+            url: res.url(),
+            request: req,
+            json,
+            seq: seqByRequest.has(req) ? seqByRequest.get(req) : -1,
+            ms: msByRequest.has(req) ? msByRequest.get(req) : -1,
+        });
+    };
+    const failedHandler = (req) => {
+        if (req.url().indexOf('/api/payroll-run.audit-log.list') === -1) return;
+        if (req.method() !== 'POST') return;
+        const f = req.failure();
+        failed.push({
+            url: req.url(),
+            seq: seqByRequest.has(req) ? seqByRequest.get(req) : -1,
+            ms: msByRequest.has(req) ? msByRequest.get(req) : -1,
+            errorText: f ? f.errorText : null,
+        });
     };
     page.on('request', requestHandler);
     page.on('response', handler);
-    return { list, stop: () => { page.off('request', requestHandler); page.off('response', handler); } };
+    page.on('requestfailed', failedHandler);
+    return {
+        list,
+        failed,
+        get dispatchedCount() { return seqCounter; },
+        stop: () => {
+            page.off('request', requestHandler);
+            page.off('response', handler);
+            page.off('requestfailed', failedHandler);
+        },
+    };
 }
 /** Reads the `application/x-www-form-urlencoded` body jQuery's own `$.ajax({data:{...}})` sends
  *  (detail.js's own `ajax.data`) -- plain key lookups on the exact field names DataTables/detail.js
@@ -860,6 +909,18 @@ async function c9() {
         note('c9: run 1014 has no audit rows -- skipping the stale-filter half, headers/labels half still runs');
     }
 
+    // 2026-09-25, dtlang round C diagnostic (additive, temporary -- see
+    // docs/decisions/2026-09-25-dtlang-visible-double-fetch.md for why c9 dropped to 1 request instead
+    // of the 2 predicted after the app.js V-fix): `iDraw` is DataTables' own internal per-table draw
+    // counter (settings().iDraw, incremented once per ACTUAL draw cycle, ssp or not) -- comparing it
+    // before/after the switch tells us how many times this table really redrew, independent of the
+    // network layer. `hasActiveColumnFilters()` (table-column-filter.js) is the same function the app
+    // itself uses to decide whether a filter is still narrowing the table.
+    const diagBefore = await ctx.page.evaluate(() => {
+        const dt = jQuery('#tb_run_audit_log').DataTable();
+        return { iDraw: dt.settings()[0].iDraw, hasActiveColumnFilters: hasActiveColumnFilters(dt) };
+    });
+    measured('c9 diag BEFORE switch (iDraw/hasActiveColumnFilters)', diagBefore);
     const collector = collectAuditListResponses(ctx.page);
     // changeLanguage()'s own promise (awaited via page.evaluate()) only covers ITS OWN synchronous
     // body + `await loadLang()` -- reloadAllTablesForLanguageChange()'s own `.ajax.reload()` calls
@@ -880,28 +941,68 @@ async function c9() {
     await draw9.waitFor();
     await ctx.page.waitForLoadState('networkidle');
     collector.stop();
+    const diagAfter = await ctx.page.evaluate(() => {
+        const dt = jQuery('#tb_run_audit_log').DataTable();
+        return { iDraw: dt.settings()[0].iDraw, hasActiveColumnFilters: hasActiveColumnFilters(dt) };
+    });
+    measured('c9 diag AFTER switch (iDraw/hasActiveColumnFilters)', diagAfter);
+    measured('c9 diag iDraw delta (AFTER - BEFORE)', diagAfter.iDraw - diagBefore.iDraw);
+    // 2026-09-25, dtlang round C diagnostic (additive, temporary): `dispatchedCount` is the TOTAL
+    // number of matching 'request' events seen (regardless of what happened after), vs `.list.length`
+    // which only counts ones that got a 'response'. If these ever differ, something was dispatched and
+    // never got a response THROUGH NORMAL COMPLETION -- `.failed` (Playwright's own 'requestfailed'
+    // event, fired for a genuinely aborted/errored request) is what would explain that gap, if present.
+    measured('c9 audit-log.list dispatchedCount (total requests sent, incl. any never-responded)', collector.dispatchedCount);
+    measured('c9 audit-log.list failed (requestfailed events)', collector.failed);
     measured('c9 audit-log.list requests fired during th->en switch', collector.list.length);
-    // 2026-09-24, Round B4: locked to the measured value (3), not B1's own original ceiling (<=2) --
-    // the consultant's hypothesis this round ("initFilterBar()'s own onChange fires spuriously on
-    // construction/relabel, table-column-filter.js") was checked directly against source and is
-    // FALSE: initFilterBar()'s own init-time call is `refresh()` alone (public/js/app.js:1638), never
-    // `options.onChange` (only scheduleNotify()'s debounced timer calls that, app.js:1589-1594, which
-    // only runs off a real 'change' event -- nothing in detail.js's construction path or in
-    // refreshAuditLogTableLanguage() ever triggers one on #auditLogDateFrom/To or any other field in
-    // #auditLogFilterBar). The REAL 3rd reload was found instead, by direct reading, in
-    // `refreshAllDataTablesLanguage()`'s own inner loop (public/js/app.js:4917-4944): it calls
-    // `table.draw(false)` (line 4944) on EVERY DataTable via `$.fn.dataTable.tables()` -- unlike
-    // `reloadAllTablesForLanguageChange()`'s own `{visible:true}` filter, this one has no visibility
-    // guard at all, and a `serverSide:true` table's `.draw()` always re-fetches -- so this table gets
-    // reloaded a 3rd time by a completely separate app-wide language-refresh mechanism, on top of the
-    // 2 detail.js/table-column-filter.js already account for. Per this round's own scope
-    // ("ห้ามแตะ app.js"), NOT fixed here -- see BACKLOG.md and
-    // docs/decisions/2026-09-24-audit-log-serverside.md for the full evidence and the (out-of-scope)
-    // fix shape. This ceiling adjustment is the ONE exception this round's own spec allows (locking a
-    // known, investigated behavior, not silently loosening a check to pass) -- a REGRESSION past 3
-    // must still fail this test.
-    check('c9: fetch count equals the known, investigated value (3 -- see BACKLOG.md)',
-        collector.list.length === 3, collector.list.length);
+    // 2026-09-25, dtlang round B: log every entry BEFORE asserting, not just the count -- so a future
+    // flake (an isolated 4th request was seen once on 2026-09-25, BACKLOG.md, with nothing left to
+    // diagnose it from because only `.length` was ever logged) can be told apart from a real
+    // regression next time without needing to reproduce it live again first.
+    measured('c9 audit-log.list request detail (seq/ms/draw/url)', collector.list
+        .slice()
+        .sort((a, b) => a.seq - b.seq)
+        .map((entry) => ({ seq: entry.seq, ms: entry.ms, draw: auditRequestParams(entry.request).get('draw'), url: entry.url })));
+    // 2026-09-25, dtlang round C diagnostic (additive, temporary): whether the surviving request's own
+    // body carries a non-empty column search value tells us whether it was built BEFORE
+    // clearColumnFilters() ran (still narrowed -- came from reloadAllTablesForLanguageChange()) or
+    // AFTER (already cleared -- came from clearColumnFilters() itself). Reads every `columns[i][search]
+    // [value]` key DataTables' own ajax.data serializes (server-mode column search, not the 4
+    // Excel-style `column_filters[...]` keys table-column-filter.js sends separately -- both are
+    // checked since either shape could carry the still-active filter depending on which layer built
+    // the request).
+    measured('c9 surviving request(s) -- non-empty columns[i][search][value] + column_filters[*] in body', collector.list
+        .slice()
+        .sort((a, b) => a.seq - b.seq)
+        .map((entry) => {
+            const params = auditRequestParams(entry.request);
+            const nonEmpty = [];
+            for (const [key, value] of params.entries()) {
+                if (!value) continue;
+                if (/^columns\[\d+\]\[search\]\[value\]$/.test(key) || key.indexOf('column_filters[') === 0) {
+                    nonEmpty.push([key, value]);
+                }
+            }
+            return { seq: entry.seq, nonEmptySearchOrFilterParams: nonEmpty };
+        }));
+    // 2026-09-25, dtlang round B: lowered from 3 (Round B4's own locked-in value) to 2, after fixing
+    // the root cause Round B4 itself identified but was scoped out of fixing ("ห้ามแตะ app.js" that
+    // round) -- `refreshAllDataTablesLanguage()`'s own inner loop
+    // (`_refreshAllDataTablesLanguageInner()`, public/js/app.js) now skips its own `table.draw(false)`
+    // for a table that is both `serverSide:true` and visible (see
+    // `dtlangShouldSkipVisibleServerSideDraw()`'s own docblock, public/js/app.js, and
+    // docs/decisions/2026-09-25-dtlang-visible-double-fetch.md for the full before/after). The 2
+    // remaining requests are the 2 OTHER independent mechanisms Round B4 already found still fire on
+    // this table during a real language switch, neither touched this round: (1)
+    // `reloadAllTablesForLanguageChange()` (public/js/app.js), which re-fetches every visible table
+    // (`{visible:true}`, `table.ajax.url()` branch) unconditionally on every `changeLanguage()` call,
+    // and (2) `clearColumnFilters()` inside `refreshAuditLogTableLanguage()`
+    // (public/js/payroll/detail.js), which fires its own reload ONLY because this cell sets a column
+    // filter before switching (see `applyColumnFilter()` call above) -- a language switch with no
+    // filter set beforehand would measure 1, not 2, but this cell's own scenario always has a filter
+    // set, so 2 is what it locks. A REGRESSION past 2 must still fail this test.
+    check('c9: fetch count equals the known, investigated value (2 -- see BACKLOG.md)',
+        collector.list.length === 2, collector.list.length);
 
     const afterEn = await ctx.page.evaluate(() => ({
         headers: Array.from(document.querySelectorAll('#tb_run_audit_log thead th')).map((th) => th.textContent.trim()),

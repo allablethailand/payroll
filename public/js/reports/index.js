@@ -859,6 +859,83 @@ $(document).on('click', '#btnExportHistoryClearFilter', function () {
     if (tb_export_history) tb_export_history.ajax.reload(null, true);
 });
 
+// Monthly Report tab: year dropdown reuses api/report.available-years, table = 12 fixed month rows.
+function loadMonthlySummary(year) {
+    $.getJSON(`${BASE_URL}/api/report.monthly-summary`, { year: year }, function (res) {
+        if (!res.status) return;
+        initSharedDataTable('#tb_monthly_summary', {
+            searchThreshold: 99,
+            dtOptions: {
+                data: res.data || [],
+                paging: false,
+                info: false,
+                order: [[0, 'asc']],
+                columns: [
+                    { data: 'month', render: { display: m => (langData['month_' + m] || m), sort: m => m, filter: m => (langData['month_' + m] || m) } },
+                    { data: 'run_count', className: 'text-end' },
+                    { data: 'employee_count', className: 'text-end' },
+                    { data: 'gross', className: 'text-end', render: v => fmtNum(v) },
+                    { data: 'deduction', className: 'text-end', render: v => fmtNum(v) },
+                    { data: 'net', className: 'text-end', render: v => fmtNum(v) },
+                    { data: 'month', orderable: false, searchable: false, className: 'text-end', render: (m, type, row) => row.employee_count > 0
+                        ? `<button type="button" class="btn btn-link btn-sm btn-monthly-employees" data-month="${m}">${langData['view_list'] || 'View List'}</button>` : '' }
+                ]
+            }
+        });
+    });
+}
+function loadMonthlyYears() {
+    $.getJSON(`${BASE_URL}/api/report.available-years`, function (res) {
+        const years = (res && res.data) || [];
+        const $select = $('#monthlyReportYear').empty();
+        years.forEach(y => $select.append(`<option value="${y}">${y}</option>`));
+        if (years.length > 0) $select.trigger('change');
+    });
+}
+let monthlySlipMonth = null;
+function downloadMonthlySlip(employeeId) {
+    const params = new URLSearchParams({ year: $('#monthlyReportYear').val(), month: monthlySlipMonth, language: currentLang });
+    if (employeeId) params.set('employee_id', employeeId);
+    generateReport(`${BASE_URL}/api/report.monthly-slip?${params}`);
+}
+$(document).on('click', '.btn-monthly-slip', function () { downloadMonthlySlip($(this).data('employee-id')); });
+$(document).on('click', '#btnMonthlySlipZip', function () { downloadMonthlySlip(null); });
+$(document).on('click', '.btn-monthly-employees', function () {
+    const month = $(this).data('month');
+    const year = $('#monthlyReportYear').val();
+    monthlySlipMonth = month;
+    $('#monthlyEmployeesModalTitle').text(`${langData['month_' + month] || month} ${year}`);
+    $.getJSON(`${BASE_URL}/api/report.monthly-employees`, { year: year, month: month }, function (res) {
+        if (!res.status) return;
+        initSharedDataTable('#tb_monthly_employees', {
+            dtOptions: {
+                data: res.data || [],
+                columns: [
+                    { data: null, render: (d, type, row) => employeeNameReports(row) },
+                    { data: 'gross', className: 'text-end', render: v => fmtNum(v) },
+                    { data: 'deduction', className: 'text-end', render: v => fmtNum(v) },
+                    { data: 'net', className: 'text-end', render: v => fmtNum(v) },
+                    { data: 'employee_id', orderable: false, searchable: false, className: 'text-end', render: id =>
+                        `<button type="button" class="btn btn-link btn-circle-action text-primary btn-monthly-slip" data-employee-id="${id}" title="${langData['download_slip'] || 'Download Slip'}"><i class="fa-solid fa-download"></i></button>` }
+                ]
+            }
+        });
+        bootstrap.Modal.getOrCreateInstance('#monthlyEmployeesModal').show();
+    });
+});
+$(document).on('shown.bs.modal', '#monthlyEmployeesModal', function () {
+    $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust();
+});
+$(document).on('change', '#monthlyReportYear', function () {
+    const year = $(this).val();
+    if (year) loadMonthlySummary(year);
+});
+$(document).on('click', '#monthlyReportPeriodBarToggle', function () {
+    const $filter = $('#monthlyReportPeriodBar').toggleClass('collapsed');
+    const collapsed = $filter.hasClass('collapsed');
+    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
+});
+
 $(document).ready(function () {
     (window.langReady || Promise.resolve()).then(function () {
     loadReportList();
@@ -875,6 +952,9 @@ $(document).ready(function () {
     }
     $('button[data-bs-toggle="tab"]').on('shown.bs.tab', function (e) {
         const tabId = $(e.target).attr('id');
+        if (tabId === 'monthly-tab' && !$('#monthlyReportYear').children().length) {
+            loadMonthlyYears();
+        }
         if (tabId === 'history-tab') {
             initExportHistoryTable();
         }
