@@ -174,7 +174,7 @@ function renderApprovalTimelineModal(data) {
     if (data.can_approve_payroll && revertableStates.includes(data.state)) {
         const buttons = [];
         if (data.state === 'pending_approval') {
-            buttons.push(`<button type="button" class="btn btn-sm btn-success" id="btnTimelineApprove"><i class="fa-solid fa-check me-1"></i>${langData['action_approve'] || 'Approve'}</button>`);
+            buttons.push(`<button type="button" class="btn btn-sm btn-primary" id="btnTimelineApprove"><i class="fa-solid fa-check me-1"></i>${langData['action_approve'] || 'Approve'}</button>`);
             buttons.push(`<button type="button" class="btn btn-sm btn-primary" id="btnTimelineRequestInfo"><i class="fa-solid fa-circle-info me-1"></i>${langData['action_request_info'] || 'Request Info'}</button>`);
             buttons.push(`<button type="button" class="btn btn-sm btn-danger" id="btnTimelineReject"><i class="fa-solid fa-xmark me-1"></i>${langData['action_reject'] || 'Reject'}</button>`);
             buttons.push(`<button type="button" class="btn btn-sm btn-outline-secondary btn-timeline-revert-to" data-to-state="draft"><i class="fa-solid fa-rotate-left me-1"></i>${langData['action_revert'] || 'Send Back for Revision'}</button>`);

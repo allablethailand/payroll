@@ -127,8 +127,8 @@
            api/payslip-template.publish-toggle IMMEDIATELY (not gated behind Save), same as the List
            page's own badge. Disabled until the template has a real id (see updatePstPublishUi()). -->
       <div class="btn-group btn-group-sm pst-publish-toggle-group" role="group" id="pstPublishToggleGroup">
-        <button type="button" class="btn btn-outline-warning pst-publish-option" data-value="draft" disabled><i class="fa-solid fa-pen me-1"></i><span data-i18n="ect_publish_draft">Draft</span></button>
-        <button type="button" class="btn btn-outline-success pst-publish-option" data-value="public" disabled><i class="fa-solid fa-globe me-1"></i><span data-i18n="ect_publish_public">Public</span></button>
+        <button type="button" class="btn btn-outline-secondary pst-publish-option" data-value="draft" disabled><i class="fa-solid fa-pen me-1"></i><span data-i18n="ect_publish_draft">Draft</span></button>
+        <button type="button" class="btn btn-outline-secondary pst-publish-option" data-value="public" disabled><i class="fa-solid fa-globe me-1"></i><span data-i18n="ect_publish_public">Public</span></button>
       </div>
       <div class="form-check form-switch" data-i18n-title="ect_auto_save_hint" title="Automatically save changes while editing, instead of only on Save.">
         <input class="form-check-input" type="checkbox" id="pstAutoSaveSwitch">

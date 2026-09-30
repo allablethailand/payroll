@@ -850,7 +850,7 @@ function initPendingSyncTable() {
                     // refusal message; now the admin sees WHY up front (matches the badge above).
                     const mergeReady = row.attribution_target_status === 'ready';
                     const mergeBtn = (row.run_kind === 'supplemental' && row.attribution_tax_treatment === 'merge')
-                        ? `<button type="button" class="btn btn-info btn-merge-sync" data-id="${row.id}"
+                        ? `<button type="button" class="btn btn-outline-secondary btn-merge-sync" data-id="${row.id}"
                             data-label="${escapeHtml(row.process_subject || row.process_no)}"
                             data-target="${escapeHtml(row.attribution_target_process_no || ('#' + row.attribution_target_origami_process_id))}"
                             ${mergeReady ? '' : 'disabled'}
@@ -858,7 +858,7 @@ function initPendingSyncTable() {
                         : '';
                     return `
                     <div class="btn-group rounded-3 row-actions" role="group">
-                        <button type="button" class="btn btn-warning btn-pull-sync" data-id="${row.id}"
+                        <button type="button" class="btn btn-outline-secondary btn-pull-sync" data-id="${row.id}"
                             data-label="${escapeHtml(row.process_subject || row.process_no)}"
                             data-subject="${escapeHtml(row.process_subject || '')}"
                             data-description="${escapeHtml(row.process_description || '')}"
@@ -869,7 +869,7 @@ function initPendingSyncTable() {
                             data-matched-cycle-name="${escapeHtml(row.matched_cycle_name || '')}"
                             title="${langData['btn_pull_to_run'] || 'Pull to Run'}"><i class="fa-solid fa-arrow-right-to-bracket"></i></button>
                         ${mergeBtn}
-                        <button type="button" class="btn btn-outline-info btn-view-sync" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
+                        <button type="button" class="btn btn-outline-secondary btn-view-sync" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
                         <button type="button" class="btn btn-outline-danger btn-reject-sync" data-id="${row.id}" data-label="${escapeHtml(row.process_subject || row.process_no)}" title="${langData['btn_reject_sync'] || 'Reject'}"><i class="fa-solid fa-reply"></i></button>
                     </div>
                 `;

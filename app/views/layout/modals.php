@@ -1446,7 +1446,7 @@
                         <textarea id="requestActionNote" class="form-control" rows="2" maxlength="500" data-i18n="approve_note_placeholder" placeholder="Any comment for this approval..."></textarea>
                     </div>
                     <div class="d-flex gap-2">
-                        <button type="button" class="btn btn-success btn-sm" id="btnApproveRequest"><i class="fa-solid fa-check me-1"></i><span data-i18n="approve">Approve</span></button>
+                        <button type="button" class="btn btn-primary btn-sm" id="btnApproveRequest"><i class="fa-solid fa-check me-1"></i><span data-i18n="approve">Approve</span></button>
                         <button type="button" class="btn btn-outline-danger btn-sm" id="btnRejectRequest"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="reject">Reject</span></button>
                         <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCancelRequest"><i class="fa-solid fa-ban me-1"></i><span data-i18n="cancel_request">Cancel Request</span></button>
                     </div>
@@ -2176,7 +2176,7 @@
             <div class="modal-footer d-none" id="bulkImportReviewFooter">
                 <button type="button" class="btn btn-outline-secondary me-auto" id="btnBulkImportBack"><i class="fa-solid fa-arrow-left me-1"></i><span data-i18n="back">Back</span></button>
                 <button type="button" class="btn btn-outline-primary" id="btnBulkImportLoadToGrid"><i class="fa-solid fa-table-cells me-1"></i><span data-i18n="bulk_import_load_to_grid">Load into Grid to Edit</span></button>
-                <button type="button" class="btn btn-success px-4" id="btnBulkImportSaveDirect"><i class="fa-solid fa-check me-1"></i><span data-i18n="bulk_import_save_direct">Save Directly</span></button>
+                <button type="button" class="btn btn-primary px-4" id="btnBulkImportSaveDirect"><i class="fa-solid fa-check me-1"></i><span data-i18n="bulk_import_save_direct">Save Directly</span></button>
             </div>
         </div>
     </div>
@@ -2224,7 +2224,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                    <button type="submit" class="btn btn-success"><span data-i18n="approval_confirm_approve">Confirm Approve</span></button>
+                    <button type="submit" class="btn btn-primary"><span data-i18n="approval_confirm_approve">Confirm Approve</span></button>
                 </div>
             </form>
         </div>

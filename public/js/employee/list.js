@@ -378,7 +378,7 @@ function initEmployeeTable() {
             let $lengthDiv = $wrapper.find('.dt-length');
             if (typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED && $lengthDiv.find('#btnBulkSyncSelected').length === 0) {
                 let bulkSyncBtn = `
-                    <button class="btn btn-outline-info ms-2" id="btnBulkSyncSelected" type="button" disabled>
+                    <button class="btn btn-outline-secondary ms-2" id="btnBulkSyncSelected" type="button" disabled>
                         <i class="fa-solid fa-rotate me-2"></i><span data-i18n="employee_bulk_sync_button">Sync Selected</span>
                         <span class="badge bg-info ms-1" id="employeeBulkSyncCount">0</span>
                     </button>
@@ -412,14 +412,9 @@ function initEmployeeTable() {
             // all never sees these buttons.
             if (typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED) {
                 if ($searchDiv.find('#btnOpenEmployeeSync').length === 0) {
-                    // 2026-08-29, explicit request: "ปุ่ม Sync ให้เปลี่ยนเป็นสีฟ้า" -- btn-outline-info,
-                    // not btn-outline-primary (this app's --bs-primary override makes that orange,
-                    // see the per-row Sync icon's own comment above for the full reasoning).
-                    // "Sync Log" right below stays btn-outline-secondary on purpose -- it's a
-                    // history VIEWER, not a sync-triggering action, so it's not in scope of "the
-                    // Sync button" this request means.
+                    // Sync is a secondary action (rules.md 4); "Sync Log" below is a history viewer, also secondary.
                     let syncBtn = `
-                        <button class="btn btn-outline-info ms-1" id="btnOpenEmployeeSync" type="button">
+                        <button class="btn btn-outline-secondary ms-1" id="btnOpenEmployeeSync" type="button">
                             <i class="fa-solid fa-rotate me-2"></i><span data-i18n="employee_sync_button">Sync from Origami</span>
                         </button>
                     `;

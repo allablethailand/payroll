@@ -1979,7 +1979,7 @@ function renderPermissionOverridesTable() {
                     <input type="radio" class="btn-check po-effect-radio" name="po-effect-${p.permission_id}" id="po-inherit-${p.permission_id}" value="" ${effect === 'inherit' ? 'checked' : ''}>
                     <label class="btn btn-outline-secondary" for="po-inherit-${p.permission_id}">${escapeAttr(langData['override_inherit'] || 'Inherit')}</label>
                     <input type="radio" class="btn-check po-effect-radio" name="po-effect-${p.permission_id}" id="po-grant-${p.permission_id}" value="grant" ${effect === 'grant' ? 'checked' : ''}>
-                    <label class="btn btn-outline-success" for="po-grant-${p.permission_id}">${escapeAttr(langData['override_grant'] || 'Grant')}</label>
+                    <label class="btn btn-outline-secondary" for="po-grant-${p.permission_id}">${escapeAttr(langData['override_grant'] || 'Grant')}</label>
                     <input type="radio" class="btn-check po-effect-radio" name="po-effect-${p.permission_id}" id="po-deny-${p.permission_id}" value="deny" ${effect === 'deny' ? 'checked' : ''}>
                     <label class="btn btn-outline-danger" for="po-deny-${p.permission_id}">${escapeAttr(langData['override_deny'] || 'Deny')}</label>
                 </div>

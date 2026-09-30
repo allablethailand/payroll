@@ -1768,7 +1768,7 @@ $(document).on('click', '#btnSaveRunSettings', function () {
 function renderRunTimelineModal(run) {
     const buttons = [];
     if (run.state === 'pending_approval' && run.can_approve_payroll) {
-        buttons.push(`<button type="button" class="btn btn-sm btn-success btn-tl-approve"><i class="fa-solid fa-check me-1"></i>${langData['action_approve'] || 'Approve'}</button>`);
+        buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-approve"><i class="fa-solid fa-check me-1"></i>${langData['action_approve'] || 'Approve'}</button>`);
         buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-request-info"><i class="fa-solid fa-circle-info me-1"></i>${langData['action_request_info'] || 'Request Info'}</button>`);
         buttons.push(`<button type="button" class="btn btn-sm btn-danger btn-tl-reject"><i class="fa-solid fa-xmark me-1"></i>${langData['action_reject'] || 'Reject'}</button>`);
     }

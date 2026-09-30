@@ -120,8 +120,8 @@
         <label class="form-check-label small" for="ectIsDefaultSwitch" data-i18n="set_as_default_template">Set as default template</label>
       </div>
       <div class="btn-group btn-group-sm pst-publish-toggle-group" role="group" id="ectPublishToggleGroup">
-        <button type="button" class="btn btn-outline-warning pst-publish-option" data-value="draft" disabled><i class="fa-solid fa-pen me-1"></i><span data-i18n="ect_publish_draft">Draft</span></button>
-        <button type="button" class="btn btn-outline-success pst-publish-option" data-value="public" disabled><i class="fa-solid fa-globe me-1"></i><span data-i18n="ect_publish_public">Public</span></button>
+        <button type="button" class="btn btn-outline-secondary pst-publish-option" data-value="draft" disabled><i class="fa-solid fa-pen me-1"></i><span data-i18n="ect_publish_draft">Draft</span></button>
+        <button type="button" class="btn btn-outline-secondary pst-publish-option" data-value="public" disabled><i class="fa-solid fa-globe me-1"></i><span data-i18n="ect_publish_public">Public</span></button>
       </div>
       <div class="form-check form-switch mb-0" data-i18n-title="ect_auto_save_hint" title="Automatically save changes while editing, instead of only on Save.">
         <input class="form-check-input" type="checkbox" id="ectAutoSaveSwitch">

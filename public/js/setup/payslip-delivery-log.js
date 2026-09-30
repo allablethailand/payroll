@@ -90,7 +90,7 @@ function initPayslipDeliveryLogTable() {
                 render: (d, t, row) => {
                     if (row.document_type === 'employment_certificate') {
                         return row.status === 'success'
-                            ? `<a class="btn btn-sm btn-outline-success" href="${BASE_URL}/api/employment-certificate-request.download?id=${row.id}" target="_blank" title="${langData['download'] || 'Download'}"><i class="fa-solid fa-download"></i></a>`
+                            ? `<a class="btn btn-sm btn-outline-secondary" href="${BASE_URL}/api/employment-certificate-request.download?id=${row.id}" target="_blank" title="${langData['download'] || 'Download'}"><i class="fa-solid fa-download"></i></a>`
                             : '';
                     }
                     return row.status === 'failed'

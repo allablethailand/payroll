@@ -58,7 +58,7 @@ function initEcrRequestTable() {
                         html += `<button type="button" class="btn btn-sm btn-outline-secondary btn-view-ecr-request" data-id="${row.approval_request_id}" title="${langData['approval_request_detail'] || 'Request Detail'}"><i class="fa-solid fa-eye"></i></button> `;
                     }
                     if (row.status === 'issued') {
-                        html += `<a class="btn btn-sm btn-outline-success" href="${BASE_URL}/api/employment-certificate-request.download?id=${row.id}" target="_blank" title="${langData['download'] || 'Download'}"><i class="fa-solid fa-download"></i></a>`;
+                        html += `<a class="btn btn-sm btn-outline-secondary" href="${BASE_URL}/api/employment-certificate-request.download?id=${row.id}" target="_blank" title="${langData['download'] || 'Download'}"><i class="fa-solid fa-download"></i></a>`;
                     }
                     return html;
                 }

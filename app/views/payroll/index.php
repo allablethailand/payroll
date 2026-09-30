@@ -152,7 +152,7 @@
 
         <div class="d-none align-items-center mb-2 bulk-pull-bar" id="bulkPullBar">
             <span class="bulk-pull-bar-count"><strong id="bulkPullCount">0</strong> <span data-i18n="bulk_pull_selected_label">selected</span></span>
-            <button type="button" class="btn btn-sm btn-warning" id="btnBulkPull">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnBulkPull">
                 <i class="fa-solid fa-arrow-right-to-bracket me-1"></i><span data-i18n="btn_pull_to_run">Pull to Run</span>
             </button>
         </div>

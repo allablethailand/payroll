@@ -233,11 +233,8 @@
                 <span>&middot;</span>
                 <span id="profileLastSyncedText">-</span>
             </div>
-            <!-- 2026-08-29, explicit request: "ปุ่ม Sync ให้เปลี่ยนเป็นสีฟ้าทั้งในหน้า List และ Detail" --
-                 btn-outline-info specifically, not btn-outline-primary (this app's own --bs-primary
-                 override repoints that at brand orange, see style.css's ".btn-primary" section; --bs-info
-                 was never touched, so it's still Bootstrap's real cyan-blue). -->
-            <button type="button" class="btn btn-outline-info btn-sm" id="btnResyncOneEmployee">
+            <!-- Sync is a secondary action, so it is btn-outline-secondary (rules.md 4). -->
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnResyncOneEmployee">
                 <i class="fa-solid fa-rotate me-1"></i><span id="btnResyncOneEmployeeLabel" data-i18n="employee_sync_resync_one_button">Re-Sync from Origami</span>
             </button>
         </div>
@@ -2615,7 +2612,7 @@
                         <button type="button" class="btn btn-outline-danger btn-sm d-none" id="btnSuspendEmployee">
                             <i class="fa-solid fa-ban me-1"></i><span data-i18n="suspend_access">Suspend Access</span>
                         </button>
-                        <button type="button" class="btn btn-outline-success btn-sm d-none" id="btnUnsuspendEmployee">
+                        <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnUnsuspendEmployee">
                             <i class="fa-solid fa-lock-open me-1"></i><span data-i18n="unsuspend_access">Restore Access</span>
                         </button>
                     </div>

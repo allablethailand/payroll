@@ -83,7 +83,7 @@
              Pending Sync picker on the Process list, reused here for consistency. -->
         <div class="d-none align-items-center mb-3 bulk-pull-bar" id="approvalBulkBar">
             <span class="bulk-pull-bar-count"><strong id="approvalBulkCount">0</strong> <span data-i18n="bulk_pull_selected_label">selected</span></span>
-            <button type="button" class="btn btn-sm btn-success" id="btnBulkApprove">
+            <button type="button" class="btn btn-sm btn-primary" id="btnBulkApprove">
                 <i class="fa-solid fa-check me-1"></i><span data-i18n="approval_bulk_approve">Approve Selected</span>
             </button>
             <button type="button" class="btn btn-sm btn-primary" id="btnBulkRequestInfo">
