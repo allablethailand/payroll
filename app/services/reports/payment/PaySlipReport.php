@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../../models/PayslipTemplateModel.php';
 require_once __DIR__ . '/../../../models/DocumentNumberingModel.php';
 require_once __DIR__ . '/../../PayslipTemplateRenderer.php';
 require_once __DIR__ . '/../LocalizedException.php';
+require_once __DIR__ . '/MonthlyPayslipLayoutTrait.php';
 
 /**
  * Pay Slip — one PDF per employee for a given payroll run, showing the earning/deduction/
@@ -39,6 +40,7 @@ require_once __DIR__ . '/../LocalizedException.php';
 class PaySlipReport implements ReportGeneratorInterface {
     use PdfRendererTrait;
     use EmployeePiiTrait;
+    use MonthlyPayslipLayoutTrait;
 
     private const ALLOWED_STATES = ['approved', 'paid', 'locked'];
 
@@ -63,7 +65,9 @@ class PaySlipReport implements ReportGeneratorInterface {
     }
 
     /**
-     * @param array $context { comp_id: int, run_id: int, employee_id: int, language?: 'th'|'en' }
+     * @param array $context { comp_id: int, run_id: int, employee_id: int, language?: 'th'|'en', run_ids?: int[], layout?: 'monthly' }
+     *   layout='monthly' = fixed 4-column Monthly Report layout (MonthlyPayslipLayoutTrait), never cached.
+     *   run_ids (2+ ids) = Monthly Report merge: those runs' lines/totals are summed into ONE slip (run_id = the last one).
      *   2026-08-25 follow-up ("รูปแบบการทำเหมือนกัน") -- PayslipTemplateModel dropped `language_mode`
      *   in favor of a real per-language `language`/`pair_key` pair like Employment Certificate
      *   Template, so a payslip now has to pick exactly ONE language to render in. Defaults to 'th'
@@ -88,19 +92,29 @@ class PaySlipReport implements ReportGeneratorInterface {
         $employeeId = (int)$context['employee_id'];
 
         $dataModel = new PayrollReportDataModel();
-        $run = $dataModel->getRun($runId, $compId);
-        if (!$run) {
-            throw new LocalizedException('Payroll run not found.', 'run_not_found');
-        }
-        $dataModel->assertRunStateOrThrow($run, self::ALLOWED_STATES);
-        $detail = $dataModel->getRunDetailForEmployee($runId, $employeeId);
-        if (!$detail) {
-            throw new LocalizedException('This employee is not part of the selected payroll run.', 'employee_not_in_run');
+        $runIds = array_values(array_unique(array_map('intval', (array)($context['run_ids'] ?? []))));
+        $merged = count($runIds) > 1;
+        $monthlyLayout = ($context['layout'] ?? '') === 'monthly';
+        $skipCache = $merged || $monthlyLayout;
+        if ($merged) {
+            [$run, $detail] = $this->mergeRuns($dataModel, $compId, $runIds, $employeeId);
+            $runId = (int)$run['id'];
+        } else {
+            $run = $dataModel->getRun($runId, $compId);
+            if (!$run) {
+                throw new LocalizedException('Payroll run not found.', 'run_not_found');
+            }
+            $dataModel->assertRunStateOrThrow($run, self::ALLOWED_STATES);
+            $detail = $dataModel->getRunDetailForEmployee($runId, $employeeId);
+            if (!$detail) {
+                throw new LocalizedException('This employee is not part of the selected payroll run.', 'employee_not_in_run');
+            }
         }
         $detail['payslip_number'] = $this->resolvePayslipNumber($compId, $runId, $employeeId, $detail['payslip_number'] ?? null);
-        $fileName = "PaySlip_{$detail['employee_no']}_{$run['id']}.pdf";
+        $fileName = $merged ? "PaySlip_{$detail['employee_no']}_merged.pdf" : "PaySlip_{$detail['employee_no']}_{$run['id']}.pdf";
 
-        if ($format === 'pdf') {
+        // Merged / monthly-layout slips never touch the per-(run,employee) PDF cache (it holds the template render).
+        if ($format === 'pdf' && !$skipCache) {
             $cached = $this->readCachedPdf($detail['payslip_pdf_path'] ?? null);
             if ($cached !== null) {
                 return ['content' => $cached, 'file_name' => $fileName, 'mime_type' => 'application/pdf'];
@@ -121,7 +135,14 @@ class PaySlipReport implements ReportGeneratorInterface {
         // matches this employee.
         $template = $templateModel->resolveTemplateForEmployee($compId, $employeeId, $language);
 
-        if ($template !== null && !empty($template['elements'])) {
+        // TODO: Integrate with Dynamic Slip Template Setup -- the monthly layout below is a hardcoded
+        // stand-in; once Monthly Report should honor the company's Slip Template Setup, drop this branch
+        // and let the resolveTemplateForEmployee() path below render it (needs the 4 column blocks + merged data as tokens).
+        if ($monthlyLayout) {
+            $ytdSlip = $dataModel->getYtdSlipTotals($compId, $employeeId, (string)$run['payment_date'], self::ALLOWED_STATES);
+            $html = $this->buildMonthlySlipHtml((string)$companyName, $run, $detail, $employeeName, $ytdSlip);
+            $content = $this->renderPdfFromHtml($html, 'A4', 'landscape');
+        } elseif ($template !== null && !empty($template['elements'])) {
             $ytd = null;
             foreach ($template['elements'] as $el) {
                 if (($el['element_type'] ?? '') === 'text' && trim((string)($el['content'] ?? '')) === '{{ytd_summary}}') {
@@ -152,7 +173,7 @@ class PaySlipReport implements ReportGeneratorInterface {
             $content = $this->renderPdfFromHtml($html, 'A5', 'portrait');
         }
 
-        if ($format === 'pdf') {
+        if ($format === 'pdf' && !$skipCache) {
             $this->persistPdf($compId, $runId, $employeeId, $content);
         }
 
@@ -161,6 +182,61 @@ class PaySlipReport implements ReportGeneratorInterface {
             'file_name' => $fileName,
             'mime_type' => 'application/pdf',
         ];
+    }
+
+    /** Sums the employee's rows across $runIds (oldest payment first) into one run/detail pair for the template:
+     *  amounts added, breakdown lines merged by code, period = full span, payment_date/number = last run's.
+     *  sync_process_id is cleared since installment sub-rows only make sense for a single sync process. */
+    private function mergeRuns(PayrollReportDataModel $dataModel, int $compId, array $runIds, int $employeeId): array {
+        $run = null;
+        $detail = null;
+        $sums = ['base_salary_amount' => 0.0, 'gross_amount' => 0.0, 'total_deduction_amount' => 0.0, 'net_amount' => 0.0];
+        $lines = ['earning_breakdown' => [], 'deduction_breakdown' => [], 'statutory_breakdown' => []];
+        $start = null;
+        $end = null;
+        foreach ($runIds as $id) {
+            $r = $dataModel->getRun($id, $compId);
+            if (!$r) {
+                throw new LocalizedException('Payroll run not found.', 'run_not_found');
+            }
+            $dataModel->assertRunStateOrThrow($r, self::ALLOWED_STATES);
+            $d = $dataModel->getRunDetailForEmployee($id, $employeeId);
+            if (!$d) {
+                throw new LocalizedException('This employee is not part of the selected payroll run.', 'employee_not_in_run');
+            }
+            foreach ($sums as $k => $_) {
+                $sums[$k] += (float)$d[$k];
+            }
+            foreach ($lines as $group => $_) {
+                foreach ($d[$group] as $i => $line) {
+                    $key = (string)($line['code'] ?? ('#' . $id . '_' . $i));
+                    if (!isset($lines[$group][$key])) {
+                        $lines[$group][$key] = $line;
+                        continue;
+                    }
+                    foreach (['amount', 'employee_amount', 'employer_amount'] as $f) {
+                        if (isset($line[$f])) {
+                            $lines[$group][$key][$f] = (float)($lines[$group][$key][$f] ?? 0) + (float)$line[$f];
+                        }
+                    }
+                }
+            }
+            $start = $start === null || $r['period_start_date'] < $start ? $r['period_start_date'] : $start;
+            $end = $end === null || $r['period_end_date'] > $end ? $r['period_end_date'] : $end;
+            $run = $r;
+            $detail = $d;
+        }
+        $run['period_start_date'] = $start;
+        $run['period_end_date'] = $end;
+        $run['sync_process_id'] = null;
+        foreach ($sums as $k => $v) {
+            $detail[$k] = $v;
+        }
+        foreach ($lines as $group => $byCode) {
+            $detail[$group] = array_values($byCode);
+        }
+        $detail['payslip_pdf_path'] = null;
+        return [$run, $detail];
     }
 
     /** Returns the cached PDF's bytes if $relativePath is set AND the file still genuinely exists
