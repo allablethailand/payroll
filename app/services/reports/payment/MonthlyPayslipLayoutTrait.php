@@ -48,6 +48,9 @@ trait MonthlyPayslipLayoutTrait {
         ['อื่นๆ', 'catch_all'],
     ];
 
+    // Cap keeps the slip on one A4 landscape page; extras beyond it fold into one summary row.
+    private static int $MONTHLY_MAX_OTHER_ROWS = 6;
+
     private static array $THAI_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
 
     /** @return array{0: array<int,array{0:string,1:float}>, 1: array<int,array{0:string,1:float}>} income rows, deduction rows */
@@ -67,9 +70,7 @@ trait MonthlyPayslipLayoutTrait {
                 }
             }
             $rows[$catchAll][1] += $amount;
-            if ($haystackName !== '' && !in_array($haystackName, $otherNames[$side], true)) {
-                $otherNames[$side][] = $haystackName;
-            }
+            $otherNames[$side][] = [$haystackName, $amount];
         };
         foreach ($detail['earning_breakdown'] as $line) {
             $place($income, self::$MONTHLY_INCOME_SLOTS, (string)($line['code'] ?? ''), (string)($line['name_th'] ?? ''), (float)($line['amount'] ?? 0), 'income');
@@ -83,13 +84,21 @@ trait MonthlyPayslipLayoutTrait {
                 $place($deduct, self::$MONTHLY_DEDUCTION_SLOTS, (string)($item['code'] ?? ''), (string)($item['name_th'] ?? ''), $amount, 'deduct');
             }
         }
-        // The catch-all row shows the item names themselves ("name, name"); plain label kept when none or > 30 chars.
+        // Each unmatched item gets its own row (same-named items must not merge); empty catch-all row kept when none.
         foreach ([['income', &$income], ['deduct', &$deduct]] as [$side, &$rows]) {
-            $label = implode(', ', $otherNames[$side]);
-            if ($otherNames[$side] && mb_strlen($label) <= 30) {
-                $rows[count($rows) - 1][0] = $label;
+            if (!$otherNames[$side]) continue;
+            $catchAllLabel = $rows[count($rows) - 1][0];
+            array_pop($rows);
+            $items = $otherNames[$side];
+            if (count($items) > self::$MONTHLY_MAX_OTHER_ROWS) {
+                $overflow = array_splice($items, self::$MONTHLY_MAX_OTHER_ROWS - 1);
+                $items[] = [$catchAllLabel . ' (รวม ' . count($overflow) . ' รายการ)', array_sum(array_column($overflow, 1))];
+            }
+            foreach ($items as [$name, $amount]) {
+                $rows[] = [$name !== '' ? $name : $catchAllLabel, $amount];
             }
         }
+        unset($rows);
         return [$income, $deduct];
     }
 
