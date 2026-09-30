@@ -3073,5 +3073,9 @@
     "pvd_not_available_for_country": "ไม่มีรายการกองทุนสำรองเลี้ยงชีพสำหรับประเทศของบริษัท",
     "confirm_row_restore_title": "คืนค่าที่ระบบคำนวณ",
     "confirm_row_restore_message": "\"{item}\" จะกลับไปใช้ค่าที่ระบบคำนวณ ดำเนินการต่อหรือไม่?",
-    "line_override_group_empty": "ยังไม่มีรายการ กด \"เพิ่มรายการ\" เพื่อเริ่ม"
+    "line_override_group_empty": "ยังไม่มีรายการ กด \"เพิ่มรายการ\" เพื่อเริ่ม",
+    "tab_monthly_reports": "รายงานรายเดือน",
+    "monthly_run_count": "จำนวนรอบ",
+    "download_slip": "ดาวน์โหลด Slip",
+    "download_all_slips_zip": "ดาวน์โหลด Slip ทั้งหมด (ZIP)"
 }

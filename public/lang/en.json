@@ -3073,5 +3073,9 @@
     "pvd_not_available_for_country": "No Provident Fund (PVD) item is configured for your company's country.",
     "confirm_row_restore_title": "Restore the calculated value",
     "confirm_row_restore_message": "\"{item}\" goes back to its calculated value. Continue?",
-    "line_override_group_empty": "No items yet -- press \"Add Line\" to start."
+    "line_override_group_empty": "No items yet -- press \"Add Line\" to start.",
+    "tab_monthly_reports": "Monthly Report",
+    "monthly_run_count": "Runs",
+    "download_slip": "Download Slip",
+    "download_all_slips_zip": "Download All Slips (ZIP)"
 }

@@ -528,6 +528,106 @@ class ReportsController extends Controller {
         $this->json(['status' => true, 'data' => $this->logModel->summaryForYear((int)$compId, $year)]);
     }
 
+    /** Monthly summary tab; `year` is B.E. like the Annual tab's dropdown. */
+    public function monthlySummary() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $year = isset($_GET['year']) ? (int)$_GET['year'] - 543 : 0;
+        if (!$compId || $year <= 0) {
+            $this->json(['status' => false, 'message' => 'Missing year.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->reportDataModel->monthlySummary((int)$compId, $year, self::CYCLE_REPORT_STATES)]);
+    }
+
+    public function monthlyEmployees() {
+        if (!$this->requireViewAccess()) return;
+        $compId = getCompId();
+        $year = isset($_GET['year']) ? (int)$_GET['year'] - 543 : 0;
+        $month = (int)($_GET['month'] ?? 0);
+        if (!$compId || $year <= 0 || $month < 1 || $month > 12) {
+            $this->json(['status' => false, 'message' => 'Missing year or month.']);
+            return;
+        }
+        $this->json(['status' => true, 'data' => $this->reportDataModel->monthlyEmployees((int)$compId, $year, $month, self::CYCLE_REPORT_STATES)]);
+    }
+
+    /** Monthly Report slip download: one employee -> PDF, no employee_id -> ZIP of everyone that month.
+     *  An employee paid in 2+ runs that month gets one PDF per run (`_run{id}` suffix), so a single one becomes a ZIP. */
+    public function monthlySlip() {
+        if (!$this->requireViewAccess()) return;
+        $compId = (int)getCompId();
+        $year = isset($_GET['year']) ? (int)$_GET['year'] - 543 : 0;
+        $month = (int)($_GET['month'] ?? 0);
+        $employeeId = !empty($_GET['employee_id']) ? (int)$_GET['employee_id'] : null;
+        $language = ($_GET['language'] ?? 'th') === 'en' ? 'en' : 'th';
+        if (!$compId || $year <= 0 || $month < 1 || $month > 12) {
+            $this->json(['status' => false, 'message' => 'Missing year or month.']);
+            return;
+        }
+        $visibility = $this->permissionModel->resolveSalaryVisibility($this->userId(), 'reports', $this->isAdmin(), $compId);
+        if (!$visibility['full']) {
+            $this->json(['status' => false, 'message' => 'You do not have permission to view salary amounts in reports.']);
+            return;
+        }
+        $targets = $this->reportDataModel->monthlySlipTargets($compId, $year, $month, self::CYCLE_REPORT_STATES, $employeeId);
+        if (!$targets) {
+            $this->json(['status' => false, 'message' => 'No payslips found for this month.']);
+            return;
+        }
+        $perEmployee = array_count_values(array_column($targets, 'employee_id'));
+        $report = ReportRegistry::get('PAY_SLIP');
+        $files = [];
+        try {
+            foreach ($targets as $t) {
+                $result = $report->generate(['comp_id' => $compId, 'run_id' => (int)$t['run_id'], 'employee_id' => (int)$t['employee_id'], 'language' => $language], 'pdf');
+                $suffix = $perEmployee[$t['employee_id']] > 1 ? '_run' . $t['run_id'] : '';
+                $files["slip_{$t['employee_id']}_{$year}_{$month}{$suffix}.pdf"] = $result['content'];
+                $this->logModel->log($compId, $report->reportType(), $report->code(), $result['file_name'], 'pdf', $year + 543, $month, (int)$t['run_id'],
+                    $this->userId() ?: null, (string)($_SERVER['REMOTE_ADDR'] ?? ''), (string)($_SERVER['HTTP_USER_AGENT'] ?? ''), $language, 'monthly_report', (int)$t['employee_id']);
+            }
+        } catch (LocalizedException $e) {
+            $this->json(['status' => false, 'message' => $e->getMessage(), 'error_key' => $e->getErrorKey(), 'params' => $e->getParams()]);
+            return;
+        } catch (RuntimeException $e) {
+            $this->json(['status' => false, 'message' => $e->getMessage()]);
+            return;
+        }
+
+        if (count($files) === 1) {
+            $name = array_key_first($files);
+            $content = $files[$name];
+            $mime = 'application/pdf';
+        } else {
+            $name = $employeeId !== null ? "slip_{$employeeId}_{$year}_{$month}.zip" : "slips_{$year}_{$month}.zip";
+            $tmp = tempnam(sys_get_temp_dir(), 'slips');
+            $zip = new ZipArchive();
+            if ($zip->open($tmp, ZipArchive::OVERWRITE) !== true) {
+                $this->json(['status' => false, 'message' => 'Could not create ZIP file.']);
+                return;
+            }
+            foreach ($files as $fname => $bytes) {
+                $zip->addFromString($fname, $bytes);
+            }
+            $zip->close();
+            $content = (string)file_get_contents($tmp);
+            @unlink($tmp);
+            $mime = 'application/zip';
+        }
+        // Audit must never block a finished download (e.g. report_download_logs migration not applied yet).
+        try {
+            $type = $employeeId === null ? 'monthly_zip' : (count($files) === 1 ? 'single_pdf' : 'employee_zip');
+            $this->logModel->logSlipDownload($compId, $this->userId() ?: null, $type, $employeeId, $year, $month,
+                (string)($_SERVER['REMOTE_ADDR'] ?? ''), (string)($_SERVER['HTTP_USER_AGENT'] ?? ''));
+        } catch (Throwable $e) {
+            error_log('report_download_logs insert failed: ' . $e->getMessage());
+        }
+        header('Content-Type: ' . $mime);
+        header('Content-Disposition: attachment; filename="' . $name . '"');
+        header('Content-Length: ' . strlen($content));
+        echo $content;
+    }
+
     public function availableYears() {
         if (!$this->requireViewAccess()) return;
         $compId = getCompId();

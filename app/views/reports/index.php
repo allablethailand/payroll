@@ -73,6 +73,11 @@
             </button>
         </li>
         <li class="nav-item" role="presentation">
+            <button class="nav-link setup-menu" id="monthly-tab" data-bs-toggle="tab" data-bs-target="#monthly-pane" type="button" role="tab" aria-controls="monthly-pane" aria-selected="false">
+                <i class="fa-solid fa-calendar-week me-2"></i><span data-i18n="tab_monthly_reports">Monthly Report</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="history-tab" data-bs-toggle="tab" data-bs-target="#history-pane" type="button" role="tab" aria-controls="history-pane" aria-selected="false">
                 <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="tab_export_history">Export History</span>
             </button>
@@ -184,6 +189,36 @@
                 </table></div>
             </div>
             <div class="text-center text-secondary py-4 d-none" id="noReports_annual"><span data-i18n="no_reports_available">No reports are registered in this category yet.</span></div>
+        </div>
+        <div class="tab-pane fade" id="monthly-pane" role="tabpanel" aria-labelledby="monthly-tab" tabindex="0">
+            <div class="station-filter" id="monthlyReportPeriodBar">
+                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
+                <button type="button" class="station-filter-toggle" id="monthlyReportPeriodBarToggle" title="Toggle filter">
+                    <i class="fas fa-chevron-up"></i>
+                </button>
+                <div class="station-filter-body">
+                    <div class="row g-2">
+                        <div class="col-6 col-md-4 col-lg-2">
+                            <label class="form-label mb-1"><i class="fa-solid fa-calendar me-1 text-muted"></i><span data-i18n="period_year">Year</span></label>
+                            <select class="form-select form-select-sm select2-native" id="monthlyReportYear"></select>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle w-100" id="tb_monthly_summary">
+                    <thead class="table-light text-secondary"><tr>
+                        <th><span data-i18n="month">Month</span></th>
+                        <th class="text-end"><span data-i18n="monthly_run_count">Runs</span></th>
+                        <th class="text-end"><span data-i18n="table_employee_count">Employees</span></th>
+                        <th class="text-end"><span data-i18n="table_gross_amount">Gross</span></th>
+                        <th class="text-end"><span data-i18n="table_deduction_amount">Deductions</span></th>
+                        <th class="text-end"><span data-i18n="table_net_amount">Net Total</span></th>
+                        <th></th>
+                    </tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
         </div>
         <div class="tab-pane fade" id="history-pane" role="tabpanel" aria-labelledby="history-tab" tabindex="0">
             <!-- 2026-08-29, explicit request: "ประวัติการ Export ให้เป็น Datatable เพิ่ม Filter ช่วงวันที่ได้"
