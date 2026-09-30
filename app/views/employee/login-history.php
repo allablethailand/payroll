@@ -74,17 +74,17 @@
             <table class="table table-striped table-hover w-100" id="tb_login_history_overview">
                 <thead class="table-light text-secondary">
                     <tr>
-                        <th data-i18n="employee">Employee</th>
-                        <th data-i18n="login_at">Login At</th>
-                        <th data-i18n="logout_at">Logout At</th>
-                        <th data-i18n="ip_address">IP Address</th>
-                        <th data-i18n="location">Location</th>
-                        <th data-i18n="timezone">Timezone</th>
-                        <th data-i18n="device">Device</th>
-                        <th data-i18n="operating_system">OS</th>
-                        <th data-i18n="browser">Browser</th>
+                        <th><span data-i18n="employee">Employee</span></th>
+                        <th><span data-i18n="login_at">Login At</span></th>
+                        <th><span data-i18n="logout_at">Logout At</span></th>
+                        <th><span data-i18n="ip_address">IP Address</span></th>
+                        <th><span data-i18n="location">Location</span></th>
+                        <th><span data-i18n="timezone">Timezone</span></th>
+                        <th><span data-i18n="device">Device</span></th>
+                        <th><span data-i18n="operating_system">OS</span></th>
+                        <th><span data-i18n="browser">Browser</span></th>
                         <!-- 2026-08-30, Phase 7 (T037/T038) -- see employee/detail.php's own equivalent comment. -->
-                        <th data-i18n="status">Status</th>
+                        <th><span data-i18n="status">Status</span></th>
                     </tr>
                 </thead>
                 <tbody></tbody>

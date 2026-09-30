@@ -48,46 +48,46 @@ function fetchEmailQueueSummary() {
 
 function initEmailQueueLogTable() {
     if ($.fn.DataTable.isDataTable('#tb_email_queue_log')) {
-        $('#tb_email_queue_log').DataTable().ajax.reload(null, false);
+        tb_email_queue_log.ajax.reload(null, false);
         fetchEmailQueueSummary();
         return;
     }
-    tb_email_queue_log = $('#tb_email_queue_log').DataTable({
-        responsive: true,
-        ajax: {
-            url: `${BASE_URL}/api/email-queue.list`,
-            dataSrc: 'data',
-            data: function (d) { Object.assign(d, currentEmailQueueFilters()); }
+    tb_email_queue_log = initSharedDataTable('#tb_email_queue_log', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'recipient' },
+                { index: 1, key: 'email_subject' },
+                { index: 2, key: 'status' },
+                { index: 3, key: 'email_attempts' },
+                { index: 4, key: 'email_error' },
+                { index: 5, key: 'created_at' },
+                { index: 6, key: 'email_sent_at' },
+            ]
         },
-        columns: [
-            { data: 'to_address', render: d => escapeAttr(d) },
-            { data: 'subject', render: d => escapeAttr(d) },
-            { data: 'status', render: d => emailQueueStatusBadge(d) },
-            { data: 'attempts', className: 'text-center' },
-            { data: 'error_message', render: d => d ? `<span class="text-danger small" title="${escapeAttr(d)}">${escapeAttr(d.length > 60 ? d.substring(0, 60) + '...' : d)}</span>` : '-' },
-            // object-form render (display only) -- see payslip-delivery-log.js's own identical
-            // comment on why: this table's default sort is by this column and has no serverSide:true.
-            { data: 'created_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },
-            { data: 'sent_at', render: { display: d => d ? formatDisplayDateTime(d) : '-', sort: d => d || '', filter: d => d || '' } },
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        order: [[5, 'desc']],
-        initComplete: function () {
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'recipient' },
-                    { index: 1, key: 'email_subject' },
-                    { index: 2, key: 'status' },
-                    { index: 3, key: 'email_attempts' },
-                    { index: 4, key: 'email_error' },
-                    { index: 5, key: 'created_at' },
-                    { index: 6, key: 'email_sent_at' },
-                ]
-            });
-        }
+        dtOptions: {
+            // A client-side table fed by ajax has no rows at construction time, so the helper's
+            // row-count threshold would hide the search box; keep it on as before.
+            searching: true,
+            responsive: true,
+            ajax: {
+                url: `${BASE_URL}/api/email-queue.list`,
+                dataSrc: 'data',
+                data: function (d) { Object.assign(d, currentEmailQueueFilters()); }
+            },
+            columns: [
+                { data: 'to_address', render: d => escapeAttr(d) },
+                { data: 'subject', render: d => escapeAttr(d) },
+                { data: 'status', render: d => emailQueueStatusBadge(d) },
+                { data: 'attempts', className: 'text-center' },
+                { data: 'error_message', render: d => d ? `<span class="text-danger small" title="${escapeAttr(d)}">${escapeAttr(d.length > 60 ? d.substring(0, 60) + '...' : d)}</span>` : '-' },
+                // object-form render (display only) -- see payslip-delivery-log.js's own identical
+                // comment on why: this table's default sort is by this column and has no serverSide:true.
+                { data: 'created_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },
+                { data: 'sent_at', render: { display: d => d ? formatDisplayDateTime(d) : '-', sort: d => d || '', filter: d => d || '' } },
+            ],
+            order: [[5, 'desc']],
+        },
     });
     fetchEmailQueueSummary();
 }

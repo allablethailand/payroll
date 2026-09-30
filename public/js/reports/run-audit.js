@@ -59,45 +59,46 @@ $(document).on('click', '.station-card', function () {
 });
 
 function initRunAuditTable() {
-    runAuditTable = $('#tb_run_audit_list').DataTable({
-        ajax: {
-            url: `${BASE_URL}/api/report.run-audit-list`,
-            data: function (d) {
-                d.date_from = toIsoDateRa($('#runAuditFilterDateFrom').val());
-                d.date_to = toIsoDateRa($('#runAuditFilterDateTo').val());
-            },
-            dataSrc: function (json) {
-                updateRunAuditStationCounts(json.data || []);
-                return json.data || [];
-            },
+    runAuditTable = initSharedDataTable('#tb_run_audit_list', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'run_name' },
+                { index: 1, key: 'cycle_name' },
+                { index: 2, key: 'origin' },
+                { index: 3, key: 'state' },
+                { index: 5, key: 'edit_count' },
+            ],
         },
-        columns: [
-            { data: 'run_name', render: d => escapeAttr(d) },
-            { data: 'cycle_name', render: d => escapeAttr(d || '-') },
-            { data: 'origin', render: d => escapeAttr(runAuditOriginLabel(d)) },
-            { data: 'state', render: d => escapeAttr(d) },
-            { data: null, render: (d, t, row) => `${escapeAttr(row.period_start_date)} - ${escapeAttr(row.period_end_date)}` },
-            { data: 'edit_count', className: 'text-end', render: { display: d => Number(d).toLocaleString(), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
-            {
-                data: null, orderable: false, className: 'text-center', render: (d, t, row) => `
-                <button type="button" class="btn btn-sm btn-outline-primary btn-view-run-audit-diff" data-id="${row.id}">
-                    <i class="fa-solid fa-magnifying-glass me-1"></i>${langData['view'] || 'View'}
-                </button>`,
+        dtOptions: {
+            // Rows arrive by ajax, so the helper's row-count threshold would see 0 rows at
+            // construction and hide the search box; keep it on as before.
+            searching: true,
+            ajax: {
+                url: `${BASE_URL}/api/report.run-audit-list`,
+                data: function (d) {
+                    d.date_from = toIsoDateRa($('#runAuditFilterDateFrom').val());
+                    d.date_to = toIsoDateRa($('#runAuditFilterDateTo').val());
+                },
+                dataSrc: function (json) {
+                    updateRunAuditStationCounts(json.data || []);
+                    return json.data || [];
+                },
             },
-        ],
-        language: getTableLang(),
-        initComplete: function () {
-            const self = this.api();
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'run_name' },
-                    { index: 1, key: 'cycle_name' },
-                    { index: 2, key: 'origin' },
-                    { index: 3, key: 'state' },
-                    { index: 5, key: 'edit_count' },
-                ],
-            });
+            columns: [
+                { data: 'run_name', render: d => escapeAttr(d) },
+                { data: 'cycle_name', render: d => escapeAttr(d || '-') },
+                { data: 'origin', render: d => escapeAttr(runAuditOriginLabel(d)) },
+                { data: 'state', render: d => escapeAttr(d) },
+                { data: null, render: (d, t, row) => `${escapeAttr(row.period_start_date)} - ${escapeAttr(row.period_end_date)}` },
+                { data: 'edit_count', className: 'text-end', render: { display: d => Number(d).toLocaleString(), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
+                {
+                    data: null, orderable: false, className: 'text-center', render: (d, t, row) => `
+                    <button type="button" class="btn btn-sm btn-outline-primary btn-view-run-audit-diff" data-id="${row.id}">
+                        <i class="fa-solid fa-magnifying-glass me-1"></i>${langData['view'] || 'View'}
+                    </button>`,
+                },
+            ],
         },
     });
 }

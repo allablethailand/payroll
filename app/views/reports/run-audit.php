@@ -114,13 +114,13 @@
             <table class="table table-hover align-middle" id="tb_run_audit_list" style="width:100%;">
                 <thead>
                     <tr>
-                        <th data-i18n="run_name">Run Name</th>
-                        <th data-i18n="cycle">Cycle</th>
-                        <th data-i18n="origin">Origin</th>
-                        <th data-i18n="table_status">Status</th>
-                        <th data-i18n="pay_period">Pay Period</th>
-                        <th data-i18n="run_audit_edit_count">Edits</th>
-                        <th data-i18n="table_action">Action</th>
+                        <th><span data-i18n="run_name">Run Name</span></th>
+                        <th><span data-i18n="cycle">Cycle</span></th>
+                        <th><span data-i18n="origin">Origin</span></th>
+                        <th><span data-i18n="table_status">Status</span></th>
+                        <th><span data-i18n="pay_period">Pay Period</span></th>
+                        <th class="num"><span data-i18n="run_audit_edit_count">Edits</span></th>
+                        <th><span data-i18n="table_action">Action</span></th>
                     </tr>
                 </thead>
                 <tbody></tbody>

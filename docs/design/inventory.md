@@ -190,6 +190,8 @@ php scripts/check-design.php --all
 
 ### 6.2 6 ตาราง audit → `initSharedDataTable`
 
+**สถานะ: เสร็จ (2026-09-30)** — ทั้ง 6 ตารางสร้างผ่าน `initSharedDataTable()` แล้ว, `<th data-i18n>` ของ 6 ตารางนี้เป็น `<th><span data-i18n>`; กฎ #5 ลด 137 → 127 (6 ตาราง + getter `.DataTable()` 4 จุด); ยังไม่ได้ตรวจในเบราว์เซอร์
+
 | # | selector | ไฟล์ | serverSide? |
 |---|---|---|---|
 | 1 | `#tb_audit_log` | `public/js/setup/audit-log.js` | ใช่ |
@@ -257,6 +259,6 @@ php scripts/check-design.php --all
 
 | วันที่ | ก้อน | commit | ตัวเลขก่อน | ตัวเลขหลัง |
 |---|---|---|---|---|
-| | | | | |
+| 2026-09-30 | 6.2 — 6 ตาราง audit → `initSharedDataTable` | commit ที่แก้ไฟล์นี้ (ดู `git log`) | กฎ #5 = 137 | กฎ #5 = 127 |
 
-(ว่าง — เติมทีละแถวทุกครั้งที่ปิดก้อนจากคิว §6 หรือกลุ่มโมดูลใน §5)
+(เติมทีละแถวทุกครั้งที่ปิดก้อนจากคิว §6 หรือกลุ่มโมดูลใน §5)

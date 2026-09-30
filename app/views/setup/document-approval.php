@@ -182,13 +182,13 @@
       <table class="table table-striped table-hover" id="tb_email_queue_log">
         <thead class="table-light text-secondary">
           <tr>
-            <th data-i18n="recipient">Recipient</th>
-            <th data-i18n="email_subject">Subject</th>
-            <th data-i18n="status">Status</th>
-            <th data-i18n="email_attempts">Attempts</th>
-            <th data-i18n="email_error">Error</th>
-            <th data-i18n="created_at">Created At</th>
-            <th data-i18n="email_sent_at">Sent At</th>
+            <th><span data-i18n="recipient">Recipient</span></th>
+            <th><span data-i18n="email_subject">Subject</span></th>
+            <th><span data-i18n="status">Status</span></th>
+            <th><span data-i18n="email_attempts">Attempts</span></th>
+            <th><span data-i18n="email_error">Error</span></th>
+            <th><span data-i18n="created_at">Created At</span></th>
+            <th><span data-i18n="email_sent_at">Sent At</span></th>
           </tr>
         </thead>
         <tbody></tbody>

@@ -330,10 +330,10 @@
                     <table class="table table-sm table-hover align-middle w-100" id="tb_system_access_history">
                         <thead>
                             <tr>
-                                <th data-i18n="audit_log_performed_at">When</th>
-                                <th data-i18n="ip_address">IP Address</th>
-                                <th data-i18n="device">Device</th>
-                                <th data-i18n="browser">Browser</th>
+                                <th><span data-i18n="audit_log_performed_at">When</span></th>
+                                <th><span data-i18n="ip_address">IP Address</span></th>
+                                <th><span data-i18n="device">Device</span></th>
+                                <th><span data-i18n="browser">Browser</span></th>
                             </tr>
                         </thead>
                         <tbody></tbody>

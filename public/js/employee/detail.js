@@ -1719,14 +1719,11 @@ function loginHistoryStatusBadgeRd(row) {
 function initLoginHistoryTable() {
     if (!currentEmployeeId) return;
     if ($.fn.DataTable.isDataTable('#tableLoginHistory')) {
-        $('#tableLoginHistory').DataTable().ajax.reload();
+        tb_login_history.ajax.reload();
         return;
     }
-    tb_login_history = $('#tableLoginHistory').DataTable({
-        responsive: true,
+    tb_login_history = initSharedDataTable('#tableLoginHistory', {
         serverSide: true,
-        processing: true,
-        order: [[0, 'desc']],
         ajax: {
             url: `${BASE_URL}/api/employee-login-log.list`,
             type: 'POST',
@@ -1738,27 +1735,25 @@ function initLoginHistoryTable() {
                 d.browser_name = $('#loginHistoryFilterBrowser').val() || '';
             }
         },
-        columns: [
-            { data: 'login_at', render: d => escapeHtml(typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : (d || '-')) },
-            // 2026-08-29: logout_at is only ever set by auth/switch.php's own "Switch App away from
-            // Payroll" capture (see that file's own docblock) -- null is the normal, expected state
-            // for a session that ended any other way (tab closed, browser closed, session expired),
-            // not a sign anything is broken.
-            { data: 'logout_at', render: d => escapeHtml(d && typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : '-') },
-            { data: 'ip_address', render: d => escapeHtml(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtml([row.location_city, row.location_country].filter(Boolean).join(', ') || '-') },
-            { data: 'timezone', render: d => escapeHtml(d || '-') },
-            { data: 'device_type', render: d => { const m = loginHistoryDeviceIconRd(d); return `<span class="row-type-icon ${m.rt}"><i class="fa-solid ${m.icon}"></i></span>${escapeHtml(d || '-')}`; } },
-            { data: null, render: (d, t, row) => escapeHtml([row.os_name, row.os_version].filter(Boolean).join(' ') || '-') },
-            { data: null, render: (d, t, row) => escapeHtml([row.browser_name, row.browser_version].filter(Boolean).join(' ') || '-') },
-            { data: null, orderable: false, render: (d, t, row) => loginHistoryStatusBadgeRd(row) },
-        ],
-        // 2026-08-30, real gap found and fixed (explicit request: "จำนวนแสดงต่อหน้า 50 รายการเป็น
-        // Default...มีตารางอื่นที่ยังไม่ใช้ Format เดียวกันอีกไหมครับ", found via a full-codebase audit) --
-        // was missing entirely, silently falling back to DataTables' own built-in default of 10.
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
+        dtOptions: {
+            responsive: true,
+            order: [[0, 'desc']],
+            columns: [
+                { data: 'login_at', render: d => escapeHtml(typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : (d || '-')) },
+                // 2026-08-29: logout_at is only ever set by auth/switch.php's own "Switch App away from
+                // Payroll" capture (see that file's own docblock) -- null is the normal, expected state
+                // for a session that ended any other way (tab closed, browser closed, session expired),
+                // not a sign anything is broken.
+                { data: 'logout_at', render: d => escapeHtml(d && typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : '-') },
+                { data: 'ip_address', render: d => escapeHtml(d || '-') },
+                { data: null, render: (d, t, row) => escapeHtml([row.location_city, row.location_country].filter(Boolean).join(', ') || '-') },
+                { data: 'timezone', render: d => escapeHtml(d || '-') },
+                { data: 'device_type', render: d => { const m = loginHistoryDeviceIconRd(d); return `<span class="row-type-icon ${m.rt}"><i class="fa-solid ${m.icon}"></i></span>${escapeHtml(d || '-')}`; } },
+                { data: null, render: (d, t, row) => escapeHtml([row.os_name, row.os_version].filter(Boolean).join(' ') || '-') },
+                { data: null, render: (d, t, row) => escapeHtml([row.browser_name, row.browser_version].filter(Boolean).join(' ') || '-') },
+                { data: null, orderable: false, render: (d, t, row) => loginHistoryStatusBadgeRd(row) },
+            ],
+        },
     });
 }
 function updateClearLoginHistoryFilterVisibility() {
@@ -1768,7 +1763,7 @@ function updateClearLoginHistoryFilterVisibility() {
 $(document).on('change', '#loginHistoryFilterDateFrom, #loginHistoryFilterDateTo, #loginHistoryFilterDevice, #loginHistoryFilterBrowser', function () {
     updateClearLoginHistoryFilterVisibility();
     if ($.fn.DataTable.isDataTable('#tableLoginHistory')) {
-        $('#tableLoginHistory').DataTable().ajax.reload();
+        tb_login_history.ajax.reload();
     }
 });
 // 2026-08-30, same-day follow-up ("Tab ประวัติการเข้าใช้งานใน Employee Detail ยังไม่ใช่ Filter มาตรฐาน")
@@ -1789,7 +1784,7 @@ $(document).on('click', '#btnClearLoginHistoryFilter', function () {
     $('#loginHistoryFilterDevice, #loginHistoryFilterBrowser').val(null).trigger('change');
     updateClearLoginHistoryFilterVisibility();
     if ($.fn.DataTable.isDataTable('#tableLoginHistory')) {
-        $('#tableLoginHistory').DataTable().ajax.reload();
+        tb_login_history.ajax.reload();
     }
 });
 // Lazy-init on first tab show -- a DataTable constructed while its own tab-pane is `display:none`

@@ -70,15 +70,15 @@
         <table id="tb_audit_log" class="table table-hover align-middle w-100">
             <thead>
                 <tr>
-                    <th data-i18n="audit_log_performed_at">When</th>
-                    <th data-i18n="audit_log_table">Table</th>
-                    <th data-i18n="audit_log_record_id">Record</th>
-                    <th data-i18n="audit_log_action">Action</th>
-                    <th data-i18n="audit_log_field">Field</th>
-                    <th data-i18n="audit_log_old_value">Old Value</th>
-                    <th data-i18n="audit_log_new_value">New Value</th>
-                    <th data-i18n="audit_log_performed_by">By</th>
-                    <th data-i18n="audit_log_source">Source</th>
+                    <th><span data-i18n="audit_log_performed_at">When</span></th>
+                    <th><span data-i18n="audit_log_table">Table</span></th>
+                    <th><span data-i18n="audit_log_record_id">Record</span></th>
+                    <th><span data-i18n="audit_log_action">Action</span></th>
+                    <th><span data-i18n="audit_log_field">Field</span></th>
+                    <th><span data-i18n="audit_log_old_value">Old Value</span></th>
+                    <th><span data-i18n="audit_log_new_value">New Value</span></th>
+                    <th><span data-i18n="audit_log_performed_by">By</span></th>
+                    <th><span data-i18n="audit_log_source">Source</span></th>
                 </tr>
             </thead>
             <tbody></tbody>
