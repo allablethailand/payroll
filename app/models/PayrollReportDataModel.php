@@ -151,19 +151,25 @@ class PayrollReportDataModel {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    /** (run_id, employee_id) pairs to slip for a month -- one employee, or all when $employeeId is null. */
+    /** One target per employee for a month (one employee, or all when $employeeId is null): employee_id + every
+     *  usable run they were paid in that month, oldest payment first -- PaySlipReport merges those into one slip. */
     public function monthlySlipTargets(int $compId, int $year, int $month, array $allowedStates, ?int $employeeId = null): array {
         $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
-        $sql = "SELECT r.id AS run_id, d.employee_id
+        $sql = "SELECT d.employee_id, GROUP_CONCAT(r.id ORDER BY r.payment_date, r.id) AS run_ids
                 FROM `payroll_run_details` d
                 JOIN `payroll_runs` r ON r.id = d.run_id
                 WHERE r.comp_id = ? AND r.deleted_at IS NULL AND YEAR(r.payment_date) = ? AND MONTH(r.payment_date) = ?
                   AND r.state IN ({$placeholders})" . ($employeeId !== null ? ' AND d.employee_id = ?' : '') . "
-                ORDER BY d.employee_id, r.id";
+                GROUP BY d.employee_id
+                ORDER BY d.employee_id";
         $params = array_merge([$compId, $year, $month], $allowedStates, $employeeId !== null ? [$employeeId] : []);
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $out[] = ['employee_id' => (int)$row['employee_id'], 'run_ids' => array_map('intval', explode(',', (string)$row['run_ids']))];
+        }
+        return $out;
     }
 
     /** Runs actually PAID (payment_date) within the given calendar year, usable states only.
@@ -401,6 +407,30 @@ class PayrollReportDataModel {
             'ytd_deduction' => (float)($row['ytd_deduction'] ?? 0),
             'ytd_net' => (float)($row['ytd_net'] ?? 0),
         ];
+    }
+
+    /** Year-to-date base salary / gross / PIT / SSO / PVD (employee share) for the Monthly Report slip's Yearly Summary. */
+    public function getYtdSlipTotals(int $compId, int $employeeId, string $uptoDate, array $allowedStates): array {
+        $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
+        $sql = "SELECT d.base_salary_amount, d.gross_amount, d.statutory_breakdown
+                FROM `payroll_run_details` d
+                JOIN `payroll_runs` r ON r.id = d.run_id
+                WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
+                    AND YEAR(r.payment_date) = ? AND r.payment_date <= ? AND d.employee_id = ?";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array_merge([$compId], $allowedStates, [(int)substr($uptoDate, 0, 4), $uptoDate, $employeeId]));
+        $out = ['base' => 0.0, 'gross' => 0.0, 'tax' => 0.0, 'sso' => 0.0, 'pvd' => 0.0];
+        $byCode = ['TH_PIT' => 'tax', 'TH_SSO' => 'sso', 'TH_PVD' => 'pvd'];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $out['base'] += (float)$row['base_salary_amount'];
+            $out['gross'] += (float)$row['gross_amount'];
+            foreach (json_decode((string)$row['statutory_breakdown'], true) ?? [] as $item) {
+                if (isset($byCode[$item['code'] ?? ''])) {
+                    $out[$byCode[$item['code']]] += (float)($item['employee_amount'] ?? 0);
+                }
+            }
+        }
+        return $out;
     }
 
     public function assertRunState(array $run, array $allowedStates): ?string {
