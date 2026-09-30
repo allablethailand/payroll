@@ -540,6 +540,14 @@ class ReportsController extends Controller {
         $this->json(['status' => true, 'data' => $this->reportDataModel->monthlySummary((int)$compId, $year, self::CYCLE_REPORT_STATES)]);
     }
 
+    /** slip_{emp_code}_{first}_{last}_{year}_{month}.pdf -- English name lowercased, spaces -> underscore, anything else stripped. */
+    private function monthlySlipFileName(array $t, int $year, int $month): string {
+        $slug = fn(string $s) => trim((string)preg_replace('/[^a-z0-9_-]+/', '', str_replace(' ', '_', strtolower(trim($s)))), '_');
+        $parts = array_filter([$slug($t['employee_no']) !== '' ? preg_replace('/[^A-Za-z0-9_-]+/', '', $t['employee_no']) : (string)$t['employee_id'],
+                               $slug($t['name_en']), $slug($t['surname_en'])], fn($p) => $p !== '');
+        return 'slip_' . implode('_', $parts) . "_{$year}_{$month}.pdf";
+    }
+
     public function monthlyEmployees() {
         if (!$this->requireViewAccess()) return;
         $compId = getCompId();
@@ -581,7 +589,7 @@ class ReportsController extends Controller {
             foreach ($targets as $t) {
                 $lastRunId = (int)end($t['run_ids']);
                 $result = $report->generate(['comp_id' => $compId, 'run_id' => $lastRunId, 'run_ids' => $t['run_ids'], 'employee_id' => $t['employee_id'], 'language' => $language, 'layout' => 'monthly'], 'pdf');
-                $files["slip_{$t['employee_id']}_{$year}_{$month}.pdf"] = $result['content'];
+                $files[$this->monthlySlipFileName($t, $year, $month)] = $result['content'];
                 $this->logModel->log($compId, $report->reportType(), $report->code(), $result['file_name'], 'pdf', $year + 543, $month, $lastRunId,
                     $this->userId() ?: null, (string)($_SERVER['REMOTE_ADDR'] ?? ''), (string)($_SERVER['HTTP_USER_AGENT'] ?? ''), $language, 'monthly_report', $t['employee_id']);
             }
