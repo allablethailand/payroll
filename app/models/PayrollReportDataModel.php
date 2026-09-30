@@ -155,19 +155,20 @@ class PayrollReportDataModel {
      *  usable run they were paid in that month, oldest payment first -- PaySlipReport merges those into one slip. */
     public function monthlySlipTargets(int $compId, int $year, int $month, array $allowedStates, ?int $employeeId = null): array {
         $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
-        $sql = "SELECT d.employee_id, GROUP_CONCAT(r.id ORDER BY r.payment_date, r.id) AS run_ids
+        $sql = "SELECT d.employee_id, e.employee_no, e.name_en, e.surname_en, GROUP_CONCAT(r.id ORDER BY r.payment_date, r.id) AS run_ids
                 FROM `payroll_run_details` d
                 JOIN `payroll_runs` r ON r.id = d.run_id
+                JOIN `employees` e ON e.id = d.employee_id
                 WHERE r.comp_id = ? AND r.deleted_at IS NULL AND YEAR(r.payment_date) = ? AND MONTH(r.payment_date) = ?
                   AND r.state IN ({$placeholders})" . ($employeeId !== null ? ' AND d.employee_id = ?' : '') . "
-                GROUP BY d.employee_id
+                GROUP BY d.employee_id, e.employee_no, e.name_en, e.surname_en
                 ORDER BY d.employee_id";
         $params = array_merge([$compId, $year, $month], $allowedStates, $employeeId !== null ? [$employeeId] : []);
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
         $out = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
-            $out[] = ['employee_id' => (int)$row['employee_id'], 'run_ids' => array_map('intval', explode(',', (string)$row['run_ids']))];
+            $out[] = ['employee_id' => (int)$row['employee_id'], 'employee_no' => (string)$row['employee_no'], 'name_en' => (string)$row['name_en'], 'surname_en' => (string)$row['surname_en'], 'run_ids' => array_map('intval', explode(',', (string)$row['run_ids']))];
         }
         return $out;
     }
