@@ -483,17 +483,8 @@ function initBankAccountTable() {
         $(tableId).DataTable().ajax.reload(null, false);
         return;
     }
-    structureTables['bank_account'] = $(tableId).DataTable({
-        processing: true,
+    structureTables['bank_account'] = initSharedDataTable(tableId, {
         serverSide: true,
-        responsive: true,
-        // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- default sort points to column 1
-        // (bank) now that column 0 is the non-orderable status switch. BankAccountModel::list()'s
-        // own sortColumns[1] already resolves to `mb.bank_name_th` (the bank column's real content),
-        // so this is not a regression the way PED Type's own equivalent change was (see that
-        // table's own comment) -- if anything a slight improvement over the old default (colIndex 0
-        // resolved to a bare `ba.id` sort, not a meaningful column to sort by at all).
-        order: [[1, 'asc']],
         ajax: {
             url: `${BASE_URL}/api/bank_account.list`,
             type: 'POST',
@@ -503,6 +494,16 @@ function initBankAccountTable() {
                 d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
             }
         },
+        searchThreshold: -1,
+        dtOptions: {
+        responsive: true,
+        // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- default sort points to column 1
+        // (bank) now that column 0 is the non-orderable status switch. BankAccountModel::list()'s
+        // own sortColumns[1] already resolves to `mb.bank_name_th` (the bank column's real content),
+        // so this is not a regression the way PED Type's own equivalent change was (see that
+        // table's own comment) -- if anything a slight improvement over the old default (colIndex 0
+        // resolved to a bare `ba.id` sort, not a meaningful column to sort by at all).
+        order: [[1, 'asc']],
         columns: [
             // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- status switch is the first
             // column now, same shared mechanism as every other table already converted.
@@ -559,9 +560,6 @@ function initBankAccountTable() {
                 `
             }
         ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         initComplete: function () {
             let self = this.api();
             let $wrapper = $(self.table().container());
@@ -615,6 +613,7 @@ function initBankAccountTable() {
             let self = this.api();
             let $wrapper = $(self.table().container());
             updateText($wrapper[0]);
+        }
         }
     });
 }
@@ -745,15 +744,8 @@ function initStructureTable(type, tableId) {
         $(tableId).DataTable().ajax.reload(null, false);
         return;
     }
-    structureTables[type] = $(tableId).DataTable({
-        processing: true,
+    structureTables[type] = initSharedDataTable(tableId, {
         serverSide: true,
-        responsive: true,
-        // 2026-09-02, Platform Hardening Phase 1.1 -- was `[[0, 'asc']]` back when column 0 was
-        // always the entity's own code/name column; now column 0 is the (non-orderable) status
-        // switch, so the default landing sort moves to column 1 (still each type's own code/name
-        // column in every case, see getStructureColumns()'s own new column order).
-        order: [[1, 'asc']],
         ajax: {
             url: `${BASE_URL}/api/structure.${type}`,
             type: "POST",
@@ -766,10 +758,15 @@ function initStructureTable(type, tableId) {
                 d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
             }
         },
+        searchThreshold: -1,
+        dtOptions: {
+        responsive: true,
+        // 2026-09-02, Platform Hardening Phase 1.1 -- was `[[0, 'asc']]` back when column 0 was
+        // always the entity's own code/name column; now column 0 is the (non-orderable) status
+        // switch, so the default landing sort moves to column 1 (still each type's own code/name
+        // column in every case, see getStructureColumns()'s own new column order).
+        order: [[1, 'asc']],
         columns: getStructureColumns(type),
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         initComplete: function () {
             let self = this.api();
             let $wrapper = $(self.table().container());
@@ -852,6 +849,7 @@ function initStructureTable(type, tableId) {
             let self = this.api();
             let $wrapper = $(self.table().container());
             updateText($wrapper[0]);
+        }
         }
     });
 }

@@ -347,12 +347,16 @@ function designLintRule4(array $lines): array {
 
 /** Rule 5 -- .DataTable(/.dataTable( outside initSharedDataTable(). app.js is exempt wholesale (the
  * caller passes the exempt filename in, see the dispatcher below) since it's the ONE file allowed to
- * call this directly, inside initSharedDataTable()'s own body. */
+ * call this directly, inside initSharedDataTable()'s own body. Only a CONSTRUCTION counts: a bare
+ * getter `.DataTable()` just reads an instance that already exists, and a comment line is not code
+ * (docs/design/inventory.md 6.2 called both a false floor under this rule). */
 function designLintRule5(array $lines): array {
     $hits = [];
     foreach ($lines as $i => $line) {
         if (designLintLineIgnored($line)) continue;
-        if (preg_match('/\.(DataTable|dataTable)\s*\(/', $line)) {
+        $trimmed = ltrim($line);
+        if (str_starts_with($trimmed, '//') || str_starts_with($trimmed, '*') || str_starts_with($trimmed, '/*')) continue;
+        if (preg_match('/\.(DataTable|dataTable)\s*\(\s*(?!\))/', $line)) {
             $hits[] = ['rule' => 5, 'line' => $i + 1, 'text' => trim($line)];
         }
     }

@@ -1516,7 +1516,17 @@ function initPstTemplateTable() {
         $('#tb_pst_template').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_pst_template = $('#tb_pst_template').DataTable({
+    tb_pst_template = initSharedDataTable('#tb_pst_template', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 1, key: 'template_name' },
+                { index: 2, key: 'page_size' },
+                { index: 5, key: 'updated_at' },
+            ]
+        },
+        dtOptions: {
+        searching: true,
         responsive: true,
         ajax: {
             url: `${BASE_URL}/api/payslip-template.paired-list`,
@@ -1543,9 +1553,6 @@ function initPstTemplateTable() {
         // Edit/Duplicate/Preview/Delete all need the FULL pair row (both languages' ids, pair_key,
         // name) -- stashed on the <tr> itself rather than re-derived from data-* attributes.
         createdRow: function (row, data) { $(row).data('pairRow', data); },
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         initComplete: function () {
             const self = this.api();
             const $wrapper = $(self.table().container());
@@ -1557,17 +1564,7 @@ function initPstTemplateTable() {
                     </button>
                 `);
             }
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the publish-switch column (0), the icon-only TH/EN
-            // language-status columns (3, 4, no single filterable value), and actions (6).
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 1, key: 'template_name' },
-                    { index: 2, key: 'page_size' },
-                    { index: 5, key: 'updated_at' },
-                ]
-            });
+        }
         }
     });
 }

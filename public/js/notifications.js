@@ -235,15 +235,17 @@ function notifPageTableInit() {
         initDatepicker('#notif_filter_date_to');
     }
     initFilterBar('#notifFilterBar', { onChange: function () { if (tb_notification) tb_notification.ajax.reload(null, true); } });
-    tb_notification = $('#tb_notification').DataTable({
+    tb_notification = initSharedDataTable('#tb_notification', {
         serverSide: true,
-        processing: true,
-        responsive: true,
+        // 0 keeps the search box visible as before (helper hides it at <=10 rows by default)
+        searchThreshold: 0,
         ajax: {
             url: `${BASE_URL}/api/notification.datatable`,
             type: 'POST',
             data: function (d) { Object.assign(d, notifPageCurrentFilters()); }
         },
+        dtOptions: {
+        responsive: true,
         columns: [
             { data: null, orderable: false, className: 'text-center', render: (d, t, row) => { const m = notifTypeMeta(row); return `<span class="row-type-icon ${m.rt}" style="margin-right:0;"><i class="fa-solid ${notifEscapeHtml(row.icon || m.icon)}"></i></span>`; } },
             {
@@ -265,10 +267,8 @@ function notifPageTableInit() {
         order: [[2, 'desc']],
         createdRow: function (rowEl, row) {
             if (Number(row.is_read) === 0) $(rowEl).addClass('notif-row-unread');
-        },
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
+        }
+        }
     });
 }
 // Same click-to-mark-read-then-navigate as .nav-notif-item (dropdown/dashboard), reusing the same

@@ -162,19 +162,9 @@ function initEmployeeTable() {
         $('#tb_employee').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_employee = $('#tb_employee').DataTable({
-        processing: true,
+    tb_employee = initSharedDataTable('#tb_employee', {
         serverSide: true,
-        // 2026-08-27, explicit request: "ปุ่มที่ expand ตารางเพื่อดูข้อมูลของ column ที่ซ่อน ควรแยกมาเป็น
-        // column แรก" -- `details.type:'column'` + `target:0` makes the responsive expand toggle its
-        // OWN dedicated column (column 0 below) instead of DataTables' default of embedding it into
-        // whichever column happens to be first (our avatar column, which then made clicking the
-        // avatar ambiguous between "view" and "expand"). Every real data column shifted by +1 to make
-        // room -- same "inserting a column shifts every later index" convention as Team's own column
-        // addition (see CLAUDE.md's Team section); EmployeeModel::list()'s `sortColumns` map updated
-        // to match, and this table's `order`/Excel-filter column indices below too.
-        responsive: { details: { type: 'column', target: 0 } },
-        order: [[3, 'asc']], // employee_no -- shifted from 2 to 3 by the new checkbox column at index 1
+        searchThreshold: -1, // keep the search bar (and the buttons injected into it) visible at any row count
         ajax: {
             url: `${BASE_URL}/api/employee.list`,
             type: "POST",
@@ -188,317 +178,326 @@ function initEmployeeTable() {
                 // sent to the backend rather than filtered in the browser). Built from `settings`
                 // (DataTables' own 2nd arg to ajax.data), NOT the outer `tb_employee` variable --
                 // DataTables calls this synchronously to build the FIRST request while
-                // `tb_employee = $(...).DataTable({...})` is still constructing, so `tb_employee`
+                // `tb_employee = initSharedDataTable(...)` is still constructing, so `tb_employee`
                 // itself is still undefined at that exact moment (see getColumnFilterValues()'s own
                 // comment on why this isn't just defensive paranoia).
                 d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
             }
         },
-        // 2026-08-27, explicit follow-up: "column ขวาสุดอยากให้แสดงปุ่มดำเนินการ และตอนนี้พอเป็น
-        // responsive table แล้ว การดำเนินการดูยากขึ้น" -- now that `responsive:true` genuinely works
-        // (the extension itself was only just installed, see the git history around 2026-08-27), its
-        // DEFAULT behavior hides columns starting from the HIGHEST index first when a row doesn't
-        // fit the viewport -- which is exactly backwards for this table, since Actions (the rightmost
-        // column) is the one column that must never disappear into the collapsed "+" child row.
-        // `responsivePriority` (lower number = kept visible longer) overrides that default -- Actions
-        // pinned to the same top priority as Name/Employee No. (the row's own identity), everything
-        // else ranked by how useful it is to see at a glance without expanding the row.
-        columns: [
-            // Dedicated Responsive expand/collapse control column (see the `responsive:{details:...}`
-            // option above) -- `dtr-control` is the class DataTables Responsive itself looks for to
-            // render the +/- toggle into; empty otherwise (no data, no title).
-            { data: null, orderable: false, className: 'dtr-control', defaultContent: '' },
-            // 2026-08-29, explicit request: "ในหน้า List เพิ่ม checkbox ด้านหน้า เพื่อให้เลือกหลายรายการ
-            // แล้วกด Sync ได้หลายคนพร้อมกัน" -- see employeeBulkSyncSelection (below) for how
-            // selection is tracked across pages (this table is serverSide:true, so DataTables only
-            // ever holds the CURRENT page's rows -- selection has to be its own id Set, not
-            // DataTables' own row-selection API, to survive a page change).
-            {
-                data: null,
-                orderable: false,
-                className: 'text-center all',
-                responsivePriority: 1,
-                render: function (data, type, row) {
-                    const checked = employeeBulkSyncSelection.has(row.id) ? 'checked' : '';
-                    return `<input type="checkbox" class="employee-row-checkbox" data-id="${row.id}" ${checked}>`;
-                }
-            },
-            {
-                data: null,
-                orderable: false,
-                className: 'text-center',
-                responsivePriority: 8,
-                render: function (data, type, row) {
-                    // 2026-08-30, real gap found and fixed (explicit report: "Sync รูปมาแล้ว ในหน้า
-                    // Employee List ยังไม่แสดง") -- profile_photo_path was never selected by
-                    // EmployeeModel::list() at all (see that method's own SELECT list), so this
-                    // column always fell back to the plain initial-letter circle even for an
-                    // employee with a real synced/uploaded photo on file.
-                    if (row.profile_photo_path) {
-                        return `<img src="${BASE_URL}/${row.profile_photo_path}" class="employee-list-avatar-img" alt="">`;
+        dtOptions: {
+            // 2026-08-27, explicit request: "ปุ่มที่ expand ตารางเพื่อดูข้อมูลของ column ที่ซ่อน ควรแยกมาเป็น
+            // column แรก" -- `details.type:'column'` + `target:0` makes the responsive expand toggle its
+            // OWN dedicated column (column 0 below) instead of DataTables' default of embedding it into
+            // whichever column happens to be first (our avatar column, which then made clicking the
+            // avatar ambiguous between "view" and "expand"). Every real data column shifted by +1 to make
+            // room -- same "inserting a column shifts every later index" convention as Team's own column
+            // addition (see CLAUDE.md's Team section); EmployeeModel::list()'s `sortColumns` map updated
+            // to match, and this table's `order`/Excel-filter column indices below too.
+            responsive: { details: { type: 'column', target: 0 } },
+            order: [[3, 'asc']], // employee_no -- shifted from 2 to 3 by the new checkbox column at index 1
+            // 2026-08-27, explicit follow-up: "column ขวาสุดอยากให้แสดงปุ่มดำเนินการ และตอนนี้พอเป็น
+            // responsive table แล้ว การดำเนินการดูยากขึ้น" -- now that `responsive:true` genuinely works
+            // (the extension itself was only just installed, see the git history around 2026-08-27), its
+            // DEFAULT behavior hides columns starting from the HIGHEST index first when a row doesn't
+            // fit the viewport -- which is exactly backwards for this table, since Actions (the rightmost
+            // column) is the one column that must never disappear into the collapsed "+" child row.
+            // `responsivePriority` (lower number = kept visible longer) overrides that default -- Actions
+            // pinned to the same top priority as Name/Employee No. (the row's own identity), everything
+            // else ranked by how useful it is to see at a glance without expanding the row.
+            columns: [
+                // Dedicated Responsive expand/collapse control column (see the `responsive:{details:...}`
+                // option above) -- `dtr-control` is the class DataTables Responsive itself looks for to
+                // render the +/- toggle into; empty otherwise (no data, no title).
+                { data: null, orderable: false, className: 'dtr-control', defaultContent: '' },
+                // 2026-08-29, explicit request: "ในหน้า List เพิ่ม checkbox ด้านหน้า เพื่อให้เลือกหลายรายการ
+                // แล้วกด Sync ได้หลายคนพร้อมกัน" -- see employeeBulkSyncSelection (below) for how
+                // selection is tracked across pages (this table is serverSide:true, so DataTables only
+                // ever holds the CURRENT page's rows -- selection has to be its own id Set, not
+                // DataTables' own row-selection API, to survive a page change).
+                {
+                    data: null,
+                    orderable: false,
+                    className: 'text-center all',
+                    responsivePriority: 1,
+                    render: function (data, type, row) {
+                        const checked = employeeBulkSyncSelection.has(row.id) ? 'checked' : '';
+                        return `<input type="checkbox" class="employee-row-checkbox" data-id="${row.id}" ${checked}>`;
                     }
-                    const letter = (row.name || '').trim().charAt(0).toUpperCase() || '?';
-                    return `<div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold" style="width: 38px; height: 38px; min-width: 38px; background-color: #007aff;">${letter}</div>`;
-                }
-            },
-            { data: "employee_no", responsivePriority: 2 },
-            {
-                // 2026-08-28, same-day follow-up: "สัญลักษณ์ Sync กับ Manual สร้าง ปรับให้แสดงผลสวยๆ
-                // และอยู่ใน Column ที่เป็นระเบียบ" -- was a bare icon squeezed onto the end of the
-                // Employee No. column (see git history for that version's own reasoning); the user
-                // came back asking for a proper, tidy column instead. `orderable: false` (same as
-                // the completeness column further along) means this needs ZERO changes to
-                // EmployeeModel::list()'s sortColumns/listColumnExprMap index map -- unlike a
-                // sortable column, a display-only one costs nothing to insert anywhere in this
-                // array. Same 3-way badge convention (colored bg-*-subtle/text-* pill) already
-                // established by Manual Entry's own list (sourceBadgeMe()) and Payroll Run Detail's
-                // employee list (dataSourceBadgeRd()), reusing their existing source_manual/
-                // source_sync/source_import i18n keys.
-                data: "data_source",
-                orderable: false,
-                responsivePriority: 8,
-                render: function (data, type) {
-                    if (type !== 'display') return data;
-                    const label = langData['source_' + (data || 'manual')] || data || '';
-                    return `<span class="text-muted">${escapeHtml(label)}</span>`;
-                }
-            },
-            { data: "name", responsivePriority: 1 },
-            { data: "phone", render: d => d || '-', responsivePriority: 9 },
-            // 2026-08-29, explicit request: "เพิ่ม Email ในหน้า List ของพนักงานด้วยครับ" -- already
-            // selected server-side (EmployeeModel::list()'s own `e.personal_email AS email`), just
-            // never rendered as a column here before now.
-            { data: "email", render: d => d || '-', responsivePriority: 9 },
-            { data: "role", responsivePriority: 6 },
-            { data: "position", render: d => d || '-', responsivePriority: 7 },
-            { data: "department", responsivePriority: 5 },
-            { data: "team", render: d => d || '-', responsivePriority: 10 },
-            { data: "shift", render: d => d || '-', responsivePriority: 10 },
-            { data: "branch", responsivePriority: 7 },
-            // Plain render is safe here (unlike the client-side tables elsewhere in this pass) --
-            // this table is serverSide:true, so sorting is done server-side via ORDER BY on the
-            // real DB column, entirely unaffected by how the client renders it for display.
-            { data: "start_work_date", render: d => formatDisplayDate(d), responsivePriority: 6 },
-            {
-                data: "status",
-                responsivePriority: 4,
-                render: function (data) {
-                    const key = String(data || '').toLowerCase();
-                    if (['active', 'probation', 'suspended', 'resigned', 'terminated'].indexOf(key) !== -1) return statusBadgeHtml(key, 'employee_status');
-                    return `<span class="text-muted">${escapeHtml(data || '')}</span>`;
-                }
-            },
-            // 2026-08-31, explicit request: "ในตารางให้มีสัญลักษณ์บอกด้วยว่าจ่ายหรือไม่จ่ายเงินเดือน" --
-            // object-form render (Table convention: display differs from the raw sort/filter value)
-            // reading `payroll_participant_flag` (EmployeeModel::list()'s own deliberately-different
-            // alias for `is_payroll_participant`, see that method's own comment on why the bare key
-            // would have been stripped before reaching here).
-            {
-                data: "payroll_participant_flag",
-                responsivePriority: 6,
-                render: {
-                    display: function (d) {
-                        return Number(d) === 1
-                            ? statusBadgeHtml('yes', 'payroll_participant')
-                            : statusBadgeHtml('no', 'payroll_participant');
-                    },
-                    sort: d => Number(d) || 0,
-                    filter: d => Number(d) || 0,
-                }
-            },
-            {
-                data: "completeness",
-                orderable: false,
-                responsivePriority: 5,
-                render: function (data) {
-                    return completenessRingHtml(data);
-                }
-            },
-            {
-                data: null,
-                orderable: false,
-                // 2026-08-27, real bug found and fixed (explicit report: "ปุ่มแก้ไขปุ่มลบ หายไปครับ
-                // column ท้าย") -- had this backwards: DataTables Responsive's `className: 'never'`
-                // does NOT mean "never hidden" -- per its own source (`_classLogic()`), `never` is
-                // treated exactly like `className: 'none'`: "never show this column in the table at
-                // all, only reachable via the expand row" -- i.e. the OPPOSITE of what was wanted,
-                // which is why the buttons vanished outright instead of just staying put. The correct
-                // class for "always visible, never collapse into the expand row" is `all`/`dtr-all`
-                // (confirmed directly against the extension's own source, not guessed a second time).
-                className: 'all',
-                responsivePriority: 1,
-                render: function (data, type, row) {
-                    // 2026-08-28, explicit follow-up: "สามารถกดได้จากในหน้า List" -- the per-employee
-                    // Re-Sync/Sync action (previously only reachable from inside Employee Detail's own
-                    // profile header, see detail.js's updateOrigamiSyncSummary()) is now also available
-                    // right here per-row, so an admin scanning the whole roster doesn't need to open
-                    // every employee individually just to sync them. Same endpoint
-                    // (api/employee-sync.resync-one), same employee_no fallback matching for a row
-                    // with no origami_ref_id yet -- see EmployeeSyncModel::resyncOne()'s own docblock.
-                    // Gated on IS_ORIGAMI_HR_LINKED same as the bulk "Sync from Origami"/"Sync Log"
-                    // buttons above (a company with no Origami HR link at all has nothing to sync).
-                    // 2026-08-29, explicit request: "ปุ่ม Sync ให้เปลี่ยนเป็นสีฟ้าทั้งในหน้า List และ
-                    // Detail" -- was text-secondary (linked)/text-warning (not-yet-linked), now
-                    // uniformly blue regardless of link state (per the request's own plain wording).
-                    // `text-info` specifically, not `text-primary` -- this app's own :root override
-                    // (see style.css's ".btn-primary" section) repoints --bs-primary at brand orange,
-                    // so `text-primary` would silently render orange here, not blue; --bs-info was
-                    // never touched, so it's still Bootstrap's real cyan-blue.
-                    let syncBtn = '';
-                    if (typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED) {
-                        syncBtn = `<button class="btn btn-link btn-circle-action text-info sync-one-employee" data-id="${row.id}" data-i18n-tooltip="employee_sync_list_action_title"><i class="fa-solid fa-rotate"></i></button>`;
-                    }
-                    // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
-                    // ".btn-circle-action" section) replace the old adjacent .btn-group -- Employee
-                    // List first, per the request's own wording.
-                    return `<div class="d-flex gap-1 justify-content-center">
-                        <button class="btn btn-link btn-circle-action text-warning manage-employee" data-id="${row.employee_no}" data-i18n-tooltip="edit"><i class="fa-solid fa-pen-to-square"></i></button>
-                        ${syncBtn}
-                        <button class="btn btn-link btn-circle-action text-danger delete-employee" data-id="${row.id}" data-i18n-tooltip="delete"><i class="fa-solid fa-trash-can"></i></button>
-                    </div>`;
-                }
-            }
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        initComplete: function () {
-            let self = this.api();
-            let $wrapper = $(self.table().container());
-            let $searchDiv = $wrapper.find('.dt-search');
-            // 2026-08-29, explicit request: "โดยปุ่ม Sync หลายรายการให้อยู่ต่อกับ Show 50 entries" --
-            // deliberately injected into `.dt-length` (the "Show N entries" control), NOT `.dt-search`
-            // where every other button on this page lives -- the request specifically asked for this
-            // one to sit next to that control instead of the usual search-bar button row.
-            let $lengthDiv = $wrapper.find('.dt-length');
-            if (typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED && $lengthDiv.find('#btnBulkSyncSelected').length === 0) {
-                let bulkSyncBtn = `
-                    <button class="btn btn-outline-secondary ms-2" id="btnBulkSyncSelected" type="button" disabled>
-                        <i class="fa-solid fa-rotate me-2"></i><span data-i18n="employee_bulk_sync_button">Sync Selected</span>
-                        <span class="count-inline" id="employeeBulkSyncCount">0</span>
-                    </button>
-                `;
-                $lengthDiv.append(bulkSyncBtn);
-            }
-            if ($searchDiv.find('.manage-employee').length === 0) {
-                // 2026-08-30, real bug found and fixed (explicit report: "ปุ่ม 'เพิ่มพนักงานใหม่' ไม่เปลี่ยน
-                // ภาษา") -- this button is built ONCE by initComplete, which only re-fires on a true
-                // DataTables re-init; the `$searchDiv.find('.manage-employee').length === 0` guard
-                // above means it's never rebuilt again after that (initEmployeeTable()'s own re-call
-                // path just does an ajax.reload(), it doesn't re-run initComplete at all -- see that
-                // function's own docblock). Since the label text was plain-templated with no
-                // `data-i18n`, it stayed frozen in whatever language was active the first time this
-                // table ever initialized. Adding `data-i18n` lets the EXISTING generic
-                // updateText(document) sweep (already run on every language change via
-                // applyLanguage()) pick it up for free -- no table-rebuild needed at all.
-                let btn = `
-                    <button class="btn btn-primary manage-employee ms-1" data-id="">
-                        <i class="fa-solid fa-plus me-2"></i><span data-i18n="employee">${langData['employee'] || 'Employee'}</span>
-                    </button>
-                `;
-                $searchDiv.append(btn);
-            }
-            // 2026-08-28, explicit request: "ต้องการปุ่ม Sync ข้อมูล Employee จากระบบ Origami" --
-            // see public/js/employee/employee-sync.js for the picker modal this opens.
-            // 2026-08-28, same-day follow-up: "ถ้าไม่ใช่บริษัทที่มาจาก Origami ปุ่ม Sync จะไม่ขึ้น" --
-            // both Sync buttons below now gated on IS_ORIGAMI_HR_LINKED (set once in
-            // layout/header.php from companies.ref_id), not just left to fail with a "not linked"
-            // message after the admin already clicked in -- a company with no Origami HR link at
-            // all never sees these buttons.
-            if (typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED) {
-                if ($searchDiv.find('#btnOpenEmployeeSync').length === 0) {
-                    // Sync is a secondary action (rules.md 4); "Sync Log" below is a history viewer, also secondary.
-                    let syncBtn = `
-                        <button class="btn btn-outline-secondary ms-1" id="btnOpenEmployeeSync" type="button">
-                            <i class="fa-solid fa-rotate me-2"></i><span data-i18n="employee_sync_button">Sync from Origami</span>
-                        </button>
-                    `;
-                    $searchDiv.append(syncBtn);
-                }
-                // 2026-08-28, explicit request: "ย้ายปุ่มประวัติการ Sync ให้หน่อยครับ ตอนนี้ดูสะเปะสะปะ"
-                // (move the Sync Log button, it looks scattered right now) -- was squeezed into the
-                // picker modal's own header between the title and the close button. Moved out here
-                // as a proper peer button next to Sync from Origami, matching this app's own
-                // convention (every action button lives in the DataTable's search bar, not floating
-                // inside a modal header). Also fixes a real reachability gap this uncovered: since
-                // the picker modal now blocks its own content behind a "Not connected" panel when
-                // Origami isn't configured (see employee-sync.js), Sync Log used to be unreachable
-                // in that state too -- it opens its own separate modal and reads past history only,
-                // so it doesn't need a live connection at all.
-                if ($searchDiv.find('#btnOpenEmployeeSyncLog').length === 0) {
-                    let syncLogBtn = `
-                        <button class="btn btn-outline-secondary ms-1" id="btnOpenEmployeeSyncLog" type="button">
-                            <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="employee_sync_log_button">Sync Log</span>
-                        </button>
-                    `;
-                    $searchDiv.append(syncLogBtn);
-                }
-            }
-            if (typeof updateText === 'function') updateText($searchDiv[0]);
-            let $input = $searchDiv.find('input').off('.employeeSearch');
-            $input.on('keypress.employeeSearch', function (e) {
-                if (e.keyCode === 13) {
-                    self.search(this.value).draw();
-                }
-                if(e.value === "") {
-                    self.search(this.value).draw();
-                }
-            });
-            // 2026-08-27, explicit request: Excel-style per-column header filter (proof-of-concept,
-            // server mode -- see table-column-filter.js's own docblock). Excludes the avatar/
-            // completeness/actions columns (not meaningfully filterable), same "only columns
-            // explicitly opted in get a filter" convention that component documents.
-            initExcelColumnFilters(self, {
-                mode: 'server',
-                // 2026-08-28: shifted +1 from index 4 onward -- a new "Source" column (data_source
-                // badge) was inserted right after Employee No. It's deliberately absent from this
-                // list (no `{ index: 4, key: 'data_source' }` entry) since it isn't a real filter
-                // target here -- same "only columns explicitly listed get filter UI" rule this
-                // module's own docblock states (avatar/completeness/actions columns are excluded
-                // the same way).
-                // 2026-08-29: shifted AGAIN -- a checkbox column (index 1, bulk sync selection) and
-                // an Email column (index 7, right after Phone) were both inserted. Email itself is
-                // included here too (same shape as Phone, genuinely filterable contact info) --
-                // EmployeeModel::listColumnExprMap() now has an 'email' entry to match.
-                columns: [
-                    { index: 3, key: 'employee_no' },
-                    { index: 5, key: 'name' },
-                    { index: 6, key: 'phone' },
-                    { index: 7, key: 'email' },
-                    { index: 8, key: 'role' },
-                    { index: 9, key: 'position' },
-                    { index: 10, key: 'department' },
-                    { index: 11, key: 'team' },
-                    { index: 12, key: 'shift' },
-                    { index: 13, key: 'branch' },
-                    { index: 14, key: 'start_work_date' },
-                    { index: 15, key: 'status' },
-                    // 2026-08-31: new "จ่ายเงินเดือน" badge column, index 16 -- see
-                    // EmployeeModel::listColumnExprMap()'s own 'payroll_participant' entry.
-                    { index: 16, key: 'payroll_participant' },
-                ],
-                fetchValues: function (key, done) {
-                    const filters = currentStatusFilters();
-                    const payload = Object.assign({ column: key, status: filters.status, employment_status: filters.employment_status }, currentEmployeeExtraFilters());
-                    payload.column_filters = getColumnFilterValues(tb_employee);
-                    $.ajax({
-                        url: `${BASE_URL}/api/employee.list-column-values`,
-                        method: 'POST',
-                        data: payload,
-                        dataType: 'json'
-                    }).done(function (res) {
-                        done((res && res.values) || []);
-                    }).fail(function () {
-                        done([]);
-                    });
                 },
-                onApply: function () { tb_employee.ajax.reload(null, false); }
-            });
+                {
+                    data: null,
+                    orderable: false,
+                    className: 'text-center',
+                    responsivePriority: 8,
+                    render: function (data, type, row) {
+                        // 2026-08-30, real gap found and fixed (explicit report: "Sync รูปมาแล้ว ในหน้า
+                        // Employee List ยังไม่แสดง") -- profile_photo_path was never selected by
+                        // EmployeeModel::list() at all (see that method's own SELECT list), so this
+                        // column always fell back to the plain initial-letter circle even for an
+                        // employee with a real synced/uploaded photo on file.
+                        if (row.profile_photo_path) {
+                            return `<img src="${BASE_URL}/${row.profile_photo_path}" class="employee-list-avatar-img" alt="">`;
+                        }
+                        const letter = (row.name || '').trim().charAt(0).toUpperCase() || '?';
+                        return `<div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold" style="width: 38px; height: 38px; min-width: 38px; background-color: #007aff;">${letter}</div>`;
+                    }
+                },
+                { data: "employee_no", responsivePriority: 2 },
+                {
+                    // 2026-08-28, same-day follow-up: "สัญลักษณ์ Sync กับ Manual สร้าง ปรับให้แสดงผลสวยๆ
+                    // และอยู่ใน Column ที่เป็นระเบียบ" -- was a bare icon squeezed onto the end of the
+                    // Employee No. column (see git history for that version's own reasoning); the user
+                    // came back asking for a proper, tidy column instead. `orderable: false` (same as
+                    // the completeness column further along) means this needs ZERO changes to
+                    // EmployeeModel::list()'s sortColumns/listColumnExprMap index map -- unlike a
+                    // sortable column, a display-only one costs nothing to insert anywhere in this
+                    // array. Same 3-way badge convention (colored bg-*-subtle/text-* pill) already
+                    // established by Manual Entry's own list (sourceBadgeMe()) and Payroll Run Detail's
+                    // employee list (dataSourceBadgeRd()), reusing their existing source_manual/
+                    // source_sync/source_import i18n keys.
+                    data: "data_source",
+                    orderable: false,
+                    responsivePriority: 8,
+                    render: function (data, type) {
+                        if (type !== 'display') return data;
+                        const label = langData['source_' + (data || 'manual')] || data || '';
+                        return `<span class="text-muted">${escapeHtml(label)}</span>`;
+                    }
+                },
+                { data: "name", responsivePriority: 1 },
+                { data: "phone", render: d => d || '-', responsivePriority: 9 },
+                // 2026-08-29, explicit request: "เพิ่ม Email ในหน้า List ของพนักงานด้วยครับ" -- already
+                // selected server-side (EmployeeModel::list()'s own `e.personal_email AS email`), just
+                // never rendered as a column here before now.
+                { data: "email", render: d => d || '-', responsivePriority: 9 },
+                { data: "role", responsivePriority: 6 },
+                { data: "position", render: d => d || '-', responsivePriority: 7 },
+                { data: "department", responsivePriority: 5 },
+                { data: "team", render: d => d || '-', responsivePriority: 10 },
+                { data: "shift", render: d => d || '-', responsivePriority: 10 },
+                { data: "branch", responsivePriority: 7 },
+                // Plain render is safe here (unlike the client-side tables elsewhere in this pass) --
+                // this table is serverSide:true, so sorting is done server-side via ORDER BY on the
+                // real DB column, entirely unaffected by how the client renders it for display.
+                { data: "start_work_date", render: d => formatDisplayDate(d), responsivePriority: 6 },
+                {
+                    data: "status",
+                    responsivePriority: 4,
+                    render: function (data) {
+                        const key = String(data || '').toLowerCase();
+                        if (['active', 'probation', 'suspended', 'resigned', 'terminated'].indexOf(key) !== -1) return statusBadgeHtml(key, 'employee_status');
+                        return `<span class="text-muted">${escapeHtml(data || '')}</span>`;
+                    }
+                },
+                // 2026-08-31, explicit request: "ในตารางให้มีสัญลักษณ์บอกด้วยว่าจ่ายหรือไม่จ่ายเงินเดือน" --
+                // object-form render (Table convention: display differs from the raw sort/filter value)
+                // reading `payroll_participant_flag` (EmployeeModel::list()'s own deliberately-different
+                // alias for `is_payroll_participant`, see that method's own comment on why the bare key
+                // would have been stripped before reaching here).
+                {
+                    data: "payroll_participant_flag",
+                    responsivePriority: 6,
+                    render: {
+                        display: function (d) {
+                            return Number(d) === 1
+                                ? statusBadgeHtml('yes', 'payroll_participant')
+                                : statusBadgeHtml('no', 'payroll_participant');
+                        },
+                        sort: d => Number(d) || 0,
+                        filter: d => Number(d) || 0,
+                    }
+                },
+                {
+                    data: "completeness",
+                    orderable: false,
+                    responsivePriority: 5,
+                    render: function (data) {
+                        return completenessRingHtml(data);
+                    }
+                },
+                {
+                    data: null,
+                    orderable: false,
+                    // 2026-08-27, real bug found and fixed (explicit report: "ปุ่มแก้ไขปุ่มลบ หายไปครับ
+                    // column ท้าย") -- had this backwards: DataTables Responsive's `className: 'never'`
+                    // does NOT mean "never hidden" -- per its own source (`_classLogic()`), `never` is
+                    // treated exactly like `className: 'none'`: "never show this column in the table at
+                    // all, only reachable via the expand row" -- i.e. the OPPOSITE of what was wanted,
+                    // which is why the buttons vanished outright instead of just staying put. The correct
+                    // class for "always visible, never collapse into the expand row" is `all`/`dtr-all`
+                    // (confirmed directly against the extension's own source, not guessed a second time).
+                    className: 'all',
+                    responsivePriority: 1,
+                    render: function (data, type, row) {
+                        // 2026-08-28, explicit follow-up: "สามารถกดได้จากในหน้า List" -- the per-employee
+                        // Re-Sync/Sync action (previously only reachable from inside Employee Detail's own
+                        // profile header, see detail.js's updateOrigamiSyncSummary()) is now also available
+                        // right here per-row, so an admin scanning the whole roster doesn't need to open
+                        // every employee individually just to sync them. Same endpoint
+                        // (api/employee-sync.resync-one), same employee_no fallback matching for a row
+                        // with no origami_ref_id yet -- see EmployeeSyncModel::resyncOne()'s own docblock.
+                        // Gated on IS_ORIGAMI_HR_LINKED same as the bulk "Sync from Origami"/"Sync Log"
+                        // buttons above (a company with no Origami HR link at all has nothing to sync).
+                        // 2026-08-29, explicit request: "ปุ่ม Sync ให้เปลี่ยนเป็นสีฟ้าทั้งในหน้า List และ
+                        // Detail" -- was text-secondary (linked)/text-warning (not-yet-linked), now
+                        // uniformly blue regardless of link state (per the request's own plain wording).
+                        // `text-info` specifically, not `text-primary` -- this app's own :root override
+                        // (see style.css's ".btn-primary" section) repoints --bs-primary at brand orange,
+                        // so `text-primary` would silently render orange here, not blue; --bs-info was
+                        // never touched, so it's still Bootstrap's real cyan-blue.
+                        let syncBtn = '';
+                        if (typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED) {
+                            syncBtn = `<button class="btn btn-link btn-circle-action text-info sync-one-employee" data-id="${row.id}" data-i18n-tooltip="employee_sync_list_action_title"><i class="fa-solid fa-rotate"></i></button>`;
+                        }
+                        // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+                        // ".btn-circle-action" section) replace the old adjacent .btn-group -- Employee
+                        // List first, per the request's own wording.
+                        return `<div class="d-flex gap-1 justify-content-center">
+                            <button class="btn btn-link btn-circle-action text-warning manage-employee" data-id="${row.employee_no}" data-i18n-tooltip="edit"><i class="fa-solid fa-pen-to-square"></i></button>
+                            ${syncBtn}
+                            <button class="btn btn-link btn-circle-action text-danger delete-employee" data-id="${row.id}" data-i18n-tooltip="delete"><i class="fa-solid fa-trash-can"></i></button>
+                        </div>`;
+                    }
+                }
+            ],
+            initComplete: function () {
+                let self = this.api();
+                let $wrapper = $(self.table().container());
+                let $searchDiv = $wrapper.find('.dt-search');
+                // 2026-08-29, explicit request: "โดยปุ่ม Sync หลายรายการให้อยู่ต่อกับ Show 50 entries" --
+                // deliberately injected into `.dt-length` (the "Show N entries" control), NOT `.dt-search`
+                // where every other button on this page lives -- the request specifically asked for this
+                // one to sit next to that control instead of the usual search-bar button row.
+                let $lengthDiv = $wrapper.find('.dt-length');
+                if (typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED && $lengthDiv.find('#btnBulkSyncSelected').length === 0) {
+                    let bulkSyncBtn = `
+                        <button class="btn btn-outline-secondary ms-2" id="btnBulkSyncSelected" type="button" disabled>
+                            <i class="fa-solid fa-rotate me-2"></i><span data-i18n="employee_bulk_sync_button">Sync Selected</span>
+                            <span class="count-inline" id="employeeBulkSyncCount">0</span>
+                        </button>
+                    `;
+                    $lengthDiv.append(bulkSyncBtn);
+                }
+                if ($searchDiv.find('.manage-employee').length === 0) {
+                    // 2026-08-30, real bug found and fixed (explicit report: "ปุ่ม 'เพิ่มพนักงานใหม่' ไม่เปลี่ยน
+                    // ภาษา") -- this button is built ONCE by initComplete, which only re-fires on a true
+                    // DataTables re-init; the `$searchDiv.find('.manage-employee').length === 0` guard
+                    // above means it's never rebuilt again after that (initEmployeeTable()'s own re-call
+                    // path just does an ajax.reload(), it doesn't re-run initComplete at all -- see that
+                    // function's own docblock). Since the label text was plain-templated with no
+                    // `data-i18n`, it stayed frozen in whatever language was active the first time this
+                    // table ever initialized. Adding `data-i18n` lets the EXISTING generic
+                    // updateText(document) sweep (already run on every language change via
+                    // applyLanguage()) pick it up for free -- no table-rebuild needed at all.
+                    let btn = `
+                        <button class="btn btn-primary manage-employee ms-1" data-id="">
+                            <i class="fa-solid fa-plus me-2"></i><span data-i18n="employee">${langData['employee'] || 'Employee'}</span>
+                        </button>
+                    `;
+                    $searchDiv.append(btn);
+                }
+                // 2026-08-28, explicit request: "ต้องการปุ่ม Sync ข้อมูล Employee จากระบบ Origami" --
+                // see public/js/employee/employee-sync.js for the picker modal this opens.
+                // 2026-08-28, same-day follow-up: "ถ้าไม่ใช่บริษัทที่มาจาก Origami ปุ่ม Sync จะไม่ขึ้น" --
+                // both Sync buttons below now gated on IS_ORIGAMI_HR_LINKED (set once in
+                // layout/header.php from companies.ref_id), not just left to fail with a "not linked"
+                // message after the admin already clicked in -- a company with no Origami HR link at
+                // all never sees these buttons.
+                if (typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED) {
+                    if ($searchDiv.find('#btnOpenEmployeeSync').length === 0) {
+                        // Sync is a secondary action (rules.md 4); "Sync Log" below is a history viewer, also secondary.
+                        let syncBtn = `
+                            <button class="btn btn-outline-secondary ms-1" id="btnOpenEmployeeSync" type="button">
+                                <i class="fa-solid fa-rotate me-2"></i><span data-i18n="employee_sync_button">Sync from Origami</span>
+                            </button>
+                        `;
+                        $searchDiv.append(syncBtn);
+                    }
+                    // 2026-08-28, explicit request: "ย้ายปุ่มประวัติการ Sync ให้หน่อยครับ ตอนนี้ดูสะเปะสะปะ"
+                    // (move the Sync Log button, it looks scattered right now) -- was squeezed into the
+                    // picker modal's own header between the title and the close button. Moved out here
+                    // as a proper peer button next to Sync from Origami, matching this app's own
+                    // convention (every action button lives in the DataTable's search bar, not floating
+                    // inside a modal header). Also fixes a real reachability gap this uncovered: since
+                    // the picker modal now blocks its own content behind a "Not connected" panel when
+                    // Origami isn't configured (see employee-sync.js), Sync Log used to be unreachable
+                    // in that state too -- it opens its own separate modal and reads past history only,
+                    // so it doesn't need a live connection at all.
+                    if ($searchDiv.find('#btnOpenEmployeeSyncLog').length === 0) {
+                        let syncLogBtn = `
+                            <button class="btn btn-outline-secondary ms-1" id="btnOpenEmployeeSyncLog" type="button">
+                                <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="employee_sync_log_button">Sync Log</span>
+                            </button>
+                        `;
+                        $searchDiv.append(syncLogBtn);
+                    }
+                }
+                if (typeof updateText === 'function') updateText($searchDiv[0]);
+                let $input = $searchDiv.find('input').off('.employeeSearch');
+                $input.on('keypress.employeeSearch', function (e) {
+                    if (e.keyCode === 13) {
+                        self.search(this.value).draw();
+                    }
+                    if(e.value === "") {
+                        self.search(this.value).draw();
+                    }
+                });
+                // 2026-08-27, explicit request: Excel-style per-column header filter (proof-of-concept,
+                // server mode -- see table-column-filter.js's own docblock). Excludes the avatar/
+                // completeness/actions columns (not meaningfully filterable), same "only columns
+                // explicitly opted in get a filter" convention that component documents.
+                initExcelColumnFilters(self, {
+                    mode: 'server',
+                    // 2026-08-28: shifted +1 from index 4 onward -- a new "Source" column (data_source
+                    // badge) was inserted right after Employee No. It's deliberately absent from this
+                    // list (no `{ index: 4, key: 'data_source' }` entry) since it isn't a real filter
+                    // target here -- same "only columns explicitly listed get filter UI" rule this
+                    // module's own docblock states (avatar/completeness/actions columns are excluded
+                    // the same way).
+                    // 2026-08-29: shifted AGAIN -- a checkbox column (index 1, bulk sync selection) and
+                    // an Email column (index 7, right after Phone) were both inserted. Email itself is
+                    // included here too (same shape as Phone, genuinely filterable contact info) --
+                    // EmployeeModel::listColumnExprMap() now has an 'email' entry to match.
+                    columns: [
+                        { index: 3, key: 'employee_no' },
+                        { index: 5, key: 'name' },
+                        { index: 6, key: 'phone' },
+                        { index: 7, key: 'email' },
+                        { index: 8, key: 'role' },
+                        { index: 9, key: 'position' },
+                        { index: 10, key: 'department' },
+                        { index: 11, key: 'team' },
+                        { index: 12, key: 'shift' },
+                        { index: 13, key: 'branch' },
+                        { index: 14, key: 'start_work_date' },
+                        { index: 15, key: 'status' },
+                        // 2026-08-31: new "จ่ายเงินเดือน" badge column, index 16 -- see
+                        // EmployeeModel::listColumnExprMap()'s own 'payroll_participant' entry.
+                        { index: 16, key: 'payroll_participant' },
+                    ],
+                    fetchValues: function (key, done) {
+                        const filters = currentStatusFilters();
+                        const payload = Object.assign({ column: key, status: filters.status, employment_status: filters.employment_status }, currentEmployeeExtraFilters());
+                        payload.column_filters = getColumnFilterValues(tb_employee);
+                        $.ajax({
+                            url: `${BASE_URL}/api/employee.list-column-values`,
+                            method: 'POST',
+                            data: payload,
+                            dataType: 'json'
+                        }).done(function (res) {
+                            done((res && res.values) || []);
+                        }).fail(function () {
+                            done([]);
+                        });
+                    },
+                    onApply: function () { tb_employee.ajax.reload(null, false); }
+                });
+            },
+            drawCallback: function () {
+                getTableLang();
+                updateEmployeeBulkSyncUi();
+            }
         },
-        drawCallback: function () {
-            getTableLang();
-            updateEmployeeBulkSyncUi();
-        }
     });
 }
 // 2026-08-29, explicit request: "ในหน้า List เพิ่ม checkbox ด้านหน้า เพื่อให้เลือกหลายรายการแล้วกด Sync
@@ -790,90 +789,87 @@ function initEmployeeRecheckTable() {
         tb_employee_recheck.ajax.reload(null, false);
         return;
     }
-    tb_employee_recheck = $('#tb_employee_recheck').DataTable({
+    tb_employee_recheck = initSharedDataTable('#tb_employee_recheck', {
         serverSide: true,
-        processing: true,
-        ordering: false,
-        // 2026-09-08, explicit follow-up request: "อยากให้ column รหัสพนักงาน และชื่อพนักงาน fixed อยู่กับที่
-        // ฝั่งซ้าย...และ column Action อยากให้ fixed อยู่ขวาตลอด ส่วน Column ส่วนกลางๆ อยากให้ใช้เมาส์เลื่อนดู
-        // ข้อมูลได้" -- reverts the 2026-08-30 responsive:true/column-collapse choice back to a frozen-
-        // column layout. 2026-09-08 same-day follow-up ("ตอนนี้ใช้เมาส์เลื่อนเพื่อลากดู column ไม่ได้") --
-        // the FIRST attempt used DataTables' own core `scrollX` option, which needs CSS
-        // (`.dataTables_scrollBody { overflow-x:auto; }` etc.) that lives in the BASE `datatables.net`
-        // skin's own stylesheet -- this app only ever loads the `datatables.net-bs5` skin on top of
-        // it, never that base skin itself, so `scrollX` had nothing to actually create a scrollable
-        // container with (confirmed by grepping the installed CSS directly). Rebuilt on this app's own
-        // ALREADY-established, ALREADY-working convention instead (see list.php's own comment on this
-        // table, and CLAUDE.md/style.css's "no DataTables scrollX, just .table-responsive" note) --
-        // the view now wraps this table in a plain `.table-responsive` div, and `initStickyColumns()`
-        // (public/js/sticky-table-columns.js, plain CSS position:sticky) freezes columns 1-2 (Employee
-        // No.+Employee) on the left and the last column (Actions) on the right directly on this table's
-        // own cells -- NOT DataTables' own FixedColumns extension, which is confirmed broken in this
-        // app for an unrelated reason (see that file's own docblock). Every field-readiness/
-        // Identification/Bank Details/Status column in between scrolls horizontally instead of
-        // collapsing into an expand row -- the dtr-control column from the old responsive:true layout
-        // is gone, nothing left to expand.
-        drawCallback: function () { initStickyColumns('#tb_employee_recheck', { left: 2, right: 1 }); },
+        searchThreshold: -1, // keep the search bar (and the buttons injected into it) visible at any row count
         ajax: {
             url: `${BASE_URL}/api/employee.recheck-list`,
             type: 'POST',
             data: function (d) { Object.assign(d, currentEmployeeRecheckFilters()); }
         },
-        columns: [
-            // 2026-08-31, explicit request: "ตารางพนักงานทุกตาราง แยก code กับชื่อเป็นคนละ Column" -- was
-            // one column with employee_no/name stacked as 2 divs, split into 2 real columns (matches
-            // the main #tb_employee table's own convention, which already had them separate).
-            { data: 'employee_no', render: d => escapeHtml(d || '-') },
-            { data: 'name', render: d => escapeHtml(d || '-') },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.title) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.gender) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.name_th) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.name_en) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.date_of_birth) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.nationality) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckIdentificationHtml(row.field_readiness) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.personal_email) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.mobile_no) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.department_id) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.position_id) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.branch_id) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.employment_date) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckOtSummaryHtml(row.ot_summary) },
-            { data: 'sso_status', className: 'text-center', render: d => recheckSsoStatusHtml(d) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckBankDetailsHtml(row) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.base_salary_amount) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.salary_effective_date) },
-            { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.tax_calculation_method) },
-            { data: 'is_ready', className: 'text-center', render: d => statusBadgeHtml(d ? 'ready' : 'not_ready', 'recheck_ready') },
-            {
-                // 2026-08-31, explicit request: "เพิ่มปุ่มให้นำออกจากการจ่ายเงินเดือน และมีปุ่มเพิ่ม Employee ที่
-                // ไม่ทำจ่ายเงินเดือนกลับเข้ามาทำเงินเดือน" -- every row in a given ajax response shares the
-                // SAME is_payroll_participant value (recheckList() forces it via $participantMode, see that
-                // method's own comment), so branching on the current view toggle (not a per-row field) is
-                // correct and avoids needing to select+strip yet another raw column server-side.
-                data: null, className: 'text-center', orderable: false, render: (d, t, row) => {
-                    // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
-                    // ".btn-circle-action" section) replace the old adjacent .btn-group.
-                    const editBtn = `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-recheck-edit" data-employee-no="${escapeHtml(row.employee_no)}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>`;
-                    const toggleBtn = currentEmployeeRecheckView === 'excluded'
-                        ? `<button type="button" class="btn btn-link btn-circle-action text-success btn-recheck-add-back" data-id="${row.id}" data-employee-no="${escapeHtml(row.employee_no)}" title="${langData['add_back_to_payroll'] || 'Add Back to Payroll'}"><i class="fa-solid fa-user-plus"></i></button>`
-                        : `<button type="button" class="btn btn-link btn-circle-action text-danger btn-recheck-remove" data-id="${row.id}" data-employee-no="${escapeHtml(row.employee_no)}" title="${langData['remove_from_payroll'] || 'Remove from Payroll'}"><i class="fa-solid fa-user-slash"></i></button>`;
-                    return `<div class="d-flex gap-1 justify-content-center">${editBtn}${toggleBtn}</div>`;
-                }
-            },
-        ],
-        // 2026-08-30, real gap found and fixed (same audit as tb_login_history_overview above) --
-        // was missing entirely on this table too, same fix.
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        // 2026-09-08, round 3 follow-up -- fires ONCE, after DataTables has already built its own
-        // length/search/info/pagination controls as siblings of the table (see list.php's own comment
-        // on this table for why doing this any earlier, e.g. a static wrapper in the view, was wrong).
-        // `initTableDragScroll()` (public/js/sticky-table-columns.js) wraps ONLY the `<table>` element
-        // itself in `.table-responsive` at this point and adds real click-and-hold-then-drag panning
-        // on top of it (plain `overflow-x:auto` alone only ever supports scrollbar-drag/shift+wheel).
-        initComplete: function () { initTableDragScroll('#tb_employee_recheck'); },
+        dtOptions: {
+            ordering: false,
+            // 2026-09-08, explicit follow-up request: "อยากให้ column รหัสพนักงาน และชื่อพนักงาน fixed อยู่กับที่
+            // ฝั่งซ้าย...และ column Action อยากให้ fixed อยู่ขวาตลอด ส่วน Column ส่วนกลางๆ อยากให้ใช้เมาส์เลื่อนดู
+            // ข้อมูลได้" -- reverts the 2026-08-30 responsive:true/column-collapse choice back to a frozen-
+            // column layout. 2026-09-08 same-day follow-up ("ตอนนี้ใช้เมาส์เลื่อนเพื่อลากดู column ไม่ได้") --
+            // the FIRST attempt used DataTables' own core `scrollX` option, which needs CSS
+            // (`.dataTables_scrollBody { overflow-x:auto; }` etc.) that lives in the BASE `datatables.net`
+            // skin's own stylesheet -- this app only ever loads the `datatables.net-bs5` skin on top of
+            // it, never that base skin itself, so `scrollX` had nothing to actually create a scrollable
+            // container with (confirmed by grepping the installed CSS directly). Rebuilt on this app's own
+            // ALREADY-established, ALREADY-working convention instead (see list.php's own comment on this
+            // table, and CLAUDE.md/style.css's "no DataTables scrollX, just .table-responsive" note) --
+            // the view now wraps this table in a plain `.table-responsive` div, and `initStickyColumns()`
+            // (public/js/sticky-table-columns.js, plain CSS position:sticky) freezes columns 1-2 (Employee
+            // No.+Employee) on the left and the last column (Actions) on the right directly on this table's
+            // own cells -- NOT DataTables' own FixedColumns extension, which is confirmed broken in this
+            // app for an unrelated reason (see that file's own docblock). Every field-readiness/
+            // Identification/Bank Details/Status column in between scrolls horizontally instead of
+            // collapsing into an expand row -- the dtr-control column from the old responsive:true layout
+            // is gone, nothing left to expand.
+            drawCallback: function () { initStickyColumns('#tb_employee_recheck', { left: 2, right: 1 }); },
+            columns: [
+                // 2026-08-31, explicit request: "ตารางพนักงานทุกตาราง แยก code กับชื่อเป็นคนละ Column" -- was
+                // one column with employee_no/name stacked as 2 divs, split into 2 real columns (matches
+                // the main #tb_employee table's own convention, which already had them separate).
+                { data: 'employee_no', render: d => escapeHtml(d || '-') },
+                { data: 'name', render: d => escapeHtml(d || '-') },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.title) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.gender) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.name_th) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.name_en) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.date_of_birth) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.nationality) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckIdentificationHtml(row.field_readiness) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.personal_email) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.mobile_no) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.department_id) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.position_id) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.branch_id) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.employment_date) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckOtSummaryHtml(row.ot_summary) },
+                { data: 'sso_status', className: 'text-center', render: d => recheckSsoStatusHtml(d) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckBankDetailsHtml(row) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.base_salary_amount) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.salary_effective_date) },
+                { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.tax_calculation_method) },
+                { data: 'is_ready', className: 'text-center', render: d => statusBadgeHtml(d ? 'ready' : 'not_ready', 'recheck_ready') },
+                {
+                    // 2026-08-31, explicit request: "เพิ่มปุ่มให้นำออกจากการจ่ายเงินเดือน และมีปุ่มเพิ่ม Employee ที่
+                    // ไม่ทำจ่ายเงินเดือนกลับเข้ามาทำเงินเดือน" -- every row in a given ajax response shares the
+                    // SAME is_payroll_participant value (recheckList() forces it via $participantMode, see that
+                    // method's own comment), so branching on the current view toggle (not a per-row field) is
+                    // correct and avoids needing to select+strip yet another raw column server-side.
+                    data: null, className: 'text-center', orderable: false, render: (d, t, row) => {
+                        // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+                        // ".btn-circle-action" section) replace the old adjacent .btn-group.
+                        const editBtn = `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-recheck-edit" data-employee-no="${escapeHtml(row.employee_no)}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>`;
+                        const toggleBtn = currentEmployeeRecheckView === 'excluded'
+                            ? `<button type="button" class="btn btn-link btn-circle-action text-success btn-recheck-add-back" data-id="${row.id}" data-employee-no="${escapeHtml(row.employee_no)}" title="${langData['add_back_to_payroll'] || 'Add Back to Payroll'}"><i class="fa-solid fa-user-plus"></i></button>`
+                            : `<button type="button" class="btn btn-link btn-circle-action text-danger btn-recheck-remove" data-id="${row.id}" data-employee-no="${escapeHtml(row.employee_no)}" title="${langData['remove_from_payroll'] || 'Remove from Payroll'}"><i class="fa-solid fa-user-slash"></i></button>`;
+                        return `<div class="d-flex gap-1 justify-content-center">${editBtn}${toggleBtn}</div>`;
+                    }
+                },
+            ],
+            // 2026-09-08, round 3 follow-up -- fires ONCE, after DataTables has already built its own
+            // length/search/info/pagination controls as siblings of the table (see list.php's own comment
+            // on this table for why doing this any earlier, e.g. a static wrapper in the view, was wrong).
+            // `initTableDragScroll()` (public/js/sticky-table-columns.js) wraps ONLY the `<table>` element
+            // itself in `.table-responsive` at this point and adds real click-and-hold-then-drag panning
+            // on top of it (plain `overflow-x:auto` alone only ever supports scrollbar-drag/shift+wheel).
+            initComplete: function () { initTableDragScroll('#tb_employee_recheck'); },
+        },
     });
 }
 $(document).on('shown.bs.tab', '#employee-recheck-top-tab', function () {

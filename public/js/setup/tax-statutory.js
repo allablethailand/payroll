@@ -146,7 +146,8 @@ function initCompanySettingTable() {
         $('#tb_company_setting').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_company_setting = $('#tb_company_setting').DataTable({
+    tb_company_setting = initSharedDataTable('#tb_company_setting', {
+        dtOptions: {
         responsive: true,
         paging: false,
         info: false,
@@ -184,7 +185,6 @@ function initCompanySettingTable() {
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => csActionButtonsTs(row) }
         ],
-        language: getTableLang(),
         drawCallback: function () { getTableLang(); },
         // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
         // rollout. Same `searching:false` gotcha as `tb_rate_history` above (see that table's own
@@ -224,6 +224,7 @@ function initCompanySettingTable() {
                     { index: 5, key: 'adjustable' },
                 ]
             });
+        }
         }
     });
 }

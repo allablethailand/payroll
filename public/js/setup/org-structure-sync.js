@@ -62,7 +62,8 @@ function orgSyncUpdateSelectedCount() {
 }
 
 function orgSyncRenderTables() {
-    $('#tb_org_sync_new').DataTable({
+    initSharedDataTable('#tb_org_sync_new', {
+        dtOptions: {
         destroy: true, responsive: true, paging: false, info: false, searching: false, ordering: false,
         data: orgSyncLastNewRows,
         language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
@@ -70,8 +71,10 @@ function orgSyncRenderTables() {
             { data: 'ref_id', orderable: false, className: 'text-center', render: d => orgSyncCheckboxCellHtml(d) },
             { data: null, render: (d, t, row) => orgSyncRenderItemCell(row) },
         ],
+        }
     });
-    $('#tb_org_sync_existing').DataTable({
+    initSharedDataTable('#tb_org_sync_existing', {
+        dtOptions: {
         destroy: true, responsive: true, paging: false, info: false, searching: false, ordering: false,
         data: orgSyncLastExistingRows,
         language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
@@ -80,6 +83,7 @@ function orgSyncRenderTables() {
             { data: null, render: (d, t, row) => orgSyncRenderItemCell(row, row.existing_code) },
             { data: null, render: (d, t, row) => orgSyncUpdateBadgeHtml(row) },
         ],
+        }
     });
 }
 

@@ -116,7 +116,7 @@ function getShiftWorkDaysPayload() {
 }
 function renderShift() {
     if ($.fn.DataTable.isDataTable('#tb_shift')) { $('#tb_shift').DataTable().ajax.reload(null, false); return; }
-    dtShift = $('#tb_shift').DataTable({
+    dtShift = initSharedDataTable('#tb_shift', { dtOptions: {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/shift.list`, dataSrc: 'data' },
         columns: [
@@ -141,8 +141,8 @@ function renderShift() {
             // API consumer wants bulk-assign later.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openShiftModal(${row.id})`, `askDelete('shift', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}')`, structureAssignExtraBtns('shift', row.id, currentLang === 'th' ? row.shift_name_th : row.shift_name_en)) }
         ],
-        ordering: false, lengthChange: false, pageLength: 10,
-        language: { ...getTableLang(), emptyTable: langData['no_shifts_yet'] || 'No shifts have been added yet.' },
+        searching: true, ordering: false, lengthChange: false, pageLength: 10,
+        language: { emptyTable: langData['no_shifts_yet'] || 'No shifts have been added yet.' },
         initComplete: function () {
             addButtonInitComplete('btn-add-shift', 'fa-solid fa-plus', 'add_shift', 'Shift', 'openShiftModal()').call(this);
             // 2026-09-04, Backlog Phase 9, T050 -- Shift has a real Origami-side master
@@ -182,7 +182,7 @@ function renderShift() {
                 ]
             });
         }
-    });
+    } });
 }
 // 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
 // .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).
@@ -280,7 +280,7 @@ function updateHolidayModeHint() {
 }
 function renderHoliday() {
     if ($.fn.DataTable.isDataTable('#tb_holiday')) { $('#tb_holiday').DataTable().ajax.reload(null, false); return; }
-    dtHoliday = $('#tb_holiday').DataTable({
+    dtHoliday = initSharedDataTable('#tb_holiday', { dtOptions: {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/holiday.list`, dataSrc: 'data' },
         columns: [
@@ -295,8 +295,8 @@ function renderHoliday() {
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openHolidayModal(${row.id})`, `askDelete('holiday', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
         ],
-        ordering: false, lengthChange: false, pageLength: 10,
-        language: { ...getTableLang(), emptyTable: langData['no_holidays_found'] || 'No holidays found.' },
+        searching: true, ordering: false, lengthChange: false, pageLength: 10,
+        language: { emptyTable: langData['no_holidays_found'] || 'No holidays found.' },
         initComplete: function () {
             addButtonInitComplete('btn-add-holiday', 'fa-solid fa-plus', 'add_holiday', 'Holiday', 'openHolidayModal()').call(this);
             // 2026-08-28, explicit request: "เพิ่มให้ Sync ข้อมูลวันหยุดตามประกาศจาก API ที่มี" -- see
@@ -351,7 +351,7 @@ function renderHoliday() {
                 ]
             });
         }
-    });
+    } });
 }
 // 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
 // .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).
@@ -449,7 +449,7 @@ function saveHoliday(btnEl) {
 let dtWorkLocation;
 function renderWorkLocation() {
     if ($.fn.DataTable.isDataTable('#tb_work_location')) { $('#tb_work_location').DataTable().ajax.reload(null, false); return; }
-    dtWorkLocation = $('#tb_work_location').DataTable({
+    dtWorkLocation = initSharedDataTable('#tb_work_location', { dtOptions: {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/work-location.list`, dataSrc: 'data' },
         columns: [
@@ -463,8 +463,8 @@ function renderWorkLocation() {
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openWorkLocationModal(${row.id})`, `askDelete('location', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.location_name_th : row.location_name_en)}')`, structureAssignExtraBtns('work_location', row.id, currentLang === 'th' ? row.location_name_th : row.location_name_en)) }
         ],
-        ordering: false, lengthChange: false, pageLength: 10,
-        language: { ...getTableLang(), emptyTable: langData['no_work_locations_yet'] || 'No work locations have been added yet.' },
+        searching: true, ordering: false, lengthChange: false, pageLength: 10,
+        language: { emptyTable: langData['no_work_locations_yet'] || 'No work locations have been added yet.' },
         initComplete: function () {
             addButtonInitComplete('btn-add-location', 'fa-solid fa-plus', 'add_work_location', 'Location', 'openWorkLocationModal()').call(this);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
@@ -480,7 +480,7 @@ function renderWorkLocation() {
                 ]
             });
         }
-    });
+    } });
 }
 // 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
 // .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).
@@ -546,7 +546,7 @@ function leaveQuotaUnitLabel(unit) {
 }
 function renderLeave() {
     if ($.fn.DataTable.isDataTable('#tb_leave')) { $('#tb_leave').DataTable().ajax.reload(null, false); return; }
-    dtLeave = $('#tb_leave').DataTable({
+    dtLeave = initSharedDataTable('#tb_leave', { dtOptions: {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/leave-type.list`, dataSrc: 'data' },
         columns: [
@@ -563,8 +563,8 @@ function renderLeave() {
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openLeaveModal(${row.id})`, `askDelete('leave', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
         ],
-        ordering: false, lengthChange: false, pageLength: 10,
-        language: { ...getTableLang(), emptyTable: langData['no_leave_types_found'] || 'No leave types found.' },
+        searching: true, ordering: false, lengthChange: false, pageLength: 10,
+        language: { emptyTable: langData['no_leave_types_found'] || 'No leave types found.' },
         initComplete: function () {
             addButtonInitComplete('btn-add-leave', 'fa-solid fa-plus', 'add_leave_type', 'Leave Type', 'openLeaveModal()').call(this);
             // "Apply Default" (2026-08-28) -- seeds the 10 starter leave types (see
@@ -598,7 +598,7 @@ function renderLeave() {
                 ]
             });
         }
-    });
+    } });
 }
 // 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
 // .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).
@@ -756,7 +756,7 @@ function otAssignSummary(row) {
 }
 function renderOt() {
     if ($.fn.DataTable.isDataTable('#tb_ot')) { $('#tb_ot').DataTable().ajax.reload(null, false); return; }
-    dtOt = $('#tb_ot').DataTable({
+    dtOt = initSharedDataTable('#tb_ot', { dtOptions: {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/ot-rate.list`, dataSrc: 'data' },
         columns: [
@@ -777,8 +777,8 @@ function renderOt() {
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openOtModal(${row.id})`, `askDelete('ot', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
         ],
-        ordering: false, lengthChange: false, pageLength: 10,
-        language: { ...getTableLang(), emptyTable: langData['no_ot_rate_sets_yet'] || 'No OT Rate Sets have been added yet.' },
+        searching: true, ordering: false, lengthChange: false, pageLength: 10,
+        language: { emptyTable: langData['no_ot_rate_sets_yet'] || 'No OT Rate Sets have been added yet.' },
         initComplete: function () {
             addButtonInitComplete('btn-add-ot', 'fa-solid fa-plus', 'add_ot_rate', 'OT Rate Set', 'openOtModal()').call(this);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
@@ -797,7 +797,7 @@ function renderOt() {
                 ]
             });
         }
-    });
+    } });
 }
 // 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
 // .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).

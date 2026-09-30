@@ -27,7 +27,19 @@ function initEcrRequestTable() {
         $('#tb_ecr_request').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_ecr_request = $('#tb_ecr_request').DataTable({
+    tb_ecr_request = initSharedDataTable('#tb_ecr_request', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'employee' },
+                { index: 1, key: 'language' },
+                { index: 2, key: 'requested_by' },
+                { index: 3, key: 'status' },
+                { index: 4, key: 'created_at' },
+            ]
+        },
+        dtOptions: {
+        searching: true,
         responsive: true,
         ajax: { url: `${BASE_URL}/api/employment-certificate-request.list`, dataSrc: 'data' },
         columns: [
@@ -55,9 +67,6 @@ function initEcrRequestTable() {
                 }
             }
         ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         order: [[4, 'desc']],
         initComplete: function () {
             const self = this.api();
@@ -70,18 +79,7 @@ function initEcrRequestTable() {
                     </button>
                 `);
             }
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode.
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'employee' },
-                    { index: 1, key: 'language' },
-                    { index: 2, key: 'requested_by' },
-                    { index: 3, key: 'status' },
-                    { index: 4, key: 'created_at' },
-                ]
-            });
+        }
         }
     });
 }

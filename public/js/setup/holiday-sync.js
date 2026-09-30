@@ -82,7 +82,8 @@ function hsUpdateSelectedCount() {
 }
 
 function hsRenderTables() {
-    $('#tb_holiday_sync_new').DataTable({
+    initSharedDataTable('#tb_holiday_sync_new', {
+        dtOptions: {
         destroy: true, responsive: true, paging: false, info: false, searching: false,
         data: holidaySyncLastNewRows,
         order: [[1, 'asc']],
@@ -92,8 +93,10 @@ function hsRenderTables() {
             { data: 'holiday_date', render: { display: (d, t, row) => hsRenderHolidayCell(row), sort: d => d, filter: d => d } },
             { data: null, orderable: false, render: (d, t, row) => hsNotesCellHtml(row) },
         ],
+        }
     });
-    $('#tb_holiday_sync_existing').DataTable({
+    initSharedDataTable('#tb_holiday_sync_existing', {
+        dtOptions: {
         destroy: true, responsive: true, paging: false, info: false, searching: false,
         data: holidaySyncLastExistingRows,
         order: [[1, 'asc']],
@@ -103,6 +106,7 @@ function hsRenderTables() {
             { data: 'holiday_date', render: { display: (d, t, row) => hsRenderHolidayCell(row), sort: d => d, filter: d => d } },
             { data: null, orderable: false, render: (d, t, row) => hsUpdateBadgeHtml(row) },
         ],
+        }
     });
 }
 

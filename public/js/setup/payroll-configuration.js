@@ -78,9 +78,18 @@ function initEarningTypeTable() {
         $('#tb_earning_type').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_earning_type = $('#tb_earning_type').DataTable({
-        processing: true,
+    tb_earning_type = initSharedDataTable('#tb_earning_type', {
         serverSide: true,
+        ajax: {
+            url: `${BASE_URL}/api/ped-type.list`,
+            type: 'POST',
+            data: function (d, settings) {
+                d.item_type = 'earning';
+                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
+            }
+        },
+        searchThreshold: -1,
+        dtOptions: {
         responsive: true,
         // 2026-09-02, Platform Hardening Phase 1.1 follow-up (explicit request: finish repositioning
         // the status switch to column 0 on every remaining table) -- default sort points to column 1
@@ -92,14 +101,6 @@ function initEarningTypeTable() {
         // fixing that separate sortColumns map here (same "don't take on that bug as a prerequisite"
         // decision already applied to Branch/Role/Department/Position/Rank/Team above).
         order: [[1, 'asc']],
-        ajax: {
-            url: `${BASE_URL}/api/ped-type.list`,
-            type: 'POST',
-            data: function (d, settings) {
-                d.item_type = 'earning';
-                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
-            }
-        },
         columns: [
             { data: null, orderable: false, render: (d, t, row) => pcRowStatusBadge(row) },
             { data: 'item_code', render: d => `<code class="fw-bold text-dark">${d}</code>` },
@@ -120,9 +121,6 @@ function initEarningTypeTable() {
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => actionButtons(row) }
         ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         initComplete: function () {
             const self = this.api();
             injectAddButton(self, 'earning', 'earning_type', 'Income Type');
@@ -156,6 +154,7 @@ function initEarningTypeTable() {
             });
         },
         drawCallback: function () { getTableLang(); }
+        }
     });
 }
 function initDeductionTypeTable() {
@@ -163,13 +162,8 @@ function initDeductionTypeTable() {
         $('#tb_deduction_type').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_deduction_type = $('#tb_deduction_type').DataTable({
-        processing: true,
+    tb_deduction_type = initSharedDataTable('#tb_deduction_type', {
         serverSide: true,
-        responsive: true,
-        // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- same repositioning + same accepted
-        // default-sort side effect as initEarningTypeTable()'s own identical change just above.
-        order: [[1, 'asc']],
         ajax: {
             url: `${BASE_URL}/api/ped-type.list`,
             type: 'POST',
@@ -178,6 +172,12 @@ function initDeductionTypeTable() {
                 d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
             }
         },
+        searchThreshold: -1,
+        dtOptions: {
+        responsive: true,
+        // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- same repositioning + same accepted
+        // default-sort side effect as initEarningTypeTable()'s own identical change just above.
+        order: [[1, 'asc']],
         columns: [
             { data: null, orderable: false, render: (d, t, row) => pcRowStatusBadge(row) },
             { data: 'item_code', render: d => `<code class="fw-bold text-dark">${d}</code>` },
@@ -196,9 +196,6 @@ function initDeductionTypeTable() {
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => actionButtons(row) }
         ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         initComplete: function () {
             const self = this.api();
             injectAddButton(self, 'deduction', 'deduction_type', 'Deduction Type');
@@ -231,6 +228,7 @@ function initDeductionTypeTable() {
             });
         },
         drawCallback: function () { getTableLang(); }
+        }
     });
 }
 // 2026-09-03, Manual Entry / Employee Salary tab review Phase 1B -- same conditional-field-visibility
@@ -1005,7 +1003,9 @@ function initPayrollCycleTable() {
         $('#tb_payroll_cycle').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_payroll_cycle = $('#tb_payroll_cycle').DataTable({
+    tb_payroll_cycle = initSharedDataTable('#tb_payroll_cycle', {
+        dtOptions: {
+        searching: true,
         responsive: true,
         ajax: {
             url: `${BASE_URL}/api/payroll-cycle.list`,
@@ -1029,9 +1029,6 @@ function initPayrollCycleTable() {
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => cycleActionButtons(row) }
         ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         initComplete: function () {
             const self = this.api();
             const $wrapper = $(self.table().container());
@@ -1062,6 +1059,7 @@ function initPayrollCycleTable() {
             });
         },
         drawCallback: function () { getTableLang(); }
+        }
     });
 }
 // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- reload after a successful status toggle,

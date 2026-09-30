@@ -127,26 +127,26 @@ function renderAnnualReportsTable() {
         $('#tb_annual_reports').find('tbody').empty();
     }
     if (rows.length === 0) return;
-    tb_annual_reports = $('#tb_annual_reports').DataTable({
-        data: rows,
-        responsive: true,
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        columns: [
-            // 2026-08-30, explicit request: "ในตารางอยากให้เพิ่ม icon ของรายงานแต่ละตัว ตอนนี้ตารางดูโล้นๆ" --
-            // reuses the SAME .reports-row-report-type-icon/.rt-* classes (this file's own <style>
-            // block in reports/index.php) and REPORT_TYPE_ICONS map Per-Cycle Reports' own rows
-            // already use, keyed off the same report_type value every row already carries.
-            { data: null, render: (d, t, report) => `<span class="reports-row-report-type-icon rt-${report.report_type}"><i class="fa-solid ${REPORT_TYPE_ICONS[report.report_type] || 'fa-file-lines'}"></i></span><span class="reports-row-report-name">${escapeHtml(reportLabel(report))}</span>` },
-            { data: null, className: 'text-center', render: (d, t, report) => (annualReportCounts[report.code] || {}).download_count || 0 },
-            { data: null, render: (d, t, report) => {
-                const c = annualReportCounts[report.code];
-                return c && c.last_downloaded_at ? formatDisplayDateTime(c.last_downloaded_at) : `<span class="text-muted">${langData['report_never_downloaded'] || 'Never'}</span>`;
-            } },
-            { data: null, className: 'text-center all', orderable: false, render: (d, t, report) => annualReportActionsHtml(report) },
-        ],
-        drawCallback: function () { getTableLang(); }
+    tb_annual_reports = initSharedDataTable('#tb_annual_reports', {
+        dtOptions: {
+            data: rows,
+            responsive: true,
+            columns: [
+                // 2026-08-30, explicit request: "ในตารางอยากให้เพิ่ม icon ของรายงานแต่ละตัว ตอนนี้ตารางดูโล้นๆ" --
+                // reuses the SAME .reports-row-report-type-icon/.rt-* classes (this file's own <style>
+                // block in reports/index.php) and REPORT_TYPE_ICONS map Per-Cycle Reports' own rows
+                // already use, keyed off the same report_type value every row already carries.
+                { data: null, render: (d, t, report) => `<span class="reports-row-report-type-icon rt-${report.report_type}"><i class="fa-solid ${REPORT_TYPE_ICONS[report.report_type] || 'fa-file-lines'}"></i></span><span class="reports-row-report-name">${escapeHtml(reportLabel(report))}</span>` },
+                { data: null, className: 'text-center', render: (d, t, report) => (annualReportCounts[report.code] || {}).download_count || 0 },
+                { data: null, render: (d, t, report) => {
+                    const c = annualReportCounts[report.code];
+                    return c && c.last_downloaded_at ? formatDisplayDateTime(c.last_downloaded_at) : `<span class="text-muted">${langData['report_never_downloaded'] || 'Never'}</span>`;
+                } },
+                { data: null, className: 'text-center all', orderable: false, render: (d, t, report) => annualReportActionsHtml(report) },
+            ],
+            drawCallback: function () { getTableLang(); },
+            searching: true,
+        },
     });
 }
 function loadAnnualReportCounts(year) {
@@ -515,18 +515,18 @@ function renderCycleMatrixTable() {
     groups.forEach(function (group) {
         columns.push({ data: null, className: 'text-center reports-matrix-group-col', orderable: false, render: (d, t, run) => cycleMatrixGroupCellHtml(run, group) });
     });
-    tbCycleMatrix = $('#tb_cycle_matrix').DataTable({
-        data: cycleMatrixRuns,
-        responsive: true,
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        columns: columns,
-        // 2026-09-10, Batch 3A item 1 -- this table's own dropdown-clipping fix (a `.table-responsive`
-        // wrapper forcing overflow-y:auto, catching the dropdown-menu when there are few rows) is now
-        // handled globally by app.js's own applyFixedStrategyToTableDropdowns() on every `draw.dt`,
-        // superseding the per-table drawCallback that used to live here.
-        drawCallback: function () { getTableLang(); },
+    tbCycleMatrix = initSharedDataTable('#tb_cycle_matrix', {
+        dtOptions: {
+            data: cycleMatrixRuns,
+            responsive: true,
+            columns: columns,
+            // 2026-09-10, Batch 3A item 1 -- this table's own dropdown-clipping fix (a `.table-responsive`
+            // wrapper forcing overflow-y:auto, catching the dropdown-menu when there are few rows) is now
+            // handled globally by app.js's own applyFixedStrategyToTableDropdowns() on every `draw.dt`,
+            // superseding the per-table drawCallback that used to live here.
+            drawCallback: function () { getTableLang(); },
+            searching: true,
+        },
     });
 }
 $(document).on('click', '.btn-cycle-matrix-print', function () {
@@ -597,40 +597,38 @@ function openPayslipRoster(row, runId) {
         tb_payslip_roster.destroy();
         $('#tb_payslip_roster').find('tbody').empty();
     }
-    tb_payslip_roster = $('#tb_payslip_roster').DataTable({
-        responsive: true,
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        ajax: {
-            url: `${BASE_URL}/api/report.payslip-roster`,
-            dataSrc: 'data',
-            data: function (d) { d.run_id = runId; d.report_code = row.code; }
+    tb_payslip_roster = initSharedDataTable('#tb_payslip_roster', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'roster_employee_no' },
+                { index: 2, key: 'roster_department' },
+                { index: 3, key: 'roster_position' },
+                { index: 4, key: 'roster_team' },
+            ]
         },
-        columns: [
-            { data: 'employee_no' },
-            { data: null, render: (d, t, r) => escapeHtml(employeeNameReports(r)) },
-            { data: null, render: (d, t, r) => escapeHtml((currentLang === 'th' ? r.department_name_th : r.department_name_en) || r.department_name_th || '-') },
-            { data: null, render: (d, t, r) => escapeHtml((currentLang === 'th' ? r.position_name_th : r.position_name_en) || r.position_name_th || '-') },
-            { data: null, render: (d, t, r) => escapeHtml((currentLang === 'th' ? r.team_name_th : r.team_name_en) || r.team_name_th || '-') },
-            { data: 'download_count', className: 'text-center' },
-            {
-                data: null, className: 'text-center all', orderable: false,
-                render: (d, t, r) => `<button type="button" class="btn btn-sm btn-outline-primary btn-payslip-roster-download" data-employee-id="${r.employee_id}"><i class="fa-solid fa-download"></i></button>`
+        dtOptions: {
+            responsive: true,
+            ajax: {
+                url: `${BASE_URL}/api/report.payslip-roster`,
+                dataSrc: 'data',
+                data: function (d) { d.run_id = runId; d.report_code = row.code; }
             },
-        ],
-        initComplete: function () {
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'roster_employee_no' },
-                    { index: 2, key: 'roster_department' },
-                    { index: 3, key: 'roster_position' },
-                    { index: 4, key: 'roster_team' },
-                ]
-            });
+            columns: [
+                { data: 'employee_no' },
+                { data: null, render: (d, t, r) => escapeHtml(employeeNameReports(r)) },
+                { data: null, render: (d, t, r) => escapeHtml((currentLang === 'th' ? r.department_name_th : r.department_name_en) || r.department_name_th || '-') },
+                { data: null, render: (d, t, r) => escapeHtml((currentLang === 'th' ? r.position_name_th : r.position_name_en) || r.position_name_th || '-') },
+                { data: null, render: (d, t, r) => escapeHtml((currentLang === 'th' ? r.team_name_th : r.team_name_en) || r.team_name_th || '-') },
+                { data: 'download_count', className: 'text-center' },
+                {
+                    data: null, className: 'text-center all', orderable: false,
+                    render: (d, t, r) => `<button type="button" class="btn btn-sm btn-outline-primary btn-payslip-roster-download" data-employee-id="${r.employee_id}"><i class="fa-solid fa-download"></i></button>`
+                },
+            ],
+            drawCallback: function () { getTableLang(); },
+            searching: true,
         },
-        drawCallback: function () { getTableLang(); }
     });
 }
 $(document).on('click', '.btn-payslip-roster-download', function () {
@@ -700,45 +698,41 @@ function openReportHistoryModal(reportCode, label, scopeParams) {
     initFilterBar('#cycleReportHistoryFilterBar', { onChange: reloadCycleReportHistoryTable });
     bootstrap.Modal.getOrCreateInstance(document.getElementById('cycleReportHistoryModal')).show();
     if (dtCycleReportHistory) { dtCycleReportHistory.destroy(); dtCycleReportHistory = null; }
-    dtCycleReportHistory = $('#tb_cycle_report_history').DataTable({
-        responsive: true,
-        order: [[0, 'desc']],
-        ajax: {
-            url: `${BASE_URL}/api/report.export-logs`,
-            dataSrc: 'data',
-            data: function (d) {
-                d.report_code = cycleReportHistoryCode;
-                Object.assign(d, reportHistoryScopeParams);
-                d.date_from = toIsoDateReports($('#cycleReportHistoryDateFrom').val());
-                d.date_to = toIsoDateReports($('#cycleReportHistoryDateTo').val());
-            },
+    dtCycleReportHistory = initSharedDataTable('#tb_cycle_report_history', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 1, key: 'cycle_history_by' },
+                { index: 2, key: 'cycle_history_language' },
+                { index: 3, key: 'cycle_history_device' },
+                { index: 4, key: 'cycle_history_browser' },
+                { index: 5, key: 'cycle_history_ip' },
+                { index: 6, key: 'cycle_history_source' },
+            ]
         },
-        columns: [
-            { data: 'generated_at', render: { display: (v) => formatDisplayDateTime(v), sort: (v) => v, filter: (v) => v } },
-            { data: null, render: (l) => escapeHtml(rdReportByLabelReports(l)) },
-            { data: null, render: (l) => escapeHtml(rdReportLanguageLabelReports(l)) },
-            { data: null, render: (l) => escapeHtml(rdReportDeviceLabelReports(l)) },
-            { data: null, render: (l) => escapeHtml(rdReportBrowserLabelReports(l)) },
-            { data: 'ip_address', render: (v) => escapeHtml(v || '-') },
-            { data: 'source', render: (v) => escapeHtml(v || '-') },
-        ],
-        // 2026-08-30, real gap found and fixed (full-codebase pageLength audit) -- was missing
-        // entirely, silently falling back to DataTables' own built-in default of 10. Same shape as
-        // payroll/detail.js's own dtReportHistory (the per-run equivalent of this cycle-wide one).
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        initComplete: function () {
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 1, key: 'cycle_history_by' },
-                    { index: 2, key: 'cycle_history_language' },
-                    { index: 3, key: 'cycle_history_device' },
-                    { index: 4, key: 'cycle_history_browser' },
-                    { index: 5, key: 'cycle_history_ip' },
-                    { index: 6, key: 'cycle_history_source' },
-                ]
-            });
+        dtOptions: {
+            responsive: true,
+            order: [[0, 'desc']],
+            ajax: {
+                url: `${BASE_URL}/api/report.export-logs`,
+                dataSrc: 'data',
+                data: function (d) {
+                    d.report_code = cycleReportHistoryCode;
+                    Object.assign(d, reportHistoryScopeParams);
+                    d.date_from = toIsoDateReports($('#cycleReportHistoryDateFrom').val());
+                    d.date_to = toIsoDateReports($('#cycleReportHistoryDateTo').val());
+                },
+            },
+            columns: [
+                { data: 'generated_at', render: { display: (v) => formatDisplayDateTime(v), sort: (v) => v, filter: (v) => v } },
+                { data: null, render: (l) => escapeHtml(rdReportByLabelReports(l)) },
+                { data: null, render: (l) => escapeHtml(rdReportLanguageLabelReports(l)) },
+                { data: null, render: (l) => escapeHtml(rdReportDeviceLabelReports(l)) },
+                { data: null, render: (l) => escapeHtml(rdReportBrowserLabelReports(l)) },
+                { data: 'ip_address', render: (v) => escapeHtml(v || '-') },
+                { data: 'source', render: (v) => escapeHtml(v || '-') },
+            ],
+            searching: true,
         },
     });
 }
@@ -760,48 +754,44 @@ function initExportHistoryTable() {
         $('#tb_export_history').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_export_history = $('#tb_export_history').DataTable({
-        responsive: true,
-        order: [[0, 'desc']],
-        ajax: {
-            url: `${BASE_URL}/api/report.export-logs`,
-            dataSrc: 'data',
-            data: function (d) {
-                const reportType = $('#filter_export_report_type').val();
-                d.report_type = reportType === 'all' ? '' : (reportType || '');
-                d.date_from = toIsoDateReports($('#exportHistoryDateFrom').val());
-                d.date_to = toIsoDateReports($('#exportHistoryDateTo').val());
-            }
+    tb_export_history = initSharedDataTable('#tb_export_history', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'generated_at' },
+                { index: 1, key: 'report_code' },
+                { index: 2, key: 'format' },
+                { index: 3, key: 'file_name' },
+                { index: 4, key: 'generated_by' },
+            ]
         },
-        columns: [
-            // object-form render: only 'display' gets the dd/mm/yyyy formatting -- 'sort'/'filter'
-            // stay on the raw ISO string, since this is a CLIENT-side table (no serverSide) and
-            // sorting/filtering on the dd/mm/yyyy display string would sort lexicographically
-            // ("05/09" before "26/08") instead of chronologically.
-            { data: 'generated_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },
-            { data: 'report_code', render: d => reportNameByCode(d) },
-            { data: 'format', render: d => formatLabel(d) },
-            { data: 'file_name' },
-            { data: null, render: (d, t, row) => (currentLang === 'th' ? row.generated_by_name_th : row.generated_by_name_en) || row.generated_by_name_th || row.generated_by_name_en || '-' },
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        drawCallback: function () { getTableLang(); },
-        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-        // rollout, client mode. No actions column on this table -- every column is filterable.
-        initComplete: function () {
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'generated_at' },
-                    { index: 1, key: 'report_code' },
-                    { index: 2, key: 'format' },
-                    { index: 3, key: 'file_name' },
-                    { index: 4, key: 'generated_by' },
-                ]
-            });
-        }
+        dtOptions: {
+            responsive: true,
+            order: [[0, 'desc']],
+            ajax: {
+                url: `${BASE_URL}/api/report.export-logs`,
+                dataSrc: 'data',
+                data: function (d) {
+                    const reportType = $('#filter_export_report_type').val();
+                    d.report_type = reportType === 'all' ? '' : (reportType || '');
+                    d.date_from = toIsoDateReports($('#exportHistoryDateFrom').val());
+                    d.date_to = toIsoDateReports($('#exportHistoryDateTo').val());
+                }
+            },
+            columns: [
+                // object-form render: only 'display' gets the dd/mm/yyyy formatting -- 'sort'/'filter'
+                // stay on the raw ISO string, since this is a CLIENT-side table (no serverSide) and
+                // sorting/filtering on the dd/mm/yyyy display string would sort lexicographically
+                // ("05/09" before "26/08") instead of chronologically.
+                { data: 'generated_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => d } },
+                { data: 'report_code', render: d => reportNameByCode(d) },
+                { data: 'format', render: d => formatLabel(d) },
+                { data: 'file_name' },
+                { data: null, render: (d, t, row) => (currentLang === 'th' ? row.generated_by_name_th : row.generated_by_name_en) || row.generated_by_name_th || row.generated_by_name_en || '-' },
+            ],
+            drawCallback: function () { getTableLang(); },
+            searching: true,
+        },
     });
 }
 

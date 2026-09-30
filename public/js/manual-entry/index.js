@@ -113,51 +113,52 @@ function confirmManualEntryDelete() {
 let dtAttendance;
 function renderAttendance() {
     if ($.fn.DataTable.isDataTable('#tb_attendance')) { dtAttendance.ajax.reload(null, false); return; }
-    dtAttendance = $('#tb_attendance').DataTable({
-        responsive: true,
-        ajax: {
-            url: `${BASE_URL}/api/manual-attendance.list`, dataSrc: 'data',
-            data: function (d) {
-                d.employee_id = $('#filter_att_employee').val() || '';
-                d.date_from = toIsoDateMe($('#filter_att_date_from').val());
-                d.date_to = toIsoDateMe($('#filter_att_date_to').val());
-            }
+    dtAttendance = initSharedDataTable('#tb_attendance', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'employee' },
+                { index: 1, key: 'work_date' },
+                { index: 2, key: 'shift' },
+                { index: 3, key: 'clock_in' },
+                { index: 4, key: 'clock_out' },
+                { index: 5, key: 'actual_hours' },
+                { index: 6, key: 'status' },
+                { index: 7, key: 'data_source' },
+            ]
         },
-        columns: [
-            { data: null, render: (d, t, row) => employeeCellMe(row) },
-            { data: null, render: (d, t, row) => toDisplayDateMe(row.work_date) },
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.shift_name_th : row.shift_name_en) || '-') },
-            { data: null, render: (d, t, row) => row.clock_in ? String(row.clock_in).substring(11, 16) : '-' },
-            { data: null, render: (d, t, row) => row.clock_out ? String(row.clock_out).substring(11, 16) : '-' },
-            { data: null, className: 'text-end', render: (d, t, row) => row.actual_work_minutes ? (row.actual_work_minutes / 60).toFixed(1) : '-' },
-            { data: 'status', className: 'text-center', render: (d) => attendanceStatusBadge(d) },
-            { data: 'data_source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
-            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
-            // Responsive expand row.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openAttendanceModal(${row.id})`, `askDeleteMe('attendance', ${row.id}, '${escapeHtml(employeeNameMe(row))} - ${escapeHtml(toDisplayDateMe(row.work_date))}')`) }
-        ],
-        ordering: false, lengthChange: false, pageLength: 10,
-        language: { ...getTableLang(), emptyTable: langData['no_attendance_yet'] || 'No attendance records have been added yet.' },
-        initComplete: function () {
-            addButtonInitCompleteMe('btn-add-attendance', 'fa-solid fa-plus', 'add_attendance', 'Attendance', 'openAttendanceModal()').call(this);
-            addBulkButtonInitCompleteMe('btn-bulk-attendance', 'attendance').call(this);
-            addImportButtonInitCompleteMe('btn-import-attendance', 'attendance').call(this);
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the actions column (8).
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'employee' },
-                    { index: 1, key: 'work_date' },
-                    { index: 2, key: 'shift' },
-                    { index: 3, key: 'clock_in' },
-                    { index: 4, key: 'clock_out' },
-                    { index: 5, key: 'actual_hours' },
-                    { index: 6, key: 'status' },
-                    { index: 7, key: 'data_source' },
-                ]
-            });
-        }
+        dtOptions: {
+            responsive: true,
+            ajax: {
+                url: `${BASE_URL}/api/manual-attendance.list`, dataSrc: 'data',
+                data: function (d) {
+                    d.employee_id = $('#filter_att_employee').val() || '';
+                    d.date_from = toIsoDateMe($('#filter_att_date_from').val());
+                    d.date_to = toIsoDateMe($('#filter_att_date_to').val());
+                }
+            },
+            columns: [
+                { data: null, render: (d, t, row) => employeeCellMe(row) },
+                { data: null, render: (d, t, row) => toDisplayDateMe(row.work_date) },
+                { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.shift_name_th : row.shift_name_en) || '-') },
+                { data: null, render: (d, t, row) => row.clock_in ? String(row.clock_in).substring(11, 16) : '-' },
+                { data: null, render: (d, t, row) => row.clock_out ? String(row.clock_out).substring(11, 16) : '-' },
+                { data: null, className: 'text-end', render: (d, t, row) => row.actual_work_minutes ? (row.actual_work_minutes / 60).toFixed(1) : '-' },
+                { data: 'status', className: 'text-center', render: (d) => attendanceStatusBadge(d) },
+                { data: 'data_source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
+                // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+                // Responsive expand row.
+                { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openAttendanceModal(${row.id})`, `askDeleteMe('attendance', ${row.id}, '${escapeHtml(employeeNameMe(row))} - ${escapeHtml(toDisplayDateMe(row.work_date))}')`) }
+            ],
+            ordering: false, lengthChange: false, pageLength: 10,
+            language: { emptyTable: langData['no_attendance_yet'] || 'No attendance records have been added yet.' },
+            initComplete: function () {
+                addButtonInitCompleteMe('btn-add-attendance', 'fa-solid fa-plus', 'add_attendance', 'Attendance', 'openAttendanceModal()').call(this);
+                addBulkButtonInitCompleteMe('btn-bulk-attendance', 'attendance').call(this);
+                addImportButtonInitCompleteMe('btn-import-attendance', 'attendance').call(this);
+            },
+            searching: true,
+        },
     });
 }
 // 2026-09-03, Manual Entry Phase 1A: true for the entire synchronous+async duration of an EDIT-mode
@@ -271,49 +272,50 @@ $(document).on('change', '#attendanceEmployee', function () {
 let dtLeave;
 function renderLeave() {
     if ($.fn.DataTable.isDataTable('#tb_leave')) { dtLeave.ajax.reload(null, false); return; }
-    dtLeave = $('#tb_leave').DataTable({
-        responsive: true,
-        ajax: {
-            url: `${BASE_URL}/api/manual-leave.list`, dataSrc: 'data',
-            data: function (d) {
-                d.employee_id = $('#filter_leave_employee').val() || '';
-                d.date_from = toIsoDateMe($('#filter_leave_date_from').val());
-                d.date_to = toIsoDateMe($('#filter_leave_date_to').val());
-            }
+    dtLeave = initSharedDataTable('#tb_leave', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'employee' },
+                { index: 1, key: 'leave_type' },
+                { index: 2, key: 'start_date' },
+                { index: 3, key: 'end_date' },
+                { index: 4, key: 'total_days' },
+                { index: 5, key: 'status' },
+                { index: 6, key: 'data_source' },
+            ]
         },
-        columns: [
-            { data: null, render: (d, t, row) => employeeCellMe(row) },
-            { data: null, render: (d, t, row) => escapeHtml(currentLang === 'th' ? row.leave_type_name_th : row.leave_type_name_en) },
-            { data: null, render: (d, t, row) => toDisplayDateMe(row.start_date) },
-            { data: null, render: (d, t, row) => toDisplayDateMe(row.end_date) },
-            { data: 'total_days', className: 'text-end' },
-            { data: 'status', className: 'text-center', render: (d) => leaveStatusBadge(d) },
-            { data: 'data_source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
-            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
-            // Responsive expand row.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openLeaveModal(${row.id})`, `askDeleteMe('leave', ${row.id}, '${escapeHtml(employeeNameMe(row))} - ${escapeHtml(toDisplayDateMe(row.start_date))}')`) }
-        ],
-        ordering: false, lengthChange: false, pageLength: 10,
-        language: { ...getTableLang(), emptyTable: langData['no_leave_yet'] || 'No leave records have been added yet.' },
-        initComplete: function () {
-            addButtonInitCompleteMe('btn-add-leave', 'fa-solid fa-plus', 'add_leave', 'Leave', 'openLeaveModal()').call(this);
-            addBulkButtonInitCompleteMe('btn-bulk-leave', 'leave').call(this);
-            addImportButtonInitCompleteMe('btn-import-leave', 'leave').call(this);
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the actions column (7).
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'employee' },
-                    { index: 1, key: 'leave_type' },
-                    { index: 2, key: 'start_date' },
-                    { index: 3, key: 'end_date' },
-                    { index: 4, key: 'total_days' },
-                    { index: 5, key: 'status' },
-                    { index: 6, key: 'data_source' },
-                ]
-            });
-        }
+        dtOptions: {
+            responsive: true,
+            ajax: {
+                url: `${BASE_URL}/api/manual-leave.list`, dataSrc: 'data',
+                data: function (d) {
+                    d.employee_id = $('#filter_leave_employee').val() || '';
+                    d.date_from = toIsoDateMe($('#filter_leave_date_from').val());
+                    d.date_to = toIsoDateMe($('#filter_leave_date_to').val());
+                }
+            },
+            columns: [
+                { data: null, render: (d, t, row) => employeeCellMe(row) },
+                { data: null, render: (d, t, row) => escapeHtml(currentLang === 'th' ? row.leave_type_name_th : row.leave_type_name_en) },
+                { data: null, render: (d, t, row) => toDisplayDateMe(row.start_date) },
+                { data: null, render: (d, t, row) => toDisplayDateMe(row.end_date) },
+                { data: 'total_days', className: 'text-end' },
+                { data: 'status', className: 'text-center', render: (d) => leaveStatusBadge(d) },
+                { data: 'data_source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
+                // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+                // Responsive expand row.
+                { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openLeaveModal(${row.id})`, `askDeleteMe('leave', ${row.id}, '${escapeHtml(employeeNameMe(row))} - ${escapeHtml(toDisplayDateMe(row.start_date))}')`) }
+            ],
+            ordering: false, lengthChange: false, pageLength: 10,
+            language: { emptyTable: langData['no_leave_yet'] || 'No leave records have been added yet.' },
+            initComplete: function () {
+                addButtonInitCompleteMe('btn-add-leave', 'fa-solid fa-plus', 'add_leave', 'Leave', 'openLeaveModal()').call(this);
+                addBulkButtonInitCompleteMe('btn-bulk-leave', 'leave').call(this);
+                addImportButtonInitCompleteMe('btn-import-leave', 'leave').call(this);
+            },
+            searching: true,
+        },
     });
 }
 function openLeaveModal(id) {
@@ -391,49 +393,50 @@ function saveLeave(btnEl) {
 let dtOvertime;
 function renderOvertime() {
     if ($.fn.DataTable.isDataTable('#tb_overtime')) { dtOvertime.ajax.reload(null, false); return; }
-    dtOvertime = $('#tb_overtime').DataTable({
-        responsive: true,
-        ajax: {
-            url: `${BASE_URL}/api/manual-overtime.list`, dataSrc: 'data',
-            data: function (d) {
-                d.employee_id = $('#filter_ot_employee').val() || '';
-                d.date_from = toIsoDateMe($('#filter_ot_date_from').val());
-                d.date_to = toIsoDateMe($('#filter_ot_date_to').val());
-            }
+    dtOvertime = initSharedDataTable('#tb_overtime', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'employee' },
+                { index: 1, key: 'ot_name' },
+                { index: 2, key: 'ot_date' },
+                { index: 3, key: 'hours' },
+                { index: 4, key: 'amount' },
+                { index: 5, key: 'status' },
+                { index: 6, key: 'data_source' },
+            ]
         },
-        columns: [
-            { data: null, render: (d, t, row) => employeeCellMe(row) },
-            { data: null, render: (d, t, row) => escapeHtml(currentLang === 'th' ? row.ot_name_th : row.ot_name_en) },
-            { data: null, render: (d, t, row) => toDisplayDateMe(row.ot_date) },
-            { data: 'hours', className: 'text-end' },
-            { data: null, className: 'text-end', render: (d, t, row) => row.amount !== null ? Number(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-' },
-            { data: 'status', className: 'text-center', render: (d) => overtimeStatusBadge(d) },
-            { data: 'data_source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
-            // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
-            // Responsive expand row.
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openOvertimeModal(${row.id})`, `askDeleteMe('overtime', ${row.id}, '${escapeHtml(employeeNameMe(row))} - ${escapeHtml(toDisplayDateMe(row.ot_date))}')`) }
-        ],
-        ordering: false, lengthChange: false, pageLength: 10,
-        language: { ...getTableLang(), emptyTable: langData['no_overtime_yet'] || 'No overtime records have been added yet.' },
-        initComplete: function () {
-            addButtonInitCompleteMe('btn-add-overtime', 'fa-solid fa-plus', 'add_overtime', 'Overtime', 'openOvertimeModal()').call(this);
-            addBulkButtonInitCompleteMe('btn-bulk-overtime', 'overtime').call(this);
-            addImportButtonInitCompleteMe('btn-import-overtime', 'overtime').call(this);
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the actions column (7).
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'employee' },
-                    { index: 1, key: 'ot_name' },
-                    { index: 2, key: 'ot_date' },
-                    { index: 3, key: 'hours' },
-                    { index: 4, key: 'amount' },
-                    { index: 5, key: 'status' },
-                    { index: 6, key: 'data_source' },
-                ]
-            });
-        }
+        dtOptions: {
+            responsive: true,
+            ajax: {
+                url: `${BASE_URL}/api/manual-overtime.list`, dataSrc: 'data',
+                data: function (d) {
+                    d.employee_id = $('#filter_ot_employee').val() || '';
+                    d.date_from = toIsoDateMe($('#filter_ot_date_from').val());
+                    d.date_to = toIsoDateMe($('#filter_ot_date_to').val());
+                }
+            },
+            columns: [
+                { data: null, render: (d, t, row) => employeeCellMe(row) },
+                { data: null, render: (d, t, row) => escapeHtml(currentLang === 'th' ? row.ot_name_th : row.ot_name_en) },
+                { data: null, render: (d, t, row) => toDisplayDateMe(row.ot_date) },
+                { data: 'hours', className: 'text-end' },
+                { data: null, className: 'text-end', render: (d, t, row) => row.amount !== null ? Number(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-' },
+                { data: 'status', className: 'text-center', render: (d) => overtimeStatusBadge(d) },
+                { data: 'data_source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
+                // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
+                // Responsive expand row.
+                { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtnsMe(`openOvertimeModal(${row.id})`, `askDeleteMe('overtime', ${row.id}, '${escapeHtml(employeeNameMe(row))} - ${escapeHtml(toDisplayDateMe(row.ot_date))}')`) }
+            ],
+            ordering: false, lengthChange: false, pageLength: 10,
+            language: { emptyTable: langData['no_overtime_yet'] || 'No overtime records have been added yet.' },
+            initComplete: function () {
+                addButtonInitCompleteMe('btn-add-overtime', 'fa-solid fa-plus', 'add_overtime', 'Overtime', 'openOvertimeModal()').call(this);
+                addBulkButtonInitCompleteMe('btn-bulk-overtime', 'overtime').call(this);
+                addImportButtonInitCompleteMe('btn-import-overtime', 'overtime').call(this);
+            },
+            searching: true,
+        },
     });
 }
 function openOvertimeModal(id) {
@@ -576,57 +579,55 @@ function meIhFilterValue(selector) {
 }
 function renderImportHistory() {
     if ($.fn.DataTable.isDataTable('#tb_import_history')) { dtImportHistory.ajax.reload(null, false); return; }
-    dtImportHistory = $('#tb_import_history').DataTable({
-        responsive: true,
-        ajax: {
-            url: `${BASE_URL}/api/manual-import.activity-log`, dataSrc: 'data',
-            data: function (d) {
-                d.event_type = meIhFilterValue('#filter_ih_event_type');
-                d.entity_type = meIhFilterValue('#filter_ih_entity_type');
-                d.date_from = toIsoDateMe($('#filter_ih_date_from').val());
-                d.date_to = toIsoDateMe($('#filter_ih_date_to').val());
-            }
+    dtImportHistory = initSharedDataTable('#tb_import_history', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 1, key: 'event_type' },
+                { index: 2, key: 'entity_type' },
+                { index: 3, key: 'by' },
+                { index: 4, key: 'device' },
+                { index: 5, key: 'browser' },
+                { index: 6, key: 'ip_address' },
+                { index: 7, key: 'status' },
+            ]
         },
-        columns: [
-            { data: 'performed_at', render: { display: (v) => v ? String(v).replace('T', ' ').substring(0, 16) : '-', sort: (v) => v || '', filter: (v) => v || '' } },
-            { data: 'event_type', className: 'text-center', render: (d) => importEventTypeBadge(d) },
-            { data: null, render: (d, t, row) => escapeHtml(importEntityLabel(row.entity_type)) },
-            { data: null, render: (d, t, row) => escapeHtml(importHistoryByLabel(row)) },
-            { data: null, render: (d, t, row) => escapeHtml(importHistoryDeviceLabel(row)) },
-            { data: null, render: (d, t, row) => escapeHtml(importHistoryBrowserLabel(row)) },
-            { data: 'ip_address', render: (v) => escapeHtml(v || '-') },
-            { data: null, className: 'text-center', render: (d, t, row) => importHistoryStatusBadge(row) },
-            // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
-            // ".btn-circle-action" section) replace the old adjacent .btn-group.
-            // Platform Hardening Phase 5C: a Download button for the original uploaded file --
-            // row.original_file_name is only ever set on an 'import' row that has one (NULL for
-            // 'download' rows and for any import batch committed before this column existed).
-            { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => row.event_type === 'import'
-                ? `<div class="d-flex gap-1 justify-content-end">
-                    <button class="btn btn-link btn-circle-action text-primary" onclick="openImportBatchDetail(${row.id}, '${row.entity_type}')"><i class="fa-solid fa-eye"></i></button>
-                    ${row.original_file_name ? `<a href="${BASE_URL}/api/manual-import.download-original?batch_id=${row.id}" class="btn btn-link btn-circle-action text-secondary" title="${escapeHtml(row.original_file_name)}"><i class="fa-solid fa-download"></i></a>` : ''}
-                   </div>`
-                : '' },
-        ],
-        order: [[0, 'desc']],
-        pageLength: pageLength, lengthMenu: lengthMenu,
-        language: { ...getTableLang(), emptyTable: langData['no_import_batches_yet'] || 'No imports have been run yet.' },
-        initComplete: function () {
-            // Per this app's own DataTable convention (CLAUDE.md): every new list-table calls
-            // initExcelColumnFilters(), excludes only the button-only Actions column (8).
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 1, key: 'event_type' },
-                    { index: 2, key: 'entity_type' },
-                    { index: 3, key: 'by' },
-                    { index: 4, key: 'device' },
-                    { index: 5, key: 'browser' },
-                    { index: 6, key: 'ip_address' },
-                    { index: 7, key: 'status' },
-                ]
-            });
-        }
+        dtOptions: {
+            responsive: true,
+            ajax: {
+                url: `${BASE_URL}/api/manual-import.activity-log`, dataSrc: 'data',
+                data: function (d) {
+                    d.event_type = meIhFilterValue('#filter_ih_event_type');
+                    d.entity_type = meIhFilterValue('#filter_ih_entity_type');
+                    d.date_from = toIsoDateMe($('#filter_ih_date_from').val());
+                    d.date_to = toIsoDateMe($('#filter_ih_date_to').val());
+                }
+            },
+            columns: [
+                { data: 'performed_at', render: { display: (v) => v ? String(v).replace('T', ' ').substring(0, 16) : '-', sort: (v) => v || '', filter: (v) => v || '' } },
+                { data: 'event_type', className: 'text-center', render: (d) => importEventTypeBadge(d) },
+                { data: null, render: (d, t, row) => escapeHtml(importEntityLabel(row.entity_type)) },
+                { data: null, render: (d, t, row) => escapeHtml(importHistoryByLabel(row)) },
+                { data: null, render: (d, t, row) => escapeHtml(importHistoryDeviceLabel(row)) },
+                { data: null, render: (d, t, row) => escapeHtml(importHistoryBrowserLabel(row)) },
+                { data: 'ip_address', render: (v) => escapeHtml(v || '-') },
+                { data: null, className: 'text-center', render: (d, t, row) => importHistoryStatusBadge(row) },
+                // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
+                // ".btn-circle-action" section) replace the old adjacent .btn-group.
+                // Platform Hardening Phase 5C: a Download button for the original uploaded file --
+                // row.original_file_name is only ever set on an 'import' row that has one (NULL for
+                // 'download' rows and for any import batch committed before this column existed).
+                { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => row.event_type === 'import'
+                    ? `<div class="d-flex gap-1 justify-content-end">
+                        <button class="btn btn-link btn-circle-action text-primary" onclick="openImportBatchDetail(${row.id}, '${row.entity_type}')"><i class="fa-solid fa-eye"></i></button>
+                        ${row.original_file_name ? `<a href="${BASE_URL}/api/manual-import.download-original?batch_id=${row.id}" class="btn btn-link btn-circle-action text-secondary" title="${escapeHtml(row.original_file_name)}"><i class="fa-solid fa-download"></i></a>` : ''}
+                       </div>`
+                    : '' },
+            ],
+            order: [[0, 'desc']],
+            language: { emptyTable: langData['no_import_batches_yet'] || 'No imports have been run yet.' },
+            searching: true,
+        },
     });
 }
 
@@ -686,15 +687,15 @@ function openImportBatchDetail(batchId, entityType) {
             if (dtImportBatchDetail) { dtImportBatchDetail.destroy(); dtImportBatchDetail = null; }
             $('#tb_import_batch_detail thead').empty();
             $('#tb_import_batch_detail tbody').empty();
-            dtImportBatchDetail = $('#tb_import_batch_detail').DataTable({
-                responsive: true,
-                data: res.data || [],
-                columns: IMPORT_BATCH_DETAIL_COLUMNS[entityType],
-                order: [], lengthChange: false, pageLength: pageLength, lengthMenu: lengthMenu,
-                language: { ...getTableLang() },
-                initComplete: function () {
-                    initExcelColumnFilters(this.api(), { mode: 'client', columns: IMPORT_BATCH_DETAIL_FILTER_COLUMNS[entityType] });
-                }
+            dtImportBatchDetail = initSharedDataTable('#tb_import_batch_detail', {
+                columnFilters: { mode: 'client', columns: IMPORT_BATCH_DETAIL_FILTER_COLUMNS[entityType] },
+                dtOptions: {
+                    responsive: true,
+                    data: res.data || [],
+                    columns: IMPORT_BATCH_DETAIL_COLUMNS[entityType],
+                    order: [], lengthChange: false,
+                    searching: true,
+                },
             });
             new bootstrap.Modal(document.getElementById('importBatchDetailModal')).show();
         },

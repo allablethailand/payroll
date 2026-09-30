@@ -76,11 +76,8 @@ function initEmployeeSummaryTable() {
         tb_employee_summary.ajax.reload(null, false);
         return;
     }
-    tb_employee_summary = $('#tb_employee_summary').DataTable({
+    tb_employee_summary = initSharedDataTable('#tb_employee_summary', {
         serverSide: true,
-        processing: true,
-        ordering: false,
-        responsive: { details: { type: 'column', target: 0 } },
         ajax: {
             url: `${BASE_URL}/api/employee.standing-summary-list`,
             type: 'POST',
@@ -91,25 +88,26 @@ function initEmployeeSummaryTable() {
                 return json.data || [];
             }
         },
-        columns: [
-            { data: null, orderable: false, className: 'dtr-control', defaultContent: '' },
-            // 2026-08-31, explicit request: "ตารางพนักงานทุกตาราง แยก code กับชื่อเป็นคนละ Column" -- was
-            // one column with employee_no/name stacked, split into 2 (matches #tb_employee's own
-            // convention, and the same fix just applied to #tb_employee_recheck above).
-            { data: 'employee_no', responsivePriority: 1, render: d => escapeHtml(d || '-') },
-            { data: 'name', responsivePriority: 1, render: d => escapeHtml(d || '-') },
-            { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => fmtMoneyList(row.summary ? row.summary.base_salary_amount : 0) },
-            { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => row.summary ? summaryBadgeHtml(row.summary.recurring, row.summary.recurring_total, {}) : '-' },
-            { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => row.summary ? summaryBadgeHtml(row.summary.recurring_deduction, row.summary.recurring_deduction_total, { deduction: true }) : '-' },
-            { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => row.summary ? summaryBadgeHtml(row.summary.ped_earning, row.summary.ped_earning_total, { showInstallment: true }) : '-' },
-            { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => row.summary ? summaryBadgeHtml(row.summary.ped_deduction, row.summary.ped_deduction_total, { showInstallment: true, deduction: true }) : '-' },
-            { data: null, className: 'text-end fw-bold', responsivePriority: 5, render: (d, t, row) => fmtMoneyList(row.summary ? row.summary.total_earning : 0) },
-            { data: null, className: 'text-end fw-bold', responsivePriority: 5, render: (d, t, row) => fmtMoneyList(row.summary ? row.summary.total_deduction : 0) },
-            { data: null, className: 'text-end fw-bold', responsivePriority: 1, render: (d, t, row) => fmtMoneyList(row.summary ? row.summary.net_total : 0) },
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
+        dtOptions: {
+            ordering: false,
+            responsive: { details: { type: 'column', target: 0 } },
+            columns: [
+                { data: null, orderable: false, className: 'dtr-control', defaultContent: '' },
+                // 2026-08-31, explicit request: "ตารางพนักงานทุกตาราง แยก code กับชื่อเป็นคนละ Column" -- was
+                // one column with employee_no/name stacked, split into 2 (matches #tb_employee's own
+                // convention, and the same fix just applied to #tb_employee_recheck above).
+                { data: 'employee_no', responsivePriority: 1, render: d => escapeHtml(d || '-') },
+                { data: 'name', responsivePriority: 1, render: d => escapeHtml(d || '-') },
+                { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => fmtMoneyList(row.summary ? row.summary.base_salary_amount : 0) },
+                { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => row.summary ? summaryBadgeHtml(row.summary.recurring, row.summary.recurring_total, {}) : '-' },
+                { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => row.summary ? summaryBadgeHtml(row.summary.recurring_deduction, row.summary.recurring_deduction_total, { deduction: true }) : '-' },
+                { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => row.summary ? summaryBadgeHtml(row.summary.ped_earning, row.summary.ped_earning_total, { showInstallment: true }) : '-' },
+                { data: null, className: 'text-end', responsivePriority: 10, render: (d, t, row) => row.summary ? summaryBadgeHtml(row.summary.ped_deduction, row.summary.ped_deduction_total, { showInstallment: true, deduction: true }) : '-' },
+                { data: null, className: 'text-end fw-bold', responsivePriority: 5, render: (d, t, row) => fmtMoneyList(row.summary ? row.summary.total_earning : 0) },
+                { data: null, className: 'text-end fw-bold', responsivePriority: 5, render: (d, t, row) => fmtMoneyList(row.summary ? row.summary.total_deduction : 0) },
+                { data: null, className: 'text-end fw-bold', responsivePriority: 1, render: (d, t, row) => fmtMoneyList(row.summary ? row.summary.net_total : 0) },
+            ],
+        },
     });
 }
 // 2026-09-02, 3-way Employee submenu split -- this used to be a shown.bs.tab lazy-init (Reports was
@@ -225,39 +223,36 @@ function initEmployeeHeadcountEventsTable(events) {
         tb_employee_headcount_events.clear().rows.add(events).draw();
         return;
     }
-    tb_employee_headcount_events = $('#tb_employee_headcount_events').DataTable({
-        data: events,
-        responsive: true,
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        order: [[0, 'desc']],
-        columns: [
-            {
-                data: 'event_date',
-                render: {
-                    display: d => formatDisplayDate(d),
-                    sort: d => d,
-                    filter: d => d,
-                }
-            },
-            { data: 'employee_no', render: d => escapeHtml(d || '-') },
-            { data: 'name', render: d => escapeHtml(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
-            {
-                data: 'movement_type',
-                render: {
-                    display: t => `<span class="text-muted">${employeeHeadcountEventTypeLabel(t)}</span>`,
-                    sort: t => t,
-                    filter: t => employeeHeadcountEventTypeLabel(t),
-                }
-            },
-        ],
+    tb_employee_headcount_events = initSharedDataTable('#tb_employee_headcount_events', {
+        columnFilters: { mode: 'client' },
+        dtOptions: {
+            data: events,
+            responsive: true,
+            order: [[0, 'desc']],
+            columns: [
+                {
+                    data: 'event_date',
+                    render: {
+                        display: d => formatDisplayDate(d),
+                        sort: d => d,
+                        filter: d => d,
+                    }
+                },
+                { data: 'employee_no', render: d => escapeHtml(d || '-') },
+                { data: 'name', render: d => escapeHtml(d || '-') },
+                { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
+                { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
+                {
+                    data: 'movement_type',
+                    render: {
+                        display: t => `<span class="text-muted">${employeeHeadcountEventTypeLabel(t)}</span>`,
+                        sort: t => t,
+                        filter: t => employeeHeadcountEventTypeLabel(t),
+                    }
+                },
+            ],
+        },
     });
-    if (typeof initExcelColumnFilters === 'function') {
-        initExcelColumnFilters(tb_employee_headcount_events, { mode: 'client' });
-    }
 }
 function loadEmployeeHeadcountReport() {
     const filters = currentEmployeeHeadcountFilters();
@@ -304,52 +299,49 @@ function initEmployeeExpiryTable(items) {
         tb_employee_expiry.clear().rows.add(items).draw();
         return;
     }
-    tb_employee_expiry = $('#tb_employee_expiry').DataTable({
-        data: items,
-        responsive: true,
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        order: [[6, 'asc']],
-        columns: [
-            { data: 'employee_no', render: d => escapeHtml(d || '-') },
-            { data: 'name', render: d => escapeHtml(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
-            {
-                data: 'expiry_type',
-                render: {
-                    display: t => escapeHtml(employeeExpiryTypeLabel(t)),
-                    sort: t => t,
-                    filter: t => employeeExpiryTypeLabel(t),
-                }
-            },
-            {
-                data: 'expiry_date',
-                render: {
-                    display: d => formatDisplayDate(d),
-                    sort: d => d,
-                    filter: d => d,
-                }
-            },
-            {
-                data: 'days_remaining',
-                render: {
-                    display: d => {
-                        const n = Number(d) || 0;
-                        const cls = n < 0 ? 'text-danger fw-bold' : (n <= 30 ? 'text-warning fw-bold' : '');
-                        const text = n < 0 ? `${Math.abs(n)} ${langData['expiry_days_overdue'] || 'days overdue'}` : `${n} ${langData['expiry_days_left'] || 'days left'}`;
-                        return `<span class="${cls}">${text}</span>`;
-                    },
-                    sort: d => Number(d) || 0,
-                    filter: d => Number(d) || 0,
-                }
-            },
-        ],
+    tb_employee_expiry = initSharedDataTable('#tb_employee_expiry', {
+        columnFilters: { mode: 'client' },
+        dtOptions: {
+            data: items,
+            responsive: true,
+            order: [[6, 'asc']],
+            columns: [
+                { data: 'employee_no', render: d => escapeHtml(d || '-') },
+                { data: 'name', render: d => escapeHtml(d || '-') },
+                { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
+                { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
+                {
+                    data: 'expiry_type',
+                    render: {
+                        display: t => escapeHtml(employeeExpiryTypeLabel(t)),
+                        sort: t => t,
+                        filter: t => employeeExpiryTypeLabel(t),
+                    }
+                },
+                {
+                    data: 'expiry_date',
+                    render: {
+                        display: d => formatDisplayDate(d),
+                        sort: d => d,
+                        filter: d => d,
+                    }
+                },
+                {
+                    data: 'days_remaining',
+                    render: {
+                        display: d => {
+                            const n = Number(d) || 0;
+                            const cls = n < 0 ? 'text-danger fw-bold' : (n <= 30 ? 'text-warning fw-bold' : '');
+                            const text = n < 0 ? `${Math.abs(n)} ${langData['expiry_days_overdue'] || 'days overdue'}` : `${n} ${langData['expiry_days_left'] || 'days left'}`;
+                            return `<span class="${cls}">${text}</span>`;
+                        },
+                        sort: d => Number(d) || 0,
+                        filter: d => Number(d) || 0,
+                    }
+                },
+            ],
+        },
     });
-    if (typeof initExcelColumnFilters === 'function') {
-        initExcelColumnFilters(tb_employee_expiry, { mode: 'client' });
-    }
 }
 function loadEmployeeExpiryReport() {
     const filters = currentEmployeeExpiryFilters();
@@ -385,32 +377,29 @@ function initEmployeeProbationTable(items) {
         tb_employee_probation.clear().rows.add(items).draw();
         return;
     }
-    tb_employee_probation = $('#tb_employee_probation').DataTable({
-        data: items,
-        responsive: true,
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        order: [[5, 'desc']],
-        columns: [
-            { data: 'employee_no', render: d => escapeHtml(d || '-') },
-            { data: 'name', render: d => escapeHtml(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
-            {
-                data: 'employment_date',
-                render: {
-                    display: d => formatDisplayDate(d),
-                    sort: d => d,
-                    filter: d => d,
-                }
-            },
-            { data: 'days_on_probation', className: 'text-end', render: d => (Number(d) || 0).toLocaleString() },
-        ],
+    tb_employee_probation = initSharedDataTable('#tb_employee_probation', {
+        columnFilters: { mode: 'client' },
+        dtOptions: {
+            data: items,
+            responsive: true,
+            order: [[5, 'desc']],
+            columns: [
+                { data: 'employee_no', render: d => escapeHtml(d || '-') },
+                { data: 'name', render: d => escapeHtml(d || '-') },
+                { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
+                { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
+                {
+                    data: 'employment_date',
+                    render: {
+                        display: d => formatDisplayDate(d),
+                        sort: d => d,
+                        filter: d => d,
+                    }
+                },
+                { data: 'days_on_probation', className: 'text-end', render: d => (Number(d) || 0).toLocaleString() },
+            ],
+        },
     });
-    if (typeof initExcelColumnFilters === 'function') {
-        initExcelColumnFilters(tb_employee_probation, { mode: 'client' });
-    }
 }
 function loadEmployeeProbationReport() {
     const filters = currentEmployeeProbationFilters();
@@ -469,38 +458,35 @@ function initEmployeeEnrollmentTable(items) {
     const statusBadge = enrolled => Number(enrolled) === 1
         ? statusBadgeHtml('enrolled', 'enrollment_status')
         : statusBadgeHtml('not_enrolled', 'enrollment_status');
-    tb_employee_enrollment = $('#tb_employee_enrollment').DataTable({
-        data: items,
-        responsive: true,
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        columns: [
-            { data: 'employee_no', render: d => escapeHtml(d || '-') },
-            { data: 'name', render: d => escapeHtml(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
-            {
-                data: 'sso_enrolled',
-                render: {
-                    display: d => statusBadge(d),
-                    sort: d => Number(d) || 0,
-                    filter: d => Number(d) === 1 ? (langData['enrollment_enrolled'] || 'Enrolled') : (langData['enrollment_not_enrolled'] || 'Not Enrolled'),
-                }
-            },
-            {
-                data: 'pvd_enrolled',
-                render: {
-                    display: d => statusBadge(d),
-                    sort: d => Number(d) || 0,
-                    filter: d => Number(d) === 1 ? (langData['enrollment_enrolled'] || 'Enrolled') : (langData['enrollment_not_enrolled'] || 'Not Enrolled'),
-                }
-            },
-        ],
+    tb_employee_enrollment = initSharedDataTable('#tb_employee_enrollment', {
+        columnFilters: { mode: 'client' },
+        dtOptions: {
+            data: items,
+            responsive: true,
+            columns: [
+                { data: 'employee_no', render: d => escapeHtml(d || '-') },
+                { data: 'name', render: d => escapeHtml(d || '-') },
+                { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
+                { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
+                {
+                    data: 'sso_enrolled',
+                    render: {
+                        display: d => statusBadge(d),
+                        sort: d => Number(d) || 0,
+                        filter: d => Number(d) === 1 ? (langData['enrollment_enrolled'] || 'Enrolled') : (langData['enrollment_not_enrolled'] || 'Not Enrolled'),
+                    }
+                },
+                {
+                    data: 'pvd_enrolled',
+                    render: {
+                        display: d => statusBadge(d),
+                        sort: d => Number(d) || 0,
+                        filter: d => Number(d) === 1 ? (langData['enrollment_enrolled'] || 'Enrolled') : (langData['enrollment_not_enrolled'] || 'Not Enrolled'),
+                    }
+                },
+            ],
+        },
     });
-    if (typeof initExcelColumnFilters === 'function') {
-        initExcelColumnFilters(tb_employee_enrollment, { mode: 'client' });
-    }
 }
 function loadEmployeeEnrollmentReport() {
     const filters = currentEmployeeEnrollmentFilters();
@@ -606,36 +592,33 @@ function loadEmployeeStructureReport() {
             if ($.fn.DataTable.isDataTable('#tb_employee_structure')) {
                 tb_employee_structure.clear().rows.add(rows).draw();
             } else {
-                tb_employee_structure = $('#tb_employee_structure').DataTable({
-                    data: rows,
-                    responsive: true,
-                    pageLength: pageLength,
-                    lengthMenu: lengthMenu,
-                    language: getTableLang(),
-                    order: [[1, 'desc']],
-                    columns: [
-                        {
-                            data: 'label',
-                            render: (d, t, row) => {
-                                const badge = row.rank <= 3 ? `<span class="rank-badge rank-badge-${row.rank}">${row.rank}</span>` : '';
-                                return badge + escapeHtml(d || '-');
-                            }
-                        },
-                        { data: 'count', className: 'text-end', render: d => (Number(d) || 0).toLocaleString() },
-                        {
-                            data: 'share',
-                            className: 'text-end',
-                            render: {
-                                display: d => `<div class="d-flex align-items-center justify-content-end gap-2"><span class="small text-muted">${(Number(d) || 0).toFixed(1)}%</span><span class="mini-progress-track"><span class="mini-progress-fill" style="width:${Math.min(100, Number(d) || 0)}%; background:#FF9900;"></span></span></div>`,
-                                sort: d => Number(d) || 0,
-                                filter: d => Number(d) || 0,
-                            }
-                        },
-                    ],
+                tb_employee_structure = initSharedDataTable('#tb_employee_structure', {
+                    columnFilters: { mode: 'client' },
+                    dtOptions: {
+                        data: rows,
+                        responsive: true,
+                        order: [[1, 'desc']],
+                        columns: [
+                            {
+                                data: 'label',
+                                render: (d, t, row) => {
+                                    const badge = row.rank <= 3 ? `<span class="rank-badge rank-badge-${row.rank}">${row.rank}</span>` : '';
+                                    return badge + escapeHtml(d || '-');
+                                }
+                            },
+                            { data: 'count', className: 'text-end', render: d => (Number(d) || 0).toLocaleString() },
+                            {
+                                data: 'share',
+                                className: 'text-end',
+                                render: {
+                                    display: d => `<div class="d-flex align-items-center justify-content-end gap-2"><span class="small text-muted">${(Number(d) || 0).toFixed(1)}%</span><span class="mini-progress-track"><span class="mini-progress-fill" style="width:${Math.min(100, Number(d) || 0)}%; background:#FF9900;"></span></span></div>`,
+                                    sort: d => Number(d) || 0,
+                                    filter: d => Number(d) || 0,
+                                }
+                            },
+                        ],
+                    },
                 });
-                if (typeof initExcelColumnFilters === 'function') {
-                    initExcelColumnFilters(tb_employee_structure, { mode: 'client' });
-                }
             }
         }
     });
@@ -676,54 +659,51 @@ function initEmployeeTenureTable(items) {
         tb_employee_tenure.clear().rows.add(items).draw();
         return;
     }
-    tb_employee_tenure = $('#tb_employee_tenure').DataTable({
-        data: items,
-        responsive: true,
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        order: [[5, 'desc']],
-        columns: [
-            { data: 'employee_no', render: d => escapeHtml(d || '-') },
-            { data: 'name', render: d => escapeHtml(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
-            {
-                data: 'employment_date',
-                render: {
-                    display: d => formatDisplayDate(d),
-                    sort: d => d,
-                    filter: d => d,
-                }
-            },
-            {
-                data: 'tenure_years',
-                className: 'text-end',
-                render: {
-                    display: d => {
-                        const years = Number(d) || 0;
-                        const text = years.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-                        const star = employeeTenureIsMilestone(years) ? '<i class="fa-solid fa-star milestone-star" title="Milestone"></i>' : '';
-                        return text + star;
-                    },
-                    sort: d => Number(d) || 0,
-                    filter: d => Number(d) || 0,
-                }
-            },
-            {
-                data: 'tenure_years',
-                render: d => {
-                    const key = employeeTenureBucketKey(d);
-                    const label = langData[EMP_TENURE_BUCKET_LABEL_KEYS[key]] || key;
-                    const color = EMP_TENURE_BUCKET_COLORS[key] || '#6c757d';
-                    return `<span class="tenure-bucket-chip" style="background:${color};">${escapeHtml(label)}</span>`;
-                }
-            },
-        ],
+    tb_employee_tenure = initSharedDataTable('#tb_employee_tenure', {
+        columnFilters: { mode: 'client' },
+        dtOptions: {
+            data: items,
+            responsive: true,
+            order: [[5, 'desc']],
+            columns: [
+                { data: 'employee_no', render: d => escapeHtml(d || '-') },
+                { data: 'name', render: d => escapeHtml(d || '-') },
+                { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
+                { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
+                {
+                    data: 'employment_date',
+                    render: {
+                        display: d => formatDisplayDate(d),
+                        sort: d => d,
+                        filter: d => d,
+                    }
+                },
+                {
+                    data: 'tenure_years',
+                    className: 'text-end',
+                    render: {
+                        display: d => {
+                            const years = Number(d) || 0;
+                            const text = years.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+                            const star = employeeTenureIsMilestone(years) ? '<i class="fa-solid fa-star milestone-star" title="Milestone"></i>' : '';
+                            return text + star;
+                        },
+                        sort: d => Number(d) || 0,
+                        filter: d => Number(d) || 0,
+                    }
+                },
+                {
+                    data: 'tenure_years',
+                    render: d => {
+                        const key = employeeTenureBucketKey(d);
+                        const label = langData[EMP_TENURE_BUCKET_LABEL_KEYS[key]] || key;
+                        const color = EMP_TENURE_BUCKET_COLORS[key] || '#6c757d';
+                        return `<span class="tenure-bucket-chip" style="background:${color};">${escapeHtml(label)}</span>`;
+                    }
+                },
+            ],
+        },
     });
-    if (typeof initExcelColumnFilters === 'function') {
-        initExcelColumnFilters(tb_employee_tenure, { mode: 'client' });
-    }
 }
 function loadEmployeeTenureReport() {
     const filters = currentEmployeeTenureFilters();
@@ -799,43 +779,37 @@ function initEmployeeBirthdayTables(birthdays, anniversaries) {
     if ($.fn.DataTable.isDataTable('#tb_employee_birthday')) {
         tb_employee_birthday.clear().rows.add(birthdays).draw();
     } else {
-        tb_employee_birthday = $('#tb_employee_birthday').DataTable({
-            data: birthdays,
-            responsive: true,
-            pageLength: pageLength,
-            lengthMenu: lengthMenu,
-            language: getTableLang(),
-            columns: [
-                { data: 'employee_no', render: d => escapeHtml(d || '-') },
-                { data: 'name', render: d => escapeHtml(d || '-') },
-                deptCol,
-                dateCol,
-            ],
+        tb_employee_birthday = initSharedDataTable('#tb_employee_birthday', {
+            columnFilters: { mode: 'client' },
+            dtOptions: {
+                data: birthdays,
+                responsive: true,
+                columns: [
+                    { data: 'employee_no', render: d => escapeHtml(d || '-') },
+                    { data: 'name', render: d => escapeHtml(d || '-') },
+                    deptCol,
+                    dateCol,
+                ],
+            },
         });
-        if (typeof initExcelColumnFilters === 'function') {
-            initExcelColumnFilters(tb_employee_birthday, { mode: 'client' });
-        }
     }
     if ($.fn.DataTable.isDataTable('#tb_employee_anniversary')) {
         tb_employee_anniversary.clear().rows.add(anniversaries).draw();
     } else {
-        tb_employee_anniversary = $('#tb_employee_anniversary').DataTable({
-            data: anniversaries,
-            responsive: true,
-            pageLength: pageLength,
-            lengthMenu: lengthMenu,
-            language: getTableLang(),
-            columns: [
-                { data: 'employee_no', render: d => escapeHtml(d || '-') },
-                { data: 'name', render: d => escapeHtml(d || '-') },
-                deptCol,
-                dateCol,
-                { data: 'years', className: 'text-end', render: d => (Number(d) || 0).toLocaleString() },
-            ],
+        tb_employee_anniversary = initSharedDataTable('#tb_employee_anniversary', {
+            columnFilters: { mode: 'client' },
+            dtOptions: {
+                data: anniversaries,
+                responsive: true,
+                columns: [
+                    { data: 'employee_no', render: d => escapeHtml(d || '-') },
+                    { data: 'name', render: d => escapeHtml(d || '-') },
+                    deptCol,
+                    dateCol,
+                    { data: 'years', className: 'text-end', render: d => (Number(d) || 0).toLocaleString() },
+                ],
+            },
         });
-        if (typeof initExcelColumnFilters === 'function') {
-            initExcelColumnFilters(tb_employee_anniversary, { mode: 'client' });
-        }
     }
 }
 function loadEmployeeBirthdayReport() {
@@ -920,38 +894,35 @@ function initEmployeeCompletenessTable(items) {
         tb_employee_completeness.clear().rows.add(items).draw();
         return;
     }
-    tb_employee_completeness = $('#tb_employee_completeness').DataTable({
-        data: items,
-        responsive: true,
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        order: [[4, 'asc']],
-        columns: [
-            { data: 'employee_no', render: d => escapeHtml(d || '-') },
-            { data: 'name', render: d => escapeHtml(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
-            {
-                data: 'completeness',
-                className: 'text-end',
-                render: {
-                    // 2026-09-07, "wow" redesign: was plain colored text -- a mini progress bar reads
-                    // at a glance across a whole column of rows the way a bare number doesn't.
-                    display: d => {
-                        const pct = Number(d) || 0;
-                        const color = employeeCompletenessColor(pct);
-                        return `<div class="d-flex align-items-center justify-content-end gap-2"><span class="fw-semibold small" style="color:${color};">${pct}%</span><span class="mini-progress-track"><span class="mini-progress-fill" style="width:${Math.min(100, pct)}%; background:${color};"></span></span></div>`;
-                    },
-                    sort: d => Number(d) || 0,
-                    filter: d => Number(d) || 0,
-                }
-            },
-        ],
+    tb_employee_completeness = initSharedDataTable('#tb_employee_completeness', {
+        columnFilters: { mode: 'client' },
+        dtOptions: {
+            data: items,
+            responsive: true,
+            order: [[4, 'asc']],
+            columns: [
+                { data: 'employee_no', render: d => escapeHtml(d || '-') },
+                { data: 'name', render: d => escapeHtml(d || '-') },
+                { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') },
+                { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.branch_name_th : row.branch_name_en) || '-') },
+                {
+                    data: 'completeness',
+                    className: 'text-end',
+                    render: {
+                        // 2026-09-07, "wow" redesign: was plain colored text -- a mini progress bar reads
+                        // at a glance across a whole column of rows the way a bare number doesn't.
+                        display: d => {
+                            const pct = Number(d) || 0;
+                            const color = employeeCompletenessColor(pct);
+                            return `<div class="d-flex align-items-center justify-content-end gap-2"><span class="fw-semibold small" style="color:${color};">${pct}%</span><span class="mini-progress-track"><span class="mini-progress-fill" style="width:${Math.min(100, pct)}%; background:${color};"></span></span></div>`;
+                        },
+                        sort: d => Number(d) || 0,
+                        filter: d => Number(d) || 0,
+                    }
+                },
+            ],
+        },
     });
-    if (typeof initExcelColumnFilters === 'function') {
-        initExcelColumnFilters(tb_employee_completeness, { mode: 'client' });
-    }
 }
 function loadEmployeeCompletenessReport() {
     const filters = currentEmployeeCompletenessFilters();

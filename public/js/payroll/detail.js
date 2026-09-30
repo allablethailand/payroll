@@ -1081,53 +1081,44 @@ $(document).on('click', '.btn-report-history', function () {
     initFilterBar('#reportHistoryFilterBar', { onChange: reloadReportHistoryTable });
     new bootstrap.Modal(document.getElementById('reportHistoryModal')).show();
     if (dtReportHistory) { dtReportHistory.destroy(); dtReportHistory = null; }
-    dtReportHistory = $('#tb_report_history').DataTable({
-        responsive: true,
-        order: [[0, 'desc']],
-        ajax: {
-            url: `${BASE_URL}/api/report.export-logs`,
-            dataSrc: 'data',
-            data: function (d) {
-                d.report_code = rdReportHistoryCode;
-                d.payroll_run_id = PAYROLL_RUN_ID;
-                d.date_from = toIsoDateRd($('#reportHistoryDateFrom').val());
-                d.date_to = toIsoDateRd($('#reportHistoryDateTo').val());
-            },
+    dtReportHistory = initSharedDataTable('#tb_report_history', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 1, key: 'downloaded_by' },
+                { index: 2, key: 'language' },
+                { index: 3, key: 'device' },
+                { index: 4, key: 'browser' },
+                { index: 5, key: 'ip_address' },
+                { index: 6, key: 'source' },
+            ]
         },
-        columns: [
-            // object-form render: client-side sort/filter must use the raw ISO datetime (sorts
-            // correctly as a string already), not the dd/mm/yyyy display string -- same gotcha
-            // documented in this project's own date-format-audit history.
-            { data: 'generated_at', render: { display: (v) => formatDisplayDateTime(v), sort: (v) => v, filter: (v) => v } },
-            { data: null, render: (l) => escapeHtml(rdReportByLabel(l)) },
-            { data: null, render: (l) => escapeHtml(rdReportLanguageLabel(l)) },
-            { data: null, render: (l) => escapeHtml(rdReportDeviceLabel(l)) },
-            { data: null, render: (l) => escapeHtml(rdReportBrowserLabel(l)) },
-            { data: 'ip_address', render: (v) => escapeHtml(v || '-') },
-            { data: 'source', render: (v) => escapeHtml(v || '-') },
-        ],
-        // 2026-08-30, real gap found and fixed (full-codebase pageLength audit) -- was missing
-        // entirely, silently falling back to DataTables' own built-in default of 10.
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        initComplete: function () {
-            // 2026-08-29, same-day follow-up: system-wide table audit punch-list item -- every
-            // categorical column here (By/Language/Device/Browser/IP/Source) is a real filter
-            // candidate that had none at all; the date-range fields above already cover Date/Time.
-            // mode:'client' since this table is loaded whole (not serverSide:true) even though the
-            // date range itself is filtered server-side -- the Excel-filter operates on whatever
-            // rows are currently loaded, same as tb_payroll_run's own client-side station filter.
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 1, key: 'downloaded_by' },
-                    { index: 2, key: 'language' },
-                    { index: 3, key: 'device' },
-                    { index: 4, key: 'browser' },
-                    { index: 5, key: 'ip_address' },
-                    { index: 6, key: 'source' },
-                ]
-            });
+        dtOptions: {
+            responsive: true,
+            order: [[0, 'desc']],
+            ajax: {
+                url: `${BASE_URL}/api/report.export-logs`,
+                dataSrc: 'data',
+                data: function (d) {
+                    d.report_code = rdReportHistoryCode;
+                    d.payroll_run_id = PAYROLL_RUN_ID;
+                    d.date_from = toIsoDateRd($('#reportHistoryDateFrom').val());
+                    d.date_to = toIsoDateRd($('#reportHistoryDateTo').val());
+                },
+            },
+            columns: [
+                // object-form render: client-side sort/filter must use the raw ISO datetime (sorts
+                // correctly as a string already), not the dd/mm/yyyy display string -- same gotcha
+                // documented in this project's own date-format-audit history.
+                { data: 'generated_at', render: { display: (v) => formatDisplayDateTime(v), sort: (v) => v, filter: (v) => v } },
+                { data: null, render: (l) => escapeHtml(rdReportByLabel(l)) },
+                { data: null, render: (l) => escapeHtml(rdReportLanguageLabel(l)) },
+                { data: null, render: (l) => escapeHtml(rdReportDeviceLabel(l)) },
+                { data: null, render: (l) => escapeHtml(rdReportBrowserLabel(l)) },
+                { data: 'ip_address', render: (v) => escapeHtml(v || '-') },
+                { data: 'source', render: (v) => escapeHtml(v || '-') },
+            ],
+            searching: true,
         },
     });
 });
@@ -7226,10 +7217,8 @@ function initJoinEmployeesTable() {
         $('#tb_join_employees').DataTable().ajax.reload();
         return;
     }
-    tb_join_employees = $('#tb_join_employees').DataTable({
-        responsive: true,
+    tb_join_employees = initSharedDataTable('#tb_join_employees', {
         serverSide: true,
-        processing: true,
         ajax: {
             url: `${BASE_URL}/api/payroll-run.manual-employee-options`,
             type: 'POST',
@@ -7248,104 +7237,102 @@ function initJoinEmployeesTable() {
                 d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
             }
         },
-        columns: [
-            {
-                data: null, orderable: false, render: (d, t, row) => {
-                    const checked = joinSelectedEmployees[row.id] ? 'checked' : '';
-                    return `<input type="checkbox" class="join-emp-checkbox" data-id="${row.id}" data-employee-no="${escapeHtml(row.employee_no)}" ${checked}>`;
-                }
-            },
-            { data: 'employee_no' },
-            // 2026-09-22, n: avatar + name, the same line every other employee list in the app shows
-            // (apvPersonLineHtml(), app.js) -- in BOTH modes, not just the new one, so the picker
-            // does not look like two different tables. `employeeId: null` deliberately: a clickable
-            // avatar here would stack the app-wide quick-view modal on top of an open picker, which
-            // is a separate decision (see BACKLOG). Object-form render (this app's DataTables
-            // sort-safety convention) since display is now HTML -- filter stays the plain name.
-            { data: null, render: {
-                display: (d, t, row) => apvPersonLineHtml(joinEmployeeNameRd(row), 24, row.profile_photo_path, { employeeId: null }),
-                filter: (d, t, row) => joinEmployeeNameRd(row),
-            } },
-            { data: 'department', render: d => escapeHtml(d || '-') },
-            { data: 'team', render: d => escapeHtml(d || '-') },
-            { data: 'position', render: d => escapeHtml(d || '-') },
-            { data: 'cycle_name', render: d => escapeHtml(d || '-') },
-            // Column 7 -- `missing` mode only (hidden by DataTables' own column visibility in `all`
-            // mode, not by a second table). One row = one employee this run is missing, so "pull this
-            // one in" belongs on the row; the footer button stays for pulling several at once.
-            {
-                data: null, orderable: false, className: 'text-center',
-                visible: joinEmployeesModeIsMissingRd(),
-                // Responsive drops columns right-to-left, so this one -- the rightmost -- would be the
-                // first to fold into a child row on a phone. An action you have to expand a row to
-                // reach is not reachable; it keeps its place at every width.
-                responsivePriority: 1,
-                render: function (d, t, row) {
-                    const label = escapeAttr(langData['action_pull_one'] || 'Pull this employee into the run');
-                    return `<button type="button" class="btn-icon btn-icon-ghost join-emp-pull-one" data-id="${row.id}" title="${label}" aria-label="${label}"><i class="fa-solid fa-arrow-right-to-bracket"></i></button>`;
-                }
-            },
-        ],
-        order: [],
-        searching: false,
-        // 2026-08-30, real gap found and fixed (full-codebase pageLength audit) -- was missing
-        // entirely, silently falling back to DataTables' own built-in default of 10.
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        initComplete: function () {
-            const self = this.api();
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, server mode. Excludes the row-select checkbox (0) -- no actions column on
-            // this picker.
-            initExcelColumnFilters(self, {
-                mode: 'server',
-                columns: [
-                    { index: 1, key: 'employee_no' },
-                    { index: 2, key: 'name' },
-                    { index: 3, key: 'department' },
-                    { index: 4, key: 'team' },
-                    { index: 5, key: 'position' },
-                    { index: 6, key: 'cycle_name' },
-                ],
-                fetchValues: function (key, done) {
-                    $.ajax({
-                        url: `${BASE_URL}/api/payroll-run.manual-employee-column-values`,
-                        method: 'POST',
-                        data: {
-                            run_id: PAYROLL_RUN_ID,
-                            department_id: $('#joinFilterDepartment').val() || '',
-                            team_id: $('#joinFilterTeam').val() || '',
-                            position_id: $('#joinFilterPosition').val() || '',
-                            emp_cycle_id: $('#joinFilterCycle').val() || '',
-                            column: key,
-                            missing_only: joinEmployeesModeIsMissingRd() ? 1 : 0,
-                            column_filters: getColumnFilterValues(self)
-                        },
-                        dataType: 'json'
-                    }).done(function (res) {
-                        done((res && res.values) || []);
-                    }).fail(function () {
-                        done([]);
-                    });
+        dtOptions: {
+            responsive: true,
+            columns: [
+                {
+                    data: null, orderable: false, render: (d, t, row) => {
+                        const checked = joinSelectedEmployees[row.id] ? 'checked' : '';
+                        return `<input type="checkbox" class="join-emp-checkbox" data-id="${row.id}" data-employee-no="${escapeHtml(row.employee_no)}" ${checked}>`;
+                    }
                 },
-                onApply: function () { self.ajax.reload(null, false); }
-            });
+                { data: 'employee_no' },
+                // 2026-09-22, n: avatar + name, the same line every other employee list in the app shows
+                // (apvPersonLineHtml(), app.js) -- in BOTH modes, not just the new one, so the picker
+                // does not look like two different tables. `employeeId: null` deliberately: a clickable
+                // avatar here would stack the app-wide quick-view modal on top of an open picker, which
+                // is a separate decision (see BACKLOG). Object-form render (this app's DataTables
+                // sort-safety convention) since display is now HTML -- filter stays the plain name.
+                { data: null, render: {
+                    display: (d, t, row) => apvPersonLineHtml(joinEmployeeNameRd(row), 24, row.profile_photo_path, { employeeId: null }),
+                    filter: (d, t, row) => joinEmployeeNameRd(row),
+                } },
+                { data: 'department', render: d => escapeHtml(d || '-') },
+                { data: 'team', render: d => escapeHtml(d || '-') },
+                { data: 'position', render: d => escapeHtml(d || '-') },
+                { data: 'cycle_name', render: d => escapeHtml(d || '-') },
+                // Column 7 -- `missing` mode only (hidden by DataTables' own column visibility in `all`
+                // mode, not by a second table). One row = one employee this run is missing, so "pull this
+                // one in" belongs on the row; the footer button stays for pulling several at once.
+                {
+                    data: null, orderable: false, className: 'text-center',
+                    visible: joinEmployeesModeIsMissingRd(),
+                    // Responsive drops columns right-to-left, so this one -- the rightmost -- would be the
+                    // first to fold into a child row on a phone. An action you have to expand a row to
+                    // reach is not reachable; it keeps its place at every width.
+                    responsivePriority: 1,
+                    render: function (d, t, row) {
+                        const label = escapeAttr(langData['action_pull_one'] || 'Pull this employee into the run');
+                        return `<button type="button" class="btn-icon btn-icon-ghost join-emp-pull-one" data-id="${row.id}" title="${label}" aria-label="${label}"><i class="fa-solid fa-arrow-right-to-bracket"></i></button>`;
+                    }
+                },
+            ],
+            order: [],
+            searching: false,
+            initComplete: function () {
+                const self = this.api();
+                // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+                // rollout, server mode. Excludes the row-select checkbox (0) -- no actions column on
+                // this picker.
+                initExcelColumnFilters(self, {
+                    mode: 'server',
+                    columns: [
+                        { index: 1, key: 'employee_no' },
+                        { index: 2, key: 'name' },
+                        { index: 3, key: 'department' },
+                        { index: 4, key: 'team' },
+                        { index: 5, key: 'position' },
+                        { index: 6, key: 'cycle_name' },
+                    ],
+                    fetchValues: function (key, done) {
+                        $.ajax({
+                            url: `${BASE_URL}/api/payroll-run.manual-employee-column-values`,
+                            method: 'POST',
+                            data: {
+                                run_id: PAYROLL_RUN_ID,
+                                department_id: $('#joinFilterDepartment').val() || '',
+                                team_id: $('#joinFilterTeam').val() || '',
+                                position_id: $('#joinFilterPosition').val() || '',
+                                emp_cycle_id: $('#joinFilterCycle').val() || '',
+                                column: key,
+                                missing_only: joinEmployeesModeIsMissingRd() ? 1 : 0,
+                                column_filters: getColumnFilterValues(self)
+                            },
+                            dataType: 'json'
+                        }).done(function (res) {
+                            done((res && res.values) || []);
+                        }).fail(function () {
+                            done([]);
+                        });
+                    },
+                    onApply: function () { self.ajax.reload(null, false); }
+                });
+            },
+            drawCallback: function () {
+                getTableLang();
+                $('#joinSelectAll').prop('checked', false);
+                // 2026-08-24, explicit request ("จัดรูปแบบให้การดึงพนักงานเข้ามาในการคำนวณดำเนินการได้ง่าย
+                // ที่สุด") -- recordsDisplay (post-filter, pre-pagination total) is exactly what "Select
+                // All Matching" would select, shown right next to that button so the number it acts on
+                // is never a guess.
+                $('#joinFilteredCount').text(this.api().page.info().recordsDisplay);
+                // 2026-09-22, n: the shared empty state (11), on every draw rather than once at
+                // construction -- so it follows the mode AND the language with nothing to invalidate. It
+                // no-ops unless the table really is empty, and falls back to the app-wide "narrowed to
+                // nothing + clear filter" copy by itself when a filter is what emptied it.
+                dtRenderEmptyState(this.api(), joinEmptyStateRd());
+            }
         },
-        drawCallback: function () {
-            getTableLang();
-            $('#joinSelectAll').prop('checked', false);
-            // 2026-08-24, explicit request ("จัดรูปแบบให้การดึงพนักงานเข้ามาในการคำนวณดำเนินการได้ง่าย
-            // ที่สุด") -- recordsDisplay (post-filter, pre-pagination total) is exactly what "Select
-            // All Matching" would select, shown right next to that button so the number it acts on
-            // is never a guess.
-            $('#joinFilteredCount').text(this.api().page.info().recordsDisplay);
-            // 2026-09-22, n: the shared empty state (11), on every draw rather than once at
-            // construction -- so it follows the mode AND the language with nothing to invalidate. It
-            // no-ops unless the table really is empty, and falls back to the app-wide "narrowed to
-            // nothing + clear filter" copy by itself when a filter is what emptied it.
-            dtRenderEmptyState(this.api(), joinEmptyStateRd());
-        }
     });
 }
 $(document).on('click', '#btnJoinEmployees', function () {

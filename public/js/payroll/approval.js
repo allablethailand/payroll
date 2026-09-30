@@ -256,107 +256,104 @@ function initPayrollApprovalTable() {
         $('#tb_payroll_approval').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_payroll_approval = $('#tb_payroll_approval').DataTable({
-        responsive: true,
-        order: [[6, 'asc']],
-        ajax: {
-            url: `${BASE_URL}/api/payroll-run.list`,
-            // 2026-08-22, bug fix (explicit report: "ตอนนี้ไม่มีข้อมูลไม่เห็นตาราง") -- the table
-            // used to hide itself entirely when zero rows matched. Now it always stays visible,
-            // same as the Process List page's own table, relying on DataTables' native
-            // zeroRecords/emptyTable text instead of a custom placeholder.
-            dataSrc: function (res) {
-                // approval_queue=1 (below) already asks the server to drop any pending_approval row
-                // this viewer has no currently-actionable step on (see PayrollRunModel::list()'s own
-                // docblock, 2026-08-24) -- this client-side filter only narrows to the 4 states this
-                // page ever shows, it's not the access-control boundary.
-                return (res.data || []).filter(r => ['pending_approval', 'approved', 'rejected', 'need_info'].includes(r.state));
+    tb_payroll_approval = initSharedDataTable('#tb_payroll_approval', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 1, key: 'run_name' },
+                { index: 2, key: 'period' },
+                { index: 3, key: 'state' },
+                { index: 4, key: 'employee_count' },
+                { index: 5, key: 'total_net_amount' },
+                { index: 6, key: 'submitter' },
+                { index: 7, key: 'submitted_at' },
+                { index: 8, key: 'updated_at' },
+            ]
+        },
+        dtOptions: {
+            responsive: true,
+            order: [[6, 'asc']],
+            ajax: {
+                url: `${BASE_URL}/api/payroll-run.list`,
+                // 2026-08-22, bug fix (explicit report: "ตอนนี้ไม่มีข้อมูลไม่เห็นตาราง") -- the table
+                // used to hide itself entirely when zero rows matched. Now it always stays visible,
+                // same as the Process List page's own table, relying on DataTables' native
+                // zeroRecords/emptyTable text instead of a custom placeholder.
+                dataSrc: function (res) {
+                    // approval_queue=1 (below) already asks the server to drop any pending_approval row
+                    // this viewer has no currently-actionable step on (see PayrollRunModel::list()'s own
+                    // docblock, 2026-08-24) -- this client-side filter only narrows to the 4 states this
+                    // page ever shows, it's not the access-control boundary.
+                    return (res.data || []).filter(r => ['pending_approval', 'approved', 'rejected', 'need_info'].includes(r.state));
+                },
+                data: function (d) {
+                    d.state = '';
+                    d.approval_queue = 1;
+                    d.date_from = toIsoDateAp($('#approval_filter_date_from').val());
+                    d.date_to = toIsoDateAp($('#approval_filter_date_to').val());
+                }
             },
-            data: function (d) {
-                d.state = '';
-                d.approval_queue = 1;
-                d.date_from = toIsoDateAp($('#approval_filter_date_from').val());
-                d.date_to = toIsoDateAp($('#approval_filter_date_to').val());
-            }
+            columns: [
+                { data: null, orderable: false, render: (d, t, row) => approvalCheckboxHtml(row) },
+                { data: 'run_name', render: d => `<strong class="text-dark">${escapeHtml(d)}</strong>` },
+                { data: null, render: (d, t, row) => `${toDisplayDateAp(row.period_start_date)} - ${toDisplayDateAp(row.period_end_date)}` },
+                { data: 'state', render: d => stateBadgeAp(d) },
+                { data: 'employee_count', className: 'text-end' },
+                // 2026-08-29, real bug found via a system-wide table audit: sort-safety fix -- plain
+                // `render: fn` meant client-side sort/filter operated on the formatted "1,234.56"
+                // string, not the raw numeric amount (same class of bug already documented in CLAUDE.md).
+                { data: 'total_net_amount', className: 'text-end', render: { display: d => fmtNum(d), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
+                { data: null, render: (d, t, row) => escapeHtml(submitterNameAp(row)) },
+                // 2026-08-29, real bug found and fixed (explicit report: "เวลาที่ Save ลงใน Database เป็น
+                // UTC การแสดงผลให้แปลงเป็น timezone ปัจจุบันของผู้ใช้") -- was displaying the raw UTC time
+                // straight from the DB string with no timezone conversion at all. Reuses
+                // formatDisplayDateTime() (app.js) -- already UTC-aware, no need for a local copy of
+                // the same technique here.
+                // 2026-08-29, same-day: object-form render added (sort-safety audit) -- sort/filter now
+                // key off the raw ISO datetime (still sorts correctly as a string) instead of the
+                // dd/mm/yyyy display string.
+                { data: 'submitted_at', render: { display: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-', sort: d => d || '', filter: d => d || '' } },
+                // "Last Updated" = updated_at, same column/semantics as the Process List page's own
+                // (2026-08-23, explicit request: "หน้า Process List และ Approval List ให้แสดงวันที่ของ
+                // Status ล่าสุดด้วย") -- every state transition (submit/approve/reject/request-info/
+                // revert/markPaid/lock/cancel) explicitly sets updated_at in its own UPDATE, and a run
+                // is otherwise immutable once it leaves draft, so this always reflects exactly when the
+                // CURRENT status was reached, not just "last touched" (which for a draft run tracks the
+                // last edit/recalculate -- also correct, since a draft doesn't have a "status date" of
+                // its own beyond that).
+                { data: 'updated_at', render: { display: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-', sort: d => d || '', filter: d => d || '' } },
+                // 2026-08-28, explicit request: "ตาราง Responsive ทุกตาราง Column ท้ายสุดต้องเป็นปุ่ม
+                // ดำเนินการ แล้วไป hidden ส่วนอื่นเป็นตัว expand แทน" -- these 2 action-button columns
+                // are already positioned last; `className: 'all'` (per DataTables Responsive's own
+                // dtr-all convention, NOT 'never' -- see employee/list.js's own 2026-08-27 fix for why)
+                // keeps them from ever collapsing into the expand row on a narrow viewport, letting
+                // every OTHER column collapse there instead.
+                { data: null, className: 'text-center all', orderable: false, render: (d, t, row) => renderApprovalViewActions(row) },
+                { data: null, className: 'text-center all', orderable: false, render: (d, t, row) => renderApprovalDecisionActions(row) },
+            ],
+            initComplete: function () {
+                // Relocate the bulk action bar (static markup above the table) into the DataTables
+                // length control row so it sits right after "Show N entries" instead of on its own
+                // line -- same idiom as index.js's #bulkPullBar. Only moves the existing DOM node
+                // (keeps its d-none/d-inline-flex toggling untouched), not a copy.
+                const self = this.api();
+                const $wrapper = $(self.table().container());
+                const $lengthDiv = $wrapper.find('.dt-length');
+                if ($lengthDiv.length && $('#approvalBulkBar').closest('.dt-length').length === 0) {
+                    $lengthDiv.append($('#approvalBulkBar'));
+                }
+            },
+            drawCallback: function () {
+                getTableLang();
+                updateApprovalStationCounts();
+                const $rowBoxes = $('#tb_payroll_approval tbody .approval-row-checkbox');
+                $rowBoxes.each(function () {
+                    $(this).prop('checked', Object.prototype.hasOwnProperty.call(selectedApprovalRuns, $(this).val()));
+                });
+                $('#approvalSelectAll').prop('checked', $rowBoxes.length > 0 && $rowBoxes.filter(':not(:checked)').length === 0);
+            },
+            searching: true,
         },
-        columns: [
-            { data: null, orderable: false, render: (d, t, row) => approvalCheckboxHtml(row) },
-            { data: 'run_name', render: d => `<strong class="text-dark">${escapeHtml(d)}</strong>` },
-            { data: null, render: (d, t, row) => `${toDisplayDateAp(row.period_start_date)} - ${toDisplayDateAp(row.period_end_date)}` },
-            { data: 'state', render: d => stateBadgeAp(d) },
-            { data: 'employee_count', className: 'text-end' },
-            // 2026-08-29, real bug found via a system-wide table audit: sort-safety fix -- plain
-            // `render: fn` meant client-side sort/filter operated on the formatted "1,234.56"
-            // string, not the raw numeric amount (same class of bug already documented in CLAUDE.md).
-            { data: 'total_net_amount', className: 'text-end', render: { display: d => fmtNum(d), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
-            { data: null, render: (d, t, row) => escapeHtml(submitterNameAp(row)) },
-            // 2026-08-29, real bug found and fixed (explicit report: "เวลาที่ Save ลงใน Database เป็น
-            // UTC การแสดงผลให้แปลงเป็น timezone ปัจจุบันของผู้ใช้") -- was displaying the raw UTC time
-            // straight from the DB string with no timezone conversion at all. Reuses
-            // formatDisplayDateTime() (app.js) -- already UTC-aware, no need for a local copy of
-            // the same technique here.
-            // 2026-08-29, same-day: object-form render added (sort-safety audit) -- sort/filter now
-            // key off the raw ISO datetime (still sorts correctly as a string) instead of the
-            // dd/mm/yyyy display string.
-            { data: 'submitted_at', render: { display: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-', sort: d => d || '', filter: d => d || '' } },
-            // "Last Updated" = updated_at, same column/semantics as the Process List page's own
-            // (2026-08-23, explicit request: "หน้า Process List และ Approval List ให้แสดงวันที่ของ
-            // Status ล่าสุดด้วย") -- every state transition (submit/approve/reject/request-info/
-            // revert/markPaid/lock/cancel) explicitly sets updated_at in its own UPDATE, and a run
-            // is otherwise immutable once it leaves draft, so this always reflects exactly when the
-            // CURRENT status was reached, not just "last touched" (which for a draft run tracks the
-            // last edit/recalculate -- also correct, since a draft doesn't have a "status date" of
-            // its own beyond that).
-            { data: 'updated_at', render: { display: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-', sort: d => d || '', filter: d => d || '' } },
-            // 2026-08-28, explicit request: "ตาราง Responsive ทุกตาราง Column ท้ายสุดต้องเป็นปุ่ม
-            // ดำเนินการ แล้วไป hidden ส่วนอื่นเป็นตัว expand แทน" -- these 2 action-button columns
-            // are already positioned last; `className: 'all'` (per DataTables Responsive's own
-            // dtr-all convention, NOT 'never' -- see employee/list.js's own 2026-08-27 fix for why)
-            // keeps them from ever collapsing into the expand row on a narrow viewport, letting
-            // every OTHER column collapse there instead.
-            { data: null, className: 'text-center all', orderable: false, render: (d, t, row) => renderApprovalViewActions(row) },
-            { data: null, className: 'text-center all', orderable: false, render: (d, t, row) => renderApprovalDecisionActions(row) },
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        initComplete: function () {
-            // Relocate the bulk action bar (static markup above the table) into the DataTables
-            // length control row so it sits right after "Show N entries" instead of on its own
-            // line -- same idiom as index.js's #bulkPullBar. Only moves the existing DOM node
-            // (keeps its d-none/d-inline-flex toggling untouched), not a copy.
-            const self = this.api();
-            const $wrapper = $(self.table().container());
-            const $lengthDiv = $wrapper.find('.dt-length');
-            if ($lengthDiv.length && $('#approvalBulkBar').closest('.dt-length').length === 0) {
-                $lengthDiv.append($('#approvalBulkBar'));
-            }
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the row-select checkbox (0) and the two action-button
-            // columns (9, 10).
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 1, key: 'run_name' },
-                    { index: 2, key: 'period' },
-                    { index: 3, key: 'state' },
-                    { index: 4, key: 'employee_count' },
-                    { index: 5, key: 'total_net_amount' },
-                    { index: 6, key: 'submitter' },
-                    { index: 7, key: 'submitted_at' },
-                    { index: 8, key: 'updated_at' },
-                ]
-            });
-        },
-        drawCallback: function () {
-            getTableLang();
-            updateApprovalStationCounts();
-            const $rowBoxes = $('#tb_payroll_approval tbody .approval-row-checkbox');
-            $rowBoxes.each(function () {
-                $(this).prop('checked', Object.prototype.hasOwnProperty.call(selectedApprovalRuns, $(this).val()));
-            });
-            $('#approvalSelectAll').prop('checked', $rowBoxes.length > 0 && $rowBoxes.filter(':not(:checked)').length === 0);
-        }
     });
     $(document).off('click', '.btn-view-approval-run').on('click', '.btn-view-approval-run', function (e) {
         e.stopPropagation();

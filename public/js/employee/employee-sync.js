@@ -123,26 +123,30 @@ function esUpdateBadgeHtml(row) {
 }
 
 function renderSyncTables() {
-    $('#tb_sync_new').DataTable({
-        destroy: true, responsive: true, paging: false, info: false, searching: false, ordering: false,
-        data: syncLastNewRows,
-        language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
-        columns: [
-            { data: 'ref_id', orderable: false, className: 'text-center', render: d => esCheckboxCellHtml(d) },
-            { data: null, render: (d, t, row) => esRenderEmployeeCell(row, row.employee_no, row.type) },
-            { data: null, render: (d, t, row) => esRenderDeptPositionCell(row) },
-        ],
+    initSharedDataTable('#tb_sync_new', {
+        dtOptions: {
+            destroy: true, responsive: true, paging: false, info: false, searching: false, ordering: false,
+            data: syncLastNewRows,
+            language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
+            columns: [
+                { data: 'ref_id', orderable: false, className: 'text-center', render: d => esCheckboxCellHtml(d) },
+                { data: null, render: (d, t, row) => esRenderEmployeeCell(row, row.employee_no, row.type) },
+                { data: null, render: (d, t, row) => esRenderDeptPositionCell(row) },
+            ],
+        },
     });
-    $('#tb_sync_existing').DataTable({
-        destroy: true, responsive: true, paging: false, info: false, searching: false, ordering: false,
-        data: syncLastExistingRows,
-        language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
-        columns: [
-            { data: 'ref_id', orderable: false, className: 'text-center', render: d => esCheckboxCellHtml(d) },
-            { data: null, render: (d, t, row) => esRenderEmployeeCell(row, row.existing_employee_no || row.employee_no, row.type) },
-            { data: null, render: (d, t, row) => esEscapeHtml(esCandidateDepartment(row)) },
-            { data: null, render: (d, t, row) => esUpdateBadgeHtml(row) },
-        ],
+    initSharedDataTable('#tb_sync_existing', {
+        dtOptions: {
+            destroy: true, responsive: true, paging: false, info: false, searching: false, ordering: false,
+            data: syncLastExistingRows,
+            language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
+            columns: [
+                { data: 'ref_id', orderable: false, className: 'text-center', render: d => esCheckboxCellHtml(d) },
+                { data: null, render: (d, t, row) => esRenderEmployeeCell(row, row.existing_employee_no || row.employee_no, row.type) },
+                { data: null, render: (d, t, row) => esEscapeHtml(esCandidateDepartment(row)) },
+                { data: null, render: (d, t, row) => esUpdateBadgeHtml(row) },
+            ],
+        },
     });
 }
 

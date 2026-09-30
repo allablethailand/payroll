@@ -83,7 +83,9 @@ function annActionBtns(row) {
 }
 function initAnnouncementTable() {
     if (annTable) { annTable.ajax.reload(null, false); return; }
-    annTable = $('#tb_announcement').DataTable({
+    annTable = initSharedDataTable('#tb_announcement', {
+        dtOptions: {
+        searching: true,
         ajax: { url: `${BASE_URL}/api/announcement.list`, dataSrc: 'data' },
         columns: [
             { data: 'status', render: (d) => annStatusBadge(d) },
@@ -98,14 +100,14 @@ function initAnnouncementTable() {
             { data: null, render: (d, t, row) => formatDisplayDateTime ? formatDisplayDateTime(row.updated_at || row.created_at) : (row.updated_at || row.created_at || '') },
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => annActionBtns(row) }
         ],
-        ordering: false, lengthChange: false, pageLength: pageLength,
-        language: (typeof getTableLang === 'function') ? getTableLang() : {},
+        ordering: false, lengthChange: false,
         initComplete: function () {
             const $wrapper = $(this.api().table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-announcement').length === 0) {
                 $searchDiv.append(`<button type="button" class="btn btn-primary ms-1 btn-add-announcement" onclick="openAnnouncementModal()"><i class="fa-solid fa-plus me-1"></i><span>${langData['announcement_new'] || 'New Announcement'}</span></button>`);
             }
+        }
         }
     });
 }

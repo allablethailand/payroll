@@ -317,7 +317,10 @@ function dsHistoryFilterParams(d) {
 function dsInitHistoryTable() {
     if (dsHistoryTableInited) return;
     dsHistoryTableInited = true;
-    tb_data_sync_history = $('#tb_data_sync_history').DataTable({
+    tb_data_sync_history = initSharedDataTable('#tb_data_sync_history', {
+        columnFilters: { mode: 'client', columns: [{ index: 0, key: 'entity_type' }, { index: 1, key: 'status' }] },
+        dtOptions: {
+        searching: true,
         ajax: {
             url: `${BASE_URL}/api/master-data-sync.history`,
             type: 'POST',
@@ -358,14 +361,6 @@ function dsInitHistoryTable() {
         ],
         order: [[6, 'desc']],
         responsive: true,
-        initComplete: function () {
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'entity_type' },
-                    { index: 1, key: 'status' },
-                ]
-            });
         }
     });
 }
@@ -383,7 +378,9 @@ function dsOpenCardHistory(type) {
         tb_ds_card_history.destroy();
         $('#tb_ds_card_history tbody').empty();
     }
-    tb_ds_card_history = $('#tb_ds_card_history').DataTable({
+    tb_ds_card_history = initSharedDataTable('#tb_ds_card_history', {
+        dtOptions: {
+        searching: true,
         ajax: {
             url: `${BASE_URL}/api/master-data-sync.history`,
             type: 'POST',
@@ -423,9 +420,7 @@ function dsOpenCardHistory(type) {
         ],
         order: [[5, 'desc']],
         responsive: true,
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
+        }
     });
 }
 $(document).on('click', '.ds-view-history-btn', function () {
