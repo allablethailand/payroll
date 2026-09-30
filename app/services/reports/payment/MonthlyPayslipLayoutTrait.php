@@ -83,9 +83,9 @@ trait MonthlyPayslipLayoutTrait {
                 $place($deduct, self::$MONTHLY_DEDUCTION_SLOTS, (string)($item['code'] ?? ''), (string)($item['name_th'] ?? ''), $amount, 'deduct');
             }
         }
-        // "อื่นๆ (name, name)" -- falls back to plain "อื่นๆ" when the names would not fit the column.
+        // The catch-all row shows the item names themselves ("name, name"); plain label kept when none or > 30 chars.
         foreach ([['income', &$income], ['deduct', &$deduct]] as [$side, &$rows]) {
-            $label = 'อื่นๆ (' . implode(', ', $otherNames[$side]) . ')';
+            $label = implode(', ', $otherNames[$side]);
             if ($otherNames[$side] && mb_strlen($label) <= 30) {
                 $rows[count($rows) - 1][0] = $label;
             }
