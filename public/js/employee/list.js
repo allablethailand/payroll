@@ -85,7 +85,16 @@ $(document).ready(function () {
     if (typeof initSelect2 === 'function') {
         initSelect2('#employee_filter_role, #employee_filter_department, #employee_filter_team, #employee_filter_shift, #employee_filter_branch', { mode: 'ajax', allowClear: true });
     }
-    updateClearEmployeeFilterVisibility();
+    initFilterBar('#employeeFilterBar', {
+        onChange: function () {
+            if (tb_employee) tb_employee.ajax.reload(null, true);
+            refreshEmployeeStationCounts();
+        },
+    });
+    // Recheck bar selects are initialised by app.js's generic sweep, so it can bind now even though its tab is hidden.
+    initFilterBar('#employeeRecheckFilterBar', {
+        onChange: function () { if (tb_employee_recheck) tb_employee_recheck.ajax.reload(null, true); },
+    });
     refreshEmployeeStationCounts();
     activateTabFromHash('#employeeTopTabs');
     initRcMobileIti();
@@ -129,11 +138,6 @@ function toIsoDateEmp(displayVal) {
     const [dd, mm, yyyy] = parts;
     return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 }
-function updateClearEmployeeFilterVisibility() {
-    const f = currentEmployeeExtraFilters();
-    const hasFilter = !!(f.created_date_from || f.created_date_to || f.role_id || f.department_id || f.team_id || f.shift_id || f.branch_id || f.is_payroll_participant !== '');
-    $('#employeeFilterClearRow').toggleClass('d-none', !hasFilter);
-}
 // 2026-08-30 (Phase 3, T024) -- populates the station-card pipeline's own .station-count spans.
 // Deliberately does NOT send the free-text search term (station counts represent "how many
 // employees are in this station" as a stable navigational aid, not "how many match what I just
@@ -153,37 +157,6 @@ function refreshEmployeeStationCounts() {
         $('#tab-emp-resign .station-count').text(res.data.resigned || 0);
     });
 }
-$(document).on('click', '#employeeStationFilterToggle', function () {
-    const $filter = $('#employeeStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-// 'changeDate' alone (not the native 'change' bootstrap-datepicker also fires alongside it) --
-// same reasoning as the Payroll Process filter this is modeled on, avoids double-firing reload.
-$(document).on('changeDate', '#employee_filter_date_from, #employee_filter_date_to', function () {
-    updateClearEmployeeFilterVisibility();
-    if (tb_employee) tb_employee.ajax.reload(null, true);
-    refreshEmployeeStationCounts();
-});
-$(document).on('change', '#employee_filter_role, #employee_filter_department, #employee_filter_team, #employee_filter_shift, #employee_filter_branch, #employee_filter_payroll_participant', function () {
-    updateClearEmployeeFilterVisibility();
-    if (tb_employee) tb_employee.ajax.reload(null, true);
-    refreshEmployeeStationCounts();
-});
-$(document).on('click', '#btnClearEmployeeFilter', function () {
-    // Clear every control WITHOUT letting each one's own change handler fire its own
-    // ajax.reload() -- 'change.select2' only refreshes the widget's display, and clearDates()'s
-    // 'changeDate' event is left to fire on the date fields same as the Process page's own Clear
-    // Filter (2 reloads there already, accepted) -- one explicit reload below covers the rest.
-    $('#employee_filter_role, #employee_filter_department, #employee_filter_team, #employee_filter_shift, #employee_filter_branch').val(null).trigger('change.select2');
-    // 2026-08-30 (T022) -- reset to its own real 'all' option, not null (this dropdown has no blank
-    // placeholder option the way the select2-remote ones above do).
-    $('#employee_filter_payroll_participant').val('all').trigger('change.select2');
-    $('#employee_filter_date_from, #employee_filter_date_to').datepicker('clearDates');
-    updateClearEmployeeFilterVisibility();
-    if (tb_employee) tb_employee.ajax.reload(null, true);
-    refreshEmployeeStationCounts();
-});
 function initEmployeeTable() {
     if ($.fn.DataTable.isDataTable('#tb_employee')) {
         $('#tb_employee').DataTable().ajax.reload(null, false);
@@ -824,21 +797,6 @@ $(document).ready(function () {
     }
     });
 });
-function updateClearEmployeeRecheckFilterVisibility() {
-    const f = currentEmployeeRecheckFilters();
-    // 2026-09-08: `view` joined this same filter row (was a separate .btn-group toggle before) --
-    // 'participant' ("In Payroll") is its default, so only 'excluded' counts as an active filter here,
-    // same "non-default state shows Clear Filter" convention the Employee tab's own
-    // is_payroll_participant filter already uses (see updateClearEmployeeFilterVisibility() above).
-    // 2026-09-12, Batch 4 item 4 -- status/employment_status/tax_calculation_method are already ''
-    // when their own select sits on its own "All" option (mapped in currentEmployeeRecheckFilters()
-    // above), same '' -> "no filter" convention every other field here already uses.
-    const hasFilter = !!(f.role_id || f.department_id || f.team_id || f.shift_id || f.branch_id
-        || f.position_id || f.nationality || f.payment_method_id
-        || f.status || f.employment_status || f.tax_calculation_method
-        || f.view !== 'participant');
-    $('#employeeRecheckFilterClearRow').toggleClass('d-none', !hasFilter);
-}
 function initEmployeeRecheckTable() {
     if ($.fn.DataTable.isDataTable('#tb_employee_recheck')) {
         tb_employee_recheck.ajax.reload(null, false);
@@ -932,32 +890,6 @@ function initEmployeeRecheckTable() {
 }
 $(document).on('shown.bs.tab', '#employee-recheck-top-tab', function () {
     initEmployeeRecheckTable();
-});
-$(document).on('click', '#employeeRecheckStationFilterToggle', function () {
-    const $filter = $('#employeeRecheckStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-// 2026-09-12, Batch 4 item 4 -- Status/Employment Status/Position/Nationality/Tax Method/Payment
-// Method joined this same change-triggers-reload group, same pattern as every filter here.
-$(document).on('change', '#employee_recheck_filter_role, #employee_recheck_filter_department, #employee_recheck_filter_team, #employee_recheck_filter_shift, #employee_recheck_filter_branch, #employee_recheck_filter_position, #employee_recheck_filter_nationality, #employee_recheck_filter_payment_method, #employee_recheck_filter_status, #employee_recheck_filter_employment_status, #employee_recheck_filter_tax_calculation_method', function () {
-    updateClearEmployeeRecheckFilterVisibility();
-    if (tb_employee_recheck) tb_employee_recheck.ajax.reload(null, true);
-});
-$(document).on('click', '#btnClearEmployeeRecheckFilter', function () {
-    $('#employee_recheck_filter_role, #employee_recheck_filter_department, #employee_recheck_filter_team, #employee_recheck_filter_shift, #employee_recheck_filter_branch, #employee_recheck_filter_position, #employee_recheck_filter_nationality, #employee_recheck_filter_payment_method').val(null).trigger('change.select2');
-    // 2026-09-12, Batch 4 item 4 -- these 3 have no blank placeholder option (same reasoning as
-    // #employee_filter_payroll_participant on the main tab), so Clear Filter resets each to its own
-    // real 'all' option instead of null.
-    $('#employee_recheck_filter_status, #employee_recheck_filter_employment_status, #employee_recheck_filter_tax_calculation_method').val('all').trigger('change.select2');
-    // 2026-09-08: reset the view select back to its own default ('participant'/"In Payroll") too --
-    // it's part of this same filter row now, so Clear Filter should clear it as well, same as every
-    // other field here. The 'change.select2' trigger fires the plain `change` handler above (which
-    // updates currentEmployeeRecheckView itself), same event-namespacing convention this file's
-    // other Clear Filter handlers already rely on.
-    $('#employee_recheck_filter_view').val('participant').trigger('change.select2');
-    updateClearEmployeeRecheckFilterVisibility();
-    if (tb_employee_recheck) tb_employee_recheck.ajax.reload(null, true);
 });
 // Reuses the same bfcache/cross-tab-open staleness fixes #tb_employee's own init already has above.
 if (typeof watchTabDirty === 'function') {
@@ -1139,7 +1071,6 @@ function syncRcMobileCountryCode() {
 // (see the filter-row markup's own comment on why it moved), same effect otherwise.
 $(document).on('change', '#employee_recheck_filter_view', function () {
     const view = $(this).val() || 'participant';
-    updateClearEmployeeRecheckFilterVisibility();
     if (view === currentEmployeeRecheckView) return;
     currentEmployeeRecheckView = view;
     if (tb_employee_recheck) tb_employee_recheck.ajax.reload(null, true);

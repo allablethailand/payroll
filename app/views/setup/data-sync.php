@@ -59,40 +59,27 @@
     </div>
 
     <div class="tab-pane fade" id="ds-history-pane" role="tabpanel" aria-labelledby="ds-history-tab" tabindex="0">
-      <!-- 2026-09-02, explicit request: "ในประวัติให้มี Filter ด้วย" -- same .station-filter component
+      <!-- 2026-09-02, explicit request: "ในประวัติให้มี Filter ด้วย" -- same filter-bar component
            every other history-style table in this app already uses (see Employee List's own Login
            History tab for the identical pattern this is copied from). Excel-style per-column
            filters (entity_type/status, already existing before this redesign) stay on the table
            header itself -- this row is for the date range they can't express. -->
-      <div class="station-filter mb-2" id="dsHistoryStationFilter">
-        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-        <button type="button" class="station-filter-toggle" id="dsHistoryStationFilterToggle" title="Toggle filter">
-          <i class="fas fa-chevron-up"></i>
-        </button>
-        <div class="station-filter-body">
-          <div class="row g-2">
-            <div class="col-6 col-md-3">
-              <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-              <div class="input-group">
-                <input type="text" class="form-control datepicker" id="dsHistoryFilterDateFrom" autocomplete="off">
-                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-              </div>
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-              <div class="input-group">
-                <input type="text" class="form-control datepicker" id="dsHistoryFilterDateTo" autocomplete="off">
-                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-              </div>
-            </div>
-          </div>
+      <?php ob_start(); ?>
+      <div class="row g-2">
+        <div class="col-6 col-md-3">
+          <label class="form-label small mb-1" for="dsHistoryFilterDateFrom" data-i18n="filter_date_from">From</label>
+          <input type="text" class="form-control datepicker" id="dsHistoryFilterDateFrom" autocomplete="off">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small mb-1" for="dsHistoryFilterDateTo" data-i18n="filter_date_to">To</label>
+          <input type="text" class="form-control datepicker" id="dsHistoryFilterDateTo" autocomplete="off">
         </div>
       </div>
-      <div class="station-filter-clear-row d-none" id="dsHistoryFilterClearRow">
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearDsHistoryFilter">
-          <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-        </button>
-      </div>
+      <?php
+      $filter_fields_html = ob_get_clean();
+      $id = 'dsHistoryFilterBar';
+      include __DIR__ . '/../partials/filter-bar.php';
+      ?>
       <div class="table-responsive">
         <table id="tb_data_sync_history" class="table table-hover align-middle w-100">
           <thead>

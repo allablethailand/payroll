@@ -2541,37 +2541,31 @@
                  Process/Notifications. IDs on the 4 fields themselves are UNCHANGED, so
                  detail.js's own initLoginHistoryTable()/loadLoginHistoryFilterOptions() needed no
                  changes -- only the wrapper markup + a new toggle/clear-visibility JS pair. -->
-            <div class="station-filter" id="loginHistoryStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="loginHistoryStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-3">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_from">From</span></label>
-                            <input type="text" class="form-control datepicker" id="loginHistoryFilterDateFrom">
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_to">To</span></label>
-                            <input type="text" class="form-control datepicker" id="loginHistoryFilterDateTo">
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label mb-1"><i class="fa-solid fa-display me-1 text-muted"></i><span data-i18n="device">Device</span></label>
-                            <select class="form-select select2-native" id="loginHistoryFilterDevice"></select>
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label mb-1"><i class="fa-solid fa-globe me-1 text-muted"></i><span data-i18n="browser">Browser</span></label>
-                            <select class="form-select select2-native" id="loginHistoryFilterBrowser"></select>
-                        </div>
-                    </div>
+            <?php
+            ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-6 col-md-3">
+                    <label class="form-label small mb-1" for="loginHistoryFilterDateFrom" data-i18n="date_from">From</label>
+                    <input type="text" class="form-control datepicker" id="loginHistoryFilterDateFrom">
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label small mb-1" for="loginHistoryFilterDateTo" data-i18n="date_to">To</label>
+                    <input type="text" class="form-control datepicker" id="loginHistoryFilterDateTo">
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label small mb-1" for="loginHistoryFilterDevice" data-i18n="device">Device</label>
+                    <select class="form-select select2-native" id="loginHistoryFilterDevice"></select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label small mb-1" for="loginHistoryFilterBrowser" data-i18n="browser">Browser</label>
+                    <select class="form-select select2-native" id="loginHistoryFilterBrowser"></select>
                 </div>
             </div>
-            <div class="station-filter-clear-row d-none" id="loginHistoryFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearLoginHistoryFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
-            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'loginHistoryFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="table-responsive">
                 <table class="table table-bordered table-sm w-100" id="tableLoginHistory">
                     <thead>

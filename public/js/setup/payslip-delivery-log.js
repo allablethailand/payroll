@@ -45,21 +45,28 @@ function formatReferenceDlog(row) {
     return `${escapeAttr(row.reference_label)} <span class="text-secondary small">(${formatDisplayDate(row.period_start_date)} - ${formatDisplayDate(row.period_end_date)})</span>`;
 }
 
+// The filter-bar's "no filter" option is 'all'; the API expects it empty.
+function dlogFilterValue(selector) {
+    const v = $(selector).val();
+    return v === 'all' ? '' : (v || '');
+}
+
 function initPayslipDeliveryLogTable() {
     if ($.fn.DataTable.isDataTable('#tb_payslip_delivery_log')) {
         $('#tb_payslip_delivery_log').DataTable().ajax.reload(null, false);
         return;
     }
+    initFilterBar('#dlogFilterBar', { onChange: function () { if (tb_payslip_delivery_log) tb_payslip_delivery_log.ajax.reload(null, true); } });
     tb_payslip_delivery_log = $('#tb_payslip_delivery_log').DataTable({
         responsive: true,
         ajax: {
             url: `${BASE_URL}/api/document-delivery-log.list`,
             dataSrc: 'data',
             data: function (d) {
-                d.document_type = $('#dlog_filter_document_type').val() || '';
-                d.status = $('#dlog_filter_status').val() || '';
+                d.document_type = dlogFilterValue('#dlog_filter_document_type');
+                d.status = dlogFilterValue('#dlog_filter_status');
                 d.channel_code = $('#dlog_filter_channel').val() || '';
-                d.source = $('#dlog_filter_source').val() || '';
+                d.source = dlogFilterValue('#dlog_filter_source');
             }
         },
         columns: [
@@ -116,28 +123,6 @@ function initPayslipDeliveryLogTable() {
         }
     });
 }
-
-function updateClearDlogFilterVisibility() {
-    const hasFilter = !!($('#dlog_filter_document_type').val() || $('#dlog_filter_status').val() || $('#dlog_filter_channel').val() || $('#dlog_filter_source').val());
-    $('#dlogFilterClearRow').toggleClass('d-none', !hasFilter);
-}
-
-$(document).on('click', '#dlogStationFilterToggle', function () {
-    const $filter = $('#dlogStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-
-$(document).on('change', '#dlog_filter_document_type, #dlog_filter_status, #dlog_filter_channel, #dlog_filter_source', function () {
-    updateClearDlogFilterVisibility();
-    if (tb_payslip_delivery_log) tb_payslip_delivery_log.ajax.reload(null, true);
-});
-
-$(document).on('click', '#btnClearDlogFilter', function () {
-    $('#dlog_filter_document_type, #dlog_filter_status, #dlog_filter_channel, #dlog_filter_source').val(null).trigger('change.select2');
-    updateClearDlogFilterVisibility();
-    if (tb_payslip_delivery_log) tb_payslip_delivery_log.ajax.reload(null, true);
-});
 
 $(document).on('click', '.btn-resend-dlog', function () {
     const id = $(this).data('id');

@@ -1756,36 +1756,12 @@ function initLoginHistoryTable() {
         },
     });
 }
-function updateClearLoginHistoryFilterVisibility() {
-    const hasFilter = !!($('#loginHistoryFilterDateFrom').val() || $('#loginHistoryFilterDateTo').val() || $('#loginHistoryFilterDevice').val() || $('#loginHistoryFilterBrowser').val());
-    $('#loginHistoryFilterClearRow').toggleClass('d-none', !hasFilter);
-}
-$(document).on('change', '#loginHistoryFilterDateFrom, #loginHistoryFilterDateTo, #loginHistoryFilterDevice, #loginHistoryFilterBrowser', function () {
-    updateClearLoginHistoryFilterVisibility();
-    if ($.fn.DataTable.isDataTable('#tableLoginHistory')) {
-        tb_login_history.ajax.reload();
-    }
-});
-// 2026-08-30, same-day follow-up ("Tab ประวัติการเข้าใช้งานใน Employee Detail ยังไม่ใช่ Filter มาตรฐาน")
-// -- the standard .station-filter toggle/clear pair, same idiom as Employee List's own station
-// filters.
-$(document).on('click', '#loginHistoryStationFilterToggle', function () {
-    const $filter = $('#loginHistoryStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('click', '#btnClearLoginHistoryFilter', function () {
-    $('#loginHistoryFilterDateFrom, #loginHistoryFilterDateTo').val('');
-    if (typeof $.fn.datepicker === 'function') {
-        $('#loginHistoryFilterDateFrom, #loginHistoryFilterDateTo').datepicker('update');
-    }
-    // 'change' (not 'change.select2') -- matches the exact same select2-native device/browser
-    // clear-pattern list.js's own Login History OVERVIEW tab already uses successfully.
-    $('#loginHistoryFilterDevice, #loginHistoryFilterBrowser').val(null).trigger('change');
-    updateClearLoginHistoryFilterVisibility();
-    if ($.fn.DataTable.isDataTable('#tableLoginHistory')) {
-        tb_login_history.ajax.reload();
-    }
+$(document).ready(function () {
+    initFilterBar('#loginHistoryFilterBar', {
+        onChange: function () {
+            if ($.fn.DataTable.isDataTable('#tableLoginHistory')) tb_login_history.ajax.reload();
+        },
+    });
 });
 // Lazy-init on first tab show -- a DataTable constructed while its own tab-pane is `display:none`
 // collapses every column to 0 width (this app's own well-known DataTables+Bootstrap-tab gotcha,

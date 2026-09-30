@@ -224,6 +224,8 @@ php scripts/check-design.php --all
 
 ### 6.4 `.station-filter` ที่เหลือ
 
+**สถานะ: เสร็จ (2026-09-30)** — ย้ายครบ 27 panel ใน 15 ไฟล์ไป `partials/filter-bar.php` แล้ว (`employee/reports` ได้ bar 8 ตัว เพราะ `employeeStructure` เหลือแค่ select ที่ย้ายออก); CSS `.station-filter*` ใน `style.css` **ยังไม่ได้ลบ** (ขั้นตอนแยกต่างหาก)
+
 นับด้วย pattern `class="station-filter(\s|")` — บาง panel มี class เพิ่ม (เช่น `mb-2`) ถ้าค้นแบบ exact string จะนับขาด
 
 | ไฟล์ | จำนวน panel | id |
@@ -260,6 +262,7 @@ php scripts/check-design.php --all
 | วันที่ | ก้อน | commit | ตัวเลขก่อน | ตัวเลขหลัง |
 |---|---|---|---|---|
 | 2026-09-30 | 6.2 — 6 ตาราง audit → `initSharedDataTable` | `5ff1b06b` | กฎ #5 = 137 | กฎ #5 = 127 |
-| 2026-09-30 | 6.3 — `<th data-i18n>` ใน `layout/modals.php` | commit ที่แก้ไฟล์นี้ (ดู `git log`) | 43 จุด | 0 จุด |
+| 2026-09-30 | 6.3 — `<th data-i18n>` ใน `layout/modals.php` | `2f5a2553` | 43 จุด | 0 จุด |
+| 2026-09-30 | 6.4 — `.station-filter` ที่เหลือ → `filter-bar.php` | commit ที่แก้ไฟล์นี้ (ดู `git log`) | 27 panel / 15 ไฟล์ | 0 panel |
 
 (เติมทีละแถวทุกครั้งที่ปิดก้อนจากคิว §6 หรือกลุ่มโมดูลใน §5)

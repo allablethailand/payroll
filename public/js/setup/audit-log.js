@@ -41,10 +41,6 @@ function auditLogTableFilterValue() {
     const v = $('#filter_al_table_name').val();
     return (!v || v === 'all') ? '' : v;
 }
-function updateAuditLogClearFilterVisibility() {
-    const active = !!(auditLogTableFilterValue() || $('#filter_al_record_id').val() || $('#filter_al_date_from').val() || $('#filter_al_date_to').val());
-    $('#auditLogFilterClearRow').toggleClass('d-none', !active);
-}
 function renderAuditLogTable() {
     if ($.fn.DataTable.isDataTable('#tb_audit_log')) { dtAuditLog.ajax.reload(null, false); return; }
     dtAuditLog = initSharedDataTable('#tb_audit_log', {
@@ -76,32 +72,16 @@ function renderAuditLogTable() {
         },
     });
 }
-$(document).on('click', '#auditLogStationFilterToggle', function () {
-    const $filter = $('#auditLogStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
 $(document).ready(function () {
     (window.langReady || Promise.resolve()).then(function () {
     if (!$('#tb_audit_log').length) return;
     initDatepicker('#filter_al_date_from, #filter_al_date_to');
     if (typeof initSelect2 === 'function') initSelect2('#filter_al_table_name', { mode: 'static', selectedValue: 'all' });
     renderAuditLogTable();
-    $('#filter_al_table_name, #filter_al_record_id').on('change input', function () {
-        updateAuditLogClearFilterVisibility();
-        dtAuditLog.ajax.reload();
+    initFilterBar('#auditLogFilterBar', {
+        onChange: function () { dtAuditLog.ajax.reload(); },
     });
-    $('#filter_al_date_from, #filter_al_date_to').on('changeDate', function () {
-        updateAuditLogClearFilterVisibility();
-        dtAuditLog.ajax.reload();
-    });
-    $('#btnAuditLogClearFilter').on('click', function () {
-        $('#filter_al_table_name').val('all').trigger('change.select2');
-        $('#filter_al_record_id').val('');
-        $('#filter_al_date_from').val('').datepicker('update');
-        $('#filter_al_date_to').val('').datepicker('update');
-        updateAuditLogClearFilterVisibility();
-        dtAuditLog.ajax.reload();
-    });
+    // The bar listens to change only; the old filter reloaded while typing.
+    $('#filter_al_record_id').on('input', function () { $(this).trigger('change'); });
     });
 });

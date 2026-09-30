@@ -544,63 +544,6 @@ $(document).on('change', '#overtimeEmployee', function () {
     $('#overtimeRate').empty().trigger('change.select2');
 });
 
-// 2026-08-29, same-day follow-up: system-wide page-level filter audit -- these 3 tabs' filter
-// fields moved from a bare row into the standard .station-filter component (see
-// app/views/manual-entry/index.php's own comment) -- toggle + conditional Clear Filter visibility
-// wired the same way as every other .station-filter instance in this app (e.g.
-// employee/list.js's own #employeeLoginHistoryStationFilterToggle).
-function meFilterToggle(filterId, toggleId) {
-    $(document).on('click', toggleId, function () {
-        const $filter = $(filterId).toggleClass('collapsed');
-        const collapsed = $filter.hasClass('collapsed');
-        $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-    });
-}
-meFilterToggle('#attendanceStationFilter', '#attendanceStationFilterToggle');
-meFilterToggle('#leaveStationFilter', '#leaveStationFilterToggle');
-meFilterToggle('#overtimeStationFilter', '#overtimeStationFilterToggle');
-
-function updateMeClearFilterVisibility(btnId, employeeId, dateFromId, dateToId) {
-    const active = !!($(employeeId).val() || $(dateFromId).val() || $(dateToId).val());
-    // 2026-09-02, Platform Hardening Phase 1.6 -- toggles the wrapping .station-filter-clear-row
-    // (not just the button itself) so the whole row collapses to nothing when no filter is active,
-    // instead of leaving an empty bordered strip attached to the filter card.
-    $(btnId).closest('.station-filter-clear-row').toggleClass('d-none', !active);
-}
-$(document).on('change', '#filter_att_employee, #filter_att_date_from, #filter_att_date_to', function () {
-    updateMeClearFilterVisibility('#btnAttendanceClearFilter', '#filter_att_employee', '#filter_att_date_from', '#filter_att_date_to');
-    if (dtAttendance) dtAttendance.ajax.reload(null, true);
-});
-$(document).on('change', '#filter_leave_employee, #filter_leave_date_from, #filter_leave_date_to', function () {
-    updateMeClearFilterVisibility('#btnLeaveClearFilter', '#filter_leave_employee', '#filter_leave_date_from', '#filter_leave_date_to');
-    if (dtLeave) dtLeave.ajax.reload(null, true);
-});
-$(document).on('change', '#filter_ot_employee, #filter_ot_date_from, #filter_ot_date_to', function () {
-    updateMeClearFilterVisibility('#btnOvertimeClearFilter', '#filter_ot_employee', '#filter_ot_date_from', '#filter_ot_date_to');
-    if (dtOvertime) dtOvertime.ajax.reload(null, true);
-});
-$(document).on('click', '#btnAttendanceClearFilter', function () {
-    $('#filter_att_employee').val(null).trigger('change');
-    $('#filter_att_date_from, #filter_att_date_to').val('');
-    if (typeof $.fn.datepicker === 'function') $('#filter_att_date_from, #filter_att_date_to').datepicker('update');
-    updateMeClearFilterVisibility('#btnAttendanceClearFilter', '#filter_att_employee', '#filter_att_date_from', '#filter_att_date_to');
-    if (dtAttendance) dtAttendance.ajax.reload(null, true);
-});
-$(document).on('click', '#btnLeaveClearFilter', function () {
-    $('#filter_leave_employee').val(null).trigger('change');
-    $('#filter_leave_date_from, #filter_leave_date_to').val('');
-    if (typeof $.fn.datepicker === 'function') $('#filter_leave_date_from, #filter_leave_date_to').datepicker('update');
-    updateMeClearFilterVisibility('#btnLeaveClearFilter', '#filter_leave_employee', '#filter_leave_date_from', '#filter_leave_date_to');
-    if (dtLeave) dtLeave.ajax.reload(null, true);
-});
-$(document).on('click', '#btnOvertimeClearFilter', function () {
-    $('#filter_ot_employee').val(null).trigger('change');
-    $('#filter_ot_date_from, #filter_ot_date_to').val('');
-    if (typeof $.fn.datepicker === 'function') $('#filter_ot_date_from, #filter_ot_date_to').datepicker('update');
-    updateMeClearFilterVisibility('#btnOvertimeClearFilter', '#filter_ot_employee', '#filter_ot_date_from', '#filter_ot_date_to');
-    if (dtOvertime) dtOvertime.ajax.reload(null, true);
-});
-
 /* ==================== IMPORT (2026-08-30, Phase 5, T030-T035) ====================
  * 2026-09-02: the standalone Import TAB this section used to also serve was removed (superseded by
  * openBulkImportModal() in bulk-entry.js, see that file's own docblock) -- importEntityLabel() and
@@ -652,9 +595,10 @@ function importHistoryBrowserLabel(row) {
     if (!row.browser_name) return '-';
     return row.browser_version ? `${row.browser_name} ${row.browser_version}` : row.browser_name;
 }
-function updateImportHistoryClearFilterVisibility() {
-    const active = !!($('#filter_ih_event_type').val() || $('#filter_ih_entity_type').val() || $('#filter_ih_date_from').val() || $('#filter_ih_date_to').val());
-    $('#importHistoryFilterClearRow').toggleClass('d-none', !active);
+// The filter-bar's "no filter" option is 'all'; the API expects it empty.
+function meIhFilterValue(selector) {
+    const v = $(selector).val();
+    return v === 'all' ? '' : (v || '');
 }
 function renderImportHistory() {
     if ($.fn.DataTable.isDataTable('#tb_import_history')) { dtImportHistory.ajax.reload(null, false); return; }
@@ -663,8 +607,8 @@ function renderImportHistory() {
         ajax: {
             url: `${BASE_URL}/api/manual-import.activity-log`, dataSrc: 'data',
             data: function (d) {
-                d.event_type = $('#filter_ih_event_type').val() || '';
-                d.entity_type = $('#filter_ih_entity_type').val() || '';
+                d.event_type = meIhFilterValue('#filter_ih_event_type');
+                d.entity_type = meIhFilterValue('#filter_ih_entity_type');
                 d.date_from = toIsoDateMe($('#filter_ih_date_from').val());
                 d.date_to = toIsoDateMe($('#filter_ih_date_to').val());
             }
@@ -797,33 +741,21 @@ function refreshImportBatchDetailIfOpen(entityType) {
 }
 $(document).on('hidden.bs.modal', '#importBatchDetailModal', function () { currentImportBatchContext = null; });
 
-// 2026-08-30, History tab wiring -- same .station-filter toggle/clear-filter/change-reloads
-// convention every other tab on this page already uses (see meFilterToggle()/
-// updateMeClearFilterVisibility() above), lazy-inited on shown.bs.tab (this tab is not the default
-// active one, same "DataTable inside a hidden Bootstrap tab collapses columns" precedent this app
-// has hit and documented many times).
+// History tab is lazy-inited on shown.bs.tab (DataTable inside a hidden tab collapses columns).
 $(document).on('shown.bs.tab', '#import-history-tab', function () { renderImportHistory(); });
-meFilterToggle('#importHistoryStationFilter', '#importHistoryStationFilterToggle');
-$(document).on('change', '#filter_ih_event_type, #filter_ih_entity_type, #filter_ih_date_from, #filter_ih_date_to', function () {
-    updateImportHistoryClearFilterVisibility();
-    if (dtImportHistory) dtImportHistory.ajax.reload(null, true);
-});
-$(document).on('click', '#btnImportHistoryClearFilter', function () {
-    $('#filter_ih_event_type, #filter_ih_entity_type').val(null).trigger('change');
-    $('#filter_ih_date_from, #filter_ih_date_to').val('');
-    if (typeof $.fn.datepicker === 'function') $('#filter_ih_date_from, #filter_ih_date_to').datepicker('update');
-    updateImportHistoryClearFilterVisibility();
-    if (dtImportHistory) dtImportHistory.ajax.reload(null, true);
-});
 
 $(function () {
     initDatepicker('#filter_att_date_from, #filter_att_date_to, #filter_leave_date_from, #filter_leave_date_to, #filter_ot_date_from, #filter_ot_date_to, #filter_ih_date_from, #filter_ih_date_to, #attendanceWorkDate, #leaveStartDate, #leaveEndDate, #overtimeDate');
     initSelect2('#filter_att_employee', { mode: 'ajax', allowClear: true });
     initSelect2('#filter_leave_employee', { mode: 'ajax', allowClear: true });
     initSelect2('#filter_ot_employee', { mode: 'ajax', allowClear: true });
-    initSelect2('#filter_ih_event_type', { mode: 'static', allowClear: true });
-    initSelect2('#filter_ih_entity_type', { mode: 'static', allowClear: true });
+    initSelect2('#filter_ih_event_type', { mode: 'static' });
+    initSelect2('#filter_ih_entity_type', { mode: 'static' });
     renderAttendance();
     renderLeave();
     renderOvertime();
+    initFilterBar('#attendanceFilterBar', { onChange: function () { if (dtAttendance) dtAttendance.ajax.reload(null, true); } });
+    initFilterBar('#leaveFilterBar', { onChange: function () { if (dtLeave) dtLeave.ajax.reload(null, true); } });
+    initFilterBar('#overtimeFilterBar', { onChange: function () { if (dtOvertime) dtOvertime.ajax.reload(null, true); } });
+    initFilterBar('#importHistoryFilterBar', { onChange: function () { if (dtImportHistory) dtImportHistory.ajax.reload(null, true); } });
 });

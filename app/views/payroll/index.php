@@ -20,57 +20,36 @@
         </div>
     </div>
 
-        <div class="station-filter" id="stationFilter">
-            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-            <button type="button" class="station-filter-toggle" id="stationFilterToggle" title="Toggle filter">
-                <i class="fas fa-chevron-up"></i>
-            </button>
-            <!-- 2026-09-02, explicit request: "Filter ปรับให้เป็นแถวละ 6 Column" -- col-6 col-md-4 col-lg-2
-                 is this app's own established 6-per-row .station-filter grid (2/3/6 fields per row at
-                 sm/md/lg, same class combo Employee List's own 4-6-field filters already use, e.g.
-                 #employeeRecheckStationFilter/#employeeSummaryStationFilter) -- was col-sm-4 col-md-3
-                 (4 per row) before this. -->
-            <div class="station-filter-body">
-                <div class="row g-2">
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" id="filter_date_from" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" id="filter_date_to" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
-                    </div>
-                    <!-- 2026-09-01, explicit request: "ในส่วนของ Filter สามารถเพิ่มอะไรได้อีกไหม ตามความ
-                         เหมาะสมสามารถเพิ่มได้เลยครับ" -- 3 new filters, same run-level data every row
-                         already carries (PayrollRunModel::list()'s own `r.*`), pure client-side
-                         (no ajax.reload needed, same mechanism the Station cards themselves already
-                         use -- see registerStationSearchFilter() in index.js). -->
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-route me-1 text-muted"></i><span data-i18n="run_origin_label">Origin</span></label>
-                        <select class="form-select select2-static" id="filter_run_origin" data-option-keys="filter_all,run_origin_sync,run_origin_cycle,run_origin_manual" data-option-values="all,sync,cycle,manual"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-calendar-check me-1 text-muted"></i><span data-i18n="modal_cycle">Payroll Schedule</span></label>
-                        <select class="form-select select2-remote" id="filter_run_cycle" data-api="/api/payroll-cycle.options"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-bullseye me-1 text-muted"></i><span data-i18n="modal_run_purpose">Payment Type</span></label>
-                        <select class="form-select select2-static" id="filter_run_purpose" data-option-keys="filter_all,run_purpose_payroll,run_purpose_incentive" data-option-values="all,payroll,incentive"></select>
-                    </div>
-                </div>
+        <?php
+        ob_start(); ?>
+        <!-- 6 fields per row at lg (2/3/6 per row at sm/md/lg); Origin/Schedule/Payment Type are client-side only. -->
+        <div class="row g-2">
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_date_from" data-i18n="filter_date_from">From</label>
+                <input type="text" class="form-control datepicker" id="filter_date_from" autocomplete="off">
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_date_to" data-i18n="filter_date_to">To</label>
+                <input type="text" class="form-control datepicker" id="filter_date_to" autocomplete="off">
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_run_origin" data-i18n="run_origin_label">Origin</label>
+                <select class="form-select select2-static" id="filter_run_origin" data-option-keys="filter_all,run_origin_sync,run_origin_cycle,run_origin_manual" data-option-values="all,sync,cycle,manual"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_run_cycle" data-i18n="modal_cycle">Payroll Schedule</label>
+                <select class="form-select select2-remote" id="filter_run_cycle" data-api="/api/payroll-cycle.options"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_run_purpose" data-i18n="modal_run_purpose">Payment Type</label>
+                <select class="form-select select2-static" id="filter_run_purpose" data-option-keys="filter_all,run_purpose_payroll,run_purpose_incentive" data-option-values="all,payroll,incentive"></select>
             </div>
         </div>
-        <div class="station-filter-clear-row d-none" id="dateFilterClearRow">
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearDateFilter">
-                <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-            </button>
-        </div>
+        <?php
+        $filter_fields_html = ob_get_clean();
+        $id = 'runListFilterBar';
+        include __DIR__ . '/../partials/filter-bar.php';
+        ?>
 
         <div class="station-row" id="stationRow">
             <div class="station-col">

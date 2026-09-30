@@ -313,35 +313,13 @@ $(document).on('click', '.ds-view-error-btn', function () {
     dsShowErrorDetail(errorDetail);
 });
 
-// 2026-09-02, explicit request: "ในประวัติให้มี Filter ด้วย" -- date range (station-filter) reloads the
+// 2026-09-02, explicit request: "ในประวัติให้มี Filter ด้วย" -- date range (filter-bar) reloads the
 // table server-side (SyncBatchModel::list()'s own date_from/date_to filter); entity_type/status stay
 // as the pre-existing Excel-style per-column filters on the table header itself.
 function dsHistoryFilterParams(d) {
     d.date_from = $('#dsHistoryFilterDateFrom').val() ? toIsoDate($('#dsHistoryFilterDateFrom').val()) : '';
     d.date_to = $('#dsHistoryFilterDateTo').val() ? toIsoDate($('#dsHistoryFilterDateTo').val()) : '';
 }
-function dsUpdateClearHistoryFilterVisibility() {
-    const hasFilter = !!($('#dsHistoryFilterDateFrom').val() || $('#dsHistoryFilterDateTo').val());
-    $('#dsHistoryFilterClearRow').toggleClass('d-none', !hasFilter);
-}
-$(document).on('click', '#dsHistoryStationFilterToggle', function () {
-    const $filter = $('#dsHistoryStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('changeDate', '#dsHistoryFilterDateFrom, #dsHistoryFilterDateTo', function () {
-    dsUpdateClearHistoryFilterVisibility();
-    if (tb_data_sync_history) tb_data_sync_history.ajax.reload();
-});
-$(document).on('click', '#btnClearDsHistoryFilter', function () {
-    $('#dsHistoryFilterDateFrom').val('');
-    if (typeof $.fn.datepicker === 'function') $('#dsHistoryFilterDateFrom').datepicker('update');
-    $('#dsHistoryFilterDateTo').val('');
-    if (typeof $.fn.datepicker === 'function') $('#dsHistoryFilterDateTo').datepicker('update');
-    dsUpdateClearHistoryFilterVisibility();
-    if (tb_data_sync_history) tb_data_sync_history.ajax.reload();
-});
-
 function dsInitHistoryTable() {
     if (dsHistoryTableInited) return;
     dsHistoryTableInited = true;
@@ -466,6 +444,9 @@ function initDataSyncPage() {
         initDatepicker('#dsHistoryFilterDateFrom');
         initDatepicker('#dsHistoryFilterDateTo');
     }
+    initFilterBar('#dsHistoryFilterBar', {
+        onChange: function () { if (tb_data_sync_history) tb_data_sync_history.ajax.reload(); },
+    });
     // Lazy-init on first shown -- this table is no longer the default-active tab (Sync is), and this
     // app has hit the "DataTable constructed inside a display:none Bootstrap tab collapses every
     // column to 0 width" bug enough times elsewhere that it's a standing habit to guard against here

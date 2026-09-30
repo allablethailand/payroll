@@ -17,35 +17,28 @@
     </div>
 
     <!-- 2026-09-04, Backlog Phase 11, T066: this page had no filter at all (the only list-style page
-         in an app-wide audit with no `.station-filter` and no documented exemption). Client-side
+         in an app-wide audit with no filter bar and no documented exemption). Client-side
          DataTable (small, bounded per-company list, see announcements.js's own top-of-file comment),
          so filtering is wired via DataTables' own column search API (announcements.js), not a
          server round-trip. -->
-    <div class="station-filter" id="announcementStationFilter">
-        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-        <button type="button" class="station-filter-toggle" id="announcementStationFilterToggle" title="Toggle filter">
-            <i class="fas fa-chevron-up"></i>
-        </button>
-        <div class="station-filter-body">
-            <div class="row g-2">
-                <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1"><i class="fa-solid fa-toggle-on me-1 text-muted"></i><span data-i18n="col_status">Status</span></label>
-                    <select class="form-select select2-static" id="announcement_filter_status"
-                        data-option-keys="announcement_status_draft,announcement_status_published" data-option-values="draft,published"></select>
-                </div>
-                <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1"><i class="fa-solid fa-circle-check me-1 text-muted"></i><span data-i18n="announcement_accept_required">Accept Required</span></label>
-                    <select class="form-select select2-static" id="announcement_filter_accept_required"
-                        data-option-keys="yes,no" data-option-values="1,0"></select>
-                </div>
-            </div>
+    <?php ob_start(); ?>
+    <div class="row g-2">
+        <div class="col-6 col-md-4 col-lg-2">
+            <label class="form-label small mb-1" for="announcement_filter_status" data-i18n="col_status">Status</label>
+            <select class="form-select select2-static" id="announcement_filter_status"
+                data-option-keys="filter_all,announcement_status_draft,announcement_status_published" data-option-values="all,draft,published"></select>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <label class="form-label small mb-1" for="announcement_filter_accept_required" data-i18n="announcement_accept_required">Accept Required</label>
+            <select class="form-select select2-static" id="announcement_filter_accept_required"
+                data-option-keys="filter_all,yes,no" data-option-values="all,1,0"></select>
         </div>
     </div>
-    <div class="station-filter-clear-row d-none" id="announcementFilterClearRow">
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearAnnouncementFilter">
-            <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-        </button>
-    </div>
+    <?php
+    $filter_fields_html = ob_get_clean();
+    $id = 'announcementFilterBar';
+    include __DIR__ . '/../partials/filter-bar.php';
+    ?>
 
     <table class="table table-hover table-border align-middle w-100" id="tb_announcement">
         <thead class="table-light text-secondary">

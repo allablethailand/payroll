@@ -1080,19 +1080,17 @@ function rdReportLanguageLabel(l) {
 function reloadReportHistoryTable() {
     if (dtReportHistory) { dtReportHistory.ajax.reload(null, false); }
 }
-function updateReportHistoryClearFilterVisibility() {
-    const active = !!($('#reportHistoryDateFrom').val() || $('#reportHistoryDateTo').val());
-    $('#reportHistoryFilterClearRow').toggleClass('d-none', !active);
-}
 $(document).on('click', '.btn-report-history', function () {
     const row = rdReportsRows.find(r => r.code === $(this).data('code'));
     if (!row) return;
     rdReportHistoryCode = row.code;
     $('#reportHistoryModalTitle').text(`${langData['report_view_history'] || 'View Download History'} - ${rdReportLabel(row)}`);
-    $('#reportHistoryDateFrom, #reportHistoryDateTo').val('');
-    updateReportHistoryClearFilterVisibility();
+    // A bar left filled from the previous open is cleared through its own clear routine so chips/count reset too.
+    const reportHistBarClear = $('#reportHistoryFilterBar').data('filterBarClear');
+    if (($('#reportHistoryDateFrom').val() || $('#reportHistoryDateTo').val()) && reportHistBarClear) reportHistBarClear();
     initDatepicker('#reportHistoryDateFrom');
     initDatepicker('#reportHistoryDateTo');
+    initFilterBar('#reportHistoryFilterBar', { onChange: reloadReportHistoryTable });
     new bootstrap.Modal(document.getElementById('reportHistoryModal')).show();
     if (dtReportHistory) { dtReportHistory.destroy(); dtReportHistory = null; }
     dtReportHistory = $('#tb_report_history').DataTable({
@@ -1144,20 +1142,6 @@ $(document).on('click', '.btn-report-history', function () {
             });
         },
     });
-});
-$(document).on('click', '#reportHistoryStationFilterToggle', function () {
-    const $filter = $('#reportHistoryStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#reportHistoryDateFrom, #reportHistoryDateTo', function () {
-    updateReportHistoryClearFilterVisibility();
-    reloadReportHistoryTable();
-});
-$(document).on('click', '#btnReportHistoryClearFilter', function () {
-    $('#reportHistoryDateFrom, #reportHistoryDateTo').val('');
-    updateReportHistoryClearFilterVisibility();
-    reloadReportHistoryTable();
 });
 function renderSectionButtons(run) {
     const $editWrap = $('#runEditButtonWrap').empty();

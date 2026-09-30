@@ -501,35 +501,23 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="station-filter mb-2" id="cycleReportHistoryStationFilter">
-                    <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                    <button type="button" class="station-filter-toggle" id="cycleReportHistoryStationFilterToggle" title="Toggle filter">
-                        <i class="fas fa-chevron-up"></i>
-                    </button>
-                    <div class="station-filter-body">
-                        <div class="row g-2">
-                            <div class="col-6 col-md-4">
-                                <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-                                <div class="input-group">
-                                    <input type="text" class="form-control datepicker" id="cycleReportHistoryDateFrom" autocomplete="off">
-                                    <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-4">
-                                <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-                                <div class="input-group">
-                                    <input type="text" class="form-control datepicker" id="cycleReportHistoryDateTo" autocomplete="off">
-                                    <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                                </div>
-                            </div>
-                        </div>
+                <?php
+                ob_start(); ?>
+                <div class="row g-2">
+                    <div class="col-6 col-md-4">
+                        <label class="form-label small mb-1" for="cycleReportHistoryDateFrom" data-i18n="filter_date_from">From</label>
+                        <input type="text" class="form-control datepicker" id="cycleReportHistoryDateFrom" autocomplete="off">
+                    </div>
+                    <div class="col-6 col-md-4">
+                        <label class="form-label small mb-1" for="cycleReportHistoryDateTo" data-i18n="filter_date_to">To</label>
+                        <input type="text" class="form-control datepicker" id="cycleReportHistoryDateTo" autocomplete="off">
                     </div>
                 </div>
-                <div class="station-filter-clear-row d-none" id="cycleReportHistoryFilterClearRow">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCycleReportHistoryClearFilter">
-                        <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                    </button>
-                </div>
+                <?php
+                $filter_fields_html = ob_get_clean();
+                $id = 'cycleReportHistoryFilterBar';
+                include __DIR__ . '/../partials/filter-bar.php';
+                ?>
                 <div class="table-responsive">
                     <table class="table table-sm align-middle w-100" id="tb_cycle_report_history">
                         <thead class="table-light text-secondary small">

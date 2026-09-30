@@ -690,11 +690,14 @@ function openReportHistoryModal(reportCode, label, scopeParams) {
     cycleReportHistoryCode = reportCode;
     reportHistoryScopeParams = scopeParams;
     $('#cycleReportHistoryModalTitle').text(`${langData['report_view_history'] || 'View Download History'} - ${label}`);
-    $('#cycleReportHistoryDateFrom, #cycleReportHistoryDateTo').val('');
+    // A bar left filled from the previous open is cleared through its own clear routine so chips/count reset too.
+    const cycleHistBarClear = $('#cycleReportHistoryFilterBar').data('filterBarClear');
+    if (($('#cycleReportHistoryDateFrom').val() || $('#cycleReportHistoryDateTo').val()) && cycleHistBarClear) cycleHistBarClear();
     if (typeof initDatepicker === 'function') {
         initDatepicker('#cycleReportHistoryDateFrom');
         initDatepicker('#cycleReportHistoryDateTo');
     }
+    initFilterBar('#cycleReportHistoryFilterBar', { onChange: reloadCycleReportHistoryTable });
     bootstrap.Modal.getOrCreateInstance(document.getElementById('cycleReportHistoryModal')).show();
     if (dtCycleReportHistory) { dtCycleReportHistory.destroy(); dtCycleReportHistory = null; }
     dtCycleReportHistory = $('#tb_cycle_report_history').DataTable({
@@ -744,16 +747,6 @@ $(document).on('click', '.btn-annual-report-history', function () {
     const year = $('#reportsPeriodYear').val();
     if (!report || !year) return;
     openReportHistoryModal(report.code, reportLabel(report), { period_year: year });
-});
-$(document).on('click', '#cycleReportHistoryStationFilterToggle', function () {
-    const $filter = $('#cycleReportHistoryStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#cycleReportHistoryDateFrom, #cycleReportHistoryDateTo', reloadCycleReportHistoryTable);
-$(document).on('click', '#btnCycleReportHistoryClearFilter', function () {
-    $('#cycleReportHistoryDateFrom, #cycleReportHistoryDateTo').val('');
-    reloadCycleReportHistoryTable();
 });
 
 /* ---------- Export History tab ---------- */

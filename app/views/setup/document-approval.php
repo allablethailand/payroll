@@ -114,7 +114,7 @@
          การส่งได้ มี Filter และตาราง รวมถึง Summary" -- the cron itself (cron/send_queued_emails.php)
          already existed from Phase 7 (T040); this is the new admin log/summary page on top of it.
          Summary = stat cards (same .stat-card markup as dashboard.php's own), filter = the shared
-         .station-filter pattern (per CLAUDE.md's own Table convention), table = a plain client-side
+         filter-bar pattern (per CLAUDE.md's own Table convention), table = a plain client-side
          DataTable (unbounded-but-capped at 200 rows server-side, LIMIT 200 in EmailQueueModel::
          list(), same "recent window, not a full unbounded archive" convention every other
          audit-log-style table in this app already uses -- e.g. PayslipDeliveryLogModel::list()). -->
@@ -148,37 +148,30 @@
           </div>
         </div>
       </div>
-      <div class="station-filter" id="emailQueueStationFilter">
-        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-        <button type="button" class="station-filter-toggle" id="emailQueueStationFilterToggle" title="Toggle filter">
-          <i class="fas fa-chevron-up"></i>
-        </button>
-        <div class="station-filter-body">
-          <div class="row g-2">
-            <div class="col-6 col-md-4 col-lg-3">
-              <label class="form-label mb-1"><i class="fa-solid fa-toggle-on me-1 text-muted"></i><span data-i18n="status">Status</span></label>
-              <select class="form-select select2-static" id="emailQueueFilterStatus" data-option-keys="email_queue_status_pending,email_queue_status_sent,email_queue_status_failed" data-option-values="pending,sent,failed"></select>
-            </div>
-            <div class="col-6 col-md-4 col-lg-3">
-              <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_from">From</span></label>
-              <input type="text" class="form-control datepicker" id="emailQueueFilterDateFrom" autocomplete="off">
-            </div>
-            <div class="col-6 col-md-4 col-lg-3">
-              <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_to">To</span></label>
-              <input type="text" class="form-control datepicker" id="emailQueueFilterDateTo" autocomplete="off">
-            </div>
-            <div class="col-6 col-md-4 col-lg-3">
-              <label class="form-label mb-1"><i class="fa-solid fa-envelope me-1 text-muted"></i><span data-i18n="recipient">Recipient</span></label>
-              <input type="text" class="form-control" id="emailQueueFilterToAddress" autocomplete="off" data-i18n="email_filter_placeholder" placeholder="e.g., name@company.com">
-            </div>
-          </div>
+      <?php ob_start(); ?>
+      <div class="row g-2">
+        <div class="col-6 col-md-4 col-lg-3">
+          <label class="form-label small mb-1" for="emailQueueFilterStatus" data-i18n="status">Status</label>
+          <select class="form-select select2-static" id="emailQueueFilterStatus" data-option-keys="filter_all,email_queue_status_pending,email_queue_status_sent,email_queue_status_failed" data-option-values="all,pending,sent,failed"></select>
+        </div>
+        <div class="col-6 col-md-4 col-lg-3">
+          <label class="form-label small mb-1" for="emailQueueFilterDateFrom" data-i18n="date_from">From</label>
+          <input type="text" class="form-control datepicker" id="emailQueueFilterDateFrom" autocomplete="off">
+        </div>
+        <div class="col-6 col-md-4 col-lg-3">
+          <label class="form-label small mb-1" for="emailQueueFilterDateTo" data-i18n="date_to">To</label>
+          <input type="text" class="form-control datepicker" id="emailQueueFilterDateTo" autocomplete="off">
+        </div>
+        <div class="col-6 col-md-4 col-lg-3">
+          <label class="form-label small mb-1" for="emailQueueFilterToAddress" data-i18n="recipient">Recipient</label>
+          <input type="text" class="form-control" id="emailQueueFilterToAddress" autocomplete="off" data-i18n="email_filter_placeholder" placeholder="e.g., name@company.com">
         </div>
       </div>
-      <div class="station-filter-clear-row d-none" id="emailQueueFilterClearRow">
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmailQueueFilter">
-          <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-        </button>
-      </div>
+      <?php
+      $filter_fields_html = ob_get_clean();
+      $id = 'emailQueueFilterBar';
+      include __DIR__ . '/../partials/filter-bar.php';
+      ?>
       <table class="table table-striped table-hover" id="tb_email_queue_log">
         <thead class="table-light text-secondary">
           <tr>

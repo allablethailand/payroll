@@ -270,25 +270,6 @@ function deleteAnnouncement(id) {
         }
     );
 }
-function annUpdateClearFilterVisibility() {
-    const hasFilter = !!($('#announcement_filter_status').val() || $('#announcement_filter_accept_required').val());
-    $('#announcementFilterClearRow').toggleClass('d-none', !hasFilter);
-}
-$(document).on('change', '#announcement_filter_status, #announcement_filter_accept_required', function () {
-    annUpdateClearFilterVisibility();
-    if (annTable) annTable.draw();
-});
-$(document).on('click', '#announcementStationFilterToggle', function () {
-    const $filter = $('#announcementStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('click', '#btnClearAnnouncementFilter', function () {
-    $('#announcement_filter_status').val('').trigger('change.select2');
-    $('#announcement_filter_accept_required').val('').trigger('change.select2');
-    annUpdateClearFilterVisibility();
-    if (annTable) annTable.draw();
-});
 $(document).ready(function () {
     (window.langReady || Promise.resolve()).then(function () {
     if ($('#tb_announcement').length) {
@@ -316,9 +297,9 @@ $(document).ready(function () {
         $.fn.dataTable.ext.search.push(function (settings, searchData, index, rowData) {
             if (settings.nTable.id !== 'tb_announcement' || !rowData) return true;
             const statusFilter = $('#announcement_filter_status').val();
-            if (statusFilter && rowData.status !== statusFilter) return false;
+            if (statusFilter && statusFilter !== 'all' && rowData.status !== statusFilter) return false;
             const acceptFilter = $('#announcement_filter_accept_required').val();
-            if (acceptFilter !== '' && acceptFilter !== null && acceptFilter !== undefined) {
+            if (acceptFilter !== '' && acceptFilter !== 'all' && acceptFilter !== null && acceptFilter !== undefined) {
                 const wantsAccept = acceptFilter === '1';
                 if (Boolean(Number(rowData.accept_required)) !== wantsAccept) return false;
             }
@@ -327,6 +308,9 @@ $(document).ready(function () {
         initAnnouncementTable();
         initSelect2('#announcement_filter_status');
         initSelect2('#announcement_filter_accept_required');
+        initFilterBar('#announcementFilterBar', {
+            onChange: function () { if (annTable) annTable.draw(); },
+        });
     }
     });
 });

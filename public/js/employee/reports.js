@@ -43,11 +43,6 @@ function currentEmployeeSummaryFilters() {
         branch_id: $('#employee_summary_filter_branch').val() || ''
     };
 }
-function updateClearEmployeeSummaryFilterVisibility() {
-    const f = currentEmployeeSummaryFilters();
-    const hasFilter = !!(f.role_id || f.department_id || f.team_id || f.shift_id || f.branch_id);
-    $('#employeeSummaryFilterClearRow').toggleClass('d-none', !hasFilter);
-}
 // 2026-09-02, real bug found and fixed (explicit report: "ตาราง Body ไม่เท่า Footer") -- this used to
 // replace the WHOLE <tfoot> row via .html() on every ajax response, which destroys and recreates
 // its <td> nodes -- the Responsive extension tracks/hides SPECIFIC DOM nodes it captured when the
@@ -130,20 +125,6 @@ $(document).ready(function () {
     initEmployeeSummaryTable();
     });
 });
-$(document).on('click', '#employeeSummaryStationFilterToggle', function () {
-    const $filter = $('#employeeSummaryStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#employee_summary_filter_role, #employee_summary_filter_department, #employee_summary_filter_team, #employee_summary_filter_shift, #employee_summary_filter_branch', function () {
-    updateClearEmployeeSummaryFilterVisibility();
-    if (tb_employee_summary) tb_employee_summary.ajax.reload(null, true);
-});
-$(document).on('click', '#btnClearEmployeeSummaryFilter', function () {
-    $('#employee_summary_filter_role, #employee_summary_filter_department, #employee_summary_filter_team, #employee_summary_filter_shift, #employee_summary_filter_branch').val(null).trigger('change.select2');
-    updateClearEmployeeSummaryFilterVisibility();
-    if (tb_employee_summary) tb_employee_summary.ajax.reload(null, true);
-});
 if (typeof watchTabDirty === 'function') {
     watchTabDirty('employee_list_dirty', function () {
         if ($.fn.DataTable.isDataTable('#tb_employee_summary')) {
@@ -165,11 +146,6 @@ function currentEmployeeHeadcountFilters() {
         department_id: $('#employee_headcount_filter_department').val() || '',
         branch_id: $('#employee_headcount_filter_branch').val() || '',
     };
-}
-function updateClearEmployeeHeadcountFilterVisibility() {
-    const f = currentEmployeeHeadcountFilters();
-    const hasFilter = !!(f.department_id || f.branch_id);
-    $('#employeeHeadcountFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 const EMP_HEADCOUNT_MONTH_LABELS_TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const EMP_HEADCOUNT_MONTH_LABELS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -305,20 +281,6 @@ function loadEmployeeHeadcountReport() {
 $(document).on('shown.bs.tab', '#empReportSub-headcount-tab', function () {
     loadEmployeeHeadcountReport();
 });
-$(document).on('click', '#employeeHeadcountStationFilterToggle', function () {
-    const $filter = $('#employeeHeadcountStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#employee_headcount_filter_year, #employee_headcount_filter_department, #employee_headcount_filter_branch', function () {
-    updateClearEmployeeHeadcountFilterVisibility();
-    loadEmployeeHeadcountReport();
-});
-$(document).on('click', '#btnClearEmployeeHeadcountFilter', function () {
-    $('#employee_headcount_filter_department, #employee_headcount_filter_branch').val(null).trigger('change.select2');
-    updateClearEmployeeHeadcountFilterVisibility();
-    loadEmployeeHeadcountReport();
-});
 
 /* ==================== Expiry Alerts (2026-09-02, Phase 2 of the Employee Reports plan) --
    Contract/Work Permit/Visa/Passport, the highest-value quick win: this data has sat fully
@@ -330,11 +292,6 @@ function currentEmployeeExpiryFilters() {
         department_id: $('#employee_expiry_filter_department').val() || '',
         branch_id: $('#employee_expiry_filter_branch').val() || '',
     };
-}
-function updateClearEmployeeExpiryFilterVisibility() {
-    const f = currentEmployeeExpiryFilters();
-    const hasFilter = !!(f.department_id || f.branch_id);
-    $('#employeeExpiryFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function employeeExpiryTypeLabel(type) {
     return langData['expiry_' + type] || type;
@@ -415,20 +372,6 @@ function loadEmployeeExpiryReport() {
 $(document).on('shown.bs.tab', '#empReportSub-expiry-tab', function () {
     loadEmployeeExpiryReport();
 });
-$(document).on('click', '#employeeExpiryStationFilterToggle', function () {
-    const $filter = $('#employeeExpiryStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#employee_expiry_filter_within_days, #employee_expiry_filter_department, #employee_expiry_filter_branch', function () {
-    updateClearEmployeeExpiryFilterVisibility();
-    loadEmployeeExpiryReport();
-});
-$(document).on('click', '#btnClearEmployeeExpiryFilter', function () {
-    $('#employee_expiry_filter_department, #employee_expiry_filter_branch').val(null).trigger('change.select2');
-    updateClearEmployeeExpiryFilterVisibility();
-    loadEmployeeExpiryReport();
-});
 
 /* ==================== Probation Status (2026-09-02, Phase 2) -- NO "days until due" column,
    confirmed via AskUserQuestion: no probation-period-length setting exists anywhere in this app
@@ -439,11 +382,6 @@ function currentEmployeeProbationFilters() {
         department_id: $('#employee_probation_filter_department').val() || '',
         branch_id: $('#employee_probation_filter_branch').val() || '',
     };
-}
-function updateClearEmployeeProbationFilterVisibility() {
-    const f = currentEmployeeProbationFilters();
-    const hasFilter = !!(f.department_id || f.branch_id);
-    $('#employeeProbationFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function initEmployeeProbationTable(items) {
     if ($.fn.DataTable.isDataTable('#tb_employee_probation')) {
@@ -495,20 +433,6 @@ function loadEmployeeProbationReport() {
 $(document).on('shown.bs.tab', '#empReportSub-probation-tab', function () {
     loadEmployeeProbationReport();
 });
-$(document).on('click', '#employeeProbationStationFilterToggle', function () {
-    const $filter = $('#employeeProbationStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#employee_probation_filter_department, #employee_probation_filter_branch', function () {
-    updateClearEmployeeProbationFilterVisibility();
-    loadEmployeeProbationReport();
-});
-$(document).on('click', '#btnClearEmployeeProbationFilter', function () {
-    $('#employee_probation_filter_department, #employee_probation_filter_branch').val(null).trigger('change.select2');
-    updateClearEmployeeProbationFilterVisibility();
-    loadEmployeeProbationReport();
-});
 
 /* ==================== SSO/PVD Enrollment (2026-09-02, Phase 2) -- "which people," distinct from
    the existing statutory SSO 1-10 FORM exports. ==================== */
@@ -520,11 +444,6 @@ function currentEmployeeEnrollmentFilters() {
         department_id: $('#employee_enrollment_filter_department').val() || '',
         branch_id: $('#employee_enrollment_filter_branch').val() || '',
     };
-}
-function updateClearEmployeeEnrollmentFilterVisibility() {
-    const f = currentEmployeeEnrollmentFilters();
-    const hasFilter = !!(f.department_id || f.branch_id);
-    $('#employeeEnrollmentFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function renderEmployeeEnrollmentDonut(instanceGetter, instanceSetter, canvasId, enrolled, notEnrolled) {
     const $canvas = $(`#${canvasId}`);
@@ -608,20 +527,6 @@ function loadEmployeeEnrollmentReport() {
     });
 }
 $(document).on('shown.bs.tab', '#empReportSub-enrollment-tab', function () {
-    loadEmployeeEnrollmentReport();
-});
-$(document).on('click', '#employeeEnrollmentStationFilterToggle', function () {
-    const $filter = $('#employeeEnrollmentStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#employee_enrollment_filter_department, #employee_enrollment_filter_branch', function () {
-    updateClearEmployeeEnrollmentFilterVisibility();
-    loadEmployeeEnrollmentReport();
-});
-$(document).on('click', '#btnClearEmployeeEnrollmentFilter', function () {
-    $('#employee_enrollment_filter_department, #employee_enrollment_filter_branch').val(null).trigger('change.select2');
-    updateClearEmployeeEnrollmentFilterVisibility();
     loadEmployeeEnrollmentReport();
 });
 
@@ -741,14 +646,6 @@ function loadEmployeeStructureReport() {
 $(document).on('shown.bs.tab', '#empReportSub-structure-tab', function () {
     loadEmployeeStructureReport();
 });
-$(document).on('click', '#employeeStructureStationFilterToggle', function () {
-    const $filter = $('#employeeStructureStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#employee_structure_filter_group_by', function () {
-    loadEmployeeStructureReport();
-});
 
 /* ==================== Tenure / อายุงาน (2026-09-02, Phase 3) ==================== */
 let tb_employee_tenure;
@@ -776,11 +673,6 @@ function currentEmployeeTenureFilters() {
         department_id: $('#employee_tenure_filter_department').val() || '',
         branch_id: $('#employee_tenure_filter_branch').val() || '',
     };
-}
-function updateClearEmployeeTenureFilterVisibility() {
-    const f = currentEmployeeTenureFilters();
-    const hasFilter = !!(f.department_id || f.branch_id);
-    $('#employeeTenureFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function initEmployeeTenureTable(items) {
     if ($.fn.DataTable.isDataTable('#tb_employee_tenure')) {
@@ -885,20 +777,6 @@ function loadEmployeeTenureReport() {
 $(document).on('shown.bs.tab', '#empReportSub-tenure-tab', function () {
     loadEmployeeTenureReport();
 });
-$(document).on('click', '#employeeTenureStationFilterToggle', function () {
-    const $filter = $('#employeeTenureStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#employee_tenure_filter_department, #employee_tenure_filter_branch', function () {
-    updateClearEmployeeTenureFilterVisibility();
-    loadEmployeeTenureReport();
-});
-$(document).on('click', '#btnClearEmployeeTenureFilter', function () {
-    $('#employee_tenure_filter_department, #employee_tenure_filter_branch').val(null).trigger('change.select2');
-    updateClearEmployeeTenureFilterVisibility();
-    loadEmployeeTenureReport();
-});
 
 /* ==================== Birthday & Work Anniversary (2026-09-02, Phase 3) -- no chart, a simple
    monthly reminder list. ==================== */
@@ -910,11 +788,6 @@ function currentEmployeeBirthdayFilters() {
         department_id: $('#employee_birthday_filter_department').val() || '',
         branch_id: $('#employee_birthday_filter_branch').val() || '',
     };
-}
-function updateClearEmployeeBirthdayFilterVisibility() {
-    const f = currentEmployeeBirthdayFilters();
-    const hasFilter = !!(f.department_id || f.branch_id);
-    $('#employeeBirthdayFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function initEmployeeBirthdayTables(birthdays, anniversaries) {
     const deptCol = { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || '-') };
@@ -989,20 +862,6 @@ function loadEmployeeBirthdayReport() {
 $(document).on('shown.bs.tab', '#empReportSub-birthday-tab', function () {
     loadEmployeeBirthdayReport();
 });
-$(document).on('click', '#employeeBirthdayStationFilterToggle', function () {
-    const $filter = $('#employeeBirthdayStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#employee_birthday_filter_month, #employee_birthday_filter_department, #employee_birthday_filter_branch', function () {
-    updateClearEmployeeBirthdayFilterVisibility();
-    loadEmployeeBirthdayReport();
-});
-$(document).on('click', '#btnClearEmployeeBirthdayFilter', function () {
-    $('#employee_birthday_filter_department, #employee_birthday_filter_branch').val(null).trigger('change.select2');
-    updateClearEmployeeBirthdayFilterVisibility();
-    loadEmployeeBirthdayReport();
-});
 
 /* ==================== Data Completeness overview (2026-09-02, Phase 4 -- the final phase) --
    aggregates the SAME per-employee % already shown on the List/Recheck tabs. ==================== */
@@ -1016,11 +875,6 @@ function currentEmployeeCompletenessFilters() {
         department_id: $('#employee_completeness_filter_department').val() || '',
         branch_id: $('#employee_completeness_filter_branch').val() || '',
     };
-}
-function updateClearEmployeeCompletenessFilterVisibility() {
-    const f = currentEmployeeCompletenessFilters();
-    const hasFilter = !!(f.department_id || f.branch_id);
-    $('#employeeCompletenessFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function employeeCompletenessColor(percent) {
     if (percent >= 80) return '#198754';
@@ -1150,18 +1004,22 @@ function loadEmployeeCompletenessReport() {
 $(document).on('shown.bs.tab', '#empReportSub-completeness-tab', function () {
     loadEmployeeCompletenessReport();
 });
-$(document).on('click', '#employeeCompletenessStationFilterToggle', function () {
-    const $filter = $('#employeeCompletenessStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#employee_completeness_filter_department, #employee_completeness_filter_branch', function () {
-    updateClearEmployeeCompletenessFilterVisibility();
-    loadEmployeeCompletenessReport();
-});
-$(document).on('click', '#btnClearEmployeeCompletenessFilter', function () {
-    $('#employee_completeness_filter_department, #employee_completeness_filter_branch').val(null).trigger('change.select2');
-    updateClearEmployeeCompletenessFilterVisibility();
-    loadEmployeeCompletenessReport();
-});
 
+// Period/grouping selectors have no "not filtered" value so they live outside the filter bars and reload on their own.
+$(document).on('change', '#employee_headcount_filter_year', function () { loadEmployeeHeadcountReport(); });
+$(document).on('change', '#employee_expiry_filter_within_days', function () { loadEmployeeExpiryReport(); });
+$(document).on('change', '#employee_structure_filter_group_by', function () { loadEmployeeStructureReport(); });
+$(document).on('change', '#employee_birthday_filter_month', function () { loadEmployeeBirthdayReport(); });
+
+$(document).ready(function () {
+    (window.langReady || Promise.resolve()).then(function () {
+        initFilterBar('#employeeSummaryFilterBar', { onChange: function () { if (tb_employee_summary) tb_employee_summary.ajax.reload(null, true); } });
+        initFilterBar('#employeeHeadcountFilterBar', { onChange: loadEmployeeHeadcountReport });
+        initFilterBar('#employeeExpiryFilterBar', { onChange: loadEmployeeExpiryReport });
+        initFilterBar('#employeeProbationFilterBar', { onChange: loadEmployeeProbationReport });
+        initFilterBar('#employeeEnrollmentFilterBar', { onChange: loadEmployeeEnrollmentReport });
+        initFilterBar('#employeeTenureFilterBar', { onChange: loadEmployeeTenureReport });
+        initFilterBar('#employeeBirthdayFilterBar', { onChange: loadEmployeeBirthdayReport });
+        initFilterBar('#employeeCompletenessFilterBar', { onChange: loadEmployeeCompletenessReport });
+    });
+});

@@ -33,11 +33,6 @@ function loginHistoryOverviewCurrentFilters() {
         browser_name: $('#loginHistoryOverviewFilterBrowser').val() || '',
     };
 }
-function updateClearLoginHistoryOverviewFilterVisibility() {
-    const f = loginHistoryOverviewCurrentFilters();
-    const hasFilter = !!(f.employee_id || f.date_from || f.date_to || f.device_type || f.browser_name);
-    $('#loginHistoryOverviewFilterClearRow').toggleClass('d-none', !hasFilter);
-}
 function loadLoginHistoryOverviewFilterOptions() {
     $.getJSON(`${BASE_URL}/api/employee-login-log.filter-options-company-wide`, function (res) {
         if (!res.status) return;
@@ -98,28 +93,8 @@ $(document).ready(function () {
     (window.langReady || Promise.resolve()).then(function () {
     loadLoginHistoryOverviewFilterOptions();
     initLoginHistoryOverviewTable();
+    initFilterBar('#employeeLoginHistoryFilterBar', {
+        onChange: function () { if (tb_login_history_overview) tb_login_history_overview.ajax.reload(); },
+    });
     });
 });
-$(document).on('click', '#employeeLoginHistoryStationFilterToggle', function () {
-    const $filter = $('#employeeLoginHistoryStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('changeDate', '#loginHistoryOverviewFilterDateFrom, #loginHistoryOverviewFilterDateTo', function () {
-    updateClearLoginHistoryOverviewFilterVisibility();
-    if (tb_login_history_overview) tb_login_history_overview.ajax.reload();
-});
-$(document).on('change', '#loginHistoryOverviewFilterEmployee, #loginHistoryOverviewFilterDevice, #loginHistoryOverviewFilterBrowser', function () {
-    updateClearLoginHistoryOverviewFilterVisibility();
-    if (tb_login_history_overview) tb_login_history_overview.ajax.reload();
-});
-$(document).on('click', '#btnClearLoginHistoryOverviewFilter', function () {
-    $('#loginHistoryOverviewFilterEmployee').val(null).trigger('change');
-    $('#loginHistoryOverviewFilterDateFrom').val('');
-    if (typeof $.fn.datepicker === 'function') $('#loginHistoryOverviewFilterDateFrom').datepicker('update');
-    $('#loginHistoryOverviewFilterDateTo').val('');
-    if (typeof $.fn.datepicker === 'function') $('#loginHistoryOverviewFilterDateTo').datepicker('update');
-    $('#loginHistoryOverviewFilterDevice').val(null).trigger('change');
-    $('#loginHistoryOverviewFilterBrowser').val(null).trigger('change');
-});
-

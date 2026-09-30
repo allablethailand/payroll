@@ -400,22 +400,6 @@ $(document).on('change', '#approvalSelectAll', function () {
 $(document).on('click', '#approvalStationRow .station-card', function () {
     showApprovalStation($(this).data('state') || '');
 });
-$(document).on('click', '#approvalStationFilterToggle', function () {
-    const $filter = $('#approvalStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-function updateApprovalClearFilterVisibility() {
-    const hasFilter = !!($('#approval_filter_date_from').val() || $('#approval_filter_date_to').val());
-    $('#approvalDateFilterClearRow').toggleClass('d-none', !hasFilter);
-}
-$(document).on('changeDate', '#approval_filter_date_from, #approval_filter_date_to', function () {
-    updateApprovalClearFilterVisibility();
-    if (tb_payroll_approval) tb_payroll_approval.ajax.reload(null, true);
-});
-$(document).on('click', '#btnClearApprovalDateFilter', function () {
-    $('#approval_filter_date_from, #approval_filter_date_to').datepicker('clearDates');
-});
 
 /* ---------- Timeline button ---------- */
 $(document).on('click', '.btn-view-approval-timeline', function (e) {
@@ -587,5 +571,8 @@ $(document).ready(function () {
         initDatepicker('#approval_filter_date_from');
         initDatepicker('#approval_filter_date_to');
     }
+    initFilterBar('#approvalFilterBar', {
+        onChange: function () { if (tb_payroll_approval) tb_payroll_approval.ajax.reload(null, true); },
+    });
     });
 });

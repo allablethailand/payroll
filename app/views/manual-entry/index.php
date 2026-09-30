@@ -54,39 +54,26 @@
                  `row mt-5 mb-3 g-2` with no collapse/Clear Filter, now the same .station-filter
                  component every other page's own filter uses (see Employee List's Login History
                  tab for the canonical shape this was copied from). -->
-            <div class="station-filter" id="attendanceStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="attendanceStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-user me-1 text-muted"></i><span data-i18n="employee">Employee</span></label>
-                            <select class="form-select select2-remote" id="filter_att_employee" data-api="/api/employee.report_to.get" data-type=""></select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="filter_att_date_from" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="filter_att_date_to" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <?php ob_start(); ?>
+            <div class="row g-2">
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_att_employee" data-i18n="employee">Employee</label>
+                <select class="form-select select2-remote" id="filter_att_employee" data-api="/api/employee.report_to.get" data-type=""></select>
             </div>
-            <div class="station-filter-clear-row d-none" id="attendanceFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnAttendanceClearFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_att_date_from" data-i18n="filter_date_from">From</label>
+                <input type="text" class="form-control datepicker" id="filter_att_date_from" autocomplete="off">
             </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_att_date_to" data-i18n="filter_date_to">To</label>
+                <input type="text" class="form-control datepicker" id="filter_att_date_to" autocomplete="off">
+            </div>
+            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'attendanceFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="mb-5 table-responsive">
                 <table class="table table-striped table-hover align-middle" id="tb_attendance" style="width:100%">
                     <thead>
@@ -107,39 +94,26 @@
             </div>
         </div>
         <div class="tab-pane fade" id="leave-pane" role="tabpanel" aria-labelledby="leave-tab" tabindex="0">
-            <div class="station-filter" id="leaveStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="leaveStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-user me-1 text-muted"></i><span data-i18n="employee">Employee</span></label>
-                            <select class="form-select select2-remote" id="filter_leave_employee" data-api="/api/employee.report_to.get" data-type=""></select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="filter_leave_date_from" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="filter_leave_date_to" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <?php ob_start(); ?>
+            <div class="row g-2">
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_leave_employee" data-i18n="employee">Employee</label>
+                <select class="form-select select2-remote" id="filter_leave_employee" data-api="/api/employee.report_to.get" data-type=""></select>
             </div>
-            <div class="station-filter-clear-row d-none" id="leaveFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnLeaveClearFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_leave_date_from" data-i18n="filter_date_from">From</label>
+                <input type="text" class="form-control datepicker" id="filter_leave_date_from" autocomplete="off">
             </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_leave_date_to" data-i18n="filter_date_to">To</label>
+                <input type="text" class="form-control datepicker" id="filter_leave_date_to" autocomplete="off">
+            </div>
+            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'leaveFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="mb-5 table-responsive">
                 <table class="table table-striped table-hover align-middle" id="tb_leave" style="width:100%">
                     <thead>
@@ -159,39 +133,26 @@
             </div>
         </div>
         <div class="tab-pane fade" id="overtime-pane" role="tabpanel" aria-labelledby="overtime-tab" tabindex="0">
-            <div class="station-filter" id="overtimeStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="overtimeStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-user me-1 text-muted"></i><span data-i18n="employee">Employee</span></label>
-                            <select class="form-select select2-remote" id="filter_ot_employee" data-api="/api/employee.report_to.get" data-type=""></select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="filter_ot_date_from" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="filter_ot_date_to" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <?php ob_start(); ?>
+            <div class="row g-2">
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_ot_employee" data-i18n="employee">Employee</label>
+                <select class="form-select select2-remote" id="filter_ot_employee" data-api="/api/employee.report_to.get" data-type=""></select>
             </div>
-            <div class="station-filter-clear-row d-none" id="overtimeFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnOvertimeClearFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_ot_date_from" data-i18n="filter_date_from">From</label>
+                <input type="text" class="form-control datepicker" id="filter_ot_date_from" autocomplete="off">
             </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_ot_date_to" data-i18n="filter_date_to">To</label>
+                <input type="text" class="form-control datepicker" id="filter_ot_date_to" autocomplete="off">
+            </div>
+            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'overtimeFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="mb-5 table-responsive">
                 <table class="table table-striped table-hover align-middle" id="tb_overtime" style="width:100%">
                     <thead>
@@ -219,43 +180,30 @@
              audit-field convention (who/when/device/IP/browser/source) report_export_logs already
              established for Reports' own Download History. -->
         <div class="tab-pane fade" id="import-history-pane" role="tabpanel" aria-labelledby="import-history-tab" tabindex="0">
-            <div class="station-filter" id="importHistoryStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="importHistoryStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-bolt me-1 text-muted"></i><span data-i18n="event_type">Event</span></label>
-                            <select class="form-select" id="filter_ih_event_type" data-option-keys="download,import" data-option-values="download,import"></select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-database me-1 text-muted"></i><span data-i18n="entity_type">Data Type</span></label>
-                            <select class="form-select" id="filter_ih_entity_type" data-option-keys="attendance,leave,overtime" data-option-values="attendance,leave,overtime"></select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="filter_ih_date_from" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="filter_ih_date_to" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            <?php ob_start(); ?>
+            <div class="row g-2">
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_ih_event_type" data-i18n="event_type">Event</label>
+                <select class="form-select" id="filter_ih_event_type" data-option-keys="filter_all,download,import" data-option-values="all,download,import"></select>
             </div>
-            <div class="station-filter-clear-row d-none" id="importHistoryFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnImportHistoryClearFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_ih_entity_type" data-i18n="entity_type">Data Type</label>
+                <select class="form-select" id="filter_ih_entity_type" data-option-keys="filter_all,attendance,leave,overtime" data-option-values="all,attendance,leave,overtime"></select>
             </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_ih_date_from" data-i18n="filter_date_from">From</label>
+                <input type="text" class="form-control datepicker" id="filter_ih_date_from" autocomplete="off">
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="filter_ih_date_to" data-i18n="filter_date_to">To</label>
+                <input type="text" class="form-control datepicker" id="filter_ih_date_to" autocomplete="off">
+            </div>
+            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'importHistoryFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="mb-5 table-responsive">
                 <table class="table table-striped table-hover align-middle" id="tb_import_history" style="width:100%">
                     <thead>

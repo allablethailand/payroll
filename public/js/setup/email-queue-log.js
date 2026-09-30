@@ -21,7 +21,7 @@ function emailQueueStatusBadge(status) {
 
 function currentEmailQueueFilters() {
     return {
-        status: $('#emailQueueFilterStatus').val() || '',
+        status: ($('#emailQueueFilterStatus').val() === 'all' ? '' : $('#emailQueueFilterStatus').val()) || '',
         date_from: toIsoDateEql($('#emailQueueFilterDateFrom').val()),
         date_to: toIsoDateEql($('#emailQueueFilterDateTo').val()),
         to_address: $('#emailQueueFilterToAddress').val() || ''
@@ -92,37 +92,14 @@ function initEmailQueueLogTable() {
     fetchEmailQueueSummary();
 }
 
-function updateClearEmailQueueFilterVisibility() {
-    const f = currentEmailQueueFilters();
-    const hasFilter = !!(f.status || f.date_from || f.date_to || f.to_address);
-    $('#emailQueueFilterClearRow').toggleClass('d-none', !hasFilter);
-}
-
-$(document).on('click', '#emailQueueStationFilterToggle', function () {
-    const $filter = $('#emailQueueStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-
-$(document).on('change', '#emailQueueFilterStatus, #emailQueueFilterDateFrom, #emailQueueFilterDateTo', function () {
-    updateClearEmailQueueFilterVisibility();
-    if (tb_email_queue_log) { tb_email_queue_log.ajax.reload(null, true); fetchEmailQueueSummary(); }
-});
-$(document).on('keyup', '#emailQueueFilterToAddress', function () {
-    updateClearEmailQueueFilterVisibility();
-    if (tb_email_queue_log) { tb_email_queue_log.ajax.reload(null, true); fetchEmailQueueSummary(); }
-});
-
-$(document).on('click', '#btnClearEmailQueueFilter', function () {
-    $('#emailQueueFilterStatus').val(null).trigger('change.select2');
-    $('#emailQueueFilterDateFrom, #emailQueueFilterDateTo').val('');
-    if (typeof $.fn.datepicker === 'function') $('#emailQueueFilterDateFrom, #emailQueueFilterDateTo').datepicker('update');
-    $('#emailQueueFilterToAddress').val('');
-    updateClearEmailQueueFilterVisibility();
-    if (tb_email_queue_log) { tb_email_queue_log.ajax.reload(null, true); fetchEmailQueueSummary(); }
-});
-
 $(document).ready(function () {
+    initFilterBar('#emailQueueFilterBar', {
+        onChange: function () {
+            if (tb_email_queue_log) { tb_email_queue_log.ajax.reload(null, true); fetchEmailQueueSummary(); }
+        },
+    });
+    // The bar listens to change only; the old filter reloaded on every keyup.
+    $('#emailQueueFilterToAddress').on('keyup', function () { $(this).trigger('change'); });
     $('#emailQueueLogTabBtn').on('shown.bs.tab', function () {
         initEmailQueueLogTable();
     });

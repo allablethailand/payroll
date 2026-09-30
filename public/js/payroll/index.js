@@ -494,10 +494,6 @@ function registerStationSearchFilter() {
         return true;
     });
 }
-$(document).on('change', '#filter_run_origin, #filter_run_cycle, #filter_run_purpose', function () {
-    updateClearFilterVisibility();
-    if (tb_payroll_run) tb_payroll_run.draw();
-});
 
 function updateStationCounts() {
     if (!tb_payroll_run) return;
@@ -1357,57 +1353,6 @@ function showStation(state, opts) {
 $(document).on('click', '.station-card', function () {
     showStation($(this).data('state') || '');
 });
-$(document).on('click', '#stationFilterToggle', function () {
-    const $filter = $('#stationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-// bootstrap-datepicker's core _setDate() fires BOTH 'changeDate' and the native 'change' event
-// together, unconditionally, for every date-picked interaction (confirmed in the bundled
-// library's own source) -- binding to both (an earlier fix here) double-fired this handler,
-// causing two back-to-back ajax.reload() calls per pick (visible in Network as one cancelled
-// request immediately followed by one 200). 'changeDate' alone is reliable on its own since it's
-// the one _setDate() always fires regardless of code path (clicking a day, clearDates(), etc.).
-// Clear Filter only makes sense (and only shows) once at least one of the two fields actually has
-// a value -- per explicit request, hidden by default rather than always visible.
-function updateClearFilterVisibility() {
-    // 2026-09-01: widened to cover the 3 new filters too, not just the date range -- one shared
-    // "Clear Filter" button/visibility rule for the whole station-filter box, same convention this
-    // app's own .station-filter component uses elsewhere (e.g. Employee List). Origin/Run Purpose
-    // are select2-static with a literal "all" option as their own neutral/no-op value (same
-    // "all" convention #employee_filter_payroll_participant already established) -- excluded here
-    // the same way, or the button would show permanently from page load.
-    const origin = $('#filter_run_origin').val();
-    const purpose = $('#filter_run_purpose').val();
-    const hasFilter = !!($('#filter_date_from').val() || $('#filter_date_to').val()
-        || (origin && origin !== 'all') || $('#filter_run_cycle').val() || (purpose && purpose !== 'all'));
-    $('#dateFilterClearRow').toggleClass('d-none', !hasFilter);
-}
-$(document).on('changeDate', '#filter_date_from, #filter_date_to', function () {
-    updateClearFilterVisibility();
-    if (tb_payroll_run) tb_payroll_run.ajax.reload(null, true);
-    // Also reload the Pending Pull ("Wait") table -- its own ajax now sends the same date_from/
-    // date_to (filtered on received_at, its only real date field -- payroll_sync_processes has no
-    // period_start/end of its own). Blindly reloading it unfiltered here used to make a genuinely
-    // empty result on the main table look like "the filter gave up and fetched everything", since
-    // this table would always come back full regardless of the date picked -- per explicit
-    // feedback, a filter that matches nothing should just show nothing, not fall back to showing
-    // everything.
-    if (tb_pending_sync) tb_pending_sync.ajax.reload(null, true);
-});
-$(document).on('click', '#btnClearDateFilter', function () {
-    // .datepicker('clearDates') goes through the same library API used to set them, so it fires
-    // 'changeDate' itself and the handler above reloads both tables (and re-hides this button)
-    // automatically -- no need to duplicate that here.
-    $('#filter_date_from, #filter_date_to').datepicker('clearDates');
-    // 2026-09-01: clears the 3 new filters too -- 'all' is Origin/Run Purpose's own neutral value
-    // (see updateClearFilterVisibility()'s own comment), an empty selection is Payroll Schedule's.
-    // .trigger('change') fires the '#filter_run_origin, #filter_run_cycle, #filter_run_purpose'
-    // handler above, which redraws the table -- no separate reload call needed here either.
-    $('#filter_run_origin').val('all').trigger('change');
-    $('#filter_run_cycle').val(null).trigger('change');
-    $('#filter_run_purpose').val('all').trigger('change');
-});
 $(document).on('click', '.btn-add-run', function () {
     resetRunForm();
     new bootstrap.Modal(document.getElementById('payrollRunModal')).show();
@@ -2204,6 +2149,19 @@ $(document).ready(function () {
         initDatepicker('#filter_date_to');
         initDatepicker('#run_mark_paid_date');
     }
-    updateClearFilterVisibility();
+    // Date changes reload both tables server-side; select changes are client-side only (ext.search redraw).
+    let runListFilterDates = ($('#filter_date_from').val() || '') + '|' + ($('#filter_date_to').val() || '');
+    initFilterBar('#runListFilterBar', {
+        onChange: function () {
+            const dates = ($('#filter_date_from').val() || '') + '|' + ($('#filter_date_to').val() || '');
+            if (dates !== runListFilterDates) {
+                runListFilterDates = dates;
+                if (tb_payroll_run) tb_payroll_run.ajax.reload(null, true);
+                if (tb_pending_sync) tb_pending_sync.ajax.reload(null, true);
+            } else if (tb_payroll_run) {
+                tb_payroll_run.draw();
+            }
+        },
+    });
     });
 });
