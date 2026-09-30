@@ -360,12 +360,12 @@
                     <table class="table table-hover table-sm align-middle w-100" id="tb_payslip_roster">
                         <thead class="table-light text-secondary small">
                             <tr>
-                                <th data-i18n="employee_no">Employee No.</th>
-                                <th data-i18n="name">Name</th>
-                                <th data-i18n="department">Department</th>
-                                <th data-i18n="position">Position</th>
-                                <th data-i18n="team">Team</th>
-                                <th class="text-center" data-i18n="download_count">Downloaded</th>
+                                <th><span data-i18n="employee_no">Employee No.</span></th>
+                                <th><span data-i18n="name">Name</span></th>
+                                <th><span data-i18n="department">Department</span></th>
+                                <th><span data-i18n="position">Position</span></th>
+                                <th><span data-i18n="team">Team</span></th>
+                                <th class="text-center"><span data-i18n="download_count">Downloaded</span></th>
                                 <th class="text-center"></th>
                             </tr>
                         </thead>
@@ -534,13 +534,13 @@
                     <table class="table table-sm align-middle w-100" id="tb_cycle_report_history">
                         <thead class="table-light text-secondary small">
                             <tr>
-                                <th data-i18n="downloaded_at">Date/Time</th>
-                                <th data-i18n="downloaded_by">By</th>
-                                <th data-i18n="language">Language</th>
-                                <th data-i18n="device">Device</th>
-                                <th data-i18n="browser">Browser</th>
+                                <th><span data-i18n="downloaded_at">Date/Time</span></th>
+                                <th><span data-i18n="downloaded_by">By</span></th>
+                                <th><span data-i18n="language">Language</span></th>
+                                <th><span data-i18n="device">Device</span></th>
+                                <th><span data-i18n="browser">Browser</span></th>
                                 <th>IP</th>
-                                <th data-i18n="source">Source</th>
+                                <th><span data-i18n="source">Source</span></th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -611,8 +611,8 @@
                                     <thead class="table-light text-secondary">
                                         <tr>
                                             <th class="es-sync-th-check"><input type="checkbox" id="syncNewSelectAll"></th>
-                                            <th data-i18n="employee">Employee</th>
-                                            <th data-i18n="employee_sync_dept_position">Department / Position</th>
+                                            <th><span data-i18n="employee">Employee</span></th>
+                                            <th><span data-i18n="employee_sync_dept_position">Department / Position</span></th>
                                         </tr>
                                     </thead>
                                     <tbody></tbody>
@@ -633,9 +633,9 @@
                                     <thead class="table-light text-secondary">
                                         <tr>
                                             <th class="es-sync-th-check"><input type="checkbox" id="syncExistingSelectAll"></th>
-                                            <th data-i18n="employee">Employee</th>
-                                            <th data-i18n="department">Department</th>
-                                            <th data-i18n="employee_sync_update_col">Update Available</th>
+                                            <th><span data-i18n="employee">Employee</span></th>
+                                            <th><span data-i18n="department">Department</span></th>
+                                            <th><span data-i18n="employee_sync_update_col">Update Available</span></th>
                                         </tr>
                                     </thead>
                                     <tbody></tbody>
@@ -1334,7 +1334,7 @@
                                 <tr>
                                     <th id="attendanceBracketMinLabel">From</th>
                                     <th id="attendanceBracketMaxLabel">To</th>
-                                    <th data-i18n="attendance_deduction_bracket_amount">Deduction Amount</th>
+                                    <th><span data-i18n="attendance_deduction_bracket_amount">Deduction Amount</span></th>
                                     <th class="text-end"></th>
                                 </tr>
                             </thead>
@@ -1737,9 +1737,9 @@
                                             <table class="table pl-table mb-0">
                                                 <thead>
                                                     <tr>
-                                                        <th data-i18n="bracket_from">From</th>
-                                                        <th data-i18n="bracket_to">To</th>
-                                                        <th data-i18n="bracket_rate">Rate (%)</th>
+                                                        <th><span data-i18n="bracket_from">From</span></th>
+                                                        <th><span data-i18n="bracket_to">To</span></th>
+                                                        <th><span data-i18n="bracket_rate">Rate (%)</span></th>
                                                         <th style="width:50px;"></th>
                                                     </tr>
                                                 </thead>
@@ -2170,10 +2170,10 @@
                         <table class="table table-sm" id="tb_bulk_import_preview">
                             <thead class="table-light">
                                 <tr>
-                                    <th data-i18n="row">Row</th>
-                                    <th data-i18n="status">Status</th>
-                                    <th data-i18n="action">Action</th>
-                                    <th data-i18n="message">Message</th>
+                                    <th><span data-i18n="row">Row</span></th>
+                                    <th><span data-i18n="status">Status</span></th>
+                                    <th><span data-i18n="action">Action</span></th>
+                                    <th><span data-i18n="message">Message</span></th>
                                 </tr>
                             </thead>
                             <tbody></tbody>
@@ -2518,11 +2518,11 @@
                                 <table class="table table-sm table-striped align-middle mb-0" id="eedInstallmentTable">
                                     <thead>
                                         <tr>
-                                            <th class="text-muted small" style="width:15%;" data-i18n="installment_no_col">#</th>
-                                            <th class="text-muted small d-none" id="eedInstallmentPrincipalHeader" data-i18n="installment_principal_col">Principal</th>
-                                            <th class="text-muted small d-none" id="eedInstallmentInterestHeader" data-i18n="installment_interest_col">Interest</th>
-                                            <th class="text-muted small" data-i18n="installment_amount_col">Amount</th>
-                                            <th class="text-muted small d-none" id="eedInstallmentStatusHeader" data-i18n="installment_status_col">Status</th>
+                                            <th class="text-muted small" style="width:15%;"><span data-i18n="installment_no_col">#</span></th>
+                                            <th class="text-muted small d-none" id="eedInstallmentPrincipalHeader"><span data-i18n="installment_principal_col">Principal</span></th>
+                                            <th class="text-muted small d-none" id="eedInstallmentInterestHeader"><span data-i18n="installment_interest_col">Interest</span></th>
+                                            <th class="text-muted small"><span data-i18n="installment_amount_col">Amount</span></th>
+                                            <th class="text-muted small d-none" id="eedInstallmentStatusHeader"><span data-i18n="installment_status_col">Status</span></th>
                                         </tr>
                                     </thead>
                                     <tbody id="eedInstallmentTableBody"></tbody>
@@ -3063,7 +3063,7 @@
                                         <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
                                             <tr>
                                                 <th style="width:3%;"><input type="checkbox" id="orgSyncNewSelectAll"></th>
-                                                <th data-i18n="name">Name</th>
+                                                <th><span data-i18n="name">Name</span></th>
                                             </tr>
                                         </thead>
                                         <tbody></tbody>
@@ -3079,8 +3079,8 @@
                                         <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
                                             <tr>
                                                 <th style="width:3%;"><input type="checkbox" id="orgSyncExistingSelectAll"></th>
-                                                <th data-i18n="name">Name</th>
-                                                <th data-i18n="employee_sync_update_col">Update Available</th>
+                                                <th><span data-i18n="name">Name</span></th>
+                                                <th><span data-i18n="employee_sync_update_col">Update Available</span></th>
                                             </tr>
                                         </thead>
                                         <tbody></tbody>
@@ -3120,12 +3120,12 @@
                 <table class="table table-hover table-sm align-middle w-100" id="tb_org_structure_sync_log">
                     <thead class="table-light text-secondary">
                         <tr>
-                            <th data-i18n="employee_sync_log_col_date">Date</th>
-                            <th data-i18n="employee_sync_log_col_triggered_by">By</th>
-                            <th data-i18n="employee_sync_log_col_status">Status</th>
-                            <th class="text-end" data-i18n="employee_sync_log_col_total">Total</th>
-                            <th class="text-end" data-i18n="employee_sync_log_col_success">Success</th>
-                            <th class="text-end" data-i18n="employee_sync_log_col_error">Error</th>
+                            <th><span data-i18n="employee_sync_log_col_date">Date</span></th>
+                            <th><span data-i18n="employee_sync_log_col_triggered_by">By</span></th>
+                            <th><span data-i18n="employee_sync_log_col_status">Status</span></th>
+                            <th class="text-end"><span data-i18n="employee_sync_log_col_total">Total</span></th>
+                            <th class="text-end"><span data-i18n="employee_sync_log_col_success">Success</span></th>
+                            <th class="text-end"><span data-i18n="employee_sync_log_col_error">Error</span></th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -3911,10 +3911,10 @@
                             <table class="table table-sm align-middle mb-0">
                                 <thead>
                                     <tr>
-                                        <th data-i18n="ot_scope">OT Type</th>
-                                        <th data-i18n="calculation_method">Calculation Method</th>
-                                        <th data-i18n="rate">Rate</th>
-                                        <th data-i18n="calculation_base">Base</th>
+                                        <th><span data-i18n="ot_scope">OT Type</span></th>
+                                        <th><span data-i18n="calculation_method">Calculation Method</span></th>
+                                        <th><span data-i18n="rate">Rate</span></th>
+                                        <th><span data-i18n="calculation_base">Base</span></th>
                                     </tr>
                                 </thead>
                                 <tbody id="rcOtRateOverridesBody"></tbody>

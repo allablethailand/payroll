@@ -220,7 +220,7 @@ php scripts/check-design.php --all
 
 ### 6.3 `app/views/layout/modals.php` — `<th data-i18n>` 47 จุด
 
-ยังไม่ตรวจ key ครบ th/en (ต้องรัน `php scripts/check-lang.php` แยก ไม่ได้ทำในรอบนี้)
+**สถานะ: เสร็จ (2026-09-30)** — แก้ 43 จุดเป็น `<th><span data-i18n>` (อีก 4 จุดของ `#tb_system_access_history` ถูกแก้ไปแล้วในก้อน 6.2); `php scripts/check-lang.php` = No issues found
 
 ### 6.4 `.station-filter` ที่เหลือ
 
@@ -259,6 +259,7 @@ php scripts/check-design.php --all
 
 | วันที่ | ก้อน | commit | ตัวเลขก่อน | ตัวเลขหลัง |
 |---|---|---|---|---|
-| 2026-09-30 | 6.2 — 6 ตาราง audit → `initSharedDataTable` | commit ที่แก้ไฟล์นี้ (ดู `git log`) | กฎ #5 = 137 | กฎ #5 = 127 |
+| 2026-09-30 | 6.2 — 6 ตาราง audit → `initSharedDataTable` | `5ff1b06b` | กฎ #5 = 137 | กฎ #5 = 127 |
+| 2026-09-30 | 6.3 — `<th data-i18n>` ใน `layout/modals.php` | commit ที่แก้ไฟล์นี้ (ดู `git log`) | 43 จุด | 0 จุด |
 
 (เติมทีละแถวทุกครั้งที่ปิดก้อนจากคิว §6 หรือกลุ่มโมดูลใน §5)
