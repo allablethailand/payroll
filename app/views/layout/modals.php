@@ -302,7 +302,7 @@
                 <button type="button" class="btn btn-primary" id="btnAcceptTerms" disabled data-i18n="terms_and_conditions_accept_btn">I have read and accept the Terms and Conditions</button>
             </div>
             <div class="modal-footer terms-modal-footer-view">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -1677,17 +1677,11 @@
                                     <div class="row g-3 mb-3">
                                         <div class="col-md-6">
                                             <label class="form-label mb-1"><span data-i18n="modal_effective_date">Effective Date</span> <span class="text-danger">*</span></label>
-                                            <div class="input-group">
-                                                <input type="text" class="form-control required datepicker" id="sr_rate_effective_date" autocomplete="off">
-                                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                                            </div>
+                                            <input type="text" class="form-control required datepicker" id="sr_rate_effective_date" autocomplete="off">
                                         </div>
                                         <div class="col-md-6">
                                             <label class="form-label mb-1"><span data-i18n="modal_end_date">End Date</span></label>
-                                            <div class="input-group">
-                                                <input type="text" class="form-control datepicker" id="sr_rate_end_date" autocomplete="off">
-                                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                                            </div>
+                                            <input type="text" class="form-control datepicker" id="sr_rate_end_date" autocomplete="off">
                                             <span class="text-muted small" data-i18n="end_date_optional_hint">Leave blank if this rate is still in effect (open-ended).</span>
                                         </div>
                                     </div>
@@ -1883,10 +1877,7 @@
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1"><span data-i18n="work_date">Work Date</span> <span class="text-danger">*</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker required" id="attendanceWorkDate" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker required" id="attendanceWorkDate" autocomplete="off">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1" data-i18n="shift">Shift</label>
@@ -1942,17 +1933,11 @@
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1"><span data-i18n="start_date">Start Date</span> <span class="text-danger">*</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker required" id="leaveStartDate" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker required" id="leaveStartDate" autocomplete="off">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1"><span data-i18n="end_date">End Date</span> <span class="text-danger">*</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker required" id="leaveEndDate" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker required" id="leaveEndDate" autocomplete="off">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1"><span data-i18n="total_days">Total Days</span> <span class="text-danger">*</span></label>
@@ -1996,10 +1981,7 @@
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1"><span data-i18n="ot_date">OT Date</span> <span class="text-danger">*</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker required" id="overtimeDate" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker required" id="overtimeDate" autocomplete="off">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1"><span data-i18n="hours">Hours</span> <span class="text-danger">*</span></label>
@@ -2358,10 +2340,7 @@
                             <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker required" id="eed_effective_date" name="effective_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker required" id="eed_effective_date" name="effective_date" autocomplete="off">
                         </div>
                     </div>
                     <hr class="my-4 text-muted opacity-25">
@@ -2652,10 +2631,7 @@
                             <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker required" id="ere_effective_date" name="effective_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker required" id="ere_effective_date" name="effective_date" autocomplete="off">
                         </div>
                     </div>
                     <hr class="my-4 text-muted opacity-25">
@@ -2666,10 +2642,7 @@
                             <label class="form-label mb-1"><span data-i18n="suspend_from">Suspend From</span></label>
                         </div>
                         <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="ere_suspended_from" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker" id="ere_suspended_from" autocomplete="off">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -2677,10 +2650,7 @@
                             <label class="form-label mb-1"><span data-i18n="suspend_to">Suspend To</span></label>
                         </div>
                         <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="ere_suspended_to" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker" id="ere_suspended_to" autocomplete="off">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -2742,10 +2712,7 @@
                             <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker required" id="erd_effective_date" name="effective_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker required" id="erd_effective_date" name="effective_date" autocomplete="off">
                         </div>
                     </div>
                     <!-- 2026-08-31, explicit request: "Form ที่เป็นรายการหัก ทุก Form ให้เพิ่มว่า คิดดอกเบี้ย
@@ -2829,10 +2796,7 @@
                             <label class="form-label mb-1"><span data-i18n="suspend_from">Suspend From</span></label>
                         </div>
                         <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="erd_suspended_from" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker" id="erd_suspended_from" autocomplete="off">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -2840,10 +2804,7 @@
                             <label class="form-label mb-1"><span data-i18n="suspend_to">Suspend To</span></label>
                         </div>
                         <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="erd_suspended_to" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker" id="erd_suspended_to" autocomplete="off">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -3502,17 +3463,11 @@
                             <label class="form-label mb-1"><span data-i18n="modal_period_start">Period Start Date</span> <span class="text-danger" id="run_period_required_mark">*</span></label>
                         </div>
                         <div class="col-sm-4">
-                            <div class="input-group">
-                                <input type="text" class="form-control required datepicker" id="run_period_start" name="period_start_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control required datepicker" id="run_period_start" name="period_start_date" autocomplete="off">
                         </div>
                         <div class="col-sm-1 align-self-center text-center text-muted">-</div>
                         <div class="col-sm-4">
-                            <div class="input-group">
-                                <input type="text" class="form-control required datepicker" id="run_period_end" name="period_end_date" data-i18n="modal_period_end" placeholder="Period End" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control required datepicker" id="run_period_end" name="period_end_date" data-i18n="modal_period_end" placeholder="Period End" autocomplete="off">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -3520,10 +3475,7 @@
                             <label class="form-label mb-1"><span data-i18n="modal_payment_date">Payment Date</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-4">
-                            <div class="input-group">
-                                <input type="text" class="form-control required datepicker" id="run_payment_date" name="payment_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control required datepicker" id="run_payment_date" name="payment_date" autocomplete="off">
                         </div>
                     </div>
                     <div class="row mb-3">

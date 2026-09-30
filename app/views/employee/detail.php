@@ -491,10 +491,7 @@
                     <label class="form-label mb-1"><span data-i18n="date_of_birth">Date of Birth</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker required" name="date_of_birth" id="date_of_birth" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
+                    <input type="text" class="form-control datepicker required" name="date_of_birth" id="date_of_birth" autocomplete="off">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label mb-1"><span data-i18n="nationality">Nationality</span> <span class="text-danger">*</span></label>
@@ -561,10 +558,7 @@
                         <label class="form-label mb-1"><span data-i18n="id_card_expire">ID Card Expire Date</span></label>
                     </div>
                     <div class="col-sm-4 mt-3 d-none">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="id_card_expire_date" id="id_card_expire_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="id_card_expire_date" id="id_card_expire_date" autocomplete="off">
                     </div>
                 </div>
             </div>
@@ -588,10 +582,7 @@
                         <label class="form-label mb-1"><span data-i18n="passport_expire">Passport Expire Date</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="passport_expire_date" id="passport_expire_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="passport_expire_date" id="passport_expire_date" autocomplete="off">
                     </div>
                     <div class="col-sm-2 mt-3">
                         <label class="form-label mb-1"><span data-i18n="work_permit_no">Work Permit No.</span> <span class="text-danger">*</span></label>
@@ -605,19 +596,13 @@
                         <label class="form-label mb-1"><span data-i18n="date_work_permit_issue">Date Work Permit Issue</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="date_work_permit_issue" id="date_work_permit_issue" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="date_work_permit_issue" id="date_work_permit_issue" autocomplete="off">
                     </div>
                     <div class="col-sm-2 mt-3">
                         <label class="form-label mb-1"><span data-i18n="date_work_permit_expire">Date Work Permit Expire</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="date_work_permit_expire" id="date_work_permit_expire" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="date_work_permit_expire" id="date_work_permit_expire" autocomplete="off">
                     </div>
                 </div>
                 <!-- 2026-09-02, extends the earlier Origami candidates.php field batch (passport_no/
@@ -636,10 +621,7 @@
                         <label class="form-label mb-1" data-i18n="passport_issue_date">Passport Issue Date</label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="passport_issue_date" id="passport_issue_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="passport_issue_date" id="passport_issue_date" autocomplete="off">
                     </div>
                 </div>
                 <div class="row">
@@ -667,10 +649,7 @@
                         <label class="form-label mb-1" data-i18n="visa_issue_date">Visa Issue Date</label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="visa_issue_date" id="visa_issue_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="visa_issue_date" id="visa_issue_date" autocomplete="off">
                     </div>
                 </div>
                 <div class="row">
@@ -684,10 +663,7 @@
                         <label class="form-label mb-1"><span data-i18n="date_visa_expire">Visa Expire Date</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="date_visa_expire" id="date_visa_expire" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="date_visa_expire" id="date_visa_expire" autocomplete="off">
                     </div>
                 </div>
                 <!-- 2026-09-02, explicit request following an AskUserQuestion exchange -- plain
@@ -740,19 +716,13 @@
                         <label class="form-label mb-1" data-i18n="arrival_date">Arrival Date</label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="arrival_date" id="arrival_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="arrival_date" id="arrival_date" autocomplete="off">
                     </div>
                     <div class="col-sm-2 mt-3">
                         <label class="form-label mb-1" data-i18n="due_date">Due Date</label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="due_date" id="due_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="due_date" id="due_date" autocomplete="off">
                     </div>
                 </div>
                 <div class="row">
@@ -1186,10 +1156,7 @@
                     <label class="form-label mb-1"><span data-i18n="employment_date">Employment Date</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker required" name="employment_date" id="employment_date" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
+                    <input type="text" class="form-control datepicker required" name="employment_date" id="employment_date" autocomplete="off">
                 </div>
                 <!-- 2026-09-02, Origami candidates.php field batch: company-defined employment
                      classification (e.g. รายเดือน/รายวัน/สัญญาจ้าง), synced from Origami's
@@ -1295,19 +1262,13 @@
                     <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker" name="employment_status_effective_date" id="employment_status_effective_date" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
+                    <input type="text" class="form-control datepicker" name="employment_status_effective_date" id="employment_status_effective_date" autocomplete="off">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label mb-1"><span data-i18n="employment_last_report_date">Last Date for Reports</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker" name="employment_end_date" id="employment_end_date" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
+                    <input type="text" class="form-control datepicker" name="employment_end_date" id="employment_end_date" autocomplete="off">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label mb-1"><span data-i18n="reason">Reason</span></label>
@@ -1353,10 +1314,7 @@
                     <label class="form-label mb-1"><span data-i18n="date_contract_expire">Date Contract Expire</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker" name="date_contract_expire" id="date_contract_expire" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
+                    <input type="text" class="form-control datepicker" name="date_contract_expire" id="date_contract_expire" autocomplete="off">
                 </div>
             </div>
             <div class="row d-none">
@@ -1536,10 +1494,7 @@
                     <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker required" name="salary_effective_date" id="salary_effective_date" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
+                    <input type="text" class="form-control datepicker required" name="salary_effective_date" id="salary_effective_date" autocomplete="off">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label mb-1"><span data-i18n="modal_cycle">Payroll Schedule</span></label>
@@ -2089,10 +2044,7 @@
                         </div>
                         <div class="mt-3">
                             <label class="form-label d-block mb-1"><span data-i18n="sso_start_date">SSO Start Date</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" name="sso_start_date" id="sso_start_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker" name="sso_start_date" id="sso_start_date" autocomplete="off">
                         </div>
                         <!-- 2026-09-02, real gap found and fixed (explicit report: "Smart Form...ตัวอย่างเช่น
                              กองทุนประกันสังคม (สปส.) เลือกไม่มี แต่ให้กรอก Rate") -- these 2 rate-override
@@ -2202,10 +2154,7 @@
                          -- falls back to Employment Date when blank. -->
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="pvd_start_date">Start Date</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="pvd_start_date" id="pvd_start_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="pvd_start_date" id="pvd_start_date" autocomplete="off">
                     </div>
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="pvd_employee_rate">Employee Rate (%)</span></label>
@@ -2223,10 +2172,7 @@
                          #employmentEndFields' own resigned/terminated gate. -->
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="pvd_end_date">Membership End Date</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="pvd_end_date" id="pvd_end_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="pvd_end_date" id="pvd_end_date" autocomplete="off">
                     </div>
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="pvd_end_reason">Reason for Ending Membership</span></label>
@@ -2257,10 +2203,7 @@
                         <label class="form-label mb-1"><span data-i18n="insurance_start_date">Coverage Start Date</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="insurance_start_date" id="insurance_start_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="insurance_start_date" id="insurance_start_date" autocomplete="off">
                     </div>
                 </div>
             </div>

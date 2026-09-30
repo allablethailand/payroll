@@ -1710,15 +1710,15 @@ $(document).on('click', '#btnBulkPull', function () {
                     </div>
                     <div class="col-sm-4">
                         <label class="form-label mb-1">${langData['modal_period_start'] || 'Period Start Date'} <span class="text-danger">*</span></label>
-                        <div class="input-group"><input type="text" class="form-control datepicker bulk-period-start required" autocomplete="off"><span class="input-group-text"><i class="fas fa-calendar"></i></span></div>
+                        <input type="text" class="form-control datepicker bulk-period-start required" autocomplete="off">
                     </div>
                     <div class="col-sm-4">
                         <label class="form-label mb-1">${langData['modal_period_end'] || 'Period End Date'} <span class="text-danger">*</span></label>
-                        <div class="input-group"><input type="text" class="form-control datepicker bulk-period-end required" autocomplete="off"><span class="input-group-text"><i class="fas fa-calendar"></i></span></div>
+                        <input type="text" class="form-control datepicker bulk-period-end required" autocomplete="off">
                     </div>
                     <div class="col-sm-4">
                         <label class="form-label mb-1">${langData['modal_payment_date'] || 'Payment Date'} <span class="text-danger">*</span></label>
-                        <div class="input-group"><input type="text" class="form-control datepicker bulk-payment-date required" autocomplete="off"><span class="input-group-text"><i class="fas fa-calendar"></i></span></div>
+                        <input type="text" class="form-control datepicker bulk-payment-date required" autocomplete="off">
                     </div>
                 </div>
                 <div class="bulk-pull-row-status mt-2"></div>
