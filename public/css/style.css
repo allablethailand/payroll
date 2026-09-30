@@ -1970,90 +1970,14 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 
 /* ==========================================================================
-   Payroll Process "Station" bar + collapsible filter box.
+   Payroll Process "Station" bar.
    Adapted from Origami's own Process page (app/views/process.php,
-   public/css/header.css .filter / .rows .columns .cards / .last-item / .inner) -- same
-   collapsible bordered filter box with a corner label + toggle icon, and the same
+   public/css/header.css .rows .columns .cards / .last-item / .inner) -- the
    chevron-shaped station cards (fake-arrow via ::before/::after triangle notches) with a
    reversed/rotated exception card for the branch-off state (Rejected here, Origami's own
    Not Approved/Need Changes there) -- recolored to this app's orange/gold brand instead of
    Origami's flat gray-on-white, same adaptation approach used for the header app-switcher.
    ========================================================================== */
-.station-filter {
-    position: relative;
-    border: 1px solid var(--app-border);
-    border-radius: 10px;
-    padding: 22px 44px 16px 16px;
-    margin-bottom: 16px;
-    margin-top: 11px;
-    background: var(--app-surface-bg);
-}
-/* Collapse/expand only clips this inner wrapper -- .station-filter itself must stay
-   overflow:visible or the corner label (positioned above the border) and the toggle icon get
-   cut off along with the collapsing content. */
-.station-filter-body {
-    overflow: hidden;
-    max-height: 200px;
-    transition: max-height 0.3s ease;
-}
-.station-filter.collapsed .station-filter-body {
-    max-height: 0;
-}
-.station-filter-label {
-    position: absolute;
-    top: -11px;
-    left: 14px;
-    background: var(--app-surface-bg);
-    border: 1px solid var(--app-border);
-    border-radius: 5px;
-    padding: 1px 10px;
-    font-size: 1rem;
-    color: var(--app-text-muted);
-    z-index: 1;
-}
-.station-filter-toggle {
-    position: absolute;
-    top: 14px;
-    right: 16px;
-    background: none;
-    border: none;
-    padding: 0;
-    font-size: 1.5rem;
-    line-height: 1;
-    color: var(--c-primary);
-    cursor: pointer;
-    transition: color 0.15s ease, transform 0.2s ease;
-}
-.station-filter.collapsed .station-filter-toggle {
-    color: var(--app-text-muted);
-}
-/* 2026-09-02, Platform Hardening Phase 1.6, explicit request: "ปุ่ม Clear Filter ปัจจุบันแยกลอยออกมา
-   ต่างหาก...ให้เป็นส่วนหนึ่งของกรอบ/การ์ด Filter เอง" -- confirmed via audit: this WAS the standing,
-   intentional convention (CLAUDE.md documents it), copy-pasted at ~24 call sites as a sibling
-   `<div class="d-flex justify-content-end mb-3">` sitting AFTER `.station-filter`'s own closing tag
-   -- a real border/background gap, not just visual perception. This class replaces that ad-hoc
-   wrapper everywhere: negative margin-top pulls it flush against `.station-filter`'s own bottom
-   edge, matching border color on 3 sides (none on top, so the two read as one continuous box) and
-   rounded bottom corners only (radius must match `.station-filter`'s own 10px exactly or the
-   corners visibly mismatch). `.station-filter` itself keeps its own `margin-bottom` for spacing to
-   whatever comes after -- this row sits INSIDE that spacing envelope, not fighting it. Same "hidden
-   until a filter is actually active" convention as before, but now the CONTAINER hides (not just
-   the button inside it) so an inactive filter shows no visible seam/empty strip at all -- toggle
-   this class's own `d-none` alongside (not instead of) the Clear button's, see each page's own JS.
-   STANDING CONVENTION going forward: any NEW `.station-filter` gets one of these immediately after
-   it, not a bare `d-flex justify-content-end` again. */
-.station-filter-clear-row {
-    margin-top: -1px;
-    padding: 8px 16px;
-    border: 1px solid var(--app-border);
-    border-top: none;
-    border-bottom-left-radius: 10px;
-    border-bottom-right-radius: 10px;
-    background: var(--app-surface-bg);
-    display: flex;
-    justify-content: flex-end;
-}
-
 .station-row {
     display: flex;
     flex-wrap: nowrap;
