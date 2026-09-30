@@ -203,7 +203,7 @@
             </div>
             <div class="employee-verify-status-summary text-sm-end">
                 <div class="text-muted small mb-1" data-i18n="verify_status_title">Verify Status</div>
-                <span class="badge" id="profileVerifyStatusBadge"></span>
+                <span id="profileVerifyStatusBadge"></span>
             </div>
             <div class="employee-completeness-summary">
                 <div class="text-muted small mb-1 text-sm-end" data-i18n="profile_completeness_title">Profile Completeness</div>

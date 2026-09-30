@@ -28,15 +28,7 @@ function submitterNameAp(row) {
     return (currentLang === 'th' ? row.submitted_by_name_th : row.submitted_by_name_en) || row.submitted_by_name_th || row.submitted_by_name_en || '-';
 }
 function stateBadgeAp(state) {
-    const map = {
-        pending_approval: 'bg-warning-subtle text-warning',
-        approved: 'bg-info-subtle text-info',
-        rejected: 'bg-danger-subtle text-danger',
-        need_info: 'bg-primary-subtle text-primary',
-    };
-    const cls = map[state] || 'bg-light text-dark';
-    const text = langData['state_' + state] || state;
-    return `<span class="badge ${cls}">${text}</span>`;
+    return statusBadgeHtml(state, 'run_state');
 }
 
 /* ---------- Filter + Station Status bar (2026-08-22) -- same .station-filter/.station-row/

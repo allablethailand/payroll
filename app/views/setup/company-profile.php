@@ -423,7 +423,7 @@
                     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
                         <div>
                             <h6 class="fw-bold mb-0"><span id="bffDetailFormatName"></span></h6>
-                            <span class="badge bg-warning-subtle text-warning" id="bffDraftBadge" data-i18n="draft_not_verified">DRAFT — not verified</span>
+                            <span id="bffDraftBadge"><?= statusBadge('draft', 'bff_verification') ?></span>
                         </div>
                         <div class="btn-group border rounded-3 bg-white">
                             <button type="button" class="btn btn-link btn-sm" id="bffViewLogBtn"><i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="edit_log">Edit Log</span></button>

@@ -71,7 +71,7 @@
       <div class="card-surface">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
           <div class="awf-flow-status-wrap">
-            <span class="badge" id="flowStatusBadge"></span>
+            <span id="flowStatusBadge"></span>
             <button type="button" class="btn btn-link btn-sm p-0 ms-2 d-none" id="btnToggleFlowStatus"></button>
             <div class="text-secondary small mt-1" id="flowStatusHint"></div>
           </div>

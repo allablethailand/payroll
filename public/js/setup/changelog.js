@@ -20,7 +20,7 @@
             html += '<div class="card-surface mb-3 version-entry">'
                 + '<div class="d-flex justify-content-between align-items-start mb-1">'
                 + '<h6 class="fw-bold mb-0">' + escapeHtmlCl(title) + '</h6>'
-                + '<span class="badge bg-primary-subtle text-primary-emphasis">' + escapeHtmlCl(row.version_label) + '</span>'
+                + '<span class="text-muted">' + escapeHtmlCl(row.version_label) + '</span>'
                 + '</div>'
                 + '<div class="text-muted small mb-2">' + escapeHtmlCl(row.release_date) + '</div>'
                 + '<div>' + escapeHtmlCl(body) + '</div>'

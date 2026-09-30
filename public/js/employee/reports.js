@@ -31,8 +31,7 @@ function summaryBadgeHtml(items, total, opts) {
         const installmentSuffix = opts.showInstallment ? ` (${it.installment_no}/${it.total_installments})` : '';
         return `${name}${installmentSuffix}: ${fmtMoneyList(it.amount)}`;
     });
-    const cls = opts.deduction ? 'bg-danger-subtle text-danger' : 'bg-success-subtle text-success';
-    return `<span class="badge ${cls}" title="${escapeHtml(lines.join(' | '))}">${items.length} ${langData['items_short'] || 'item(s)'} — ${fmtMoneyList(total)}</span>`;
+    return `<span class="text-muted" title="${escapeHtml(lines.join(' | '))}">${items.length} ${langData['items_short'] || 'item(s)'} — ${fmtMoneyList(total)}</span>`;
 }
 function currentEmployeeSummaryFilters() {
     return {
@@ -249,9 +248,7 @@ function initEmployeeHeadcountEventsTable(events) {
             {
                 data: 'movement_type',
                 render: {
-                    display: t => t === 'hire'
-                        ? `<span class="badge bg-success-subtle text-success">${employeeHeadcountEventTypeLabel(t)}</span>`
-                        : `<span class="badge bg-danger-subtle text-danger">${employeeHeadcountEventTypeLabel(t)}</span>`,
+                    display: t => `<span class="text-muted">${employeeHeadcountEventTypeLabel(t)}</span>`,
                     sort: t => t,
                     filter: t => employeeHeadcountEventTypeLabel(t),
                 }
@@ -470,8 +467,8 @@ function initEmployeeEnrollmentTable(items) {
         return;
     }
     const statusBadge = enrolled => Number(enrolled) === 1
-        ? `<span class="badge bg-success-subtle text-success">${langData['enrollment_enrolled'] || 'Enrolled'}</span>`
-        : `<span class="badge bg-secondary-subtle text-secondary">${langData['enrollment_not_enrolled'] || 'Not Enrolled'}</span>`;
+        ? statusBadgeHtml('enrolled', 'enrollment_status')
+        : statusBadgeHtml('not_enrolled', 'enrollment_status');
     tb_employee_enrollment = $('#tb_employee_enrollment').DataTable({
         data: items,
         responsive: true,

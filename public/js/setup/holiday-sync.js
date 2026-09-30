@@ -31,9 +31,7 @@ function hsCheckboxCellHtml(date) {
 }
 
 function hsUpdateBadgeHtml(row) {
-    return row.has_update
-        ? `<span class="badge bg-warning-subtle text-warning"><i class="fa-solid fa-rotate me-1"></i>${langData['employee_sync_update_available'] || 'Update available'}</span>`
-        : `<span class="badge bg-success-subtle text-success">${langData['employee_sync_up_to_date'] || 'Up to date'}</span>`;
+    return statusBadgeHtml(row.has_update ? 'update_available' : 'up_to_date', 'sync_update_state');
 }
 
 // 2026-08-28, explicit request: "ปรับข้อมูลตาราง ตรง Sync ให้ดูสวยขึ้น" (make the Sync tables look
@@ -224,10 +222,8 @@ $(document).on('click', '#btnApplyHolidaySync', function () {
 });
 
 function hsSyncLogStatusBadge(status) {
-    const map = { completed: 'bg-success-subtle text-success', running: 'bg-warning-subtle text-warning', failed: 'bg-danger-subtle text-danger' };
-    const cls = map[status] || 'bg-light text-dark';
-    const text = langData['sync_log_status_' + status] || status;
-    return `<span class="badge ${cls}">${text}</span>`;
+    if (!['completed', 'running', 'failed'].includes(status)) return `<span class="text-muted">${escapeHtml(status)}</span>`;
+    return statusBadgeHtml(status, 'sync_batch_status');
 }
 
 function hsLoadSyncLog() {

@@ -75,7 +75,7 @@ function dsLastSyncLine(entry) {
 function dsSyncCountBadge(count) {
     const n = Number(count) || 0;
     const tpl = langData['data_sync_count_badge'] || '{count}x';
-    return `<span class="badge rounded-pill ds-sync-count-badge" title="${escapeAttr((langData['data_sync_count_title'] || 'Synced {count} times').replace('{count}', n))}">${escapeHtml(tpl.replace('{count}', n))}</span>`;
+    return `<span class="text-muted" title="${escapeAttr((langData['data_sync_count_title'] || 'Synced {count} times').replace('{count}', n))}">${escapeHtml(tpl.replace('{count}', n))}</span>`;
 }
 function dsRenderCards(statusData) {
     const lastSyncAt = statusData.last_sync_at || {};
@@ -272,14 +272,8 @@ $(document).on('click', '#btnSyncAllMasterData', function () {
 });
 
 function dsStatusBadge(status) {
-    const map = {
-        completed: ['bg-success-subtle text-success', 'data_sync_status_completed', 'Completed'],
-        failed: ['bg-danger-subtle text-danger', 'data_sync_status_failed', 'Failed'],
-        running: ['bg-info-subtle text-info', 'data_sync_status_running', 'Running'],
-    };
-    const [cls, key, fallback] = map[status] || ['bg-secondary-subtle text-secondary', '', status];
-    const label = (key && langData[key]) || fallback;
-    return `<span class="badge ${cls}">${escapeHtml(label)}</span>`;
+    if (!['completed', 'failed', 'running'].includes(status)) return `<span class="text-muted">${escapeHtml(status)}</span>`;
+    return statusBadgeHtml(status, 'sync_batch_status');
 }
 
 function dsSyncedByCell(row) {

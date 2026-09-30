@@ -20,9 +20,7 @@ function orgSyncCheckboxCellHtml(refId) {
     return `<input type="checkbox" class="org-sync-row-check" data-ref-id="${refId}"${orgSyncSelectedRefIds.has(refId) ? ' checked' : ''}>`;
 }
 function orgSyncUpdateBadgeHtml(row) {
-    return row.has_update
-        ? `<span class="badge bg-warning-subtle text-warning"><i class="fa-solid fa-rotate me-1"></i>${langData['employee_sync_update_available'] || 'Update available'}</span>`
-        : `<span class="badge bg-success-subtle text-success">${langData['employee_sync_up_to_date'] || 'Up to date'}</span>`;
+    return statusBadgeHtml(row.has_update ? 'update_available' : 'up_to_date', 'sync_update_state');
 }
 // Same "prettier" identity-cell convention as employee-sync.js's esRenderEmployeeCell() --
 // initial-letter avatar circle + name, so this reads like a real record row.
@@ -203,10 +201,8 @@ $(document).on('click', '#btnApplyOrgStructureSync', function () {
 });
 
 function orgSyncStatusBadge(status) {
-    const map = { completed: 'bg-success-subtle text-success', running: 'bg-warning-subtle text-warning', failed: 'bg-danger-subtle text-danger' };
-    const cls = map[status] || 'bg-light text-dark';
-    const text = langData['sync_log_status_' + status] || status;
-    return `<span class="badge ${cls}">${text}</span>`;
+    if (!['completed', 'running', 'failed'].includes(status)) return `<span class="text-muted">${escapeHtml(status)}</span>`;
+    return statusBadgeHtml(status, 'sync_batch_status');
 }
 
 function orgSyncRenderLogModalTitle() {

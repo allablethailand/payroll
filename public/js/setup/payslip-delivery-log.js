@@ -17,10 +17,7 @@ let tb_payslip_delivery_log;
 
 
 function deliveryStatusBadge(status) {
-    if (status === 'success') {
-        return `<span class="badge bg-success-subtle text-success">${langData['status_sent'] || 'Sent'}</span>`;
-    }
-    return `<span class="badge bg-danger-subtle text-danger">${langData['status_send_failed'] || 'Send Failed'}</span>`;
+    return statusBadgeHtml(status === 'success' ? 'success' : 'failed', 'document_delivery_status');
 }
 
 function sourceLabel(source) {

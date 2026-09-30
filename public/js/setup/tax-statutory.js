@@ -40,7 +40,7 @@ function itemNameTs(row) {
 }
 function categoryBadgeTs(cat) {
     const key = 'category_' + cat;
-    return `<span class="badge bg-light text-dark border">${langData[key] || cat}</span>`;
+    return `<span class="text-muted">${langData[key] || cat}</span>`;
 }
 // 2026-08-28, explicit request: "เก็บ Log ดำเนินการว่าแก้ไขล่าสุดเมื่อไหร่" -- updated_at/updated_by
 // (falling back to created_at/created_by, see TaxStatutoryModel/CompanyStatutorySettingModel's own
@@ -81,8 +81,8 @@ function csIsCustomizedTs(row) {
 }
 function csRateInUseCellTs(row) {
     const badge = csIsCustomizedTs(row)
-        ? `<span class="badge bg-warning-subtle text-warning border me-1">${langData['sr_source_customized'] || 'Customized'}</span>`
-        : `<span class="badge bg-light text-dark border me-1">${langData['sr_source_default'] || 'Default'}</span>`;
+        ? `<span class="text-muted me-1">${langData['sr_source_customized'] || 'Customized'}</span>`
+        : `<span class="text-muted me-1">${langData['sr_source_default'] || 'Default'}</span>`;
     let valueText = '';
     if (row.calc_method === 'flat_rate') {
         const empRate = row.effective_employee_rate;
@@ -369,8 +369,8 @@ function srRateSummaryTs(row) {
 // "Customized" -- the badge the user explicitly asked for ("ต้องมีบอกว่า ปรับแต่งหรือ Default").
 function srSourceBadgeTs(source) {
     return source === 'company_custom'
-        ? `<span class="badge bg-warning-subtle text-warning border">${langData['sr_source_customized'] || 'Customized'}</span>`
-        : `<span class="badge bg-light text-dark border">${langData['sr_source_default'] || 'Default'}</span>`;
+        ? `<span class="text-muted">${langData['sr_source_customized'] || 'Customized'}</span>`
+        : `<span class="text-muted">${langData['sr_source_default'] || 'Default'}</span>`;
 }
 function srViewFieldHtml(label, value) {
     return `<div class="sr-view-field"><div class="sr-view-label">${label}</div><div class="sr-view-value">${value}</div></div>`;
@@ -388,7 +388,7 @@ function renderSrVersionViewCard(row) {
     }
     const isMaster = currentSrItem && currentSrItem.scope === 'master';
     const calcMethod = currentSrItem ? currentSrItem.calc_method : row.calc_method;
-    const endLabel = row.end_date ? formatDisplayDate(row.end_date) : `<span class="badge bg-success-subtle text-success">${langData['current_version'] || 'Current'}</span>`;
+    const endLabel = row.end_date ? formatDisplayDate(row.end_date) : `<span class="text-muted">${langData['current_version'] || 'Current'}</span>`;
 
     let valuesHtml = '';
     if (calcMethod === 'flat_rate') {
@@ -1588,8 +1588,8 @@ function renderStatutoryFormatCard(item) {
         // (implying a real choice) would be worse UX than none. Still shown so the checklist is
         // complete, not just the 2 forms that happen to have a picker.
         const verifiedBadge = item.is_verified
-            ? `<span class="badge bg-success-subtle text-success mt-2" data-i18n="verified">${langData['verified'] || 'Verified'}</span>`
-            : `<span class="badge bg-warning-subtle text-warning mt-2" data-i18n="draft_not_verified">${langData['draft_not_verified'] || 'DRAFT — not verified'}</span>`;
+            ? statusBadgeHtml('verified', 'statutory_format_verify')
+            : statusBadgeHtml('draft_not_verified', 'statutory_format_verify');
         return $(`
             <div class="col-md-6">
                 <div class="card-surface p-3 h-100 d-flex flex-column bg-light bg-opacity-50">
@@ -1613,8 +1613,8 @@ function renderStatutoryFormatCard(item) {
     }).join('');
     const selectedVersion = item.versions.find(v => v.id === item.selected_version_id);
     const verifiedBadge = selectedVersion && !selectedVersion.is_verified
-        ? `<span class="badge bg-warning-subtle text-warning mt-2" data-i18n="draft_not_verified">${langData['draft_not_verified'] || 'DRAFT — not verified'}</span>`
-        : (selectedVersion ? `<span class="badge bg-success-subtle text-success mt-2" data-i18n="verified">${langData['verified'] || 'Verified'}</span>` : '');
+        ? statusBadgeHtml('draft_not_verified', 'statutory_format_verify')
+        : (selectedVersion ? statusBadgeHtml('verified', 'statutory_format_verify') : '');
     const $card = $(`
         <div class="col-md-6">
             <div class="card-surface p-3 h-100 d-flex flex-column">
@@ -1642,8 +1642,8 @@ $(document).on('change', '.statutory-format-version-select', function () {
     const $badgeWrap = $card.find('.statutory-format-badge-wrap');
     if (selected) {
         $badgeWrap.html(selected.is_verified
-            ? `<span class="badge bg-success-subtle text-success mt-2" data-i18n="verified">${langData['verified'] || 'Verified'}</span>`
-            : `<span class="badge bg-warning-subtle text-warning mt-2" data-i18n="draft_not_verified">${langData['draft_not_verified'] || 'DRAFT — not verified'}</span>`);
+            ? statusBadgeHtml('verified', 'statutory_format_verify')
+            : statusBadgeHtml('draft_not_verified', 'statutory_format_verify'));
     }
 });
 $(document).on('click', '.statutory-format-save-btn', function () {

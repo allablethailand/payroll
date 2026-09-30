@@ -211,9 +211,7 @@ function notifToIsoDate(displayVal) {
     return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 }
 function notifStatusBadge(isRead) {
-    return Number(isRead) === 0
-        ? `<span class="badge bg-warning-subtle text-warning">${langData['notif_status_unread'] || 'Unread'}</span>`
-        : `<span class="badge bg-secondary-subtle text-secondary">${langData['notif_status_read'] || 'Read'}</span>`;
+    return statusBadgeHtml(Number(isRead) === 0 ? 'unread' : 'read', 'notification_read_status');
 }
 // The filter-bar's "no filter" option is 'all'; the API expects it empty.
 function notifIsReadFilterValue() {

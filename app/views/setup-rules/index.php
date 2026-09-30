@@ -576,7 +576,7 @@
                         <div class="row g-3">
                             <div class="col-lg-6">
                                 <div class="d-flex align-items-center mb-2">
-                                    <h6 class="mb-0 text-success"><span data-i18n="employee_sync_tab_new">New</span> <span class="badge bg-success ms-1" id="holidaySyncNewCount">0</span></h6>
+                                    <h6 class="mb-0 text-success"><span data-i18n="employee_sync_tab_new">New</span> <span class="count-inline" id="holidaySyncNewCount">0</span></h6>
                                 </div>
                                 <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
                                     <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_holiday_sync_new">
@@ -593,7 +593,7 @@
                             </div>
                             <div class="col-lg-6">
                                 <div class="d-flex align-items-center mb-2">
-                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="badge bg-secondary ms-1" id="holidaySyncExistingCount">0</span></h6>
+                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="count-inline" id="holidaySyncExistingCount">0</span></h6>
                                 </div>
                                 <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
                                     <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_holiday_sync_existing">

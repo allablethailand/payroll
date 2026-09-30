@@ -68,8 +68,8 @@ function saRenderList($container, rows, emptyKey, listPrefix) {
     }
     $container.html(rows.map(row => {
         const badge = row.current_row_name
-            ? `<span class="badge bg-secondary-subtle text-secondary ms-1">${escapeHtml(row.current_row_name)}</span>`
-            : (row.current_row_id === null || row.current_row_id === undefined ? `<span class="badge bg-light text-muted ms-1">${langData['sa_unassigned'] || 'Unassigned'}</span>` : '');
+            ? `<span class="text-muted ms-1">${escapeHtml(row.current_row_name)}</span>`
+            : (row.current_row_id === null || row.current_row_id === undefined ? `<span class="text-muted ms-1">${langData['sa_unassigned'] || 'Unassigned'}</span>` : '');
         const cbId = `saEmpChk_${listPrefix}_${row.id}`;
         return `<div class="form-check border-bottom py-1">
             <input class="form-check-input sa-emp-checkbox" type="checkbox" value="${row.id}" id="${cbId}">

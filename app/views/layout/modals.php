@@ -592,7 +592,7 @@
                                     <h6 class="mb-0"><span data-i18n="employee_sync_tab_new">New</span></h6>
                                     <div class="text-muted small" data-i18n="employee_sync_tab_new_hint">Not in this system yet</div>
                                 </div>
-                                <span class="badge rounded-pill bg-success" id="syncNewCount">0</span>
+                                <span class="count-inline" id="syncNewCount">0</span>
                             </div>
                             <div class="es-sync-scroll-box">
                                 <table class="table table-hover align-middle w-100 mb-0 es-sync-table" id="tb_sync_new">
@@ -614,7 +614,7 @@
                                     <h6 class="mb-0"><span data-i18n="employee_sync_tab_existing">Already Exists</span></h6>
                                     <div class="text-muted small" data-i18n="employee_sync_tab_existing_hint">Already in this system</div>
                                 </div>
-                                <span class="badge rounded-pill bg-secondary" id="syncExistingCount">0</span>
+                                <span class="count-inline" id="syncExistingCount">0</span>
                             </div>
                             <div class="es-sync-scroll-box">
                                 <table class="table table-hover align-middle w-100 mb-0 es-sync-table" id="tb_sync_existing">
@@ -967,7 +967,7 @@
             <div class="modal-header">
                 <h5 class="modal-title text-secondary d-flex align-items-center gap-2" id="pedTypeModalLabel">
                     <i class="fa-solid fa-pen-to-square text-secondary" id="pedTypeModalIcon"></i>
-                    <span class="badge fs-6" id="pedTypeModalBadge"></span>
+                    <span class="text-muted" id="pedTypeModalBadge"></span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -1250,7 +1250,7 @@
                      creating a brand-new variant (see payroll-configuration.js's openAttendanceDeductionRuleModal()). -->
                 <div class="mb-3" id="attendanceRuleScopeBadgeWrapper">
                     <label class="form-label small text-muted mb-1" data-i18n="attendance_deduction_scope">Applies To</label>
-                    <div><span class="badge bg-secondary-subtle text-secondary" id="attendanceRuleScopeBadge"></span></div>
+                    <div><span class="text-muted" id="attendanceRuleScopeBadge"></span></div>
                 </div>
                 <div class="row g-2 mb-3 d-none" id="attendanceRuleScopePickerWrapper">
                     <div class="col-5">
@@ -1478,9 +1478,9 @@
             <div class="modal-header">
                 <h5 class="modal-title text-secondary" id="statutoryRateModalLabel">
                     <i class="fa-solid fa-sliders me-1"></i><span id="srModalItemName"></span>
-                    <span class="badge bg-light text-dark border ms-2 d-none" id="srModalScopeBadgeMaster" data-i18n="statutory_scope_master">Master</span>
-                    <span class="badge bg-warning-subtle text-warning border ms-2 d-none" id="srModalScopeBadgeCustom" data-i18n="statutory_scope_custom">Your Company's Item</span>
-                    <span class="badge bg-secondary ms-2 d-none" id="srModalReadOnlyBadge" data-i18n="view_only">View Only</span>
+                    <span class="text-muted ms-2 d-none" id="srModalScopeBadgeMaster" data-i18n="statutory_scope_master">Master</span>
+                    <span class="text-muted ms-2 d-none" id="srModalScopeBadgeCustom" data-i18n="statutory_scope_custom">Your Company's Item</span>
+                    <span class="text-muted ms-2 d-none" id="srModalReadOnlyBadge" data-i18n="view_only">View Only</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -3005,7 +3005,7 @@
                         <div class="row g-3">
                             <div class="col-lg-6">
                                 <div class="d-flex align-items-center mb-2">
-                                    <h6 class="mb-0 text-success"><span data-i18n="employee_sync_tab_new">New</span> <span class="badge bg-success ms-1" id="orgSyncNewCount">0</span></h6>
+                                    <h6 class="mb-0 text-success"><span data-i18n="employee_sync_tab_new">New</span> <span class="count-inline" id="orgSyncNewCount">0</span></h6>
                                 </div>
                                 <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
                                     <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_org_sync_new">
@@ -3021,7 +3021,7 @@
                             </div>
                             <div class="col-lg-6">
                                 <div class="d-flex align-items-center mb-2">
-                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="badge bg-secondary ms-1" id="orgSyncExistingCount">0</span></h6>
+                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="count-inline" id="orgSyncExistingCount">0</span></h6>
                                 </div>
                                 <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
                                     <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_org_sync_existing">
@@ -3583,7 +3583,7 @@
                 <div class="modal-body">
                     <div class="d-flex align-items-center gap-2 mb-4">
                         <span class="fw-bold" id="rcEditEmployeeNoLabel">-</span>
-                        <span class="badge bg-secondary-subtle text-secondary" id="rcEditTypeBadge"></span>
+                        <span class="text-muted" id="rcEditTypeBadge"></span>
                     </div>
                     <!-- 2026-08-30, same-day follow-up ("Form จัดใหม่ ให้แยกตามประเภท และเติม Icon ลงไปด้วย")
                          -- grouped into the same numbered-section convention every other form in this

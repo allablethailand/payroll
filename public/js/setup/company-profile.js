@@ -536,7 +536,7 @@ function initBankAccountTable() {
                 data: 'is_default',
                 className: 'text-center',
                 render: function (data) {
-                    return data ? `<span class="badge bg-primary" data-i18n="default">Default</span>` : `-`;
+                    return data ? `<span class="text-muted" data-i18n="default">Default</span>` : `-`;
                 }
             },
             {
@@ -928,7 +928,7 @@ function getStructureColumns(type) {
                     data: "is_default",
                     className: "text-center",
                     render: function (data) {
-                        return data ? `<span class="badge bg-primary" data-i18n="default">Default</span>` : `-`;
+                        return data ? `<span class="text-muted" data-i18n="default">Default</span>` : `-`;
                     }
                 },
                 { data: "location", defaultContent: "-" },
@@ -957,9 +957,9 @@ function getStructureColumns(type) {
                     data: "salary_access",
                     render: function (data) {
                         return data ? `
-                            <span class="badge bg-info" data-i18n="allowed">Allowed</span>
+                            <span class="text-muted" data-i18n="allowed">Allowed</span>
                         ` : `
-                            <span class="badge bg-secondary" data-i18n="restricted">Restricted</span>
+                            <span class="text-muted" data-i18n="restricted">Restricted</span>
                         `;
                     }
                 },
@@ -1030,7 +1030,7 @@ function getStructureColumns(type) {
                     data: "ot_eligible",
                     className: "text-center",
                     render: function (data) {
-                        return data ? `<span class="badge bg-info" data-i18n="yes">Yes</span>` : `<span class="badge bg-light text-dark" data-i18n="no">No</span>`;
+                        return data ? `<span class="text-muted" data-i18n="yes">Yes</span>` : `<span class="text-muted" data-i18n="no">No</span>`;
                     }
                 },
                 {
@@ -1385,10 +1385,8 @@ function bffRenderFormatList(defaultFormatId) {
         const isDefault = defaultFormatId && f.id === defaultFormatId;
         const isActive = f.id === bffSelectedFormatId;
         const verifiedBadge = f.has_own_override
-            ? (f.is_verified
-                ? `<span class="badge bg-success-subtle text-success" data-i18n="verified">Verified</span>`
-                : `<span class="badge bg-warning-subtle text-warning" data-i18n="draft_not_verified">DRAFT — not verified</span>`)
-            : `<span class="badge bg-secondary-subtle text-secondary" data-i18n="using_default_template">Using default template</span>`;
+            ? statusBadgeHtml(f.is_verified ? 'verified' : 'draft', 'bff_verification')
+            : statusBadgeHtml('default_template', 'bff_verification');
         const $item = $(`
             <button type="button" class="btn btn-outline-secondary text-start bff-format-item ${isActive ? 'active border-warning' : ''}" data-id="${f.id}">
                 <div class="d-flex justify-content-between align-items-center">
@@ -1484,8 +1482,7 @@ $(document).on('click', '#bffSaveConfigBtn', function () {
 });
 
 function bffRowTypeBadge(rowType) {
-    const map = { header: 'bg-info-subtle text-info', detail: 'bg-primary-subtle text-primary', trailer: 'bg-secondary-subtle text-secondary' };
-    return `<span class="badge ${map[rowType] || 'bg-light text-dark'}" data-i18n="row_type_${rowType}">${langData['row_type_' + rowType] || rowType}</span>`;
+    return `<span class="text-muted" data-i18n="row_type_${rowType}">${langData['row_type_' + rowType] || rowType}</span>`;
 }
 function bffSourceSummary(field) {
     if (field.source_type === 'constant') {

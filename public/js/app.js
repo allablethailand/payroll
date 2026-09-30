@@ -1811,7 +1811,7 @@ const STATUS_MAP = (typeof window !== 'undefined' && window.STATUS_MAP) ? window
 })();
 // Raw lookup -- mirrors PHP's own statusMapEntry(), same reason it exists as its own function
 // separate from statusBadgeHtml() below: status-tabs.php's own caller needs the raw tone/direction
-// pair to build its $tabs array, not a rendered `<span class="badge">` (its pill is a plain colored
+// pair to build its $tabs array, not a rendered badge element (its pill is a plain colored
 // number, no label text to duplicate).
 function getStatusMapEntry(enumValue, context) {
     return (STATUS_MAP[context] && STATUS_MAP[context][enumValue]) || null;
@@ -1996,7 +1996,8 @@ function countBadgeHtml(n, options) {
     // to a status badge in the same cell, rather than overlaid on a button that already names the
     // thing. Without it the badge stays exactly what it has always been: the bare number.
     const text = options.label ? String(options.label).replace('{n}', String(n)) : String(n);
-    return `<span class="badge badge-${tone}" data-badge="count">${escapeHtml(text)}</span>`;
+    // A count is not a status, so it carries data-badge="count" instead of "status" (rules.md 5).
+    return `<span class="badge badge-${tone}" data-badge="count">${escapeHtml(text)}</span>`; // design:ignore
 }
 // Status stepper (§6, Round 2 item 6, extended 2026-09-13 Round 3 item 3a -- see
 // status-stepper.php's own docblock for the full per-step date/tone shape and the branch-state

@@ -47,12 +47,10 @@ function loadLoginHistoryOverviewFilterOptions() {
 // 2026-08-30, Phase 7 (T037/T038 follow-up) -- see employee/detail.js's own equivalent comment.
 function loginHistoryOverviewStatusBadge(row) {
     if (Number(row.is_active) === 1) {
-        return `<span class="badge bg-success-subtle text-success">${langData['session_status_active'] || 'Active'}</span>`;
+        return statusBadgeHtml('active', 'session_status');
     }
-    const reasonKey = { new_login: 'session_reason_new_login', switch_app: 'session_reason_switch_app', timeout: 'session_reason_timeout' }[row.ended_reason];
-    const label = (reasonKey && langData[reasonKey]) || langData['session_status_ended'] || 'Ended';
-    const tone = row.ended_reason === 'timeout' ? 'bg-warning-subtle text-warning' : 'bg-secondary-subtle text-secondary';
-    return `<span class="badge ${tone}">${$('<div>').text(label).html()}</span>`;
+    const known = ['new_login', 'switch_app', 'timeout'].indexOf(row.ended_reason) !== -1;
+    return statusBadgeHtml(known ? row.ended_reason : 'ended', 'session_status');
 }
 function initLoginHistoryOverviewTable() {
     if ($.fn.DataTable.isDataTable('#tb_login_history_overview')) {

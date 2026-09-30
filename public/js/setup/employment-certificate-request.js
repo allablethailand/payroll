@@ -15,16 +15,7 @@ let tb_ecr_request;
 
 
 function ecrRequestStatusBadge(status) {
-    const map = {
-        pending: { cls: 'bg-warning-subtle text-warning', key: 'status_pending', fallback: 'Pending' },
-        approved: { cls: 'bg-info-subtle text-info', key: 'status_approved', fallback: 'Approved' },
-        rejected: { cls: 'bg-danger-subtle text-danger', key: 'status_rejected', fallback: 'Rejected' },
-        cancelled: { cls: 'bg-secondary-subtle text-secondary', key: 'cancelled', fallback: 'Cancelled' },
-        issued: { cls: 'bg-success-subtle text-success', key: 'ecr_status_issued', fallback: 'Issued' },
-        issue_failed: { cls: 'bg-danger-subtle text-danger', key: 'ecr_status_issue_failed', fallback: 'Issue Failed' }
-    };
-    const m = map[status] || { cls: 'bg-secondary-subtle text-secondary', key: '', fallback: status };
-    return `<span class="badge ${m.cls}">${langData[m.key] || m.fallback}</span>`;
+    return statusBadgeHtml(status, 'employment_certificate_request_status');
 }
 
 function ecrLanguageLabel(lang) {

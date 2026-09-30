@@ -65,9 +65,7 @@ function initAnnQuillEditors() {
 }
 
 function annStatusBadge(status) {
-    return status === 'published'
-        ? `<span class="badge bg-success-subtle text-success">${langData['announcement_status_published'] || 'Published'}</span>`
-        : `<span class="badge bg-secondary-subtle text-secondary">${langData['announcement_status_draft'] || 'Draft'}</span>`;
+    return statusBadgeHtml(status === 'published' ? 'published' : 'draft', 'announcement_status');
 }
 function annActionBtns(row) {
     const isDraft = row.status === 'draft';

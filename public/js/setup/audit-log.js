@@ -14,13 +14,8 @@ function auditLogTableLabel(tableName) {
     return langData['audit_log_table_' + tableName] || tableName;
 }
 function auditLogActionBadge(action) {
-    const map = {
-        create: { key: 'audit_log_action_create', cls: 'bg-success-subtle text-success' },
-        update: { key: 'audit_log_action_update', cls: 'bg-primary-subtle text-primary' },
-        delete: { key: 'audit_log_action_delete', cls: 'bg-danger-subtle text-danger' },
-    };
-    const m = map[action] || { key: action, cls: 'bg-secondary-subtle text-secondary' };
-    return `<span class="badge ${m.cls}">${escapeAttr(langData[m.key] || action)}</span>`;
+    const keys = { create: 'audit_log_action_create', update: 'audit_log_action_update', delete: 'audit_log_action_delete' };
+    return `<span class="text-muted">${escapeAttr(langData[keys[action] || action] || action)}</span>`;
 }
 function auditLogByLabel(row) {
     const nameTh = [row.performed_by_name_th, row.performed_by_surname_th].filter(Boolean).join(' ');

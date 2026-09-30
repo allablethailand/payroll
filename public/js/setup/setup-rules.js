@@ -264,10 +264,9 @@ function holidayScopeSelector(type) {
 }
 function holidayScopeSummary(row) {
     const modeLabel = row.assignment_mode === 'exclude' ? (langData['exclude_mode'] || 'Exclude') : (langData['include_mode'] || 'Include');
-    const modeCls = row.assignment_mode === 'exclude' ? 'badge-unpaid' : 'badge-paid';
     const count = parseInt(row.assignment_count || 0);
     const countText = count > 0 ? `${count} ${langData['scopes_selected'] || 'scope(s) selected'}` : (langData['no_scope_selected'] || 'No specific scope');
-    return `<span class="badge-soft ${modeCls} me-1">${modeLabel.split(' (')[0]}</span><span class="text-faint">${countText}</span>`;
+    return `<span class="text-muted me-1">${modeLabel.split(' (')[0]}</span><span class="text-faint">${countText}</span>`;
 }
 function initHolidayScopeSelects() {
     initSelect2('#holidayRecurring', { mode: 'static' });
@@ -290,7 +289,7 @@ function renderHoliday() {
             { data: 'status', className: 'text-center', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/holiday.toggle-status') },
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
             { data: null, render: (d, t, row) => `<span class="text-faint"><i class="fa-regular fa-calendar me-1"></i>${fmtDate(row.holiday_date)}</span>` },
-            { data: null, render: (d, t, row) => parseInt(row.is_recurring) === 1 ? `<span class="badge-soft badge-paid">${langData['recurring_every_year'] || 'Recurring'}</span>` : `<span class="badge-soft badge-unpaid">${langData['one_time_only'] || 'One-time'}</span>` },
+            { data: null, render: (d, t, row) => parseInt(row.is_recurring) === 1 ? `<span class="text-muted">${langData['recurring_every_year'] || 'Recurring'}</span>` : `<span class="text-muted">${langData['one_time_only'] || 'One-time'}</span>` },
             { data: null, render: (d, t, row) => holidayScopeSummary(row) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
@@ -558,7 +557,7 @@ function renderLeave() {
             { data: 'code', render: d => `<span class="row-code">${escapeAttr(d)}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint">${escapeAttr(currentLang === 'th' ? row.category_name_th : row.category_name_en)}</span>` },
             { data: null, className: 'text-end', render: (d, t, row) => `<span class="text-faint">${parseFloat(row.quota_amount)} ${leaveQuotaUnitLabel(row.unit_type)}</span>` },
-            { data: null, render: (d, t, row) => parseInt(row.is_paid) === 1 ? `<span class="badge-soft badge-paid">${langData['leave_pay_paid'] || 'Paid'}</span>` : `<span class="badge-soft badge-unpaid">${langData['leave_pay_unpaid'] || 'Unpaid'}</span>` },
+            { data: null, render: (d, t, row) => parseInt(row.is_paid) === 1 ? `<span class="text-muted">${langData['leave_pay_paid'] || 'Paid'}</span>` : `<span class="text-muted">${langData['leave_pay_unpaid'] || 'Unpaid'}</span>` },
             { data: null, render: (d, t, row) => parseInt(row.allow_carry_over) === 1 ? `<span class="text-faint"><i class="fa-solid fa-check text-success me-1"></i>${langData['allowed'] || 'Allowed'}</span>` : `<span class="text-faint">-</span>` },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
@@ -750,7 +749,7 @@ function otItemByScopeCode(row, code) {
     return (row.items || []).find(i => i.scope_code === code) || null;
 }
 function otAssignSummary(row) {
-    if (row.is_default) { return `<span class="badge-soft badge-weekday"><i class="fa-solid fa-star me-1"></i>${langData['ot_rate_set_unassigned'] || 'Unassigned'}</span>`; }
+    if (row.is_default) { return `<span class="text-muted">${langData['ot_rate_set_unassigned'] || 'Unassigned'}</span>`; }
     const n = (row.assignments || []).length;
     if (n === 0) { return `<span class="text-muted small">-</span>`; }
     return `<span class="row-code">${n} ${langData['ot_rate_set_assignments_summary'] || 'assigned'}</span>`;

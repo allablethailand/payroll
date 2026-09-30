@@ -371,7 +371,7 @@ function fetchPayrollPolicySettings(callback) {
     });
 }
 function policyInfoBadge(label, value) {
-    return `<span class="badge bg-light text-dark border me-2 mb-2 py-2 px-3"><i class="fa-solid fa-check text-success me-1"></i>${escapeHtml(label)}: <strong>${escapeHtml(value)}</strong></span>`;
+    return `<span class="text-muted d-inline-block me-3 mb-2">${escapeHtml(label)}: <strong>${escapeHtml(value)}</strong></span>`;
 }
 // Renders the effective-policy badge row for ONE settings object (probation or intern, same shape
 // -- base_salary_ratio/defer_pvd/defer_recurring_earning/leave_days_limit/allow_leave/
@@ -1071,10 +1071,10 @@ function renderProfileHeader(data) {
     $('#profileHeaderName').text(name);
     const positionLabel = (currentLang === 'th' ? data.position_name_th : data.position_name_en) || data.position_name_th || data.position_name_en;
     $('#profileHeaderMeta').text([data.employee_no, positionLabel].filter(Boolean).join(' · ') || '-');
-    const statusColorMap = { active: 'bg-success', probation: 'bg-warning text-dark', suspended: 'bg-secondary', resigned: 'bg-danger', terminated: 'bg-dark' };
-    const statusCls = statusColorMap[data.employee_status] || 'bg-secondary';
-    const statusLabel = langData['status_' + data.employee_status] || data.employee_status || '-';
-    $('#profileHeaderStatusBadge').html(`<span class="badge ${statusCls}">${escapeHtml(statusLabel)}</span>`);
+    const knownStatus = ['active', 'probation', 'suspended', 'resigned', 'terminated'].indexOf(data.employee_status) !== -1;
+    $('#profileHeaderStatusBadge').html(knownStatus
+        ? statusBadgeHtml(data.employee_status, 'employee_status')
+        : `<span class="text-muted">${escapeHtml(langData['status_' + data.employee_status] || data.employee_status || '-')}</span>`);
 
     const percent = data.completeness.percent || 0;
     const color = completenessColor(percent);
@@ -1089,15 +1089,12 @@ function renderProfileHeader(data) {
     const tabLangKey = { info: 'employee_info', contact: 'contact', employment: 'employment', salary: 'salary' };
     const $verifyBadge = $('#profileVerifyStatusBadge');
     if (verify.ready) {
-        $verifyBadge.attr('class', 'badge bg-success')
-            .html('<i class="fa-solid fa-circle-check me-1"></i>' + escapeHtml(langData['verify_status_ready'] || 'Ready for Payroll'))
-            .attr('title', '');
+        $verifyBadge.html(statusBadgeHtml('ready', 'profile_verify')).attr('title', '');
     } else {
         const missingLabels = (verify.missing_tabs || []).map(function (key) {
             return langData[tabLangKey[key] || key] || key;
         }).join(', ');
-        $verifyBadge.attr('class', 'badge bg-danger')
-            .html('<i class="fa-solid fa-circle-exclamation me-1"></i>' + escapeHtml(langData['verify_status_not_ready'] || 'Not Ready for Payroll'))
+        $verifyBadge.html(statusBadgeHtml('not_ready', 'profile_verify'))
             .attr('title', ((langData['verify_status_missing_prefix'] || 'Missing info on:') + ' ' + missingLabels).trim());
     }
 
@@ -1642,9 +1639,9 @@ const MAX_DOC_SIZE = 10 * 1024 * 1024;
 // for sync-derived data.
 function documentSourceBadge(source) {
     if (source === 'sync') {
-        return `<span class="badge bg-info-subtle text-info" data-i18n="document_source_sync">${escapeHtml(langData['document_source_sync'] || 'Synced from Origami')}</span>`;
+        return `<span class="text-muted" data-i18n="document_source_sync">${escapeHtml(langData['document_source_sync'] || 'Synced from Origami')}</span>`;
     }
-    return `<span class="badge bg-secondary-subtle text-secondary" data-i18n="document_source_manual">${escapeHtml(langData['document_source_manual'] || 'Manual')}</span>`;
+    return `<span class="text-muted" data-i18n="document_source_manual">${escapeHtml(langData['document_source_manual'] || 'Manual')}</span>`;
 }
 function addDocumentRow(doc) {
     const labelKey = DOCUMENT_TYPE_LABEL_KEY[doc.document_type] || doc.document_type;
@@ -1709,12 +1706,10 @@ function loadLoginHistoryFilterOptions() {
 // on PDO's fetch mode -- Number(...) normalizes either.
 function loginHistoryStatusBadgeRd(row) {
     if (Number(row.is_active) === 1) {
-        return `<span class="badge bg-success-subtle text-success">${langData['session_status_active'] || 'Active'}</span>`;
+        return statusBadgeHtml('active', 'session_status');
     }
-    const reasonKey = { new_login: 'session_reason_new_login', switch_app: 'session_reason_switch_app', timeout: 'session_reason_timeout' }[row.ended_reason];
-    const label = (reasonKey && langData[reasonKey]) || langData['session_status_ended'] || 'Ended';
-    const tone = row.ended_reason === 'timeout' ? 'bg-warning-subtle text-warning' : 'bg-secondary-subtle text-secondary';
-    return `<span class="badge ${tone}">${escapeHtml(label)}</span>`;
+    const known = ['new_login', 'switch_app', 'timeout'].indexOf(row.ended_reason) !== -1;
+    return statusBadgeHtml(known ? row.ended_reason : 'ended', 'session_status');
 }
 function initLoginHistoryTable() {
     if (!currentEmployeeId) return;
@@ -2553,14 +2548,8 @@ function renderStandingSummary(mountSelector, rows, kind) {
     );
 }
 function eedStatusBadge(row) {
-    const map = {
-        active: { cls: 'bg-success-subtle text-success', key: 'active', fallback: 'Active' },
-        paused: { cls: 'bg-warning-subtle text-warning', key: 'paused', fallback: 'Paused' },
-        completed: { cls: 'bg-primary-subtle text-primary', key: 'completed', fallback: 'Completed' },
-        cancelled: { cls: 'bg-secondary-subtle text-secondary', key: 'cancelled', fallback: 'Cancelled' }
-    };
-    const cfg = map[row.status] || map.active;
-    return `<span class="badge ${cfg.cls}">${langData[cfg.key] || cfg.fallback}</span>`;
+    const known = ['active', 'paused', 'completed', 'cancelled'].indexOf(row.status) !== -1;
+    return statusBadgeHtml(known ? row.status : 'active', 'eed_status');
 }
 function eedActionButtons(row) {
     const notStarted = Number(row.current_installment) === 0;
@@ -2644,8 +2633,8 @@ function eedItemNameCell(row) {
     const badge = row.ped_type_id
         ? ''
         : (row.is_other
-            ? ` <span class="badge bg-info-subtle text-info">${langData['manual_line_other_badge'] || 'Other'}</span>`
-            : ` <span class="badge bg-secondary-subtle text-secondary">${langData['manual_line_custom_badge'] || 'Custom'}</span>`);
+            ? ` ${statusBadgeHtml('other', 'manual_line_mode')}`
+            : ` <span class="text-muted">${langData['manual_line_custom_badge'] || 'Custom'}</span>`);
     return `<div><strong>${label}</strong>${badge}</div>${payeeDescriptorHtmlRd(row.payee)}`;
 }
 // What this row can be FOUND by, as opposed to what it says: the name in both languages plus the
@@ -2760,9 +2749,9 @@ function syncTxFmtAmount(v) {
 }
 function syncTxTypeBadge(itemType) {
     if (itemType === 'earning') {
-        return `<span class="badge bg-success-subtle text-success" data-i18n="earning_singular">${langData['earning_singular'] || 'Income'}</span>`;
+        return `<span class="text-muted" data-i18n="earning_singular">${langData['earning_singular'] || 'Income'}</span>`;
     }
-    return `<span class="badge bg-danger-subtle text-danger" data-i18n="deduction_singular">${langData['deduction_singular'] || 'Deduction'}</span>`;
+    return `<span class="text-muted" data-i18n="deduction_singular">${langData['deduction_singular'] || 'Deduction'}</span>`;
 }
 function initSyncTransactionLogTable() {
     return $('#tableSyncTransactionLog').DataTable({
@@ -2812,12 +2801,7 @@ function initScheduledItemOccurrenceTable() {
 // หรือรอจ่าย") -- statuses come straight from employee_earning_deduction_installments.status, set by
 // PayrollRunModel::markPaid() when a run is actually paid (never by anything in this file).
 function eedInstallmentStatusBadge(status, processedAt) {
-    const map = {
-        pending: { cls: 'bg-secondary-subtle text-secondary', key: 'installment_status_pending', fallback: 'Pending' },
-        processed: { cls: 'bg-success-subtle text-success', key: 'installment_status_processed', fallback: 'Paid' },
-        skipped: { cls: 'bg-warning-subtle text-warning', key: 'installment_status_skipped', fallback: 'Skipped' }
-    };
-    const cfg = map[status] || map.pending;
+    const instEnum = ['pending', 'processed', 'skipped'].indexOf(status) !== -1 ? status : 'pending';
     // 2026-08-29, real bug found and fixed (explicit report: "เวลาที่ Save ลงใน Database เป็น UTC การ
     // แสดงผลให้แปลงเป็น timezone ปัจจุบันของผู้ใช้") -- processedAt is a real UTC timestamp
     // (employee_earning_deduction_installments.processed_at), but this only ever shows its DATE,
@@ -2829,7 +2813,7 @@ function eedInstallmentStatusBadge(status, processedAt) {
         ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(processedAt).split(' ')[0] : toDisplayDate(String(processedAt).substring(0, 10)))
         : '';
     const dateSuffix = (status === 'processed' && processedAt) ? ` <span class="text-muted small">${processedDateOnly}</span>` : '';
-    return `<span class="badge ${cfg.cls}">${langData[cfg.key] || cfg.fallback}</span>${dateSuffix}`;
+    return `${statusBadgeHtml(instEnum, 'eed_installment_status')}${dateSuffix}`;
 }
 // Always-visible, always-editable installment schedule table (2026-08-20, replaces the old
 // even_split/custom_per_installment radio pair + regenerateCustomAmountInputs()) -- $amounts pre-
@@ -3904,9 +3888,9 @@ function saveSalaryTab($btn) {
 }
 function recurringEarningStatusBadge(row) {
     if (row.is_suspended_now) {
-        return `<span class="badge bg-warning-subtle text-warning">${langData['status_suspended'] || 'Suspended'}</span>`;
+        return statusBadgeHtml('suspended', 'recurring_earning_status');
     }
-    return `<span class="badge bg-success-subtle text-success">${langData['status_active'] || 'Active'}</span>`;
+    return statusBadgeHtml('active', 'recurring_earning_status');
 }
 function recurringEarningSuspendPeriodCell(row) {
     if (!row.suspended_from || !row.suspended_to) return '-';
@@ -4163,9 +4147,9 @@ function validateRecurringEarningForm() {
    of 'earning'). ==================== */
 function recurringDeductionStatusBadge(row) {
     if (row.is_suspended_now) {
-        return `<span class="badge bg-warning-subtle text-warning">${langData['status_suspended'] || 'Suspended'}</span>`;
+        return statusBadgeHtml('suspended', 'recurring_earning_status');
     }
-    return `<span class="badge bg-success-subtle text-success">${langData['status_active'] || 'Active'}</span>`;
+    return statusBadgeHtml('active', 'recurring_earning_status');
 }
 function recurringDeductionSuspendPeriodCell(row) {
     if (!row.suspended_from || !row.suspended_to) return '-';

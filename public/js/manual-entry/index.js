@@ -20,39 +20,20 @@ function employeeNameMe(row) {
 function employeeCellMe(row) {
     return `${escapeHtml(row.employee_no)} - ${escapeHtml(employeeNameMe(row))}`;
 }
-function badgeMe(map, value) {
-    const m = map[value] || { key: value, cls: 'bg-light text-dark' };
-    return `<span class="badge ${m.cls}">${escapeHtml(langData[m.key] || value)}</span>`;
+function plainTagMe(key, value) {
+    return `<span class="text-muted">${escapeHtml(langData[key] || value)}</span>`;
 }
 function attendanceStatusBadge(status) {
-    return badgeMe({
-        present: { key: 'status_present', cls: 'bg-success-subtle text-success' },
-        absent: { key: 'status_absent', cls: 'bg-danger-subtle text-danger' },
-        leave: { key: 'status_leave', cls: 'bg-warning-subtle text-warning' },
-        holiday: { key: 'holiday', cls: 'bg-info-subtle text-info' },
-    }, status);
+    return statusBadgeHtml(status, 'attendance_status');
 }
 function leaveStatusBadge(status) {
-    return badgeMe({
-        pending: { key: 'status_pending', cls: 'bg-warning-subtle text-warning' },
-        approved: { key: 'status_approved', cls: 'bg-success-subtle text-success' },
-        rejected: { key: 'status_rejected', cls: 'bg-danger-subtle text-danger' },
-        cancelled: { key: 'cancelled', cls: 'bg-secondary-subtle text-secondary' },
-    }, status);
+    return statusBadgeHtml(status, 'approval_status');
 }
 function overtimeStatusBadge(status) {
-    return badgeMe({
-        pending: { key: 'status_pending', cls: 'bg-warning-subtle text-warning' },
-        approved: { key: 'status_approved', cls: 'bg-success-subtle text-success' },
-        rejected: { key: 'status_rejected', cls: 'bg-danger-subtle text-danger' },
-    }, status);
+    return statusBadgeHtml(status, 'approval_status');
 }
 function sourceBadgeMe(source) {
-    return badgeMe({
-        manual: { key: 'source_manual', cls: 'bg-light text-dark' },
-        sync: { key: 'source_sync', cls: 'bg-primary-subtle text-primary' },
-        import: { key: 'source_import', cls: 'bg-info-subtle text-info' },
-    }, source);
+    return plainTagMe('source_' + source, source);
 }
 // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
 // ".btn-circle-action" section) replace the old adjacent .btn-group.
@@ -556,9 +537,9 @@ function importEntityLabel(type) {
 }
 
 function importRowStatusBadge(row) {
-    if (row.status === 'error') { return `<span class="badge bg-danger-subtle text-danger">${langData['error'] || 'Error'}</span>`; }
-    if (row.source_conflict) { return `<span class="badge bg-warning-subtle text-warning">${langData['conflict'] || 'Conflict'}</span>`; }
-    return `<span class="badge bg-success-subtle text-success">${langData['success'] || 'OK'}</span>`;
+    if (row.status === 'error') { return statusBadgeHtml('error', 'import_activity_status'); }
+    if (row.source_conflict) { return statusBadgeHtml('conflict', 'import_activity_status'); }
+    return statusBadgeHtml('ok', 'import_activity_status');
 }
 
 // 2026-08-30, explicit follow-up request: "เก็บประวัติการ Download ข้อมูลออกจากระบบ และการ Import ข้อมูล
@@ -571,18 +552,11 @@ function importRowStatusBadge(row) {
 // dtReportHistory) + client-side Excel column filters on top of whatever page is loaded.
 let dtImportHistory = null;
 function importEventTypeBadge(eventType) {
-    return badgeMe({
-        download: { key: 'download', cls: 'bg-info-subtle text-info' },
-        import: { key: 'import', cls: 'bg-primary-subtle text-primary' },
-    }, eventType);
+    return plainTagMe(eventType, eventType);
 }
 function importHistoryStatusBadge(row) {
-    if (row.event_type === 'download') { return `<span class="badge bg-success-subtle text-success">${langData['success'] || 'Success'}</span>`; }
-    return badgeMe({
-        running: { key: 'status_pending', cls: 'bg-warning-subtle text-warning' },
-        completed: { key: 'status_approved', cls: 'bg-success-subtle text-success' },
-        failed: { key: 'status_rejected', cls: 'bg-danger-subtle text-danger' },
-    }, row.status);
+    if (row.event_type === 'download') { return statusBadgeHtml('ok', 'import_activity_status'); }
+    return statusBadgeHtml(row.status, 'import_activity_status');
 }
 function importHistoryByLabel(row) {
     return (currentLang === 'th' ? row.performed_by_name_th : row.performed_by_name_en) || row.performed_by_name_th || row.performed_by_name_en || '-';

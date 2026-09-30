@@ -36,19 +36,7 @@ function toLocalDateOnlyPr(value) {
 // as-is rather than formatted (Number('XXXX') is NaN, which .toLocaleString() would otherwise
 // render as the confusing literal text "NaN").
 function stateBadgePr(state) {
-    const map = {
-        draft: 'bg-secondary-subtle text-secondary',
-        pending_approval: 'bg-warning-subtle text-warning',
-        approved: 'bg-info-subtle text-info',
-        paid: 'bg-success-subtle text-success',
-        locked: 'bg-dark-subtle text-dark',
-        rejected: 'bg-danger-subtle text-danger',
-        cancelled: 'bg-dark-subtle text-muted',
-        need_info: 'bg-primary-subtle text-primary',
-    };
-    const cls = map[state] || 'bg-light text-dark';
-    const text = langData['state_' + state] || state;
-    return `<span class="badge ${cls}">${text}</span>`;
+    return statusBadgeHtml(state, 'run_state');
 }
 // 2026-08-28, explicit request: "ใน Process List ให้มีสัญลักษณ์บอกด้วยครับ" (whether this run
 // computes full payroll or is an off-cycle Incentive/Other Payment pull -- see
@@ -74,7 +62,7 @@ function runOriginBadgePr(row) {
     if (!row.sync_process_id) {
         return '';
     }
-    return `<span class="badge bg-light text-dark border ms-1" title="${escapeHtml(langData['run_origin_sync'] || 'Pulled from Origami')}">${escapeHtml(langData['run_origin_origami'] || 'Origami')}</span>`;
+    return `<span class="text-muted ms-1" title="${escapeHtml(langData['run_origin_sync'] || 'Pulled from Origami')}">${escapeHtml(langData['run_origin_origami'] || 'Origami')}</span>`;
 }
 // 2026-09-01: pure classification helper (no markup) -- shared between the badge above and the new
 // Origin filter's own client-side DataTables search function, so the 2 never define "what counts as
@@ -96,7 +84,7 @@ function runTypeIconPr(row) {
     if (Number(row.include_attendance_pay) === 1) parts.push(langData['include_attendance_pay_label'] || 'Include attendance pay');
     const label = langData['run_purpose_incentive'] || 'Incentive / Other Payment';
     const title = parts.length ? `${label}: ${parts.join(', ')}` : label;
-    return `<span class="badge bg-light text-dark border ms-1" title="${escapeHtml(title)}">${escapeHtml(langData['run_type_special'] || 'Special run')}</span>`;
+    return `<span class="text-muted ms-1" title="${escapeHtml(title)}">${escapeHtml(langData['run_type_special'] || 'Special run')}</span>`;
 }
 // 2026-09-01, explicit request: "หน้า List page ควรมี indicator บอกด้วยว่ารอบนี้ตั้งค่าไว้ให้ไปรวมกับรอบไหน" --
 // this was the 2nd of the 2 known gaps flagged after the Detail-page merge-target-editing feature
@@ -112,7 +100,7 @@ function runTypeIconPr(row) {
 // sentence-form copy (merge_target_banner_text) on the Detail page, which stays as-is.
 function runCodeCellHtmlPr(row) {
     const ownCode = row.run_code
-        ? `<span class="badge bg-light text-dark border font-monospace fw-normal">${escapeHtml(row.run_code)}</span>`
+        ? `<span class="text-muted font-monospace">${escapeHtml(row.run_code)}</span>`
         : '<span class="text-muted">-</span>';
     if (row.merge_target_run_id) {
         const targetLabel = row.merge_target_run_code || row.merge_target_run_name || `#${row.merge_target_run_id}`;
@@ -766,7 +754,7 @@ function initPendingSyncTable() {
                 data: 'process_no', render: (d, t, row) => {
                     const isSupplemental = row.run_kind === 'supplemental';
                     const badge = isSupplemental
-                        ? `<span class="badge bg-warning-subtle text-warning ms-1">${langData['sync_run_kind_supplemental'] || 'Supplemental'}</span>`
+                        ? `<span class="text-muted ms-1">${langData['sync_run_kind_supplemental'] || 'Supplemental'}</span>`
                         : '';
                     // 2026-08-31, PAYROLL_SYNC_API.md `attribution` revision -- a second badge on a
                     // supplemental row showing its routing intent BEFORE an admin pulls it, so
@@ -791,25 +779,25 @@ function initPendingSyncTable() {
                         // event, checked first since there's no target to build the other badges'
                         // own {target} text from.
                         if (row.attribution_target_status === 'pending_fold_in') {
-                            attrBadge = `<span class="badge bg-secondary-subtle text-secondary ms-1" title="${langData['sync_attribution_pending_fold_in_tooltip'] || 'Origami has not chosen a target regular cycle for this item yet. It will notify us automatically once a target is chosen.'}">${langData['sync_attribution_pending_fold_in'] || '→ Waiting for Origami to choose a target'}</span>`;
+                            attrBadge = `<span class="text-muted ms-1" title="${langData['sync_attribution_pending_fold_in_tooltip'] || 'Origami has not chosen a target regular cycle for this item yet. It will notify us automatically once a target is chosen.'}">${langData['sync_attribution_pending_fold_in'] || '→ Waiting for Origami to choose a target'}</span>`;
                             return `<strong class="text-dark">${escapeHtml(d)}</strong>${badge}${attrBadge}`;
                         }
                         const target = escapeHtml(row.attribution_target_process_no || `#${row.attribution_target_origami_process_id}`);
                         if (row.attribution_target_status === 'ready') {
-                            attrBadge = `<span class="badge bg-info-subtle text-info ms-1">${(langData['sync_attribution_merge_into'] || '→ Merge into {target}').replace('{target}', target)}</span>`;
+                            attrBadge = `<span class="text-muted ms-1">${(langData['sync_attribution_merge_into'] || '→ Merge into {target}').replace('{target}', target)}</span>`;
                         } else if (row.attribution_target_status === 'waiting_known') {
-                            attrBadge = `<span class="badge bg-warning-subtle text-warning ms-1" title="${langData['sync_attribution_waiting_known_tooltip'] || 'The target regular cycle has been received from Origami but not pulled into a run yet.'}">${(langData['sync_attribution_waiting_known'] || '→ Waiting: {target} not pulled yet').replace('{target}', target)}</span>`;
+                            attrBadge = `<span class="text-muted ms-1" title="${langData['sync_attribution_waiting_known_tooltip'] || 'The target regular cycle has been received from Origami but not pulled into a run yet.'}">${(langData['sync_attribution_waiting_known'] || '→ Waiting: {target} not pulled yet').replace('{target}', target)}</span>`;
                         } else if (row.attribution_target_status === 'target_rejected') {
                             // 2026-09-06: the target regular process was received but has since been
                             // REJECTED at Pending Pull -- a real dead end (no un-reject action exists),
                             // deliberately styled/worded differently from "waiting" so this doesn't read
                             // as "will become ready eventually" -- it never will on its own.
-                            attrBadge = `<span class="badge bg-danger-subtle text-danger ms-1" title="${langData['sync_attribution_target_rejected_tooltip'] || 'The target regular cycle was rejected and will never be pulled into a run. Pull this as its own standalone run instead, or ask Origami to re-attribute it.'}">${(langData['sync_attribution_target_rejected'] || '→ {target} was rejected').replace('{target}', target)}</span>`;
+                            attrBadge = `<span class="text-muted ms-1" title="${langData['sync_attribution_target_rejected_tooltip'] || 'The target regular cycle was rejected and will never be pulled into a run. Pull this as its own standalone run instead, or ask Origami to re-attribute it.'}">${(langData['sync_attribution_target_rejected'] || '→ {target} was rejected').replace('{target}', target)}</span>`;
                         } else {
-                            attrBadge = `<span class="badge bg-secondary-subtle text-secondary ms-1" title="${langData['sync_attribution_waiting_unknown_tooltip'] || 'The target regular cycle has not been received from Origami yet.'}">${(langData['sync_attribution_waiting_unknown'] || '→ Waiting for {target}').replace('{target}', target)}</span>`;
+                            attrBadge = `<span class="text-muted ms-1" title="${langData['sync_attribution_waiting_unknown_tooltip'] || 'The target regular cycle has not been received from Origami yet.'}">${(langData['sync_attribution_waiting_unknown'] || '→ Waiting for {target}').replace('{target}', target)}</span>`;
                         }
                     } else if (isSupplemental && row.attribution_tax_treatment === 'separate') {
-                        attrBadge = `<span class="badge bg-secondary-subtle text-secondary ms-1">${langData['sync_attribution_separate'] || '→ Separate'}</span>`;
+                        attrBadge = `<span class="text-muted ms-1">${langData['sync_attribution_separate'] || '→ Separate'}</span>`;
                     }
                     return `<strong class="text-dark">${escapeHtml(d)}</strong>${badge}${attrBadge}`;
                 }
@@ -918,9 +906,7 @@ function initPendingSyncTable() {
 }
 
 function mappingStatusBadgePr(isMapped) {
-    return isMapped
-        ? `<span class="badge rounded-pill bg-success-subtle text-success"><i class="fa-solid fa-check me-1"></i>${langData['sync_detail_mapped'] || 'Mapped'}</span>`
-        : `<span class="badge rounded-pill bg-danger-subtle text-danger"><i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['sync_detail_unmapped'] || 'Unmapped'}</span>`;
+    return statusBadgeHtml(isMapped ? 'mapped' : 'unmapped', 'sync_mapping_status');
 }
 function syncUnitLabelPr(unitType) {
     if (!unitType) return '';
@@ -1037,15 +1023,8 @@ function syncDetailSectionHeaderPr(num, i18nKey, fallback) {
 // getProcessDetail() attaches item.probation_status ('on_probation'/'failed'/'passed'/null, null
 // when pass_pro was never sent/not on file for this employee, nothing to show then).
 function renderProbationStatusCellPr(item) {
-    const map = {
-        on_probation: ['bg-warning-subtle text-warning', 'sync_probation_on_probation', 'On Probation'],
-        failed: ['bg-danger-subtle text-danger', 'sync_probation_failed', 'Did Not Pass Probation'],
-        passed: ['bg-success-subtle text-success', 'sync_probation_passed', 'Passed Probation'],
-    };
-    const entry = map[item.probation_status];
-    if (!entry) return '';
-    const [cls, key, fallback] = entry;
-    return `<span class="badge rounded-pill ${cls}">${langData[key] || fallback}</span>`;
+    if (!item.probation_status) return '';
+    return statusBadgeHtml(item.probation_status, 'sync_probation_status');
 }
 function renderIdCardCellPr(item) {
     if (!item.id_card_no_masked) {
@@ -1060,12 +1039,12 @@ function renderIdCardCellPr(item) {
 // output) so the new #tb_sync_items table's own SSO column can reuse it without the payment line.
 function syncSsoBadgePr(item) {
     if (item.deduct_sso === null || item.deduct_sso === undefined) {
-        return `<span class="badge rounded-pill bg-light text-muted border">${langData['sync_sso_not_set'] || 'SSO: Not Set'}</span>`;
+        return `<span class="text-muted">${langData['sync_sso_not_set'] || 'SSO: Not Set'}</span>`;
     }
     if (Number(item.deduct_sso) === 1) {
-        return `<span class="badge rounded-pill bg-info-subtle text-info">${langData['sync_sso_deduct'] || 'SSO: Deduct'}</span>`;
+        return `<span class="text-muted">${langData['sync_sso_deduct'] || 'SSO: Deduct'}</span>`;
     }
-    return `<span class="badge rounded-pill bg-light text-secondary border">${langData['sync_sso_no_deduct'] || 'SSO: No Deduct'}</span>`;
+    return `<span class="text-muted">${langData['sync_sso_no_deduct'] || 'SSO: No Deduct'}</span>`;
 }
 function renderPaymentSsoCellPr(item) {
     let payLine;

@@ -47,19 +47,7 @@ function toLocalDateOnlyRd(value) {
 // escapeHtmlRd/escapeAttrRd/fmtNumRd were confirmed byte-identical/behavior-preserving before the
 // merge, see that file's own docblock.
 function stateBadgeRd(state) {
-    const map = {
-        draft: 'bg-secondary-subtle text-secondary',
-        pending_approval: 'bg-warning-subtle text-warning',
-        approved: 'bg-info-subtle text-info',
-        paid: 'bg-success-subtle text-success',
-        locked: 'bg-dark-subtle text-dark',
-        rejected: 'bg-danger-subtle text-danger',
-        cancelled: 'bg-dark-subtle text-muted',
-        need_info: 'bg-primary-subtle text-primary',
-    };
-    const cls = map[state] || 'bg-light text-dark';
-    const text = langData['state_' + state] || state;
-    return `<span class="badge ${cls} fs-6">${text}</span>`;
+    return statusBadgeHtml(state, 'run_state');
 }
 // 2026-09-13, Round 3 item 3b: calcStatusBadgeRd() (its own hardcoded pending/calculated/error map)
 // retired -- its one caller (initRunDetailTable()'s calc_status column) now routes through the shared

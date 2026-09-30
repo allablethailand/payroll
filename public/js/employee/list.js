@@ -259,14 +259,8 @@ function initEmployeeTable() {
                 responsivePriority: 8,
                 render: function (data, type) {
                     if (type !== 'display') return data;
-                    const meta = {
-                        sync: { icon: 'fa-cloud-arrow-down', cls: 'bg-primary-subtle text-primary' },
-                        import: { icon: 'fa-file-import', cls: 'bg-info-subtle text-info' },
-                        manual: { icon: 'fa-user-pen', cls: 'bg-light text-dark' },
-                    };
-                    const m = meta[data] || meta.manual;
                     const label = langData['source_' + (data || 'manual')] || data || '';
-                    return `<span class="badge rounded-pill ${m.cls}"><i class="fa-solid ${m.icon} me-1"></i>${escapeHtml(label)}</span>`;
+                    return `<span class="text-muted">${escapeHtml(label)}</span>`;
                 }
             },
             { data: "name", responsivePriority: 1 },
@@ -289,8 +283,9 @@ function initEmployeeTable() {
                 data: "status",
                 responsivePriority: 4,
                 render: function (data) {
-                    let badge = data === 'Active' ? 'bg-success' : 'bg-danger';
-                    return `<span class="badge ${badge}">${data}</span>`;
+                    const key = String(data || '').toLowerCase();
+                    if (['active', 'probation', 'suspended', 'resigned', 'terminated'].indexOf(key) !== -1) return statusBadgeHtml(key, 'employee_status');
+                    return `<span class="text-muted">${escapeHtml(data || '')}</span>`;
                 }
             },
             // 2026-08-31, explicit request: "ในตารางให้มีสัญลักษณ์บอกด้วยว่าจ่ายหรือไม่จ่ายเงินเดือน" --
@@ -304,8 +299,8 @@ function initEmployeeTable() {
                 render: {
                     display: function (d) {
                         return Number(d) === 1
-                            ? `<span class="badge bg-success-subtle text-success"><i class="fa-solid fa-money-check-dollar me-1"></i>${escapeHtml(langData['payroll_participant_yes'] || 'Pays Salary')}</span>`
-                            : `<span class="badge bg-secondary-subtle text-secondary"><i class="fa-solid fa-ban me-1"></i>${escapeHtml(langData['payroll_participant_no'] || 'No Salary')}</span>`;
+                            ? statusBadgeHtml('yes', 'payroll_participant')
+                            : statusBadgeHtml('no', 'payroll_participant');
                     },
                     sort: d => Number(d) || 0,
                     filter: d => Number(d) || 0,
@@ -380,7 +375,7 @@ function initEmployeeTable() {
                 let bulkSyncBtn = `
                     <button class="btn btn-outline-secondary ms-2" id="btnBulkSyncSelected" type="button" disabled>
                         <i class="fa-solid fa-rotate me-2"></i><span data-i18n="employee_bulk_sync_button">Sync Selected</span>
-                        <span class="badge bg-info ms-1" id="employeeBulkSyncCount">0</span>
+                        <span class="count-inline" id="employeeBulkSyncCount">0</span>
                     </button>
                 `;
                 $lengthDiv.append(bulkSyncBtn);
@@ -703,13 +698,11 @@ function recheckBankDetailsHtml(row) {
     const code = row.payment_method_code;
     if (code === 'cash' || code === 'check') {
         const label = code === 'cash' ? (langData['payment_type_cash'] || 'Cash') : (langData['payment_method_check'] || 'Check');
-        return `<span class="badge bg-secondary-subtle text-secondary">${label}</span>`;
+        return `<span class="text-muted">${label}</span>`;
     }
     if (code === 'transfer' || code === 'mixed') {
         const hasAccount = !!(fr.bank_id && fr.bank_account_no);
-        const cls = hasAccount ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger';
-        const label = hasAccount ? (langData['payment_type_bank_ready'] || 'Bank: Account set') : (langData['payment_type_bank_missing'] || 'Bank: No account yet');
-        return `<span class="badge ${cls}">${label}</span>`;
+        return statusBadgeHtml(hasAccount ? 'set' : 'missing', 'bank_account_readiness');
     }
     // payment_method_id genuinely never set at all -- distinct dash state, same as before.
     return '<span class="text-muted">-</span>';
@@ -721,12 +714,12 @@ function recheckBankDetailsHtml(row) {
 // every employee must be SSO-enrolled), only "enrolled but no SSO number recorded" is an actual gap.
 function recheckSsoStatusHtml(status) {
     if (status === 'enrolled_complete') {
-        return `<span class="badge bg-success-subtle text-success">${langData['sso_status_enrolled'] || 'Enrolled'}</span>`;
+        return statusBadgeHtml('enrolled_complete', 'sso_enrollment');
     }
     if (status === 'enrolled_missing_no') {
-        return `<span class="badge bg-danger-subtle text-danger">${langData['sso_status_missing_no'] || 'Enrolled, No. Missing'}</span>`;
+        return statusBadgeHtml('enrolled_missing_no', 'sso_enrollment');
     }
-    return `<span class="badge bg-secondary-subtle text-secondary">${langData['sso_status_not_enrolled'] || 'Not Enrolled'}</span>`;
+    return statusBadgeHtml('never_enrolled', 'sso_enrollment');
 }
 // 2026-08-30, explicit request: "เพิ่ม Column OT เพิ่มว่าคิดหรือไม่คิด ถ้าคิดคิด Rate ของ OT แต่ละประเภท" --
 // ot_summary comes from EmployeeOtRateModel::summaryForEmployees() (see EmployeeModel::recheckList()).
@@ -736,7 +729,7 @@ function recheckSsoStatusHtml(status) {
 // employee (missing_ot_rate_{scope} in SyncPayResolver).
 function recheckOtSummaryHtml(otSummary) {
     if (!otSummary || !otSummary.eligible) {
-        return `<span class="badge bg-secondary-subtle text-secondary">${langData['ot_not_eligible_short'] || 'Not Eligible'}</span>`;
+        return statusBadgeHtml('not_eligible', 'ot_eligibility');
     }
     const scopeLines = (otSummary.scopes || []).map(function (s) {
         const name = currentLang === 'th' ? s.scope_name_th : s.scope_name_en;
@@ -750,7 +743,7 @@ function recheckOtSummaryHtml(otSummary) {
         return `${name}: ${rateText}${overrideMark}`;
     });
     const title = scopeLines.join(' | ') + (otSummary.rate_source === 'custom' ? ` (${langData['ot_rate_source_custom'] || 'Set Individually per OT Type'}, * = ${langData['ot_rate_override_mark'] || 'custom'})` : '');
-    return `<span class="badge bg-success-subtle text-success" title="${escapeHtml(title)}">${langData['ot_eligible_short'] || 'Eligible'}</span>`;
+    return `<span title="${escapeHtml(title)}">${statusBadgeHtml('eligible', 'ot_eligibility')}</span>`;
 }
 function currentEmployeeRecheckFilters() {
     // 2026-09-12, Batch 4 item 4 -- Status/Employment Status/Tax Method are static selects whose
@@ -851,7 +844,7 @@ function initEmployeeRecheckTable() {
             { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.base_salary_amount) },
             { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.salary_effective_date) },
             { data: null, className: 'text-center', render: (d, t, row) => recheckFieldIcon(!!row.field_readiness.tax_calculation_method) },
-            { data: 'is_ready', className: 'text-center', render: d => d ? `<span class="badge bg-success-subtle text-success">${langData['ready'] || 'Ready'}</span>` : `<span class="badge bg-danger-subtle text-danger">${langData['not_ready'] || 'Not Ready'}</span>` },
+            { data: 'is_ready', className: 'text-center', render: d => statusBadgeHtml(d ? 'ready' : 'not_ready', 'recheck_ready') },
             {
                 // 2026-08-31, explicit request: "เพิ่มปุ่มให้นำออกจากการจ่ายเงินเดือน และมีปุ่มเพิ่ม Employee ที่
                 // ไม่ทำจ่ายเงินเดือนกลับเข้ามาทำเงินเดือน" -- every row in a given ajax response shares the

@@ -74,7 +74,7 @@ function assignSummaryBadgeHtml(assignments) {
     const list = assignments || [];
     if (!list.length) {
         const txt = (typeof langData !== 'undefined' && langData['eaw_everyone']) || 'All Employees';
-        return `<span class="badge bg-light text-dark border">${eawEscapeHtml(txt)}</span>`;
+        return `<span class="text-muted">${eawEscapeHtml(txt)}</span>`;
     }
     const counts = {};
     list.forEach(function (a) {
@@ -89,7 +89,7 @@ function assignSummaryBadgeHtml(assignments) {
             parts.push(counts[t] + ' ' + labelTxt);
         }
     });
-    return `<span class="badge bg-warning-subtle text-warning border" title="${eawEscapeHtml(parts.join(', '))}"><i class="fa-solid fa-filter me-1"></i>${eawEscapeHtml(parts.join(', '))}</span>`;
+    return `<span class="text-muted" title="${eawEscapeHtml(parts.join(', '))}">${eawEscapeHtml(parts.join(', '))}</span>`;
 }
 
 /**

@@ -10,13 +10,7 @@ let tb_email_queue_log;
 
 
 function emailQueueStatusBadge(status) {
-    if (status === 'sent') {
-        return `<span class="badge bg-success-subtle text-success">${langData['email_queue_status_sent'] || 'Sent'}</span>`;
-    }
-    if (status === 'failed') {
-        return `<span class="badge bg-danger-subtle text-danger">${langData['email_queue_status_failed'] || 'Failed'}</span>`;
-    }
-    return `<span class="badge bg-secondary-subtle text-secondary">${langData['email_queue_status_pending'] || 'Pending'}</span>`;
+    return statusBadgeHtml(status === 'sent' || status === 'failed' ? status : 'pending', 'email_queue_status');
 }
 
 function currentEmailQueueFilters() {

@@ -242,7 +242,7 @@ function bulkEntryAddManualRow() {
     const rowId = ++bulkEntryRowSeq;
     let html = `<tr data-source="manual" data-row-id="${rowId}">
         <td class="bulk-entry-grid-rownum"></td>
-        <td><span class="badge bg-secondary-subtle text-secondary" data-i18n="bulk_entry_source_manual">${langData['bulk_entry_source_manual'] || 'Manual'}</span></td>`;
+        <td><span class="text-muted" data-i18n="bulk_entry_source_manual">${langData['bulk_entry_source_manual'] || 'Manual'}</span></td>`;
     cfg.columns.forEach(col => { html += `<td>${bulkEntryManualCellHtml(col, rowId)}</td>`; });
     html += `<td class="text-center"><button type="button" class="btn btn-link text-danger p-0 btn-bulk-entry-remove-row" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button></td></tr>`;
     const $tr = $(html);
@@ -306,12 +306,12 @@ function bulkEntryAddImportRow(mappedRow, rowResult) {
     const cfg = BULK_ENTRY_CONFIG[bulkEntryEntityType];
     const rowId = ++bulkEntryRowSeq;
     const isError = rowResult && rowResult.status === 'error';
-    const badgeCls = isError ? 'bg-danger-subtle text-danger' : 'bg-info-subtle text-info';
+    const badgeCls = isError ? 'text-danger' : 'text-muted';
     const badgeIcon = isError ? 'fa-triangle-exclamation' : 'fa-file-import';
     const badgeTitle = rowResult && rowResult.message ? ` title="${escapeHtml(rowResult.message)}"` : '';
     let html = `<tr data-source="import" data-row-id="${rowId}">
         <td class="bulk-entry-grid-rownum"></td>
-        <td><span class="badge ${badgeCls}"${badgeTitle}><i class="fa-solid ${badgeIcon} me-1"></i>${langData['bulk_entry_source_import'] || 'Imported'}</span></td>`;
+        <td><span class="${badgeCls}"${badgeTitle}><i class="fa-solid ${badgeIcon} me-1"></i>${langData['bulk_entry_source_import'] || 'Imported'}</span></td>`;
     cfg.columns.forEach(col => { html += `<td>${bulkEntryImportCellHtml(col, rowId, mappedRow[col.importField])}</td>`; });
     html += `<td class="text-center"><button type="button" class="btn btn-link text-danger p-0 btn-bulk-entry-remove-row" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button></td></tr>`;
     $(html).appendTo('#bulkEntryTbody');

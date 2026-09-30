@@ -68,8 +68,7 @@ function esRenderDeptPositionCell(row) {
     `;
 }
 function esTypeBadgeHtml(type) {
-    const cls = type === 'support' ? 'bg-info-subtle text-info' : 'bg-primary-subtle text-primary';
-    return `<span class="badge ${cls}">${esEscapeHtml(esTypeLabel(type))}</span>`;
+    return `<span class="text-muted">${esEscapeHtml(esTypeLabel(type))}</span>`;
 }
 
 function esResetModal() {
@@ -119,8 +118,8 @@ function esCheckboxCellHtml(refId) {
 
 function esUpdateBadgeHtml(row) {
     return row.has_update
-        ? `<span class="badge bg-warning-subtle text-warning" title="${esEscapeHtml((row.changed_fields || []).join(', '))}"><i class="fa-solid fa-rotate me-1"></i>${langData['employee_sync_update_available'] || 'Update available'}</span>`
-        : `<span class="badge bg-success-subtle text-success">${langData['employee_sync_up_to_date'] || 'Up to date'}</span>`;
+        ? `<span title="${esEscapeHtml((row.changed_fields || []).join(', '))}">${statusBadgeHtml('update_available', 'sync_update_state')}</span>`
+        : statusBadgeHtml('up_to_date', 'sync_update_state');
 }
 
 function renderSyncTables() {
@@ -355,10 +354,8 @@ $(document).on('click', '#btnApplyEmployeeSync', function () {
 });
 
 function esSyncLogStatusBadge(status) {
-    const map = { completed: 'bg-success-subtle text-success', running: 'bg-warning-subtle text-warning', failed: 'bg-danger-subtle text-danger' };
-    const cls = map[status] || 'bg-light text-dark';
-    const text = langData['sync_log_status_' + status] || status;
-    return `<span class="badge ${cls}">${text}</span>`;
+    if (['completed', 'running', 'failed'].indexOf(status) !== -1) return statusBadgeHtml(status, 'sync_batch_status');
+    return `<span class="text-muted">${esEscapeHtml(langData['sync_log_status_' + status] || status)}</span>`;
 }
 
 // 2026-08-29, explicit request: "Employee Sync Log ปรับจากตารางให้เป็น Card และดูได้ว่า Failed จาก

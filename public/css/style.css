@@ -6625,6 +6625,18 @@ html, body {
     .item-checklist-cols { column-count: 3; }
 }
 
+/* rules.md 5/6: a plain count next to a label, "(3)" in muted text -- for counts that are not a status
+   (sync modal headings, tab counters). The number is written by the page's own script; the brackets are CSS. */
+.count-inline {
+    color: var(--c-text-muted);
+    font-weight: 400;
+}
+.count-inline::before {
+    content: "(";
+}
+.count-inline::after {
+    content: ")";
+}
 /* Badge dropdown (rules.md §5's own "Badge dropdown" block) -- `badgeDropdownHtml()` /
    `initBadgeDropdown()` (app.js). A status badge that is also a dropdown toggle, used in 2 real
    places: Payroll Detail's verify-status badge in the table (ACTION menu) and the comment composer's

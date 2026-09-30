@@ -13,16 +13,7 @@ let tb_payslip_request;
 
 
 function payslipRequestStatusBadge(status) {
-    const map = {
-        pending: { cls: 'bg-warning-subtle text-warning', key: 'status_pending', fallback: 'Pending' },
-        approved: { cls: 'bg-success-subtle text-success', key: 'status_approved', fallback: 'Approved' },
-        rejected: { cls: 'bg-danger-subtle text-danger', key: 'status_rejected', fallback: 'Rejected' },
-        cancelled: { cls: 'bg-secondary-subtle text-secondary', key: 'cancelled', fallback: 'Cancelled' },
-        sent: { cls: 'bg-success-subtle text-success', key: 'status_sent', fallback: 'Sent' },
-        send_failed: { cls: 'bg-danger-subtle text-danger', key: 'status_send_failed', fallback: 'Send Failed' }
-    };
-    const m = map[status] || { cls: 'bg-secondary-subtle text-secondary', key: '', fallback: status };
-    return `<span class="badge ${m.cls}">${langData[m.key] || m.fallback}</span>`;
+    return statusBadgeHtml(status, 'payslip_request_status');
 }
 
 function formatPayPeriod(row) {

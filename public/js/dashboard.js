@@ -365,8 +365,8 @@ function renderProbationInternExpiring(rows) {
         const kindLabel = row.kind === 'internship' ? (langData['internship'] || 'Internship') : (langData['probation'] || 'Probation');
         const isExpired = row.milestone === 'expired';
         const statusHtml = isExpired
-            ? `<span class="badge bg-danger-subtle text-danger-emphasis">${langData['dash_probation_intern_expired'] || 'Ended'} ${dashToDisplayDate(row.expiry_date)}</span>`
-            : `<span class="badge bg-warning-subtle text-warning-emphasis">${(langData['dash_probation_intern_days_left'] || '{n} day(s) left').replace('{n}', row.days_remaining)}</span>`;
+            ? `<span class="text-muted">${langData['dash_probation_intern_expired'] || 'Ended'} ${dashToDisplayDate(row.expiry_date)}</span>`
+            : `<span class="text-muted">${(langData['dash_probation_intern_days_left'] || '{n} day(s) left').replace('{n}', row.days_remaining)}</span>`;
         $list.append(`
             <a href="${url}" target="_blank" rel="noopener" class="dash-run-row">
                 <div class="dash-run-row-top">
