@@ -149,12 +149,13 @@
     gap: 6px;
 }
 .edt-tab-more-count {
-    background: rgba(0, 0, 0, .12);
-    color: inherit;
-    font-size: .72rem;
-    font-weight: 700;
-    border-radius: 999px;
-    padding: .05em .5em;
+    color: var(--c-text-muted);
+}
+.edt-tab-more-count::before {
+    content: "(";
+}
+.edt-tab-more-count::after {
+    content: ")";
 }
 .edt-tab-more-menu {
     min-width: 230px;
@@ -241,7 +242,7 @@
     </div>
     <ul class="nav nav-tabs" id="employeeTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link text-secondary active" id="info-tab" data-bs-toggle="tab" data-bs-target="#info-pane" type="button" role="tab" aria-controls="info-pane" aria-selected="true"><i class="fa-solid fa-circle-user me-1"></i><span data-i18n="employee_info">Employee Info</span><span class="completeness-tab-badge d-none" data-tab-key="info"></span></button>
+            <button class="nav-link text-secondary active" id="info-tab" data-bs-toggle="tab" data-bs-target="#info-pane" type="button" role="tab" aria-controls="info-pane" aria-selected="true"><span data-i18n="employee_info">Employee Info</span><span class="completeness-tab-badge d-none" data-tab-key="info"></span></button>
         </li>
         <!-- New-employee flow (2026-08-19, explicit request): only the Info tab shows until the
              employee record actually exists -- jumping to Contact/Employment/Salary/etc before Info
@@ -251,10 +252,10 @@
              saveEmployee()'s success handler in detail.js the moment the FIRST save creates the row
              (currentEmployeeId was null going in), not tied to which tab that save happened on. -->
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="contact-tab" data-bs-toggle="tab" data-bs-target="#contact-pane" type="button" role="tab" aria-controls="contact-pane" aria-selected="false"><i class="fa-solid fa-address-book me-1"></i><span data-i18n="contact">Contact</span><span class="completeness-tab-badge d-none" data-tab-key="contact"></span></button>
+            <button class="nav-link text-secondary" id="contact-tab" data-bs-toggle="tab" data-bs-target="#contact-pane" type="button" role="tab" aria-controls="contact-pane" aria-selected="false"><span data-i18n="contact">Contact</span><span class="completeness-tab-badge d-none" data-tab-key="contact"></span></button>
         </li>
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="employment-tab" data-bs-toggle="tab" data-bs-target="#employment-pane" type="button" role="tab" aria-controls="employment-pane" aria-selected="false"><i class="fa-solid fa-building-user me-1"></i><span data-i18n="employment">Employment</span><span class="completeness-tab-badge d-none" data-tab-key="employment"></span></button>
+            <button class="nav-link text-secondary" id="employment-tab" data-bs-toggle="tab" data-bs-target="#employment-pane" type="button" role="tab" aria-controls="employment-pane" aria-selected="false"><span data-i18n="employment">Employment</span><span class="completeness-tab-badge d-none" data-tab-key="employment"></span></button>
         </li>
         <!-- 2026-08-30 (T025, optional polish per the fork's own audit -- "core HR" (Info/Contact/
              Employment's org-placement half) vs "payroll-specific" (Salary through Family/Tax
@@ -262,7 +263,7 @@
              functional boundary now, not just a visual grouping choice -- a thin divider here makes
              it readable in the tab bar itself, even before an admin toggles that switch. -->
         <li class="nav-item employee-secondary-tab employee-tab-group-divider<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="salary-tab" data-bs-toggle="tab" data-bs-target="#salary-pane" type="button" role="tab" aria-controls="salary-pane" aria-selected="false"><i class="fa-solid fa-file-invoice-dollar me-1"></i><span data-i18n="salary">Salary</span><span class="completeness-tab-badge d-none" data-tab-key="salary"></span></button>
+            <button class="nav-link text-secondary" id="salary-tab" data-bs-toggle="tab" data-bs-target="#salary-pane" type="button" role="tab" aria-controls="salary-pane" aria-selected="false"><span data-i18n="salary">Salary</span><span class="completeness-tab-badge d-none" data-tab-key="salary"></span></button>
         </li>
         <!-- Split out of the Salary tab (2026-08-19, explicit request: "รายรับ รายหัก อาจแยกออกมาจาก
              Tab เงินเดือน...และไม่ต้องมีการคิด %") -- deliberately no completeness-tab-badge span here
@@ -270,13 +271,13 @@
              participates in the completeness score at all (items here are optional/variable per
              employee, same reasoning as why dependents/parents were never counted either). -->
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="earningDeduction-tab" data-bs-toggle="tab" data-bs-target="#earningDeduction-pane" type="button" role="tab" aria-controls="earningDeduction-pane" aria-selected="false"><i class="fa-solid fa-money-bill-transfer me-1"></i><span data-i18n="earning_deduction_assignments">Income & Deductions</span></button>
+            <button class="nav-link text-secondary" id="earningDeduction-tab" data-bs-toggle="tab" data-bs-target="#earningDeduction-pane" type="button" role="tab" aria-controls="earningDeduction-pane" aria-selected="false"><span data-i18n="earning_deduction_assignments">Income & Deductions</span></button>
         </li>
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="social-tab" data-bs-toggle="tab" data-bs-target="#social-pane" type="button" role="tab" aria-controls="social-pane" aria-selected="false"><i class="fa-solid fa-hospital-user me-1"></i><span data-i18n="social_security">Social Security</span><span class="completeness-tab-badge d-none" data-tab-key="social"></span></button>
+            <button class="nav-link text-secondary" id="social-tab" data-bs-toggle="tab" data-bs-target="#social-pane" type="button" role="tab" aria-controls="social-pane" aria-selected="false"><span data-i18n="social_security">Social Security</span><span class="completeness-tab-badge d-none" data-tab-key="social"></span></button>
         </li>
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="family-tab" data-bs-toggle="tab" data-bs-target="#family-pane" type="button" role="tab" aria-controls="family-pane" aria-selected="false"><i class="fa-solid fa-people-roof me-1"></i><span data-i18n="family_tax">Family / Tax Allowance</span><span class="completeness-tab-badge d-none" data-tab-key="family"></span></button>
+            <button class="nav-link text-secondary" id="family-tab" data-bs-toggle="tab" data-bs-target="#family-pane" type="button" role="tab" aria-controls="family-pane" aria-selected="false"><span data-i18n="family_tax">Family / Tax Allowance</span><span class="completeness-tab-badge d-none" data-tab-key="family"></span></button>
         </li>
         <!-- 2026-09-03: re-enabled (was hidden 2026-08-19 as "not needed for Payroll" -- that's no
              longer true now that Origami-synced passport/visa/work-permit document scans need
@@ -286,14 +287,14 @@
              either way (uploadDocumentFile() itself already refuses without one). Backend/JS were
              never touched by the 2026-08-19 hide, so nothing else needed reverting here. -->
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="documents-tab" data-bs-toggle="tab" data-bs-target="#documents-pane" type="button" role="tab" aria-controls="documents-pane" aria-selected="false"><i class="fa-solid fa-paperclip me-1"></i><span data-i18n="documents">Documents</span></button>
+            <button class="nav-link text-secondary" id="documents-tab" data-bs-toggle="tab" data-bs-target="#documents-pane" type="button" role="tab" aria-controls="documents-pane" aria-selected="false"><span data-i18n="documents">Documents</span></button>
         </li>
         <!-- 2026-08-29, explicit request: "ต้องการอีก Tab ใน Employee เพื่อดูประวัติการเข้าใช้งานระบบ" -- new
              tab, only shown once a real employee is loaded (a brand-new employee has no login history
              to show yet -- see detail.js's own toggle on this <li> at the same point new-employee
              progressive reveal already hides other not-yet-relevant tabs). -->
         <li class="nav-item d-none" role="presentation" id="loginHistoryTabItem">
-            <button class="nav-link text-secondary" id="login-history-tab" data-bs-toggle="tab" data-bs-target="#login-history-pane" type="button" role="tab" aria-controls="login-history-pane" aria-selected="false"><i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="login_history">Login History</span></button>
+            <button class="nav-link text-secondary" id="login-history-tab" data-bs-toggle="tab" data-bs-target="#login-history-pane" type="button" role="tab" aria-controls="login-history-pane" aria-selected="false"><span data-i18n="login_history">Login History</span></button>
         </li>
         <!-- 2026-09-03, Platform Hardening Phase 3 Stage 5 -- per-employee permission override tab.
              Two conditions gate this <li>, ANDed together: `$employee_no` (a brand-new, not-yet-
@@ -306,7 +307,7 @@
              ANY employee). -->
         <?php if (!empty($canManagePermissionOverrides)): ?>
         <li class="nav-item d-none" role="presentation" id="permissionOverridesTabItem">
-            <button class="nav-link text-secondary" id="permission-overrides-tab" data-bs-toggle="tab" data-bs-target="#permission-overrides-pane" type="button" role="tab" aria-controls="permission-overrides-pane" aria-selected="false"><i class="fa-solid fa-user-shield me-1"></i><span data-i18n="permission_overrides">Permission Overrides</span></button>
+            <button class="nav-link text-secondary" id="permission-overrides-tab" data-bs-toggle="tab" data-bs-target="#permission-overrides-pane" type="button" role="tab" aria-controls="permission-overrides-pane" aria-selected="false"><span data-i18n="permission_overrides">Permission Overrides</span></button>
         </li>
         <?php endif; ?>
         <!-- 2026-09-07, explicit request: "ถ้าเลยจอการแสดงผลให้ขึ้น more กับตัวเลข กดแล้วเป็น dropdown ลงมา"
@@ -1964,10 +1965,10 @@
             <div class="bg-light rounded-3 p-2 mb-4 structure-tabs-wrap">
                 <ul class="nav nav-pills flex-nowrap structure-tabs" id="eedSubTabs" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="eedEarningSub-tab" data-bs-toggle="pill" data-bs-target="#eedEarningSub-pane" type="button" role="tab" aria-controls="eedEarningSub-pane" aria-selected="true"><i class="fa-solid fa-arrow-trend-up me-2"></i><span data-i18n="earning_singular">Income</span></button>
+                        <button class="nav-link active" id="eedEarningSub-tab" data-bs-toggle="pill" data-bs-target="#eedEarningSub-pane" type="button" role="tab" aria-controls="eedEarningSub-pane" aria-selected="true"><span data-i18n="earning_singular">Income</span></button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="eedDeductionSub-tab" data-bs-toggle="pill" data-bs-target="#eedDeductionSub-pane" type="button" role="tab" aria-controls="eedDeductionSub-pane" aria-selected="false"><i class="fa-solid fa-arrow-trend-down me-2"></i><span data-i18n="deduction_singular">Deduction</span></button>
+                        <button class="nav-link" id="eedDeductionSub-tab" data-bs-toggle="pill" data-bs-target="#eedDeductionSub-pane" type="button" role="tab" aria-controls="eedDeductionSub-pane" aria-selected="false"><span data-i18n="deduction_singular">Deduction</span></button>
                     </li>
                     <!-- 2026-09-04, Backlog Phase 9->10, T051: read-only history of Origami-sync-
                          derived pay lines (Diligence/Trip Allowance/opted-in Student Loan/etc.) across
@@ -1975,7 +1976,7 @@
                          a 3rd pill, not folded into Income/Deduction, since it's not an editable
                          assignment the way those 2 tables are -- no Add/Edit/Delete anywhere in this pane. -->
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="eedSyncHistorySub-tab" data-bs-toggle="pill" data-bs-target="#eedSyncHistorySub-pane" type="button" role="tab" aria-controls="eedSyncHistorySub-pane" aria-selected="false"><i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="sync_transaction_history">Sync History</span></button>
+                        <button class="nav-link" id="eedSyncHistorySub-tab" data-bs-toggle="pill" data-bs-target="#eedSyncHistorySub-pane" type="button" role="tab" aria-controls="eedSyncHistorySub-pane" aria-selected="false"><span data-i18n="sync_transaction_history">Sync History</span></button>
                     </li>
                 </ul>
             </div>

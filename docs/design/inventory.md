@@ -266,6 +266,7 @@ php scripts/check-design.php --all
 | 2026-09-30 | 6.4 — `.station-filter` ที่เหลือ → `filter-bar.php` | `021f85ee` | 27 panel / 15 ไฟล์ | 0 panel |
 | 2026-09-30 | 6.4 (ต่อ) — ลบ CSS `.station-filter*` ใน `style.css` | `f7292538` | 74 บรรทัด | 0 selector |
 | 2026-09-30 | ปุ่ม: `btn-outline-brand` + `btn-light` → `btn-outline-secondary` (กฎ #3) | `0ef99bf7` | กฎ #3 = 272 | กฎ #3 = 137 |
-| 2026-09-30 | ปุ่มสีทึบ/ขอบสี → `btn-primary`/`btn-outline-secondary` (กฎ #3) | commit ที่แก้ไฟล์นี้ (ดู `git log`) | กฎ #3 = 137 | กฎ #3 = 116 |
+| 2026-09-30 | ปุ่มสีทึบ/ขอบสี → `btn-primary`/`btn-outline-secondary` (กฎ #3) | `a5cd61da` | กฎ #3 = 137 | กฎ #3 = 116 |
+| 2026-09-30 | tab: ลบไอคอนออกจาก `.nav-link` (กฎ #4) | commit ที่แก้ไฟล์นี้ (ดู `git log`) | กฎ #4 = 84 | กฎ #4 = 0 |
 
 (เติมทีละแถวทุกครั้งที่ปิดก้อนจากคิว §6 หรือกลุ่มโมดูลใน §5)

@@ -1490,7 +1490,7 @@
                 <ul class="nav nav-tabs setup-tabs mb-3" id="statutoryRateModalTabs" role="tablist">
                     <li class="nav-item d-none" role="presentation" id="srDetailsTabItem">
                         <button class="nav-link setup-menu" id="sr-details-tab" data-bs-toggle="tab" data-bs-target="#sr-details-pane" type="button" role="tab">
-                            <i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="sr_tab_details">Item Details</span>
+                            <span data-i18n="sr_tab_details">Item Details</span>
                         </button>
                     </li>
                     <!-- 2026-09-08, Clone+Version redesign -- the "Company Setting" tab (a single flat
@@ -1510,7 +1510,7 @@
                          key is used in exactly this ONE place before renaming its value. -->
                     <li class="nav-item d-none" role="presentation" id="srHistoryTabItem">
                         <button class="nav-link setup-menu" id="sr-history-tab" data-bs-toggle="tab" data-bs-target="#sr-history-pane" type="button" role="tab">
-                            <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="rate_history">Rate History</span>
+                            <span data-i18n="rate_history">Rate History</span>
                         </button>
                     </li>
                 </ul>

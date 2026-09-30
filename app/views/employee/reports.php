@@ -33,7 +33,7 @@
             <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" id="employeeReportsSubTabs" role="tablist">
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu active" id="empReportSub-standing-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-standing-pane" type="button" role="tab" aria-controls="empReportSub-standing-pane" aria-selected="true">
-                        <i class="fa-solid fa-calculator me-1"></i><span data-i18n="standing_items_summary">Standing Items Summary</span>
+                        <span data-i18n="standing_items_summary">Standing Items Summary</span>
                     </button>
                 </li>
                 <!-- 2026-09-02, Phase 1 of the Employee Reports plan -- "Report คนเข้าคนออกประจำเดือน
@@ -41,7 +41,7 @@
                      own docblock for the backend design. -->
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-headcount-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-headcount-pane" type="button" role="tab" aria-controls="empReportSub-headcount-pane" aria-selected="false">
-                        <i class="fa-solid fa-people-arrows me-1"></i><span data-i18n="headcount_movement_report">Headcount Movement</span>
+                        <span data-i18n="headcount_movement_report">Headcount Movement</span>
                     </button>
                 </li>
                 <!-- 2026-09-02, Phase 2 of the Employee Reports plan -- 3 quick-win reports, data
@@ -49,34 +49,34 @@
                      EmployeeModel method's own docblock for the backend design. -->
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-expiry-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-expiry-pane" type="button" role="tab" aria-controls="empReportSub-expiry-pane" aria-selected="false">
-                        <i class="fa-solid fa-triangle-exclamation me-1"></i><span data-i18n="expiry_report">Expiry Alerts</span>
+                        <span data-i18n="expiry_report">Expiry Alerts</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-probation-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-probation-pane" type="button" role="tab" aria-controls="empReportSub-probation-pane" aria-selected="false">
-                        <i class="fa-solid fa-hourglass-half me-1"></i><span data-i18n="probation_report">Probation Status</span>
+                        <span data-i18n="probation_report">Probation Status</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-enrollment-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-enrollment-pane" type="button" role="tab" aria-controls="empReportSub-enrollment-pane" aria-selected="false">
-                        <i class="fa-solid fa-shield-heart me-1"></i><span data-i18n="statutory_enrollment_report">SSO/PVD Enrollment</span>
+                        <span data-i18n="statutory_enrollment_report">SSO/PVD Enrollment</span>
                     </button>
                 </li>
                 <!-- 2026-09-02, Phase 3 of the Employee Reports plan -- structural/analytical
                      reports. See each EmployeeModel method's own docblock for the backend design. -->
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-structure-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-structure-pane" type="button" role="tab" aria-controls="empReportSub-structure-pane" aria-selected="false">
-                        <i class="fa-solid fa-sitemap me-1"></i><span data-i18n="headcount_structure_report">Headcount Structure</span>
+                        <span data-i18n="headcount_structure_report">Headcount Structure</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-tenure-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-tenure-pane" type="button" role="tab" aria-controls="empReportSub-tenure-pane" aria-selected="false">
-                        <i class="fa-solid fa-award me-1"></i><span data-i18n="tenure_report">Tenure</span>
+                        <span data-i18n="tenure_report">Tenure</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-birthday-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-birthday-pane" type="button" role="tab" aria-controls="empReportSub-birthday-pane" aria-selected="false">
-                        <i class="fa-solid fa-cake-candles me-1"></i><span data-i18n="birthday_anniversary_report">Birthday &amp; Anniversary</span>
+                        <span data-i18n="birthday_anniversary_report">Birthday &amp; Anniversary</span>
                     </button>
                 </li>
                 <!-- 2026-09-02, Phase 4 (the final phase) of the Employee Reports plan -- company-wide
@@ -85,7 +85,7 @@
                      docblock. -->
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-completeness-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-completeness-pane" type="button" role="tab" aria-controls="empReportSub-completeness-pane" aria-selected="false">
-                        <i class="fa-solid fa-clipboard-check me-1"></i><span data-i18n="completeness_overview_report">Data Completeness</span>
+                        <span data-i18n="completeness_overview_report">Data Completeness</span>
                     </button>
                 </li>
             </ul>

@@ -21,12 +21,12 @@
   </div>
 
   <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" role="tablist">
-    <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-req" type="button" id="payslipRequestTabBtn" role="tab"><i class="fa-solid fa-inbox me-1"></i> <span data-i18n="payslip_requests">Payslip Requests</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-req" type="button" id="payslipRequestTabBtn" role="tab"><span data-i18n="payslip_requests">Payslip Requests</span></button></li>
     <!-- 2026-08-26, explicit request: "เพิ่ม Tab สำหรับการ Request ใบรับรองขึ้นมาด้วยคู่กับ Pay slip" --
          paired here as a 3rd top-level tab on this same page, not a separate submenu item (see
          EmploymentCertificateRequestModel's own docblock for the backend this drives). -->
-    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-ecr" type="button" id="ecrRequestTabBtn" role="tab"><i class="fa-solid fa-file-shield me-1"></i> <span data-i18n="employment_certificate_requests">Employment Certificate Requests</span></button></li>
-    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-dlog" type="button" id="payslipDeliveryLogTabBtn" role="tab"><i class="fa-solid fa-clock-rotate-left me-1"></i> <span data-i18n="payslip_delivery_log">Delivery Log</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-ecr" type="button" id="ecrRequestTabBtn" role="tab"><span data-i18n="employment_certificate_requests">Employment Certificate Requests</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-dlog" type="button" id="payslipDeliveryLogTabBtn" role="tab"><span data-i18n="payslip_delivery_log">Delivery Log</span></button></li>
   </ul>
 
   <div class="tab-content">

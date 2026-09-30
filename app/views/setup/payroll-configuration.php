@@ -20,24 +20,24 @@
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="companySetupTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu active" id="cycle-tab" data-bs-toggle="tab" data-bs-target="#cycle-pane" type="button" role="tab" aria-controls="cycle-pane" aria-selected="true">
-                <i class="fa-regular fa-calendar-days me-2"></i><span data-i18n="cycle">Schedule</span>
+                <span data-i18n="cycle">Schedule</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="earnings-tab" data-bs-toggle="tab" data-bs-target="#earnings-pane" type="button" role="tab" aria-controls="earnings-pane" aria-selected="false">
-                <i class="fa-solid fa-calendar-day me-2"></i><span data-i18n="earnings">Income</span>
+                <span data-i18n="earnings">Income</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="deductions-tab" data-bs-toggle="tab" data-bs-target="#deductions-pane" type="button" role="tab" aria-controls="deductions-pane" aria-selected="false">
-                <i class="fa-regular fa-calendar-check me-2"></i><span data-i18n="deductions">Deductions</span>
+                <span data-i18n="deductions">Deductions</span>
             </button>
         </li>
         <!-- 2026-08-21, explicit request: own tab right after Deductions, replacing the old button+shared-
              modal-with-pill-switcher entry point on the Deductions tab. -->
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="attendance-deduction-tab" data-bs-toggle="tab" data-bs-target="#attendance-deduction-pane" type="button" role="tab" aria-controls="attendance-deduction-pane" aria-selected="false">
-                <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="attendance_deduction">Attendance Deduction</span>
+                <span data-i18n="attendance_deduction">Attendance Deduction</span>
             </button>
         </li>
         <!-- 2026-08-29, explicit request: "ตัดเบี้ยขยันและการบันทึกเบี้ยขยันออกจากการตั้งค่า และไม่นำไปคำนวณ
@@ -62,7 +62,7 @@
              docblock). -->
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="policies-tab" data-bs-toggle="tab" data-bs-target="#policies-pane" type="button" role="tab" aria-controls="policies-pane" aria-selected="false">
-                <i class="fa-solid fa-shield-halved me-2"></i><span data-i18n="payroll_policies">Payroll Policies</span>
+                <span data-i18n="payroll_policies">Payroll Policies</span>
             </button>
         </li>
     </ul>

@@ -64,22 +64,22 @@
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="reportsTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu active" id="cycle-tab" data-bs-toggle="tab" data-bs-target="#cycle-pane" type="button" role="tab" aria-controls="cycle-pane" aria-selected="true">
-                <i class="fa-solid fa-calendar-check me-2"></i><span data-i18n="tab_cycle_reports">Per-Schedule Reports</span>
+                <span data-i18n="tab_cycle_reports">Per-Schedule Reports</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="annual-tab" data-bs-toggle="tab" data-bs-target="#annual-pane" type="button" role="tab" aria-controls="annual-pane" aria-selected="false">
-                <i class="fa-solid fa-calendar-days me-2"></i><span data-i18n="tab_annual_reports">Annual Reports</span>
+                <span data-i18n="tab_annual_reports">Annual Reports</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="monthly-tab" data-bs-toggle="tab" data-bs-target="#monthly-pane" type="button" role="tab" aria-controls="monthly-pane" aria-selected="false">
-                <i class="fa-solid fa-calendar-week me-2"></i><span data-i18n="tab_monthly_reports">Monthly Report</span>
+                <span data-i18n="tab_monthly_reports">Monthly Report</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="history-tab" data-bs-toggle="tab" data-bs-target="#history-pane" type="button" role="tab" aria-controls="history-pane" aria-selected="false">
-                <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="tab_export_history">Export History</span>
+                <span data-i18n="tab_export_history">Export History</span>
             </button>
         </li>
     </ul>

@@ -20,17 +20,17 @@
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active" id="attendance-tab" data-bs-toggle="tab" data-bs-target="#attendance-pane" type="button" role="tab" aria-controls="attendance-pane" aria-selected="true">
-                <i class="fa-solid fa-clock me-2"></i><span data-i18n="attendance">Attendance</span>
+                <span data-i18n="attendance">Attendance</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="leave-tab" data-bs-toggle="tab" data-bs-target="#leave-pane" type="button" role="tab" aria-controls="leave-pane" aria-selected="false">
-                <i class="fa-regular fa-calendar-check me-2"></i><span data-i18n="leave">Leave</span>
+                <span data-i18n="leave">Leave</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="overtime-tab" data-bs-toggle="tab" data-bs-target="#overtime-pane" type="button" role="tab" aria-controls="overtime-pane" aria-selected="false">
-                <i class="fa-solid fa-stopwatch me-2"></i><span data-i18n="overtime">Overtime</span>
+                <span data-i18n="overtime">Overtime</span>
             </button>
         </li>
         <!-- 2026-09-02, explicit request ("จะมีอีก Tab ที่เป็น Tab import โดยตรง ถ้าพิจารณาแล้วว่าเป็นการทำงาน
@@ -44,7 +44,7 @@
              superseded by anything this round added. -->
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="import-history-tab" data-bs-toggle="tab" data-bs-target="#import-history-pane" type="button" role="tab" aria-controls="import-history-pane" aria-selected="false">
-                <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="import_history_tab">History</span>
+                <span data-i18n="import_history_tab">History</span>
             </button>
         </li>
     </ul>

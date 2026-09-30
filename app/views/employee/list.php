@@ -81,7 +81,7 @@
          standalone pages under the Employee submenu (see header.php), leaving just these 2. -->
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" id="employeeTopTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active setup-menu" id="employee-top-tab" data-bs-toggle="tab" data-bs-target="#employee-top-pane" type="button" role="tab" aria-controls="employee-top-pane" aria-selected="true"><i class="fa-solid fa-users me-1"></i><span data-i18n="employee">Employee</span></button>
+            <button class="nav-link active setup-menu" id="employee-top-tab" data-bs-toggle="tab" data-bs-target="#employee-top-pane" type="button" role="tab" aria-controls="employee-top-pane" aria-selected="true"><span data-i18n="employee">Employee</span></button>
         </li>
         <!-- 2026-08-30 (Phase 3, T018, explicit request: "Tab 'Recheck ข้อมูล'...แสดงเป็น column-by-
              column ว่าข้อมูลจำเป็นสำหรับทำเงินเดือนครบหรือไม่") -- same top-level-page-tab pattern as
@@ -90,7 +90,7 @@
              "position moves, nothing else does" precedent as Team's own tab reorder earlier this
              project (see CLAUDE.md's Team section). -->
         <li class="nav-item" role="presentation">
-            <button class="nav-link setup-menu" id="employee-recheck-top-tab" data-bs-toggle="tab" data-bs-target="#employee-recheck-top-pane" type="button" role="tab" aria-controls="employee-recheck-top-pane" aria-selected="false"><i class="fa-solid fa-list-check me-1"></i><span data-i18n="recheck_data">Recheck Data</span></button>
+            <button class="nav-link setup-menu" id="employee-recheck-top-tab" data-bs-toggle="tab" data-bs-target="#employee-recheck-top-pane" type="button" role="tab" aria-controls="employee-recheck-top-pane" aria-selected="false"><span data-i18n="recheck_data">Recheck Data</span></button>
         </li>
     </ul>
     <div class="tab-content" id="employeeTopTabsContent">

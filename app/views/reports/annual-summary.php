@@ -39,17 +39,17 @@
 
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" id="aisTopTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active setup-menu" id="ais-income-tab" data-bs-toggle="tab" data-bs-target="#ais-income-pane" type="button" role="tab" aria-controls="ais-income-pane" aria-selected="true"><i class="fa-solid fa-sack-dollar me-1"></i><span data-i18n="ais_tab_income">Annual Income Summary</span></button>
+            <button class="nav-link active setup-menu" id="ais-income-tab" data-bs-toggle="tab" data-bs-target="#ais-income-pane" type="button" role="tab" aria-controls="ais-income-pane" aria-selected="true"><span data-i18n="ais_tab_income">Annual Income Summary</span></button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link setup-menu" id="ais-pit-tab" data-bs-toggle="tab" data-bs-target="#ais-pit-pane" type="button" role="tab" aria-controls="ais-pit-pane" aria-selected="false"><i class="fa-solid fa-file-invoice-dollar me-1"></i><span data-i18n="ais_tab_pit_annual">Annual Withholding Tax Summary</span></button>
+            <button class="nav-link setup-menu" id="ais-pit-tab" data-bs-toggle="tab" data-bs-target="#ais-pit-pane" type="button" role="tab" aria-controls="ais-pit-pane" aria-selected="false"><span data-i18n="ais_tab_pit_annual">Annual Withholding Tax Summary</span></button>
         </li>
         <!-- Batch 2, item 6 (2026-09-10) -- positioned right after the tax tab, same structure. -->
         <li class="nav-item" role="presentation">
-            <button class="nav-link setup-menu" id="ais-sso-tab" data-bs-toggle="tab" data-bs-target="#ais-sso-pane" type="button" role="tab" aria-controls="ais-sso-pane" aria-selected="false"><i class="fa-solid fa-shield-heart me-1"></i><span data-i18n="ais_tab_sso_annual">Annual SSO Contribution Summary</span></button>
+            <button class="nav-link setup-menu" id="ais-sso-tab" data-bs-toggle="tab" data-bs-target="#ais-sso-pane" type="button" role="tab" aria-controls="ais-sso-pane" aria-selected="false"><span data-i18n="ais_tab_sso_annual">Annual SSO Contribution Summary</span></button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link setup-menu" id="ais-monthly-pit-tab" data-bs-toggle="tab" data-bs-target="#ais-monthly-pit-pane" type="button" role="tab" aria-controls="ais-monthly-pit-pane" aria-selected="false"><i class="fa-solid fa-calendar-days me-1"></i><span data-i18n="ais_tab_pit_monthly">Monthly Withholding Tax</span></button>
+            <button class="nav-link setup-menu" id="ais-monthly-pit-tab" data-bs-toggle="tab" data-bs-target="#ais-monthly-pit-pane" type="button" role="tab" aria-controls="ais-monthly-pit-pane" aria-selected="false"><span data-i18n="ais_tab_pit_monthly">Monthly Withholding Tax</span></button>
         </li>
     </ul>
     <div class="tab-content" id="aisTopTabsContent">

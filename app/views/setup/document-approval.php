@@ -19,9 +19,9 @@
   </div>
 
   <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" role="tablist">
-    <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-flow" type="button" role="tab"><i class="fa-solid fa-diagram-project me-1"></i> <span data-i18n="approval_workflow">Approval Workflow</span></button></li>
-    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-run" type="button" role="tab"><i class="fa-solid fa-hashtag me-1"></i> <span data-i18n="document_running_number">Document Numbering</span></button></li>
-    <li class="nav-item"><button class="nav-link setup-menu" id="emailQueueLogTabBtn" data-bs-toggle="tab" data-bs-target="#tab-email-log" type="button" role="tab"><i class="fa-solid fa-envelope-circle-check me-1"></i> <span data-i18n="email_queue_log">Email Log</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-flow" type="button" role="tab"><span data-i18n="approval_workflow">Approval Workflow</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-run" type="button" role="tab"><span data-i18n="document_running_number">Document Numbering</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu" id="emailQueueLogTabBtn" data-bs-toggle="tab" data-bs-target="#tab-email-log" type="button" role="tab"><span data-i18n="email_queue_log">Email Log</span></button></li>
   </ul>
 
   <div class="tab-content">
@@ -44,12 +44,12 @@
         <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" id="approvalFlowDocTypeTabs">
           <li class="nav-item">
             <button type="button" class="nav-link structure-menu active" data-document-type="PAYROLL_RUN_APPROVAL">
-              <i class="fa-solid fa-money-check-dollar me-1"></i><span data-i18n="tab_payroll_run_approval">Payroll Run Approval</span>
+              <span data-i18n="tab_payroll_run_approval">Payroll Run Approval</span>
             </button>
           </li>
           <li class="nav-item">
             <button type="button" class="nav-link structure-menu" data-document-type="SLIP_REQUEST_APPROVAL">
-              <i class="fa-solid fa-file-invoice me-1"></i><span data-i18n="tab_slip_request_approval">Payslip Approval</span>
+              <span data-i18n="tab_slip_request_approval">Payslip Approval</span>
             </button>
           </li>
           <!-- 2026-08-24, explicit request: "ใน Approval Flow เพิ่มอีก Tab เป็น Tab การตั้งค่าการอนุมัติการ
@@ -62,7 +62,7 @@
                with this code. -->
           <li class="nav-item">
             <button type="button" class="nav-link structure-menu" data-document-type="EMPLOYMENT_CERTIFICATE_APPROVAL">
-              <i class="fa-solid fa-file-shield me-1"></i><span data-i18n="tab_employment_certificate_approval">Employment Certificate Approval</span>
+              <span data-i18n="tab_employment_certificate_approval">Employment Certificate Approval</span>
             </button>
           </li>
         </ul>

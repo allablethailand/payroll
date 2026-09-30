@@ -25,12 +25,12 @@
   <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="dataSyncTabs" role="tablist">
     <li class="nav-item" role="presentation">
       <button class="nav-link setup-menu active" id="ds-sync-tab" data-bs-toggle="tab" data-bs-target="#ds-sync-pane" type="button" role="tab" aria-controls="ds-sync-pane" aria-selected="true">
-        <i class="fa-solid fa-rotate me-2"></i><span data-i18n="data_sync_tab_sync">Sync</span>
+        <span data-i18n="data_sync_tab_sync">Sync</span>
       </button>
     </li>
     <li class="nav-item" role="presentation">
       <button class="nav-link setup-menu" id="ds-history-tab" data-bs-toggle="tab" data-bs-target="#ds-history-pane" type="button" role="tab" aria-controls="ds-history-pane" aria-selected="false">
-        <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="data_sync_tab_history">Sync History</span>
+        <span data-i18n="data_sync_tab_history">Sync History</span>
       </button>
     </li>
   </ul>

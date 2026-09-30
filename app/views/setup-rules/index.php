@@ -20,27 +20,27 @@
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active" id="shift-tab" data-bs-toggle="tab" data-bs-target="#shift-pane" type="button" role="tab" aria-controls="shift-pane" aria-selected="true">
-                <i class="fa-regular fa-calendar-days me-2"></i><span data-i18n="shift">Shift</span>
+                <span data-i18n="shift">Shift</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="holiday-tab" data-bs-toggle="tab" data-bs-target="#holiday-pane" type="button" role="tab" aria-controls="holiday-pane" aria-selected="false">
-                <i class="fa-solid fa-calendar-day me-2"></i><span data-i18n="holiday">Holiday</span>
+                <span data-i18n="holiday">Holiday</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="leave-type-tab" data-bs-toggle="tab" data-bs-target="#leave-type-pane" type="button" role="tab" aria-controls="leave-type-pane" aria-selected="false">
-                <i class="fa-regular fa-calendar-check me-2"></i><span data-i18n="leave_type">Leave Type</span>
+                <span data-i18n="leave_type">Leave Type</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="ot-rate-tab" data-bs-toggle="tab" data-bs-target="#ot-rate-pane" type="button" role="tab" aria-controls="ot-rate-pane" aria-selected="false">
-                <i class="fa-solid fa-coins me-2"></i><span data-i18n="ot_rate">OT Rate</span>
+                <span data-i18n="ot_rate">OT Rate</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="work-location-tab" data-bs-toggle="tab" data-bs-target="#work-location-pane" type="button" role="tab" aria-controls="work-location-pane" aria-selected="false">
-                <i class="fa-solid fa-location-dot me-2"></i><span data-i18n="work_location">Work Location</span>
+                <span data-i18n="work_location">Work Location</span>
             </button>
         </li>
     </ul>

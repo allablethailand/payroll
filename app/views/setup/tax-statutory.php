@@ -43,7 +43,7 @@
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="taxStatutoryTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu active" id="company-setting-tab" data-bs-toggle="tab" data-bs-target="#company-setting-pane" type="button" role="tab" aria-controls="company-setting-pane" aria-selected="true">
-                <i class="fa-solid fa-scale-balanced me-2"></i><span data-i18n="tab_company_setting">Statutory Rates</span>
+                <span data-i18n="tab_company_setting">Statutory Rates</span>
             </button>
         </li>
         <!-- 2026-08-29, follow-up to Bank File Format: "ส่วน Format เอกสารของการนำส่งสรรพากร และ
@@ -60,7 +60,7 @@
              on a different (admin) page without rebuilding any of this. -->
         <li class="nav-item d-none" role="presentation">
             <button class="nav-link setup-menu" id="document-format-tab" data-bs-toggle="tab" data-bs-target="#document-format-pane" type="button" role="tab" aria-controls="document-format-pane" aria-selected="false">
-                <i class="fa-solid fa-file-lines me-2"></i><span data-i18n="tab_document_format">Document Format</span>
+                <span data-i18n="tab_document_format">Document Format</span>
             </button>
         </li>
         <!-- 2026-09-02, explicit request following an AskUserQuestion exchange -- confirmed Thai
@@ -70,7 +70,7 @@
              (never a hardcoded "correct" rate) -- see NonResidentTaxSettingModel's own docblock. -->
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="nonresident-tax-tab" data-bs-toggle="tab" data-bs-target="#nonresident-tax-pane" type="button" role="tab" aria-controls="nonresident-tax-pane" aria-selected="false">
-                <i class="fa-solid fa-passport me-2"></i><span data-i18n="tab_nonresident_tax">Non-Resident Foreign Tax</span>
+                <span data-i18n="tab_nonresident_tax">Non-Resident Foreign Tax</span>
             </button>
         </li>
     </ul>

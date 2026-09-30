@@ -84,8 +84,8 @@
      strip+content with a single toggle, same as it already does for #ectEditorArea alone. -->
 <div id="ectMainTabsWrap">
 <ul class="nav nav-tabs setup-tabs mb-3" id="ectEditorTabs" role="tablist">
-  <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#ectTabDesign" type="button" role="tab"><i class="fa-solid fa-pen-ruler me-1"></i><span data-i18n="ect_design_tab">Design</span></button></li>
-  <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#ectTabAssign" type="button" role="tab"><i class="fa-solid fa-users-rectangle me-1"></i><span data-i18n="pst_assign_to">Assign To</span></button></li>
+  <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#ectTabDesign" type="button" role="tab"><span data-i18n="ect_design_tab">Design</span></button></li>
+  <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#ectTabAssign" type="button" role="tab"><span data-i18n="pst_assign_to">Assign To</span></button></li>
 </ul>
 
 <div class="tab-content">
