@@ -205,7 +205,7 @@ class EmployeeSyncer implements MasterDataSyncerInterface {
         return $id === false ? null : (int)$id;
     }
 
-    private function resolveRefByCode(string $table, string $codeColumn, int $compId, $code): ?int {
+    public function resolveRefByCode(string $table, string $codeColumn, int $compId, $code): ?int {
         if ($code === null || trim((string)$code) === '') {
             return null;
         }

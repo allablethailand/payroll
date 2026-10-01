@@ -5540,9 +5540,10 @@ class PayrollRunModel {
         }
         return [
             'code' => $row['item_code'],
-            'name_th' => $row['item_name_th'],
-            'name_en' => $row['item_name_en'],
-            'item_type' => $row['item_type'],
+            // add/edit pass a bare catalog row (no joined pt.* names) into recordManualLineHistory(), which only reads 'code'.
+            'name_th' => $row['item_name_th'] ?? ($row['custom_item_name'] ?? ''),
+            'name_en' => $row['item_name_en'] ?? ($row['custom_item_name'] ?? ''),
+            'item_type' => $row['item_type'] ?? ($row['custom_item_type'] ?? 'earning'),
             'is_custom' => false,
             'is_other' => false,
         ];
