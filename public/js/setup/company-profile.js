@@ -997,7 +997,7 @@ function getStructureColumns(type) {
                     className: "text-end",
                     render: function (data) {
                         let amount = data ? parseFloat(data) : 0;
-                        return amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        return fmtNum(amount);
                     }
                 },
                 {
@@ -1019,8 +1019,8 @@ function getStructureColumns(type) {
                     data: null,
                     className: 'text-end',
                     render: function (data, type, row) {
-                        let min = row.salary_min ? parseFloat(row.salary_min).toLocaleString('th-TH') : '0';
-                        let max = row.salary_max ? parseFloat(row.salary_max).toLocaleString('th-TH') : 'Max';
+                        let min = row.salary_min ? fmtNum(parseFloat(row.salary_min), 0, 3) : '0';
+                        let max = row.salary_max ? fmtNum(parseFloat(row.salary_max), 0, 3) : 'Max';
                         return `${min} - ${max}`;
                     }
                 },

@@ -16,7 +16,7 @@
 let tb_employee_summary;
 function fmtMoneyList(n) {
     const v = Number(n) || 0;
-    return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return fmtNum(v);
 }
 // Recurring Earnings has no installment concept (indefinite) -- Pending PED items DO ("งวดที่ X จาก Y",
 // employee_earning_deductions' own total_installments/current_installment columns, no cycle-date math
@@ -65,7 +65,7 @@ function renderEmployeeSummaryFooter(totals) {
 // response (server-computed across the whole filtered set, not just the current page) -- zero new
 // backend call, just another place to show numbers already in hand.
 function renderEmployeeSummaryCards(json) {
-    $('#empSummaryCardEmployeeCount').text((Number(json.recordsFiltered) || 0).toLocaleString());
+    $('#empSummaryCardEmployeeCount').text(fmtNum(Number(json.recordsFiltered) || 0, 0, 3));
     const totals = json.totals || {};
     $('#empSummaryCardTotalEarning').text(fmtMoneyList(totals.total_earning));
     $('#empSummaryCardTotalDeduction').text(fmtMoneyList(totals.total_deduction));
@@ -147,11 +147,11 @@ function currentEmployeeHeadcountFilters() {
 const EMP_HEADCOUNT_MONTH_LABELS_TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const EMP_HEADCOUNT_MONTH_LABELS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function renderEmployeeHeadcountCards(summary) {
-    $('#empHeadcountCardHires').text((Number(summary.total_hires) || 0).toLocaleString());
-    $('#empHeadcountCardExits').text((Number(summary.total_exits) || 0).toLocaleString());
+    $('#empHeadcountCardHires').text(fmtNum(Number(summary.total_hires) || 0, 0, 3));
+    $('#empHeadcountCardExits').text(fmtNum(Number(summary.total_exits) || 0, 0, 3));
     const net = Number(summary.net_change) || 0;
-    $('#empHeadcountCardNetChange').text((net > 0 ? '+' : '') + net.toLocaleString());
-    $('#empHeadcountCardTurnoverRate').text((Number(summary.turnover_rate) || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%');
+    $('#empHeadcountCardNetChange').text((net > 0 ? '+' : '') + fmtNum(net, 0, 3));
+    $('#empHeadcountCardTurnoverRate').text(fmtNum(Number(summary.turnover_rate) || 0) + '%');
 }
 // 2026-09-07, explicit request: "รายงานคนเข้าคนออก อยากให้เป็นกราฟเส้นครับคนละสีเหมือนเดิมและมีจำนวนประกอบ"
 // -- bar -> line (same 2 colors as before, #198754 hires / #dc3545 exits) plus the actual number
@@ -289,10 +289,10 @@ function employeeExpiryTypeLabel(type) {
     return langData['expiry_' + type] || type;
 }
 function renderEmployeeExpiryCards(counts) {
-    $('#empExpiryCardContract').text((Number(counts.contract) || 0).toLocaleString());
-    $('#empExpiryCardWorkPermit').text((Number(counts.work_permit) || 0).toLocaleString());
-    $('#empExpiryCardVisa').text((Number(counts.visa) || 0).toLocaleString());
-    $('#empExpiryCardPassport').text((Number(counts.passport) || 0).toLocaleString());
+    $('#empExpiryCardContract').text(fmtNum(Number(counts.contract) || 0, 0, 3));
+    $('#empExpiryCardWorkPermit').text(fmtNum(Number(counts.work_permit) || 0, 0, 3));
+    $('#empExpiryCardVisa').text(fmtNum(Number(counts.visa) || 0, 0, 3));
+    $('#empExpiryCardPassport').text(fmtNum(Number(counts.passport) || 0, 0, 3));
 }
 function initEmployeeExpiryTable(items) {
     if ($.fn.DataTable.isDataTable('#tb_employee_expiry')) {
@@ -396,7 +396,7 @@ function initEmployeeProbationTable(items) {
                         filter: d => d,
                     }
                 },
-                { data: 'days_on_probation', className: 'text-end', render: d => (Number(d) || 0).toLocaleString() },
+                { data: 'days_on_probation', className: 'text-end', render: d => fmtNum(Number(d) || 0, 0, 3) },
             ],
         },
     });
@@ -411,7 +411,7 @@ function loadEmployeeProbationReport() {
                 showWarning(res.message || langData['save_failed'] || 'An error occurred.');
                 return;
             }
-            $('#empProbationCardCount').text((Number(res.data.count) || 0).toLocaleString());
+            $('#empProbationCardCount').text(fmtNum(Number(res.data.count) || 0, 0, 3));
             initEmployeeProbationTable(res.data.items || []);
         }
     });
@@ -499,10 +499,10 @@ function loadEmployeeEnrollmentReport() {
                 return;
             }
             const c = res.data.counts;
-            $('#empEnrollmentCardSsoEnrolled').text((Number(c.sso_enrolled) || 0).toLocaleString());
-            $('#empEnrollmentCardSsoNotEnrolled').text((Number(c.sso_not_enrolled) || 0).toLocaleString());
-            $('#empEnrollmentCardPvdEnrolled').text((Number(c.pvd_enrolled) || 0).toLocaleString());
-            $('#empEnrollmentCardPvdNotEnrolled').text((Number(c.pvd_not_enrolled) || 0).toLocaleString());
+            $('#empEnrollmentCardSsoEnrolled').text(fmtNum(Number(c.sso_enrolled) || 0, 0, 3));
+            $('#empEnrollmentCardSsoNotEnrolled').text(fmtNum(Number(c.sso_not_enrolled) || 0, 0, 3));
+            $('#empEnrollmentCardPvdEnrolled').text(fmtNum(Number(c.pvd_enrolled) || 0, 0, 3));
+            $('#empEnrollmentCardPvdNotEnrolled').text(fmtNum(Number(c.pvd_not_enrolled) || 0, 0, 3));
             renderEmployeeEnrollmentDonut(() => empEnrollmentSsoChartInstance, v => { empEnrollmentSsoChartInstance = v; }, 'employeeEnrollmentSsoChart', c.sso_enrolled, c.sso_not_enrolled);
             renderEmployeeEnrollmentDonut(() => empEnrollmentPvdChartInstance, v => { empEnrollmentPvdChartInstance = v; }, 'employeeEnrollmentPvdChart', c.pvd_enrolled, c.pvd_not_enrolled);
             initEmployeeEnrollmentTable(res.data.items || []);
@@ -528,8 +528,8 @@ function loadEmployeeStructureReport() {
                 return;
             }
             const groups = res.data.groups || [];
-            $('#empStructureCardTotal').text((Number(res.data.total) || 0).toLocaleString());
-            $('#empStructureCardGroupCount').text(groups.length.toLocaleString());
+            $('#empStructureCardTotal').text(fmtNum(Number(res.data.total) || 0, 0, 3));
+            $('#empStructureCardGroupCount').text(fmtNum(groups.length, 0, 3));
             const largest = groups.length ? groups.reduce((a, b) => (b.count > a.count ? b : a)) : null;
             $('#empStructureCardLargest').text(largest ? `${(currentLang === 'th' ? largest.label_th : largest.label_en) || '-'} (${largest.count})` : '-');
 
@@ -606,7 +606,7 @@ function loadEmployeeStructureReport() {
                                     return badge + escapeHtml(d || '-');
                                 }
                             },
-                            { data: 'count', className: 'text-end', render: d => (Number(d) || 0).toLocaleString() },
+                            { data: 'count', className: 'text-end', render: d => fmtNum(Number(d) || 0, 0, 3) },
                             {
                                 data: 'share',
                                 className: 'text-end',
@@ -684,7 +684,7 @@ function initEmployeeTenureTable(items) {
                     render: {
                         display: d => {
                             const years = Number(d) || 0;
-                            const text = years.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+                            const text = fmtNum(years, 1);
                             const star = employeeTenureIsMilestone(years) ? '<i class="fa-solid fa-star milestone-star" title="Milestone"></i>' : '';
                             return text + star;
                         },
@@ -716,9 +716,9 @@ function loadEmployeeTenureReport() {
                 return;
             }
             const items = res.data.items || [];
-            $('#empTenureCardTotal').text(items.length.toLocaleString());
-            $('#empTenureCardAverage').text((Number(res.data.average_years) || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' ' + (langData['years_unit'] || 'yrs'));
-            $('#empTenureCardLongest').text((Number(res.data.longest_years) || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' ' + (langData['years_unit'] || 'yrs'));
+            $('#empTenureCardTotal').text(fmtNum(items.length, 0, 3));
+            $('#empTenureCardAverage').text(fmtNum(Number(res.data.average_years) || 0, 1) + ' ' + (langData['years_unit'] || 'yrs'));
+            $('#empTenureCardLongest').text(fmtNum(Number(res.data.longest_years) || 0, 1) + ' ' + (langData['years_unit'] || 'yrs'));
 
             const buckets = res.data.buckets || [];
             const labels = buckets.map(b => langData[EMP_TENURE_BUCKET_LABEL_KEYS[b.key]] || b.key);
@@ -806,7 +806,7 @@ function initEmployeeBirthdayTables(birthdays, anniversaries) {
                     { data: 'name', render: d => escapeHtml(d || '-') },
                     deptCol,
                     dateCol,
-                    { data: 'years', className: 'text-end', render: d => (Number(d) || 0).toLocaleString() },
+                    { data: 'years', className: 'text-end', render: d => fmtNum(Number(d) || 0, 0, 3) },
                 ],
             },
         });
@@ -824,8 +824,8 @@ function loadEmployeeBirthdayReport() {
             }
             const birthdays = res.data.birthdays || [];
             const anniversaries = res.data.anniversaries || [];
-            $('#empBirthdayCardCount').text(birthdays.length.toLocaleString());
-            $('#empAnniversaryCardCount').text(anniversaries.length.toLocaleString());
+            $('#empBirthdayCardCount').text(fmtNum(birthdays.length, 0, 3));
+            $('#empAnniversaryCardCount').text(fmtNum(anniversaries.length, 0, 3));
             initEmployeeBirthdayTables(birthdays, anniversaries);
         }
     });
@@ -863,7 +863,7 @@ function renderEmployeeCompletenessGauge(averagePercent) {
     if (!$canvas.length || typeof Chart === 'undefined') return;
     const pct = Math.max(0, Math.min(100, Number(averagePercent) || 0));
     const color = employeeCompletenessColor(pct);
-    $('#empCompletenessGaugeValue').text(pct.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%');
+    $('#empCompletenessGaugeValue').text(fmtNum(pct, 1) + '%');
     const trackColor = (getComputedStyle(document.documentElement).getPropertyValue('--app-border') || '').trim() || '#e9ecef';
     if (empCompletenessGaugeInstance) {
         empCompletenessGaugeInstance.data.datasets[0].data = [pct, 100 - pct];
@@ -936,10 +936,10 @@ function loadEmployeeCompletenessReport() {
             }
             const items = res.data.items || [];
             const buckets = res.data.buckets || [];
-            $('#empCompletenessCardTotal').text(items.length.toLocaleString());
-            $('#empCompletenessCardAverage').text((Number(res.data.average_percent) || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%');
+            $('#empCompletenessCardTotal').text(fmtNum(items.length, 0, 3));
+            $('#empCompletenessCardAverage').text(fmtNum(Number(res.data.average_percent) || 0, 1) + '%');
             const underAttention = buckets.find(b => b.key === 'under_50');
-            $('#empCompletenessCardNeedsAttention').text(((underAttention && underAttention.count) || 0).toLocaleString());
+            $('#empCompletenessCardNeedsAttention').text(fmtNum((underAttention && underAttention.count) || 0, 0, 3));
             renderEmployeeCompletenessGauge(res.data.average_percent);
 
             const labels = buckets.map(b => langData[EMP_COMPLETENESS_BUCKET_LABEL_KEYS[b.key]] || b.key);

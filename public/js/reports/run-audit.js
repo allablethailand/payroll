@@ -91,7 +91,7 @@ function initRunAuditTable() {
                 { data: 'origin', render: d => escapeAttr(runAuditOriginLabel(d)) },
                 { data: 'state', render: d => escapeAttr(d) },
                 { data: null, render: (d, t, row) => `${escapeAttr(row.period_start_date)} - ${escapeAttr(row.period_end_date)}` },
-                { data: 'edit_count', className: 'text-end', render: { display: d => Number(d).toLocaleString(), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
+                { data: 'edit_count', className: 'text-end', render: { display: d => fmtNum(Number(d), 0, 3), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
                 {
                     data: null, orderable: false, className: 'text-center', render: (d, t, row) => `
                     <button type="button" class="btn btn-sm btn-outline-primary btn-view-run-audit-diff" data-id="${row.id}">

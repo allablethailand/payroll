@@ -42,11 +42,11 @@ function stripHtml(html) {
     el.innerHTML = String(html);
     return (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim();
 }
-function fmtNum(value) {
+function fmtNum(value, minDigits = 2, maxDigits = minDigits) {
     if (value === 'XXXX') return 'XXXX';
     if (value === null || value === undefined || value === '') return '-';
     const num = Number(value);
-    return isNaN(num) ? '-' : num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return isNaN(num) ? '-' : num.toLocaleString(undefined, { minimumFractionDigits: minDigits, maximumFractionDigits: maxDigits });
 }
 /**
  * Round 2 item 7a (docs/design/rules.md §8) -- the ONE shared way to turn a `.money-input`'s

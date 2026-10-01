@@ -3,7 +3,7 @@ function dashEscapeHtml(str) {
 }
 
 function dashFmtNum(n) {
-    return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return fmtNum(Number(n || 0));
 }
 
 function dashToDisplayDate(isoVal) {
@@ -191,8 +191,8 @@ function renderDashboard(data) {
     renderDepartmentChart(data.department_headcount || []);
 
     const stats = data.employee_stats || {};
-    $('#dashActiveEmployees').text((stats.active_count || 0).toLocaleString());
-    $('#dashNewHires').text((stats.new_this_month || 0).toLocaleString());
+    $('#dashActiveEmployees').text(fmtNum(stats.active_count || 0, 0, 3));
+    $('#dashNewHires').text(fmtNum(stats.new_this_month || 0, 0, 3));
 
     // 2026-08-28, explicit request: "อยากให้เห็นเหมือนกันทั้งหมด แต่ตรงตัวเลขเงินเดือนให้เป็นไปตาม Role
     // ที่ Set ไว้" -- the payroll widgets themselves (run counts/dates/Recent Runs list) now always
@@ -335,7 +335,7 @@ function renderOnlineUsers(rows, total) {
         return;
     }
     $section.removeClass('d-none');
-    $('#dashOnlineUsersCount').text((total || rows.length).toLocaleString());
+    $('#dashOnlineUsersCount').text(fmtNum(total || rows.length, 0, 3));
     rows.forEach(function (row) {
         $list.append(`
             <div class="dash-online-user-row">
@@ -396,7 +396,7 @@ function dashUpcomingPayCountdownText(paymentDateIso) {
 }
 
 function renderPayrollWidgets(payroll, canViewAmounts) {
-    $('#dashPendingApproval').text((payroll.pending_my_approval || 0).toLocaleString());
+    $('#dashPendingApproval').text(fmtNum(payroll.pending_my_approval || 0, 0, 3));
     const upcomingPaymentDate = payroll.upcoming_run && payroll.upcoming_run.payment_date;
     $('#dashUpcomingPayDate').text(upcomingPaymentDate ? dashToDisplayDate(upcomingPaymentDate) : '-');
     $('#dashUpcomingPayCountdown').text(dashUpcomingPayCountdownText(upcomingPaymentDate));
@@ -456,7 +456,7 @@ function renderCostTrendChart(rows) {
             maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: {
-                y: { beginAtZero: true, ticks: { callback: v => Number(v).toLocaleString() } },
+                y: { beginAtZero: true, ticks: { callback: v => fmtNum(Number(v), 0, 3) } },
             },
         },
     });

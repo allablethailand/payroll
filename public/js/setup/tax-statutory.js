@@ -990,14 +990,10 @@ function initStatutoryRateModalUI() {
     $(document).on('click', '#srPullFromMasterBtn', function () {
         if (!currentSrItem || !currentSrItem.id) return;
         const today = new Date().toISOString().slice(0, 10);
-        Swal.fire({
-            icon: 'info',
+        showConfirm({
             title: langData['sr_pull_from_master_confirm_title'] || "Pull Master's current rate as a new version?",
             html: `<label class="form-label small mb-1 d-block text-start">${langData['modal_effective_date'] || 'Effective Date'}</label>
                    <input type="date" id="swalSrPullDate" class="swal2-input" value="${today}">`,
-            showCancelButton: true,
-            confirmButtonText: langData.yes || 'Yes',
-            cancelButtonText: langData.no || 'No',
             preConfirm: () => {
                 const val = document.getElementById('swalSrPullDate').value;
                 if (!val) { Swal.showValidationMessage(langData['required_star_message'] || 'Please fill all fields marked with *'); }
@@ -1030,15 +1026,11 @@ function initStatutoryRateModalUI() {
         const versionId = $(this).data('id');
         if (!versionId) return;
         const today = new Date().toISOString().slice(0, 10);
-        Swal.fire({
-            icon: 'info',
+        showConfirm({
             title: langData['sr_promote_override_confirm_title'] || 'Promote your override to system default?',
             html: `<p>${langData['sr_promote_override_confirm_message'] || 'Your own rate override becomes the new master default for EVERY company in this country from this date onward. This cannot be undone.'}</p>
                    <label class="form-label small mb-1 d-block text-start">${langData['modal_effective_date'] || 'Effective Date'}</label>
                    <input type="date" id="swalSrPromoteDate" class="swal2-input" value="${today}">`,
-            showCancelButton: true,
-            confirmButtonText: langData.yes || 'Yes',
-            cancelButtonText: langData.no || 'No',
             preConfirm: () => {
                 const val = document.getElementById('swalSrPromoteDate').value;
                 if (!val) { Swal.showValidationMessage(langData['required_star_message'] || 'Please fill all fields marked with *'); }

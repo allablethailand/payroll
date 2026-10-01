@@ -421,7 +421,7 @@ function renderOvertime() {
                 { data: null, render: (d, t, row) => escapeHtml(currentLang === 'th' ? row.ot_name_th : row.ot_name_en) },
                 { data: null, render: (d, t, row) => toDisplayDateMe(row.ot_date) },
                 { data: 'hours', className: 'text-end' },
-                { data: null, className: 'text-end', render: (d, t, row) => row.amount !== null ? Number(row.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '-' },
+                { data: null, className: 'text-end', render: (d, t, row) => row.amount !== null ? fmtNum(Number(row.amount)) : '-' },
                 { data: 'status', className: 'text-center', render: (d) => overtimeStatusBadge(d) },
                 { data: 'data_source', className: 'text-center', render: (d) => sourceBadgeMe(d) },
                 // 2026-08-28: className:'all' keeps this last actions column from collapsing into the

@@ -31,7 +31,7 @@ let aisCurrentMonths = [];
 
 function aisFmt(n) {
     const v = Number(n) || 0;
-    return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return fmtNum(v);
 }
 function aisMonthLabel(m) {
     const monthKey = 'month_' + m.month;

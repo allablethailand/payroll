@@ -1853,15 +1853,13 @@ function renderSuspensionStatus(data) {
     }
 }
 $(document).on('click', '#btnSuspendEmployee', function () {
-    Swal.fire({
+    showConfirm({
+        tone: 'danger',
         title: langData['confirm_suspend_title'] || 'Suspend this employee\'s access?',
         html: `<p>${langData['confirm_suspend_message'] || 'They will be unable to access the system at all until restored.'}</p>
                <textarea id="swalSuspendReason" class="form-control mt-2" rows="2" placeholder="${langData['suspend_reason_placeholder'] || 'Reason for suspension (required)'}"></textarea>`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: langData['suspend_access'] || 'Suspend Access',
-        confirmButtonColor: '#dc3545',
-        cancelButtonText: langData['cancel'] || 'Cancel',
+        confirmText: langData['suspend_access'] || 'Suspend Access',
+        cancelText: langData['cancel'] || 'Cancel',
         preConfirm: () => {
             const reason = $('#swalSuspendReason').val().trim();
             if (!reason) {
@@ -2596,22 +2594,22 @@ function eedInterestSubLabel(row) {
         const feeBaseLabel = row.fee_base === 'base_salary'
             ? (langData['fee_base_option_base_salary'] || 'Base Salary')
             : (langData['fee_base_option_principal'] || 'Principal Amount');
-        const feePct = parseFloat(row.fee_percent || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const feePct = fmtNum(parseFloat(row.fee_percent || 0));
         return ` <span class="text-muted small">(${langData['fee_has'] || 'Fee'} ${feePct}% ${langData['fee_of'] || 'of'} ${feeBaseLabel})</span>`;
     }
     const typeLabel = row.interest_type === 'fixed'
         ? (langData['interest_fixed'] || 'Flat')
         : (langData['interest_reducing_balance'] || 'Reducing Balance');
-    const rate = parseFloat(row.interest_rate || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const rate = fmtNum(parseFloat(row.interest_rate || 0));
     return ` <span class="text-muted small">(${typeLabel} ${rate}%/${langData['installment_label'] || 'installment'})</span>`;
 }
 function eedAmountSummary(row) {
-    const total = parseFloat(row.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const total = fmtNum(parseFloat(row.total_amount || 0));
     const interestSub = eedInterestSubLabel(row);
     if (row.amount_mode === 'custom_per_installment') {
         return `${total} <span class="text-muted small">(${langData['custom_per_installment'] || 'custom'})</span>${interestSub}`;
     }
-    const per = (parseFloat(row.total_amount || 0) / Math.max(1, parseInt(row.total_installments || 1, 10))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const per = fmtNum(parseFloat(row.total_amount || 0) / Math.max(1, parseInt(row.total_installments || 1, 10)));
     return `${total} <span class="text-muted small">(${per} x ${row.total_installments})</span>${interestSub}`;
 }
 // Item-name cell no longer shows the earning/deduction word (2026-08-19: the two tables are split by
@@ -2743,7 +2741,7 @@ function syncTxItemNameCell(row) {
     return escapeHtml(name);
 }
 function syncTxFmtAmount(v) {
-    return Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return fmtNum(Number(v || 0));
 }
 function syncTxTypeBadge(itemType) {
     if (itemType === 'earning') {
@@ -2835,7 +2833,7 @@ function renderInstallmentTable(amounts, installmentsData, readOnly, breakdown) 
     $('#eedInstallmentPrincipalHeader').toggleClass('d-none', !showBreakdown);
     $('#eedInstallmentInterestHeader').toggleClass('d-none', !showBreakdown)
         .attr('data-i18n', interestHeaderKey).text(langData[interestHeaderKey] || (chargeType === 'fee' ? 'Fee' : 'Interest'));
-    const fmt = n => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt = n => fmtNum(Number(n));
     let sumPrincipal = 0, sumInterest = 0, sumAmount = 0, rowsWithBreakdown = 0;
     (amounts || []).forEach(function (amount, idx) {
         const inst = hasStatus ? installmentsData[idx] : null;
@@ -2894,7 +2892,7 @@ function updateEedAmountBreakdown(amounts) {
     }
     const total = validAmounts.reduce((sum, n) => sum + n, 0);
     const added = total - principal;
-    const fmt = n => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt = n => fmtNum(Number(n));
     const template = langData['amount_breakdown_hint'] || 'Principal {principal} + {addedLabel} {added} = total deducted {total}, across {n} installment(s).';
     const addedLabelKey = chargeType === 'fee' ? 'fee_percent_label' : 'amount_breakdown_interest_noun';
     const text = template
@@ -3933,7 +3931,7 @@ function initRecurringEarningUI() {
                 // used a plain `render: fn`, so client-side sort/filter operated on the FORMATTED
                 // string (amount: "1,234.56" sorts before "999.00" lexicographically; date: dd/mm/yyyy
                 // doesn't sort chronologically), not the raw underlying value.
-                { data: 'amount', className: 'text-end', render: { display: d => Number(d || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
+                { data: 'amount', className: 'text-end', render: { display: d => fmtNum(Number(d || 0)), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
                 { data: 'effective_date', render: { display: d => toDisplayDate(d), sort: d => d || '', filter: d => d || '' } },
                 { data: null, render: (d, t, row) => recurringEarningSuspendPeriodCell(row) },
                 { data: null, render: (d, t, row) => recurringEarningStatusBadge(row) },
@@ -4157,7 +4155,7 @@ function recurringDeductionSuspendPeriodCell(row) {
 // not a static number this table's own `amount` column alone would represent.
 function recurringDeductionFeeSubLabel(row) {
     if (!row.fee_percent) return '';
-    const pct = parseFloat(row.fee_percent).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const pct = fmtNum(parseFloat(row.fee_percent));
     return ` <span class="text-muted small">(+${pct}% ${langData['fee_of'] || 'of'} ${langData['fee_base_option_base_salary'] || 'Base Salary'})</span>`;
 }
 function initRecurringDeductionUI() {
@@ -4195,7 +4193,7 @@ function initRecurringDeductionUI() {
                     sort: (d, t, row) => (currentLang === 'th' ? row.item_name_th : row.item_name_en) || '',
                     filter: (d, t, row) => eedItemSearchText(row),
                 } },
-                { data: 'amount', className: 'text-end', render: { display: (d, t, row) => Number(d || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + recurringDeductionFeeSubLabel(row), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
+                { data: 'amount', className: 'text-end', render: { display: (d, t, row) => fmtNum(Number(d || 0)) + recurringDeductionFeeSubLabel(row), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
                 { data: 'effective_date', render: { display: d => toDisplayDate(d), sort: d => d || '', filter: d => d || '' } },
                 { data: null, render: (d, t, row) => recurringDeductionSuspendPeriodCell(row) },
                 { data: null, render: (d, t, row) => recurringDeductionStatusBadge(row) },

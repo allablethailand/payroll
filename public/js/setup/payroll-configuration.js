@@ -3,7 +3,7 @@ let tb_deduction_type;
 
 function calcMethodBadge(row) {
     if (row.calculation_method === 'fixed_amount') {
-        const amt = parseFloat(row.fixed_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const amt = fmtNum(parseFloat(row.fixed_amount || 0));
         return `<span class="text-muted">${amt}</span>`;
     }
     if (row.calculation_method === 'percent_of_base_salary') {
@@ -1741,7 +1741,7 @@ function openAttendanceDeductionRuleModal(eventCode, variantId, cloneFromRow) {
  * to (see style.css's own comment on that class). */
 function attendanceCalcPreviewFormulaStepsHtml(formula) {
     if (!formula) return '';
-    const fmt = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt = (n) => fmtNum(Number(n));
     if (formula.type === 'attendance_flat') {
         return `<div class="calc-preview-step">${(langData['calc_preview_step_quantity'] || 'Quantity in {unit}').replace('{unit}', attendanceRateUnitShortLabel(formula.rate_unit))}: <code>${formula.minutes} ${langData['minutes_short'] || 'min'} = ${fmt(formula.quantity_in_rate_unit)} ${attendanceRateUnitShortLabel(formula.rate_unit)}</code></div>
             <div class="calc-preview-step">${langData['calc_preview_step_rate'] || 'Rate'}: <code>${fmt(formula.rate_per_unit)}</code></div>
@@ -1802,7 +1802,7 @@ $(document).on('click', '#btnAttendanceCalcPreview', function () {
                 showWarning(res.message || langData['save_failed'] || 'An error occurred.');
                 return;
             }
-            const amount = Number(res.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const amount = fmtNum(Number(res.amount));
             $result.removeClass('d-none').html(
                 `<div class="calc-preview-amount mb-1">${langData['calc_preview_result_label'] || 'Result'}: ${amount}</div>` +
                 attendanceCalcPreviewFormulaStepsHtml(res.formula)
@@ -1901,14 +1901,12 @@ function submitAttendanceDeductionRule(payload) {
                 if (modalInstance) { modalInstance.hide(); }
                 loadAttendanceDeductionCards();
             } else if (res.conflict_id) {
-                Swal.fire({
-                    icon: 'warning',
+                showConfirm({
+                    tone: 'warning',
                     title: langData['attendance_deduction_conflict_title'] || 'A Rule Already Exists',
-                    text: res.message,
-                    showCancelButton: true,
-                    confirmButtonText: langData['attendance_deduction_conflict_confirm'] || 'Update the Existing Rule',
-                    cancelButtonText: langData['cancel'] || 'Cancel',
-                    confirmButtonColor: '#FF9900',
+                    message: res.message,
+                    confirmText: langData['attendance_deduction_conflict_confirm'] || 'Update the Existing Rule',
+                    cancelText: langData['cancel'] || 'Cancel',
                 }).then(function (result) {
                     if (result.isConfirmed) {
                         submitAttendanceDeductionRule(Object.assign({}, payload, { id: res.conflict_id }));
@@ -1933,7 +1931,7 @@ function attendanceDeductionMethodSummary(r) {
     }
     if (r.method_code === 'flat_amount') {
         const unitLabel = (ATTENDANCE_RATE_UNIT_LABELS[r.rate_unit] || ATTENDANCE_RATE_UNIT_LABELS.minute).flat();
-        const amt = parseFloat(r.rate_per_unit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const amt = fmtNum(parseFloat(r.rate_per_unit || 0));
         return `<span class="text-muted">${langData['attendance_deduction_method_flat_amount'] || 'Flat Amount'}</span> <span class="text-muted small ms-1">${unitLabel}: ${amt}</span>`;
     }
     if (r.method_code === 'tiered_bracket') {

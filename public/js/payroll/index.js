@@ -33,7 +33,7 @@ function toLocalDateOnlyPr(value) {
 }
 // 2026-08-31, explicit request ("สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX"): PayrollController may
 // send the literal string "XXXX" instead of a real number for a masked figure -- passed through
-// as-is rather than formatted (Number('XXXX') is NaN, which .toLocaleString() would otherwise
+// as-is rather than formatted (Number('XXXX') is NaN, which number formatting would otherwise
 // render as the confusing literal text "NaN").
 function stateBadgePr(state) {
     return statusBadgeHtml(state, 'run_state');
@@ -1437,8 +1437,8 @@ $(document).on('click', '.btn-view-sync', function () {
 $(document).on('click', '.btn-reject-sync', function () {
     const id = $(this).data('id');
     const label = $(this).data('label');
-    Swal.fire({
-        icon: 'warning',
+    showConfirm({
+        tone: 'danger',
         title: (langData['confirm_reject_sync_title'] || 'Reject "{label}"?').replace('{label}', label),
         input: 'textarea',
         inputPlaceholder: langData['reject_sync_comment_placeholder'] || 'Reason for rejecting this document...',
@@ -1447,10 +1447,8 @@ $(document).on('click', '.btn-reject-sync', function () {
                 return langData['reject_sync_comment_required'] || 'A comment is required.';
             }
         },
-        showCancelButton: true,
-        confirmButtonText: langData['btn_reject_sync'] || 'Reject',
-        cancelButtonText: langData['cancel'] || 'Cancel',
-        confirmButtonColor: '#dc3545',
+        confirmText: langData['btn_reject_sync'] || 'Reject',
+        cancelText: langData['cancel'] || 'Cancel',
     }).then(function (result) {
         if (!result.isConfirmed) return;
         $.ajax({
@@ -1474,13 +1472,12 @@ $(document).on('click', '.btn-reject-sync', function () {
 // docblock).
 $(document).on('click', '.btn-apply-blocked-update', function () {
     const id = $(this).data('id');
-    Swal.fire({
-        icon: 'warning',
+    showConfirm({
+        tone: 'warning',
         title: langData['confirm_apply_blocked_update_title'] || 'Apply this update?',
-        text: langData['confirm_apply_blocked_update_message'] || 'This will overwrite the sync data for the linked run with what Origami sent. The run itself will NOT be recalculated automatically -- do that separately afterward.',
-        showCancelButton: true,
-        confirmButtonText: langData['btn_apply_update'] || 'Apply',
-        cancelButtonText: langData['cancel'] || 'Cancel',
+        message: langData['confirm_apply_blocked_update_message'] || 'This will overwrite the sync data for the linked run with what Origami sent. The run itself will NOT be recalculated automatically -- do that separately afterward.',
+        confirmText: langData['btn_apply_update'] || 'Apply',
+        cancelText: langData['cancel'] || 'Cancel',
     }).then(function (result) {
         if (!result.isConfirmed) return;
         $.ajax({
@@ -1848,13 +1845,11 @@ function requestMergeIntoExisting(sourceRunId, targetRunId, allowRevert, allowRe
 }
 function promptPendingMergesReady(items) {
     const listHtml = items.map(it => `<li>${escapeHtml(it.label)}</li>`).join('');
-    Swal.fire({
-        icon: 'info',
+    showConfirm({
         title: langData['pending_merges_ready_title'] || 'Waiting Supplemental Item(s) Found',
         html: `<p>${(langData['pending_merges_ready_message'] || 'The following supplemental item(s) were waiting for this round and can now be merged:').replace('{count}', items.length)}</p><ul class="text-start">${listHtml}</ul>`,
-        showCancelButton: true,
-        confirmButtonText: langData['pending_merges_ready_confirm'] || 'Merge Now',
-        cancelButtonText: langData['pending_merges_ready_later'] || 'Later',
+        confirmText: langData['pending_merges_ready_confirm'] || 'Merge Now',
+        cancelText: langData['pending_merges_ready_later'] || 'Later',
     }).then(function (result) {
         if (!result.isConfirmed) return;
         let i = 0;

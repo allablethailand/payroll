@@ -297,9 +297,7 @@ function dsShowErrorDetail(errorDetailJson) {
         html += `<li>${escapeHtml(item.message || JSON.stringify(item))}${item.ref_id !== undefined ? ` (ref_id: ${escapeHtml(item.ref_id)})` : ''}</li>`;
     });
     html += '</ul>';
-    if (typeof Swal !== 'undefined') {
-        Swal.fire({ title: langData['data_sync_error_detail'] || 'Error Detail', html: html, icon: 'error' });
-    }
+    showError('', true, { title: langData['data_sync_error_detail'] || 'Error Detail', html: html });
 }
 
 $(document).on('click', '.ds-view-error-btn', function () {

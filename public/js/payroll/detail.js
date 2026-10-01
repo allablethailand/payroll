@@ -2337,13 +2337,11 @@ $(document).on('click', '#btnBreakdownUnverify', function () {
     const $btn = $(this);
     const employeeId = breakdownRowRd.employee_id;
     const name = employeeDisplayNameRd(breakdownRowRd);
-    Swal.fire({
-        icon: 'info',
+    showConfirm({
         title: (langData['confirm_unverify_employee_title'] || 'Unverify {name}').replace('{name}', name),
-        text: langData['confirm_unverify_employee_message'] || 'This employee will resume normal recalculation and can be edited again.',
-        showCancelButton: true,
-        confirmButtonText: langData['action_unverify'] || 'Unverify',
-        cancelButtonText: langData['cancel'] || 'Cancel',
+        message: langData['confirm_unverify_employee_message'] || 'This employee will resume normal recalculation and can be edited again.',
+        confirmText: langData['action_unverify'] || 'Unverify',
+        cancelText: langData['cancel'] || 'Cancel',
     }).then(function (result) {
         if (!result.isConfirmed) return;
         setButtonLoading($btn, true);

@@ -742,7 +742,7 @@ function otScopeOptionsPromise() {
 function otItemBadge(item) {
     if (!item) { return `<span class="text-muted small">${langData['ot_rate_set_not_configured'] || 'Not set'}</span>`; }
     return item.calculation_method === 'flat_amount'
-        ? `<span class="row-code">${parseFloat(item.flat_amount_rate || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/${item.calculation_base === 'daily' ? (langData['ot_base_daily'] || 'Daily') : (langData['ot_base_hourly'] || 'Hourly')}</span>`
+        ? `<span class="row-code">${fmtNum(parseFloat(item.flat_amount_rate || 0))}/${item.calculation_base === 'daily' ? (langData['ot_base_daily'] || 'Daily') : (langData['ot_base_hourly'] || 'Hourly')}</span>`
         : `<span class="row-code">${parseFloat(item.multiplier_rate).toFixed(1)}x</span>`;
 }
 function otItemByScopeCode(row, code) {
@@ -1013,7 +1013,7 @@ function saveOt(btnEl) {
  * same formula real OT payroll uses) against a fixed 30,000/2h sample scenario, shown in a small popup. */
 function otCalcPreviewFormulaStepsHtml(formula) {
     if (!formula) return '';
-    const fmt = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt = (n) => fmtNum(Number(n));
     const baseLabel = formula.is_daily_base ? (langData['ot_base_daily'] || 'Daily') : (langData['ot_base_hourly'] || 'Hourly');
     if (formula.type === 'ot_flat') {
         const unitHours = formula.is_daily_base ? fmt(formula.hours / formula.hours_divisor) : fmt(formula.hours);
@@ -1057,12 +1057,11 @@ $(document).on('click', '.ot-item-preview-btn', function () {
     const calcMethod = $row.find('.ot-item-method').val() || 'multiplier';
     const rate = parseFloat($row.find('.ot-item-rate').val());
     const calcBase = $row.find('.ot-item-base').val() || 'hourly';
-    Swal.fire({
-        icon: 'question', title: langData['calc_preview_title'] || 'Calculation Preview',
+    showConfirm({
+        title: langData['calc_preview_title'] || 'Calculation Preview',
         html: otItemPreviewPromptHtml(),
-        showCancelButton: true,
-        confirmButtonText: langData['calc_preview_button'] || 'Preview',
-        cancelButtonText: langData['close'] || 'Close',
+        confirmText: langData['calc_preview_button'] || 'Preview',
+        cancelText: langData['close'] || 'Close',
         showLoaderOnConfirm: true,
         allowOutsideClick: () => !Swal.isLoading(),
         preConfirm: () => {
@@ -1084,7 +1083,7 @@ $(document).on('click', '.ot-item-preview-btn', function () {
                     Swal.showValidationMessage(res.message || langData['save_failed'] || 'An error occurred.');
                     return false;
                 }
-                const amount = Number(res.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                const amount = fmtNum(Number(res.amount));
                 $('#swalOtPreviewResult').removeClass('d-none').html(
                     `<div class="calc-preview-amount mb-1">${langData['calc_preview_result_label'] || 'Result'}: ${amount}</div>` +
                     otCalcPreviewFormulaStepsHtml(res.formula)
