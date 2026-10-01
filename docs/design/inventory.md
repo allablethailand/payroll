@@ -190,6 +190,8 @@ php scripts/check-design.php --all
 
 ### 6.2 6 ตาราง audit → `initSharedDataTable`
 
+**สถานะ: เสร็จ (2026-09-30)** — ทั้ง 6 ตารางสร้างผ่าน `initSharedDataTable()` แล้ว, `<th data-i18n>` ของ 6 ตารางนี้เป็น `<th><span data-i18n>`; กฎ #5 ลด 137 → 127 (6 ตาราง + getter `.DataTable()` 4 จุด); ยังไม่ได้ตรวจในเบราว์เซอร์
+
 | # | selector | ไฟล์ | serverSide? |
 |---|---|---|---|
 | 1 | `#tb_audit_log` | `public/js/setup/audit-log.js` | ใช่ |
@@ -218,9 +220,11 @@ php scripts/check-design.php --all
 
 ### 6.3 `app/views/layout/modals.php` — `<th data-i18n>` 47 จุด
 
-ยังไม่ตรวจ key ครบ th/en (ต้องรัน `php scripts/check-lang.php` แยก ไม่ได้ทำในรอบนี้)
+**สถานะ: เสร็จ (2026-09-30)** — แก้ 43 จุดเป็น `<th><span data-i18n>` (อีก 4 จุดของ `#tb_system_access_history` ถูกแก้ไปแล้วในก้อน 6.2); `php scripts/check-lang.php` = No issues found
 
 ### 6.4 `.station-filter` ที่เหลือ
+
+**สถานะ: เสร็จ (2026-09-30)** — ย้ายครบ 27 panel ใน 15 ไฟล์ไป `partials/filter-bar.php` แล้ว (`employee/reports` ได้ bar 8 ตัว เพราะ `employeeStructure` เหลือแค่ select ที่ย้ายออก); CSS `.station-filter*` ใน `style.css` ลบแล้ว 74 บรรทัด (2026-09-30)
 
 นับด้วย pattern `class="station-filter(\s|")` — บาง panel มี class เพิ่ม (เช่น `mb-2`) ถ้าค้นแบบ exact string จะนับขาด
 
@@ -257,6 +261,15 @@ php scripts/check-design.php --all
 
 | วันที่ | ก้อน | commit | ตัวเลขก่อน | ตัวเลขหลัง |
 |---|---|---|---|---|
-| | | | | |
+| 2026-09-30 | 6.2 — 6 ตาราง audit → `initSharedDataTable` | `5ff1b06b` | กฎ #5 = 137 | กฎ #5 = 127 |
+| 2026-09-30 | 6.3 — `<th data-i18n>` ใน `layout/modals.php` | `2f5a2553` | 43 จุด | 0 จุด |
+| 2026-09-30 | 6.4 — `.station-filter` ที่เหลือ → `filter-bar.php` | `021f85ee` | 27 panel / 15 ไฟล์ | 0 panel |
+| 2026-09-30 | 6.4 (ต่อ) — ลบ CSS `.station-filter*` ใน `style.css` | `f7292538` | 74 บรรทัด | 0 selector |
+| 2026-09-30 | ปุ่ม: `btn-outline-brand` + `btn-light` → `btn-outline-secondary` (กฎ #3) | `0ef99bf7` | กฎ #3 = 272 | กฎ #3 = 137 |
+| 2026-09-30 | ปุ่มสีทึบ/ขอบสี → `btn-primary`/`btn-outline-secondary` (กฎ #3) | `a5cd61da` | กฎ #3 = 137 | กฎ #3 = 116 |
+| 2026-09-30 | tab: ลบไอคอนออกจาก `.nav-link` (กฎ #4) | `24fe4327` | กฎ #4 = 84 | กฎ #4 = 0 |
+| 2026-09-30 | ฟอร์ม: ถอด `.input-group` ปฏิทินรอบช่องวันที่ 38 จุด + ปุ่ม Close `btn-secondary` 1 จุด | `d3685b4a` | 38 wrapper | 0 wrapper (lint ไม่เปลี่ยน) |
+| 2026-09-30 | badge: ทุกสถานะผ่าน `statusBadgeHtml`/`statusBadge` + context ใหม่ 20 ตัวใน `status_map.php` (กฎ #8) | `c2ec6e2b` | กฎ #8 = 164 (กฎ #3 = 116) | กฎ #8 = 0 (กฎ #3 = 70) |
+| 2026-09-30 | ตาราง: สร้างผ่าน `initSharedDataTable` ครบ 59 จุด + lint กฎ #5 นับเฉพาะการสร้างตาราง | commit ที่แก้ไฟล์นี้ (ดู `git log`) | กฎ #5 = 127 (นับเดิม) / 59 (นับใหม่) | กฎ #5 = 0 |
 
-(ว่าง — เติมทีละแถวทุกครั้งที่ปิดก้อนจากคิว §6 หรือกลุ่มโมดูลใน §5)
+(เติมทีละแถวทุกครั้งที่ปิดก้อนจากคิว §6 หรือกลุ่มโมดูลใน §5)

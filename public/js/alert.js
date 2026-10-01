@@ -50,23 +50,27 @@ function showSuccess(msg, confirm = true, timer = undefined) {
 // rules.md §10 only calls out success as a toast ("สำเร็จ: toast มุมขวาบน 3 วินาที") -- an error is
 // exactly the kind of thing a passive, auto-dismissing corner notification is wrong for (the user
 // must not be able to miss it by looking away for 3-6 seconds).
-function showError(msg, confirm = true) {
-    Swal.fire({
-        icon: 'error',
-        title: langData.error || 'Error',
-        text: msg,
+// Round 3 Task 3 -- shared by showError/showWarning; `extra` ({title, html, confirmText, locked}) covers
+// the few callers that need an HTML body, their own title/button copy or a non-dismissable dialog.
+// Returns Swal2's promise so a caller can act after the user acknowledges.
+function showNotice(icon, defaultTitle, msg, confirm, extra) {
+    const x = extra || {};
+    return Swal.fire({
+        icon: icon,
+        title: x.title || defaultTitle,
+        text: x.html ? undefined : msg,
+        html: x.html,
         showConfirmButton: confirm,
-        confirmButtonText: langData.ok || 'OK'
+        confirmButtonText: x.confirmText || langData.ok || 'OK',
+        allowOutsideClick: !x.locked,
+        allowEscapeKey: !x.locked,
     });
 }
-function showWarning(msg, confirm = true) {
-    Swal.fire({
-        icon: 'warning',
-        title: langData.warning || 'Warning',
-        text: msg,
-        showConfirmButton: confirm,
-        confirmButtonText: langData.ok || 'OK'
-    });
+function showError(msg, confirm = true, extra = undefined) {
+    return showNotice('error', langData.error || 'Error', msg, confirm, extra);
+}
+function showWarning(msg, confirm = true, extra = undefined) {
+    return showNotice('warning', langData.warning || 'Warning', msg, confirm, extra);
 }
 // Round 2 item 7b (docs/design/rules.md §10) -- widened to accept an object form ALONGSIDE the
 // original positional one, never instead of it: `typeof arg1 === 'object'` is the only branch point,
@@ -75,7 +79,8 @@ function showWarning(msg, confirm = true) {
 // Swal.fire() call as before, just via one shared `opts` object built from the positional arguments
 // instead of duplicating the Swal.fire() config twice.
 //
-// Object form: `showConfirm({title, message, confirmText, cancelText, danger, onYes, onNo})`.
+// Object form: `showConfirm({title, message, confirmText, cancelText, danger, onYes, onNo})`;
+// `onYes` receives the dialog's value (textarea/preConfirm result) when it has one.
 // `cancelText` is a small, deliberate widening beyond rules.md §10's own original wording (which
 // only named `confirmText`) -- added because the modal dirty-guard mechanism below (app.js) needs
 // its own exact button copy on BOTH sides ("กลับไปแก้ต่อ"/"ปิดโดยไม่บันทึก", not the generic
@@ -120,10 +125,8 @@ const TONE_ICON = {
     // 'info' doubles as the FALLBACK for no tone at all -- matches the exact default appearance this
     // function always had before this change (`icon:'info'`, colored via style.css's pre-existing
     // `.swal2-icon.swal2-info{border-color:var(--c-info);color:var(--c-info)}` rule -- that CSS rule
-    // is UNCHANGED/still live for the other direct `Swal.fire({icon:'info'|'question', ...})` callers
-    // elsewhere in the app that bypass this function entirely (a pre-existing §10 "ห้ามเรียก Swal.fire
-    // ตรงๆ" violation, out of THIS task's scope to fix -- see payroll/detail.js, payroll/index.js,
-    // setup/setup-rules.js, setup/tax-statutory.js), just no longer the thing that colors a
+    // is UNCHANGED and still live as the fallback for any
+    // other `.swal2-icon.swal2-info` surface), just no longer the thing that colors a
     // showConfirm() icon specifically, since `iconColor` below always wins over it there now).
     info: { type: 'info', html: '<i class="fa-solid fa-circle-info"></i>', color: 'var(--c-info)' },
 };
@@ -143,11 +146,18 @@ function showConfirm(arg1, arg2, arg3, arg4) {
         confirmButtonText: opts.confirmText || langData.yes || 'Yes',
         cancelButtonText: opts.cancelText || langData.no || 'No',
     };
+    // Round 3 Task 3 -- dialogs that carry a form (textarea/select/date) or HTML body pass these through.
+    ['html', 'input', 'inputPlaceholder', 'inputValidator', 'preConfirm', 'didOpen', 'showLoaderOnConfirm', 'allowOutsideClick'].forEach(function (k) {
+        if (opts[k] !== undefined) swalOpts[k] = opts[k];
+    });
     if (tone === 'danger') swalOpts.confirmButtonColor = 'var(--c-danger)';
     else if (tone === 'warning') swalOpts.confirmButtonColor = 'var(--c-warning)';
     else if (tone === 'success') swalOpts.confirmButtonColor = 'var(--c-success)';
-    Swal.fire(swalOpts).then(r => {
-        if (r.isConfirmed && opts.onYes) opts.onYes();
+    const dialog = Swal.fire(swalOpts);
+    dialog.then(r => {
+        if (r.isConfirmed && opts.onYes) opts.onYes(r.value);
         if (!r.isConfirmed && opts.onNo) opts.onNo();
     });
+    // Returned so a caller with a form-in-dialog can chain its own `.then(result => ...)` instead of onYes.
+    return dialog;
 }

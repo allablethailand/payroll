@@ -37,35 +37,23 @@
          use) -- state isn't filtered server-side since the pipeline bar needs live per-state counts
          across the WHOLE filtered set anyway, which a state-only-server-filter would need a second
          query for. -->
-    <div class="station-filter" id="runAuditStationFilter">
-        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-        <button type="button" class="station-filter-toggle" id="runAuditStationFilterToggle" title="Toggle filter">
-            <i class="fas fa-chevron-up"></i>
-        </button>
-        <div class="station-filter-body">
-            <div class="row g-2">
-                <div class="col-sm-4 col-md-3">
-                    <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker" id="runAuditFilterDateFrom" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
-                </div>
-                <div class="col-sm-4 col-md-3">
-                    <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker" id="runAuditFilterDateTo" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
-                </div>
-            </div>
+    <?php
+    ob_start(); ?>
+    <div class="row g-2">
+        <div class="col-sm-4 col-md-3">
+            <label class="form-label small mb-1" for="runAuditFilterDateFrom" data-i18n="filter_date_from">From</label>
+            <input type="text" class="form-control datepicker" id="runAuditFilterDateFrom" autocomplete="off">
+        </div>
+        <div class="col-sm-4 col-md-3">
+            <label class="form-label small mb-1" for="runAuditFilterDateTo" data-i18n="filter_date_to">To</label>
+            <input type="text" class="form-control datepicker" id="runAuditFilterDateTo" autocomplete="off">
         </div>
     </div>
-    <div class="station-filter-clear-row d-none" id="runAuditFilterClearRow">
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="runAuditClearDateFilter">
-            <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-        </button>
-    </div>
+    <?php
+    $filter_fields_html = ob_get_clean();
+    $id = 'runAuditFilterBar';
+    include __DIR__ . '/../partials/filter-bar.php';
+    ?>
 
     <div class="station-row mb-3" id="runAuditStationRow">
         <div class="station-col">
@@ -126,13 +114,13 @@
             <table class="table table-hover align-middle" id="tb_run_audit_list" style="width:100%;">
                 <thead>
                     <tr>
-                        <th data-i18n="run_name">Run Name</th>
-                        <th data-i18n="cycle">Cycle</th>
-                        <th data-i18n="origin">Origin</th>
-                        <th data-i18n="table_status">Status</th>
-                        <th data-i18n="pay_period">Pay Period</th>
-                        <th data-i18n="run_audit_edit_count">Edits</th>
-                        <th data-i18n="table_action">Action</th>
+                        <th><span data-i18n="run_name">Run Name</span></th>
+                        <th><span data-i18n="cycle">Cycle</span></th>
+                        <th><span data-i18n="origin">Origin</span></th>
+                        <th><span data-i18n="table_status">Status</span></th>
+                        <th><span data-i18n="pay_period">Pay Period</span></th>
+                        <th class="num"><span data-i18n="run_audit_edit_count">Edits</span></th>
+                        <th><span data-i18n="table_action">Action</span></th>
                     </tr>
                 </thead>
                 <tbody></tbody>

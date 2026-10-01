@@ -25,44 +25,27 @@
         </div>
     </div>
 
-    <div class="station-filter" id="notifStationFilter">
-        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-        <button type="button" class="station-filter-toggle" id="notifStationFilterToggle" title="Toggle filter">
-            <i class="fas fa-chevron-up"></i>
-        </button>
-        <div class="station-filter-body">
-            <div class="row g-2">
-                <div class="col-6 col-md-3">
-                    <label class="form-label small mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker" id="notif_filter_date_from" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
-                </div>
-                <div class="col-6 col-md-3">
-                    <label class="form-label small mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker" id="notif_filter_date_to" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
-                </div>
-                <!-- 2026-08-29, same-day follow-up: system-wide table audit punch-list item -- the
-                     Status column (Read/Unread) had no filter dimension at all. -->
-                <div class="col-6 col-md-3">
-                    <label class="form-label small mb-1"><i class="fa-solid fa-toggle-on me-1 text-muted"></i><span data-i18n="status">Status</span></label>
-                    <select class="form-select select2-static" id="notif_filter_is_read" data-option-keys="notif_status_read,notif_status_unread" data-option-values="1,0"></select>
-                </div>
-            </div>
+    <?php
+    ob_start(); ?>
+    <div class="row g-2">
+        <div class="col-6 col-md-3">
+            <label class="form-label small mb-1" for="notif_filter_date_from" data-i18n="filter_date_from">From</label>
+            <input type="text" class="form-control datepicker" id="notif_filter_date_from" autocomplete="off">
+        </div>
+        <div class="col-6 col-md-3">
+            <label class="form-label small mb-1" for="notif_filter_date_to" data-i18n="filter_date_to">To</label>
+            <input type="text" class="form-control datepicker" id="notif_filter_date_to" autocomplete="off">
+        </div>
+        <div class="col-6 col-md-3">
+            <label class="form-label small mb-1" for="notif_filter_is_read" data-i18n="status">Status</label>
+            <select class="form-select select2-static" id="notif_filter_is_read" data-option-keys="filter_all,notif_status_read,notif_status_unread" data-option-values="all,1,0"></select>
         </div>
     </div>
-    <!-- 2026-09-02, Platform Hardening Phase 1.6: Clear Filter split out of this shared row into
-         its own .station-filter-clear-row (attaches to the filter card right above it) so it reads
-         as part of the filter frame -- "Mark all as read" keeps its own row. -->
-    <div class="station-filter-clear-row d-none" id="notifFilterClearRow">
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearNotifFilter">
-            <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-        </button>
-    </div>
+    <?php
+    $filter_fields_html = ob_get_clean();
+    $id = 'notifFilterBar';
+    include __DIR__ . '/../partials/filter-bar.php';
+    ?>
     <div class="d-flex justify-content-end mb-3">
         <button type="button" class="btn btn-outline-secondary btn-sm" id="notifPageMarkAllReadBtn">
             <i class="fa-solid fa-check-double me-1"></i><span data-i18n="notif_mark_all_read">Mark all as read</span>

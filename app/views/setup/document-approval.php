@@ -19,9 +19,9 @@
   </div>
 
   <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" role="tablist">
-    <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-flow" type="button" role="tab"><i class="fa-solid fa-diagram-project me-1"></i> <span data-i18n="approval_workflow">Approval Workflow</span></button></li>
-    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-run" type="button" role="tab"><i class="fa-solid fa-hashtag me-1"></i> <span data-i18n="document_running_number">Document Numbering</span></button></li>
-    <li class="nav-item"><button class="nav-link setup-menu" id="emailQueueLogTabBtn" data-bs-toggle="tab" data-bs-target="#tab-email-log" type="button" role="tab"><i class="fa-solid fa-envelope-circle-check me-1"></i> <span data-i18n="email_queue_log">Email Log</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-flow" type="button" role="tab"><span data-i18n="approval_workflow">Approval Workflow</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-run" type="button" role="tab"><span data-i18n="document_running_number">Document Numbering</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu" id="emailQueueLogTabBtn" data-bs-toggle="tab" data-bs-target="#tab-email-log" type="button" role="tab"><span data-i18n="email_queue_log">Email Log</span></button></li>
   </ul>
 
   <div class="tab-content">
@@ -44,12 +44,12 @@
         <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" id="approvalFlowDocTypeTabs">
           <li class="nav-item">
             <button type="button" class="nav-link structure-menu active" data-document-type="PAYROLL_RUN_APPROVAL">
-              <i class="fa-solid fa-money-check-dollar me-1"></i><span data-i18n="tab_payroll_run_approval">Payroll Run Approval</span>
+              <span data-i18n="tab_payroll_run_approval">Payroll Run Approval</span>
             </button>
           </li>
           <li class="nav-item">
             <button type="button" class="nav-link structure-menu" data-document-type="SLIP_REQUEST_APPROVAL">
-              <i class="fa-solid fa-file-invoice me-1"></i><span data-i18n="tab_slip_request_approval">Payslip Approval</span>
+              <span data-i18n="tab_slip_request_approval">Payslip Approval</span>
             </button>
           </li>
           <!-- 2026-08-24, explicit request: "ใน Approval Flow เพิ่มอีก Tab เป็น Tab การตั้งค่าการอนุมัติการ
@@ -62,7 +62,7 @@
                with this code. -->
           <li class="nav-item">
             <button type="button" class="nav-link structure-menu" data-document-type="EMPLOYMENT_CERTIFICATE_APPROVAL">
-              <i class="fa-solid fa-file-shield me-1"></i><span data-i18n="tab_employment_certificate_approval">Employment Certificate Approval</span>
+              <span data-i18n="tab_employment_certificate_approval">Employment Certificate Approval</span>
             </button>
           </li>
         </ul>
@@ -71,7 +71,7 @@
       <div class="card-surface">
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
           <div class="awf-flow-status-wrap">
-            <span class="badge" id="flowStatusBadge"></span>
+            <span id="flowStatusBadge"></span>
             <button type="button" class="btn btn-link btn-sm p-0 ms-2 d-none" id="btnToggleFlowStatus"></button>
             <div class="text-secondary small mt-1" id="flowStatusHint"></div>
           </div>
@@ -114,7 +114,7 @@
          การส่งได้ มี Filter และตาราง รวมถึง Summary" -- the cron itself (cron/send_queued_emails.php)
          already existed from Phase 7 (T040); this is the new admin log/summary page on top of it.
          Summary = stat cards (same .stat-card markup as dashboard.php's own), filter = the shared
-         .station-filter pattern (per CLAUDE.md's own Table convention), table = a plain client-side
+         filter-bar pattern (per CLAUDE.md's own Table convention), table = a plain client-side
          DataTable (unbounded-but-capped at 200 rows server-side, LIMIT 200 in EmailQueueModel::
          list(), same "recent window, not a full unbounded archive" convention every other
          audit-log-style table in this app already uses -- e.g. PayslipDeliveryLogModel::list()). -->
@@ -148,47 +148,40 @@
           </div>
         </div>
       </div>
-      <div class="station-filter" id="emailQueueStationFilter">
-        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-        <button type="button" class="station-filter-toggle" id="emailQueueStationFilterToggle" title="Toggle filter">
-          <i class="fas fa-chevron-up"></i>
-        </button>
-        <div class="station-filter-body">
-          <div class="row g-2">
-            <div class="col-6 col-md-4 col-lg-3">
-              <label class="form-label mb-1"><i class="fa-solid fa-toggle-on me-1 text-muted"></i><span data-i18n="status">Status</span></label>
-              <select class="form-select select2-static" id="emailQueueFilterStatus" data-option-keys="email_queue_status_pending,email_queue_status_sent,email_queue_status_failed" data-option-values="pending,sent,failed"></select>
-            </div>
-            <div class="col-6 col-md-4 col-lg-3">
-              <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_from">From</span></label>
-              <input type="text" class="form-control datepicker" id="emailQueueFilterDateFrom" autocomplete="off">
-            </div>
-            <div class="col-6 col-md-4 col-lg-3">
-              <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_to">To</span></label>
-              <input type="text" class="form-control datepicker" id="emailQueueFilterDateTo" autocomplete="off">
-            </div>
-            <div class="col-6 col-md-4 col-lg-3">
-              <label class="form-label mb-1"><i class="fa-solid fa-envelope me-1 text-muted"></i><span data-i18n="recipient">Recipient</span></label>
-              <input type="text" class="form-control" id="emailQueueFilterToAddress" autocomplete="off" data-i18n="email_filter_placeholder" placeholder="e.g., name@company.com">
-            </div>
-          </div>
+      <?php ob_start(); ?>
+      <div class="row g-2">
+        <div class="col-6 col-md-4 col-lg-3">
+          <label class="form-label small mb-1" for="emailQueueFilterStatus" data-i18n="status">Status</label>
+          <select class="form-select select2-static" id="emailQueueFilterStatus" data-option-keys="filter_all,email_queue_status_pending,email_queue_status_sent,email_queue_status_failed" data-option-values="all,pending,sent,failed"></select>
+        </div>
+        <div class="col-6 col-md-4 col-lg-3">
+          <label class="form-label small mb-1" for="emailQueueFilterDateFrom" data-i18n="date_from">From</label>
+          <input type="text" class="form-control datepicker" id="emailQueueFilterDateFrom" autocomplete="off">
+        </div>
+        <div class="col-6 col-md-4 col-lg-3">
+          <label class="form-label small mb-1" for="emailQueueFilterDateTo" data-i18n="date_to">To</label>
+          <input type="text" class="form-control datepicker" id="emailQueueFilterDateTo" autocomplete="off">
+        </div>
+        <div class="col-6 col-md-4 col-lg-3">
+          <label class="form-label small mb-1" for="emailQueueFilterToAddress" data-i18n="recipient">Recipient</label>
+          <input type="text" class="form-control" id="emailQueueFilterToAddress" autocomplete="off" data-i18n="email_filter_placeholder" placeholder="e.g., name@company.com">
         </div>
       </div>
-      <div class="station-filter-clear-row d-none" id="emailQueueFilterClearRow">
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmailQueueFilter">
-          <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-        </button>
-      </div>
+      <?php
+      $filter_fields_html = ob_get_clean();
+      $id = 'emailQueueFilterBar';
+      include __DIR__ . '/../partials/filter-bar.php';
+      ?>
       <table class="table table-striped table-hover" id="tb_email_queue_log">
         <thead class="table-light text-secondary">
           <tr>
-            <th data-i18n="recipient">Recipient</th>
-            <th data-i18n="email_subject">Subject</th>
-            <th data-i18n="status">Status</th>
-            <th data-i18n="email_attempts">Attempts</th>
-            <th data-i18n="email_error">Error</th>
-            <th data-i18n="created_at">Created At</th>
-            <th data-i18n="email_sent_at">Sent At</th>
+            <th><span data-i18n="recipient">Recipient</span></th>
+            <th><span data-i18n="email_subject">Subject</span></th>
+            <th><span data-i18n="status">Status</span></th>
+            <th><span data-i18n="email_attempts">Attempts</span></th>
+            <th><span data-i18n="email_error">Error</span></th>
+            <th><span data-i18n="created_at">Created At</span></th>
+            <th><span data-i18n="email_sent_at">Sent At</span></th>
           </tr>
         </thead>
         <tbody></tbody>

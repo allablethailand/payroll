@@ -294,7 +294,7 @@ $(document).on('click', '.ect-margin-option', function (e) {
 
 function emptyElementBase() {
     return {
-        font_size: 14, font_family: 'th_sarabun_new', font_color: '#000000',
+        font_size: 14, font_family: 'th_sarabun_new', font_color: tokenColor('--hex-000000'),
         text_align: 'left', font_weight: 'normal', font_style: 'normal', text_decoration: 'none',
         group_key: null, page_number: currentPageNumber, is_visible: true
     };
@@ -480,15 +480,15 @@ function tableElementBodyHtml(el) {
     try { data = JSON.parse(el.content || '{}'); } catch (e) { data = {}; }
     const rows = Number(data.rows) || 1;
     const cols = Number(data.cols) || 1;
-    const borderColor = data.border_color || '#000000';
+    const borderColor = data.border_color || tokenColor('--hex-000000');
     const borderWidth = Number(data.border_width) || 1;
     const cells = Array.isArray(data.cells) ? data.cells : [];
-    let html = `<table style="width:100%;height:100%;border-collapse:collapse;">`;
+    let html = `<table class="tpl-preview-table">`;
     for (let r = 0; r < rows; r++) {
         html += '<tr>';
         for (let c = 0; c < cols; c++) {
             const text = escapeHtml((cells[r] && cells[r][c]) || '').replace(/\n/g, '<br>');
-            html += `<td style="border:${borderWidth}px solid ${borderColor};padding:2px 4px;">${text}</td>`;
+            html += `<td style="--cell-bw:${borderWidth}px;--cell-bc:${borderColor};">${text}</td>`;
         }
         html += '</tr>';
     }
@@ -534,8 +534,8 @@ function applyElementStyle($el, el) {
         // as fill/border color here (this element type has no separate fill/border fields, same
         // simplification as the server-side renderer); font/text styling doesn't apply to a shape.
         $el.find('.ect-el-body').css({
-            backgroundColor: el.font_color || '#000000',
-            border: `1px solid ${el.font_color || '#000000'}`,
+            backgroundColor: el.font_color || tokenColor('--hex-000000'),
+            border: `1px solid ${el.font_color || tokenColor('--hex-000000')}`,
             boxSizing: 'border-box',
             borderRadius: el.field_key === 'ellipse' ? '50%' : '0'
         });
@@ -547,7 +547,7 @@ function applyElementStyle($el, el) {
         fontWeight: el.font_weight === 'bold' ? '700' : '400',
         fontStyle: el.font_style === 'italic' ? 'italic' : 'normal',
         textDecoration: el.text_decoration === 'underline' ? 'underline' : 'none',
-        color: el.font_color || '#000000',
+        color: el.font_color || tokenColor('--hex-000000'),
         fontFamily: FONT_FAMILY_CSS_STACK[el.font_family] || FONT_FAMILY_CSS_STACK.th_sarabun_new
     });
 }
@@ -1245,7 +1245,7 @@ function addShapeElement(shapeType, posX, posY) {
         key: newElementKey(), id: null, element_type: 'shape', field_key: shapeType, image_asset_id: null, content: null,
         pos_x_pct: clampEct(posX, 0, 80), pos_y_pct: clampEct(posY, 0, 85),
         width_pct: shapeType === 'line' ? 30 : 20, height_pct: shapeType === 'line' ? 1 : 15,
-        font_color: '#FF9900'
+        font_color: tokenColor('--hex-ff9900')
     });
     pushUndo();
     elements.push(el);
@@ -1324,7 +1324,7 @@ $(document).on('input', '#ectTableRowsInput, #ectTableColsInput', function () {
 function openTableModal(key) {
     const el = key ? findElement(key) : null;
     editingTableKey = key || null;
-    let data = { rows: 3, cols: 3, border_color: '#000000', border_width: 1, cells: [] };
+    let data = { rows: 3, cols: 3, border_color: tokenColor('--hex-000000'), border_width: 1, cells: [] };
     if (el) {
         try { data = Object.assign(data, JSON.parse(el.content || '{}')); } catch (e) { /* keep defaults */ }
     }
@@ -1351,7 +1351,7 @@ $(document).on('click', '#ectTableInsertConfirmBtn', function () {
     }
     const content = JSON.stringify({
         rows, cols,
-        border_color: $('#ectTableBorderColorInput').val() || '#000000',
+        border_color: $('#ectTableBorderColorInput').val() || tokenColor('--hex-000000'),
         border_width: clampEct(parseInt($('#ectTableBorderWidthInput').val(), 10) || 1, 0, 10),
         cells
     });
@@ -1529,7 +1529,7 @@ function ectLangStatusHtml(pairRow, lang) {
     if (!tpl) {
         return `<i class="fa-regular fa-circle text-muted" title="${langData['ect_not_ready'] || 'Not ready'}"></i>`;
     }
-    return `<i class="fa-solid fa-circle-check text-success" title="${langData['ect_ready'] || 'Ready'}"></i>`;
+    return `<i class="fa-solid fa-circle-check text-muted" title="${langData['ect_ready'] || 'Ready'}"></i>`;
 }
 // 2026-08-26, explicit follow-up: direct port of PayslipTemplateModel's own pstPublishSwitchesHtml().
 function ectPublishSwitchesHtml(pairRow) {
@@ -1619,7 +1619,7 @@ function ectActionsGroupHtml(pairRow) {
             <ul class="dropdown-menu">${previewItems}</ul>
         </div>
         <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-ect" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-link btn-circle-action text-primary btn-duplicate-pair-ect" title="${langData['duplicate'] || 'Duplicate'}"><i class="fas fa-copy"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action btn-duplicate-pair-ect" title="${langData['duplicate'] || 'Duplicate'}"><i class="fas fa-copy"></i></button>
         <div class="dropdown">
             <button type="button" class="btn btn-link btn-circle-action text-danger dropdown-toggle" data-bs-toggle="dropdown" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
             <ul class="dropdown-menu dropdown-menu-end">${deleteItems.join('')}</ul>
@@ -1641,7 +1641,17 @@ function initEctTemplateTable() {
         $('#tb_ect_template').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_ect_template = $('#tb_ect_template').DataTable({
+    tb_ect_template = initSharedDataTable('#tb_ect_template', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 1, key: 'template_name' },
+                { index: 2, key: 'page_size' },
+                { index: 5, key: 'updated_at' },
+            ]
+        },
+        dtOptions: {
+        searching: true,
         responsive: true,
         ajax: {
             url: `${BASE_URL}/api/employment-certificate-template.paired-list`,
@@ -1664,9 +1674,6 @@ function initEctTemplateTable() {
         // name) -- stashed on the <tr> itself (idiomatic DataTables pattern) rather than re-deriving
         // it from data-* attributes scattered across the action buttons.
         createdRow: function (row, data) { $(row).data('pairRow', data); },
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         initComplete: function () {
             const self = this.api();
             const $wrapper = $(self.table().container());
@@ -1678,17 +1685,7 @@ function initEctTemplateTable() {
                     </button>
                 `);
             }
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the publish-switch column (0), the icon-only TH/EN
-            // language-status columns (3, 4, no single filterable value), and actions (6).
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 1, key: 'template_name' },
-                    { index: 2, key: 'page_size' },
-                    { index: 5, key: 'updated_at' },
-                ]
-            });
+        }
         }
     });
 }
@@ -2162,60 +2159,60 @@ function loadPresets() {
 // button on each card still opens the REAL rendered PDF for an exact look before choosing.
 const PRESET_MOCKUPS = {
     classic: { bars: [
-        { left: 15, top: 8, width: 70, height: 6, color: '#333' },
-        { left: 20, top: 16, width: 60, height: 4, color: '#bbb' },
-        { left: 10, top: 26, width: 80, height: 8, color: '#333' },
-        { left: 14, top: 42, width: 72, height: 4, color: '#ddd' },
-        { left: 14, top: 48, width: 72, height: 4, color: '#ddd' },
-        { left: 14, top: 54, width: 72, height: 4, color: '#ddd' },
-        { left: 14, top: 60, width: 50, height: 4, color: '#ddd' },
-        { left: 30, top: 80, width: 40, height: 4, color: '#bbb' },
-        { left: 30, top: 88, width: 40, height: 4, color: '#333' },
+        { left: 15, top: 8, width: 70, height: 6, color: 'var(--hex-333333)' },
+        { left: 20, top: 16, width: 60, height: 4, color: 'var(--hex-bbbbbb)' },
+        { left: 10, top: 26, width: 80, height: 8, color: 'var(--hex-333333)' },
+        { left: 14, top: 42, width: 72, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 14, top: 48, width: 72, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 14, top: 54, width: 72, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 14, top: 60, width: 50, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 30, top: 80, width: 40, height: 4, color: 'var(--hex-bbbbbb)' },
+        { left: 30, top: 88, width: 40, height: 4, color: 'var(--hex-333333)' },
     ] },
     modern: { bars: [
-        { left: 6, top: 6, width: 16, height: 12, color: '#e2e2e2', box: true },
-        { left: 26, top: 7, width: 60, height: 5, color: '#333' },
-        { left: 26, top: 14, width: 55, height: 3, color: '#bbb' },
-        { left: 6, top: 28, width: 88, height: 7, color: '#333' },
-        { left: 6, top: 40, width: 88, height: 4, color: '#ddd' },
-        { left: 6, top: 46, width: 88, height: 4, color: '#ddd' },
-        { left: 6, top: 52, width: 88, height: 4, color: '#ddd' },
-        { left: 6, top: 58, width: 60, height: 4, color: '#ddd' },
-        { left: 6, top: 82, width: 30, height: 4, color: '#bbb' },
-        { left: 58, top: 82, width: 30, height: 4, color: '#333' },
+        { left: 6, top: 6, width: 16, height: 12, color: 'var(--hex-e2e2e2)', box: true },
+        { left: 26, top: 7, width: 60, height: 5, color: 'var(--hex-333333)' },
+        { left: 26, top: 14, width: 55, height: 3, color: 'var(--hex-bbbbbb)' },
+        { left: 6, top: 28, width: 88, height: 7, color: 'var(--hex-333333)' },
+        { left: 6, top: 40, width: 88, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 6, top: 46, width: 88, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 6, top: 52, width: 88, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 6, top: 58, width: 60, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 6, top: 82, width: 30, height: 4, color: 'var(--hex-bbbbbb)' },
+        { left: 58, top: 82, width: 30, height: 4, color: 'var(--hex-333333)' },
     ] },
     minimal: { bars: [
-        { left: 10, top: 10, width: 60, height: 6, color: '#333' },
-        { left: 10, top: 22, width: 80, height: 4, color: '#ddd' },
-        { left: 10, top: 28, width: 80, height: 4, color: '#ddd' },
-        { left: 10, top: 34, width: 80, height: 4, color: '#ddd' },
-        { left: 10, top: 40, width: 55, height: 4, color: '#ddd' },
-        { left: 10, top: 68, width: 60, height: 4, color: '#bbb' },
+        { left: 10, top: 10, width: 60, height: 6, color: 'var(--hex-333333)' },
+        { left: 10, top: 22, width: 80, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 10, top: 28, width: 80, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 10, top: 34, width: 80, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 10, top: 40, width: 55, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 10, top: 68, width: 60, height: 4, color: 'var(--hex-bbbbbb)' },
     ] },
     formal: { bars: [
-        { left: 15, top: 6, width: 70, height: 5, color: '#7a1f1f' },
-        { left: 25, top: 13, width: 50, height: 3, color: '#bbb' },
-        { left: 20, top: 18, width: 60, height: 2, color: '#bbb' },
-        { left: 15, top: 24, width: 70, height: 1.5, color: '#c99' },
-        { left: 15, top: 29, width: 70, height: 7, color: '#7a1f1f' },
-        { left: 20, top: 43, width: 60, height: 4, color: '#ddd' },
-        { left: 20, top: 49, width: 60, height: 4, color: '#ddd' },
-        { left: 20, top: 55, width: 60, height: 4, color: '#ddd' },
-        { left: 15, top: 76, width: 70, height: 1.5, color: '#c99' },
-        { left: 30, top: 81, width: 40, height: 3, color: '#bbb' },
-        { left: 30, top: 88, width: 40, height: 4, color: '#333' },
+        { left: 15, top: 6, width: 70, height: 5, color: 'var(--hex-7a1f1f)' },
+        { left: 25, top: 13, width: 50, height: 3, color: 'var(--hex-bbbbbb)' },
+        { left: 20, top: 18, width: 60, height: 2, color: 'var(--hex-bbbbbb)' },
+        { left: 15, top: 24, width: 70, height: 1.5, color: 'var(--hex-cc9999)' },
+        { left: 15, top: 29, width: 70, height: 7, color: 'var(--hex-7a1f1f)' },
+        { left: 20, top: 43, width: 60, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 20, top: 49, width: 60, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 20, top: 55, width: 60, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 15, top: 76, width: 70, height: 1.5, color: 'var(--hex-cc9999)' },
+        { left: 30, top: 81, width: 40, height: 3, color: 'var(--hex-bbbbbb)' },
+        { left: 30, top: 88, width: 40, height: 4, color: 'var(--hex-333333)' },
     ] },
     elegant: { bars: [
-        { left: 6, top: 5, width: 14, height: 10, color: '#ffd9a3', box: true },
-        { left: 24, top: 6, width: 60, height: 5, color: '#FF9900' },
-        { left: 24, top: 13, width: 60, height: 6, color: '#FF9900' },
-        { left: 8, top: 26, width: 82, height: 4, color: '#ddd' },
-        { left: 8, top: 32, width: 82, height: 4, color: '#ddd' },
-        { left: 8, top: 38, width: 82, height: 4, color: '#ddd' },
-        { left: 8, top: 44, width: 60, height: 4, color: '#ddd' },
-        { left: 8, top: 60, width: 70, height: 3, color: '#e6e6e6' },
-        { left: 54, top: 80, width: 38, height: 3, color: '#bbb' },
-        { left: 54, top: 87, width: 38, height: 4, color: '#333' },
+        { left: 6, top: 5, width: 14, height: 10, color: 'var(--hex-ffd9a3)', box: true },
+        { left: 24, top: 6, width: 60, height: 5, color: 'var(--hex-ff9900)' },
+        { left: 24, top: 13, width: 60, height: 6, color: 'var(--hex-ff9900)' },
+        { left: 8, top: 26, width: 82, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 8, top: 32, width: 82, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 8, top: 38, width: 82, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 8, top: 44, width: 60, height: 4, color: 'var(--hex-dddddd)' },
+        { left: 8, top: 60, width: 70, height: 3, color: 'var(--hex-e6e6e6)' },
+        { left: 54, top: 80, width: 38, height: 3, color: 'var(--hex-bbbbbb)' },
+        { left: 54, top: 87, width: 38, height: 4, color: 'var(--hex-333333)' },
     ] },
 };
 function renderPresetMockup(code) {
@@ -2225,7 +2222,7 @@ function renderPresetMockup(code) {
     }
     const bars = cfg.bars.map(b => {
         const radius = b.box ? '3px' : '1px';
-        return `<span style="position:absolute;left:${b.left}%;top:${b.top}%;width:${b.width}%;height:${b.height}%;background:${b.color};border-radius:${radius};"></span>`;
+        return `<span class="ect-preset-bar" style="--bar-l:${b.left}%;--bar-t:${b.top}%;--bar-w:${b.width}%;--bar-h:${b.height}%;--bar-bg:${b.color};--bar-r:${radius};"></span>`;
     }).join('');
     return `<div class="ect-preset-mock">${bars}</div>`;
 }

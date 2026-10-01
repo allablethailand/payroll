@@ -65,19 +65,17 @@ function initAnnQuillEditors() {
 }
 
 function annStatusBadge(status) {
-    return status === 'published'
-        ? `<span class="badge bg-success-subtle text-success">${langData['announcement_status_published'] || 'Published'}</span>`
-        : `<span class="badge bg-secondary-subtle text-secondary">${langData['announcement_status_draft'] || 'Draft'}</span>`;
+    return statusBadgeHtml(status === 'published' ? 'published' : 'draft', 'announcement_status');
 }
 function annActionBtns(row) {
     const isDraft = row.status === 'draft';
     let html = '<div class="d-flex gap-1 justify-content-center flex-wrap">';
     if (isDraft) {
         html += `<button type="button" class="btn btn-link btn-circle-action text-warning" onclick="openAnnouncementModal(${row.id})" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>`;
-        html += `<button type="button" class="btn btn-link btn-circle-action text-success" onclick="publishAnnouncement(${row.id})" title="${langData['announcement_publish'] || 'Publish'}"><i class="fa-solid fa-paper-plane"></i></button>`;
+        html += `<button type="button" class="btn btn-link btn-circle-action" onclick="publishAnnouncement(${row.id})" title="${langData['announcement_publish'] || 'Publish'}"><i class="fa-solid fa-paper-plane"></i></button>`;
     }
     if (row.status === 'published' && !row.is_dashboard_featured) {
-        html += `<button type="button" class="btn btn-link btn-circle-action text-primary" onclick="setFeaturedAnnouncement(${row.id})" title="${langData['announcement_set_featured'] || 'Feature on Dashboard'}"><i class="fa-regular fa-star"></i></button>`;
+        html += `<button type="button" class="btn btn-link btn-circle-action" onclick="setFeaturedAnnouncement(${row.id})" title="${langData['announcement_set_featured'] || 'Feature on Dashboard'}"><i class="fa-regular fa-star"></i></button>`;
     }
     html += `<button type="button" class="btn btn-link btn-circle-action text-danger" onclick="deleteAnnouncement(${row.id})" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
     html += '</div>';
@@ -85,7 +83,9 @@ function annActionBtns(row) {
 }
 function initAnnouncementTable() {
     if (annTable) { annTable.ajax.reload(null, false); return; }
-    annTable = $('#tb_announcement').DataTable({
+    annTable = initSharedDataTable('#tb_announcement', {
+        dtOptions: {
+        searching: true,
         ajax: { url: `${BASE_URL}/api/announcement.list`, dataSrc: 'data' },
         columns: [
             { data: 'status', render: (d) => annStatusBadge(d) },
@@ -94,20 +94,20 @@ function initAnnouncementTable() {
                 if (!row.cover_image_path) { return title; }
                 return `<div class="d-flex align-items-center gap-2"><img src="${BASE_URL}/${row.cover_image_path}" class="ann-cover-thumb" alt=""> <span>${title}</span></div>`;
             } },
-            { data: 'accept_required', className: 'text-center', render: (d) => d ? `<i class="fa-solid fa-check text-success"></i>` : `<i class="fa-solid fa-minus text-muted"></i>` },
+            { data: 'accept_required', className: 'text-center', render: (d) => d ? `<i class="fa-solid fa-check text-muted"></i>` : `<i class="fa-solid fa-minus text-muted"></i>` },
             { data: null, className: 'text-center', render: (d, t, row) => row.status === 'published' ? `${row.acknowledged_count} / ${row.recipient_count}` : '<span class="text-muted">-</span>' },
             { data: 'is_dashboard_featured', className: 'text-center', render: (d) => d ? `<i class="fa-solid fa-star text-warning"></i>` : '' },
             { data: null, render: (d, t, row) => formatDisplayDateTime ? formatDisplayDateTime(row.updated_at || row.created_at) : (row.updated_at || row.created_at || '') },
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => annActionBtns(row) }
         ],
-        ordering: false, lengthChange: false, pageLength: pageLength,
-        language: (typeof getTableLang === 'function') ? getTableLang() : {},
+        ordering: false, lengthChange: false,
         initComplete: function () {
             const $wrapper = $(this.api().table().container());
             const $searchDiv = $wrapper.find('.dt-search');
             if ($searchDiv.find('.btn-add-announcement').length === 0) {
                 $searchDiv.append(`<button type="button" class="btn btn-primary ms-1 btn-add-announcement" onclick="openAnnouncementModal()"><i class="fa-solid fa-plus me-1"></i><span>${langData['announcement_new'] || 'New Announcement'}</span></button>`);
             }
+        }
         }
     });
 }
@@ -270,25 +270,6 @@ function deleteAnnouncement(id) {
         }
     );
 }
-function annUpdateClearFilterVisibility() {
-    const hasFilter = !!($('#announcement_filter_status').val() || $('#announcement_filter_accept_required').val());
-    $('#announcementFilterClearRow').toggleClass('d-none', !hasFilter);
-}
-$(document).on('change', '#announcement_filter_status, #announcement_filter_accept_required', function () {
-    annUpdateClearFilterVisibility();
-    if (annTable) annTable.draw();
-});
-$(document).on('click', '#announcementStationFilterToggle', function () {
-    const $filter = $('#announcementStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('click', '#btnClearAnnouncementFilter', function () {
-    $('#announcement_filter_status').val('').trigger('change.select2');
-    $('#announcement_filter_accept_required').val('').trigger('change.select2');
-    annUpdateClearFilterVisibility();
-    if (annTable) annTable.draw();
-});
 $(document).ready(function () {
     (window.langReady || Promise.resolve()).then(function () {
     if ($('#tb_announcement').length) {
@@ -316,9 +297,9 @@ $(document).ready(function () {
         $.fn.dataTable.ext.search.push(function (settings, searchData, index, rowData) {
             if (settings.nTable.id !== 'tb_announcement' || !rowData) return true;
             const statusFilter = $('#announcement_filter_status').val();
-            if (statusFilter && rowData.status !== statusFilter) return false;
+            if (statusFilter && statusFilter !== 'all' && rowData.status !== statusFilter) return false;
             const acceptFilter = $('#announcement_filter_accept_required').val();
-            if (acceptFilter !== '' && acceptFilter !== null && acceptFilter !== undefined) {
+            if (acceptFilter !== '' && acceptFilter !== 'all' && acceptFilter !== null && acceptFilter !== undefined) {
                 const wantsAccept = acceptFilter === '1';
                 if (Boolean(Number(rowData.accept_required)) !== wantsAccept) return false;
             }
@@ -327,6 +308,9 @@ $(document).ready(function () {
         initAnnouncementTable();
         initSelect2('#announcement_filter_status');
         initSelect2('#announcement_filter_accept_required');
+        initFilterBar('#announcementFilterBar', {
+            onChange: function () { if (annTable) annTable.draw(); },
+        });
     }
     });
 });

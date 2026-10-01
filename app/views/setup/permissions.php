@@ -38,7 +38,7 @@
       <p class="text-muted small mb-0"><i class="fa-solid fa-circle-info me-1"></i><span data-i18n="permission_admin_bypass_note">An account with the "Admin" role always has full access regardless of what's set here -- test with a non-admin account to see the effect of a change.</span></p>
     </div>
     <div class="d-flex gap-2">
-      <button type="button" class="btn btn-light border btn-sm" id="btnCancelPermissionMatrix">
+      <button type="button" class="btn btn-outline-secondary border btn-sm" id="btnCancelPermissionMatrix">
         <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
       </button>
       <button type="button" class="btn btn-primary btn-sm" id="btnSavePermissionMatrix">

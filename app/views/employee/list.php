@@ -1,13 +1,4 @@
 <style>
-/* .station-filter-body's shared max-height (200px, see style.css) fits the Payroll Process page's
-   2-field date filter but not this page's 6-field row, which wraps to 3 rows on narrow screens --
-   raise it here only. Both the expanded and collapsed variants must be scoped to this page's own
-   id so the collapse-to-0 animation (the more specific .collapsed rule) still wins over this.
-   2026-09-02, 3-way Employee submenu split -- the Login History tab's own equivalent rule moved to
-   login-history.php's own <style> block along with that page. */
-#employeeStationFilter .station-filter-body { max-height: 320px; }
-#employeeStationFilter.collapsed .station-filter-body { max-height: 0; }
-
 #tb_employee tbody tr { transition: background-color .12s ease; }
 /* 2026-09-02, explicit request: "ความสมบูรณ์ของ Profile ช่วยปรับเป็น progress วงกลมได้ไหมครับ" -- replaces
    the old .employee-completeness-bar (horizontal Bootstrap .progress) with a small CSS
@@ -24,6 +15,7 @@
     align-items: center;
     justify-content: center;
     flex: none;
+    background: conic-gradient(var(--ring-color) var(--ring-p), var(--c-border) var(--ring-p) 100%);
 }
 .employee-completeness-ring::before {
     content: '';
@@ -37,6 +29,7 @@
     z-index: 1;
     font-size: .6rem;
     font-weight: 700;
+    color: var(--ring-color);
 }
 /* 2026-08-30, real photo (synced or manually uploaded) shown in place of the initial-letter avatar
    circle once profile_photo_path is set -- object-fit:cover so a non-square upload still fills the
@@ -90,7 +83,7 @@
          standalone pages under the Employee submenu (see header.php), leaving just these 2. -->
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" id="employeeTopTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link active setup-menu" id="employee-top-tab" data-bs-toggle="tab" data-bs-target="#employee-top-pane" type="button" role="tab" aria-controls="employee-top-pane" aria-selected="true"><i class="fa-solid fa-users me-1"></i><span data-i18n="employee">Employee</span></button>
+            <button class="nav-link active setup-menu" id="employee-top-tab" data-bs-toggle="tab" data-bs-target="#employee-top-pane" type="button" role="tab" aria-controls="employee-top-pane" aria-selected="true"><span data-i18n="employee">Employee</span></button>
         </li>
         <!-- 2026-08-30 (Phase 3, T018, explicit request: "Tab 'Recheck ข้อมูล'...แสดงเป็น column-by-
              column ว่าข้อมูลจำเป็นสำหรับทำเงินเดือนครบหรือไม่") -- same top-level-page-tab pattern as
@@ -99,74 +92,62 @@
              "position moves, nothing else does" precedent as Team's own tab reorder earlier this
              project (see CLAUDE.md's Team section). -->
         <li class="nav-item" role="presentation">
-            <button class="nav-link setup-menu" id="employee-recheck-top-tab" data-bs-toggle="tab" data-bs-target="#employee-recheck-top-pane" type="button" role="tab" aria-controls="employee-recheck-top-pane" aria-selected="false"><i class="fa-solid fa-list-check me-1"></i><span data-i18n="recheck_data">Recheck Data</span></button>
+            <button class="nav-link setup-menu" id="employee-recheck-top-tab" data-bs-toggle="tab" data-bs-target="#employee-recheck-top-pane" type="button" role="tab" aria-controls="employee-recheck-top-pane" aria-selected="false"><span data-i18n="recheck_data">Recheck Data</span></button>
         </li>
     </ul>
     <div class="tab-content" id="employeeTopTabsContent">
     <div class="tab-pane fade show active" id="employee-top-pane" role="tabpanel" aria-labelledby="employee-top-tab" tabindex="0">
-    <div class="station-filter" id="employeeStationFilter">
-        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-        <button type="button" class="station-filter-toggle" id="employeeStationFilterToggle" title="Toggle filter">
-            <i class="fas fa-chevron-up"></i>
-        </button>
-        <div class="station-filter-body">
-            <div class="row g-2">
-                <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker" id="employee_filter_date_from" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
-                </div>
-                <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker" id="employee_filter_date_to" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
-                </div>
-                <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1"><i class="fa-solid fa-user-tag me-1 text-muted"></i><span data-i18n="role">Role</span></label>
-                    <select class="form-select select2-remote" id="employee_filter_role" data-api="/api/role.get" data-type="role"></select>
-                </div>
-                <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
-                    <select class="form-select select2-remote" id="employee_filter_department" data-api="/api/department.get" data-type="department"></select>
-                </div>
-                <!-- 2026-08-24, explicit request: "เพิ่ม Filter ทีมในหน้า list พนักงานด้วย" -->
-                <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1"><i class="fa-solid fa-people-group me-1 text-muted"></i><span data-i18n="team">Team</span></label>
-                    <select class="form-select select2-remote" id="employee_filter_team" data-api="/api/team.get" data-type="team"></select>
-                </div>
-                <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1"><i class="fa-solid fa-clock me-1 text-muted"></i><span data-i18n="shift">Shift</span></label>
-                    <select class="form-select select2-remote" id="employee_filter_shift" data-api="/api/shift.options" data-type="shift"></select>
-                </div>
-                <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
-                    <select class="form-select select2-remote" id="employee_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
-                </div>
-                <!-- 2026-08-30 (Phase 3, T022, explicit request: Tab/Filter จ่าย vs ไม่จ่ายเงินเดือน) --
-                     static select2 (3 fixed options: All/Pays Salary/No Salary), same pattern as
-                     Payroll Configuration's Calculation Method dropdown -- not a master table, this
-                     is a closed 2-state toggle plus "All", not an open list. -->
-                <div class="col-6 col-md-4 col-lg-2">
-                    <label class="form-label mb-1"><i class="fa-solid fa-money-check-dollar me-1 text-muted"></i><span data-i18n="payroll_participant_label">Payroll Participation</span></label>
-                    <!-- data-option-values can't use a genuinely blank value for "All" -- initSelect2's
-                         static mode does `.split(',').filter(Boolean)` on both attributes, which
-                         silently drops an empty segment and misaligns keys<->values by index. Uses
-                         the literal string "all" instead; currentEmployeeExtraFilters() below maps it
-                         back to '' (no filter) before sending to the backend. -->
-                    <select class="form-select select2-static" id="employee_filter_payroll_participant" data-option-keys="filter_all,payroll_participant_yes,payroll_participant_no" data-option-values="all,1,0"></select>
-                </div>
-            </div>
+    <?php
+    ob_start(); ?>
+    <div class="row g-2">
+        <div class="col-6 col-md-4 col-lg-2">
+            <label class="form-label small mb-1" for="employee_filter_date_from" data-i18n="filter_date_from">From</label>
+            <input type="text" class="form-control datepicker" id="employee_filter_date_from" autocomplete="off">
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <label class="form-label small mb-1" for="employee_filter_date_to" data-i18n="filter_date_to">To</label>
+            <input type="text" class="form-control datepicker" id="employee_filter_date_to" autocomplete="off">
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <label class="form-label small mb-1" for="employee_filter_role" data-i18n="role">Role</label>
+            <select class="form-select select2-remote" id="employee_filter_role" data-api="/api/role.get" data-type="role"></select>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <label class="form-label small mb-1" for="employee_filter_department" data-i18n="department">Department</label>
+            <select class="form-select select2-remote" id="employee_filter_department" data-api="/api/department.get" data-type="department"></select>
+        </div>
+        <!-- 2026-08-24, explicit request: "เพิ่ม Filter ทีมในหน้า list พนักงานด้วย" -->
+        <div class="col-6 col-md-4 col-lg-2">
+            <label class="form-label small mb-1" for="employee_filter_team" data-i18n="team">Team</label>
+            <select class="form-select select2-remote" id="employee_filter_team" data-api="/api/team.get" data-type="team"></select>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <label class="form-label small mb-1" for="employee_filter_shift" data-i18n="shift">Shift</label>
+            <select class="form-select select2-remote" id="employee_filter_shift" data-api="/api/shift.options" data-type="shift"></select>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <label class="form-label small mb-1" for="employee_filter_branch" data-i18n="branch">Branch</label>
+            <select class="form-select select2-remote" id="employee_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
+        </div>
+        <!-- 2026-08-30 (Phase 3, T022, explicit request: Tab/Filter จ่าย vs ไม่จ่ายเงินเดือน) --
+             static select2 (3 fixed options: All/Pays Salary/No Salary), same pattern as
+             Payroll Configuration's Calculation Method dropdown -- not a master table, this
+             is a closed 2-state toggle plus "All", not an open list. -->
+        <div class="col-6 col-md-4 col-lg-2">
+            <label class="form-label small mb-1" for="employee_filter_payroll_participant" data-i18n="payroll_participant_label">Payroll Participation</label>
+            <!-- data-option-values can't use a genuinely blank value for "All" -- initSelect2's
+                 static mode does `.split(',').filter(Boolean)` on both attributes, which
+                 silently drops an empty segment and misaligns keys<->values by index. Uses
+                 the literal string "all" instead; currentEmployeeExtraFilters() below maps it
+                 back to '' (no filter) before sending to the backend. -->
+            <select class="form-select select2-static" id="employee_filter_payroll_participant" data-option-keys="filter_all,payroll_participant_yes,payroll_participant_no" data-option-values="all,1,0"></select>
         </div>
     </div>
-    <div class="station-filter-clear-row d-none" id="employeeFilterClearRow">
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmployeeFilter">
-            <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-        </button>
-    </div>
+    <?php
+    $filter_fields_html = ob_get_clean();
+    $id = 'employeeFilterBar';
+    include __DIR__ . '/../partials/filter-bar.php';
+    ?>
 
     <!-- 2026-08-30 (Phase 3, T024, explicit request: "Station...ปรับเป็น process pipeline UI...
          แสดงจำนวนพนักงานต่อ station ด้วย") -- same .station-row/.station-col/.station-card chevron-
@@ -272,98 +253,94 @@
     </div>
     </div>
     <div class="tab-pane fade" id="employee-recheck-top-pane" role="tabpanel" aria-labelledby="employee-recheck-top-tab" tabindex="0">
-        <div class="station-filter" id="employeeRecheckStationFilter">
-            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-            <button type="button" class="station-filter-toggle" id="employeeRecheckStationFilterToggle" title="Toggle filter">
-                <i class="fas fa-chevron-up"></i>
-            </button>
-            <div class="station-filter-body">
-                <div class="row g-2">
-                    <!-- 2026-09-08, explicit follow-up request ("อยู่ในระบบเงิน ควรขึ้นไปอยู่บน Filter เป็น
-                         select") -- was a separate .btn-group row BELOW this filter card (see
-                         2026-08-31's own comment on why it started as a toggle, not a new tab); moved
-                         up into the filter row itself as a plain select2-static (same pattern as the
-                         Employee tab's own "Payroll Participation" filter right above this pane) so it
-                         reads as one more filter dimension instead of a separate control area.
-                         data-option-values carries the real `participant`/`excluded` values
-                         EmployeeModel::recheckList()'s own $participantMode expects -- the i18n KEYS
-                         used for the label text are unrelated strings (recheck_view_in_payroll/
-                         recheck_view_not_in_payroll), so this can't be left to submit the raw key. -->
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-eye me-1 text-muted"></i><span data-i18n="view">View</span></label>
-                        <select class="form-select select2-static" id="employee_recheck_filter_view" data-option-keys="recheck_view_in_payroll,recheck_view_not_in_payroll" data-option-values="participant,excluded"></select>
-                    </div>
-                    <!-- 2026-09-12, Batch 4 item 4 -- Status/Employment Status/Position/Nationality/
-                         Tax Method/Payment Method added; EmployeeModel::buildListWhere() (shared by
-                         this tab and the main Employee tab's own list()) already supports
-                         status/employment_status, and gained position_id/nationality/
-                         tax_calculation_method/payment_method_id this same round -- see that method's
-                         own comments. "All" needs the same `data-option-values` sentinel ('all',
-                         mapped back to '' before hitting the backend) the Payroll Participation
-                         filter above (main Employee tab) already established, since a genuinely
-                         blank value in that attribute misaligns keys<->values by index (initSelect2's
-                         own static-mode parsing, see that filter's own comment). Option keys reuse
-                         the SAME canonical labels the real employee_status/employment_status fields
-                         on Employee Detail already use (status_active/status_probation/etc. and
-                         probation/permanent/contract/etc. respectively), not the shorter bare keys
-                         the station-row pipeline cards use elsewhere on this page.
-                         NOTE: a "Ready/Not Ready" (is_payroll_ready) filter was built here too but
-                         pulled back OUT of the UI before commit -- buildListWhere()'s own `is_ready`
-                         WHERE clause + tests/employee_recheck_filters_test.php stay in place
-                         (backend-only, unused by any UI yet) until employees.is_payroll_ready itself
-                         is trustworthy for sync-written employees (see BACKLOG.md). -->
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-toggle-on me-1 text-muted"></i><span data-i18n="status">Status</span></label>
-                        <select class="form-select select2-static" id="employee_recheck_filter_status" data-option-keys="filter_all,status_active,status_probation,status_suspended,status_resigned,status_terminated" data-option-values="all,active,probation,suspended,resigned,terminated"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-id-badge me-1 text-muted"></i><span data-i18n="employment_status">Employment Status</span></label>
-                        <select class="form-select select2-static" id="employee_recheck_filter_employment_status" data-option-keys="filter_all,probation,permanent,contract,resigned,terminated" data-option-values="all,probation,permanent,contract,resigned,terminated"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
-                        <select class="form-select select2-remote" id="employee_recheck_filter_department" data-api="/api/department.get" data-type="department"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-people-group me-1 text-muted"></i><span data-i18n="team">Team</span></label>
-                        <select class="form-select select2-remote" id="employee_recheck_filter_team" data-api="/api/team.get" data-type="team"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-briefcase me-1 text-muted"></i><span data-i18n="position">Position</span></label>
-                        <select class="form-select select2-remote" id="employee_recheck_filter_position" data-api="/api/position.get" data-type="position"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
-                        <select class="form-select select2-remote" id="employee_recheck_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-clock me-1 text-muted"></i><span data-i18n="shift">Shift</span></label>
-                        <select class="form-select select2-remote" id="employee_recheck_filter_shift" data-api="/api/shift.options" data-type="shift"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-user-tag me-1 text-muted"></i><span data-i18n="role">Role</span></label>
-                        <select class="form-select select2-remote" id="employee_recheck_filter_role" data-api="/api/role.get" data-type="role"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-earth-asia me-1 text-muted"></i><span data-i18n="nationality">Nationality</span></label>
-                        <select class="form-select select2-remote" id="employee_recheck_filter_nationality" data-api="/api/nationality.get" data-type="nationality"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-calculator me-1 text-muted"></i><span data-i18n="tax_calculation_method">Tax Calculation Method</span></label>
-                        <select class="form-select select2-static" id="employee_recheck_filter_tax_calculation_method" data-option-keys="filter_all,average_method,actual_method" data-option-values="all,average,actual"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-credit-card me-1 text-muted"></i><span data-i18n="payment_type">Payment Type</span></label>
-                        <select class="form-select select2-remote" id="employee_recheck_filter_payment_method" data-api="/api/payment-method.options"></select>
-                    </div>
-                </div>
+        <div class="row g-3 mb-3">
+            <!-- 2026-09-08, explicit follow-up request ("อยู่ในระบบเงิน ควรขึ้นไปอยู่บน Filter เป็น
+                 select") -- was a separate .btn-group row BELOW this filter card (see
+                 2026-08-31's own comment on why it started as a toggle, not a new tab); moved
+                 up into the filter row itself as a plain select2-static (same pattern as the
+                 Employee tab's own "Payroll Participation" filter right above this pane) so it
+                 reads as one more filter dimension instead of a separate control area.
+                 data-option-values carries the real `participant`/`excluded` values
+                 EmployeeModel::recheckList()'s own $participantMode expects -- the i18n KEYS
+                 used for the label text are unrelated strings (recheck_view_in_payroll/
+                 recheck_view_not_in_payroll), so this can't be left to submit the raw key. -->
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_recheck_filter_view" data-i18n="view">View</label>
+                <select class="form-select select2-static" id="employee_recheck_filter_view" data-option-keys="recheck_view_in_payroll,recheck_view_not_in_payroll" data-option-values="participant,excluded"></select>
             </div>
         </div>
-        <div class="station-filter-clear-row d-none" id="employeeRecheckFilterClearRow">
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmployeeRecheckFilter">
-                <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-            </button>
+        <?php
+        ob_start(); ?>
+        <div class="row g-2">
+            <!-- 2026-09-12, Batch 4 item 4 -- Status/Employment Status/Position/Nationality/
+                 Tax Method/Payment Method added; EmployeeModel::buildListWhere() (shared by
+                 this tab and the main Employee tab's own list()) already supports
+                 status/employment_status, and gained position_id/nationality/
+                 tax_calculation_method/payment_method_id this same round -- see that method's
+                 own comments. "All" needs the same `data-option-values` sentinel ('all',
+                 mapped back to '' before hitting the backend) the Payroll Participation
+                 filter above (main Employee tab) already established, since a genuinely
+                 blank value in that attribute misaligns keys<->values by index (initSelect2's
+                 own static-mode parsing, see that filter's own comment). Option keys reuse
+                 the SAME canonical labels the real employee_status/employment_status fields
+                 on Employee Detail already use (status_active/status_probation/etc. and
+                 probation/permanent/contract/etc. respectively), not the shorter bare keys
+                 the station-row pipeline cards use elsewhere on this page.
+                 NOTE: a "Ready/Not Ready" (is_payroll_ready) filter was built here too but
+                 pulled back OUT of the UI before commit -- buildListWhere()'s own `is_ready`
+                 WHERE clause + tests/employee_recheck_filters_test.php stay in place
+                 (backend-only, unused by any UI yet) until employees.is_payroll_ready itself
+                 is trustworthy for sync-written employees (see BACKLOG.md). -->
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_recheck_filter_status" data-i18n="status">Status</label>
+                <select class="form-select select2-static" id="employee_recheck_filter_status" data-option-keys="filter_all,status_active,status_probation,status_suspended,status_resigned,status_terminated" data-option-values="all,active,probation,suspended,resigned,terminated"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_recheck_filter_employment_status" data-i18n="employment_status">Employment Status</label>
+                <select class="form-select select2-static" id="employee_recheck_filter_employment_status" data-option-keys="filter_all,probation,permanent,contract,resigned,terminated" data-option-values="all,probation,permanent,contract,resigned,terminated"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_recheck_filter_department" data-i18n="department">Department</label>
+                <select class="form-select select2-remote" id="employee_recheck_filter_department" data-api="/api/department.get" data-type="department"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_recheck_filter_team" data-i18n="team">Team</label>
+                <select class="form-select select2-remote" id="employee_recheck_filter_team" data-api="/api/team.get" data-type="team"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_recheck_filter_position" data-i18n="position">Position</label>
+                <select class="form-select select2-remote" id="employee_recheck_filter_position" data-api="/api/position.get" data-type="position"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_recheck_filter_branch" data-i18n="branch">Branch</label>
+                <select class="form-select select2-remote" id="employee_recheck_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_recheck_filter_shift" data-i18n="shift">Shift</label>
+                <select class="form-select select2-remote" id="employee_recheck_filter_shift" data-api="/api/shift.options" data-type="shift"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_recheck_filter_role" data-i18n="role">Role</label>
+                <select class="form-select select2-remote" id="employee_recheck_filter_role" data-api="/api/role.get" data-type="role"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_recheck_filter_nationality" data-i18n="nationality">Nationality</label>
+                <select class="form-select select2-remote" id="employee_recheck_filter_nationality" data-api="/api/nationality.get" data-type="nationality"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_recheck_filter_tax_calculation_method" data-i18n="tax_calculation_method">Tax Calculation Method</label>
+                <select class="form-select select2-static" id="employee_recheck_filter_tax_calculation_method" data-option-keys="filter_all,average_method,actual_method" data-option-values="all,average,actual"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_recheck_filter_payment_method" data-i18n="payment_type">Payment Type</label>
+                <select class="form-select select2-remote" id="employee_recheck_filter_payment_method" data-api="/api/payment-method.options"></select>
+            </div>
         </div>
+        <?php
+        $filter_fields_html = ob_get_clean();
+        $id = 'employeeRecheckFilterBar';
+        include __DIR__ . '/../partials/filter-bar.php';
+        ?>
         <!-- 2026-09-08, explicit follow-up request ("อยากให้ column รหัสพนักงาน และชื่อพนักงาน fixed อยู่กับที่
              ฝั่งซ้าย...และ column Action อยากให้ fixed อยู่ขวาตลอด ส่วน Column ส่วนกลางๆ อยากให้ใช้เมาส์เลื่อนดู
              ข้อมูลได้...ทดลองกับตารางนี้ก่อน แค่จะมีอีกหลายตารางที่ปรับให้เป็นรูปแบบนี้") -- reverts the

@@ -3,7 +3,7 @@ function dashEscapeHtml(str) {
 }
 
 function dashFmtNum(n) {
-    return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return fmtNum(Number(n || 0));
 }
 
 function dashToDisplayDate(isoVal) {
@@ -191,8 +191,8 @@ function renderDashboard(data) {
     renderDepartmentChart(data.department_headcount || []);
 
     const stats = data.employee_stats || {};
-    $('#dashActiveEmployees').text((stats.active_count || 0).toLocaleString());
-    $('#dashNewHires').text((stats.new_this_month || 0).toLocaleString());
+    $('#dashActiveEmployees').text(fmtNum(stats.active_count || 0, 0, 3));
+    $('#dashNewHires').text(fmtNum(stats.new_this_month || 0, 0, 3));
 
     // 2026-08-28, explicit request: "อยากให้เห็นเหมือนกันทั้งหมด แต่ตรงตัวเลขเงินเดือนให้เป็นไปตาม Role
     // ที่ Set ไว้" -- the payroll widgets themselves (run counts/dates/Recent Runs list) now always
@@ -335,7 +335,7 @@ function renderOnlineUsers(rows, total) {
         return;
     }
     $section.removeClass('d-none');
-    $('#dashOnlineUsersCount').text((total || rows.length).toLocaleString());
+    $('#dashOnlineUsersCount').text(fmtNum(total || rows.length, 0, 3));
     rows.forEach(function (row) {
         $list.append(`
             <div class="dash-online-user-row">
@@ -365,8 +365,8 @@ function renderProbationInternExpiring(rows) {
         const kindLabel = row.kind === 'internship' ? (langData['internship'] || 'Internship') : (langData['probation'] || 'Probation');
         const isExpired = row.milestone === 'expired';
         const statusHtml = isExpired
-            ? `<span class="badge bg-danger-subtle text-danger-emphasis">${langData['dash_probation_intern_expired'] || 'Ended'} ${dashToDisplayDate(row.expiry_date)}</span>`
-            : `<span class="badge bg-warning-subtle text-warning-emphasis">${(langData['dash_probation_intern_days_left'] || '{n} day(s) left').replace('{n}', row.days_remaining)}</span>`;
+            ? `<span class="text-muted">${langData['dash_probation_intern_expired'] || 'Ended'} ${dashToDisplayDate(row.expiry_date)}</span>`
+            : `<span class="text-muted">${(langData['dash_probation_intern_days_left'] || '{n} day(s) left').replace('{n}', row.days_remaining)}</span>`;
         $list.append(`
             <a href="${url}" target="_blank" rel="noopener" class="dash-run-row">
                 <div class="dash-run-row-top">
@@ -396,7 +396,7 @@ function dashUpcomingPayCountdownText(paymentDateIso) {
 }
 
 function renderPayrollWidgets(payroll, canViewAmounts) {
-    $('#dashPendingApproval').text((payroll.pending_my_approval || 0).toLocaleString());
+    $('#dashPendingApproval').text(fmtNum(payroll.pending_my_approval || 0, 0, 3));
     const upcomingPaymentDate = payroll.upcoming_run && payroll.upcoming_run.payment_date;
     $('#dashUpcomingPayDate').text(upcomingPaymentDate ? dashToDisplayDate(upcomingPaymentDate) : '-');
     $('#dashUpcomingPayCountdown').text(dashUpcomingPayCountdownText(upcomingPaymentDate));
@@ -446,7 +446,7 @@ function renderCostTrendChart(rows) {
             datasets: [{
                 label: langData['dash_cost_trend'] || 'Payroll Cost Trend',
                 data: data,
-                backgroundColor: '#FF9900',
+                backgroundColor: tokenColor('--hex-ff9900'),
                 borderRadius: 4,
                 maxBarThickness: 48,
             }],
@@ -456,7 +456,7 @@ function renderCostTrendChart(rows) {
             maintainAspectRatio: false,
             plugins: { legend: { display: false } },
             scales: {
-                y: { beginAtZero: true, ticks: { callback: v => Number(v).toLocaleString() } },
+                y: { beginAtZero: true, ticks: { callback: v => fmtNum(Number(v), 0, 3) } },
             },
         },
     });
@@ -685,7 +685,7 @@ function renderDepartmentChart(rows) {
     }
     dashDeptChartInstance = new Chart($canvas[0].getContext('2d'), {
         type: 'bar',
-        data: { labels: labels, datasets: [{ data: data, backgroundColor: '#FF9900', borderRadius: 4, maxBarThickness: 22 }] },
+        data: { labels: labels, datasets: [{ data: data, backgroundColor: tokenColor('--hex-ff9900'), borderRadius: 4, maxBarThickness: 22 }] },
         options: {
             indexAxis: 'y',
             responsive: true,

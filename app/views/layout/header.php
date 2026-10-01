@@ -423,7 +423,7 @@ if ($compIdForOrigamiFlags > 0 && $navUserId > 0) {
                         ?>
                         <?php for ($i = 0; $i < $fillersNeeded; $i++): ?>
                             <li class="nav-hub-tile nav-hub-tile-filler" aria-hidden="true">
-                                <span class="nav-hub-tile-icon"><img src="<?=BASE_URL?>/public/images/origami_logo.png" alt="" style="opacity:0;"></span>
+                                <span class="nav-hub-tile-icon"><img src="<?=BASE_URL?>/public/images/origami_logo.png" alt="" class="opacity-0"></span>
                                 <span class="nav-hub-tile-label">&nbsp;</span>
                             </li>
                         <?php endfor; ?>

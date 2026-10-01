@@ -26,7 +26,7 @@
                 + '<div class="text-muted small">' + escapeHtmlSg(detail) + '</div>'
                 + '</div>'
                 + (item.done
-                    ? '<span class="badge bg-success-subtle text-success align-self-center" data-i18n="setup_guide_done">Done</span>'
+                    ? '<span class="align-self-center">' + statusBadgeHtml('done', 'setup_guide_status') + '</span>'
                     : '<a href="' + BASE_URL + item.link + '" class="btn btn-sm btn-outline-primary align-self-center" data-i18n="setup_guide_go_to_setting">Go to setting</a>')
                 + '</div></div>';
         });

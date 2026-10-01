@@ -31,9 +31,7 @@ function hsCheckboxCellHtml(date) {
 }
 
 function hsUpdateBadgeHtml(row) {
-    return row.has_update
-        ? `<span class="badge bg-warning-subtle text-warning"><i class="fa-solid fa-rotate me-1"></i>${langData['employee_sync_update_available'] || 'Update available'}</span>`
-        : `<span class="badge bg-success-subtle text-success">${langData['employee_sync_up_to_date'] || 'Up to date'}</span>`;
+    return statusBadgeHtml(row.has_update ? 'update_available' : 'up_to_date', 'sync_update_state');
 }
 
 // 2026-08-28, explicit request: "ปรับข้อมูลตาราง ตรง Sync ให้ดูสวยขึ้น" (make the Sync tables look
@@ -48,9 +46,9 @@ function hsRenderHolidayCell(row) {
     const name = hsHolidayName(row);
     return `
         <div class="d-flex align-items-center gap-2 py-1">
-            <div class="text-center rounded flex-shrink-0" style="width:42px;background:#fff3e0;border:1px solid #ffe0b2;">
-                <div class="text-uppercase fw-bold" style="color:#FF9900;font-size:.62rem;line-height:1.3;">${hsEscapeHtml(monthAbbr)}</div>
-                <div class="fw-bold" style="font-size:1rem;line-height:1.2;">${d.getDate()}</div>
+            <div class="text-center rounded flex-shrink-0 hs-date-tile">
+                <div class="text-uppercase fw-bold hs-date-month">${hsEscapeHtml(monthAbbr)}</div>
+                <div class="fw-bold hs-date-day">${d.getDate()}</div>
             </div>
             <div class="lh-sm">
                 <div class="fw-semibold">${hsEscapeHtml(name)}</div>
@@ -84,7 +82,8 @@ function hsUpdateSelectedCount() {
 }
 
 function hsRenderTables() {
-    $('#tb_holiday_sync_new').DataTable({
+    initSharedDataTable('#tb_holiday_sync_new', {
+        dtOptions: {
         destroy: true, responsive: true, paging: false, info: false, searching: false,
         data: holidaySyncLastNewRows,
         order: [[1, 'asc']],
@@ -94,8 +93,10 @@ function hsRenderTables() {
             { data: 'holiday_date', render: { display: (d, t, row) => hsRenderHolidayCell(row), sort: d => d, filter: d => d } },
             { data: null, orderable: false, render: (d, t, row) => hsNotesCellHtml(row) },
         ],
+        }
     });
-    $('#tb_holiday_sync_existing').DataTable({
+    initSharedDataTable('#tb_holiday_sync_existing', {
+        dtOptions: {
         destroy: true, responsive: true, paging: false, info: false, searching: false,
         data: holidaySyncLastExistingRows,
         order: [[1, 'asc']],
@@ -105,6 +106,7 @@ function hsRenderTables() {
             { data: 'holiday_date', render: { display: (d, t, row) => hsRenderHolidayCell(row), sort: d => d, filter: d => d } },
             { data: null, orderable: false, render: (d, t, row) => hsUpdateBadgeHtml(row) },
         ],
+        }
     });
 }
 
@@ -224,10 +226,8 @@ $(document).on('click', '#btnApplyHolidaySync', function () {
 });
 
 function hsSyncLogStatusBadge(status) {
-    const map = { completed: 'bg-success-subtle text-success', running: 'bg-warning-subtle text-warning', failed: 'bg-danger-subtle text-danger' };
-    const cls = map[status] || 'bg-light text-dark';
-    const text = langData['sync_log_status_' + status] || status;
-    return `<span class="badge ${cls}">${text}</span>`;
+    if (!['completed', 'running', 'failed'].includes(status)) return `<span class="text-muted">${escapeHtml(status)}</span>`;
+    return statusBadgeHtml(status, 'sync_batch_status');
 }
 
 function hsLoadSyncLog() {
@@ -251,7 +251,7 @@ function hsLoadSyncLog() {
                         <td>${hsEscapeHtml(byName)}</td>
                         <td>${hsSyncLogStatusBadge(r.status)}</td>
                         <td class="text-end">${hsEscapeHtml(r.total_count)}</td>
-                        <td class="text-end text-success">${hsEscapeHtml(r.success_count)}</td>
+                        <td class="text-end">${hsEscapeHtml(r.success_count)}</td>
                         <td class="text-end ${Number(r.error_count) > 0 ? 'text-danger' : ''}">${hsEscapeHtml(r.error_count)}</td>
                     </tr>
                 `;

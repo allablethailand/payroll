@@ -24,25 +24,24 @@
         $('#tb_system_access_history tbody').empty();
         $.get(`${BASE_URL}/api/employee-login-log.my-history`).done(function (res) {
             const rows = (res && res.status) ? (res.data || []) : [];
-            dtSystemAccessHistory = $('#tb_system_access_history').DataTable({
-                data: rows,
-                responsive: true,
-                pageLength: pageLength,
-                lengthMenu: lengthMenu,
-                language: { ...getTableLang(), emptyTable: langData['system_access_history_empty'] || 'No login history yet.' },
-                order: [[0, 'desc']],
-                columns: [
-                    // object-form render: sort/filter stay on the raw ISO timestamp -- this is a
-                    // CLIENT-side table (no serverSide), so sorting on a formatted display string
-                    // would sort lexicographically instead of chronologically (CLAUDE.md's own
-                    // Table convention -- the exact bug category already found/fixed elsewhere in
-                    // this app for the same reason).
-                    { data: null, render: { display: (d, t, r) => escapeHtmlSah(r.login_at || r.created_at || ''), sort: (d, t, r) => r.login_at || r.created_at || '', filter: (d, t, r) => r.login_at || r.created_at || '' } },
-                    { data: 'ip_address', render: (v) => escapeHtmlSah(v || '-') },
-                    { data: 'device_type', render: (v) => escapeHtmlSah(v || '-') },
-                    { data: 'browser_name', render: (v) => escapeHtmlSah(v || '-') },
-                ],
-                drawCallback: function () { getTableLang(); }
+            dtSystemAccessHistory = initSharedDataTable('#tb_system_access_history', {
+                dtOptions: {
+                    data: rows,
+                    responsive: true,
+                    language: { emptyTable: langData['system_access_history_empty'] || 'No login history yet.' },
+                    order: [[0, 'desc']],
+                    columns: [
+                        // object-form render: sort/filter stay on the raw ISO timestamp -- this is a
+                        // CLIENT-side table (no serverSide), so sorting on a formatted display string
+                        // would sort lexicographically instead of chronologically (CLAUDE.md's own
+                        // Table convention -- the exact bug category already found/fixed elsewhere in
+                        // this app for the same reason).
+                        { data: null, render: { display: (d, t, r) => escapeHtmlSah(r.login_at || r.created_at || ''), sort: (d, t, r) => r.login_at || r.created_at || '', filter: (d, t, r) => r.login_at || r.created_at || '' } },
+                        { data: 'ip_address', render: (v) => escapeHtmlSah(v || '-') },
+                        { data: 'device_type', render: (v) => escapeHtmlSah(v || '-') },
+                        { data: 'browser_name', render: (v) => escapeHtmlSah(v || '-') },
+                    ],
+                },
             });
         });
     });

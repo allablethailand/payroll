@@ -21,12 +21,12 @@
   </div>
 
   <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" role="tablist">
-    <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-req" type="button" id="payslipRequestTabBtn" role="tab"><i class="fa-solid fa-inbox me-1"></i> <span data-i18n="payslip_requests">Payslip Requests</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-req" type="button" id="payslipRequestTabBtn" role="tab"><span data-i18n="payslip_requests">Payslip Requests</span></button></li>
     <!-- 2026-08-26, explicit request: "เพิ่ม Tab สำหรับการ Request ใบรับรองขึ้นมาด้วยคู่กับ Pay slip" --
          paired here as a 3rd top-level tab on this same page, not a separate submenu item (see
          EmploymentCertificateRequestModel's own docblock for the backend this drives). -->
-    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-ecr" type="button" id="ecrRequestTabBtn" role="tab"><i class="fa-solid fa-file-shield me-1"></i> <span data-i18n="employment_certificate_requests">Employment Certificate Requests</span></button></li>
-    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-dlog" type="button" id="payslipDeliveryLogTabBtn" role="tab"><i class="fa-solid fa-clock-rotate-left me-1"></i> <span data-i18n="payslip_delivery_log">Delivery Log</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-ecr" type="button" id="ecrRequestTabBtn" role="tab"><span data-i18n="employment_certificate_requests">Employment Certificate Requests</span></button></li>
+    <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#tab-dlog" type="button" id="payslipDeliveryLogTabBtn" role="tab"><span data-i18n="payslip_delivery_log">Delivery Log</span></button></li>
   </ul>
 
   <div class="tab-content">
@@ -71,37 +71,31 @@
          DocumentDeliveryLogModel's own docblock for why this is a UNION at the read layer, not a
          schema change to payslip_delivery_logs). -->
     <div class="tab-pane fade p-0" id="tab-dlog">
-        <div class="station-filter" id="dlogStationFilter">
-          <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-          <button type="button" class="station-filter-toggle" id="dlogStationFilterToggle" title="Toggle filter">
-            <i class="fas fa-chevron-up"></i>
-          </button>
-          <div class="station-filter-body">
-            <div class="row g-2">
-              <div class="col-6 col-md-3">
-                <label class="form-label small mb-1"><i class="fa-solid fa-file-lines me-1 text-muted"></i><span data-i18n="document_types">Document Type</span></label>
-                <select class="form-select select2-static" id="dlog_filter_document_type" data-option-keys="doc_type_payslip,doc_type_employment_certificate" data-option-values="payslip,employment_certificate"></select>
-              </div>
-              <div class="col-6 col-md-3">
-                <label class="form-label small mb-1"><i class="fa-solid fa-toggle-on me-1 text-muted"></i><span data-i18n="status">Status</span></label>
-                <select class="form-select select2-static" id="dlog_filter_status" data-option-keys="status_sent,status_send_failed" data-option-values="success,failed"></select>
-              </div>
-              <div class="col-6 col-md-3">
-                <label class="form-label small mb-1"><i class="fa-solid fa-paper-plane me-1 text-muted"></i><span data-i18n="channel">Channel</span></label>
-                <select class="form-select select2-remote" id="dlog_filter_channel" data-api="/api/payslip-distribution.channel-options"></select>
-              </div>
-              <div class="col-6 col-md-3">
-                <label class="form-label small mb-1"><i class="fa-solid fa-route me-1 text-muted"></i><span data-i18n="source">Source</span></label>
-                <select class="form-select select2-static" id="dlog_filter_source" data-option-keys="source_auto,source_request" data-option-values="auto,request"></select>
-              </div>
+        <?php
+        ob_start(); ?>
+          <div class="row g-2">
+            <div class="col-6 col-md-3">
+              <label class="form-label small mb-1" for="dlog_filter_document_type" data-i18n="document_types">Document Type</label>
+              <select class="form-select select2-static" id="dlog_filter_document_type" data-option-keys="filter_all,doc_type_payslip,doc_type_employment_certificate" data-option-values="all,payslip,employment_certificate"></select>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small mb-1" for="dlog_filter_status" data-i18n="status">Status</label>
+              <select class="form-select select2-static" id="dlog_filter_status" data-option-keys="filter_all,status_sent,status_send_failed" data-option-values="all,success,failed"></select>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small mb-1" for="dlog_filter_channel" data-i18n="channel">Channel</label>
+              <select class="form-select select2-remote" id="dlog_filter_channel" data-api="/api/payslip-distribution.channel-options"></select>
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small mb-1" for="dlog_filter_source" data-i18n="source">Source</label>
+              <select class="form-select select2-static" id="dlog_filter_source" data-option-keys="filter_all,source_auto,source_request" data-option-values="all,auto,request"></select>
             </div>
           </div>
-        </div>
-        <div class="station-filter-clear-row d-none" id="dlogFilterClearRow">
-          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearDlogFilter">
-            <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-          </button>
-        </div>
+        <?php
+        $filter_fields_html = ob_get_clean();
+        $id = 'dlogFilterBar';
+        include __DIR__ . '/../partials/filter-bar.php';
+        ?>
         <table class="table table-hover align-middle w-100" id="tb_payslip_delivery_log">
           <thead class="table-light text-secondary">
             <tr>

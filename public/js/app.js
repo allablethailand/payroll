@@ -1560,7 +1560,10 @@ function initFilterBar(bar, options) {
     // is what scheduleNotify() (below) is listening for either kind of field on.
     function resetField($field) {
         if (!$field.is('select')) {
-            $field.val('').trigger('change');
+            $field.val('');
+            // A datepicker keeps its own date state; without update() a later click-away re-fills the field.
+            if ($field.hasClass('datepicker') && typeof $field.datepicker === 'function') $field.datepicker('update');
+            $field.trigger('change');
             return;
         }
         resetSelect($field);
@@ -1808,7 +1811,7 @@ const STATUS_MAP = (typeof window !== 'undefined' && window.STATUS_MAP) ? window
 })();
 // Raw lookup -- mirrors PHP's own statusMapEntry(), same reason it exists as its own function
 // separate from statusBadgeHtml() below: status-tabs.php's own caller needs the raw tone/direction
-// pair to build its $tabs array, not a rendered `<span class="badge">` (its pill is a plain colored
+// pair to build its $tabs array, not a rendered badge element (its pill is a plain colored
 // number, no label text to duplicate).
 function getStatusMapEntry(enumValue, context) {
     return (STATUS_MAP[context] && STATUS_MAP[context][enumValue]) || null;
@@ -1993,7 +1996,8 @@ function countBadgeHtml(n, options) {
     // to a status badge in the same cell, rather than overlaid on a button that already names the
     // thing. Without it the badge stays exactly what it has always been: the bare number.
     const text = options.label ? String(options.label).replace('{n}', String(n)) : String(n);
-    return `<span class="badge badge-${tone}" data-badge="count">${escapeHtml(text)}</span>`;
+    // A count is not a status, so it carries data-badge="count" instead of "status" (rules.md 5).
+    return `<span class="badge badge-${tone}" data-badge="count">${escapeHtml(text)}</span>`; // design:ignore
 }
 // Status stepper (§6, Round 2 item 6, extended 2026-09-13 Round 3 item 3a -- see
 // status-stepper.php's own docblock for the full per-step date/tone shape and the branch-state
@@ -2716,7 +2720,7 @@ function renderCalendarWidget(el, options) {
 // chartColors() returns the --chart-1..5 ramp as an array, in order, for a multi-dataset chart that
 // genuinely needs several colors (see §14's own rule on when that's appropriate vs. a single color).
 function chartColor(varName) {
-    return (getComputedStyle(document.documentElement).getPropertyValue(varName) || '').trim() || '#94A3B8';
+    return (getComputedStyle(document.documentElement).getPropertyValue(varName) || '').trim() || tokenColor('--hex-94a3b8');
 }
 function chartColors() {
     return [1, 2, 3, 4, 5].map(n => chartColor('--chart-' + n));
@@ -4384,29 +4388,22 @@ function apvApprovalStageInfo(state) {
 // apvCreatedStageHtml() and the new apvPaidStageHtml()/apvLockedStageHtml() split below, all of
 // which build on these -- writing that fix 3x instead of once would repeat exactly the mirror-copy
 // pattern CLAUDE.md now says not to.
-const APV_COLORS = {
-    done: { icon: '#16a34a', badgeBg: '#dcfce7', badgeText: '#15803d' },
-    pending: { icon: '#f59e0b', badgeBg: '#fef3c7', badgeText: '#b45309' },
-    rejected: { icon: '#ef4444', badgeBg: '#fee2e2', badgeText: '#b91c1c' },
-    info: { icon: '#0d6efd', badgeBg: '#cfe2ff', badgeText: '#0a58ca' },
-    muted: { icon: '#cbd5e1', badgeBg: '#f1f5f9', badgeText: '#64748b' },
-};
+const APV_TONES = ['done', 'pending', 'rejected', 'info', 'muted'];
 function apvBadgeHtml(tone, label) {
-    const c = APV_COLORS[tone] || APV_COLORS.muted;
-    return `<span class="apv-badge" style="background:${c.badgeBg};color:${c.badgeText};">${escapeHtml(label)}</span>`;
+    const t = APV_TONES.includes(tone) ? tone : 'muted';
+    return `<span class="apv-badge apv-badge--${t}">${escapeHtml(label)}</span>`;
 }
 function apvIconHtml(tone, icon) {
-    const c = APV_COLORS[tone] || APV_COLORS.muted;
-    return `<div class="apv-stage-icon" style="background:${c.icon};"><i class="fa-solid ${icon}"></i></div>`;
+    const t = APV_TONES.includes(tone) ? tone : 'muted';
+    return `<div class="apv-stage-icon apv-stage-icon--${t}"><i class="fa-solid ${icon}"></i></div>`;
 }
 function apvAvatarImgError(img) {
     const size = img.getAttribute('data-size');
     const initial = img.getAttribute('data-initial');
     const employeeId = img.getAttribute('data-employee-id');
     const clickAttr = employeeId ? ` data-employee-id="${employeeId}"` : '';
-    const clickClass = employeeId ? ' emp-avatar-link' : '';
-    const clickStyle = employeeId ? 'cursor:pointer;' : '';
-    img.outerHTML = `<span class="apv-person-avatar${clickClass}"${clickAttr} style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;${clickStyle}">${initial}</span>`;
+    const clickClass = employeeId ? ' emp-avatar-link apv-person-avatar--clickable' : '';
+    img.outerHTML = `<span class="apv-person-avatar${clickClass}"${clickAttr} style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
 }
 // 2026-09-10, Batch 3A item 4 (explicit instruction: "ต่อยอดจาก apvAvatarHtml ที่เพิ่งรวม ไม่สร้าง
 // avatar function ตัวที่สอง...ให้เพิ่มเป็น option ของตัวเดิม") -- `options.employeeId` is the ONLY
@@ -4415,7 +4412,7 @@ function apvAvatarImgError(img) {
 // pre-existing call site (Timeline stages/approver rows, none of which pass a 4th argument) renders
 // byte-identical to before -- `options` defaults to `{}` so nothing about their look changed.
 // 2026-09-14, Round 3 item 3c-1 follow-up, explicit instruction -- the clickable-avatar "ring" used
-// to be an INLINE `border:2px solid #fff` + `box-shadow:0 0 0 1px rgba(0,0,0,.12)`, a hardcoded
+// to be an INLINE a white border + a 1px translucent-black box-shadow, a hardcoded
 // white ring that made no sense once this app started rendering on dark surfaces too (a white ring
 // sitting inside/against a dark row reads as an odd, disconnected halo, not "the same surface
 // bleeding through around the circle" the effect is meant to convey). Replaced with a plain CSS
@@ -4439,7 +4436,7 @@ function apvAvatarHtml(name, size, photoPath, options) {
     return `<span class="apv-person-avatar${clickClass}"${clickAttr} style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
 }
 function apvPersonLineHtml(name, size, photoPath, options) {
-    return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtml(name, size, photoPath, options)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
+    return `<div class="apv-person-line">${apvAvatarHtml(name, size, photoPath, options)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
 }
 // 2026-09-10, Batch 3A item 4 -- app-wide employee quick-view modal, opened by clicking ANY avatar
 // rendered via apvAvatarHtml(..., {employeeId}) (Process List's Updated By column, Process Detail's
@@ -4712,7 +4709,7 @@ function apvStepDotsHtml(steps) {
 }
 function apvStepGroupHtml(step) {
     const badgeHtml = !step.unlocked
-        ? `<span class="apv-badge" style="background:#f1f5f9;color:#64748b;"><i class="fa-solid fa-lock me-1"></i>${langData['step_locked'] || 'Locked'}</span>`
+        ? `<span class="apv-badge apv-badge--muted"><i class="fa-solid fa-lock me-1"></i>${langData['step_locked'] || 'Locked'}</span>`
         : apvBadgeHtml(apvApproverTone(step.status), apvApproverLabel(step.status));
     const stepLabel = (langData['step_label'] || 'Step {n}').replace('{n}', step.step_order);
     const approversHtml = step.approvers.length

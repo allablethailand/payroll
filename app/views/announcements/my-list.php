@@ -26,9 +26,7 @@ function annMyItemHtml(row) {
     // announcement.manage -- rendered as-is (not escaped) via .ann-rich-content below, same trust
     // boundary/rendering approach as the Dashboard's own click-through modal.
     const body = currentLang === 'en' ? row.body_en : row.body_th;
-    const statusBadge = row.acknowledged_at
-        ? `<span class="badge bg-success-subtle text-success">${langData['announcement_acknowledged'] || 'Acknowledged'}</span>`
-        : `<span class="badge bg-warning-subtle text-warning">${langData['announcement_pending'] || 'Pending'}</span>`;
+    const statusBadge = statusBadgeHtml(row.acknowledged_at ? 'acknowledged' : 'pending', 'announcement_ack_status');
     const cover = row.cover_image_path ? `<img src="${BASE_URL}/${row.cover_image_path}" alt="" class="ann-cover-banner">` : '';
     return `<div class="card-surface p-3">
         ${cover}

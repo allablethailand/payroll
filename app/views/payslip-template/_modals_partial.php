@@ -70,7 +70,7 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+        <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
         <button type="button" class="btn btn-primary px-4" id="pstCreateTemplateBtn"><span id="pstCreateTemplateBtnLabel" data-i18n="create">Create</span></button>
       </div>
     </div>
@@ -89,7 +89,7 @@
         <div class="text-secondary small mt-2" data-i18n="ect_token_hint">Tip: use {{field_key}} to merge data anywhere in the text, e.g. "This certifies that {{employee_name}} holds the position of {{position}}."</div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+        <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
         <button type="button" class="btn btn-primary px-4" id="pstTextModalApplyBtn" data-i18n="apply">Apply</button>
       </div>
     </div>
@@ -109,7 +109,7 @@
         <div class="text-center text-secondary small py-4 d-none" id="pstImageLibraryEmpty" data-i18n="ect_image_library_empty">No images uploaded yet.</div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+        <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
         <button type="button" class="btn btn-primary px-4" id="pstImageLibraryInsertBtn" disabled>
           <i class="fa-solid fa-plus me-1"></i><span data-i18n="ect_insert_selected">Insert Selected</span> (<span id="pstImageLibrarySelectedCount">0</span>)
         </button>
@@ -148,7 +148,7 @@
         <div id="pstTableCellsGrid" class="pst-table-cells-grid"></div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+        <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
         <button type="button" class="btn btn-primary px-4" id="pstTableInsertConfirmBtn" data-i18n="insert">Insert</button>
       </div>
     </div>

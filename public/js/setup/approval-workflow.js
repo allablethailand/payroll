@@ -181,7 +181,7 @@ function buildStepEditHtml(step, index) {
                 </div>
 
                 <div class="d-flex justify-content-end gap-2 mt-3">
-                    <button type="button" class="btn btn-light btn-sm awf-step-cancel-btn">${langData['cancel'] || 'Cancel'}</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm awf-step-cancel-btn">${langData['cancel'] || 'Cancel'}</button>
                     <button type="button" class="btn btn-primary btn-sm awf-step-save-btn"><i class="fa-solid fa-check me-1"></i>${langData['save'] || 'Save'}</button>
                 </div>
             </div>
@@ -247,9 +247,7 @@ function renderFlowStatus() {
         return;
     }
     const isActive = currentFlow.status === 'active';
-    $badge.removeClass('d-none bg-success-subtle text-success bg-secondary-subtle text-secondary')
-        .addClass(isActive ? 'bg-success-subtle text-success' : 'bg-secondary-subtle text-secondary')
-        .text(isActive ? (langData['active'] || 'Active') : (langData['inactive'] || 'Inactive'));
+    $badge.removeClass('d-none').html(statusBadgeHtml(isActive ? 'active' : 'inactive', 'workflow_flow_status'));
     $toggleBtn.removeClass('d-none').html(`<i class="fa-solid ${isActive ? 'fa-toggle-on' : 'fa-toggle-off'} me-1"></i>${isActive ? (langData['deactivate'] || 'Deactivate') : (langData['activate'] || 'Activate')}`);
     $hint.text(isActive ? (langData['flow_status_active_hint'] || '') : (langData['flow_status_inactive_hint'] || ''));
 }

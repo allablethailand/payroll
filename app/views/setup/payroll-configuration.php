@@ -20,24 +20,24 @@
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="companySetupTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu active" id="cycle-tab" data-bs-toggle="tab" data-bs-target="#cycle-pane" type="button" role="tab" aria-controls="cycle-pane" aria-selected="true">
-                <i class="fa-regular fa-calendar-days me-2"></i><span data-i18n="cycle">Schedule</span>
+                <span data-i18n="cycle">Schedule</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="earnings-tab" data-bs-toggle="tab" data-bs-target="#earnings-pane" type="button" role="tab" aria-controls="earnings-pane" aria-selected="false">
-                <i class="fa-solid fa-calendar-day me-2"></i><span data-i18n="earnings">Income</span>
+                <span data-i18n="earnings">Income</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="deductions-tab" data-bs-toggle="tab" data-bs-target="#deductions-pane" type="button" role="tab" aria-controls="deductions-pane" aria-selected="false">
-                <i class="fa-regular fa-calendar-check me-2"></i><span data-i18n="deductions">Deductions</span>
+                <span data-i18n="deductions">Deductions</span>
             </button>
         </li>
         <!-- 2026-08-21, explicit request: own tab right after Deductions, replacing the old button+shared-
              modal-with-pill-switcher entry point on the Deductions tab. -->
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="attendance-deduction-tab" data-bs-toggle="tab" data-bs-target="#attendance-deduction-pane" type="button" role="tab" aria-controls="attendance-deduction-pane" aria-selected="false">
-                <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="attendance_deduction">Attendance Deduction</span>
+                <span data-i18n="attendance_deduction">Attendance Deduction</span>
             </button>
         </li>
         <!-- 2026-08-29, explicit request: "ตัดเบี้ยขยันและการบันทึกเบี้ยขยันออกจากการตั้งค่า และไม่นำไปคำนวณ
@@ -62,11 +62,11 @@
              docblock). -->
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="policies-tab" data-bs-toggle="tab" data-bs-target="#policies-pane" type="button" role="tab" aria-controls="policies-pane" aria-selected="false">
-                <i class="fa-solid fa-shield-halved me-2"></i><span data-i18n="payroll_policies">Payroll Policies</span>
+                <span data-i18n="payroll_policies">Payroll Policies</span>
             </button>
         </li>
     </ul>
-    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
+    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 rounded-top-0">
         <div class="tab-pane fade show active" id="cycle-pane" role="tabpanel" aria-labelledby="cycle-tab" tabindex="0">
             <div class="mt-5 mb-5">
                 <div class="mt-5 mb-5">
@@ -82,7 +82,7 @@
                                 <th scope="col" style="width: 15%;" data-i18n="table_cutoff">Attendance Cut-off</th>
                                 <th scope="col" style="width: 15%;" data-i18n="table_payment_day">Payment Day</th>
                                 <th scope="col" style="width: 13%;" data-i18n="table_bank_format">Bank Format</th>
-                                <th scope="col" style="width: 8%; text-align: center;"></th>
+                                <th class="text-center" scope="col" style="width: 8%"></th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -103,7 +103,7 @@
                             <th scope="col" style="width: 16%;" data-i18n="col_tax_type">Tax Treatment</th>
                             <th scope="col" style="width: 10%;" data-i18n="col_sso">SSO Cal</th>
                             <th scope="col" style="width: 10%;" data-i18n="col_pf">Provident Fund</th>
-                            <th scope="col" style="width: 4%; text-align: center;"></th>
+                            <th class="text-center" scope="col" style="width: 4%"></th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -120,7 +120,7 @@
                             <th scope="col" style="width: 30%;" data-i18n="col_name">Item Name</th>
                             <th scope="col" style="width: 20%;" data-i18n="col_calc_method">Calculation</th>
                             <th scope="col" style="width: 20%;" data-i18n="col_deduct_type">Tax Deduction Impact</th>
-                            <th scope="col" style="width: 5%; text-align: center;"></th>
+                            <th class="text-center" scope="col" style="width: 5%"></th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -438,7 +438,7 @@
                     </div>
                 </div>
                 <div class="d-flex justify-content-end gap-2">
-                    <button type="button" class="btn btn-light border btn-sm" id="btnCancelPayrollPolicies"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span></button>
+                    <button type="button" class="btn btn-outline-secondary border btn-sm" id="btnCancelPayrollPolicies"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span></button>
                     <button type="button" class="btn btn-primary btn-sm" id="btnSavePayrollPolicies"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
                 </div>
             </div>

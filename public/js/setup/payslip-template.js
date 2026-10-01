@@ -250,7 +250,7 @@ $(document).on('click', '.pst-margin-option', function (e) {
 
 function emptyElementBase() {
     return {
-        font_size: 14, font_family: 'th_sarabun_new', font_color: '#000000',
+        font_size: 14, font_family: 'th_sarabun_new', font_color: tokenColor('--hex-000000'),
         text_align: 'left', font_weight: 'normal', font_style: 'normal', text_decoration: 'none',
         group_key: null, page_number: currentPageNumber, is_visible: true
     };
@@ -408,15 +408,15 @@ function tableElementBodyHtml(el) {
     try { data = JSON.parse(el.content || '{}'); } catch (e) { data = {}; }
     const rows = Number(data.rows) || 1;
     const cols = Number(data.cols) || 1;
-    const borderColor = data.border_color || '#000000';
+    const borderColor = data.border_color || tokenColor('--hex-000000');
     const borderWidth = Number(data.border_width) || 1;
     const cells = Array.isArray(data.cells) ? data.cells : [];
-    let html = `<table style="width:100%;height:100%;border-collapse:collapse;">`;
+    let html = `<table class="tpl-preview-table">`;
     for (let r = 0; r < rows; r++) {
         html += '<tr>';
         for (let c = 0; c < cols; c++) {
             const text = escapeHtml((cells[r] && cells[r][c]) || '').replace(/\n/g, '<br>');
-            html += `<td style="border:${borderWidth}px solid ${borderColor};padding:2px 4px;">${text}</td>`;
+            html += `<td style="--cell-bw:${borderWidth}px;--cell-bc:${borderColor};">${text}</td>`;
         }
         html += '</tr>';
     }
@@ -459,8 +459,8 @@ function applyElementStyle($el, el) {
     });
     if (el.element_type === 'shape') {
         $el.find('.pst-el-body').css({
-            backgroundColor: el.font_color || '#000000',
-            border: `1px solid ${el.font_color || '#000000'}`,
+            backgroundColor: el.font_color || tokenColor('--hex-000000'),
+            border: `1px solid ${el.font_color || tokenColor('--hex-000000')}`,
             boxSizing: 'border-box',
             borderRadius: el.field_key === 'ellipse' ? '50%' : '0'
         });
@@ -472,7 +472,7 @@ function applyElementStyle($el, el) {
         fontWeight: el.font_weight === 'bold' ? '700' : '400',
         fontStyle: el.font_style === 'italic' ? 'italic' : 'normal',
         textDecoration: el.text_decoration === 'underline' ? 'underline' : 'none',
-        color: el.font_color || '#000000',
+        color: el.font_color || tokenColor('--hex-000000'),
         fontFamily: FONT_FAMILY_CSS_STACK[el.font_family] || FONT_FAMILY_CSS_STACK.th_sarabun_new
     });
 }
@@ -1111,7 +1111,7 @@ function addShapeElement(shapeType, posX, posY) {
         key: newElementKey(), id: null, element_type: 'shape', field_key: shapeType, image_asset_id: null, content: null,
         pos_x_pct: clampPst(posX, 0, 80), pos_y_pct: clampPst(posY, 0, 85),
         width_pct: shapeType === 'line' ? 30 : 20, height_pct: shapeType === 'line' ? 1 : 15,
-        font_color: '#FF9900'
+        font_color: tokenColor('--hex-ff9900')
     });
     pushUndo();
     elements.push(el);
@@ -1185,7 +1185,7 @@ $(document).on('input', '#pstTableRowsInput, #pstTableColsInput', function () {
 function openTableModal(key) {
     const el = key ? findElement(key) : null;
     editingTableKey = key || null;
-    let data = { rows: 3, cols: 3, border_color: '#000000', border_width: 1, cells: [] };
+    let data = { rows: 3, cols: 3, border_color: tokenColor('--hex-000000'), border_width: 1, cells: [] };
     if (el) {
         try { data = Object.assign(data, JSON.parse(el.content || '{}')); } catch (e) { /* keep defaults */ }
     }
@@ -1212,7 +1212,7 @@ $(document).on('click', '#pstTableInsertConfirmBtn', function () {
     }
     const content = JSON.stringify({
         rows, cols,
-        border_color: $('#pstTableBorderColorInput').val() || '#000000',
+        border_color: $('#pstTableBorderColorInput').val() || tokenColor('--hex-000000'),
         border_width: clampPst(parseInt($('#pstTableBorderWidthInput').val(), 10) || 1, 0, 10),
         cells
     });
@@ -1375,7 +1375,7 @@ function pstLangStatusHtml(pairRow, lang) {
     if (!tpl) {
         return `<i class="fa-regular fa-circle text-muted" title="${langData['ect_not_ready'] || 'Not ready'}"></i>`;
     }
-    return `<i class="fa-solid fa-circle-check text-success" title="${langData['ect_ready'] || 'Ready'}"></i>`;
+    return `<i class="fa-solid fa-circle-check text-muted" title="${langData['ect_ready'] || 'Ready'}"></i>`;
 }
 // 2026-08-26, explicit follow-up: "ในหน้า List ปุ่ม Draft กับ Public ให้เป็น Switch ปิดเปิด แล้วแยกมาเป็น
 // Column แรกสุด โดยเปิดคือ Public" -- publish_status is genuinely PER LANGUAGE, so a pair with both
@@ -1504,7 +1504,7 @@ function pstActionsGroupHtml(pairRow) {
             <ul class="dropdown-menu">${previewItems}</ul>
         </div>
         <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-pst" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-link btn-circle-action text-primary btn-duplicate-pair-pst" title="${langData['duplicate'] || 'Duplicate'}"><i class="fas fa-copy"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action btn-duplicate-pair-pst" title="${langData['duplicate'] || 'Duplicate'}"><i class="fas fa-copy"></i></button>
         <div class="dropdown">
             <button type="button" class="btn btn-link btn-circle-action text-danger dropdown-toggle" data-bs-toggle="dropdown" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
             <ul class="dropdown-menu dropdown-menu-end">${deleteItems.join('')}</ul>
@@ -1516,7 +1516,17 @@ function initPstTemplateTable() {
         $('#tb_pst_template').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_pst_template = $('#tb_pst_template').DataTable({
+    tb_pst_template = initSharedDataTable('#tb_pst_template', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 1, key: 'template_name' },
+                { index: 2, key: 'page_size' },
+                { index: 5, key: 'updated_at' },
+            ]
+        },
+        dtOptions: {
+        searching: true,
         responsive: true,
         ajax: {
             url: `${BASE_URL}/api/payslip-template.paired-list`,
@@ -1543,9 +1553,6 @@ function initPstTemplateTable() {
         // Edit/Duplicate/Preview/Delete all need the FULL pair row (both languages' ids, pair_key,
         // name) -- stashed on the <tr> itself rather than re-derived from data-* attributes.
         createdRow: function (row, data) { $(row).data('pairRow', data); },
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         initComplete: function () {
             const self = this.api();
             const $wrapper = $(self.table().container());
@@ -1557,17 +1564,7 @@ function initPstTemplateTable() {
                     </button>
                 `);
             }
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the publish-switch column (0), the icon-only TH/EN
-            // language-status columns (3, 4, no single filterable value), and actions (6).
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 1, key: 'template_name' },
-                    { index: 2, key: 'page_size' },
-                    { index: 5, key: 'updated_at' },
-                ]
-            });
+        }
         }
     });
 }
@@ -2029,34 +2026,34 @@ function loadPresets() {
 }
 const PRESET_MOCKUPS = {
     classic: { bars: [
-        { left: 8, top: 3, width: 60, height: 6, color: '#333' },
-        { left: 8, top: 18, width: 40, height: 4, color: '#bbb' },
-        { left: 50, top: 18, width: 42, height: 4, color: '#bbb' },
-        { left: 8, top: 30, width: 84, height: 3, color: '#ddd' },
-        { left: 8, top: 38, width: 40, height: 22, color: '#eee', box: true },
-        { left: 52, top: 38, width: 40, height: 22, color: '#eee', box: true },
-        { left: 8, top: 62, width: 84, height: 15, color: '#eee', box: true },
-        { left: 8, top: 80, width: 40, height: 5, color: '#333' },
-        { left: 52, top: 80, width: 40, height: 5, color: '#333' },
+        { left: 8, top: 3, width: 60, height: 6, color: 'var(--hex-333333)' },
+        { left: 8, top: 18, width: 40, height: 4, color: 'var(--hex-bbbbbb)' },
+        { left: 50, top: 18, width: 42, height: 4, color: 'var(--hex-bbbbbb)' },
+        { left: 8, top: 30, width: 84, height: 3, color: 'var(--hex-dddddd)' },
+        { left: 8, top: 38, width: 40, height: 22, color: 'var(--hex-eeeeee)', box: true },
+        { left: 52, top: 38, width: 40, height: 22, color: 'var(--hex-eeeeee)', box: true },
+        { left: 8, top: 62, width: 84, height: 15, color: 'var(--hex-eeeeee)', box: true },
+        { left: 8, top: 80, width: 40, height: 5, color: 'var(--hex-333333)' },
+        { left: 52, top: 80, width: 40, height: 5, color: 'var(--hex-333333)' },
     ] },
     modern: { bars: [
-        { left: 6, top: 5, width: 16, height: 10, color: '#e2e2e2', box: true },
-        { left: 26, top: 6, width: 60, height: 6, color: '#333' },
-        { left: 26, top: 12, width: 55, height: 3, color: '#bbb' },
-        { left: 6, top: 19, width: 88, height: 1, color: '#FF9900' },
-        { left: 6, top: 22, width: 88, height: 5, color: '#333' },
-        { left: 6, top: 40, width: 88, height: 18, color: '#eee', box: true },
-        { left: 6, top: 60, width: 88, height: 12, color: '#eee', box: true },
-        { left: 6, top: 74, width: 88, height: 12, color: '#eee', box: true },
-        { left: 6, top: 89, width: 88, height: 6, color: '#FF9900' },
+        { left: 6, top: 5, width: 16, height: 10, color: 'var(--hex-e2e2e2)', box: true },
+        { left: 26, top: 6, width: 60, height: 6, color: 'var(--hex-333333)' },
+        { left: 26, top: 12, width: 55, height: 3, color: 'var(--hex-bbbbbb)' },
+        { left: 6, top: 19, width: 88, height: 1, color: 'var(--hex-ff9900)' },
+        { left: 6, top: 22, width: 88, height: 5, color: 'var(--hex-333333)' },
+        { left: 6, top: 40, width: 88, height: 18, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 60, width: 88, height: 12, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 74, width: 88, height: 12, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 89, width: 88, height: 6, color: 'var(--hex-ff9900)' },
     ] },
     minimal: { bars: [
-        { left: 6, top: 6, width: 88, height: 6, color: '#333' },
-        { left: 6, top: 14, width: 60, height: 4, color: '#bbb' },
-        { left: 6, top: 24, width: 88, height: 20, color: '#eee', box: true },
-        { left: 6, top: 46, width: 88, height: 14, color: '#eee', box: true },
-        { left: 6, top: 62, width: 88, height: 14, color: '#eee', box: true },
-        { left: 6, top: 80, width: 88, height: 6, color: '#333' },
+        { left: 6, top: 6, width: 88, height: 6, color: 'var(--hex-333333)' },
+        { left: 6, top: 14, width: 60, height: 4, color: 'var(--hex-bbbbbb)' },
+        { left: 6, top: 24, width: 88, height: 20, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 46, width: 88, height: 14, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 62, width: 88, height: 14, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 80, width: 88, height: 6, color: 'var(--hex-333333)' },
     ] },
 };
 function renderPresetMockup(code) {
@@ -2066,7 +2063,7 @@ function renderPresetMockup(code) {
     }
     const bars = cfg.bars.map(b => {
         const radius = b.box ? '3px' : '1px';
-        return `<span style="position:absolute;left:${b.left}%;top:${b.top}%;width:${b.width}%;height:${b.height}%;background:${b.color};border-radius:${radius};"></span>`;
+        return `<span class="ect-preset-bar" style="--bar-l:${b.left}%;--bar-t:${b.top}%;--bar-w:${b.width}%;--bar-h:${b.height}%;--bar-bg:${b.color};--bar-r:${radius};"></span>`;
     }).join('');
     return `<div class="pst-preset-mock">${bars}</div>`;
 }

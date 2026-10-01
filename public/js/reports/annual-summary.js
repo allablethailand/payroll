@@ -31,7 +31,7 @@ let aisCurrentMonths = [];
 
 function aisFmt(n) {
     const v = Number(n) || 0;
-    return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return fmtNum(v);
 }
 function aisMonthLabel(m) {
     const monthKey = 'month_' + m.month;
@@ -81,6 +81,12 @@ function aisAnnualTotalCellHtml(row) {
     </button>`;
 }
 
+// The filter-bar's "no filter" status option is the value 'all'; the API expects it empty.
+function aisStatusFilterValue(selector) {
+    const v = $(selector).val();
+    return v === 'all' ? '' : (v || '');
+}
+
 function aisCurrentFilters() {
     return {
         fiscal_year: $('#aisFiscalYear').val(),
@@ -89,13 +95,8 @@ function aisCurrentFilters() {
         team_id: $('#aisFilterTeam').val() || '',
         branch_id: $('#aisFilterBranch').val() || '',
         role_id: $('#aisFilterRole').val() || '',
-        employee_status: $('#aisFilterStatus').val() || '',
+        employee_status: aisStatusFilterValue('#aisFilterStatus'),
     };
-}
-function aisUpdateClearFilterVisibility() {
-    const f = aisCurrentFilters();
-    const hasFilter = !!(f.cycle_id || f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
-    $('#aisFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 
 function loadAisFiscalYears() {
@@ -372,7 +373,7 @@ function aisRenderCellDetail(runs) {
                 <span>${langData['table_base_salary'] || 'Base Salary'}</span>
                 <span class="fw-semibold">${aisFmt(run.base_salary_amount)}</span>
             </div>
-            <div class="fw-semibold small text-success mt-2 mb-1">${langData['breakdown_earnings'] || 'Income'}</div>
+            <div class="fw-semibold small mt-2 mb-1">${langData['breakdown_earnings'] || 'Income'}</div>
             ${aisDetailLineRowsHtml(run.earning_lines, 'amount')}
             <div class="fw-semibold small text-danger mt-2 mb-1">${langData['table_deduction_amount'] || 'Deductions'}</div>
             ${aisDetailLineRowsHtml(run.deduction_lines, 'amount')}
@@ -514,7 +515,7 @@ function aisRenderAnnualDetail(row) {
         const hasData = aisMonthHasData(cell);
         const cls = idx === stats.peakIdx && hasData ? ' class="table-warning"' : '';
         const clickableAttrs = hasData ? ` data-employee-id="${row.employee_id}" data-year="${m.year}" data-month="${m.month}"` : '';
-        const rowTag = hasData ? `<tr class="ais-cell-clickable"${clickableAttrs} style="cursor:pointer;"${cls}>` : `<tr${cls}>`;
+        const rowTag = hasData ? `<tr class="ais-cell-clickable"${clickableAttrs}${cls}>` : `<tr${cls}>`;
         return `${rowTag}
             <td>${escapeHtml(aisMonthLabel(m))}</td>
             <td class="text-end">${hasData ? aisFmt(cell.gross) : '-'}</td>
@@ -583,19 +584,7 @@ $(document).on('click', '.ais-annual-total-clickable', function () {
     bootstrap.Modal.getOrCreateInstance(document.getElementById('aisAnnualDetailModal')).show();
 });
 
-$(document).on('click', '#aisStationFilterToggle', function () {
-    const $filter = $('#aisStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#aisFiscalYear, #aisFilterCycle, #aisFilterDepartment, #aisFilterTeam, #aisFilterBranch, #aisFilterRole, #aisFilterStatus', function () {
-    aisUpdateClearFilterVisibility();
-    loadAisSummary();
-});
-$(document).on('click', '#aisClearFilterBtn', function () {
-    $('#aisFilterCycle, #aisFilterDepartment, #aisFilterTeam, #aisFilterBranch, #aisFilterRole').val(null).trigger('change.select2');
-    $('#aisFilterStatus').val('').trigger('change');
-});
+$(document).on('change', '#aisFiscalYear', loadAisSummary);
 
 /* ==================== Tab 2: Annual Withholding Tax (PIT) Summary (Phase 4, T027) ====================
    Same shape/conventions as Tab 1 above (client-side, un-paginated, FixedColumns) -- tracking a
@@ -616,13 +605,8 @@ function aisPitCurrentFilters() {
         team_id: $('#aisPitFilterTeam').val() || '',
         branch_id: $('#aisPitFilterBranch').val() || '',
         role_id: $('#aisPitFilterRole').val() || '',
-        employee_status: $('#aisPitFilterStatus').val() || '',
+        employee_status: aisStatusFilterValue('#aisPitFilterStatus'),
     };
-}
-function aisPitUpdateClearFilterVisibility() {
-    const f = aisPitCurrentFilters();
-    const hasFilter = !!(f.cycle_id || f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
-    $('#aisPitFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function loadAisPitFiscalYears() {
     $.ajax({
@@ -754,13 +738,8 @@ function aisSsoCurrentFilters() {
         team_id: $('#aisSsoFilterTeam').val() || '',
         branch_id: $('#aisSsoFilterBranch').val() || '',
         role_id: $('#aisSsoFilterRole').val() || '',
-        employee_status: $('#aisSsoFilterStatus').val() || '',
+        employee_status: aisStatusFilterValue('#aisSsoFilterStatus'),
     };
-}
-function aisSsoUpdateClearFilterVisibility() {
-    const f = aisSsoCurrentFilters();
-    const hasFilter = !!(f.cycle_id || f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
-    $('#aisSsoFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function loadAisSsoFiscalYears() {
     $.ajax({
@@ -885,13 +864,8 @@ function aisMonthlyCurrentFilters() {
         role_id: $('#aisMonthlyFilterRole').val() || '',
         // 2026-09-12, Batch 5 item 5 step 2 -- genuinely missing before this (Branch above already
         // existed; Status did not -- see the view's own comment on this correction).
-        employee_status: $('#aisMonthlyFilterStatus').val() || '',
+        employee_status: aisStatusFilterValue('#aisMonthlyFilterStatus'),
     };
-}
-function aisMonthlyUpdateClearFilterVisibility() {
-    const f = aisMonthlyCurrentFilters();
-    const hasFilter = !!(f.cycle_id || f.department_id || f.team_id || f.branch_id || f.role_id || f.employee_status);
-    $('#aisMonthlyFilterClearRow').toggleClass('d-none', !hasFilter);
 }
 function loadAisMonthlyYears() {
     $.ajax({
@@ -1003,47 +977,11 @@ function aisRenderMonthlyTable(employees) {
     updateText($('#tb_ais_monthly')[0]);
 }
 
-$(document).on('click', '#aisPitStationFilterToggle', function () {
-    const $filter = $('#aisPitStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#aisPitFiscalYear, #aisPitFilterCycle, #aisPitFilterDepartment, #aisPitFilterTeam, #aisPitFilterBranch, #aisPitFilterRole, #aisPitFilterStatus', function () {
-    aisPitUpdateClearFilterVisibility();
-    loadAisPitSummary();
-});
-$(document).on('click', '#aisPitClearFilterBtn', function () {
-    $('#aisPitFilterCycle, #aisPitFilterDepartment, #aisPitFilterTeam, #aisPitFilterBranch, #aisPitFilterRole').val(null).trigger('change.select2');
-    $('#aisPitFilterStatus').val('').trigger('change');
-});
+$(document).on('change', '#aisPitFiscalYear', loadAisPitSummary);
 
-$(document).on('click', '#aisSsoStationFilterToggle', function () {
-    const $filter = $('#aisSsoStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#aisSsoFiscalYear, #aisSsoFilterCycle, #aisSsoFilterDepartment, #aisSsoFilterTeam, #aisSsoFilterBranch, #aisSsoFilterRole, #aisSsoFilterStatus', function () {
-    aisSsoUpdateClearFilterVisibility();
-    loadAisSsoSummary();
-});
-$(document).on('click', '#aisSsoClearFilterBtn', function () {
-    $('#aisSsoFilterCycle, #aisSsoFilterDepartment, #aisSsoFilterTeam, #aisSsoFilterBranch, #aisSsoFilterRole').val(null).trigger('change.select2');
-    $('#aisSsoFilterStatus').val('').trigger('change');
-});
+$(document).on('change', '#aisSsoFiscalYear', loadAisSsoSummary);
 
-$(document).on('click', '#aisMonthlyStationFilterToggle', function () {
-    const $filter = $('#aisMonthlyStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#aisMonthlyYear, #aisMonthlyMonth, #aisMonthlyFilterCycle, #aisMonthlyFilterDepartment, #aisMonthlyFilterTeam, #aisMonthlyFilterBranch, #aisMonthlyFilterRole, #aisMonthlyFilterStatus', function () {
-    aisMonthlyUpdateClearFilterVisibility();
-    loadAisMonthlySummary();
-});
-$(document).on('click', '#aisMonthlyClearFilterBtn', function () {
-    $('#aisMonthlyFilterCycle, #aisMonthlyFilterDepartment, #aisMonthlyFilterTeam, #aisMonthlyFilterBranch, #aisMonthlyFilterRole').val(null).trigger('change.select2');
-    $('#aisMonthlyFilterStatus').val('').trigger('change');
-});
+$(document).on('change', '#aisMonthlyYear, #aisMonthlyMonth', loadAisMonthlySummary);
 
 // Lazy-init every non-default tab (including the SSO tab added in Batch 2, item 6) on first
 // shown.bs.tab (same "DataTable built while display:none collapses every column" gotcha this app
@@ -1059,6 +997,7 @@ $(document).on('shown.bs.tab', '#ais-pit-tab', function () {
         initSelect2('#aisPitFilterRole', { mode: 'ajax', allowClear: true });
         initSelect2('#aisPitFilterStatus', { mode: 'static' });
     }
+    initFilterBar('#aisPitFilterBar', { onChange: loadAisPitSummary });
     loadAisPitFiscalYears();
 });
 $(document).on('shown.bs.tab', '#ais-sso-tab', function () {
@@ -1072,6 +1011,7 @@ $(document).on('shown.bs.tab', '#ais-sso-tab', function () {
         initSelect2('#aisSsoFilterRole', { mode: 'ajax', allowClear: true });
         initSelect2('#aisSsoFilterStatus', { mode: 'static' });
     }
+    initFilterBar('#aisSsoFilterBar', { onChange: loadAisSsoSummary });
     loadAisSsoFiscalYears();
 });
 $(document).on('shown.bs.tab', '#ais-monthly-pit-tab', function () {
@@ -1086,6 +1026,7 @@ $(document).on('shown.bs.tab', '#ais-monthly-pit-tab', function () {
         initSelect2('#aisMonthlyMonth', { mode: 'static' });
         initSelect2('#aisMonthlyFilterStatus', { mode: 'static' });
     }
+    initFilterBar('#aisMonthlyFilterBar', { onChange: loadAisMonthlySummary });
     loadAisMonthlyYears();
 });
 
@@ -1099,6 +1040,7 @@ $(document).ready(function () {
         initSelect2('#aisFilterRole', { mode: 'ajax', allowClear: true });
         initSelect2('#aisFilterStatus', { mode: 'static' });
     }
+    initFilterBar('#aisFilterBar', { onChange: loadAisSummary });
     loadAisFiscalYears();
     });
 });
