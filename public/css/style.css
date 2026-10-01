@@ -12577,3 +12577,85 @@ div.dt-processing {
 .tpl-preview-table { width: 100%; height: 100%; border-collapse: collapse; }
 .tpl-preview-table td { border: var(--cell-bw, 1px) solid var(--cell-bc, currentColor); padding: 2px 4px; }
 .ect-preset-bar { position: absolute; left: var(--bar-l); top: var(--bar-t); width: var(--bar-w); height: var(--bar-h); background: var(--bar-bg); border-radius: var(--bar-r); }
+
+/* Round 3 Phase 3 -- Canvas Designers (employment-certificate/edit.php, payslip-template/edit.php) stay LIGHT-ONLY: the page is a paper-style document editor, and the dark tokens
+   made its inherited text pale on white. Custom properties inherit as RESOLVED values (alias tokens like --c-bg-surface were already resolved against the dark theme on the root),
+   so every light --c- and --app- token is re-declared on the scope, and data-bs-theme="light" on the same element resets Bootstrap own --bs- variables. */
+.designer-light-scope {
+    --c-primary-hover: var(--hex-e68a00);
+    --c-primary-soft: var(--hex-fff4e0);
+    --c-text: var(--hex-1f2328);
+    --c-text-muted: var(--hex-6b7280);
+    --c-text-faint: var(--hex-9ca3af);
+    --c-border: var(--hex-e5e7eb);
+    --c-border-strong: var(--hex-d1d5db);
+    --c-bg: var(--hex-ffffff);
+    --c-bg-rgb: 255, 255, 255;
+    --c-bg-subtle: var(--hex-f7f8fa);
+    --c-bg-hover: var(--hex-f1f3f5);
+    --c-bg-hover-rgb: 241, 243, 245;
+    --c-danger: var(--hex-d92d20);
+    --c-danger-soft: var(--hex-fee4e2);
+    --c-warning: var(--hex-b54708);
+    --c-warning-soft: var(--hex-fef0c7);
+    --c-success: var(--hex-067647);
+    --c-success-soft: var(--hex-dcfae6);
+    --c-info: var(--hex-6b7280);
+    --c-info-soft: var(--hex-f1f3f5);
+    --c-success-on-fill: var(--hex-ffffff);
+    --c-warning-on-fill: var(--hex-ffffff);
+    --c-danger-on-fill: var(--hex-ffffff);
+    --c-success-hover: var(--hex-066d41);
+    --c-warning-hover: var(--hex-a74107);
+    --c-danger-hover: var(--hex-c8291d);
+    --c-success-fill: var(--c-success);
+    --c-warning-fill: var(--hex-d97706);
+    --c-danger-fill: var(--c-danger);
+    --c-warning-fill-hover: var(--hex-c86d06);
+    --c-neutral-fill: var(--c-text-muted);
+    --c-neutral-on-fill: var(--hex-ffffff);
+    --c-bg-app: var(--c-bg-subtle);
+    --c-bg-surface: var(--c-bg);
+    --c-bg-raised: var(--hex-ffffff);
+    --c-bg-selected: var(--c-primary-soft);
+    --c-bg-inverse: var(--hex-101828);
+    --c-bg-overlay: color-mix(in srgb, var(--hex-000000) 50%, transparent);
+    --c-text-primary: var(--c-text);
+    --c-text-secondary: var(--hex-495057);
+    --c-text-disabled: var(--c-text-faint);
+    --c-text-inverse: var(--hex-ffffff);
+    --c-text-on-brand: var(--hex-ffffff);
+    --c-text-link: var(--c-text);
+    --c-icon-default: var(--c-text-muted);
+    --c-icon-strong: var(--c-text);
+    --c-icon-faint: var(--c-text-faint);
+    --c-border-default: var(--c-border);
+    --c-border-subtle: var(--hex-eef0f2);
+    --c-border-focus: var(--c-primary);
+    --c-brand-primary: var(--c-primary);
+    --c-brand-primary-hover: var(--c-primary-hover);
+    --c-brand-primary-soft: var(--c-primary-soft);
+    --c-focus-ring: color-mix(in srgb, var(--c-primary) 35%, transparent);
+    --c-interactive-disabled-bg: var(--c-bg-hover);
+    --c-interactive-disabled-text: var(--c-text-faint);
+    --c-status-success: var(--c-success);
+    --c-status-success-soft: var(--c-success-soft);
+    --c-status-warning: var(--c-warning);
+    --c-status-warning-soft: var(--c-warning-soft);
+    --c-status-danger: var(--c-danger);
+    --c-status-danger-soft: var(--c-danger-soft);
+    --c-status-info: var(--c-info);
+    --c-status-info-soft: var(--c-info-soft);
+    --app-bg: var(--hex-ffffff);
+    --app-surface-bg: var(--hex-ffffff);
+    --app-text: var(--hex-555555);
+    --app-border: var(--hex-f0f0f0);
+    --app-heading: var(--hex-333333);
+    --app-text-muted: var(--hex-8a939e);
+    --app-accent-soft-bg: var(--hex-fff2df);
+    --app-accent-soft-text: var(--hex-b45f00);
+    --app-hover-bg: var(--hex-f9fafb);
+    color-scheme: light;
+    color: var(--c-text);
+    background-color: var(--c-bg);
+}

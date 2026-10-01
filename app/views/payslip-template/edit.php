@@ -12,7 +12,7 @@
  * same shape/naming as EmploymentCertificateTemplateController's own `$pair`.
  */
 ?>
-<div class="container container-body">
+<div class="container container-body designer-light-scope" data-bs-theme="light">
   <nav aria-label="breadcrumb">
     <h5 class="payroll-breadcrumb mt-5 mb-5">
       <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
