@@ -631,6 +631,7 @@ class AnnualIncomeSummaryModel {
                 $row[$k] = $r[$k];
             }
             $row['tax_year'] = $taxYear;
+            $row['comp_id'] = $compId;
             $row['sys_gross'] = (float)$r['sys_gross'];
             $row['sys_run_count'] = (int)$r['sys_run_count'];
             if ($r['ytd_id'] !== null) {

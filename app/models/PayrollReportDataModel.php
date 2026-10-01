@@ -27,13 +27,13 @@ class PayrollReportDataModel {
         return $row ?: null;
     }
 
-    /** Title and encrypted ID-card number (with key_version, for EmployeePiiTrait::decryptEmployeeField) by employee id. @return array<int, array> */
+    /** Title, encrypted ID-card number (with key_version, for EmployeePiiTrait::decryptEmployeeField) and addresses by employee id. @return array<int, array> */
     public function getEmployeesPii(array $employeeIds): array {
         $ids = array_values(array_unique(array_map('intval', $employeeIds)));
         if (!$ids) {
             return [];
         }
-        $stmt = $this->db->prepare('SELECT id, title, id_card_no, key_version FROM `employees` WHERE id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')');
+        $stmt = $this->db->prepare('SELECT id, title, id_card_no, key_version, address_line_1_register, address_line_2_register, address_line_1_contact, address_line_2_contact FROM `employees` WHERE id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')');
         $stmt->execute($ids);
         $out = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {

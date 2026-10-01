@@ -231,7 +231,7 @@ try {
     echo "=== Registry ===\n";
     $all = ReportRegistry::all();
     checkTrue('registry has at least 3 reports', count($all) >= 3);
-    check('statutory type has 6 reports', count(ReportRegistry::byType('statutory')), 6);
+    check('statutory type has 7 reports (incl. TH_WHT50, the 50 Tawi draft)', count(ReportRegistry::byType('statutory')), 7);
     // 2026-08-31: +1 for CASH_PAYMENT_SUMMARY (see tests/cash_payment_test.php for its own dedicated coverage).
     // 2026-09-02: +1 for THIRD_PARTY_REMITTANCE_SUMMARY (see tests/payroll_remittance_test.php for its own dedicated coverage).
     // 2026-09-02: +1 for BANK_ACCOUNT_PAYMENT_SUMMARY (see tests/payroll_run_employee_bank_account_test.php for its own dedicated coverage).

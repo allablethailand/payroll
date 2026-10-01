@@ -3138,5 +3138,7 @@
     "import_action_commit": "Import",
     "import_action_discard": "Discard",
     "import_entity_employees": "Employees",
-    "import_entity_ytd": "Opening YTD balances"
+    "import_entity_ytd": "Opening YTD balances",
+    "error_employee_not_found": "Employee not found.",
+    "error_unsupported_format": "This report does not support that format."
 }

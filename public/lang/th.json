@@ -3138,5 +3138,7 @@
     "import_action_commit": "นำเข้า",
     "import_action_discard": "ยกเลิก",
     "import_entity_employees": "พนักงาน",
-    "import_entity_ytd": "ยอดสะสมต้นปี (YTD)"
+    "import_entity_ytd": "ยอดสะสมต้นปี (YTD)",
+    "error_employee_not_found": "ไม่พบพนักงาน",
+    "error_unsupported_format": "รายงานนี้ไม่รองรับรูปแบบไฟล์ดังกล่าว"
 }
