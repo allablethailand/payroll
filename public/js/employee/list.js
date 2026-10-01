@@ -3,9 +3,9 @@
 // (needs real attention), brand orange in the middle (getting there), green once genuinely mostly
 // filled in. Shared between the list (this file) and the Detail page's own summary card.
 function completenessColor(percent) {
-    if (percent >= 80) return '#198754';
-    if (percent >= 50) return '#FF9900';
-    return '#dc3545';
+    if (percent >= 80) return tokenColor('--hex-198754');
+    if (percent >= 50) return tokenColor('--hex-ff9900');
+    return tokenColor('--hex-dc3545');
 }
 // 2026-09-02, explicit request: "ความสมบูรณ์ของ Profile ช่วยปรับเป็น progress วงกลมได้ไหมครับ" -- was a
 // horizontal Bootstrap .progress bar, now a small CSS conic-gradient ring (no chart library needed

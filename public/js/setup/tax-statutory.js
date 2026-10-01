@@ -1332,7 +1332,7 @@ function pvdLadderRowHtml(row, index, isLast) {
         </div>
         <div class="col-3">
             <label class="form-label small mb-0" data-i18n="pvd_ladder_to_years">${langData['pvd_ladder_to_years'] || 'To (yrs)'}</label>
-            <input type="number" class="form-control form-control-sm pvd-ladder-max" step="0.01" min="0" value="${maxVal}" placeholder="&#8734;" ${isLast ? 'disabled' : ''}>
+            <input type="number" class="form-control form-control-sm pvd-ladder-max" step="0.01" min="0" value="${maxVal}" placeholder="&infin;" ${isLast ? 'disabled' : ''}>
         </div>
         <div class="col-4">
             <label class="form-label small mb-0" data-i18n="pvd_ladder_rate_percent">${langData['pvd_ladder_rate_percent'] || 'Employer Rate (%)'}</label>

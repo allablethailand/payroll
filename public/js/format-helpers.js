@@ -42,6 +42,16 @@ function stripHtml(html) {
     el.innerHTML = String(html);
     return (el.textContent || el.innerText || '').replace(/\s+/g, ' ').trim();
 }
+/**
+ * Round 3 Task 6 (rules.md 1) -- the ONE way JS reads a colour: from a design token (tokens.css), never a literal.
+ * Returns the token's hex text; with `alpha` (0-1) returns the 8-digit #rrggbbaa form, which canvas/Chart.js accept.
+ * DOM styling should prefer `var(--token)` strings directly; this is for canvas, Chart.js and values saved as data.
+ */
+function tokenColor(name, alpha) {
+    const v = (getComputedStyle(document.documentElement).getPropertyValue(name) || '').trim() || 'gray';
+    if (alpha === undefined || alpha >= 1 || v.charAt(0) !== '#' || v.length !== 7) return v;
+    return v + Math.round(Math.max(0, alpha) * 255).toString(16).padStart(2, '0');
+}
 function fmtNum(value, minDigits = 2, maxDigits = minDigits) {
     if (value === 'XXXX') return 'XXXX';
     if (value === null || value === undefined || value === '') return '-';

@@ -1044,9 +1044,9 @@ function saveFamilyTab($btn) {
 // green scale used elsewhere in this app for validation-style status (payroll run banners etc.) --
 // red under 50% (needs real attention), brand orange in the middle, green once mostly filled in.
 function completenessColor(percent) {
-    if (percent >= 80) return '#198754';
-    if (percent >= 50) return '#FF9900';
-    return '#dc3545';
+    if (percent >= 80) return tokenColor('--hex-198754');
+    if (percent >= 50) return tokenColor('--hex-ff9900');
+    return tokenColor('--hex-dc3545');
 }
 // Renders the profile header card + per-tab badges from whatever api/employee.get last returned --
 // called on initial load AND (via refreshProfileHeader()) after every tab's Save, WITHOUT touching
@@ -4560,11 +4560,11 @@ function initEmpSignaturePad() {
     const canvas = document.getElementById('empSignaturePadCanvas');
     if (!canvas) return;
     empSignaturePadCtx = canvas.getContext('2d');
-    empSignaturePadCtx.fillStyle = '#ffffff';
+    empSignaturePadCtx.fillStyle = tokenColor('--hex-ffffff');
     empSignaturePadCtx.fillRect(0, 0, canvas.width, canvas.height);
     empSignaturePadCtx.lineWidth = 2.5;
     empSignaturePadCtx.lineCap = 'round';
-    empSignaturePadCtx.strokeStyle = '#1a1a1a';
+    empSignaturePadCtx.strokeStyle = tokenColor('--hex-1a1a1a');
     empSignaturePadHasStrokes = false;
     const startDraw = function (e) {
         e.preventDefault();

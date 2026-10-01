@@ -250,7 +250,7 @@ $(document).on('click', '.pst-margin-option', function (e) {
 
 function emptyElementBase() {
     return {
-        font_size: 14, font_family: 'th_sarabun_new', font_color: '#000000',
+        font_size: 14, font_family: 'th_sarabun_new', font_color: tokenColor('--hex-000000'),
         text_align: 'left', font_weight: 'normal', font_style: 'normal', text_decoration: 'none',
         group_key: null, page_number: currentPageNumber, is_visible: true
     };
@@ -408,7 +408,7 @@ function tableElementBodyHtml(el) {
     try { data = JSON.parse(el.content || '{}'); } catch (e) { data = {}; }
     const rows = Number(data.rows) || 1;
     const cols = Number(data.cols) || 1;
-    const borderColor = data.border_color || '#000000';
+    const borderColor = data.border_color || tokenColor('--hex-000000');
     const borderWidth = Number(data.border_width) || 1;
     const cells = Array.isArray(data.cells) ? data.cells : [];
     let html = `<table class="tpl-preview-table">`;
@@ -459,8 +459,8 @@ function applyElementStyle($el, el) {
     });
     if (el.element_type === 'shape') {
         $el.find('.pst-el-body').css({
-            backgroundColor: el.font_color || '#000000',
-            border: `1px solid ${el.font_color || '#000000'}`,
+            backgroundColor: el.font_color || tokenColor('--hex-000000'),
+            border: `1px solid ${el.font_color || tokenColor('--hex-000000')}`,
             boxSizing: 'border-box',
             borderRadius: el.field_key === 'ellipse' ? '50%' : '0'
         });
@@ -472,7 +472,7 @@ function applyElementStyle($el, el) {
         fontWeight: el.font_weight === 'bold' ? '700' : '400',
         fontStyle: el.font_style === 'italic' ? 'italic' : 'normal',
         textDecoration: el.text_decoration === 'underline' ? 'underline' : 'none',
-        color: el.font_color || '#000000',
+        color: el.font_color || tokenColor('--hex-000000'),
         fontFamily: FONT_FAMILY_CSS_STACK[el.font_family] || FONT_FAMILY_CSS_STACK.th_sarabun_new
     });
 }
@@ -1111,7 +1111,7 @@ function addShapeElement(shapeType, posX, posY) {
         key: newElementKey(), id: null, element_type: 'shape', field_key: shapeType, image_asset_id: null, content: null,
         pos_x_pct: clampPst(posX, 0, 80), pos_y_pct: clampPst(posY, 0, 85),
         width_pct: shapeType === 'line' ? 30 : 20, height_pct: shapeType === 'line' ? 1 : 15,
-        font_color: '#FF9900'
+        font_color: tokenColor('--hex-ff9900')
     });
     pushUndo();
     elements.push(el);
@@ -1185,7 +1185,7 @@ $(document).on('input', '#pstTableRowsInput, #pstTableColsInput', function () {
 function openTableModal(key) {
     const el = key ? findElement(key) : null;
     editingTableKey = key || null;
-    let data = { rows: 3, cols: 3, border_color: '#000000', border_width: 1, cells: [] };
+    let data = { rows: 3, cols: 3, border_color: tokenColor('--hex-000000'), border_width: 1, cells: [] };
     if (el) {
         try { data = Object.assign(data, JSON.parse(el.content || '{}')); } catch (e) { /* keep defaults */ }
     }
@@ -1212,7 +1212,7 @@ $(document).on('click', '#pstTableInsertConfirmBtn', function () {
     }
     const content = JSON.stringify({
         rows, cols,
-        border_color: $('#pstTableBorderColorInput').val() || '#000000',
+        border_color: $('#pstTableBorderColorInput').val() || tokenColor('--hex-000000'),
         border_width: clampPst(parseInt($('#pstTableBorderWidthInput').val(), 10) || 1, 0, 10),
         cells
     });
@@ -2026,34 +2026,34 @@ function loadPresets() {
 }
 const PRESET_MOCKUPS = {
     classic: { bars: [
-        { left: 8, top: 3, width: 60, height: 6, color: '#333' },
-        { left: 8, top: 18, width: 40, height: 4, color: '#bbb' },
-        { left: 50, top: 18, width: 42, height: 4, color: '#bbb' },
-        { left: 8, top: 30, width: 84, height: 3, color: '#ddd' },
-        { left: 8, top: 38, width: 40, height: 22, color: '#eee', box: true },
-        { left: 52, top: 38, width: 40, height: 22, color: '#eee', box: true },
-        { left: 8, top: 62, width: 84, height: 15, color: '#eee', box: true },
-        { left: 8, top: 80, width: 40, height: 5, color: '#333' },
-        { left: 52, top: 80, width: 40, height: 5, color: '#333' },
+        { left: 8, top: 3, width: 60, height: 6, color: 'var(--hex-333333)' },
+        { left: 8, top: 18, width: 40, height: 4, color: 'var(--hex-bbbbbb)' },
+        { left: 50, top: 18, width: 42, height: 4, color: 'var(--hex-bbbbbb)' },
+        { left: 8, top: 30, width: 84, height: 3, color: 'var(--hex-dddddd)' },
+        { left: 8, top: 38, width: 40, height: 22, color: 'var(--hex-eeeeee)', box: true },
+        { left: 52, top: 38, width: 40, height: 22, color: 'var(--hex-eeeeee)', box: true },
+        { left: 8, top: 62, width: 84, height: 15, color: 'var(--hex-eeeeee)', box: true },
+        { left: 8, top: 80, width: 40, height: 5, color: 'var(--hex-333333)' },
+        { left: 52, top: 80, width: 40, height: 5, color: 'var(--hex-333333)' },
     ] },
     modern: { bars: [
-        { left: 6, top: 5, width: 16, height: 10, color: '#e2e2e2', box: true },
-        { left: 26, top: 6, width: 60, height: 6, color: '#333' },
-        { left: 26, top: 12, width: 55, height: 3, color: '#bbb' },
-        { left: 6, top: 19, width: 88, height: 1, color: '#FF9900' },
-        { left: 6, top: 22, width: 88, height: 5, color: '#333' },
-        { left: 6, top: 40, width: 88, height: 18, color: '#eee', box: true },
-        { left: 6, top: 60, width: 88, height: 12, color: '#eee', box: true },
-        { left: 6, top: 74, width: 88, height: 12, color: '#eee', box: true },
-        { left: 6, top: 89, width: 88, height: 6, color: '#FF9900' },
+        { left: 6, top: 5, width: 16, height: 10, color: 'var(--hex-e2e2e2)', box: true },
+        { left: 26, top: 6, width: 60, height: 6, color: 'var(--hex-333333)' },
+        { left: 26, top: 12, width: 55, height: 3, color: 'var(--hex-bbbbbb)' },
+        { left: 6, top: 19, width: 88, height: 1, color: 'var(--hex-ff9900)' },
+        { left: 6, top: 22, width: 88, height: 5, color: 'var(--hex-333333)' },
+        { left: 6, top: 40, width: 88, height: 18, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 60, width: 88, height: 12, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 74, width: 88, height: 12, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 89, width: 88, height: 6, color: 'var(--hex-ff9900)' },
     ] },
     minimal: { bars: [
-        { left: 6, top: 6, width: 88, height: 6, color: '#333' },
-        { left: 6, top: 14, width: 60, height: 4, color: '#bbb' },
-        { left: 6, top: 24, width: 88, height: 20, color: '#eee', box: true },
-        { left: 6, top: 46, width: 88, height: 14, color: '#eee', box: true },
-        { left: 6, top: 62, width: 88, height: 14, color: '#eee', box: true },
-        { left: 6, top: 80, width: 88, height: 6, color: '#333' },
+        { left: 6, top: 6, width: 88, height: 6, color: 'var(--hex-333333)' },
+        { left: 6, top: 14, width: 60, height: 4, color: 'var(--hex-bbbbbb)' },
+        { left: 6, top: 24, width: 88, height: 20, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 46, width: 88, height: 14, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 62, width: 88, height: 14, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 80, width: 88, height: 6, color: 'var(--hex-333333)' },
     ] },
 };
 function renderPresetMockup(code) {

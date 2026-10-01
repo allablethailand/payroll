@@ -171,7 +171,7 @@ const empHeadcountDataLabelsPlugin = {
                 const value = dataset.data[index];
                 if (value === null || value === undefined) return;
                 ctx.save();
-                ctx.fillStyle = dataset.borderColor || '#333';
+                ctx.fillStyle = dataset.borderColor || tokenColor('--hex-333333');
                 ctx.font = 'bold 11px sans-serif';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'bottom';
@@ -201,8 +201,8 @@ function renderEmployeeHeadcountChart(byMonth) {
         data: {
             labels: labels,
             datasets: [
-                { label: langData['headcount_total_hires'] || 'Total Hires', data: hiresData, borderColor: '#198754', backgroundColor: 'rgba(25,135,84,.12)', pointBackgroundColor: '#198754', pointBorderColor: '#fff', pointRadius: 4, pointHoverRadius: 6, borderWidth: 2, tension: .3, fill: true },
-                { label: langData['headcount_total_exits'] || 'Total Exits', data: exitsData, borderColor: '#dc3545', backgroundColor: 'rgba(220,53,69,.12)', pointBackgroundColor: '#dc3545', pointBorderColor: '#fff', pointRadius: 4, pointHoverRadius: 6, borderWidth: 2, tension: .3, fill: true },
+                { label: langData['headcount_total_hires'] || 'Total Hires', data: hiresData, borderColor: tokenColor('--hex-198754'), backgroundColor: tokenColor('--hex-198754', .12), pointBackgroundColor: tokenColor('--hex-198754'), pointBorderColor: tokenColor('--hex-ffffff'), pointRadius: 4, pointHoverRadius: 6, borderWidth: 2, tension: .3, fill: true },
+                { label: langData['headcount_total_exits'] || 'Total Exits', data: exitsData, borderColor: tokenColor('--hex-dc3545'), backgroundColor: tokenColor('--hex-dc3545', .12), pointBackgroundColor: tokenColor('--hex-dc3545'), pointBorderColor: tokenColor('--hex-ffffff'), pointRadius: 4, pointHoverRadius: 6, borderWidth: 2, tension: .3, fill: true },
             ],
         },
         plugins: [empHeadcountDataLabelsPlugin],
@@ -444,7 +444,7 @@ function renderEmployeeEnrollmentDonut(instanceGetter, instanceSetter, canvasId,
         type: 'doughnut',
         data: {
             labels: [langData['enrollment_enrolled'] || 'Enrolled', langData['enrollment_not_enrolled'] || 'Not Enrolled'],
-            datasets: [{ data: [enrolled, notEnrolled], backgroundColor: ['#198754', '#dc3545'], borderWidth: 2, borderColor: '#fff' }],
+            datasets: [{ data: [enrolled, notEnrolled], backgroundColor: [tokenColor('--hex-198754'), tokenColor('--hex-dc3545')], borderWidth: 2, borderColor: tokenColor('--hex-ffffff') }],
         },
         options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'bottom' } } },
     });
@@ -550,8 +550,8 @@ function loadEmployeeStructureReport() {
                 } else {
                     const ctx = $('#employeeStructureChart')[0].getContext('2d');
                     const gradient = ctx.createLinearGradient(0, 0, 400, 0);
-                    gradient.addColorStop(0, '#ffcb66');
-                    gradient.addColorStop(1, '#FF9900');
+                    gradient.addColorStop(0, tokenColor('--hex-ffcb66'));
+                    gradient.addColorStop(1, tokenColor('--hex-ff9900'));
                     empStructureChartInstance = new Chart(ctx, {
                         type: 'bar',
                         data: { labels: labels, datasets: [{ data: data, backgroundColor: gradient, borderRadius: 6, maxBarThickness: 26 }] },
@@ -563,7 +563,7 @@ function loadEmployeeStructureReport() {
                                 meta.data.forEach((bar, i) => {
                                     const value = chart.data.datasets[0].data[i];
                                     c.save();
-                                    c.fillStyle = '#b45f00';
+                                    c.fillStyle = tokenColor('--hex-b45f00');
                                     c.font = 'bold 11px sans-serif';
                                     c.textAlign = 'left';
                                     c.textBaseline = 'middle';
@@ -633,7 +633,7 @@ let empTenureChartInstance = null;
 const EMP_TENURE_BUCKET_LABEL_KEYS = { '<1': 'tenure_bucket_under_1', '1-3': 'tenure_bucket_1_3', '3-5': 'tenure_bucket_3_5', '5-10': 'tenure_bucket_5_10', '10+': 'tenure_bucket_10_plus' };
 // 2026-09-07, "wow" redesign: one color per bucket (same idea as Data Completeness's own
 // EMP_COMPLETENESS_BUCKET_COLORS, cooler palette since tenure buckets aren't a good/bad scale).
-const EMP_TENURE_BUCKET_COLORS = { '<1': '#6c757d', '1-3': '#0dcaf0', '3-5': '#20c997', '5-10': '#FF9900', '10+': '#6f42c1' };
+const EMP_TENURE_BUCKET_COLORS = { '<1': tokenColor('--hex-6c757d'), '1-3': tokenColor('--hex-0dcaf0'), '3-5': tokenColor('--hex-20c997'), '5-10': tokenColor('--hex-ff9900'), '10+': tokenColor('--hex-6f42c1') };
 function employeeTenureBucketKey(years) {
     const y = Number(years) || 0;
     if (y < 1) return '<1';
@@ -697,7 +697,7 @@ function initEmployeeTenureTable(items) {
                     render: d => {
                         const key = employeeTenureBucketKey(d);
                         const label = langData[EMP_TENURE_BUCKET_LABEL_KEYS[key]] || key;
-                        const color = EMP_TENURE_BUCKET_COLORS[key] || '#6c757d';
+                        const color = EMP_TENURE_BUCKET_COLORS[key] || tokenColor('--hex-6c757d');
                         return `<span class="tenure-bucket-chip" style="--chip-color:${color};">${escapeHtml(label)}</span>`;
                     }
                 },
@@ -723,7 +723,7 @@ function loadEmployeeTenureReport() {
             const buckets = res.data.buckets || [];
             const labels = buckets.map(b => langData[EMP_TENURE_BUCKET_LABEL_KEYS[b.key]] || b.key);
             const data = buckets.map(b => Number(b.count) || 0);
-            const colors = buckets.map(b => EMP_TENURE_BUCKET_COLORS[b.key] || '#6c757d');
+            const colors = buckets.map(b => EMP_TENURE_BUCKET_COLORS[b.key] || tokenColor('--hex-6c757d'));
             // 2026-09-07, "wow" redesign: one color per bucket (was a single flat cyan for every
             // bar) + the count drawn above each bar, same inline-plugin approach as the other 2
             // charts on this page (see empHeadcountDataLabelsPlugin's own comment for why).
@@ -840,7 +840,7 @@ let tb_employee_completeness;
 let empCompletenessChartInstance = null;
 let empCompletenessGaugeInstance = null;
 const EMP_COMPLETENESS_BUCKET_LABEL_KEYS = { under_50: 'completeness_bucket_under_50', '50_80': 'completeness_bucket_50_80', '80_plus': 'completeness_bucket_80_plus' };
-const EMP_COMPLETENESS_BUCKET_COLORS = { under_50: '#dc3545', '50_80': '#ffc107', '80_plus': '#198754' };
+const EMP_COMPLETENESS_BUCKET_COLORS = { under_50: tokenColor('--hex-dc3545'), '50_80': tokenColor('--hex-ffc107'), '80_plus': tokenColor('--hex-198754') };
 function currentEmployeeCompletenessFilters() {
     return {
         department_id: $('#employee_completeness_filter_department').val() || '',
@@ -848,9 +848,9 @@ function currentEmployeeCompletenessFilters() {
     };
 }
 function employeeCompletenessColor(percent) {
-    if (percent >= 80) return '#198754';
-    if (percent >= 50) return '#FF9900';
-    return '#dc3545';
+    if (percent >= 80) return tokenColor('--hex-198754');
+    if (percent >= 50) return tokenColor('--hex-ff9900');
+    return tokenColor('--hex-dc3545');
 }
 // 2026-09-07, "wow" redesign: a center-labeled gauge for the average -- a plain doughnut with a
 // cutout, colored by the SAME 3-tier scale as the per-employee progress bars below, plus a plain
@@ -864,7 +864,7 @@ function renderEmployeeCompletenessGauge(averagePercent) {
     const pct = Math.max(0, Math.min(100, Number(averagePercent) || 0));
     const color = employeeCompletenessColor(pct);
     $('#empCompletenessGaugeValue').text(fmtNum(pct, 1) + '%');
-    const trackColor = (getComputedStyle(document.documentElement).getPropertyValue('--app-border') || '').trim() || '#e9ecef';
+    const trackColor = (getComputedStyle(document.documentElement).getPropertyValue('--app-border') || '').trim() || tokenColor('--hex-e9ecef');
     if (empCompletenessGaugeInstance) {
         empCompletenessGaugeInstance.data.datasets[0].data = [pct, 100 - pct];
         empCompletenessGaugeInstance.data.datasets[0].backgroundColor = [color, trackColor];
@@ -944,7 +944,7 @@ function loadEmployeeCompletenessReport() {
 
             const labels = buckets.map(b => langData[EMP_COMPLETENESS_BUCKET_LABEL_KEYS[b.key]] || b.key);
             const data = buckets.map(b => Number(b.count) || 0);
-            const colors = buckets.map(b => EMP_COMPLETENESS_BUCKET_COLORS[b.key] || '#6c757d');
+            const colors = buckets.map(b => EMP_COMPLETENESS_BUCKET_COLORS[b.key] || tokenColor('--hex-6c757d'));
             if (typeof Chart !== 'undefined' && $('#employeeCompletenessChart').length) {
                 if (empCompletenessChartInstance) {
                     empCompletenessChartInstance.data.labels = labels;

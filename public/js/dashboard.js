@@ -446,7 +446,7 @@ function renderCostTrendChart(rows) {
             datasets: [{
                 label: langData['dash_cost_trend'] || 'Payroll Cost Trend',
                 data: data,
-                backgroundColor: '#FF9900',
+                backgroundColor: tokenColor('--hex-ff9900'),
                 borderRadius: 4,
                 maxBarThickness: 48,
             }],
@@ -685,7 +685,7 @@ function renderDepartmentChart(rows) {
     }
     dashDeptChartInstance = new Chart($canvas[0].getContext('2d'), {
         type: 'bar',
-        data: { labels: labels, datasets: [{ data: data, backgroundColor: '#FF9900', borderRadius: 4, maxBarThickness: 22 }] },
+        data: { labels: labels, datasets: [{ data: data, backgroundColor: tokenColor('--hex-ff9900'), borderRadius: 4, maxBarThickness: 22 }] },
         options: {
             indexAxis: 'y',
             responsive: true,

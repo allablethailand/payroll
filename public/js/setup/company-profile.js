@@ -121,11 +121,11 @@ function initCpSignaturePad() {
     const canvas = document.getElementById('cpSignaturePadCanvas');
     if (!canvas) return;
     cpSignaturePadCtx = canvas.getContext('2d');
-    cpSignaturePadCtx.fillStyle = '#ffffff';
+    cpSignaturePadCtx.fillStyle = tokenColor('--hex-ffffff');
     cpSignaturePadCtx.fillRect(0, 0, canvas.width, canvas.height);
     cpSignaturePadCtx.lineWidth = 2.5;
     cpSignaturePadCtx.lineCap = 'round';
-    cpSignaturePadCtx.strokeStyle = '#1a1a1a';
+    cpSignaturePadCtx.strokeStyle = tokenColor('--hex-1a1a1a');
     cpSignaturePadHasStrokes = false;
     const startDraw = function (e) {
         e.preventDefault();

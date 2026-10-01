@@ -2720,7 +2720,7 @@ function renderCalendarWidget(el, options) {
 // chartColors() returns the --chart-1..5 ramp as an array, in order, for a multi-dataset chart that
 // genuinely needs several colors (see §14's own rule on when that's appropriate vs. a single color).
 function chartColor(varName) {
-    return (getComputedStyle(document.documentElement).getPropertyValue(varName) || '').trim() || '#94A3B8';
+    return (getComputedStyle(document.documentElement).getPropertyValue(varName) || '').trim() || tokenColor('--hex-94a3b8');
 }
 function chartColors() {
     return [1, 2, 3, 4, 5].map(n => chartColor('--chart-' + n));
@@ -4412,7 +4412,7 @@ function apvAvatarImgError(img) {
 // pre-existing call site (Timeline stages/approver rows, none of which pass a 4th argument) renders
 // byte-identical to before -- `options` defaults to `{}` so nothing about their look changed.
 // 2026-09-14, Round 3 item 3c-1 follow-up, explicit instruction -- the clickable-avatar "ring" used
-// to be an INLINE `border:2px solid #fff` + `box-shadow:0 0 0 1px rgba(0,0,0,.12)`, a hardcoded
+// to be an INLINE a white border + a 1px translucent-black box-shadow, a hardcoded
 // white ring that made no sense once this app started rendering on dark surfaces too (a white ring
 // sitting inside/against a dark row reads as an odd, disconnected halo, not "the same surface
 // bleeding through around the circle" the effect is meant to convey). Replaced with a plain CSS
