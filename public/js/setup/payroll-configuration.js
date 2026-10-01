@@ -115,8 +115,8 @@ function initEarningTypeTable() {
                     ? `<span class="text-muted">${langData['taxable'] || 'Taxable'}</span>`
                     : `<span class="text-muted">${langData['non_taxable'] || 'Tax-exempt'}</span>`
             },
-            { data: 'calc_sso', className: 'text-center', render: d => Number(d) ? '<i class="fa-solid fa-circle-check text-success fs-5"></i>' : '<i class="fa-solid fa-circle-xmark text-muted fs-5"></i>' },
-            { data: 'calc_pf', className: 'text-center', render: d => Number(d) ? '<i class="fa-solid fa-circle-check text-success fs-5"></i>' : '<i class="fa-solid fa-circle-xmark text-muted fs-5"></i>' },
+            { data: 'calc_sso', className: 'text-center', render: d => Number(d) ? '<i class="fa-solid fa-circle-check text-muted fs-5"></i>' : '<i class="fa-solid fa-circle-xmark text-muted fs-5"></i>' },
+            { data: 'calc_pf', className: 'text-center', render: d => Number(d) ? '<i class="fa-solid fa-circle-check text-muted fs-5"></i>' : '<i class="fa-solid fa-circle-xmark text-muted fs-5"></i>' },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => actionButtons(row) }
@@ -636,7 +636,7 @@ function probationSetSummaryHtml(s) {
 function probationSetCardHtml(s) {
     const defaultBadge = s.is_default ? `<span class="text-muted me-2">${langData['default'] || 'Default'}</span>` : '';
     const assignBtn = s.is_default ? '' : `<button type="button" class="btn btn-link btn-circle-action text-secondary" onclick="openProbationSetAssignModal(${s.id})" title="${langData['assign'] || 'Assign'}"><i class="fa-solid fa-user-shield"></i></button>`;
-    const setDefaultBtn = s.is_default ? '' : `<button type="button" class="btn btn-link btn-circle-action text-primary" onclick="setDefaultProbationSet(${s.id})" title="${langData['probation_set_as_default'] || 'Set as Default'}"><i class="fa-solid fa-star"></i></button>`;
+    const setDefaultBtn = s.is_default ? '' : `<button type="button" class="btn btn-link btn-circle-action" onclick="setDefaultProbationSet(${s.id})" title="${langData['probation_set_as_default'] || 'Set as Default'}"><i class="fa-solid fa-star"></i></button>`;
     const deleteBtn = s.is_default ? '' : `<button type="button" class="btn btn-link btn-circle-action text-danger" onclick="deleteProbationSet(${s.id})" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
     return `<div class="adr-variant-row mb-2" data-set-id="${s.id}">
         <div class="adr-variant-main">
@@ -648,7 +648,7 @@ function probationSetCardHtml(s) {
         <div class="adr-variant-actions">
             <div class="d-flex gap-1 justify-content-center flex-wrap">
                 <button type="button" class="btn btn-link btn-circle-action text-warning" onclick="openProbationSetModal(${s.id})" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
-                <button type="button" class="btn btn-link btn-circle-action text-info" onclick="cloneProbationSet(${s.id})" title="${langData['clone'] || 'Clone'}"><i class="fa-solid fa-clone"></i></button>
+                <button type="button" class="btn btn-link btn-circle-action" onclick="cloneProbationSet(${s.id})" title="${langData['clone'] || 'Clone'}"><i class="fa-solid fa-clone"></i></button>
                 ${assignBtn}
                 ${setDefaultBtn}
                 ${deleteBtn}
@@ -1595,7 +1595,7 @@ function renderAttendanceBracketRows() {
             <td><input type="number" min="0" class="form-control form-control-sm" value="${b.min_units ?? ''}" onchange="updateAttendanceBracketField(${i}, 'min_units', this.value)"></td>
             <td><input type="number" min="0" class="form-control form-control-sm" value="${b.max_units ?? ''}" placeholder="${langData['no_limit'] || 'No limit'}" onchange="updateAttendanceBracketField(${i}, 'max_units', this.value)"></td>
             <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" value="${b.deduction_amount ?? ''}" onchange="updateAttendanceBracketField(${i}, 'deduction_amount', this.value)"></td>
-            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeAttendanceBracketRow(${i})"><i class="fa-solid fa-trash"></i></button></td>
+            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary" onclick="removeAttendanceBracketRow(${i})"><i class="fa-solid fa-trash"></i></button></td>
         </tr>
     `).join(''));
 }
@@ -2016,7 +2016,7 @@ function attendanceDeductionVariantRowHtml(eventCode, r) {
                  so it's included in the same rollout for consistency within this settings page. -->
             <div class="d-flex gap-1 justify-content-center flex-wrap">
                 ${editBtn}
-                <button type="button" class="btn btn-link btn-circle-action text-primary" onclick="cloneAttendanceDeductionRule('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['clone'] || 'Clone'}"><i class="fa-solid fa-clone"></i></button>
+                <button type="button" class="btn btn-link btn-circle-action" onclick="cloneAttendanceDeductionRule('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['clone'] || 'Clone'}"><i class="fa-solid fa-clone"></i></button>
                 ${assignBtn}
                 ${canDelete ? `<button type="button" class="btn btn-link btn-circle-action text-danger" onclick="deleteAttendanceDeductionVariant(${r.id})" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>` : ''}
             </div>

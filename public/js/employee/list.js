@@ -239,7 +239,7 @@ function initEmployeeTable() {
                             return `<img src="${BASE_URL}/${row.profile_photo_path}" class="employee-list-avatar-img" alt="">`;
                         }
                         const letter = (row.name || '').trim().charAt(0).toUpperCase() || '?';
-                        return `<div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold" style="width: 38px; height: 38px; min-width: 38px; background-color: #007aff;">${letter}</div>`;
+                        return `<div class="apv-person-avatar es-sync-avatar">${letter}</div>`;
                     }
                 },
                 { data: "employee_no", responsivePriority: 2 },
@@ -347,7 +347,7 @@ function initEmployeeTable() {
                         // never touched, so it's still Bootstrap's real cyan-blue.
                         let syncBtn = '';
                         if (typeof IS_ORIGAMI_HR_LINKED !== 'undefined' && IS_ORIGAMI_HR_LINKED) {
-                            syncBtn = `<button class="btn btn-link btn-circle-action text-info sync-one-employee" data-id="${row.id}" data-i18n-tooltip="employee_sync_list_action_title"><i class="fa-solid fa-rotate"></i></button>`;
+                            syncBtn = `<button class="btn btn-link btn-circle-action sync-one-employee" data-id="${row.id}" data-i18n-tooltip="employee_sync_list_action_title"><i class="fa-solid fa-rotate"></i></button>`;
                         }
                         // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
                         // ".btn-circle-action" section) replace the old adjacent .btn-group -- Employee
@@ -674,7 +674,7 @@ let tb_employee_recheck;
 let currentEmployeeRecheckView = 'participant';
 function recheckFieldIcon(ready) {
     return ready
-        ? '<i class="fa-solid fa-circle-check text-success" title="' + (langData['ready'] || 'Ready') + '"></i>'
+        ? '<i class="fa-solid fa-circle-check text-muted" title="' + (langData['ready'] || 'Ready') + '"></i>'
         : '<i class="fa-solid fa-circle-xmark text-danger" title="' + (langData['not_ready'] || 'Not Ready') + '"></i>';
 }
 // Identification is always applicable (every employee needs SOME form of ID) -- fieldReadiness()
@@ -856,7 +856,7 @@ function initEmployeeRecheckTable() {
                         // ".btn-circle-action" section) replace the old adjacent .btn-group.
                         const editBtn = `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-recheck-edit" data-employee-no="${escapeHtml(row.employee_no)}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen-to-square"></i></button>`;
                         const toggleBtn = currentEmployeeRecheckView === 'excluded'
-                            ? `<button type="button" class="btn btn-link btn-circle-action text-success btn-recheck-add-back" data-id="${row.id}" data-employee-no="${escapeHtml(row.employee_no)}" title="${langData['add_back_to_payroll'] || 'Add Back to Payroll'}"><i class="fa-solid fa-user-plus"></i></button>`
+                            ? `<button type="button" class="btn btn-link btn-circle-action btn-recheck-add-back" data-id="${row.id}" data-employee-no="${escapeHtml(row.employee_no)}" title="${langData['add_back_to_payroll'] || 'Add Back to Payroll'}"><i class="fa-solid fa-user-plus"></i></button>`
                             : `<button type="button" class="btn btn-link btn-circle-action text-danger btn-recheck-remove" data-id="${row.id}" data-employee-no="${escapeHtml(row.employee_no)}" title="${langData['remove_from_payroll'] || 'Remove from Payroll'}"><i class="fa-solid fa-user-slash"></i></button>`;
                         return `<div class="d-flex gap-1 justify-content-center">${editBtn}${toggleBtn}</div>`;
                     }

@@ -1375,7 +1375,7 @@ function pstLangStatusHtml(pairRow, lang) {
     if (!tpl) {
         return `<i class="fa-regular fa-circle text-muted" title="${langData['ect_not_ready'] || 'Not ready'}"></i>`;
     }
-    return `<i class="fa-solid fa-circle-check text-success" title="${langData['ect_ready'] || 'Ready'}"></i>`;
+    return `<i class="fa-solid fa-circle-check text-muted" title="${langData['ect_ready'] || 'Ready'}"></i>`;
 }
 // 2026-08-26, explicit follow-up: "ในหน้า List ปุ่ม Draft กับ Public ให้เป็น Switch ปิดเปิด แล้วแยกมาเป็น
 // Column แรกสุด โดยเปิดคือ Public" -- publish_status is genuinely PER LANGUAGE, so a pair with both
@@ -1504,7 +1504,7 @@ function pstActionsGroupHtml(pairRow) {
             <ul class="dropdown-menu">${previewItems}</ul>
         </div>
         <button type="button" class="btn btn-link btn-circle-action text-warning btn-edit-pst" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
-        <button type="button" class="btn btn-link btn-circle-action text-primary btn-duplicate-pair-pst" title="${langData['duplicate'] || 'Duplicate'}"><i class="fas fa-copy"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action btn-duplicate-pair-pst" title="${langData['duplicate'] || 'Duplicate'}"><i class="fas fa-copy"></i></button>
         <div class="dropdown">
             <button type="button" class="btn btn-link btn-circle-action text-danger dropdown-toggle" data-bs-toggle="dropdown" title="${langData['delete'] || 'Delete'}"><i class="fas fa-trash-alt"></i></button>
             <ul class="dropdown-menu dropdown-menu-end">${deleteItems.join('')}</ul>

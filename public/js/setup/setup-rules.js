@@ -25,7 +25,7 @@ function actionBtns(editFn, delFn, extraBtns) {
 }
 function structureAssignExtraBtns(type, id, label) {
     return `
-        <button type="button" class="btn btn-link btn-circle-action text-primary btn-structure-assign" data-type="${type}" data-id="${id}" data-label="${escapeAttr(label)}" data-i18n-title="assign_employees"><i class="fa-solid fa-user-plus"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action btn-structure-assign" data-type="${type}" data-id="${id}" data-label="${escapeAttr(label)}" data-i18n-title="assign_employees"><i class="fa-solid fa-user-plus"></i></button>
         <button type="button" class="btn btn-link btn-circle-action text-secondary btn-structure-view-assigned" data-type="${type}" data-id="${id}" data-label="${escapeAttr(label)}" data-i18n-title="view_assigned_employees"><i class="fa-solid fa-users"></i></button>
     `;
 }
@@ -558,7 +558,7 @@ function renderLeave() {
             { data: null, render: (d, t, row) => `<span class="text-faint">${escapeAttr(currentLang === 'th' ? row.category_name_th : row.category_name_en)}</span>` },
             { data: null, className: 'text-end', render: (d, t, row) => `<span class="text-faint">${parseFloat(row.quota_amount)} ${leaveQuotaUnitLabel(row.unit_type)}</span>` },
             { data: null, render: (d, t, row) => parseInt(row.is_paid) === 1 ? `<span class="text-muted">${langData['leave_pay_paid'] || 'Paid'}</span>` : `<span class="text-muted">${langData['leave_pay_unpaid'] || 'Unpaid'}</span>` },
-            { data: null, render: (d, t, row) => parseInt(row.allow_carry_over) === 1 ? `<span class="text-faint"><i class="fa-solid fa-check text-success me-1"></i>${langData['allowed'] || 'Allowed'}</span>` : `<span class="text-faint">-</span>` },
+            { data: null, render: (d, t, row) => parseInt(row.allow_carry_over) === 1 ? `<span class="text-faint"><i class="fa-solid fa-check text-muted me-1"></i>${langData['allowed'] || 'Allowed'}</span>` : `<span class="text-faint">-</span>` },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openLeaveModal(${row.id})`, `askDelete('leave', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }

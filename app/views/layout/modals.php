@@ -713,7 +713,7 @@
                                 <div class="sa-list" id="saInList" style="max-height:340px;overflow-y:auto;"></div>
                             </div>
                             <div class="card-footer text-end bg-white">
-                                <button type="button" class="btn btn-outline-danger btn-sm" id="btnSaMoveOut" disabled>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnSaMoveOut" disabled>
                                     <i class="fa-solid fa-arrow-right me-1"></i><span data-i18n="sa_move_out">Move Out</span>
                                 </button>
                             </div>
@@ -1447,7 +1447,7 @@
                     </div>
                     <div class="d-flex gap-2">
                         <button type="button" class="btn btn-primary btn-sm" id="btnApproveRequest"><i class="fa-solid fa-check me-1"></i><span data-i18n="approve">Approve</span></button>
-                        <button type="button" class="btn btn-outline-danger btn-sm" id="btnRejectRequest"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="reject">Reject</span></button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnRejectRequest"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="reject">Reject</span></button>
                         <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCancelRequest"><i class="fa-solid fa-ban me-1"></i><span data-i18n="cancel_request">Cancel Request</span></button>
                     </div>
                 </div>
@@ -3005,7 +3005,7 @@
                         <div class="row g-3">
                             <div class="col-lg-6">
                                 <div class="d-flex align-items-center mb-2">
-                                    <h6 class="mb-0 text-success"><span data-i18n="employee_sync_tab_new">New</span> <span class="count-inline" id="orgSyncNewCount">0</span></h6>
+                                    <h6 class="mb-0"><span data-i18n="employee_sync_tab_new">New</span> <span class="count-inline" id="orgSyncNewCount">0</span></h6>
                                 </div>
                                 <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
                                     <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_org_sync_new">

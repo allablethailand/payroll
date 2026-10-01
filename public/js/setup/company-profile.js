@@ -881,7 +881,7 @@ function getStructureColumns(type) {
                 <button class="btn btn-link btn-circle-action text-warning btn-open-modal manage-${type}" data-action="edit" data-type="${type}" data-id="${row.id}" data-i18n-title="edit">
                     <i class="fa-solid fa-pen-to-square"></i>
                 </button>
-                <button class="btn btn-link btn-circle-action text-primary btn-structure-assign" data-type="${type}" data-id="${row.id}" data-label="${escapeAttr(label)}" data-i18n-title="assign_employees">
+                <button class="btn btn-link btn-circle-action btn-structure-assign" data-type="${type}" data-id="${row.id}" data-label="${escapeAttr(label)}" data-i18n-title="assign_employees">
                     <i class="fa-solid fa-user-plus"></i>
                 </button>
                 <button class="btn btn-link btn-circle-action text-secondary btn-structure-view-assigned" data-type="${type}" data-id="${row.id}" data-label="${escapeAttr(label)}" data-i18n-title="view_assigned_employees">

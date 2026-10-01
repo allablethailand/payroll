@@ -296,7 +296,7 @@
       </div>
     </div>
     <div class="ect-ribbon-group">
-      <button type="button" class="btn btn-outline-danger btn-sm" id="ectDeleteElementBtn" disabled>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="ectDeleteElementBtn" disabled>
         <i class="fa-solid fa-trash me-1"></i><span data-i18n="delete">Delete</span>
       </button>
     </div>
@@ -392,7 +392,7 @@
         <button type="button" class="btn btn-link btn-sm" id="ectPageNextBtn" title="Next page"><i class="fa-solid fa-chevron-right"></i></button>
         <span class="ect-page-nav-sep"></span>
         <button type="button" class="btn btn-outline-secondary btn-sm" id="ectPageAddBtn" title="Add page"><i class="fa-solid fa-plus me-1"></i><span data-i18n="ect_add_page">Add Page</span></button>
-        <button type="button" class="btn btn-outline-danger btn-sm" id="ectPageRemoveBtn" title="Remove this page"><i class="fa-solid fa-trash me-1"></i><span data-i18n="ect_remove_page">Remove Page</span></button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="ectPageRemoveBtn" title="Remove this page"><i class="fa-solid fa-trash me-1"></i><span data-i18n="ect_remove_page">Remove Page</span></button>
       </div>
     </div>
 

@@ -279,7 +279,7 @@
       </div>
     </div>
     <div class="pst-ribbon-group">
-      <button type="button" class="btn btn-outline-danger btn-sm" id="pstDeleteElementBtn" disabled>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="pstDeleteElementBtn" disabled>
         <i class="fa-solid fa-trash me-1"></i><span data-i18n="delete">Delete</span>
       </button>
     </div>
@@ -349,7 +349,7 @@
         <button type="button" class="btn btn-link btn-sm" id="pstPageNextBtn" title="Next page"><i class="fa-solid fa-chevron-right"></i></button>
         <span class="pst-page-nav-sep"></span>
         <button type="button" class="btn btn-outline-secondary btn-sm" id="pstPageAddBtn" title="Add page"><i class="fa-solid fa-plus me-1"></i><span data-i18n="ect_add_page">Add Page</span></button>
-        <button type="button" class="btn btn-outline-danger btn-sm" id="pstPageRemoveBtn" title="Remove this page"><i class="fa-solid fa-trash me-1"></i><span data-i18n="ect_remove_page">Remove Page</span></button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="pstPageRemoveBtn" title="Remove this page"><i class="fa-solid fa-trash me-1"></i><span data-i18n="ect_remove_page">Remove Page</span></button>
       </div>
     </div>
 

@@ -251,7 +251,7 @@ function hsLoadSyncLog() {
                         <td>${hsEscapeHtml(byName)}</td>
                         <td>${hsSyncLogStatusBadge(r.status)}</td>
                         <td class="text-end">${hsEscapeHtml(r.total_count)}</td>
-                        <td class="text-end text-success">${hsEscapeHtml(r.success_count)}</td>
+                        <td class="text-end">${hsEscapeHtml(r.success_count)}</td>
                         <td class="text-end ${Number(r.error_count) > 0 ? 'text-danger' : ''}">${hsEscapeHtml(r.error_count)}</td>
                     </tr>
                 `;

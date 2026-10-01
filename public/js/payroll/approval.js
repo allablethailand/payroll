@@ -94,7 +94,7 @@ function approvalCheckboxHtml(row) {
 function renderApprovalViewActions(row) {
     let html = '<div class="d-flex gap-1 justify-content-center">';
     if (row.public_id) {
-        html += `<button type="button" class="btn btn-link btn-circle-action text-info btn-view-approval-run" data-public-id="${row.public_id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>`;
+        html += `<button type="button" class="btn btn-link btn-circle-action btn-view-approval-run" data-public-id="${row.public_id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>`;
     }
     html += `<button type="button" class="btn btn-link btn-circle-action text-secondary btn-view-approval-timeline" data-id="${row.id}" title="${langData['action_timeline'] || 'Timeline'}"><i class="fa-solid fa-list-check"></i></button>`;
     html += '</div>';
@@ -110,8 +110,8 @@ function renderApprovalDecisionActions(row) {
         return '';
     }
     let html = '<div class="d-flex gap-1 justify-content-center">';
-    html += `<button type="button" class="btn btn-link btn-circle-action text-success btn-approve-run" data-id="${row.id}" title="${langData['action_approve'] || 'Approve'}"><i class="fa-solid fa-check"></i></button>`;
-    html += `<button type="button" class="btn btn-link btn-circle-action text-primary btn-request-info-run" data-id="${row.id}" title="${langData['action_request_info'] || 'Request Info'}"><i class="fa-solid fa-circle-info"></i></button>`;
+    html += `<button type="button" class="btn btn-link btn-circle-action btn-approve-run" data-id="${row.id}" title="${langData['action_approve'] || 'Approve'}"><i class="fa-solid fa-check"></i></button>`;
+    html += `<button type="button" class="btn btn-link btn-circle-action btn-request-info-run" data-id="${row.id}" title="${langData['action_request_info'] || 'Request Info'}"><i class="fa-solid fa-circle-info"></i></button>`;
     html += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-reject-run" data-id="${row.id}" title="${langData['action_reject'] || 'Reject'}"><i class="fa-solid fa-xmark"></i></button>`;
     html += '</div>';
     return html;

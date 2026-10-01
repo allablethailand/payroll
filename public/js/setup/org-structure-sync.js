@@ -29,7 +29,7 @@ function orgSyncRenderItemCell(row, subtitle) {
     const letter = name.trim().charAt(0).toUpperCase() || '?';
     return `
         <div class="d-flex align-items-center gap-2 py-1">
-            <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white flex-shrink-0" style="width:32px;height:32px;font-size:.78rem;background-color:#FF9900;">${orgSyncEscapeHtml(letter)}</div>
+            <div class="apv-person-avatar" style="width:32px;height:32px;min-width:32px;font-size:.78rem;">${orgSyncEscapeHtml(letter)}</div>
             <div class="lh-sm">
                 <div class="fw-semibold">${orgSyncEscapeHtml(name)}</div>
                 ${subtitle ? `<div class="text-muted small">${orgSyncEscapeHtml(subtitle)}</div>` : ''}
@@ -238,7 +238,7 @@ $(document).on('click', '.btn-open-org-sync-log', function () {
                         <td>${orgSyncEscapeHtml(byName)}</td>
                         <td>${orgSyncStatusBadge(r.status)}</td>
                         <td class="text-end">${orgSyncEscapeHtml(r.total_count)}</td>
-                        <td class="text-end text-success">${orgSyncEscapeHtml(r.success_count)}</td>
+                        <td class="text-end">${orgSyncEscapeHtml(r.success_count)}</td>
                         <td class="text-end ${Number(r.error_count) > 0 ? 'text-danger' : ''}">${orgSyncEscapeHtml(r.error_count)}</td>
                     </tr>
                 `;

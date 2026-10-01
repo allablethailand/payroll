@@ -1557,7 +1557,7 @@ function itemChecklistBoxesHtml(itemOptions, opts) {
     return `${baseSalaryHtml}<div class="row g-2">
         <div class="col-md-6">
             <div class="border rounded-3 p-2 h-100">
-                <div class="fw-bold small text-success mb-1"><i class="fa-solid fa-arrow-trend-up me-1"></i>${langData['breakdown_earnings'] || 'Income'}</div>
+                <div class="fw-bold small mb-1"><i class="fa-solid fa-arrow-trend-up me-1"></i>${langData['breakdown_earnings'] || 'Income'}</div>
                 ${rowsHtml(earningItems)}
             </div>
         </div>
@@ -1579,7 +1579,7 @@ function itemChecklistBoxesHtml(itemOptions, opts) {
 // condition was actually picked (never all 3 radio choices, never blank -- "Each Employee's Own
 // Setting" is itself a real, correctly-worded condition, not an absence of one).
 function runSettingsConditionHtml(value, yesKey, yesFallback, noKey, noFallback) {
-    if (value === 'yes') return `<span class="text-success fw-semibold"><i class="fa-solid fa-check me-1"></i>${langData[yesKey] || yesFallback}</span>`;
+    if (value === 'yes') return `<span class="fw-semibold"><i class="fa-solid fa-check me-1"></i>${langData[yesKey] || yesFallback}</span>`;
     if (value === 'no') return `<span class="text-danger fw-semibold"><i class="fa-solid fa-xmark me-1"></i>${langData[noKey] || noFallback}</span>`;
     return `<span class="text-secondary"><i class="fa-solid fa-users me-1"></i>${langData['calc_default_use_employee'] || "Each Employee's Own Setting"}</span>`;
 }
@@ -1587,7 +1587,7 @@ function runSettingsConditionHtml(value, yesKey, yesFallback, noKey, noFallback)
 // "ถ้าไม่เลือกก็ให้แสดงคำให้ถูกต้อง" -- a correct sentence (not a blank box) when nothing is excluded.
 function runSettingsExcludedItemsSummaryHtml(itemOptions, excludedCodes) {
     if (!excludedCodes.length) {
-        return `<div class="text-muted small"><i class="fa-solid fa-circle-check me-1 text-success"></i>${langData['run_settings_no_excluded_items'] || "Nothing is excluded -- every item is included in this run's calculation."}</div>`;
+        return `<div class="text-muted small"><i class="fa-solid fa-circle-check me-1 text-muted"></i>${langData['run_settings_no_excluded_items'] || "Nothing is excluded -- every item is included in this run's calculation."}</div>`;
     }
     // 2026-09-20, 3e-1 (rules.md §5: "Badge = สถานะเท่านั้น ไม่ใช่ label ทั่วไป (ประเภท, หมวด, ที่มา
     // -> เป็นข้อความธรรมดาหรือคอลัมน์)"). These pills carried an ITEM NAME coloured by its item_type --

@@ -373,7 +373,7 @@ function aisRenderCellDetail(runs) {
                 <span>${langData['table_base_salary'] || 'Base Salary'}</span>
                 <span class="fw-semibold">${aisFmt(run.base_salary_amount)}</span>
             </div>
-            <div class="fw-semibold small text-success mt-2 mb-1">${langData['breakdown_earnings'] || 'Income'}</div>
+            <div class="fw-semibold small mt-2 mb-1">${langData['breakdown_earnings'] || 'Income'}</div>
             ${aisDetailLineRowsHtml(run.earning_lines, 'amount')}
             <div class="fw-semibold small text-danger mt-2 mb-1">${langData['table_deduction_amount'] || 'Deductions'}</div>
             ${aisDetailLineRowsHtml(run.deduction_lines, 'amount')}

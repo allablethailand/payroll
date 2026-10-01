@@ -1665,6 +1665,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     font-size: 1rem;
 }
 .profile-upload-circle {
+    border-radius: 50%;
     cursor: pointer;
     /* `object-fit` only affects a replaced element (img/video) -- this class sits on the <label>
        wrapper (see employee/detail.php's #profile_photo_input label), not on #profilePreview itself,
@@ -1686,6 +1687,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    display in the app -- .profile-img-box img/.employee-avatar-lg img/.employee-list-avatar-img)
    keeps the head in frame instead of centering on the chest/shoulders. */
 #profilePreview {
+    border-radius: 50%;
     object-fit: cover;
     object-position: center top;
 }
@@ -1697,6 +1699,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     color: var(--c-primary);
 }
 .profile-upload-badge {
+    border-radius: 50%;
     width: 26px;
     height: 26px;
     cursor: pointer;

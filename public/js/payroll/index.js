@@ -105,7 +105,7 @@ function runCodeCellHtmlPr(row) {
     if (row.merge_target_run_id) {
         const targetLabel = row.merge_target_run_code || row.merge_target_run_name || `#${row.merge_target_run_id}`;
         const tpl = langData['run_merge_reference_inline'] || 'Merges into: {target}';
-        const refLine = `<div class="small text-primary mt-1" title="${escapeHtml(targetLabel)}"><i class="fa-solid fa-code-merge me-1"></i>${escapeHtml(tpl.replace('{target}', targetLabel))}</div>`;
+        const refLine = `<div class="small mt-1" title="${escapeHtml(targetLabel)}"><i class="fa-solid fa-code-merge me-1"></i>${escapeHtml(tpl.replace('{target}', targetLabel))}</div>`;
         return ownCode + refLine;
     }
     // 2026-09-06: the "future cycle" merge-target form -- merge_target_run_id is still null (no
@@ -425,9 +425,9 @@ function renderRunActionsPr(row) {
     // copy of the same pattern Process Detail's #reportPreviewModal already established -- see
     // runRegisterPdfPreview()); Excel stays a direct one-click download.
     html += `<div class="dropdown">
-        <button type="button" class="btn btn-link btn-circle-action text-primary dropdown-toggle" data-bs-toggle="dropdown" title="${langData['export'] || 'Export'}"><i class="fa-solid fa-file-export"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action dropdown-toggle" data-bs-toggle="dropdown" title="${langData['export'] || 'Export'}"><i class="fa-solid fa-file-export"></i></button>
         <ul class="dropdown-menu">
-            <li><button type="button" class="dropdown-item btn-export-run-register" data-id="${row.id}"><i class="fa-solid fa-file-excel text-success me-2"></i>${langData['export_excel'] || 'Export Excel'}</button></li>
+            <li><button type="button" class="dropdown-item btn-export-run-register" data-id="${row.id}"><i class="fa-solid fa-file-excel text-muted me-2"></i>${langData['export_excel'] || 'Export Excel'}</button></li>
             <li><button type="button" class="dropdown-item btn-preview-run-register-pdf" data-id="${row.id}"><i class="fa-solid fa-file-pdf text-danger me-2"></i>${langData['export_pdf'] || 'Export PDF'}</button></li>
         </ul>
     </div>`;
@@ -436,7 +436,7 @@ function renderRunActionsPr(row) {
     // without opening the run first. Draft-only (PayrollRunModel::setEmployeeVerified() itself
     // refuses any other state), matching the Detail-page button's own visibility gate.
     if (isDraft) {
-        html += `<button type="button" class="btn btn-link btn-circle-action text-success btn-verify-all-run" data-id="${row.id}" title="${langData['action_verify_all'] || 'Verify All'}"><i class="fa-solid fa-check-double"></i></button>`;
+        html += `<button type="button" class="btn btn-link btn-circle-action btn-verify-all-run" data-id="${row.id}" title="${langData['action_verify_all'] || 'Verify All'}"><i class="fa-solid fa-check-double"></i></button>`;
     }
     if (['draft', 'pending_approval', 'approved', 'rejected'].includes(row.state)) {
         html += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-cancel-run" data-id="${row.id}" title="${langData['action_cancel'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
@@ -861,7 +861,7 @@ function initPendingSyncTable() {
                                 title="${langData['btn_pull_to_run'] || 'Pull to Run'}"><i class="fa-solid fa-arrow-right-to-bracket"></i></button>
                             ${mergeBtn}
                             <button type="button" class="btn btn-outline-secondary btn-view-sync" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
-                            <button type="button" class="btn btn-outline-danger btn-reject-sync" data-id="${row.id}" data-label="${escapeHtml(row.process_subject || row.process_no)}" title="${langData['btn_reject_sync'] || 'Reject'}"><i class="fa-solid fa-reply"></i></button>
+                            <button type="button" class="btn btn-outline-secondary btn-reject-sync" data-id="${row.id}" data-label="${escapeHtml(row.process_subject || row.process_no)}" title="${langData['btn_reject_sync'] || 'Reject'}"><i class="fa-solid fa-reply"></i></button>
                         </div>
                     `;
                     }
@@ -1056,7 +1056,7 @@ function renderSyncStatusRowPr(row) {
             <td>${escapeHtml(row.dept_description || '-')}<br><span class="text-muted small">${escapeHtml(row.position_name || '-')}</span></td>
             <td>${row.emp_start_date ? toDisplayDatePr(row.emp_start_date) : '-'}</td>
             <td>${row.emp_resign_date ? toDisplayDatePr(row.emp_resign_date) : '-'}</td>
-            <td class="text-center">${Number(row.is_new_hire) === 1 ? '<i class="fa-solid fa-circle-check text-success"></i>' : '<span class="text-muted">-</span>'}</td>
+            <td class="text-center">${Number(row.is_new_hire) === 1 ? '<i class="fa-solid fa-circle-check text-muted"></i>' : '<span class="text-muted">-</span>'}</td>
             <td class="text-center">${Number(row.is_resigned_this_period) === 1 ? '<i class="fa-solid fa-circle-check text-danger"></i>' : '<span class="text-muted">-</span>'}</td>
             <td>${escapeHtml(row.status_text || '-')}</td>
         </tr>
@@ -1231,7 +1231,7 @@ function renderSyncDetail(data) {
                 <input type="radio" class="btn-check sync-item-filter-radio" name="syncItemFilter" id="syncItemFilterAll" value="all" autocomplete="off" checked>
                 <label class="btn btn-outline-secondary btn-sm" for="syncItemFilterAll">${langData['filter_all'] || 'All'} (<span id="syncItemFilterAllCount">0</span>)</label>
                 <input type="radio" class="btn-check sync-item-filter-radio" name="syncItemFilter" id="syncItemFilterUnmapped" value="unmapped" autocomplete="off">
-                <label class="btn btn-outline-danger btn-sm" for="syncItemFilterUnmapped">${langData['sync_detail_unmapped'] || 'Unmapped'} (<span id="syncItemFilterUnmappedCount">0</span>)</label>
+                <label class="btn btn-outline-secondary btn-sm" for="syncItemFilterUnmapped">${langData['sync_detail_unmapped'] || 'Unmapped'} (<span id="syncItemFilterUnmappedCount">0</span>)</label>
                 <input type="radio" class="btn-check sync-item-filter-radio" name="syncItemFilter" id="syncItemFilterSsoNotSet" value="sso_not_set" autocomplete="off">
                 <label class="btn btn-outline-secondary btn-sm" for="syncItemFilterSsoNotSet">${langData['sync_sso_not_set'] || 'SSO: Not Set'} (<span id="syncItemFilterSsoNotSetCount">0</span>)</label>
             </div>
@@ -1775,7 +1775,7 @@ $(document).on('click', '#btnBulkPullSubmit', function () {
                     if ((res.pending_merges_ready || []).length > 0) {
                         pendingMergesAll = pendingMergesAll.concat(res.pending_merges_ready);
                     }
-                    $row.find('.bulk-pull-row-status').html(`<span class="text-success small"><i class="fa-solid fa-check me-1"></i>${langData['bulk_pull_result_success'] || 'created'}</span>`);
+                    $row.find('.bulk-pull-row-status').html(`<span class="small"><i class="fa-solid fa-check me-1"></i>${langData['bulk_pull_result_success'] || 'created'}</span>`);
                 } else {
                     failCount++;
                     $row.find('.bulk-pull-row-status').html(`<span class="text-danger small"><i class="fa-solid fa-xmark me-1"></i>${escapeHtml(res.message || 'failed')}</span>`);

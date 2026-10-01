@@ -137,7 +137,7 @@ function csActionButtonsTs(row) {
         : '';
     return `<div class="d-flex gap-1 justify-content-center">
         <button type="button" class="btn btn-link btn-circle-action text-secondary btn-view-sr-current" data-id="${row.statutory_item_id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
-        <button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-sr" data-id="${row.statutory_item_id}" title="${csManageButtonTitleTs(row)}"><i class="fa-solid fa-sliders"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action btn-manage-sr" data-id="${row.statutory_item_id}" title="${csManageButtonTitleTs(row)}"><i class="fa-solid fa-sliders"></i></button>
         ${deleteBtn}
     </div>`;
 }
@@ -565,7 +565,7 @@ function addSrBracketRow(min, max, rate) {
         <td><input type="number" step="0.01" class="form-control form-control-sm sr-bracket-min" value="${min !== undefined ? min : ''}" ${idx > 0 ? 'readonly' : ''}></td>
         <td><input type="number" step="0.01" class="form-control form-control-sm sr-bracket-max" value="${max !== undefined && max !== null ? max : ''}" placeholder="${langData['no_upper_limit'] || 'No upper limit'}"></td>
         <td><input type="number" step="0.0001" min="0" max="100" class="form-control form-control-sm sr-bracket-rate" value="${rate !== undefined ? rate : ''}"></td>
-        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btn-remove-sr-bracket"><i class="fa-solid fa-trash"></i></button></td>
+        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-secondary btn-remove-sr-bracket"><i class="fa-solid fa-trash"></i></button></td>
     </tr>`);
     $('#srBracketBody').append($row);
     if (idx === 0 && min === undefined) {
@@ -1339,7 +1339,7 @@ function pvdLadderRowHtml(row, index, isLast) {
             <input type="number" class="form-control form-control-sm pvd-ladder-rate" step="0.01" min="0" max="100" value="${rateVal}">
         </div>
         <div class="col-2">
-            ${isLast && index > 0 ? `<button type="button" class="btn btn-sm btn-outline-danger pvd-ladder-remove-row w-100"><i class="fa-solid fa-trash"></i></button>` : ''}
+            ${isLast && index > 0 ? `<button type="button" class="btn btn-sm btn-outline-secondary pvd-ladder-remove-row w-100"><i class="fa-solid fa-trash"></i></button>` : ''}
         </div>
     </div>`;
 }

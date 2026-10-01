@@ -326,14 +326,14 @@
         <div class="tab-pane fade show active" id="info-pane" role="tabpanel" aria-labelledby="info-tab" tabindex="0">
             <div class="d-flex justify-content-center mb-4">
                 <div class="position-relative">
-                    <label for="profile_photo_input" class="d-flex flex-column align-items-center justify-content-center rounded-circle bg-light border profile-upload-circle" style="width:100px;height:100px;">
-                        <img id="profilePreview" class="rounded-circle w-100 h-100 d-none" src="" alt="">
+                    <label for="profile_photo_input" class="d-flex flex-column align-items-center justify-content-center bg-light border profile-upload-circle" style="width:100px;height:100px;">
+                        <img id="profilePreview" class="w-100 h-100 d-none" src="" alt="">
                         <span id="profilePlaceholder" class="text-center">
                             <i class="fas fa-camera fs-5 d-block"></i>
                             <small class="text-secondary" data-i18n="upload_profile">Upload profile</small>
                         </span>
                     </label>
-                    <span class="badge bg-brand rounded-circle d-flex align-items-center justify-content-center position-absolute bottom-0 end-0 profile-upload-badge"
+                    <span class="badge bg-brand d-flex align-items-center justify-content-center position-absolute bottom-0 end-0 profile-upload-badge"
                         onclick="document.getElementById('profile_photo_input').click()">
                         <i class="fas fa-camera"></i>
                     </span>
@@ -805,7 +805,7 @@
                             <button type="button" class="btn btn-outline-primary btn-sm" id="empDrawSignatureBtn">
                                 <i class="fa-solid fa-pen-nib me-1"></i><span data-i18n="draw_signature">Draw Signature</span>
                             </button>
-                            <button type="button" class="btn btn-outline-danger btn-sm d-none" id="empSignatureRemoveBtn">
+                            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="empSignatureRemoveBtn">
                                 <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
                             </button>
                             <input type="file" id="emp_signature_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
@@ -1007,7 +1007,7 @@
                         <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPinMapLocation">
                             <i class="fa-solid fa-map-location-dot me-1"></i><span data-i18n="pin_location_on_map">Pin Location on Map</span>
                         </button>
-                        <button type="button" class="btn btn-outline-danger btn-sm d-none" id="btnRemoveMapPin">
+                        <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnRemoveMapPin">
                             <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
                         </button>
                         <span class="text-muted small" id="mapLocationSummary"></span>
@@ -2553,7 +2553,7 @@
                         <div id="employeeSuspensionStatusText" class="small text-muted">-</div>
                     </div>
                     <div>
-                        <button type="button" class="btn btn-outline-danger btn-sm d-none" id="btnSuspendEmployee">
+                        <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnSuspendEmployee">
                             <i class="fa-solid fa-ban me-1"></i><span data-i18n="suspend_access">Suspend Access</span>
                         </button>
                         <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnUnsuspendEmployee">

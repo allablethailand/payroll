@@ -86,7 +86,7 @@
                                 <label class="btn btn-outline-secondary btn-sm" for="ann_cover_file">
                                     <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_image">Upload Image</span>
                                 </label>
-                                <button type="button" class="btn btn-outline-danger btn-sm d-none" id="annCoverRemoveBtn">
+                                <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="annCoverRemoveBtn">
                                     <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
                                 </button>
                                 <input type="file" id="ann_cover_file" accept=".jpg,.jpeg,.png,.webp" class="d-none">

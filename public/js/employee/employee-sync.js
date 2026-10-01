@@ -49,7 +49,7 @@ function esRenderEmployeeCell(row, employeeNo, type) {
     const typeBadge = type ? ` ${esTypeBadgeHtml(type)}` : '';
     return `
         <div class="d-flex align-items-center gap-2 py-1">
-            <div class="es-sync-avatar rounded-circle d-flex align-items-center justify-content-center fw-bold text-white flex-shrink-0" style="background-color:#007aff;">${esEscapeHtml(letter)}</div>
+            <div class="apv-person-avatar es-sync-avatar">${esEscapeHtml(letter)}</div>
             <div class="lh-sm">
                 <div class="fw-semibold">${esEscapeHtml(name)}${typeBadge}</div>
                 <div class="text-muted small">${esEscapeHtml(employeeNo || '-')}</div>

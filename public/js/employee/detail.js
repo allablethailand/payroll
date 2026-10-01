@@ -1663,7 +1663,7 @@ function addDocumentRow(doc) {
         // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
         // ".btn-circle-action" section) replace the old adjacent .btn-group.
         '<div class="d-flex gap-1 justify-content-center">' +
-        `<a href="${BASE_URL}/api/employee.document.view?id=${encodeURIComponent(doc.id)}" target="_blank" class="btn btn-link btn-circle-action text-info"><i class="fa-solid fa-eye"></i></a>` +
+        `<a href="${BASE_URL}/api/employee.document.view?id=${encodeURIComponent(doc.id)}" target="_blank" class="btn btn-link btn-circle-action"><i class="fa-solid fa-eye"></i></a>` +
         '<button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-document"><i class="fa-solid fa-trash-can"></i></button>' +
         '</div>' +
         '</td>' +
@@ -1847,7 +1847,7 @@ function renderSuspensionStatus(data) {
         $suspendBtn.addClass('d-none');
         $unsuspendBtn.removeClass('d-none');
     } else {
-        $text.html(`<span class="text-success"><i class="fa-solid fa-circle-check me-1"></i>${(langData['access_active'] || 'Access active')}</span>`);
+        $text.html(`<span class=""><i class="fa-solid fa-circle-check me-1"></i>${(langData['access_active'] || 'Access active')}</span>`);
         $suspendBtn.removeClass('d-none');
         $unsuspendBtn.addClass('d-none');
     }
@@ -1964,7 +1964,7 @@ function renderPermissionOverridesTable() {
             <td>${escapeAttr(currentLang === 'th' ? p.name_th : p.name_en)}</td>
             <td class="text-center">
                 ${p.role_granted
-                    ? `<i class="fa-solid fa-check text-success" title="${escapeAttr(langData['inherited'] || 'Inherited')}"></i>`
+                    ? `<i class="fa-solid fa-check text-muted" title="${escapeAttr(langData['inherited'] || 'Inherited')}"></i>`
                     : `<i class="fa-solid fa-minus text-muted" title="${escapeAttr(langData['inherited'] || 'Inherited')}"></i>`}
             </td>
             <td class="text-center">
@@ -1974,7 +1974,7 @@ function renderPermissionOverridesTable() {
                     <input type="radio" class="btn-check po-effect-radio" name="po-effect-${p.permission_id}" id="po-grant-${p.permission_id}" value="grant" ${effect === 'grant' ? 'checked' : ''}>
                     <label class="btn btn-outline-secondary" for="po-grant-${p.permission_id}">${escapeAttr(langData['override_grant'] || 'Grant')}</label>
                     <input type="radio" class="btn-check po-effect-radio" name="po-effect-${p.permission_id}" id="po-deny-${p.permission_id}" value="deny" ${effect === 'deny' ? 'checked' : ''}>
-                    <label class="btn btn-outline-danger" for="po-deny-${p.permission_id}">${escapeAttr(langData['override_deny'] || 'Deny')}</label>
+                    <label class="btn btn-outline-secondary" for="po-deny-${p.permission_id}">${escapeAttr(langData['override_deny'] || 'Deny')}</label>
                 </div>
             </td>
             <td class="text-center">`;
@@ -3940,7 +3940,7 @@ function initRecurringEarningUI() {
                     // the Responsive expand row.
                     data: null, orderable: false, className: 'text-center all',
                     render: (d, t, row) => `
-                        <button type="button" class="btn btn-sm btn-link text-primary btn-edit-recurring-earning" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" class="btn btn-sm btn-link btn-edit-recurring-earning" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
                         <button type="button" class="btn btn-sm btn-link text-danger btn-delete-recurring-earning" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>
                     `
                 }
@@ -4200,7 +4200,7 @@ function initRecurringDeductionUI() {
                 {
                     data: null, orderable: false, className: 'text-center all',
                     render: (d, t, row) => `
-                        <button type="button" class="btn btn-sm btn-link text-primary btn-edit-recurring-deduction" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" class="btn btn-sm btn-link btn-edit-recurring-deduction" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
                         <button type="button" class="btn btn-sm btn-link text-danger btn-delete-recurring-deduction" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>
                     `
                 }

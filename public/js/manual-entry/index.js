@@ -619,7 +619,7 @@ function renderImportHistory() {
                 // 'download' rows and for any import batch committed before this column existed).
                 { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => row.event_type === 'import'
                     ? `<div class="d-flex gap-1 justify-content-end">
-                        <button class="btn btn-link btn-circle-action text-primary" onclick="openImportBatchDetail(${row.id}, '${row.entity_type}')"><i class="fa-solid fa-eye"></i></button>
+                        <button class="btn btn-link btn-circle-action" onclick="openImportBatchDetail(${row.id}, '${row.entity_type}')"><i class="fa-solid fa-eye"></i></button>
                         ${row.original_file_name ? `<a href="${BASE_URL}/api/manual-import.download-original?batch_id=${row.id}" class="btn btn-link btn-circle-action text-secondary" title="${escapeHtml(row.original_file_name)}"><i class="fa-solid fa-download"></i></a>` : ''}
                        </div>`
                     : '' },

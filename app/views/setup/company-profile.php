@@ -291,7 +291,7 @@
                                     <label class="btn btn-outline-secondary btn-sm" for="cp_logo_file">
                                         <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_logo">Upload Logo</span>
                                     </label>
-                                    <button type="button" class="btn btn-outline-danger btn-sm d-none" id="cpLogoRemoveBtn">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="cpLogoRemoveBtn">
                                         <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
                                     </button>
                                     <input type="file" id="cp_logo_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
@@ -333,7 +333,7 @@
                                     <button type="button" class="btn btn-outline-primary btn-sm" id="cpDrawSignatureBtn">
                                         <i class="fa-solid fa-pen-nib me-1"></i><span data-i18n="draw_signature">Draw Signature</span>
                                     </button>
-                                    <button type="button" class="btn btn-outline-danger btn-sm d-none" id="cpSignatureRemoveBtn">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="cpSignatureRemoveBtn">
                                         <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
                                     </button>
                                     <input type="file" id="cp_signature_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">

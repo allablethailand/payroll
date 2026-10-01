@@ -72,10 +72,10 @@ function annActionBtns(row) {
     let html = '<div class="d-flex gap-1 justify-content-center flex-wrap">';
     if (isDraft) {
         html += `<button type="button" class="btn btn-link btn-circle-action text-warning" onclick="openAnnouncementModal(${row.id})" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>`;
-        html += `<button type="button" class="btn btn-link btn-circle-action text-success" onclick="publishAnnouncement(${row.id})" title="${langData['announcement_publish'] || 'Publish'}"><i class="fa-solid fa-paper-plane"></i></button>`;
+        html += `<button type="button" class="btn btn-link btn-circle-action" onclick="publishAnnouncement(${row.id})" title="${langData['announcement_publish'] || 'Publish'}"><i class="fa-solid fa-paper-plane"></i></button>`;
     }
     if (row.status === 'published' && !row.is_dashboard_featured) {
-        html += `<button type="button" class="btn btn-link btn-circle-action text-primary" onclick="setFeaturedAnnouncement(${row.id})" title="${langData['announcement_set_featured'] || 'Feature on Dashboard'}"><i class="fa-regular fa-star"></i></button>`;
+        html += `<button type="button" class="btn btn-link btn-circle-action" onclick="setFeaturedAnnouncement(${row.id})" title="${langData['announcement_set_featured'] || 'Feature on Dashboard'}"><i class="fa-regular fa-star"></i></button>`;
     }
     html += `<button type="button" class="btn btn-link btn-circle-action text-danger" onclick="deleteAnnouncement(${row.id})" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
     html += '</div>';
@@ -94,7 +94,7 @@ function initAnnouncementTable() {
                 if (!row.cover_image_path) { return title; }
                 return `<div class="d-flex align-items-center gap-2"><img src="${BASE_URL}/${row.cover_image_path}" class="ann-cover-thumb" alt=""> <span>${title}</span></div>`;
             } },
-            { data: 'accept_required', className: 'text-center', render: (d) => d ? `<i class="fa-solid fa-check text-success"></i>` : `<i class="fa-solid fa-minus text-muted"></i>` },
+            { data: 'accept_required', className: 'text-center', render: (d) => d ? `<i class="fa-solid fa-check text-muted"></i>` : `<i class="fa-solid fa-minus text-muted"></i>` },
             { data: null, className: 'text-center', render: (d, t, row) => row.status === 'published' ? `${row.acknowledged_count} / ${row.recipient_count}` : '<span class="text-muted">-</span>' },
             { data: 'is_dashboard_featured', className: 'text-center', render: (d) => d ? `<i class="fa-solid fa-star text-warning"></i>` : '' },
             { data: null, render: (d, t, row) => formatDisplayDateTime ? formatDisplayDateTime(row.updated_at || row.created_at) : (row.updated_at || row.created_at || '') },

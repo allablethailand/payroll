@@ -114,7 +114,7 @@ function annualReportRows() {
 // ".btn-circle-action" section) replace the old adjacent .btn-group.
 function annualReportActionsHtml(report) {
     return `<div class="d-flex gap-1 justify-content-center">
-        <button type="button" class="btn btn-link btn-circle-action text-primary btn-annual-report-download" data-code="${report.code}" title="${langData['report_preview_and_download'] || 'Preview & Download'}"><i class="fa-solid fa-download"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action btn-annual-report-download" data-code="${report.code}" title="${langData['report_preview_and_download'] || 'Preview & Download'}"><i class="fa-solid fa-download"></i></button>
         <button type="button" class="btn btn-link btn-circle-action text-secondary btn-annual-report-history" data-code="${report.code}" title="${langData['report_view_history'] || 'View Download History'}"><i class="fa-solid fa-clock-rotate-left"></i></button>
     </div>`;
 }
@@ -442,7 +442,7 @@ function cycleMatrixGroupCellHtml(run, group) {
         return `<li><button type="button" class="dropdown-item btn-cycle-matrix-print" data-run-id="${run.id}" data-code="${col.code}"><i class="fa-solid ${itemIcon} me-2 text-muted"></i>${escapeHtml(reportLabel(col))}</button></li>`;
     }).join('');
     return `<div class="dropdown">
-        <button type="button" class="btn btn-link btn-circle-action text-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="${escapeAttr(langData['report_preview_and_download'] || 'Preview & Download')}"><i class="fa-solid ${groupIcon}"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false" title="${escapeAttr(langData['report_preview_and_download'] || 'Preview & Download')}"><i class="fa-solid ${groupIcon}"></i></button>
         <ul class="dropdown-menu dropdown-menu-end">${items}</ul>
     </div>`;
 }
@@ -853,7 +853,7 @@ $(document).on('click', '.btn-monthly-employees', function () {
                     { data: 'deduction', className: 'text-end', render: v => fmtNum(v) },
                     { data: 'net', className: 'text-end', render: v => fmtNum(v) },
                     { data: 'employee_id', orderable: false, searchable: false, className: 'text-end', render: id =>
-                        `<button type="button" class="btn btn-link btn-circle-action text-primary btn-monthly-slip" data-employee-id="${id}" title="${langData['download_slip'] || 'Download Slip'}"><i class="fa-solid fa-download"></i></button>` }
+                        `<button type="button" class="btn btn-link btn-circle-action btn-monthly-slip" data-employee-id="${id}" title="${langData['download_slip'] || 'Download Slip'}"><i class="fa-solid fa-download"></i></button>` }
                 ]
             }
         });
