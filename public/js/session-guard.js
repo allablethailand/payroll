@@ -55,14 +55,10 @@
         // this the DB/session could still look "active" for a little while after the user already
         // saw and acknowledged the popup.
         $.ajax({ url: `${BASE_URL}/api/session.heartbeat`, method: 'GET', dataType: 'json' });
-        Swal.fire({
-            icon: 'warning',
+        showWarning(text, true, {
             title: (typeof langData !== 'undefined' && langData['session_ended_title']) || 'Session Ended',
-            text: text,
-            confirmButtonText: (typeof langData !== 'undefined' && langData['back_to_origami']) || 'Back to Origami',
-            showCancelButton: false,
-            allowOutsideClick: false,
-            allowEscapeKey: false,
+            confirmText: (typeof langData !== 'undefined' && langData['back_to_origami']) || 'Back to Origami',
+            locked: true,
         }).then(function () {
             window.location.href = backToOrigamiUrl();
         });

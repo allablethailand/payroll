@@ -25,16 +25,16 @@
   <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="dataSyncTabs" role="tablist">
     <li class="nav-item" role="presentation">
       <button class="nav-link setup-menu active" id="ds-sync-tab" data-bs-toggle="tab" data-bs-target="#ds-sync-pane" type="button" role="tab" aria-controls="ds-sync-pane" aria-selected="true">
-        <i class="fa-solid fa-rotate me-2"></i><span data-i18n="data_sync_tab_sync">Sync</span>
+        <span data-i18n="data_sync_tab_sync">Sync</span>
       </button>
     </li>
     <li class="nav-item" role="presentation">
       <button class="nav-link setup-menu" id="ds-history-tab" data-bs-toggle="tab" data-bs-target="#ds-history-pane" type="button" role="tab" aria-controls="ds-history-pane" aria-selected="false">
-        <i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="data_sync_tab_history">Sync History</span>
+        <span data-i18n="data_sync_tab_history">Sync History</span>
       </button>
     </li>
   </ul>
-  <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 p-3" style="border-top-left-radius:0;border-top-right-radius:0;">
+  <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 p-3 rounded-top-0">
     <div class="tab-pane fade show active" id="ds-sync-pane" role="tabpanel" aria-labelledby="ds-sync-tab" tabindex="0">
       <div class="d-flex justify-content-end align-items-center gap-2 mb-3">
         <!-- 2026-09-02, explicit request: "ตอน Sync อยากให้มี % บอกด้วยครับ" -- "Sync All" walks the 6
@@ -42,13 +42,13 @@
              instead of the single all-in-one api/master-data-sync.sync-all call, so this bar
              reflects REAL step progress (N of 6 done), not a fake animation. See data-sync.js's own
              dsSyncAll() docblock. -->
-        <div class="ds-progress-wrap align-items-center" id="dsSyncAllProgressWrap" style="display:none;">
+        <div class="ds-progress-wrap align-items-center" id="dsSyncAllProgressWrap">
           <div class="progress" style="height:6px; width:160px;">
-            <div class="progress-bar" role="progressbar" id="dsSyncAllProgressBar" style="width:0%; background-color:#FF9900;"></div>
+            <div class="progress-bar" role="progressbar" id="dsSyncAllProgressBar" style="width:0%"></div>
           </div>
           <span class="small text-muted ms-2" id="dsSyncAllProgressLabel">0%</span>
         </div>
-        <button type="button" class="btn btn-outline-brand" id="btnSyncAllMasterData">
+        <button type="button" class="btn btn-outline-secondary" id="btnSyncAllMasterData">
           <i class="fa-solid fa-rotate me-1"></i><span data-i18n="sync_all">Sync All</span>
         </button>
       </div>
@@ -59,40 +59,27 @@
     </div>
 
     <div class="tab-pane fade" id="ds-history-pane" role="tabpanel" aria-labelledby="ds-history-tab" tabindex="0">
-      <!-- 2026-09-02, explicit request: "ในประวัติให้มี Filter ด้วย" -- same .station-filter component
+      <!-- 2026-09-02, explicit request: "ในประวัติให้มี Filter ด้วย" -- same filter-bar component
            every other history-style table in this app already uses (see Employee List's own Login
            History tab for the identical pattern this is copied from). Excel-style per-column
            filters (entity_type/status, already existing before this redesign) stay on the table
            header itself -- this row is for the date range they can't express. -->
-      <div class="station-filter mb-2" id="dsHistoryStationFilter">
-        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-        <button type="button" class="station-filter-toggle" id="dsHistoryStationFilterToggle" title="Toggle filter">
-          <i class="fas fa-chevron-up"></i>
-        </button>
-        <div class="station-filter-body">
-          <div class="row g-2">
-            <div class="col-6 col-md-3">
-              <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-              <div class="input-group">
-                <input type="text" class="form-control datepicker" id="dsHistoryFilterDateFrom" autocomplete="off">
-                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-              </div>
-            </div>
-            <div class="col-6 col-md-3">
-              <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-              <div class="input-group">
-                <input type="text" class="form-control datepicker" id="dsHistoryFilterDateTo" autocomplete="off">
-                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-              </div>
-            </div>
-          </div>
+      <?php ob_start(); ?>
+      <div class="row g-2">
+        <div class="col-6 col-md-3">
+          <label class="form-label small mb-1" for="dsHistoryFilterDateFrom" data-i18n="filter_date_from">From</label>
+          <input type="text" class="form-control datepicker" id="dsHistoryFilterDateFrom" autocomplete="off">
+        </div>
+        <div class="col-6 col-md-3">
+          <label class="form-label small mb-1" for="dsHistoryFilterDateTo" data-i18n="filter_date_to">To</label>
+          <input type="text" class="form-control datepicker" id="dsHistoryFilterDateTo" autocomplete="off">
         </div>
       </div>
-      <div class="station-filter-clear-row d-none" id="dsHistoryFilterClearRow">
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearDsHistoryFilter">
-          <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-        </button>
-      </div>
+      <?php
+      $filter_fields_html = ob_get_clean();
+      $id = 'dsHistoryFilterBar';
+      include __DIR__ . '/../partials/filter-bar.php';
+      ?>
       <div class="table-responsive">
         <table id="tb_data_sync_history" class="table table-hover align-middle w-100">
           <thead>

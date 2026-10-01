@@ -149,12 +149,13 @@
     gap: 6px;
 }
 .edt-tab-more-count {
-    background: rgba(0, 0, 0, .12);
-    color: inherit;
-    font-size: .72rem;
-    font-weight: 700;
-    border-radius: 999px;
-    padding: .05em .5em;
+    color: var(--c-text-muted);
+}
+.edt-tab-more-count::before {
+    content: "(";
+}
+.edt-tab-more-count::after {
+    content: ")";
 }
 .edt-tab-more-menu {
     min-width: 230px;
@@ -202,7 +203,7 @@
             </div>
             <div class="employee-verify-status-summary text-sm-end">
                 <div class="text-muted small mb-1" data-i18n="verify_status_title">Verify Status</div>
-                <span class="badge" id="profileVerifyStatusBadge"></span>
+                <span id="profileVerifyStatusBadge"></span>
             </div>
             <div class="employee-completeness-summary">
                 <div class="text-muted small mb-1 text-sm-end" data-i18n="profile_completeness_title">Profile Completeness</div>
@@ -233,18 +234,15 @@
                 <span>&middot;</span>
                 <span id="profileLastSyncedText">-</span>
             </div>
-            <!-- 2026-08-29, explicit request: "ปุ่ม Sync ให้เปลี่ยนเป็นสีฟ้าทั้งในหน้า List และ Detail" --
-                 btn-outline-info specifically, not btn-outline-primary (this app's own --bs-primary
-                 override repoints that at brand orange, see style.css's ".btn-primary" section; --bs-info
-                 was never touched, so it's still Bootstrap's real cyan-blue). -->
-            <button type="button" class="btn btn-outline-info btn-sm" id="btnResyncOneEmployee">
+            <!-- Sync is a secondary action, so it is btn-outline-secondary (rules.md 4). -->
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnResyncOneEmployee">
                 <i class="fa-solid fa-rotate me-1"></i><span id="btnResyncOneEmployeeLabel" data-i18n="employee_sync_resync_one_button">Re-Sync from Origami</span>
             </button>
         </div>
     </div>
     <ul class="nav nav-tabs" id="employeeTabs" role="tablist">
         <li class="nav-item" role="presentation">
-            <button class="nav-link text-secondary active" id="info-tab" data-bs-toggle="tab" data-bs-target="#info-pane" type="button" role="tab" aria-controls="info-pane" aria-selected="true"><i class="fa-solid fa-circle-user me-1"></i><span data-i18n="employee_info">Employee Info</span><span class="completeness-tab-badge d-none" data-tab-key="info"></span></button>
+            <button class="nav-link text-secondary active" id="info-tab" data-bs-toggle="tab" data-bs-target="#info-pane" type="button" role="tab" aria-controls="info-pane" aria-selected="true"><span data-i18n="employee_info">Employee Info</span><span class="completeness-tab-badge d-none" data-tab-key="info"></span></button>
         </li>
         <!-- New-employee flow (2026-08-19, explicit request): only the Info tab shows until the
              employee record actually exists -- jumping to Contact/Employment/Salary/etc before Info
@@ -254,10 +252,10 @@
              saveEmployee()'s success handler in detail.js the moment the FIRST save creates the row
              (currentEmployeeId was null going in), not tied to which tab that save happened on. -->
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="contact-tab" data-bs-toggle="tab" data-bs-target="#contact-pane" type="button" role="tab" aria-controls="contact-pane" aria-selected="false"><i class="fa-solid fa-address-book me-1"></i><span data-i18n="contact">Contact</span><span class="completeness-tab-badge d-none" data-tab-key="contact"></span></button>
+            <button class="nav-link text-secondary" id="contact-tab" data-bs-toggle="tab" data-bs-target="#contact-pane" type="button" role="tab" aria-controls="contact-pane" aria-selected="false"><span data-i18n="contact">Contact</span><span class="completeness-tab-badge d-none" data-tab-key="contact"></span></button>
         </li>
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="employment-tab" data-bs-toggle="tab" data-bs-target="#employment-pane" type="button" role="tab" aria-controls="employment-pane" aria-selected="false"><i class="fa-solid fa-building-user me-1"></i><span data-i18n="employment">Employment</span><span class="completeness-tab-badge d-none" data-tab-key="employment"></span></button>
+            <button class="nav-link text-secondary" id="employment-tab" data-bs-toggle="tab" data-bs-target="#employment-pane" type="button" role="tab" aria-controls="employment-pane" aria-selected="false"><span data-i18n="employment">Employment</span><span class="completeness-tab-badge d-none" data-tab-key="employment"></span></button>
         </li>
         <!-- 2026-08-30 (T025, optional polish per the fork's own audit -- "core HR" (Info/Contact/
              Employment's org-placement half) vs "payroll-specific" (Salary through Family/Tax
@@ -265,7 +263,7 @@
              functional boundary now, not just a visual grouping choice -- a thin divider here makes
              it readable in the tab bar itself, even before an admin toggles that switch. -->
         <li class="nav-item employee-secondary-tab employee-tab-group-divider<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="salary-tab" data-bs-toggle="tab" data-bs-target="#salary-pane" type="button" role="tab" aria-controls="salary-pane" aria-selected="false"><i class="fa-solid fa-file-invoice-dollar me-1"></i><span data-i18n="salary">Salary</span><span class="completeness-tab-badge d-none" data-tab-key="salary"></span></button>
+            <button class="nav-link text-secondary" id="salary-tab" data-bs-toggle="tab" data-bs-target="#salary-pane" type="button" role="tab" aria-controls="salary-pane" aria-selected="false"><span data-i18n="salary">Salary</span><span class="completeness-tab-badge d-none" data-tab-key="salary"></span></button>
         </li>
         <!-- Split out of the Salary tab (2026-08-19, explicit request: "รายรับ รายหัก อาจแยกออกมาจาก
              Tab เงินเดือน...และไม่ต้องมีการคิด %") -- deliberately no completeness-tab-badge span here
@@ -273,13 +271,13 @@
              participates in the completeness score at all (items here are optional/variable per
              employee, same reasoning as why dependents/parents were never counted either). -->
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="earningDeduction-tab" data-bs-toggle="tab" data-bs-target="#earningDeduction-pane" type="button" role="tab" aria-controls="earningDeduction-pane" aria-selected="false"><i class="fa-solid fa-money-bill-transfer me-1"></i><span data-i18n="earning_deduction_assignments">Income & Deductions</span></button>
+            <button class="nav-link text-secondary" id="earningDeduction-tab" data-bs-toggle="tab" data-bs-target="#earningDeduction-pane" type="button" role="tab" aria-controls="earningDeduction-pane" aria-selected="false"><span data-i18n="earning_deduction_assignments">Income & Deductions</span></button>
         </li>
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="social-tab" data-bs-toggle="tab" data-bs-target="#social-pane" type="button" role="tab" aria-controls="social-pane" aria-selected="false"><i class="fa-solid fa-hospital-user me-1"></i><span data-i18n="social_security">Social Security</span><span class="completeness-tab-badge d-none" data-tab-key="social"></span></button>
+            <button class="nav-link text-secondary" id="social-tab" data-bs-toggle="tab" data-bs-target="#social-pane" type="button" role="tab" aria-controls="social-pane" aria-selected="false"><span data-i18n="social_security">Social Security</span><span class="completeness-tab-badge d-none" data-tab-key="social"></span></button>
         </li>
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="family-tab" data-bs-toggle="tab" data-bs-target="#family-pane" type="button" role="tab" aria-controls="family-pane" aria-selected="false"><i class="fa-solid fa-people-roof me-1"></i><span data-i18n="family_tax">Family / Tax Allowance</span><span class="completeness-tab-badge d-none" data-tab-key="family"></span></button>
+            <button class="nav-link text-secondary" id="family-tab" data-bs-toggle="tab" data-bs-target="#family-pane" type="button" role="tab" aria-controls="family-pane" aria-selected="false"><span data-i18n="family_tax">Family / Tax Allowance</span><span class="completeness-tab-badge d-none" data-tab-key="family"></span></button>
         </li>
         <!-- 2026-09-03: re-enabled (was hidden 2026-08-19 as "not needed for Payroll" -- that's no
              longer true now that Origami-synced passport/visa/work-permit document scans need
@@ -289,14 +287,14 @@
              either way (uploadDocumentFile() itself already refuses without one). Backend/JS were
              never touched by the 2026-08-19 hide, so nothing else needed reverting here. -->
         <li class="nav-item employee-secondary-tab<?= $employee_no ? '' : ' d-none' ?>" role="presentation">
-            <button class="nav-link text-secondary" id="documents-tab" data-bs-toggle="tab" data-bs-target="#documents-pane" type="button" role="tab" aria-controls="documents-pane" aria-selected="false"><i class="fa-solid fa-paperclip me-1"></i><span data-i18n="documents">Documents</span></button>
+            <button class="nav-link text-secondary" id="documents-tab" data-bs-toggle="tab" data-bs-target="#documents-pane" type="button" role="tab" aria-controls="documents-pane" aria-selected="false"><span data-i18n="documents">Documents</span></button>
         </li>
         <!-- 2026-08-29, explicit request: "ต้องการอีก Tab ใน Employee เพื่อดูประวัติการเข้าใช้งานระบบ" -- new
              tab, only shown once a real employee is loaded (a brand-new employee has no login history
              to show yet -- see detail.js's own toggle on this <li> at the same point new-employee
              progressive reveal already hides other not-yet-relevant tabs). -->
         <li class="nav-item d-none" role="presentation" id="loginHistoryTabItem">
-            <button class="nav-link text-secondary" id="login-history-tab" data-bs-toggle="tab" data-bs-target="#login-history-pane" type="button" role="tab" aria-controls="login-history-pane" aria-selected="false"><i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="login_history">Login History</span></button>
+            <button class="nav-link text-secondary" id="login-history-tab" data-bs-toggle="tab" data-bs-target="#login-history-pane" type="button" role="tab" aria-controls="login-history-pane" aria-selected="false"><span data-i18n="login_history">Login History</span></button>
         </li>
         <!-- 2026-09-03, Platform Hardening Phase 3 Stage 5 -- per-employee permission override tab.
              Two conditions gate this <li>, ANDed together: `$employee_no` (a brand-new, not-yet-
@@ -309,7 +307,7 @@
              ANY employee). -->
         <?php if (!empty($canManagePermissionOverrides)): ?>
         <li class="nav-item d-none" role="presentation" id="permissionOverridesTabItem">
-            <button class="nav-link text-secondary" id="permission-overrides-tab" data-bs-toggle="tab" data-bs-target="#permission-overrides-pane" type="button" role="tab" aria-controls="permission-overrides-pane" aria-selected="false"><i class="fa-solid fa-user-shield me-1"></i><span data-i18n="permission_overrides">Permission Overrides</span></button>
+            <button class="nav-link text-secondary" id="permission-overrides-tab" data-bs-toggle="tab" data-bs-target="#permission-overrides-pane" type="button" role="tab" aria-controls="permission-overrides-pane" aria-selected="false"><span data-i18n="permission_overrides">Permission Overrides</span></button>
         </li>
         <?php endif; ?>
         <!-- 2026-09-07, explicit request: "ถ้าเลยจอการแสดงผลให้ขึ้น more กับตัวเลข กดแล้วเป็น dropdown ลงมา"
@@ -328,14 +326,14 @@
         <div class="tab-pane fade show active" id="info-pane" role="tabpanel" aria-labelledby="info-tab" tabindex="0">
             <div class="d-flex justify-content-center mb-4">
                 <div class="position-relative">
-                    <label for="profile_photo_input" class="d-flex flex-column align-items-center justify-content-center rounded-circle bg-light border profile-upload-circle" style="width:100px;height:100px;">
-                        <img id="profilePreview" class="rounded-circle w-100 h-100 d-none" src="" alt="">
+                    <label for="profile_photo_input" class="d-flex flex-column align-items-center justify-content-center bg-light border profile-upload-circle" style="width:100px;height:100px;">
+                        <img id="profilePreview" class="w-100 h-100 d-none" src="" alt="">
                         <span id="profilePlaceholder" class="text-center">
                             <i class="fas fa-camera fs-5 d-block"></i>
                             <small class="text-secondary" data-i18n="upload_profile">Upload profile</small>
                         </span>
                     </label>
-                    <span class="badge bg-brand rounded-circle d-flex align-items-center justify-content-center position-absolute bottom-0 end-0 profile-upload-badge"
+                    <span class="badge bg-brand d-flex align-items-center justify-content-center position-absolute bottom-0 end-0 profile-upload-badge"
                         onclick="document.getElementById('profile_photo_input').click()">
                         <i class="fas fa-camera"></i>
                     </span>
@@ -377,9 +375,9 @@
                 <div>
                     <div class="btn-group d-block" role="group" aria-label="Payroll participation">
                         <input type="radio" class="btn-check" name="is_payroll_participant_radio" id="payroll_participant_yes" value="1" checked>
-                        <label class="btn btn-outline-brand" for="payroll_participant_yes" data-i18n="payroll_participant_yes">Pays Salary</label>
+                        <label class="btn btn-outline-secondary" for="payroll_participant_yes" data-i18n="payroll_participant_yes">Pays Salary</label>
                         <input type="radio" class="btn-check" name="is_payroll_participant_radio" id="payroll_participant_no" value="0">
-                        <label class="btn btn-outline-brand" for="payroll_participant_no" data-i18n="payroll_participant_no">No Salary</label>
+                        <label class="btn btn-outline-secondary" for="payroll_participant_no" data-i18n="payroll_participant_no">No Salary</label>
                     </div>
                     <input type="hidden" name="is_payroll_participant" id="is_payroll_participant" value="1">
                 </div>
@@ -395,9 +393,9 @@
                 <div class="col-sm-4 mt-3">
                     <div class="btn-group d-block" role="group" aria-label="Employee type">
                         <input type="radio" class="btn-check" name="employee_type_radio" id="type_domestic" value="domestic" checked>
-                        <label class="btn btn-outline-brand" for="type_domestic" data-i18n="domestic">Domestic</label>
+                        <label class="btn btn-outline-secondary" for="type_domestic" data-i18n="domestic">Domestic</label>
                         <input type="radio" class="btn-check" name="employee_type_radio" id="type_foreigner" value="foreigner">
-                        <label class="btn btn-outline-brand" for="type_foreigner" data-i18n="foreigner">Foreigner</label>
+                        <label class="btn btn-outline-secondary" for="type_foreigner" data-i18n="foreigner">Foreigner</label>
                     </div>
                     <input type="hidden" name="employee_type" id="employee_type" value="domestic">
                 </div>
@@ -433,11 +431,11 @@
                 <div class="col-sm-4 mt-3">
                     <div class="btn-group d-block" role="group" aria-label="Gender">
                         <input type="radio" class="btn-check" name="gender_radio" id="gender_male" value="male" checked>
-                        <label class="btn btn-outline-brand" for="gender_male" data-i18n="male">Male</label>
+                        <label class="btn btn-outline-secondary" for="gender_male" data-i18n="male">Male</label>
                         <input type="radio" class="btn-check" name="gender_radio" id="gender_female" value="female">
-                        <label class="btn btn-outline-brand" for="gender_female" data-i18n="female">Female</label>
+                        <label class="btn btn-outline-secondary" for="gender_female" data-i18n="female">Female</label>
                         <input type="radio" class="btn-check" name="gender_radio" id="gender_other" value="other">
-                        <label class="btn btn-outline-brand" for="gender_other" data-i18n="other">Other</label>
+                        <label class="btn btn-outline-secondary" for="gender_other" data-i18n="other">Other</label>
                     </div>
                     <input type="hidden" name="gender" id="gender" value="male">
                 </div>
@@ -493,10 +491,7 @@
                     <label class="form-label mb-1"><span data-i18n="date_of_birth">Date of Birth</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker required" name="date_of_birth" id="date_of_birth" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
+                    <input type="text" class="form-control datepicker required" name="date_of_birth" id="date_of_birth" autocomplete="off">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label mb-1"><span data-i18n="nationality">Nationality</span> <span class="text-danger">*</span></label>
@@ -563,10 +558,7 @@
                         <label class="form-label mb-1"><span data-i18n="id_card_expire">ID Card Expire Date</span></label>
                     </div>
                     <div class="col-sm-4 mt-3 d-none">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="id_card_expire_date" id="id_card_expire_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="id_card_expire_date" id="id_card_expire_date" autocomplete="off">
                     </div>
                 </div>
             </div>
@@ -590,10 +582,7 @@
                         <label class="form-label mb-1"><span data-i18n="passport_expire">Passport Expire Date</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="passport_expire_date" id="passport_expire_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="passport_expire_date" id="passport_expire_date" autocomplete="off">
                     </div>
                     <div class="col-sm-2 mt-3">
                         <label class="form-label mb-1"><span data-i18n="work_permit_no">Work Permit No.</span> <span class="text-danger">*</span></label>
@@ -607,19 +596,13 @@
                         <label class="form-label mb-1"><span data-i18n="date_work_permit_issue">Date Work Permit Issue</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="date_work_permit_issue" id="date_work_permit_issue" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="date_work_permit_issue" id="date_work_permit_issue" autocomplete="off">
                     </div>
                     <div class="col-sm-2 mt-3">
                         <label class="form-label mb-1"><span data-i18n="date_work_permit_expire">Date Work Permit Expire</span> <span class="text-danger">*</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="date_work_permit_expire" id="date_work_permit_expire" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="date_work_permit_expire" id="date_work_permit_expire" autocomplete="off">
                     </div>
                 </div>
                 <!-- 2026-09-02, extends the earlier Origami candidates.php field batch (passport_no/
@@ -638,10 +621,7 @@
                         <label class="form-label mb-1" data-i18n="passport_issue_date">Passport Issue Date</label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="passport_issue_date" id="passport_issue_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="passport_issue_date" id="passport_issue_date" autocomplete="off">
                     </div>
                 </div>
                 <div class="row">
@@ -669,10 +649,7 @@
                         <label class="form-label mb-1" data-i18n="visa_issue_date">Visa Issue Date</label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="visa_issue_date" id="visa_issue_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="visa_issue_date" id="visa_issue_date" autocomplete="off">
                     </div>
                 </div>
                 <div class="row">
@@ -686,10 +663,7 @@
                         <label class="form-label mb-1"><span data-i18n="date_visa_expire">Visa Expire Date</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="date_visa_expire" id="date_visa_expire" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="date_visa_expire" id="date_visa_expire" autocomplete="off">
                     </div>
                 </div>
                 <!-- 2026-09-02, explicit request following an AskUserQuestion exchange -- plain
@@ -742,19 +716,13 @@
                         <label class="form-label mb-1" data-i18n="arrival_date">Arrival Date</label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="arrival_date" id="arrival_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="arrival_date" id="arrival_date" autocomplete="off">
                     </div>
                     <div class="col-sm-2 mt-3">
                         <label class="form-label mb-1" data-i18n="due_date">Due Date</label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="due_date" id="due_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="due_date" id="due_date" autocomplete="off">
                     </div>
                 </div>
                 <div class="row">
@@ -837,7 +805,7 @@
                             <button type="button" class="btn btn-outline-primary btn-sm" id="empDrawSignatureBtn">
                                 <i class="fa-solid fa-pen-nib me-1"></i><span data-i18n="draw_signature">Draw Signature</span>
                             </button>
-                            <button type="button" class="btn btn-outline-danger btn-sm d-none" id="empSignatureRemoveBtn">
+                            <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="empSignatureRemoveBtn">
                                 <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
                             </button>
                             <input type="file" id="emp_signature_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
@@ -848,7 +816,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-5">
-                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                <button type="button" class="btn btn-outline-secondary border btn-cancel-employee-tab">
                     <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
                 </button>
                 <button type="button" class="btn btn-primary" id="btnNextContact">
@@ -954,7 +922,7 @@
                     </div>
                     <div class="col-sm-4 mt-3 position-relative">
                         <input type="text" class="form-control autocomplete-address" id="search_address_register" autocomplete="off" data-i18n="map_search_placeholder" placeholder="Search for an address...">
-                        <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none" style="z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
+                        <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none"></div>
                         <input type="hidden" name="master_address_id_register" class="master-address-id-field" id="master_address_id_register">
                     </div>
                 </div>
@@ -1007,7 +975,7 @@
                     </div>
                     <div class="col-sm-4 mt-3 position-relative">
                         <input type="text" class="form-control autocomplete-address" id="search_address_contact" autocomplete="off" data-i18n="map_search_placeholder" placeholder="Search for an address...">
-                        <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none" style="z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
+                        <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none"></div>
                         <input type="hidden" name="master_address_id_contact" class="master-address-id-field" id="master_address_id_contact">
                     </div>
                 </div>
@@ -1039,7 +1007,7 @@
                         <button type="button" class="btn btn-outline-secondary btn-sm" id="btnPinMapLocation">
                             <i class="fa-solid fa-map-location-dot me-1"></i><span data-i18n="pin_location_on_map">Pin Location on Map</span>
                         </button>
-                        <button type="button" class="btn btn-outline-danger btn-sm d-none" id="btnRemoveMapPin">
+                        <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnRemoveMapPin">
                             <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
                         </button>
                         <span class="text-muted small" id="mapLocationSummary"></span>
@@ -1086,7 +1054,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-5">
-                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                <button type="button" class="btn btn-outline-secondary border btn-cancel-employee-tab">
                     <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
                 </button>
                 <button type="button" class="btn btn-primary" id="btnNextEmployment">
@@ -1188,10 +1156,7 @@
                     <label class="form-label mb-1"><span data-i18n="employment_date">Employment Date</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker required" name="employment_date" id="employment_date" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
+                    <input type="text" class="form-control datepicker required" name="employment_date" id="employment_date" autocomplete="off">
                 </div>
                 <!-- 2026-09-02, Origami candidates.php field batch: company-defined employment
                      classification (e.g. รายเดือน/รายวัน/สัญญาจ้าง), synced from Origami's
@@ -1297,19 +1262,13 @@
                     <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker" name="employment_status_effective_date" id="employment_status_effective_date" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
+                    <input type="text" class="form-control datepicker" name="employment_status_effective_date" id="employment_status_effective_date" autocomplete="off">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label mb-1"><span data-i18n="employment_last_report_date">Last Date for Reports</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker" name="employment_end_date" id="employment_end_date" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
+                    <input type="text" class="form-control datepicker" name="employment_end_date" id="employment_end_date" autocomplete="off">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label mb-1"><span data-i18n="reason">Reason</span></label>
@@ -1355,10 +1314,7 @@
                     <label class="form-label mb-1"><span data-i18n="date_contract_expire">Date Contract Expire</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker" name="date_contract_expire" id="date_contract_expire" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
+                    <input type="text" class="form-control datepicker" name="date_contract_expire" id="date_contract_expire" autocomplete="off">
                 </div>
             </div>
             <div class="row d-none">
@@ -1446,9 +1402,9 @@
                         <div class="col-sm-4 mt-3">
                             <div class="btn-group d-block" role="group" id="otRateSourceRadioGroup">
                                 <input type="radio" class="btn-check" name="ot_rate_source_radio" id="ot_rate_source_default" value="default" checked>
-                                <label class="btn btn-outline-brand" for="ot_rate_source_default" data-i18n="ot_rate_source_default">Use Company Default</label>
+                                <label class="btn btn-outline-secondary" for="ot_rate_source_default" data-i18n="ot_rate_source_default">Use Company Default</label>
                                 <input type="radio" class="btn-check" name="ot_rate_source_radio" id="ot_rate_source_custom" value="custom">
-                                <label class="btn btn-outline-brand" for="ot_rate_source_custom" data-i18n="ot_rate_source_custom">Set Individually per OT Type</label>
+                                <label class="btn btn-outline-secondary" for="ot_rate_source_custom" data-i18n="ot_rate_source_custom">Set Individually per OT Type</label>
                             </div>
                         </div>
                         <div class="col-sm-2 mt-3 ot-rate-set-picker-toggle">
@@ -1477,7 +1433,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-5">
-                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                <button type="button" class="btn btn-outline-secondary border btn-cancel-employee-tab">
                     <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
                 </button>
                 <button type="button" class="btn btn-primary" id="btnNextSalary">
@@ -1538,10 +1494,7 @@
                     <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
                 </div>
                 <div class="col-sm-4 mt-3">
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker required" name="salary_effective_date" id="salary_effective_date" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
+                    <input type="text" class="form-control datepicker required" name="salary_effective_date" id="salary_effective_date" autocomplete="off">
                 </div>
                 <div class="col-sm-2 mt-3">
                     <label class="form-label mb-1"><span data-i18n="modal_cycle">Payroll Schedule</span></label>
@@ -1671,7 +1624,7 @@
                     <div class="col-12 mt-3">
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <label class="form-label mb-1" data-i18n="mixed_payment_lines">Payment Lines</label>
-                            <button type="button" class="btn btn-sm btn-outline-brand" id="btnAddPaymentMethodLine">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnAddPaymentMethodLine">
                                 <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_line">Add Line</span>
                             </button>
                         </div>
@@ -1939,7 +1892,7 @@
                 <p class="text-secondary small mb-0" data-i18n="probation_base_salary_ratio_override_hint">Leave off to use this company's own Probation Pay Conditions default (set in Payroll Configuration > Payroll Policies). Only applies while this employee's Employment Status is Probation.</p>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-5">
-                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                <button type="button" class="btn btn-outline-secondary border btn-cancel-employee-tab">
                     <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
                 </button>
                 <button type="button" class="btn btn-primary" id="btnNextSocial">
@@ -1967,10 +1920,10 @@
             <div class="bg-light rounded-3 p-2 mb-4 structure-tabs-wrap">
                 <ul class="nav nav-pills flex-nowrap structure-tabs" id="eedSubTabs" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="eedEarningSub-tab" data-bs-toggle="pill" data-bs-target="#eedEarningSub-pane" type="button" role="tab" aria-controls="eedEarningSub-pane" aria-selected="true"><i class="fa-solid fa-arrow-trend-up me-2"></i><span data-i18n="earning_singular">Income</span></button>
+                        <button class="nav-link active" id="eedEarningSub-tab" data-bs-toggle="pill" data-bs-target="#eedEarningSub-pane" type="button" role="tab" aria-controls="eedEarningSub-pane" aria-selected="true"><span data-i18n="earning_singular">Income</span></button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="eedDeductionSub-tab" data-bs-toggle="pill" data-bs-target="#eedDeductionSub-pane" type="button" role="tab" aria-controls="eedDeductionSub-pane" aria-selected="false"><i class="fa-solid fa-arrow-trend-down me-2"></i><span data-i18n="deduction_singular">Deduction</span></button>
+                        <button class="nav-link" id="eedDeductionSub-tab" data-bs-toggle="pill" data-bs-target="#eedDeductionSub-pane" type="button" role="tab" aria-controls="eedDeductionSub-pane" aria-selected="false"><span data-i18n="deduction_singular">Deduction</span></button>
                     </li>
                     <!-- 2026-09-04, Backlog Phase 9->10, T051: read-only history of Origami-sync-
                          derived pay lines (Diligence/Trip Allowance/opted-in Student Loan/etc.) across
@@ -1978,7 +1931,7 @@
                          a 3rd pill, not folded into Income/Deduction, since it's not an editable
                          assignment the way those 2 tables are -- no Add/Edit/Delete anywhere in this pane. -->
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="eedSyncHistorySub-tab" data-bs-toggle="pill" data-bs-target="#eedSyncHistorySub-pane" type="button" role="tab" aria-controls="eedSyncHistorySub-pane" aria-selected="false"><i class="fa-solid fa-clock-rotate-left me-2"></i><span data-i18n="sync_transaction_history">Sync History</span></button>
+                        <button class="nav-link" id="eedSyncHistorySub-tab" data-bs-toggle="pill" data-bs-target="#eedSyncHistorySub-pane" type="button" role="tab" aria-controls="eedSyncHistorySub-pane" aria-selected="false"><span data-i18n="sync_transaction_history">Sync History</span></button>
                     </li>
                 </ul>
             </div>
@@ -2079,8 +2032,8 @@
                              #sso_enrolled change listener (toggles #ssoDetailFields) both need zero
                              changes -- see the toggle wiring in detail.js. -->
                         <div class="btn-group btn-group-sm" role="group" id="ssoEnrolledToggle">
-                            <button type="button" class="btn btn-outline-brand" data-value="no"><span data-i18n="no">No</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="yes"><span data-i18n="yes">Yes</span></button>
                         </div>
                         <input type="checkbox" class="d-none" name="sso_enrolled" id="sso_enrolled">
                     </div>
@@ -2091,10 +2044,7 @@
                         </div>
                         <div class="mt-3">
                             <label class="form-label d-block mb-1"><span data-i18n="sso_start_date">SSO Start Date</span></label>
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" name="sso_start_date" id="sso_start_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker" name="sso_start_date" id="sso_start_date" autocomplete="off">
                         </div>
                         <!-- 2026-09-02, real gap found and fixed (explicit report: "Smart Form...ตัวอย่างเช่น
                              กองทุนประกันสังคม (สปส.) เลือกไม่มี แต่ให้กรอก Rate") -- these 2 rate-override
@@ -2160,8 +2110,8 @@
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="enrolled_in_pvd">Enrolled in Provident Fund</span></label>
                         <div class="btn-group btn-group-sm" role="group" id="pvdEnrolledToggle">
-                            <button type="button" class="btn btn-outline-brand" data-value="no"><span data-i18n="no">No</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="yes"><span data-i18n="yes">Yes</span></button>
                         </div>
                         <input type="checkbox" class="d-none" name="pvd_enrolled" id="pvd_enrolled">
                     </div>
@@ -2204,10 +2154,7 @@
                          -- falls back to Employment Date when blank. -->
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="pvd_start_date">Start Date</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="pvd_start_date" id="pvd_start_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="pvd_start_date" id="pvd_start_date" autocomplete="off">
                     </div>
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="pvd_employee_rate">Employee Rate (%)</span></label>
@@ -2225,10 +2172,7 @@
                          #employmentEndFields' own resigned/terminated gate. -->
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="pvd_end_date">Membership End Date</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="pvd_end_date" id="pvd_end_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="pvd_end_date" id="pvd_end_date" autocomplete="off">
                     </div>
                     <div class="mt-3">
                         <label class="form-label d-block mb-1"><span data-i18n="pvd_end_reason">Reason for Ending Membership</span></label>
@@ -2259,15 +2203,12 @@
                         <label class="form-label mb-1"><span data-i18n="insurance_start_date">Coverage Start Date</span></label>
                     </div>
                     <div class="col-sm-4 mt-3">
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker" name="insurance_start_date" id="insurance_start_date" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker" name="insurance_start_date" id="insurance_start_date" autocomplete="off">
                     </div>
                 </div>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-5">
-                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                <button type="button" class="btn btn-outline-secondary border btn-cancel-employee-tab">
                     <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
                 </button>
                 <button type="button" class="btn btn-primary" id="btnNextFamily">
@@ -2301,8 +2242,8 @@
                     </div>
                     <div class="col-sm-9">
                         <div class="btn-group btn-group-sm" role="group" id="hasSpouseToggle">
-                            <button type="button" class="btn btn-outline-brand" data-value="no"><span data-i18n="no">No</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="yes"><span data-i18n="yes">Yes</span></button>
                         </div>
                         <input type="checkbox" class="d-none" name="has_spouse" id="has_spouse">
                     </div>
@@ -2346,8 +2287,8 @@
                     </div>
                     <div class="col-sm-9">
                         <div class="btn-group btn-group-sm" role="group" id="hasChildrenToggle">
-                            <button type="button" class="btn btn-outline-brand active" data-value="no"><span data-i18n="no">No</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="yes"><span data-i18n="yes">Yes</span></button>
                         </div>
                     </div>
                 </div>
@@ -2391,8 +2332,8 @@
                     </div>
                     <div class="col-sm-9">
                         <div class="btn-group btn-group-sm" role="group" id="useFatherToggle">
-                            <button type="button" class="btn btn-outline-brand active" data-value="no"><span data-i18n="no">No</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="yes"><span data-i18n="yes">Yes</span></button>
                         </div>
                     </div>
                 </div>
@@ -2421,8 +2362,8 @@
                     </div>
                     <div class="col-sm-9">
                         <div class="btn-group btn-group-sm" role="group" id="useMotherToggle">
-                            <button type="button" class="btn btn-outline-brand active" data-value="no"><span data-i18n="no">No</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-value="yes"><span data-i18n="yes">Yes</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-value="no"><span data-i18n="no">No</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-value="yes"><span data-i18n="yes">Yes</span></button>
                         </div>
                     </div>
                 </div>
@@ -2446,7 +2387,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end gap-2 mt-4">
-                <button type="button" class="btn btn-light border btn-cancel-employee-tab">
+                <button type="button" class="btn btn-outline-secondary border btn-cancel-employee-tab">
                     <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
                 </button>
                 <button type="button" class="btn btn-primary" id="btnNextDocuments">
@@ -2541,37 +2482,31 @@
                  Process/Notifications. IDs on the 4 fields themselves are UNCHANGED, so
                  detail.js's own initLoginHistoryTable()/loadLoginHistoryFilterOptions() needed no
                  changes -- only the wrapper markup + a new toggle/clear-visibility JS pair. -->
-            <div class="station-filter" id="loginHistoryStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="loginHistoryStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-3">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_from">From</span></label>
-                            <input type="text" class="form-control datepicker" id="loginHistoryFilterDateFrom">
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="date_to">To</span></label>
-                            <input type="text" class="form-control datepicker" id="loginHistoryFilterDateTo">
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label mb-1"><i class="fa-solid fa-display me-1 text-muted"></i><span data-i18n="device">Device</span></label>
-                            <select class="form-select select2-native" id="loginHistoryFilterDevice"></select>
-                        </div>
-                        <div class="col-6 col-md-3">
-                            <label class="form-label mb-1"><i class="fa-solid fa-globe me-1 text-muted"></i><span data-i18n="browser">Browser</span></label>
-                            <select class="form-select select2-native" id="loginHistoryFilterBrowser"></select>
-                        </div>
-                    </div>
+            <?php
+            ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-6 col-md-3">
+                    <label class="form-label small mb-1" for="loginHistoryFilterDateFrom" data-i18n="date_from">From</label>
+                    <input type="text" class="form-control datepicker" id="loginHistoryFilterDateFrom">
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label small mb-1" for="loginHistoryFilterDateTo" data-i18n="date_to">To</label>
+                    <input type="text" class="form-control datepicker" id="loginHistoryFilterDateTo">
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label small mb-1" for="loginHistoryFilterDevice" data-i18n="device">Device</label>
+                    <select class="form-select select2-native" id="loginHistoryFilterDevice"></select>
+                </div>
+                <div class="col-6 col-md-3">
+                    <label class="form-label small mb-1" for="loginHistoryFilterBrowser" data-i18n="browser">Browser</label>
+                    <select class="form-select select2-native" id="loginHistoryFilterBrowser"></select>
                 </div>
             </div>
-            <div class="station-filter-clear-row d-none" id="loginHistoryFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearLoginHistoryFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
-            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'loginHistoryFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="table-responsive">
                 <table class="table table-bordered table-sm w-100" id="tableLoginHistory">
                     <thead>
@@ -2618,10 +2553,10 @@
                         <div id="employeeSuspensionStatusText" class="small text-muted">-</div>
                     </div>
                     <div>
-                        <button type="button" class="btn btn-outline-danger btn-sm d-none" id="btnSuspendEmployee">
+                        <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnSuspendEmployee">
                             <i class="fa-solid fa-ban me-1"></i><span data-i18n="suspend_access">Suspend Access</span>
                         </button>
-                        <button type="button" class="btn btn-outline-success btn-sm d-none" id="btnUnsuspendEmployee">
+                        <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="btnUnsuspendEmployee">
                             <i class="fa-solid fa-lock-open me-1"></i><span data-i18n="unsuspend_access">Restore Access</span>
                         </button>
                     </div>

@@ -15,16 +15,7 @@ let tb_ecr_request;
 
 
 function ecrRequestStatusBadge(status) {
-    const map = {
-        pending: { cls: 'bg-warning-subtle text-warning', key: 'status_pending', fallback: 'Pending' },
-        approved: { cls: 'bg-info-subtle text-info', key: 'status_approved', fallback: 'Approved' },
-        rejected: { cls: 'bg-danger-subtle text-danger', key: 'status_rejected', fallback: 'Rejected' },
-        cancelled: { cls: 'bg-secondary-subtle text-secondary', key: 'cancelled', fallback: 'Cancelled' },
-        issued: { cls: 'bg-success-subtle text-success', key: 'ecr_status_issued', fallback: 'Issued' },
-        issue_failed: { cls: 'bg-danger-subtle text-danger', key: 'ecr_status_issue_failed', fallback: 'Issue Failed' }
-    };
-    const m = map[status] || { cls: 'bg-secondary-subtle text-secondary', key: '', fallback: status };
-    return `<span class="badge ${m.cls}">${langData[m.key] || m.fallback}</span>`;
+    return statusBadgeHtml(status, 'employment_certificate_request_status');
 }
 
 function ecrLanguageLabel(lang) {
@@ -36,7 +27,19 @@ function initEcrRequestTable() {
         $('#tb_ecr_request').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_ecr_request = $('#tb_ecr_request').DataTable({
+    tb_ecr_request = initSharedDataTable('#tb_ecr_request', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'employee' },
+                { index: 1, key: 'language' },
+                { index: 2, key: 'requested_by' },
+                { index: 3, key: 'status' },
+                { index: 4, key: 'created_at' },
+            ]
+        },
+        dtOptions: {
+        searching: true,
         responsive: true,
         ajax: { url: `${BASE_URL}/api/employment-certificate-request.list`, dataSrc: 'data' },
         columns: [
@@ -58,15 +61,12 @@ function initEcrRequestTable() {
                         html += `<button type="button" class="btn btn-sm btn-outline-secondary btn-view-ecr-request" data-id="${row.approval_request_id}" title="${langData['approval_request_detail'] || 'Request Detail'}"><i class="fa-solid fa-eye"></i></button> `;
                     }
                     if (row.status === 'issued') {
-                        html += `<a class="btn btn-sm btn-outline-success" href="${BASE_URL}/api/employment-certificate-request.download?id=${row.id}" target="_blank" title="${langData['download'] || 'Download'}"><i class="fa-solid fa-download"></i></a>`;
+                        html += `<a class="btn btn-sm btn-outline-secondary" href="${BASE_URL}/api/employment-certificate-request.download?id=${row.id}" target="_blank" title="${langData['download'] || 'Download'}"><i class="fa-solid fa-download"></i></a>`;
                     }
                     return html;
                 }
             }
         ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         order: [[4, 'desc']],
         initComplete: function () {
             const self = this.api();
@@ -79,18 +79,7 @@ function initEcrRequestTable() {
                     </button>
                 `);
             }
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode.
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'employee' },
-                    { index: 1, key: 'language' },
-                    { index: 2, key: 'requested_by' },
-                    { index: 3, key: 'status' },
-                    { index: 4, key: 'created_at' },
-                ]
-            });
+        }
         }
     });
 }

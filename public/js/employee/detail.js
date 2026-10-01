@@ -371,7 +371,7 @@ function fetchPayrollPolicySettings(callback) {
     });
 }
 function policyInfoBadge(label, value) {
-    return `<span class="badge bg-light text-dark border me-2 mb-2 py-2 px-3"><i class="fa-solid fa-check text-success me-1"></i>${escapeHtml(label)}: <strong>${escapeHtml(value)}</strong></span>`;
+    return `<span class="text-muted d-inline-block me-3 mb-2">${escapeHtml(label)}: <strong>${escapeHtml(value)}</strong></span>`;
 }
 // Renders the effective-policy badge row for ONE settings object (probation or intern, same shape
 // -- base_salary_ratio/defer_pvd/defer_recurring_earning/leave_days_limit/allow_leave/
@@ -1044,9 +1044,9 @@ function saveFamilyTab($btn) {
 // green scale used elsewhere in this app for validation-style status (payroll run banners etc.) --
 // red under 50% (needs real attention), brand orange in the middle, green once mostly filled in.
 function completenessColor(percent) {
-    if (percent >= 80) return '#198754';
-    if (percent >= 50) return '#FF9900';
-    return '#dc3545';
+    if (percent >= 80) return tokenColor('--hex-198754');
+    if (percent >= 50) return tokenColor('--hex-ff9900');
+    return tokenColor('--hex-dc3545');
 }
 // Renders the profile header card + per-tab badges from whatever api/employee.get last returned --
 // called on initial load AND (via refreshProfileHeader()) after every tab's Save, WITHOUT touching
@@ -1071,10 +1071,10 @@ function renderProfileHeader(data) {
     $('#profileHeaderName').text(name);
     const positionLabel = (currentLang === 'th' ? data.position_name_th : data.position_name_en) || data.position_name_th || data.position_name_en;
     $('#profileHeaderMeta').text([data.employee_no, positionLabel].filter(Boolean).join(' · ') || '-');
-    const statusColorMap = { active: 'bg-success', probation: 'bg-warning text-dark', suspended: 'bg-secondary', resigned: 'bg-danger', terminated: 'bg-dark' };
-    const statusCls = statusColorMap[data.employee_status] || 'bg-secondary';
-    const statusLabel = langData['status_' + data.employee_status] || data.employee_status || '-';
-    $('#profileHeaderStatusBadge').html(`<span class="badge ${statusCls}">${escapeHtml(statusLabel)}</span>`);
+    const knownStatus = ['active', 'probation', 'suspended', 'resigned', 'terminated'].indexOf(data.employee_status) !== -1;
+    $('#profileHeaderStatusBadge').html(knownStatus
+        ? statusBadgeHtml(data.employee_status, 'employee_status')
+        : `<span class="text-muted">${escapeHtml(langData['status_' + data.employee_status] || data.employee_status || '-')}</span>`);
 
     const percent = data.completeness.percent || 0;
     const color = completenessColor(percent);
@@ -1089,15 +1089,12 @@ function renderProfileHeader(data) {
     const tabLangKey = { info: 'employee_info', contact: 'contact', employment: 'employment', salary: 'salary' };
     const $verifyBadge = $('#profileVerifyStatusBadge');
     if (verify.ready) {
-        $verifyBadge.attr('class', 'badge bg-success')
-            .html('<i class="fa-solid fa-circle-check me-1"></i>' + escapeHtml(langData['verify_status_ready'] || 'Ready for Payroll'))
-            .attr('title', '');
+        $verifyBadge.html(statusBadgeHtml('ready', 'profile_verify')).attr('title', '');
     } else {
         const missingLabels = (verify.missing_tabs || []).map(function (key) {
             return langData[tabLangKey[key] || key] || key;
         }).join(', ');
-        $verifyBadge.attr('class', 'badge bg-danger')
-            .html('<i class="fa-solid fa-circle-exclamation me-1"></i>' + escapeHtml(langData['verify_status_not_ready'] || 'Not Ready for Payroll'))
+        $verifyBadge.html(statusBadgeHtml('not_ready', 'profile_verify'))
             .attr('title', ((langData['verify_status_missing_prefix'] || 'Missing info on:') + ' ' + missingLabels).trim());
     }
 
@@ -1642,9 +1639,9 @@ const MAX_DOC_SIZE = 10 * 1024 * 1024;
 // for sync-derived data.
 function documentSourceBadge(source) {
     if (source === 'sync') {
-        return `<span class="badge bg-info-subtle text-info" data-i18n="document_source_sync">${escapeHtml(langData['document_source_sync'] || 'Synced from Origami')}</span>`;
+        return `<span class="text-muted" data-i18n="document_source_sync">${escapeHtml(langData['document_source_sync'] || 'Synced from Origami')}</span>`;
     }
-    return `<span class="badge bg-secondary-subtle text-secondary" data-i18n="document_source_manual">${escapeHtml(langData['document_source_manual'] || 'Manual')}</span>`;
+    return `<span class="text-muted" data-i18n="document_source_manual">${escapeHtml(langData['document_source_manual'] || 'Manual')}</span>`;
 }
 function addDocumentRow(doc) {
     const labelKey = DOCUMENT_TYPE_LABEL_KEY[doc.document_type] || doc.document_type;
@@ -1666,7 +1663,7 @@ function addDocumentRow(doc) {
         // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
         // ".btn-circle-action" section) replace the old adjacent .btn-group.
         '<div class="d-flex gap-1 justify-content-center">' +
-        `<a href="${BASE_URL}/api/employee.document.view?id=${encodeURIComponent(doc.id)}" target="_blank" class="btn btn-link btn-circle-action text-info"><i class="fa-solid fa-eye"></i></a>` +
+        `<a href="${BASE_URL}/api/employee.document.view?id=${encodeURIComponent(doc.id)}" target="_blank" class="btn btn-link btn-circle-action"><i class="fa-solid fa-eye"></i></a>` +
         '<button type="button" class="btn btn-link btn-circle-action text-danger btn-delete-document"><i class="fa-solid fa-trash-can"></i></button>' +
         '</div>' +
         '</td>' +
@@ -1709,24 +1706,19 @@ function loadLoginHistoryFilterOptions() {
 // on PDO's fetch mode -- Number(...) normalizes either.
 function loginHistoryStatusBadgeRd(row) {
     if (Number(row.is_active) === 1) {
-        return `<span class="badge bg-success-subtle text-success">${langData['session_status_active'] || 'Active'}</span>`;
+        return statusBadgeHtml('active', 'session_status');
     }
-    const reasonKey = { new_login: 'session_reason_new_login', switch_app: 'session_reason_switch_app', timeout: 'session_reason_timeout' }[row.ended_reason];
-    const label = (reasonKey && langData[reasonKey]) || langData['session_status_ended'] || 'Ended';
-    const tone = row.ended_reason === 'timeout' ? 'bg-warning-subtle text-warning' : 'bg-secondary-subtle text-secondary';
-    return `<span class="badge ${tone}">${escapeHtml(label)}</span>`;
+    const known = ['new_login', 'switch_app', 'timeout'].indexOf(row.ended_reason) !== -1;
+    return statusBadgeHtml(known ? row.ended_reason : 'ended', 'session_status');
 }
 function initLoginHistoryTable() {
     if (!currentEmployeeId) return;
     if ($.fn.DataTable.isDataTable('#tableLoginHistory')) {
-        $('#tableLoginHistory').DataTable().ajax.reload();
+        tb_login_history.ajax.reload();
         return;
     }
-    tb_login_history = $('#tableLoginHistory').DataTable({
-        responsive: true,
+    tb_login_history = initSharedDataTable('#tableLoginHistory', {
         serverSide: true,
-        processing: true,
-        order: [[0, 'desc']],
         ajax: {
             url: `${BASE_URL}/api/employee-login-log.list`,
             type: 'POST',
@@ -1738,59 +1730,33 @@ function initLoginHistoryTable() {
                 d.browser_name = $('#loginHistoryFilterBrowser').val() || '';
             }
         },
-        columns: [
-            { data: 'login_at', render: d => escapeHtml(typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : (d || '-')) },
-            // 2026-08-29: logout_at is only ever set by auth/switch.php's own "Switch App away from
-            // Payroll" capture (see that file's own docblock) -- null is the normal, expected state
-            // for a session that ended any other way (tab closed, browser closed, session expired),
-            // not a sign anything is broken.
-            { data: 'logout_at', render: d => escapeHtml(d && typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : '-') },
-            { data: 'ip_address', render: d => escapeHtml(d || '-') },
-            { data: null, render: (d, t, row) => escapeHtml([row.location_city, row.location_country].filter(Boolean).join(', ') || '-') },
-            { data: 'timezone', render: d => escapeHtml(d || '-') },
-            { data: 'device_type', render: d => { const m = loginHistoryDeviceIconRd(d); return `<span class="row-type-icon ${m.rt}"><i class="fa-solid ${m.icon}"></i></span>${escapeHtml(d || '-')}`; } },
-            { data: null, render: (d, t, row) => escapeHtml([row.os_name, row.os_version].filter(Boolean).join(' ') || '-') },
-            { data: null, render: (d, t, row) => escapeHtml([row.browser_name, row.browser_version].filter(Boolean).join(' ') || '-') },
-            { data: null, orderable: false, render: (d, t, row) => loginHistoryStatusBadgeRd(row) },
-        ],
-        // 2026-08-30, real gap found and fixed (explicit request: "จำนวนแสดงต่อหน้า 50 รายการเป็น
-        // Default...มีตารางอื่นที่ยังไม่ใช้ Format เดียวกันอีกไหมครับ", found via a full-codebase audit) --
-        // was missing entirely, silently falling back to DataTables' own built-in default of 10.
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
+        dtOptions: {
+            responsive: true,
+            order: [[0, 'desc']],
+            columns: [
+                { data: 'login_at', render: d => escapeHtml(typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : (d || '-')) },
+                // 2026-08-29: logout_at is only ever set by auth/switch.php's own "Switch App away from
+                // Payroll" capture (see that file's own docblock) -- null is the normal, expected state
+                // for a session that ended any other way (tab closed, browser closed, session expired),
+                // not a sign anything is broken.
+                { data: 'logout_at', render: d => escapeHtml(d && typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : '-') },
+                { data: 'ip_address', render: d => escapeHtml(d || '-') },
+                { data: null, render: (d, t, row) => escapeHtml([row.location_city, row.location_country].filter(Boolean).join(', ') || '-') },
+                { data: 'timezone', render: d => escapeHtml(d || '-') },
+                { data: 'device_type', render: d => { const m = loginHistoryDeviceIconRd(d); return `<span class="row-type-icon ${m.rt}"><i class="fa-solid ${m.icon}"></i></span>${escapeHtml(d || '-')}`; } },
+                { data: null, render: (d, t, row) => escapeHtml([row.os_name, row.os_version].filter(Boolean).join(' ') || '-') },
+                { data: null, render: (d, t, row) => escapeHtml([row.browser_name, row.browser_version].filter(Boolean).join(' ') || '-') },
+                { data: null, orderable: false, render: (d, t, row) => loginHistoryStatusBadgeRd(row) },
+            ],
+        },
     });
 }
-function updateClearLoginHistoryFilterVisibility() {
-    const hasFilter = !!($('#loginHistoryFilterDateFrom').val() || $('#loginHistoryFilterDateTo').val() || $('#loginHistoryFilterDevice').val() || $('#loginHistoryFilterBrowser').val());
-    $('#loginHistoryFilterClearRow').toggleClass('d-none', !hasFilter);
-}
-$(document).on('change', '#loginHistoryFilterDateFrom, #loginHistoryFilterDateTo, #loginHistoryFilterDevice, #loginHistoryFilterBrowser', function () {
-    updateClearLoginHistoryFilterVisibility();
-    if ($.fn.DataTable.isDataTable('#tableLoginHistory')) {
-        $('#tableLoginHistory').DataTable().ajax.reload();
-    }
-});
-// 2026-08-30, same-day follow-up ("Tab ประวัติการเข้าใช้งานใน Employee Detail ยังไม่ใช่ Filter มาตรฐาน")
-// -- the standard .station-filter toggle/clear pair, same idiom as Employee List's own station
-// filters.
-$(document).on('click', '#loginHistoryStationFilterToggle', function () {
-    const $filter = $('#loginHistoryStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('click', '#btnClearLoginHistoryFilter', function () {
-    $('#loginHistoryFilterDateFrom, #loginHistoryFilterDateTo').val('');
-    if (typeof $.fn.datepicker === 'function') {
-        $('#loginHistoryFilterDateFrom, #loginHistoryFilterDateTo').datepicker('update');
-    }
-    // 'change' (not 'change.select2') -- matches the exact same select2-native device/browser
-    // clear-pattern list.js's own Login History OVERVIEW tab already uses successfully.
-    $('#loginHistoryFilterDevice, #loginHistoryFilterBrowser').val(null).trigger('change');
-    updateClearLoginHistoryFilterVisibility();
-    if ($.fn.DataTable.isDataTable('#tableLoginHistory')) {
-        $('#tableLoginHistory').DataTable().ajax.reload();
-    }
+$(document).ready(function () {
+    initFilterBar('#loginHistoryFilterBar', {
+        onChange: function () {
+            if ($.fn.DataTable.isDataTable('#tableLoginHistory')) tb_login_history.ajax.reload();
+        },
+    });
 });
 // Lazy-init on first tab show -- a DataTable constructed while its own tab-pane is `display:none`
 // collapses every column to 0 width (this app's own well-known DataTables+Bootstrap-tab gotcha,
@@ -1881,21 +1847,19 @@ function renderSuspensionStatus(data) {
         $suspendBtn.addClass('d-none');
         $unsuspendBtn.removeClass('d-none');
     } else {
-        $text.html(`<span class="text-success"><i class="fa-solid fa-circle-check me-1"></i>${(langData['access_active'] || 'Access active')}</span>`);
+        $text.html(`<span class=""><i class="fa-solid fa-circle-check me-1"></i>${(langData['access_active'] || 'Access active')}</span>`);
         $suspendBtn.removeClass('d-none');
         $unsuspendBtn.addClass('d-none');
     }
 }
 $(document).on('click', '#btnSuspendEmployee', function () {
-    Swal.fire({
+    showConfirm({
+        tone: 'danger',
         title: langData['confirm_suspend_title'] || 'Suspend this employee\'s access?',
         html: `<p>${langData['confirm_suspend_message'] || 'They will be unable to access the system at all until restored.'}</p>
                <textarea id="swalSuspendReason" class="form-control mt-2" rows="2" placeholder="${langData['suspend_reason_placeholder'] || 'Reason for suspension (required)'}"></textarea>`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: langData['suspend_access'] || 'Suspend Access',
-        confirmButtonColor: '#dc3545',
-        cancelButtonText: langData['cancel'] || 'Cancel',
+        confirmText: langData['suspend_access'] || 'Suspend Access',
+        cancelText: langData['cancel'] || 'Cancel',
         preConfirm: () => {
             const reason = $('#swalSuspendReason').val().trim();
             if (!reason) {
@@ -2000,7 +1964,7 @@ function renderPermissionOverridesTable() {
             <td>${escapeAttr(currentLang === 'th' ? p.name_th : p.name_en)}</td>
             <td class="text-center">
                 ${p.role_granted
-                    ? `<i class="fa-solid fa-check text-success" title="${escapeAttr(langData['inherited'] || 'Inherited')}"></i>`
+                    ? `<i class="fa-solid fa-check text-muted" title="${escapeAttr(langData['inherited'] || 'Inherited')}"></i>`
                     : `<i class="fa-solid fa-minus text-muted" title="${escapeAttr(langData['inherited'] || 'Inherited')}"></i>`}
             </td>
             <td class="text-center">
@@ -2008,19 +1972,19 @@ function renderPermissionOverridesTable() {
                     <input type="radio" class="btn-check po-effect-radio" name="po-effect-${p.permission_id}" id="po-inherit-${p.permission_id}" value="" ${effect === 'inherit' ? 'checked' : ''}>
                     <label class="btn btn-outline-secondary" for="po-inherit-${p.permission_id}">${escapeAttr(langData['override_inherit'] || 'Inherit')}</label>
                     <input type="radio" class="btn-check po-effect-radio" name="po-effect-${p.permission_id}" id="po-grant-${p.permission_id}" value="grant" ${effect === 'grant' ? 'checked' : ''}>
-                    <label class="btn btn-outline-success" for="po-grant-${p.permission_id}">${escapeAttr(langData['override_grant'] || 'Grant')}</label>
+                    <label class="btn btn-outline-secondary" for="po-grant-${p.permission_id}">${escapeAttr(langData['override_grant'] || 'Grant')}</label>
                     <input type="radio" class="btn-check po-effect-radio" name="po-effect-${p.permission_id}" id="po-deny-${p.permission_id}" value="deny" ${effect === 'deny' ? 'checked' : ''}>
-                    <label class="btn btn-outline-danger" for="po-deny-${p.permission_id}">${escapeAttr(langData['override_deny'] || 'Deny')}</label>
+                    <label class="btn btn-outline-secondary" for="po-deny-${p.permission_id}">${escapeAttr(langData['override_deny'] || 'Deny')}</label>
                 </div>
             </td>
             <td class="text-center">`;
         if (isApprovalAct) {
-            html += `<select class="form-select form-select-sm po-scope-select ${showScope ? '' : 'd-none'}" style="width:auto;margin:0 auto;">
+            html += `<select class="form-select form-select-sm po-scope-select ${showScope ? '' : 'd-none'}">
                     <option value="all" ${state.allow_scope === 'own_department' ? '' : 'selected'}>${langData['scope_all'] || 'All'}</option>
                     <option value="own_department" ${state.allow_scope === 'own_department' ? 'selected' : ''}>${langData['scope_own_department'] || 'Own Dept.'}</option>
                 </select>`;
         } else if (isSalaryAmount) {
-            html += `<select class="form-select form-select-sm po-scope-select ${showScope ? '' : 'd-none'}" style="width:auto;margin:0 auto;">
+            html += `<select class="form-select form-select-sm po-scope-select ${showScope ? '' : 'd-none'}">
                     <option value="all" ${state.allow_scope === 'all' ? 'selected' : ''}>${langData['scope_all'] || 'All'}</option>
                     <option value="own_only" ${state.allow_scope === 'own_only' ? 'selected' : ''}>${langData['scope_own_only'] || 'Own Only'}</option>
                 </select>`;
@@ -2582,14 +2546,8 @@ function renderStandingSummary(mountSelector, rows, kind) {
     );
 }
 function eedStatusBadge(row) {
-    const map = {
-        active: { cls: 'bg-success-subtle text-success', key: 'active', fallback: 'Active' },
-        paused: { cls: 'bg-warning-subtle text-warning', key: 'paused', fallback: 'Paused' },
-        completed: { cls: 'bg-primary-subtle text-primary', key: 'completed', fallback: 'Completed' },
-        cancelled: { cls: 'bg-secondary-subtle text-secondary', key: 'cancelled', fallback: 'Cancelled' }
-    };
-    const cfg = map[row.status] || map.active;
-    return `<span class="badge ${cfg.cls}">${langData[cfg.key] || cfg.fallback}</span>`;
+    const known = ['active', 'paused', 'completed', 'cancelled'].indexOf(row.status) !== -1;
+    return statusBadgeHtml(known ? row.status : 'active', 'eed_status');
 }
 function eedActionButtons(row) {
     const notStarted = Number(row.current_installment) === 0;
@@ -2636,22 +2594,22 @@ function eedInterestSubLabel(row) {
         const feeBaseLabel = row.fee_base === 'base_salary'
             ? (langData['fee_base_option_base_salary'] || 'Base Salary')
             : (langData['fee_base_option_principal'] || 'Principal Amount');
-        const feePct = parseFloat(row.fee_percent || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const feePct = fmtNum(parseFloat(row.fee_percent || 0));
         return ` <span class="text-muted small">(${langData['fee_has'] || 'Fee'} ${feePct}% ${langData['fee_of'] || 'of'} ${feeBaseLabel})</span>`;
     }
     const typeLabel = row.interest_type === 'fixed'
         ? (langData['interest_fixed'] || 'Flat')
         : (langData['interest_reducing_balance'] || 'Reducing Balance');
-    const rate = parseFloat(row.interest_rate || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const rate = fmtNum(parseFloat(row.interest_rate || 0));
     return ` <span class="text-muted small">(${typeLabel} ${rate}%/${langData['installment_label'] || 'installment'})</span>`;
 }
 function eedAmountSummary(row) {
-    const total = parseFloat(row.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const total = fmtNum(parseFloat(row.total_amount || 0));
     const interestSub = eedInterestSubLabel(row);
     if (row.amount_mode === 'custom_per_installment') {
         return `${total} <span class="text-muted small">(${langData['custom_per_installment'] || 'custom'})</span>${interestSub}`;
     }
-    const per = (parseFloat(row.total_amount || 0) / Math.max(1, parseInt(row.total_installments || 1, 10))).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const per = fmtNum(parseFloat(row.total_amount || 0) / Math.max(1, parseInt(row.total_installments || 1, 10)));
     return `${total} <span class="text-muted small">(${per} x ${row.total_installments})</span>${interestSub}`;
 }
 // Item-name cell no longer shows the earning/deduction word (2026-08-19: the two tables are split by
@@ -2673,8 +2631,8 @@ function eedItemNameCell(row) {
     const badge = row.ped_type_id
         ? ''
         : (row.is_other
-            ? ` <span class="badge bg-info-subtle text-info">${langData['manual_line_other_badge'] || 'Other'}</span>`
-            : ` <span class="badge bg-secondary-subtle text-secondary">${langData['manual_line_custom_badge'] || 'Custom'}</span>`);
+            ? ` ${statusBadgeHtml('other', 'manual_line_mode')}`
+            : ` <span class="text-muted">${langData['manual_line_custom_badge'] || 'Custom'}</span>`);
     return `<div><strong>${label}</strong>${badge}</div>${payeeDescriptorHtmlRd(row.payee)}`;
 }
 // What this row can be FOUND by, as opposed to what it says: the name in both languages plus the
@@ -2692,7 +2650,7 @@ function eedInstallmentProgressCell(row) {
     return `
         <div class="d-flex flex-column align-items-center" style="min-width:90px;">
             <div class="progress w-100" style="height:6px;">
-                <div class="progress-bar" role="progressbar" style="width:${pct}%;background-color:#FF9900;"></div>
+                <div class="progress-bar" role="progressbar" style="width:${pct}%;"></div>
             </div>
             <span class="text-muted small mt-1">${current}/${total}</span>
         </div>
@@ -2720,54 +2678,52 @@ let tbEarning, tbDeduction;
 // DataTable convention. Add button injected into .dt-search via initComplete, same as every other
 // DataTable in this app. Filtered server-side by item_type (EmployeeEarningDeductionModel::list()).
 function initEedTable(tableSelector, itemType, addBtnClass, addLangKey, addLangFallback, summarySelector) {
-    return $(tableSelector).DataTable({
-        responsive: true,
-        // 2026-08-29: deferLoading:0 -- see tbRecurringEarning's own comment on this exact race
-        // (loadAllChildTables()). This table happened not to get reported as broken (loadEarningDeductions()
-        // already re-triggers a correct reload once currentEmployeeId is known), but the underlying
-        // race -- this table's automatic FIRST ajax fetch firing before currentEmployeeId is set, then
-        // possibly resolving AFTER that later correct reload and clobbering it with stale/empty data
-        // -- is identical, so it gets the same real fix here rather than just relying on timing luck.
-        deferLoading: 0,
-        ajax: {
-            url: `${BASE_URL}/api/employee.earning-deduction.list`,
-            data: function (d) { d.employee_id = currentEmployeeId; d.item_type = itemType; },
-            // The summary above the table is counted from the SAME payload the table draws, so the
-            // two can never disagree, and from the whole of it -- not the page, not the filter.
-            dataSrc: function (json) {
-                const rows = (json && json.data) || [];
-                renderStandingSummary(summarySelector, rows, 'eed');
-                return rows;
+    return initSharedDataTable(tableSelector, {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'item_name' },
+                { index: 1, key: 'amount' },
+                { index: 3, key: 'effective_date' },
+                { index: 4, key: 'status' },
+            ]
+        },
+        dtOptions: {
+            searching: true, // ajax-fed: the helper's row-count threshold sees 0 rows at construction
+            searching: true,
+            responsive: true,
+            // 2026-08-29: deferLoading:0 -- see tbRecurringEarning's own comment on this exact race
+            // (loadAllChildTables()). This table happened not to get reported as broken (loadEarningDeductions()
+            // already re-triggers a correct reload once currentEmployeeId is known), but the underlying
+            // race -- this table's automatic FIRST ajax fetch firing before currentEmployeeId is set, then
+            // possibly resolving AFTER that later correct reload and clobbering it with stale/empty data
+            // -- is identical, so it gets the same real fix here rather than just relying on timing luck.
+            deferLoading: 0,
+            ajax: {
+                url: `${BASE_URL}/api/employee.earning-deduction.list`,
+                data: function (d) { d.employee_id = currentEmployeeId; d.item_type = itemType; },
+                // The summary above the table is counted from the SAME payload the table draws, so the
+                // two can never disagree, and from the whole of it -- not the page, not the filter.
+                dataSrc: function (json) {
+                    const rows = (json && json.data) || [];
+                    renderStandingSummary(summarySelector, rows, 'eed');
+                    return rows;
+                }
+            },
+            columns: eedTableColumns(),
+            initComplete: function () {
+                const self = this.api();
+                const $wrapper = $(self.table().container());
+                const $searchDiv = $wrapper.find('.dt-search');
+                if ($searchDiv.find(`.${addBtnClass}`).length === 0) {
+                    $searchDiv.append(`
+                        <button type="button" class="btn btn-primary btn-sm ms-1 ${addBtnClass}">
+                            <i class="fa-solid fa-plus me-1"></i><span data-i18n="${addLangKey}">${langData[addLangKey] || addLangFallback}</span>
+                        </button>
+                    `);
+                }
             }
         },
-        columns: eedTableColumns(),
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        initComplete: function () {
-            const self = this.api();
-            const $wrapper = $(self.table().container());
-            const $searchDiv = $wrapper.find('.dt-search');
-            if ($searchDiv.find(`.${addBtnClass}`).length === 0) {
-                $searchDiv.append(`
-                    <button type="button" class="btn btn-primary btn-sm ms-1 ${addBtnClass}">
-                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="${addLangKey}">${langData[addLangKey] || addLangFallback}</span>
-                    </button>
-                `);
-            }
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the installment progress bar (2, no single filterable
-            // value) and the actions column (5).
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'item_name' },
-                    { index: 1, key: 'amount' },
-                    { index: 3, key: 'effective_date' },
-                    { index: 4, key: 'status' },
-                ]
-            });
-        }
     });
 }
 function loadEarningDeductions() {
@@ -2785,68 +2741,63 @@ function syncTxItemNameCell(row) {
     return escapeHtml(name);
 }
 function syncTxFmtAmount(v) {
-    return Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return fmtNum(Number(v || 0));
 }
 function syncTxTypeBadge(itemType) {
     if (itemType === 'earning') {
-        return `<span class="badge bg-success-subtle text-success" data-i18n="earning_singular">${langData['earning_singular'] || 'Income'}</span>`;
+        return `<span class="text-muted" data-i18n="earning_singular">${langData['earning_singular'] || 'Income'}</span>`;
     }
-    return `<span class="badge bg-danger-subtle text-danger" data-i18n="deduction_singular">${langData['deduction_singular'] || 'Deduction'}</span>`;
+    return `<span class="text-muted" data-i18n="deduction_singular">${langData['deduction_singular'] || 'Deduction'}</span>`;
 }
 function initSyncTransactionLogTable() {
-    return $('#tableSyncTransactionLog').DataTable({
-        responsive: true,
-        deferLoading: 0,
-        ordering: false,
-        ajax: {
-            url: `${BASE_URL}/api/employee.sync-transaction-log.list`,
-            data: function (d) { d.employee_id = currentEmployeeId; },
-            dataSrc: 'data'
+    return initSharedDataTable('#tableSyncTransactionLog', {
+        dtOptions: {
+            searching: true, // ajax-fed: the helper's row-count threshold sees 0 rows at construction
+            responsive: true,
+            deferLoading: 0,
+            ordering: false,
+            ajax: {
+                url: `${BASE_URL}/api/employee.sync-transaction-log.list`,
+                data: function (d) { d.employee_id = currentEmployeeId; },
+                dataSrc: 'data'
+            },
+            columns: [
+                { data: null, render: (d, t, row) => `${toDisplayDate(row.pay_period_start)} - ${toDisplayDate(row.pay_period_end)}` },
+                { data: null, render: (d, t, row) => syncTxItemNameCell(row) },
+                { data: 'item_type', className: 'text-center', render: (d, t, row) => syncTxTypeBadge(row.item_type) },
+                { data: null, className: 'text-end', render: (d, t, row) => syncTxFmtAmount(row.amount) },
+                { data: 'remark', render: d => escapeHtml(d || '-') }
+            ],
         },
-        columns: [
-            { data: null, render: (d, t, row) => `${toDisplayDate(row.pay_period_start)} - ${toDisplayDate(row.pay_period_end)}` },
-            { data: null, render: (d, t, row) => syncTxItemNameCell(row) },
-            { data: 'item_type', className: 'text-center', render: (d, t, row) => syncTxTypeBadge(row.item_type) },
-            { data: null, className: 'text-end', render: (d, t, row) => syncTxFmtAmount(row.amount) },
-            { data: 'remark', render: d => escapeHtml(d || '-') }
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang()
     });
 }
 function initScheduledItemOccurrenceTable() {
-    return $('#tableScheduledItemOccurrence').DataTable({
-        responsive: true,
-        deferLoading: 0,
-        ordering: false,
-        ajax: {
-            url: `${BASE_URL}/api/employee.scheduled-item-occurrence.list`,
-            data: function (d) { d.employee_id = currentEmployeeId; },
-            dataSrc: 'data'
+    return initSharedDataTable('#tableScheduledItemOccurrence', {
+        dtOptions: {
+            searching: true, // ajax-fed: the helper's row-count threshold sees 0 rows at construction
+            responsive: true,
+            deferLoading: 0,
+            ordering: false,
+            ajax: {
+                url: `${BASE_URL}/api/employee.scheduled-item-occurrence.list`,
+                data: function (d) { d.employee_id = currentEmployeeId; },
+                dataSrc: 'data'
+            },
+            columns: [
+                { data: null, render: (d, t, row) => toDisplayDate(row.applied_at) },
+                { data: null, render: (d, t, row) => escapeHtml(row.item_ref_code || row.item_code || '-') },
+                { data: 'installment_no', className: 'text-center', render: d => d !== null && d !== undefined ? d : '-' },
+                { data: null, className: 'text-end', render: (d, t, row) => syncTxFmtAmount(row.amount) },
+                { data: null, render: (d, t, row) => row.run_name ? escapeHtml(row.run_name) : (row.process_no ? escapeHtml(row.process_no) : '-') }
+            ],
         },
-        columns: [
-            { data: null, render: (d, t, row) => toDisplayDate(row.applied_at) },
-            { data: null, render: (d, t, row) => escapeHtml(row.item_ref_code || row.item_code || '-') },
-            { data: 'installment_no', className: 'text-center', render: d => d !== null && d !== undefined ? d : '-' },
-            { data: null, className: 'text-end', render: (d, t, row) => syncTxFmtAmount(row.amount) },
-            { data: null, render: (d, t, row) => row.run_name ? escapeHtml(row.run_name) : (row.process_no ? escapeHtml(row.process_no) : '-') }
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang()
     });
 }
 // Per-installment status badge (2026-08-20, explicit request: "Status ของแต่ละงวดการจ่าย...จ่ายแล้ว
 // หรือรอจ่าย") -- statuses come straight from employee_earning_deduction_installments.status, set by
 // PayrollRunModel::markPaid() when a run is actually paid (never by anything in this file).
 function eedInstallmentStatusBadge(status, processedAt) {
-    const map = {
-        pending: { cls: 'bg-secondary-subtle text-secondary', key: 'installment_status_pending', fallback: 'Pending' },
-        processed: { cls: 'bg-success-subtle text-success', key: 'installment_status_processed', fallback: 'Paid' },
-        skipped: { cls: 'bg-warning-subtle text-warning', key: 'installment_status_skipped', fallback: 'Skipped' }
-    };
-    const cfg = map[status] || map.pending;
+    const instEnum = ['pending', 'processed', 'skipped'].indexOf(status) !== -1 ? status : 'pending';
     // 2026-08-29, real bug found and fixed (explicit report: "เวลาที่ Save ลงใน Database เป็น UTC การ
     // แสดงผลให้แปลงเป็น timezone ปัจจุบันของผู้ใช้") -- processedAt is a real UTC timestamp
     // (employee_earning_deduction_installments.processed_at), but this only ever shows its DATE,
@@ -2858,7 +2809,7 @@ function eedInstallmentStatusBadge(status, processedAt) {
         ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(processedAt).split(' ')[0] : toDisplayDate(String(processedAt).substring(0, 10)))
         : '';
     const dateSuffix = (status === 'processed' && processedAt) ? ` <span class="text-muted small">${processedDateOnly}</span>` : '';
-    return `<span class="badge ${cfg.cls}">${langData[cfg.key] || cfg.fallback}</span>${dateSuffix}`;
+    return `${statusBadgeHtml(instEnum, 'eed_installment_status')}${dateSuffix}`;
 }
 // Always-visible, always-editable installment schedule table (2026-08-20, replaces the old
 // even_split/custom_per_installment radio pair + regenerateCustomAmountInputs()) -- $amounts pre-
@@ -2882,7 +2833,7 @@ function renderInstallmentTable(amounts, installmentsData, readOnly, breakdown) 
     $('#eedInstallmentPrincipalHeader').toggleClass('d-none', !showBreakdown);
     $('#eedInstallmentInterestHeader').toggleClass('d-none', !showBreakdown)
         .attr('data-i18n', interestHeaderKey).text(langData[interestHeaderKey] || (chargeType === 'fee' ? 'Fee' : 'Interest'));
-    const fmt = n => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt = n => fmtNum(Number(n));
     let sumPrincipal = 0, sumInterest = 0, sumAmount = 0, rowsWithBreakdown = 0;
     (amounts || []).forEach(function (amount, idx) {
         const inst = hasStatus ? installmentsData[idx] : null;
@@ -2941,7 +2892,7 @@ function updateEedAmountBreakdown(amounts) {
     }
     const total = validAmounts.reduce((sum, n) => sum + n, 0);
     const added = total - principal;
-    const fmt = n => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt = n => fmtNum(Number(n));
     const template = langData['amount_breakdown_hint'] || 'Principal {principal} + {addedLabel} {added} = total deducted {total}, across {n} installment(s).';
     const addedLabelKey = chargeType === 'fee' ? 'fee_percent_label' : 'amount_breakdown_interest_noun';
     const text = template
@@ -3933,82 +3884,80 @@ function saveSalaryTab($btn) {
 }
 function recurringEarningStatusBadge(row) {
     if (row.is_suspended_now) {
-        return `<span class="badge bg-warning-subtle text-warning">${langData['status_suspended'] || 'Suspended'}</span>`;
+        return statusBadgeHtml('suspended', 'recurring_earning_status');
     }
-    return `<span class="badge bg-success-subtle text-success">${langData['status_active'] || 'Active'}</span>`;
+    return statusBadgeHtml('active', 'recurring_earning_status');
 }
 function recurringEarningSuspendPeriodCell(row) {
     if (!row.suspended_from || !row.suspended_to) return '-';
     return `${toDisplayDate(row.suspended_from)} - ${toDisplayDate(row.suspended_to)}`;
 }
 function initRecurringEarningUI() {
-    tbRecurringEarning = $('#tableRecurringEarning').DataTable({
-        responsive: true,
-        // 2026-08-29, real bug found and fixed (explicit urgent report -- a newly-added allowance
-        // would disappear again shortly after saving, and reliably came back empty on a fresh page
-        // load) -- this table used to fetch automatically on init, but currentEmployeeId is only set
-        // later, inside loadEmployeeIfEditing()'s async success callback (initRecurringEarningUI()
-        // runs synchronously well before that resolves). That first, wrongly-parameterized (null
-        // employee_id) request could resolve AFTER a later, correctly-parameterized .ajax.reload()
-        // (e.g. right after adding an allowance), silently clobbering the correct data with an empty
-        // result. deferLoading:0 tells DataTables to skip that automatic first fetch entirely -- no
-        // stale request is ever sent, so it can never race a later, deliberate reload. The ONE real
-        // fetch now happens only via the explicit .ajax.reload() calls (loadAllChildTables(), and
-        // every add/edit/delete success handler below), always AFTER currentEmployeeId is genuinely
-        // known.
-        deferLoading: 0,
-        ajax: {
-            url: `${BASE_URL}/api/employee.recurring-earning.list`,
-            data: function (d) { d.employee_id = currentEmployeeId; },
-            dataSrc: 'data'
+    tbRecurringEarning = initSharedDataTable('#tableRecurringEarning', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'item_name' },
+                { index: 1, key: 'amount' },
+                { index: 2, key: 'effective_date' },
+                { index: 3, key: 'suspend_period' },
+                { index: 4, key: 'status' },
+            ]
         },
-        columns: [
-            { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.item_name_th : row.item_name_en) || '') },
-            // 2026-08-29, real bugs found via a system-wide table audit: sort-safety fixes -- both
-            // used a plain `render: fn`, so client-side sort/filter operated on the FORMATTED
-            // string (amount: "1,234.56" sorts before "999.00" lexicographically; date: dd/mm/yyyy
-            // doesn't sort chronologically), not the raw underlying value.
-            { data: 'amount', className: 'text-end', render: { display: d => Number(d || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
-            { data: 'effective_date', render: { display: d => toDisplayDate(d), sort: d => d || '', filter: d => d || '' } },
-            { data: null, render: (d, t, row) => recurringEarningSuspendPeriodCell(row) },
-            { data: null, render: (d, t, row) => recurringEarningStatusBadge(row) },
-            {
-                // 2026-08-28: className:'all' keeps this last actions column from collapsing into
-                // the Responsive expand row.
-                data: null, orderable: false, className: 'text-center all',
-                render: (d, t, row) => `
-                    <button type="button" class="btn btn-sm btn-link text-primary btn-edit-recurring-earning" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
-                    <button type="button" class="btn btn-sm btn-link text-danger btn-delete-recurring-earning" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>
-                `
+        dtOptions: {
+            searching: true, // ajax-fed: the helper's row-count threshold sees 0 rows at construction
+            responsive: true,
+            // 2026-08-29, real bug found and fixed (explicit urgent report -- a newly-added allowance
+            // would disappear again shortly after saving, and reliably came back empty on a fresh page
+            // load) -- this table used to fetch automatically on init, but currentEmployeeId is only set
+            // later, inside loadEmployeeIfEditing()'s async success callback (initRecurringEarningUI()
+            // runs synchronously well before that resolves). That first, wrongly-parameterized (null
+            // employee_id) request could resolve AFTER a later, correctly-parameterized .ajax.reload()
+            // (e.g. right after adding an allowance), silently clobbering the correct data with an empty
+            // result. deferLoading:0 tells DataTables to skip that automatic first fetch entirely -- no
+            // stale request is ever sent, so it can never race a later, deliberate reload. The ONE real
+            // fetch now happens only via the explicit .ajax.reload() calls (loadAllChildTables(), and
+            // every add/edit/delete success handler below), always AFTER currentEmployeeId is genuinely
+            // known.
+            deferLoading: 0,
+            ajax: {
+                url: `${BASE_URL}/api/employee.recurring-earning.list`,
+                data: function (d) { d.employee_id = currentEmployeeId; },
+                dataSrc: 'data'
+            },
+            columns: [
+                { data: null, render: (d, t, row) => escapeHtml((currentLang === 'th' ? row.item_name_th : row.item_name_en) || '') },
+                // 2026-08-29, real bugs found via a system-wide table audit: sort-safety fixes -- both
+                // used a plain `render: fn`, so client-side sort/filter operated on the FORMATTED
+                // string (amount: "1,234.56" sorts before "999.00" lexicographically; date: dd/mm/yyyy
+                // doesn't sort chronologically), not the raw underlying value.
+                { data: 'amount', className: 'text-end', render: { display: d => fmtNum(Number(d || 0)), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
+                { data: 'effective_date', render: { display: d => toDisplayDate(d), sort: d => d || '', filter: d => d || '' } },
+                { data: null, render: (d, t, row) => recurringEarningSuspendPeriodCell(row) },
+                { data: null, render: (d, t, row) => recurringEarningStatusBadge(row) },
+                {
+                    // 2026-08-28: className:'all' keeps this last actions column from collapsing into
+                    // the Responsive expand row.
+                    data: null, orderable: false, className: 'text-center all',
+                    render: (d, t, row) => `
+                        <button type="button" class="btn btn-sm btn-link btn-edit-recurring-earning" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" class="btn btn-sm btn-link text-danger btn-delete-recurring-earning" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>
+                    `
+                }
+            ],
+            initComplete: function () {
+                const self = this.api();
+                const $wrapper = $(self.table().container());
+                const $searchDiv = $wrapper.find('.dt-search');
+                if ($searchDiv.find('.btn-add-recurring-earning').length === 0) {
+                    $searchDiv.append(`
+                        <button type="button" class="btn btn-primary btn-sm ms-1 btn-add-recurring-earning">
+                            <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_recurring_earning">${langData['add_recurring_earning'] || 'Add Recurring Allowance'}</span>
+                        </button>
+                    `);
+                }
             }
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        initComplete: function () {
-            const self = this.api();
-            const $wrapper = $(self.table().container());
-            const $searchDiv = $wrapper.find('.dt-search');
-            if ($searchDiv.find('.btn-add-recurring-earning').length === 0) {
-                $searchDiv.append(`
-                    <button type="button" class="btn btn-primary btn-sm ms-1 btn-add-recurring-earning">
-                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_recurring_earning">${langData['add_recurring_earning'] || 'Add Recurring Allowance'}</span>
-                    </button>
-                `);
-            }
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the actions column (5).
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'item_name' },
-                    { index: 1, key: 'amount' },
-                    { index: 2, key: 'effective_date' },
-                    { index: 3, key: 'suspend_period' },
-                    { index: 4, key: 'status' },
-                ]
-            });
-        }
+        },
     });
     // Same hidden-tab-at-init width gotcha as tableEarning/tableDeduction above -- this table lives
     // on the Salary tab, which also isn't the default-active tab on page load.
@@ -4192,9 +4141,9 @@ function validateRecurringEarningForm() {
    of 'earning'). ==================== */
 function recurringDeductionStatusBadge(row) {
     if (row.is_suspended_now) {
-        return `<span class="badge bg-warning-subtle text-warning">${langData['status_suspended'] || 'Suspended'}</span>`;
+        return statusBadgeHtml('suspended', 'recurring_earning_status');
     }
-    return `<span class="badge bg-success-subtle text-success">${langData['status_active'] || 'Active'}</span>`;
+    return statusBadgeHtml('active', 'recurring_earning_status');
 }
 function recurringDeductionSuspendPeriodCell(row) {
     if (!row.suspended_from || !row.suspended_to) return '-';
@@ -4206,69 +4155,69 @@ function recurringDeductionSuspendPeriodCell(row) {
 // not a static number this table's own `amount` column alone would represent.
 function recurringDeductionFeeSubLabel(row) {
     if (!row.fee_percent) return '';
-    const pct = parseFloat(row.fee_percent).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const pct = fmtNum(parseFloat(row.fee_percent));
     return ` <span class="text-muted small">(+${pct}% ${langData['fee_of'] || 'of'} ${langData['fee_base_option_base_salary'] || 'Base Salary'})</span>`;
 }
 function initRecurringDeductionUI() {
-    tbRecurringDeduction = $('#tableRecurringDeduction').DataTable({
-        responsive: true,
-        // Same deferLoading:0 fix as tbRecurringEarning's own comment explains (currentEmployeeId
-        // isn't known yet when this table initializes synchronously at page load).
-        deferLoading: 0,
-        ajax: {
-            url: `${BASE_URL}/api/employee.recurring-deduction.list`,
-            data: function (d) { d.employee_id = currentEmployeeId; },
-            dataSrc: function (json) {
-                const rows = (json && json.data) || [];
-                renderStandingSummary('#recurringDeductionSummary', rows, 'recurring');
-                return rows;
+    tbRecurringDeduction = initSharedDataTable('#tableRecurringDeduction', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'item_name' },
+                { index: 1, key: 'amount' },
+                { index: 2, key: 'effective_date' },
+                { index: 3, key: 'suspend_period' },
+                { index: 4, key: 'status' },
+            ]
+        },
+        dtOptions: {
+            searching: true, // ajax-fed: the helper's row-count threshold sees 0 rows at construction
+            responsive: true,
+            // Same deferLoading:0 fix as tbRecurringEarning's own comment explains (currentEmployeeId
+            // isn't known yet when this table initializes synchronously at page load).
+            deferLoading: 0,
+            ajax: {
+                url: `${BASE_URL}/api/employee.recurring-deduction.list`,
+                data: function (d) { d.employee_id = currentEmployeeId; },
+                dataSrc: function (json) {
+                    const rows = (json && json.data) || [];
+                    renderStandingSummary('#recurringDeductionSummary', rows, 'recurring');
+                    return rows;
+                }
+            },
+            columns: [
+                // 2026-09-19, 4c: same name + shared descriptor tag as the EED tables above, and the
+                // catalog code searchable but not printed -- one shape for every standing-item table.
+                { data: null, render: {
+                    display: (d, t, row) => `<div>${escapeHtml((currentLang === 'th' ? row.item_name_th : row.item_name_en) || '')}</div>${payeeDescriptorHtmlRd(row.payee)}`,
+                    sort: (d, t, row) => (currentLang === 'th' ? row.item_name_th : row.item_name_en) || '',
+                    filter: (d, t, row) => eedItemSearchText(row),
+                } },
+                { data: 'amount', className: 'text-end', render: { display: (d, t, row) => fmtNum(Number(d || 0)) + recurringDeductionFeeSubLabel(row), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
+                { data: 'effective_date', render: { display: d => toDisplayDate(d), sort: d => d || '', filter: d => d || '' } },
+                { data: null, render: (d, t, row) => recurringDeductionSuspendPeriodCell(row) },
+                { data: null, render: (d, t, row) => recurringDeductionStatusBadge(row) },
+                {
+                    data: null, orderable: false, className: 'text-center all',
+                    render: (d, t, row) => `
+                        <button type="button" class="btn btn-sm btn-link btn-edit-recurring-deduction" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
+                        <button type="button" class="btn btn-sm btn-link text-danger btn-delete-recurring-deduction" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>
+                    `
+                }
+            ],
+            initComplete: function () {
+                const self = this.api();
+                const $wrapper = $(self.table().container());
+                const $searchDiv = $wrapper.find('.dt-search');
+                if ($searchDiv.find('.btn-add-recurring-deduction').length === 0) {
+                    $searchDiv.append(`
+                        <button type="button" class="btn btn-primary btn-sm ms-1 btn-add-recurring-deduction">
+                            <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_recurring_deduction">${langData['add_recurring_deduction'] || 'Add Recurring Deduction'}</span>
+                        </button>
+                    `);
+                }
             }
         },
-        columns: [
-            // 2026-09-19, 4c: same name + shared descriptor tag as the EED tables above, and the
-            // catalog code searchable but not printed -- one shape for every standing-item table.
-            { data: null, render: {
-                display: (d, t, row) => `<div>${escapeHtml((currentLang === 'th' ? row.item_name_th : row.item_name_en) || '')}</div>${payeeDescriptorHtmlRd(row.payee)}`,
-                sort: (d, t, row) => (currentLang === 'th' ? row.item_name_th : row.item_name_en) || '',
-                filter: (d, t, row) => eedItemSearchText(row),
-            } },
-            { data: 'amount', className: 'text-end', render: { display: (d, t, row) => Number(d || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + recurringDeductionFeeSubLabel(row), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
-            { data: 'effective_date', render: { display: d => toDisplayDate(d), sort: d => d || '', filter: d => d || '' } },
-            { data: null, render: (d, t, row) => recurringDeductionSuspendPeriodCell(row) },
-            { data: null, render: (d, t, row) => recurringDeductionStatusBadge(row) },
-            {
-                data: null, orderable: false, className: 'text-center all',
-                render: (d, t, row) => `
-                    <button type="button" class="btn btn-sm btn-link text-primary btn-edit-recurring-deduction" data-id="${row.id}" title="${langData['edit'] || 'Edit'}"><i class="fa-solid fa-pen"></i></button>
-                    <button type="button" class="btn btn-sm btn-link text-danger btn-delete-recurring-deduction" data-id="${row.id}" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>
-                `
-            }
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        initComplete: function () {
-            const self = this.api();
-            const $wrapper = $(self.table().container());
-            const $searchDiv = $wrapper.find('.dt-search');
-            if ($searchDiv.find('.btn-add-recurring-deduction').length === 0) {
-                $searchDiv.append(`
-                    <button type="button" class="btn btn-primary btn-sm ms-1 btn-add-recurring-deduction">
-                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_recurring_deduction">${langData['add_recurring_deduction'] || 'Add Recurring Deduction'}</span>
-                    </button>
-                `);
-            }
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'item_name' },
-                    { index: 1, key: 'amount' },
-                    { index: 2, key: 'effective_date' },
-                    { index: 3, key: 'suspend_period' },
-                    { index: 4, key: 'status' },
-                ]
-            });
-        }
     });
     // Same hidden-tab-at-init width gotcha as tbRecurringEarning -- this table also lives on the
     // Salary tab, which isn't the default-active tab on page load.
@@ -4611,11 +4560,11 @@ function initEmpSignaturePad() {
     const canvas = document.getElementById('empSignaturePadCanvas');
     if (!canvas) return;
     empSignaturePadCtx = canvas.getContext('2d');
-    empSignaturePadCtx.fillStyle = '#ffffff';
+    empSignaturePadCtx.fillStyle = tokenColor('--hex-ffffff');
     empSignaturePadCtx.fillRect(0, 0, canvas.width, canvas.height);
     empSignaturePadCtx.lineWidth = 2.5;
     empSignaturePadCtx.lineCap = 'round';
-    empSignaturePadCtx.strokeStyle = '#1a1a1a';
+    empSignaturePadCtx.strokeStyle = tokenColor('--hex-1a1a1a');
     empSignaturePadHasStrokes = false;
     const startDraw = function (e) {
         e.preventDefault();

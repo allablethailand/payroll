@@ -20,9 +20,7 @@ function orgSyncCheckboxCellHtml(refId) {
     return `<input type="checkbox" class="org-sync-row-check" data-ref-id="${refId}"${orgSyncSelectedRefIds.has(refId) ? ' checked' : ''}>`;
 }
 function orgSyncUpdateBadgeHtml(row) {
-    return row.has_update
-        ? `<span class="badge bg-warning-subtle text-warning"><i class="fa-solid fa-rotate me-1"></i>${langData['employee_sync_update_available'] || 'Update available'}</span>`
-        : `<span class="badge bg-success-subtle text-success">${langData['employee_sync_up_to_date'] || 'Up to date'}</span>`;
+    return statusBadgeHtml(row.has_update ? 'update_available' : 'up_to_date', 'sync_update_state');
 }
 // Same "prettier" identity-cell convention as employee-sync.js's esRenderEmployeeCell() --
 // initial-letter avatar circle + name, so this reads like a real record row.
@@ -31,7 +29,7 @@ function orgSyncRenderItemCell(row, subtitle) {
     const letter = name.trim().charAt(0).toUpperCase() || '?';
     return `
         <div class="d-flex align-items-center gap-2 py-1">
-            <div class="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white flex-shrink-0" style="width:32px;height:32px;font-size:.78rem;background-color:#FF9900;">${orgSyncEscapeHtml(letter)}</div>
+            <div class="apv-person-avatar" style="width:32px;height:32px;min-width:32px;font-size:.78rem;">${orgSyncEscapeHtml(letter)}</div>
             <div class="lh-sm">
                 <div class="fw-semibold">${orgSyncEscapeHtml(name)}</div>
                 ${subtitle ? `<div class="text-muted small">${orgSyncEscapeHtml(subtitle)}</div>` : ''}
@@ -64,7 +62,8 @@ function orgSyncUpdateSelectedCount() {
 }
 
 function orgSyncRenderTables() {
-    $('#tb_org_sync_new').DataTable({
+    initSharedDataTable('#tb_org_sync_new', {
+        dtOptions: {
         destroy: true, responsive: true, paging: false, info: false, searching: false, ordering: false,
         data: orgSyncLastNewRows,
         language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
@@ -72,8 +71,10 @@ function orgSyncRenderTables() {
             { data: 'ref_id', orderable: false, className: 'text-center', render: d => orgSyncCheckboxCellHtml(d) },
             { data: null, render: (d, t, row) => orgSyncRenderItemCell(row) },
         ],
+        }
     });
-    $('#tb_org_sync_existing').DataTable({
+    initSharedDataTable('#tb_org_sync_existing', {
+        dtOptions: {
         destroy: true, responsive: true, paging: false, info: false, searching: false, ordering: false,
         data: orgSyncLastExistingRows,
         language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
@@ -82,6 +83,7 @@ function orgSyncRenderTables() {
             { data: null, render: (d, t, row) => orgSyncRenderItemCell(row, row.existing_code) },
             { data: null, render: (d, t, row) => orgSyncUpdateBadgeHtml(row) },
         ],
+        }
     });
 }
 
@@ -203,10 +205,8 @@ $(document).on('click', '#btnApplyOrgStructureSync', function () {
 });
 
 function orgSyncStatusBadge(status) {
-    const map = { completed: 'bg-success-subtle text-success', running: 'bg-warning-subtle text-warning', failed: 'bg-danger-subtle text-danger' };
-    const cls = map[status] || 'bg-light text-dark';
-    const text = langData['sync_log_status_' + status] || status;
-    return `<span class="badge ${cls}">${text}</span>`;
+    if (!['completed', 'running', 'failed'].includes(status)) return `<span class="text-muted">${escapeHtml(status)}</span>`;
+    return statusBadgeHtml(status, 'sync_batch_status');
 }
 
 function orgSyncRenderLogModalTitle() {
@@ -238,7 +238,7 @@ $(document).on('click', '.btn-open-org-sync-log', function () {
                         <td>${orgSyncEscapeHtml(byName)}</td>
                         <td>${orgSyncStatusBadge(r.status)}</td>
                         <td class="text-end">${orgSyncEscapeHtml(r.total_count)}</td>
-                        <td class="text-end text-success">${orgSyncEscapeHtml(r.success_count)}</td>
+                        <td class="text-end">${orgSyncEscapeHtml(r.success_count)}</td>
                         <td class="text-end ${Number(r.error_count) > 0 ? 'text-danger' : ''}">${orgSyncEscapeHtml(r.error_count)}</td>
                     </tr>
                 `;

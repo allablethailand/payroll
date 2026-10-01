@@ -43,7 +43,7 @@
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="taxStatutoryTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu active" id="company-setting-tab" data-bs-toggle="tab" data-bs-target="#company-setting-pane" type="button" role="tab" aria-controls="company-setting-pane" aria-selected="true">
-                <i class="fa-solid fa-scale-balanced me-2"></i><span data-i18n="tab_company_setting">Statutory Rates</span>
+                <span data-i18n="tab_company_setting">Statutory Rates</span>
             </button>
         </li>
         <!-- 2026-08-29, follow-up to Bank File Format: "ส่วน Format เอกสารของการนำส่งสรรพากร และ
@@ -60,7 +60,7 @@
              on a different (admin) page without rebuilding any of this. -->
         <li class="nav-item d-none" role="presentation">
             <button class="nav-link setup-menu" id="document-format-tab" data-bs-toggle="tab" data-bs-target="#document-format-pane" type="button" role="tab" aria-controls="document-format-pane" aria-selected="false">
-                <i class="fa-solid fa-file-lines me-2"></i><span data-i18n="tab_document_format">Document Format</span>
+                <span data-i18n="tab_document_format">Document Format</span>
             </button>
         </li>
         <!-- 2026-09-02, explicit request following an AskUserQuestion exchange -- confirmed Thai
@@ -70,7 +70,7 @@
              (never a hardcoded "correct" rate) -- see NonResidentTaxSettingModel's own docblock. -->
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="nonresident-tax-tab" data-bs-toggle="tab" data-bs-target="#nonresident-tax-pane" type="button" role="tab" aria-controls="nonresident-tax-pane" aria-selected="false">
-                <i class="fa-solid fa-passport me-2"></i><span data-i18n="tab_nonresident_tax">Non-Resident Foreign Tax</span>
+                <span data-i18n="tab_nonresident_tax">Non-Resident Foreign Tax</span>
             </button>
         </li>
     </ul>
@@ -80,7 +80,7 @@
          of the 3 panes below no longer sits flush against the tab bar above it. Only the TOP side --
          left/right/bottom spacing wasn't part of the complaint, and each pane already manages its
          own internal spacing (table margins, .card-surface padding, etc.). -->
-    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 pt-3" style="border-top-left-radius:0;border-top-right-radius:0;">
+    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 pt-3 rounded-top-0">
     <div class="tab-pane fade show active" id="company-setting-pane" role="tabpanel" aria-labelledby="company-setting-tab" tabindex="0">
         <p class="text-muted small mb-2" data-i18n="company_setting_description">Enable/disable statutory items for your company and adjust rates where the law permits, based on your company's registered country.</p>
         <!-- 2026-09-03, Backlog Phase 9, T044 -- relocated here from the removed Master Rates tab
@@ -101,7 +101,7 @@
                     <th scope="col" style="width: 15%;" data-i18n="table_current_rate">Rate in Use</th>
                     <th scope="col" style="width: 7%;" data-i18n="modal_company_rate_editable_short">Adjustable</th>
                     <th scope="col" style="width: 13%;" data-i18n="table_last_updated">Last Updated</th>
-                    <th scope="col" style="width: 8%; text-align: center;"></th>
+                    <th class="text-center" scope="col" style="width: 8%"></th>
                 </tr>
             </thead>
             <tbody></tbody>
@@ -163,7 +163,7 @@
                 </div>
             </div>
             <div class="d-flex justify-content-end gap-2">
-                <button type="button" class="btn btn-light border" id="nonresidentTaxCancelBtn">
+                <button type="button" class="btn btn-outline-secondary border" id="nonresidentTaxCancelBtn">
                     <i class="fa-solid fa-xmark me-1"></i><span data-i18n="cancel">Cancel</span>
                 </button>
                 <button type="button" class="btn btn-primary" id="nonresidentTaxSaveBtn">

@@ -120,7 +120,7 @@
             </div>
             <div class="modal-body" id="aisCellDetailBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -141,7 +141,7 @@
             </div>
             <div class="modal-body" id="aisAnnualDetailBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -230,7 +230,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="btnSaveUserSettings" data-i18n="save">Save</button>
             </div>
         </div>
@@ -256,7 +256,7 @@
                 <div id="quickLinksCustomizeList"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="btnSaveQuickLinks" data-i18n="save">Save</button>
             </div>
         </div>
@@ -302,7 +302,7 @@
                 <button type="button" class="btn btn-primary" id="btnAcceptTerms" disabled data-i18n="terms_and_conditions_accept_btn">I have read and accept the Terms and Conditions</button>
             </div>
             <div class="modal-footer terms-modal-footer-view">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -330,10 +330,10 @@
                     <table class="table table-sm table-hover align-middle w-100" id="tb_system_access_history">
                         <thead>
                             <tr>
-                                <th data-i18n="audit_log_performed_at">When</th>
-                                <th data-i18n="ip_address">IP Address</th>
-                                <th data-i18n="device">Device</th>
-                                <th data-i18n="browser">Browser</th>
+                                <th><span data-i18n="audit_log_performed_at">When</span></th>
+                                <th><span data-i18n="ip_address">IP Address</span></th>
+                                <th><span data-i18n="device">Device</span></th>
+                                <th><span data-i18n="browser">Browser</span></th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -341,7 +341,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -360,12 +360,12 @@
                     <table class="table table-hover table-sm align-middle w-100" id="tb_payslip_roster">
                         <thead class="table-light text-secondary small">
                             <tr>
-                                <th data-i18n="employee_no">Employee No.</th>
-                                <th data-i18n="name">Name</th>
-                                <th data-i18n="department">Department</th>
-                                <th data-i18n="position">Position</th>
-                                <th data-i18n="team">Team</th>
-                                <th class="text-center" data-i18n="download_count">Downloaded</th>
+                                <th><span data-i18n="employee_no">Employee No.</span></th>
+                                <th><span data-i18n="name">Name</span></th>
+                                <th><span data-i18n="department">Department</span></th>
+                                <th><span data-i18n="position">Position</span></th>
+                                <th><span data-i18n="team">Team</span></th>
+                                <th class="text-center"><span data-i18n="download_count">Downloaded</span></th>
                                 <th class="text-center"></th>
                             </tr>
                         </thead>
@@ -396,7 +396,7 @@
             </div>
             <div class="modal-body p-0">
                 <div id="reportsPreviewLoading" class="text-center text-muted py-5"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>
-                <iframe id="reportsPreviewFrame" class="d-none" style="width:100%; height:70vh; border:0;" title="Report preview"></iframe>
+                <iframe id="reportsPreviewFrame" class="d-none border-0" style="width:100%; height:70vh" title="Report preview"></iframe>
                 <div id="reportsPreviewUnavailable" class="text-center d-none py-4 px-4">
                     <div class="report-preview-unavailable-icon mx-auto mb-3">
                         <i class="fa-solid fa-file-circle-exclamation"></i>
@@ -445,11 +445,11 @@
                         <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" data-bs-auto-close="outside" id="reportsPreviewDeductionCodesBtn">
                             <span data-i18n="deduction_report_types">Deduction Types</span> (<span id="reportsPreviewDeductionCodesCount">0</span>)
                         </button>
-                        <div class="dropdown-menu p-2" id="reportsPreviewDeductionCodesMenu" style="min-width:280px; max-height:320px; overflow-y:auto;"></div>
+                        <div class="dropdown-menu p-2 overflow-y-auto" id="reportsPreviewDeductionCodesMenu" style="min-width:280px; max-height:320px"></div>
                     </div>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     <button type="button" class="btn btn-outline-primary reports-preview-download-btn" data-language="th"><img src="<?=asset('public/flags/th.png')?>" width="16" height="16" alt="TH" class="me-1"><span data-i18n="language_th">Thai</span></button>
                     <button type="button" class="btn btn-primary reports-preview-download-btn" data-language="en"><img src="<?=asset('public/flags/gb.png')?>" width="16" height="16" alt="EN" class="me-1"><span data-i18n="language_en">English</span></button>
                 </div>
@@ -487,7 +487,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -501,46 +501,34 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="station-filter mb-2" id="cycleReportHistoryStationFilter">
-                    <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                    <button type="button" class="station-filter-toggle" id="cycleReportHistoryStationFilterToggle" title="Toggle filter">
-                        <i class="fas fa-chevron-up"></i>
-                    </button>
-                    <div class="station-filter-body">
-                        <div class="row g-2">
-                            <div class="col-6 col-md-4">
-                                <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-                                <div class="input-group">
-                                    <input type="text" class="form-control datepicker" id="cycleReportHistoryDateFrom" autocomplete="off">
-                                    <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-4">
-                                <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-                                <div class="input-group">
-                                    <input type="text" class="form-control datepicker" id="cycleReportHistoryDateTo" autocomplete="off">
-                                    <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                                </div>
-                            </div>
-                        </div>
+                <?php
+                ob_start(); ?>
+                <div class="row g-2">
+                    <div class="col-6 col-md-4">
+                        <label class="form-label small mb-1" for="cycleReportHistoryDateFrom" data-i18n="filter_date_from">From</label>
+                        <input type="text" class="form-control datepicker" id="cycleReportHistoryDateFrom" autocomplete="off">
+                    </div>
+                    <div class="col-6 col-md-4">
+                        <label class="form-label small mb-1" for="cycleReportHistoryDateTo" data-i18n="filter_date_to">To</label>
+                        <input type="text" class="form-control datepicker" id="cycleReportHistoryDateTo" autocomplete="off">
                     </div>
                 </div>
-                <div class="station-filter-clear-row d-none" id="cycleReportHistoryFilterClearRow">
-                    <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCycleReportHistoryClearFilter">
-                        <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                    </button>
-                </div>
+                <?php
+                $filter_fields_html = ob_get_clean();
+                $id = 'cycleReportHistoryFilterBar';
+                include __DIR__ . '/../partials/filter-bar.php';
+                ?>
                 <div class="table-responsive">
                     <table class="table table-sm align-middle w-100" id="tb_cycle_report_history">
                         <thead class="table-light text-secondary small">
                             <tr>
-                                <th data-i18n="downloaded_at">Date/Time</th>
-                                <th data-i18n="downloaded_by">By</th>
-                                <th data-i18n="language">Language</th>
-                                <th data-i18n="device">Device</th>
-                                <th data-i18n="browser">Browser</th>
+                                <th><span data-i18n="downloaded_at">Date/Time</span></th>
+                                <th><span data-i18n="downloaded_by">By</span></th>
+                                <th><span data-i18n="language">Language</span></th>
+                                <th><span data-i18n="device">Device</span></th>
+                                <th><span data-i18n="browser">Browser</span></th>
                                 <th>IP</th>
-                                <th data-i18n="source">Source</th>
+                                <th><span data-i18n="source">Source</span></th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -548,7 +536,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -604,15 +592,15 @@
                                     <h6 class="mb-0"><span data-i18n="employee_sync_tab_new">New</span></h6>
                                     <div class="text-muted small" data-i18n="employee_sync_tab_new_hint">Not in this system yet</div>
                                 </div>
-                                <span class="badge rounded-pill bg-success" id="syncNewCount">0</span>
+                                <span class="count-inline" id="syncNewCount">0</span>
                             </div>
                             <div class="es-sync-scroll-box">
                                 <table class="table table-hover align-middle w-100 mb-0 es-sync-table" id="tb_sync_new">
                                     <thead class="table-light text-secondary">
                                         <tr>
                                             <th class="es-sync-th-check"><input type="checkbox" id="syncNewSelectAll"></th>
-                                            <th data-i18n="employee">Employee</th>
-                                            <th data-i18n="employee_sync_dept_position">Department / Position</th>
+                                            <th><span data-i18n="employee">Employee</span></th>
+                                            <th><span data-i18n="employee_sync_dept_position">Department / Position</span></th>
                                         </tr>
                                     </thead>
                                     <tbody></tbody>
@@ -626,16 +614,16 @@
                                     <h6 class="mb-0"><span data-i18n="employee_sync_tab_existing">Already Exists</span></h6>
                                     <div class="text-muted small" data-i18n="employee_sync_tab_existing_hint">Already in this system</div>
                                 </div>
-                                <span class="badge rounded-pill bg-secondary" id="syncExistingCount">0</span>
+                                <span class="count-inline" id="syncExistingCount">0</span>
                             </div>
                             <div class="es-sync-scroll-box">
                                 <table class="table table-hover align-middle w-100 mb-0 es-sync-table" id="tb_sync_existing">
                                     <thead class="table-light text-secondary">
                                         <tr>
                                             <th class="es-sync-th-check"><input type="checkbox" id="syncExistingSelectAll"></th>
-                                            <th data-i18n="employee">Employee</th>
-                                            <th data-i18n="department">Department</th>
-                                            <th data-i18n="employee_sync_update_col">Update Available</th>
+                                            <th><span data-i18n="employee">Employee</span></th>
+                                            <th><span data-i18n="department">Department</span></th>
+                                            <th><span data-i18n="employee_sync_update_col">Update Available</span></th>
                                         </tr>
                                     </thead>
                                     <tbody></tbody>
@@ -653,7 +641,7 @@
                     <button type="button" class="btn btn-primary d-none" id="btnApplyEmployeeSync">
                         <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="syncSelectedCount">0</span>)
                     </button>
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>
@@ -673,7 +661,7 @@
                 <div id="syncLogCards"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -706,7 +694,7 @@
                             </div>
                             <div class="card-body p-2">
                                 <input type="text" class="form-control form-control-sm mb-2" id="saOutsideSearch" placeholder="Search...">
-                                <div class="sa-list" id="saOutsideList" style="max-height:340px;overflow-y:auto;"></div>
+                                <div class="sa-list overflow-y-auto" id="saOutsideList" style="max-height:340px"></div>
                             </div>
                             <div class="card-footer text-end bg-white">
                                 <button type="button" class="btn btn-primary btn-sm" id="btnSaPullIn" disabled>
@@ -722,10 +710,10 @@
                             </div>
                             <div class="card-body p-2">
                                 <input type="text" class="form-control form-control-sm mb-2" id="saInSearch" placeholder="Search...">
-                                <div class="sa-list" id="saInList" style="max-height:340px;overflow-y:auto;"></div>
+                                <div class="sa-list overflow-y-auto" id="saInList" style="max-height:340px"></div>
                             </div>
                             <div class="card-footer text-end bg-white">
-                                <button type="button" class="btn btn-outline-danger btn-sm" id="btnSaMoveOut" disabled>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnSaMoveOut" disabled>
                                     <i class="fa-solid fa-arrow-right me-1"></i><span data-i18n="sa_move_out">Move Out</span>
                                 </button>
                             </div>
@@ -734,7 +722,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -773,7 +761,7 @@
                     <div class="text-secondary small" id="documentNumberingPreview"></div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
                 </div>
             </form>
@@ -925,7 +913,7 @@
                             <label class="form-label mb-1" data-i18n="modal_cycle_bank_account">Bank Accounts</label>
                         </div>
                         <div class="col-sm-9">
-                            <div id="cycleBankAccountsList" class="border rounded-3 p-2" style="max-height:180px;overflow-y:auto;">
+                            <div id="cycleBankAccountsList" class="border rounded-3 p-2 overflow-y-auto" style="max-height:180px">
                                 <div class="text-muted small" data-i18n="loading">Loading...</div>
                             </div>
                             <div id="cycleBankAccountsHint" class="form-text" data-i18n="modal_cycle_bank_account_hint">Leave every account unchecked to use the company's default bank account.</div>
@@ -954,7 +942,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 </div>
             </form>
         </div>
@@ -979,7 +967,7 @@
             <div class="modal-header">
                 <h5 class="modal-title text-secondary d-flex align-items-center gap-2" id="pedTypeModalLabel">
                     <i class="fa-solid fa-pen-to-square text-secondary" id="pedTypeModalIcon"></i>
-                    <span class="badge fs-6" id="pedTypeModalBadge"></span>
+                    <span class="text-muted" id="pedTypeModalBadge"></span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -1089,8 +1077,8 @@
                                      Interest/Fee toggle (employee/detail.js's #eedInterestToggle) -- not a
                                      new pattern. -->
                                 <div class="btn-group btn-group-sm" role="group" id="pedTaxTreatmentToggle" data-ped-segmented="tax_treatment">
-                                    <button type="button" class="btn btn-outline-brand" data-value="taxable" data-i18n-title="taxable" title="Taxable"><span data-i18n="ped_tax_treatment_taxable_short">Taxable</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="non_taxable" data-i18n-title="non_taxable" title="Tax-exempt"><span data-i18n="ped_tax_treatment_exempt_short">Tax Exempt</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="taxable" data-i18n-title="taxable" title="Taxable"><span data-i18n="ped_tax_treatment_taxable_short">Taxable</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="non_taxable" data-i18n-title="non_taxable" title="Tax-exempt"><span data-i18n="ped_tax_treatment_exempt_short">Tax Exempt</span></button>
                                 </div>
                             </div>
                         </div>
@@ -1118,8 +1106,8 @@
                             <div class="col-sm-9">
                                 <input type="hidden" id="tax_deduction_impact" name="tax_deduction_impact">
                                 <div class="btn-group btn-group-sm" role="group" id="pedTaxDeductionImpactToggle" data-ped-segmented="tax_deduction_impact">
-                                    <button type="button" class="btn btn-outline-brand" data-value="before_tax" data-i18n-title="impact_before_tax" title="Deduct before tax (reduces taxable income)"><span data-i18n="ped_impact_before_tax_short">Before Tax</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="after_tax" data-i18n-title="impact_after_tax" title="Deduct after tax (reduces net pay only)"><span data-i18n="ped_impact_after_tax_short">After Tax</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="before_tax" data-i18n-title="impact_before_tax" title="Deduct before tax (reduces taxable income)"><span data-i18n="ped_impact_before_tax_short">Before Tax</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="after_tax" data-i18n-title="impact_after_tax" title="Deduct after tax (reduces net pay only)"><span data-i18n="ped_impact_after_tax_short">After Tax</span></button>
                                 </div>
                             </div>
                         </div>
@@ -1133,8 +1121,8 @@
                                      Interest/Fee toggle's own none-state already uses) is a real 3rd choice
                                      here, not a placeholder. -->
                                 <div class="btn-group btn-group-sm" role="group" id="pedStatutoryReportToggle" data-ped-segmented="statutory_report_code">
-                                    <button type="button" class="btn btn-outline-brand active" data-value=""><span data-i18n="interest_none">None</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="TH_SLF" data-i18n-title="statutory_report_th_slf" title="Student Loan Fund (กยศ.)"><span data-i18n="ped_statutory_slf_short">SLF</span></button>
+                                    <button type="button" class="btn btn-outline-secondary active" data-value=""><span data-i18n="interest_none">None</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="TH_SLF" data-i18n-title="statutory_report_th_slf" title="Student Loan Fund (กยศ.)"><span data-i18n="ped_statutory_slf_short">SLF</span></button>
                                 </div>
                             </div>
                         </div>
@@ -1176,8 +1164,8 @@
                             <div class="col-sm-3">
                                 <input type="hidden" id="default_fee_base" name="default_fee_base">
                                 <div class="btn-group btn-group-sm" role="group" id="pedDefaultFeeBaseToggle" data-ped-segmented="default_fee_base">
-                                    <button type="button" class="btn btn-outline-brand" data-value="principal_amount" data-i18n-title="fee_base_option_principal" title="Principal Amount"><span data-i18n="ped_fee_base_principal_short">From Principal</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="base_salary" data-i18n-title="fee_base_option_base_salary" title="Base Salary"><span data-i18n="ped_fee_base_salary_short">From Base Salary</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="principal_amount" data-i18n-title="fee_base_option_principal" title="Principal Amount"><span data-i18n="ped_fee_base_principal_short">From Principal</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="base_salary" data-i18n-title="fee_base_option_base_salary" title="Base Salary"><span data-i18n="ped_fee_base_salary_short">From Base Salary</span></button>
                                 </div>
                             </div>
                         </div>
@@ -1185,7 +1173,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 </div>
             </form>
         </div>
@@ -1216,7 +1204,7 @@
                             <div class="form-check form-check-sm mb-0"><input class="form-check-input ada-select-all" type="checkbox" data-scope="department" id="adaSelectAllDept"><label class="form-check-label small" for="adaSelectAllDept" data-i18n="select_all">Select All</label></div>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-2 ada-scope-search" data-scope="department" data-i18n="search" placeholder="Search...">
-                        <div class="ada-scope-list border rounded-2 p-2" id="adaScopeListDepartment" style="max-height:280px;overflow-y:auto;"></div>
+                        <div class="ada-scope-list border rounded-2 p-2 overflow-y-auto" id="adaScopeListDepartment" style="max-height:280px"></div>
                     </div>
                     <div class="col-md-4">
                         <div class="d-flex justify-content-between align-items-center mb-1">
@@ -1224,7 +1212,7 @@
                             <div class="form-check form-check-sm mb-0"><input class="form-check-input ada-select-all" type="checkbox" data-scope="team" id="adaSelectAllTeam"><label class="form-check-label small" for="adaSelectAllTeam" data-i18n="select_all">Select All</label></div>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-2 ada-scope-search" data-scope="team" data-i18n="search" placeholder="Search...">
-                        <div class="ada-scope-list border rounded-2 p-2" id="adaScopeListTeam" style="max-height:280px;overflow-y:auto;"></div>
+                        <div class="ada-scope-list border rounded-2 p-2 overflow-y-auto" id="adaScopeListTeam" style="max-height:280px"></div>
                     </div>
                     <div class="col-md-4">
                         <div class="d-flex justify-content-between align-items-center mb-1">
@@ -1232,12 +1220,12 @@
                             <div class="form-check form-check-sm mb-0"><input class="form-check-input ada-select-all" type="checkbox" data-scope="employee" id="adaSelectAllEmployee"><label class="form-check-label small" for="adaSelectAllEmployee" data-i18n="select_all">Select All</label></div>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-2 ada-scope-search" data-scope="employee" data-i18n="search" placeholder="Search...">
-                        <div class="ada-scope-list border rounded-2 p-2" id="adaScopeListEmployee" style="max-height:280px;overflow-y:auto;"></div>
+                        <div class="ada-scope-list border rounded-2 p-2 overflow-y-auto" id="adaScopeListEmployee" style="max-height:280px"></div>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="btnSaveAttendanceDeductionAssign"><i class="fa-solid fa-check me-1"></i><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -1262,7 +1250,7 @@
                      creating a brand-new variant (see payroll-configuration.js's openAttendanceDeductionRuleModal()). -->
                 <div class="mb-3" id="attendanceRuleScopeBadgeWrapper">
                     <label class="form-label small text-muted mb-1" data-i18n="attendance_deduction_scope">Applies To</label>
-                    <div><span class="badge bg-secondary-subtle text-secondary" id="attendanceRuleScopeBadge"></span></div>
+                    <div><span class="text-muted" id="attendanceRuleScopeBadge"></span></div>
                 </div>
                 <div class="row g-2 mb-3 d-none" id="attendanceRuleScopePickerWrapper">
                     <div class="col-5">
@@ -1334,7 +1322,7 @@
                                 <tr>
                                     <th id="attendanceBracketMinLabel">From</th>
                                     <th id="attendanceBracketMaxLabel">To</th>
-                                    <th data-i18n="attendance_deduction_bracket_amount">Deduction Amount</th>
+                                    <th><span data-i18n="attendance_deduction_bracket_amount">Deduction Amount</span></th>
                                     <th class="text-end"></th>
                                 </tr>
                             </thead>
@@ -1371,7 +1359,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary px-4" onclick="saveAttendanceDeductionRule()"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -1401,7 +1389,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary px-4" data-i18n="submit_request">Submit Request</button>
                 </div>
             </form>
@@ -1430,7 +1418,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary px-4" data-i18n="submit_request">Submit Request</button>
                 </div>
             </form>
@@ -1458,8 +1446,8 @@
                         <textarea id="requestActionNote" class="form-control" rows="2" maxlength="500" data-i18n="approve_note_placeholder" placeholder="Any comment for this approval..."></textarea>
                     </div>
                     <div class="d-flex gap-2">
-                        <button type="button" class="btn btn-success btn-sm" id="btnApproveRequest"><i class="fa-solid fa-check me-1"></i><span data-i18n="approve">Approve</span></button>
-                        <button type="button" class="btn btn-outline-danger btn-sm" id="btnRejectRequest"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="reject">Reject</span></button>
+                        <button type="button" class="btn btn-primary btn-sm" id="btnApproveRequest"><i class="fa-solid fa-check me-1"></i><span data-i18n="approve">Approve</span></button>
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnRejectRequest"><i class="fa-solid fa-xmark me-1"></i><span data-i18n="reject">Reject</span></button>
                         <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCancelRequest"><i class="fa-solid fa-ban me-1"></i><span data-i18n="cancel_request">Cancel Request</span></button>
                     </div>
                 </div>
@@ -1490,9 +1478,9 @@
             <div class="modal-header">
                 <h5 class="modal-title text-secondary" id="statutoryRateModalLabel">
                     <i class="fa-solid fa-sliders me-1"></i><span id="srModalItemName"></span>
-                    <span class="badge bg-light text-dark border ms-2 d-none" id="srModalScopeBadgeMaster" data-i18n="statutory_scope_master">Master</span>
-                    <span class="badge bg-warning-subtle text-warning border ms-2 d-none" id="srModalScopeBadgeCustom" data-i18n="statutory_scope_custom">Your Company's Item</span>
-                    <span class="badge bg-secondary ms-2 d-none" id="srModalReadOnlyBadge" data-i18n="view_only">View Only</span>
+                    <span class="text-muted ms-2 d-none" id="srModalScopeBadgeMaster" data-i18n="statutory_scope_master">Master</span>
+                    <span class="text-muted ms-2 d-none" id="srModalScopeBadgeCustom" data-i18n="statutory_scope_custom">Your Company's Item</span>
+                    <span class="text-muted ms-2 d-none" id="srModalReadOnlyBadge" data-i18n="view_only">View Only</span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
@@ -1502,7 +1490,7 @@
                 <ul class="nav nav-tabs setup-tabs mb-3" id="statutoryRateModalTabs" role="tablist">
                     <li class="nav-item d-none" role="presentation" id="srDetailsTabItem">
                         <button class="nav-link setup-menu" id="sr-details-tab" data-bs-toggle="tab" data-bs-target="#sr-details-pane" type="button" role="tab">
-                            <i class="fa-solid fa-pen-to-square me-1"></i><span data-i18n="sr_tab_details">Item Details</span>
+                            <span data-i18n="sr_tab_details">Item Details</span>
                         </button>
                     </li>
                     <!-- 2026-09-08, Clone+Version redesign -- the "Company Setting" tab (a single flat
@@ -1522,7 +1510,7 @@
                          key is used in exactly this ONE place before renaming its value. -->
                     <li class="nav-item d-none" role="presentation" id="srHistoryTabItem">
                         <button class="nav-link setup-menu" id="sr-history-tab" data-bs-toggle="tab" data-bs-target="#sr-history-pane" type="button" role="tab">
-                            <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="rate_history">Rate History</span>
+                            <span data-i18n="rate_history">Rate History</span>
                         </button>
                     </li>
                 </ul>
@@ -1616,7 +1604,7 @@
                                 </div>
                             </div>
                             <div class="d-flex justify-content-between mt-4">
-                                <button type="button" class="btn btn-outline-brand d-none" id="srPromoteItemBtn">
+                                <button type="button" class="btn btn-outline-secondary d-none" id="srPromoteItemBtn">
                                     <i class="fa-solid fa-arrow-up-from-bracket me-1"></i><span data-i18n="sr_promote_item_btn">Promote to System Default</span>
                                 </button>
                                 <button type="submit" class="btn btn-primary ms-auto"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
@@ -1651,7 +1639,7 @@
                                     <button type="button" class="btn btn-sm btn-outline-secondary d-none" id="srPullFromMasterBtn">
                                         <i class="fa-solid fa-cloud-arrow-down me-1"></i><span data-i18n="sr_pull_from_master_btn">Pull from Master</span>
                                     </button>
-                                    <button type="button" class="btn btn-sm btn-outline-brand" id="srAddRateVersionBtn">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="srAddRateVersionBtn">
                                         <i class="fa-solid fa-plus me-1"></i><span data-i18n="add_bracket_version">Add Rate Version</span>
                                     </button>
                                 </div>
@@ -1689,17 +1677,11 @@
                                     <div class="row g-3 mb-3">
                                         <div class="col-md-6">
                                             <label class="form-label mb-1"><span data-i18n="modal_effective_date">Effective Date</span> <span class="text-danger">*</span></label>
-                                            <div class="input-group">
-                                                <input type="text" class="form-control required datepicker" id="sr_rate_effective_date" autocomplete="off">
-                                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                                            </div>
+                                            <input type="text" class="form-control required datepicker" id="sr_rate_effective_date" autocomplete="off">
                                         </div>
                                         <div class="col-md-6">
                                             <label class="form-label mb-1"><span data-i18n="modal_end_date">End Date</span></label>
-                                            <div class="input-group">
-                                                <input type="text" class="form-control datepicker" id="sr_rate_end_date" autocomplete="off">
-                                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                                            </div>
+                                            <input type="text" class="form-control datepicker" id="sr_rate_end_date" autocomplete="off">
                                             <span class="text-muted small" data-i18n="end_date_optional_hint">Leave blank if this rate is still in effect (open-ended).</span>
                                         </div>
                                     </div>
@@ -1737,9 +1719,9 @@
                                             <table class="table pl-table mb-0">
                                                 <thead>
                                                     <tr>
-                                                        <th data-i18n="bracket_from">From</th>
-                                                        <th data-i18n="bracket_to">To</th>
-                                                        <th data-i18n="bracket_rate">Rate (%)</th>
+                                                        <th><span data-i18n="bracket_from">From</span></th>
+                                                        <th><span data-i18n="bracket_to">To</span></th>
+                                                        <th><span data-i18n="bracket_rate">Rate (%)</span></th>
                                                         <th style="width:50px;"></th>
                                                     </tr>
                                                 </thead>
@@ -1821,10 +1803,10 @@
                  id) -- see showSrHistoryEditView()'s own toggle. View mode (srViewCurrentVersion())
                  hides this whole footer entirely via .sr-modal-readonly (style.css). -->
             <div class="modal-footer d-none" id="srHistoryModalFooter">
-                <button type="button" class="btn btn-outline-brand d-none me-auto" id="srPromoteVersionBtn">
+                <button type="button" class="btn btn-outline-secondary d-none me-auto" id="srPromoteVersionBtn">
                     <i class="fa-solid fa-arrow-up-from-bracket me-1"></i><span data-i18n="sr_promote_version_btn">Promote to System Default</span>
                 </button>
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 <button type="submit" form="srRateVersionForm" class="btn btn-primary" id="srRateVersionSaveBtn">
                     <i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span>
                 </button>
@@ -1864,7 +1846,7 @@
                  markup here -- nothing to keep in sync if that form's fields ever change. -->
             <div class="modal-body" id="srAddVersionModalBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <!-- Submits the SAME #srRateVersionForm via the HTML5 `form` attribute (works
                      regardless of that form's current DOM parent) -- a second SUBMIT TRIGGER for
                      one shared form, not a second copy of it. #srRateVersionSaveBtn (the original,
@@ -1895,10 +1877,7 @@
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1"><span data-i18n="work_date">Work Date</span> <span class="text-danger">*</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker required" id="attendanceWorkDate" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker required" id="attendanceWorkDate" autocomplete="off">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1" data-i18n="shift">Shift</label>
@@ -1927,7 +1906,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveAttendance(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -1954,17 +1933,11 @@
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1"><span data-i18n="start_date">Start Date</span> <span class="text-danger">*</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker required" id="leaveStartDate" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker required" id="leaveStartDate" autocomplete="off">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1"><span data-i18n="end_date">End Date</span> <span class="text-danger">*</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker required" id="leaveEndDate" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker required" id="leaveEndDate" autocomplete="off">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1"><span data-i18n="total_days">Total Days</span> <span class="text-danger">*</span></label>
@@ -1981,7 +1954,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveLeave(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -2008,10 +1981,7 @@
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1"><span data-i18n="ot_date">OT Date</span> <span class="text-danger">*</span></label>
-                        <div class="input-group">
-                            <input type="text" class="form-control datepicker required" id="overtimeDate" autocomplete="off">
-                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                        </div>
+                        <input type="text" class="form-control datepicker required" id="overtimeDate" autocomplete="off">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1"><span data-i18n="hours">Hours</span> <span class="text-danger">*</span></label>
@@ -2028,7 +1998,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveOvertime(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -2044,7 +2014,7 @@
                 <p class="text-muted small mb-0"><span data-i18n="delete_confirm_question">Delete</span> "<span id="manualEntryDeleteTargetName"></span>"?<br><span data-i18n="delete_irreversible_note">This action cannot be undone.</span></p>
             </div>
             <div class="modal-footer border-0 justify-content-center pb-4">
-                <button class="btn btn-light px-3" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary px-3" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-danger px-3" onclick="confirmManualEntryDelete()"><i class="fa-solid fa-trash me-1"></i><span data-i18n="delete">Delete</span></button>
             </div>
         </div>
@@ -2106,7 +2076,7 @@
             </div>
             <div class="modal-footer">
                 <span class="text-muted small me-auto" data-i18n="bulk_entry_footer_hint">Add or import as many rows as you like, then Save once.</span>
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary px-4" id="btnBulkEntrySaveAll"><i class="fa-solid fa-check me-1"></i><span data-i18n="bulk_entry_save_all">Save All</span></button>
             </div>
         </div>
@@ -2166,14 +2136,14 @@
                 <div id="bulkImportReviewStep" class="d-none">
                     <div class="row g-2 mb-3" id="bulkImportSummaryCards"></div>
                     <div class="alert alert-warning d-none" id="bulkImportUnmappedAlert"></div>
-                    <div class="table-responsive" style="max-height:340px;overflow-y:auto;">
+                    <div class="table-responsive overflow-y-auto" style="max-height:340px">
                         <table class="table table-sm" id="tb_bulk_import_preview">
                             <thead class="table-light">
                                 <tr>
-                                    <th data-i18n="row">Row</th>
-                                    <th data-i18n="status">Status</th>
-                                    <th data-i18n="action">Action</th>
-                                    <th data-i18n="message">Message</th>
+                                    <th><span data-i18n="row">Row</span></th>
+                                    <th><span data-i18n="status">Status</span></th>
+                                    <th><span data-i18n="action">Action</span></th>
+                                    <th><span data-i18n="message">Message</span></th>
                                 </tr>
                             </thead>
                             <tbody></tbody>
@@ -2182,13 +2152,13 @@
                 </div>
             </div>
             <div class="modal-footer" id="bulkImportAttachFooter">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary px-4" id="btnBulkImportRunPreview"><i class="fa-solid fa-file-import me-1"></i><span data-i18n="bulk_import_run">Import</span></button>
             </div>
             <div class="modal-footer d-none" id="bulkImportReviewFooter">
-                <button type="button" class="btn btn-light me-auto" id="btnBulkImportBack"><i class="fa-solid fa-arrow-left me-1"></i><span data-i18n="back">Back</span></button>
+                <button type="button" class="btn btn-outline-secondary me-auto" id="btnBulkImportBack"><i class="fa-solid fa-arrow-left me-1"></i><span data-i18n="back">Back</span></button>
                 <button type="button" class="btn btn-outline-primary" id="btnBulkImportLoadToGrid"><i class="fa-solid fa-table-cells me-1"></i><span data-i18n="bulk_import_load_to_grid">Load into Grid to Edit</span></button>
-                <button type="button" class="btn btn-success px-4" id="btnBulkImportSaveDirect"><i class="fa-solid fa-check me-1"></i><span data-i18n="bulk_import_save_direct">Save Directly</span></button>
+                <button type="button" class="btn btn-primary px-4" id="btnBulkImportSaveDirect"><i class="fa-solid fa-check me-1"></i><span data-i18n="bulk_import_save_direct">Save Directly</span></button>
             </div>
         </div>
     </div>
@@ -2211,7 +2181,7 @@
                 </div>
             </div>
             <div class="modal-footer border-0">
-                <button class="btn btn-light px-3" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button class="btn btn-outline-secondary px-3" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -2235,8 +2205,8 @@
                     <textarea class="form-control" id="approve_note" name="note" rows="3" data-i18n="approve_note_placeholder" placeholder="Any comment for this approval..."></textarea>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
-                    <button type="submit" class="btn btn-success"><span data-i18n="approval_confirm_approve">Confirm Approve</span></button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><span data-i18n="approval_confirm_approve">Confirm Approve</span></button>
                 </div>
             </form>
         </div>
@@ -2260,7 +2230,7 @@
                     <textarea class="form-control required" id="reject_reason" name="reason" rows="3" data-i18n="reject_reason_placeholder" placeholder="Explain what needs to be fixed before resubmitting..."></textarea>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-danger"><span data-i18n="approval_confirm_reject">Confirm Reject</span></button>
                 </div>
             </form>
@@ -2285,7 +2255,7 @@
                     <textarea class="form-control required" id="request_info_reason" name="reason" rows="3" data-i18n="request_info_reason_placeholder" placeholder="Explain what additional information is needed before this can be decided..."></textarea>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary"><span data-i18n="approval_confirm_request_info">Confirm</span></button>
                 </div>
             </form>
@@ -2310,7 +2280,7 @@
             </div>
             <div class="modal-footer justify-content-between">
                 <div id="approvalTimelineModalActions" class="d-flex flex-wrap gap-2"></div>
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -2370,10 +2340,7 @@
                             <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-9">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker required" id="eed_effective_date" name="effective_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker required" id="eed_effective_date" name="effective_date" autocomplete="off">
                         </div>
                     </div>
                     <hr class="my-4 text-muted opacity-25">
@@ -2420,9 +2387,9 @@
                             </div>
                             <div class="col-sm-9">
                                 <div class="btn-group btn-group-sm" role="group" id="eedInterestToggle">
-                                    <button type="button" class="btn btn-outline-brand active" data-value="none"><span data-i18n="interest_none">None</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="interest"><span data-i18n="interest_has">Interest</span></button>
-                                    <button type="button" class="btn btn-outline-brand" data-value="fee"><span data-i18n="fee_has">Fee</span></button>
+                                    <button type="button" class="btn btn-outline-secondary active" data-value="none"><span data-i18n="interest_none">None</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="interest"><span data-i18n="interest_has">Interest</span></button>
+                                    <button type="button" class="btn btn-outline-secondary" data-value="fee"><span data-i18n="fee_has">Fee</span></button>
                                 </div>
                             </div>
                         </div>
@@ -2433,8 +2400,8 @@
                             <div class="col-sm-9">
                                 <div class="d-flex align-items-center flex-wrap gap-2">
                                     <div class="btn-group btn-group-sm" role="group" id="eedInterestTypeToggle">
-                                        <button type="button" class="btn btn-outline-brand active" data-value="fixed"><span data-i18n="interest_fixed">Flat</span></button>
-                                        <button type="button" class="btn btn-outline-brand" data-value="reducing_balance"><span data-i18n="interest_reducing_balance">Reducing Balance</span></button>
+                                        <button type="button" class="btn btn-outline-secondary active" data-value="fixed"><span data-i18n="interest_fixed">Flat</span></button>
+                                        <button type="button" class="btn btn-outline-secondary" data-value="reducing_balance"><span data-i18n="interest_reducing_balance">Reducing Balance</span></button>
                                     </div>
                                     <div class="input-group input-group-sm" style="max-width:180px;">
                                         <input type="number" step="0.01" min="0.01" class="form-control" id="eed_interest_rate" name="interest_rate" placeholder="0.00">
@@ -2461,7 +2428,7 @@
                                         <select class="form-select form-select-sm select2-static" style="max-width:170px;" id="eedRateHelperFrequency"
                                                 data-option-keys="rate_helper_freq_monthly,rate_helper_freq_semi_monthly,rate_helper_freq_bi_weekly,rate_helper_freq_weekly"
                                                 data-option-values="12,24,26,52"></select>
-                                        <button type="button" class="btn btn-outline-brand btn-sm" id="eedRateHelperApply" data-i18n="rate_helper_apply">Use this rate</button>
+                                        <button type="button" class="btn btn-outline-secondary btn-sm" id="eedRateHelperApply" data-i18n="rate_helper_apply">Use this rate</button>
                                         <span class="small text-muted" id="eedRateHelperResult"></span>
                                     </div>
                                 </div>
@@ -2518,11 +2485,11 @@
                                 <table class="table table-sm table-striped align-middle mb-0" id="eedInstallmentTable">
                                     <thead>
                                         <tr>
-                                            <th class="text-muted small" style="width:15%;" data-i18n="installment_no_col">#</th>
-                                            <th class="text-muted small d-none" id="eedInstallmentPrincipalHeader" data-i18n="installment_principal_col">Principal</th>
-                                            <th class="text-muted small d-none" id="eedInstallmentInterestHeader" data-i18n="installment_interest_col">Interest</th>
-                                            <th class="text-muted small" data-i18n="installment_amount_col">Amount</th>
-                                            <th class="text-muted small d-none" id="eedInstallmentStatusHeader" data-i18n="installment_status_col">Status</th>
+                                            <th class="text-muted small" style="width:15%;"><span data-i18n="installment_no_col">#</span></th>
+                                            <th class="text-muted small d-none" id="eedInstallmentPrincipalHeader"><span data-i18n="installment_principal_col">Principal</span></th>
+                                            <th class="text-muted small d-none" id="eedInstallmentInterestHeader"><span data-i18n="installment_interest_col">Interest</span></th>
+                                            <th class="text-muted small"><span data-i18n="installment_amount_col">Amount</span></th>
+                                            <th class="text-muted small d-none" id="eedInstallmentStatusHeader"><span data-i18n="installment_status_col">Status</span></th>
                                         </tr>
                                     </thead>
                                     <tbody id="eedInstallmentTableBody"></tbody>
@@ -2617,7 +2584,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     <button type="submit" class="btn btn-primary px-4" id="eedSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
@@ -2664,10 +2631,7 @@
                             <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker required" id="ere_effective_date" name="effective_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker required" id="ere_effective_date" name="effective_date" autocomplete="off">
                         </div>
                     </div>
                     <hr class="my-4 text-muted opacity-25">
@@ -2678,10 +2642,7 @@
                             <label class="form-label mb-1"><span data-i18n="suspend_from">Suspend From</span></label>
                         </div>
                         <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="ere_suspended_from" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker" id="ere_suspended_from" autocomplete="off">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -2689,10 +2650,7 @@
                             <label class="form-label mb-1"><span data-i18n="suspend_to">Suspend To</span></label>
                         </div>
                         <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="ere_suspended_to" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker" id="ere_suspended_to" autocomplete="off">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -2705,7 +2663,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary px-4" id="ereSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
@@ -2754,10 +2712,7 @@
                             <label class="form-label mb-1"><span data-i18n="effective_date">Effective Date</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker required" id="erd_effective_date" name="effective_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker required" id="erd_effective_date" name="effective_date" autocomplete="off">
                         </div>
                     </div>
                     <!-- 2026-08-31, explicit request: "Form ที่เป็นรายการหัก ทุก Form ให้เพิ่มว่า คิดดอกเบี้ย
@@ -2841,10 +2796,7 @@
                             <label class="form-label mb-1"><span data-i18n="suspend_from">Suspend From</span></label>
                         </div>
                         <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="erd_suspended_from" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker" id="erd_suspended_from" autocomplete="off">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -2852,10 +2804,7 @@
                             <label class="form-label mb-1"><span data-i18n="suspend_to">Suspend To</span></label>
                         </div>
                         <div class="col-sm-8">
-                            <div class="input-group">
-                                <input type="text" class="form-control datepicker" id="erd_suspended_to" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control datepicker" id="erd_suspended_to" autocomplete="off">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -2868,7 +2817,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="close">Close</button>
                     <button type="submit" class="btn btn-primary px-4" id="erdSaveBtn" data-i18n="save_item">Save Item</button>
                 </div>
             </form>
@@ -2888,8 +2837,8 @@
                 <p class="text-muted small mt-2 mb-0" data-i18n="draw_signature_hint">Draw with your mouse or finger, then click Save.</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" id="empSignaturePadClearBtn"><i class="fa-solid fa-eraser me-1"></i><span data-i18n="clear">Clear</span></button>
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" id="empSignaturePadClearBtn"><i class="fa-solid fa-eraser me-1"></i><span data-i18n="clear">Clear</span></button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="empSignaturePadSaveBtn"><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -2905,11 +2854,11 @@
             </div>
             <div class="modal-body">
                 <input type="text" class="form-control mb-2" id="empMapSearchInput" data-i18n="map_search_placeholder" placeholder="Search for an address...">
-                <div id="empMapPinContainer" style="width:100%;height:360px;border-radius:8px;overflow:hidden;"></div>
+                <div class="overflow-hidden" id="empMapPinContainer" style="width:100%; height:360px; border-radius:8px"></div>
                 <p class="text-muted small mt-2 mb-0" data-i18n="map_pin_hint">Click anywhere on the map, or drag the marker, to set the location.</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="empMapPinSaveBtn"><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -2997,7 +2946,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="bffFieldSaveBtn"><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -3028,8 +2977,8 @@
                 <p class="text-muted small mt-2 mb-0" data-i18n="draw_signature_hint">Draw with your mouse or finger, then click Save.</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" id="cpSignaturePadClearBtn"><i class="fa-solid fa-eraser me-1"></i><span data-i18n="clear">Clear</span></button>
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" id="cpSignaturePadClearBtn"><i class="fa-solid fa-eraser me-1"></i><span data-i18n="clear">Clear</span></button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="cpSignaturePadSaveBtn"><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -3056,14 +3005,14 @@
                         <div class="row g-3">
                             <div class="col-lg-6">
                                 <div class="d-flex align-items-center mb-2">
-                                    <h6 class="mb-0 text-success"><span data-i18n="employee_sync_tab_new">New</span> <span class="badge bg-success ms-1" id="orgSyncNewCount">0</span></h6>
+                                    <h6 class="mb-0"><span data-i18n="employee_sync_tab_new">New</span> <span class="count-inline" id="orgSyncNewCount">0</span></h6>
                                 </div>
-                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                <div class="border rounded overflow-y-auto" style="max-height: 420px">
                                     <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_org_sync_new">
-                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                        <thead class="table-light text-secondary sticky-top">
                                             <tr>
                                                 <th style="width:3%;"><input type="checkbox" id="orgSyncNewSelectAll"></th>
-                                                <th data-i18n="name">Name</th>
+                                                <th><span data-i18n="name">Name</span></th>
                                             </tr>
                                         </thead>
                                         <tbody></tbody>
@@ -3072,15 +3021,15 @@
                             </div>
                             <div class="col-lg-6">
                                 <div class="d-flex align-items-center mb-2">
-                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="badge bg-secondary ms-1" id="orgSyncExistingCount">0</span></h6>
+                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="count-inline" id="orgSyncExistingCount">0</span></h6>
                                 </div>
-                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                <div class="border rounded overflow-y-auto" style="max-height: 420px">
                                     <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_org_sync_existing">
-                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                        <thead class="table-light text-secondary sticky-top">
                                             <tr>
                                                 <th style="width:3%;"><input type="checkbox" id="orgSyncExistingSelectAll"></th>
-                                                <th data-i18n="name">Name</th>
-                                                <th data-i18n="employee_sync_update_col">Update Available</th>
+                                                <th><span data-i18n="name">Name</span></th>
+                                                <th><span data-i18n="employee_sync_update_col">Update Available</span></th>
                                             </tr>
                                         </thead>
                                         <tbody></tbody>
@@ -3100,7 +3049,7 @@
                     <button type="button" class="btn btn-primary d-none" id="btnApplyOrgStructureSync">
                         <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="orgSyncSelectedCount">0</span>)
                     </button>
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>
@@ -3120,19 +3069,19 @@
                 <table class="table table-hover table-sm align-middle w-100" id="tb_org_structure_sync_log">
                     <thead class="table-light text-secondary">
                         <tr>
-                            <th data-i18n="employee_sync_log_col_date">Date</th>
-                            <th data-i18n="employee_sync_log_col_triggered_by">By</th>
-                            <th data-i18n="employee_sync_log_col_status">Status</th>
-                            <th class="text-end" data-i18n="employee_sync_log_col_total">Total</th>
-                            <th class="text-end" data-i18n="employee_sync_log_col_success">Success</th>
-                            <th class="text-end" data-i18n="employee_sync_log_col_error">Error</th>
+                            <th><span data-i18n="employee_sync_log_col_date">Date</span></th>
+                            <th><span data-i18n="employee_sync_log_col_triggered_by">By</span></th>
+                            <th><span data-i18n="employee_sync_log_col_status">Status</span></th>
+                            <th class="text-end"><span data-i18n="employee_sync_log_col_total">Total</span></th>
+                            <th class="text-end"><span data-i18n="employee_sync_log_col_success">Success</span></th>
+                            <th class="text-end"><span data-i18n="employee_sync_log_col_error">Error</span></th>
                         </tr>
                     </thead>
                     <tbody></tbody>
                 </table>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -3152,7 +3101,7 @@
                 <div class="text-center text-muted py-4"><i class="fa-solid fa-spinner fa-spin me-1"></i> <span data-i18n="loading">Loading...</span></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -3172,7 +3121,7 @@
                 <div id="bulkPullRows"></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary" id="btnBulkPullSubmit"><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -3514,17 +3463,11 @@
                             <label class="form-label mb-1"><span data-i18n="modal_period_start">Period Start Date</span> <span class="text-danger" id="run_period_required_mark">*</span></label>
                         </div>
                         <div class="col-sm-4">
-                            <div class="input-group">
-                                <input type="text" class="form-control required datepicker" id="run_period_start" name="period_start_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control required datepicker" id="run_period_start" name="period_start_date" autocomplete="off">
                         </div>
                         <div class="col-sm-1 align-self-center text-center text-muted">-</div>
                         <div class="col-sm-4">
-                            <div class="input-group">
-                                <input type="text" class="form-control required datepicker" id="run_period_end" name="period_end_date" data-i18n="modal_period_end" placeholder="Period End" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control required datepicker" id="run_period_end" name="period_end_date" data-i18n="modal_period_end" placeholder="Period End" autocomplete="off">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -3532,10 +3475,7 @@
                             <label class="form-label mb-1"><span data-i18n="modal_payment_date">Payment Date</span> <span class="text-danger">*</span></label>
                         </div>
                         <div class="col-sm-4">
-                            <div class="input-group">
-                                <input type="text" class="form-control required datepicker" id="run_payment_date" name="payment_date" autocomplete="off">
-                                <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                            </div>
+                            <input type="text" class="form-control required datepicker" id="run_payment_date" name="payment_date" autocomplete="off">
                         </div>
                     </div>
                     <div class="row mb-3">
@@ -3548,7 +3488,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-primary"><span data-i18n="save">Save</span></button>
                 </div>
             </form>
@@ -3572,7 +3512,7 @@
                     <textarea class="form-control required" id="cancel_reason" name="reason" rows="3" data-i18n="cancel_reason_placeholder" placeholder="Explain why this payroll run is being cancelled..."></textarea>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     <button type="submit" class="btn btn-danger"><span data-i18n="confirm_cancel_run">Confirm Cancellation</span></button>
                 </div>
             </form>
@@ -3594,7 +3534,7 @@
             </div>
             <div class="modal-body" id="runWorkflowModalBody"></div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>
@@ -3643,7 +3583,7 @@
                 <div class="modal-body">
                     <div class="d-flex align-items-center gap-2 mb-4">
                         <span class="fw-bold" id="rcEditEmployeeNoLabel">-</span>
-                        <span class="badge bg-secondary-subtle text-secondary" id="rcEditTypeBadge"></span>
+                        <span class="text-muted" id="rcEditTypeBadge"></span>
                     </div>
                     <!-- 2026-08-30, same-day follow-up ("Form จัดใหม่ ให้แยกตามประเภท และเติม Icon ลงไปด้วย")
                          -- grouped into the same numbered-section convention every other form in this
@@ -3831,9 +3771,9 @@
                             <label class="form-label mb-1" data-i18n="payment_type">Payment Type</label>
                             <div class="btn-group d-block" role="group" aria-label="Payment type" id="rcPaymentTypeRadioGroup">
                                 <input type="radio" class="btn-check" name="rc_payment_type_radio" id="rc_payment_bank" value="transfer" checked>
-                                <label class="btn btn-outline-brand" for="rc_payment_bank" data-i18n="bank">Bank</label>
+                                <label class="btn btn-outline-secondary" for="rc_payment_bank" data-i18n="bank">Bank</label>
                                 <input type="radio" class="btn-check" name="rc_payment_type_radio" id="rc_payment_cash" value="cash">
-                                <label class="btn btn-outline-brand" for="rc_payment_cash" data-i18n="cash">Cash</label>
+                                <label class="btn btn-outline-secondary" for="rc_payment_cash" data-i18n="cash">Cash</label>
                             </div>
                             <div class="form-text text-warning d-none" id="rcPaymentMethodOtherNote" data-i18n="recheck_payment_method_edit_in_profile">This employee uses Check/Mixed payment -- edit it from the full Employee Detail page.</div>
                             <input type="hidden" name="payment_method_id" id="rc_payment_type" value="">
@@ -3900,9 +3840,9 @@
                             <label class="form-label d-block mb-1"><span data-i18n="ot_rate_source">OT Rate Source</span></label>
                             <div class="btn-group d-block" role="group">
                                 <input type="radio" class="btn-check" name="rc_ot_rate_source_radio" id="rc_ot_rate_source_default" value="default" checked>
-                                <label class="btn btn-outline-brand" for="rc_ot_rate_source_default" data-i18n="ot_rate_source_default">Use Company Default</label>
+                                <label class="btn btn-outline-secondary" for="rc_ot_rate_source_default" data-i18n="ot_rate_source_default">Use Company Default</label>
                                 <input type="radio" class="btn-check" name="rc_ot_rate_source_radio" id="rc_ot_rate_source_custom" value="custom">
-                                <label class="btn btn-outline-brand" for="rc_ot_rate_source_custom" data-i18n="ot_rate_source_custom">Set Individually per OT Type</label>
+                                <label class="btn btn-outline-secondary" for="rc_ot_rate_source_custom" data-i18n="ot_rate_source_custom">Set Individually per OT Type</label>
                             </div>
                         </div>
                     </div>
@@ -3911,10 +3851,10 @@
                             <table class="table table-sm align-middle mb-0">
                                 <thead>
                                     <tr>
-                                        <th data-i18n="ot_scope">OT Type</th>
-                                        <th data-i18n="calculation_method">Calculation Method</th>
-                                        <th data-i18n="rate">Rate</th>
-                                        <th data-i18n="calculation_base">Base</th>
+                                        <th><span data-i18n="ot_scope">OT Type</span></th>
+                                        <th><span data-i18n="calculation_method">Calculation Method</span></th>
+                                        <th><span data-i18n="rate">Rate</span></th>
+                                        <th><span data-i18n="calculation_base">Base</span></th>
                                     </tr>
                                 </thead>
                                 <tbody id="rcOtRateOverridesBody"></tbody>
@@ -3960,7 +3900,7 @@
                     </a>
                     <div>
                         <button type="submit" class="btn btn-primary px-4" data-i18n="save">Save</button>
-                        <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                        <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                     </div>
                 </div>
             </form>
@@ -3991,7 +3931,7 @@
                             <input type="checkbox" class="form-check-input eaw-assign-select-all mt-0" data-scope-type="department" title="Select All">
                             <input type="text" class="form-control form-control-sm eaw-assign-search" data-scope-type="department" data-i18n="select_option" placeholder="Search...">
                         </div>
-                        <div class="border rounded p-2" style="max-height:180px;overflow-y:auto;" id="eawAssignDepartments"></div>
+                        <div class="border rounded p-2 overflow-y-auto" style="max-height:180px" id="eawAssignDepartments"></div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-semibold small mb-1" data-i18n="position">Position</label>
@@ -3999,7 +3939,7 @@
                             <input type="checkbox" class="form-check-input eaw-assign-select-all mt-0" data-scope-type="position" title="Select All">
                             <input type="text" class="form-control form-control-sm eaw-assign-search" data-scope-type="position" data-i18n="select_option" placeholder="Search...">
                         </div>
-                        <div class="border rounded p-2" style="max-height:180px;overflow-y:auto;" id="eawAssignPositions"></div>
+                        <div class="border rounded p-2 overflow-y-auto" style="max-height:180px" id="eawAssignPositions"></div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-semibold small mb-1" data-i18n="team">Team</label>
@@ -4007,7 +3947,7 @@
                             <input type="checkbox" class="form-check-input eaw-assign-select-all mt-0" data-scope-type="team" title="Select All">
                             <input type="text" class="form-control form-control-sm eaw-assign-search" data-scope-type="team" data-i18n="select_option" placeholder="Search...">
                         </div>
-                        <div class="border rounded p-2" style="max-height:180px;overflow-y:auto;" id="eawAssignTeams"></div>
+                        <div class="border rounded p-2 overflow-y-auto" style="max-height:180px" id="eawAssignTeams"></div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-semibold small mb-1" data-i18n="table_employee">Employee</label>
@@ -4015,12 +3955,12 @@
                             <input type="checkbox" class="form-check-input eaw-assign-select-all mt-0" data-scope-type="employee" title="Select All">
                             <input type="text" class="form-control form-control-sm eaw-assign-search" data-scope-type="employee" data-i18n="select_option" placeholder="Search...">
                         </div>
-                        <div class="border rounded p-2" style="max-height:180px;overflow-y:auto;" id="eawAssignEmployees"></div>
+                        <div class="border rounded p-2 overflow-y-auto" style="max-height:180px" id="eawAssignEmployees"></div>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary px-4" id="eawSaveBtn"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -4113,7 +4053,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button type="button" class="btn btn-primary px-4" id="btnSaveProbationSet"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
             </div>
         </div>

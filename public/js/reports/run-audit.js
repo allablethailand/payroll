@@ -30,10 +30,6 @@ function toIsoDateRa(displayVal) {
     const [dd, mm, yyyy] = parts;
     return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 }
-function updateRunAuditClearFilterVisibility() {
-    const hasFilter = !!($('#runAuditFilterDateFrom').val() || $('#runAuditFilterDateTo').val());
-    $('#runAuditFilterClearRow').toggleClass('d-none', !hasFilter);
-}
 function updateRunAuditStationCounts(rows) {
     const counts = { all: rows.length, draft: 0, pending_approval: 0, approved: 0, paid: 0, locked: 0, rejected: 0, need_info: 0, cancelled: 0 };
     rows.forEach(row => { if (counts[row.state] !== undefined) counts[row.state]++; });
@@ -61,59 +57,48 @@ $(document).on('click', '.station-card', function () {
     $(this).addClass('active');
     if (runAuditTable) runAuditTable.draw();
 });
-$(document).on('click', '#runAuditStationFilterToggle', function () {
-    const $filter = $('#runAuditStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('changeDate', '#runAuditFilterDateFrom, #runAuditFilterDateTo', function () {
-    updateRunAuditClearFilterVisibility();
-    if (runAuditTable) runAuditTable.ajax.reload(null, true);
-});
-$(document).on('click', '#runAuditClearDateFilter', function () {
-    $('#runAuditFilterDateFrom, #runAuditFilterDateTo').datepicker('clearDates');
-});
 
 function initRunAuditTable() {
-    runAuditTable = $('#tb_run_audit_list').DataTable({
-        ajax: {
-            url: `${BASE_URL}/api/report.run-audit-list`,
-            data: function (d) {
-                d.date_from = toIsoDateRa($('#runAuditFilterDateFrom').val());
-                d.date_to = toIsoDateRa($('#runAuditFilterDateTo').val());
-            },
-            dataSrc: function (json) {
-                updateRunAuditStationCounts(json.data || []);
-                return json.data || [];
-            },
+    runAuditTable = initSharedDataTable('#tb_run_audit_list', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'run_name' },
+                { index: 1, key: 'cycle_name' },
+                { index: 2, key: 'origin' },
+                { index: 3, key: 'state' },
+                { index: 5, key: 'edit_count' },
+            ],
         },
-        columns: [
-            { data: 'run_name', render: d => escapeAttr(d) },
-            { data: 'cycle_name', render: d => escapeAttr(d || '-') },
-            { data: 'origin', render: d => escapeAttr(runAuditOriginLabel(d)) },
-            { data: 'state', render: d => escapeAttr(d) },
-            { data: null, render: (d, t, row) => `${escapeAttr(row.period_start_date)} - ${escapeAttr(row.period_end_date)}` },
-            { data: 'edit_count', className: 'text-end', render: { display: d => Number(d).toLocaleString(), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
-            {
-                data: null, orderable: false, className: 'text-center', render: (d, t, row) => `
-                <button type="button" class="btn btn-sm btn-outline-primary btn-view-run-audit-diff" data-id="${row.id}">
-                    <i class="fa-solid fa-magnifying-glass me-1"></i>${langData['view'] || 'View'}
-                </button>`,
+        dtOptions: {
+            // Rows arrive by ajax, so the helper's row-count threshold would see 0 rows at
+            // construction and hide the search box; keep it on as before.
+            searching: true,
+            ajax: {
+                url: `${BASE_URL}/api/report.run-audit-list`,
+                data: function (d) {
+                    d.date_from = toIsoDateRa($('#runAuditFilterDateFrom').val());
+                    d.date_to = toIsoDateRa($('#runAuditFilterDateTo').val());
+                },
+                dataSrc: function (json) {
+                    updateRunAuditStationCounts(json.data || []);
+                    return json.data || [];
+                },
             },
-        ],
-        language: getTableLang(),
-        initComplete: function () {
-            const self = this.api();
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'run_name' },
-                    { index: 1, key: 'cycle_name' },
-                    { index: 2, key: 'origin' },
-                    { index: 3, key: 'state' },
-                    { index: 5, key: 'edit_count' },
-                ],
-            });
+            columns: [
+                { data: 'run_name', render: d => escapeAttr(d) },
+                { data: 'cycle_name', render: d => escapeAttr(d || '-') },
+                { data: 'origin', render: d => escapeAttr(runAuditOriginLabel(d)) },
+                { data: 'state', render: d => escapeAttr(d) },
+                { data: null, render: (d, t, row) => `${escapeAttr(row.period_start_date)} - ${escapeAttr(row.period_end_date)}` },
+                { data: 'edit_count', className: 'text-end', render: { display: d => fmtNum(Number(d), 0, 3), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
+                {
+                    data: null, orderable: false, className: 'text-center', render: (d, t, row) => `
+                    <button type="button" class="btn btn-sm btn-outline-primary btn-view-run-audit-diff" data-id="${row.id}">
+                        <i class="fa-solid fa-magnifying-glass me-1"></i>${langData['view'] || 'View'}
+                    </button>`,
+                },
+            ],
         },
     });
 }
@@ -209,6 +194,9 @@ $(document).ready(function () {
         initDatepicker('#runAuditFilterDateFrom');
         initDatepicker('#runAuditFilterDateTo');
     }
+    initFilterBar('#runAuditFilterBar', {
+        onChange: function () { if (runAuditTable) runAuditTable.ajax.reload(null, true); },
+    });
     registerRunAuditStationSearchFilter();
     initRunAuditTable();
     });

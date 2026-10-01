@@ -75,7 +75,7 @@ function dsLastSyncLine(entry) {
 function dsSyncCountBadge(count) {
     const n = Number(count) || 0;
     const tpl = langData['data_sync_count_badge'] || '{count}x';
-    return `<span class="badge rounded-pill ds-sync-count-badge" title="${escapeAttr((langData['data_sync_count_title'] || 'Synced {count} times').replace('{count}', n))}">${escapeHtml(tpl.replace('{count}', n))}</span>`;
+    return `<span class="text-muted" title="${escapeAttr((langData['data_sync_count_title'] || 'Synced {count} times').replace('{count}', n))}">${escapeHtml(tpl.replace('{count}', n))}</span>`;
 }
 function dsRenderCards(statusData) {
     const lastSyncAt = statusData.last_sync_at || {};
@@ -96,14 +96,14 @@ function dsRenderCards(statusData) {
                     <div class="settings-info-card-body">
                         <div class="ds-progress-wrap d-none mb-2" data-ds-progress="${type}">
                             <div class="progress" style="height:6px;">
-                                <div class="progress-bar" role="progressbar" style="width:0%; background-color:#FF9900;"></div>
+                                <div class="progress-bar" role="progressbar" style="width:0%;"></div>
                             </div>
                         </div>
                         <div class="d-flex justify-content-between align-items-center">
                             <button type="button" class="btn btn-link btn-sm p-0 ds-view-history-btn" data-entity-type="${type}">
                                 <i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="data_sync_view_history">History</span>
                             </button>
-                            <button type="button" class="btn btn-outline-brand btn-sm ds-sync-one-btn" data-entity-type="${type}">
+                            <button type="button" class="btn btn-outline-secondary btn-sm ds-sync-one-btn" data-entity-type="${type}">
                                 <i class="fa-solid fa-rotate me-1"></i><span data-i18n="sync_now">Sync Now</span>
                             </button>
                         </div>
@@ -272,14 +272,8 @@ $(document).on('click', '#btnSyncAllMasterData', function () {
 });
 
 function dsStatusBadge(status) {
-    const map = {
-        completed: ['bg-success-subtle text-success', 'data_sync_status_completed', 'Completed'],
-        failed: ['bg-danger-subtle text-danger', 'data_sync_status_failed', 'Failed'],
-        running: ['bg-info-subtle text-info', 'data_sync_status_running', 'Running'],
-    };
-    const [cls, key, fallback] = map[status] || ['bg-secondary-subtle text-secondary', '', status];
-    const label = (key && langData[key]) || fallback;
-    return `<span class="badge ${cls}">${escapeHtml(label)}</span>`;
+    if (!['completed', 'failed', 'running'].includes(status)) return `<span class="text-muted">${escapeHtml(status)}</span>`;
+    return statusBadgeHtml(status, 'sync_batch_status');
 }
 
 function dsSyncedByCell(row) {
@@ -303,9 +297,7 @@ function dsShowErrorDetail(errorDetailJson) {
         html += `<li>${escapeHtml(item.message || JSON.stringify(item))}${item.ref_id !== undefined ? ` (ref_id: ${escapeHtml(item.ref_id)})` : ''}</li>`;
     });
     html += '</ul>';
-    if (typeof Swal !== 'undefined') {
-        Swal.fire({ title: langData['data_sync_error_detail'] || 'Error Detail', html: html, icon: 'error' });
-    }
+    showError('', true, { title: langData['data_sync_error_detail'] || 'Error Detail', html: html });
 }
 
 $(document).on('click', '.ds-view-error-btn', function () {
@@ -313,39 +305,20 @@ $(document).on('click', '.ds-view-error-btn', function () {
     dsShowErrorDetail(errorDetail);
 });
 
-// 2026-09-02, explicit request: "ในประวัติให้มี Filter ด้วย" -- date range (station-filter) reloads the
+// 2026-09-02, explicit request: "ในประวัติให้มี Filter ด้วย" -- date range (filter-bar) reloads the
 // table server-side (SyncBatchModel::list()'s own date_from/date_to filter); entity_type/status stay
 // as the pre-existing Excel-style per-column filters on the table header itself.
 function dsHistoryFilterParams(d) {
     d.date_from = $('#dsHistoryFilterDateFrom').val() ? toIsoDate($('#dsHistoryFilterDateFrom').val()) : '';
     d.date_to = $('#dsHistoryFilterDateTo').val() ? toIsoDate($('#dsHistoryFilterDateTo').val()) : '';
 }
-function dsUpdateClearHistoryFilterVisibility() {
-    const hasFilter = !!($('#dsHistoryFilterDateFrom').val() || $('#dsHistoryFilterDateTo').val());
-    $('#dsHistoryFilterClearRow').toggleClass('d-none', !hasFilter);
-}
-$(document).on('click', '#dsHistoryStationFilterToggle', function () {
-    const $filter = $('#dsHistoryStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('changeDate', '#dsHistoryFilterDateFrom, #dsHistoryFilterDateTo', function () {
-    dsUpdateClearHistoryFilterVisibility();
-    if (tb_data_sync_history) tb_data_sync_history.ajax.reload();
-});
-$(document).on('click', '#btnClearDsHistoryFilter', function () {
-    $('#dsHistoryFilterDateFrom').val('');
-    if (typeof $.fn.datepicker === 'function') $('#dsHistoryFilterDateFrom').datepicker('update');
-    $('#dsHistoryFilterDateTo').val('');
-    if (typeof $.fn.datepicker === 'function') $('#dsHistoryFilterDateTo').datepicker('update');
-    dsUpdateClearHistoryFilterVisibility();
-    if (tb_data_sync_history) tb_data_sync_history.ajax.reload();
-});
-
 function dsInitHistoryTable() {
     if (dsHistoryTableInited) return;
     dsHistoryTableInited = true;
-    tb_data_sync_history = $('#tb_data_sync_history').DataTable({
+    tb_data_sync_history = initSharedDataTable('#tb_data_sync_history', {
+        columnFilters: { mode: 'client', columns: [{ index: 0, key: 'entity_type' }, { index: 1, key: 'status' }] },
+        dtOptions: {
+        searching: true,
         ajax: {
             url: `${BASE_URL}/api/master-data-sync.history`,
             type: 'POST',
@@ -386,14 +359,6 @@ function dsInitHistoryTable() {
         ],
         order: [[6, 'desc']],
         responsive: true,
-        initComplete: function () {
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'entity_type' },
-                    { index: 1, key: 'status' },
-                ]
-            });
         }
     });
 }
@@ -411,7 +376,9 @@ function dsOpenCardHistory(type) {
         tb_ds_card_history.destroy();
         $('#tb_ds_card_history tbody').empty();
     }
-    tb_ds_card_history = $('#tb_ds_card_history').DataTable({
+    tb_ds_card_history = initSharedDataTable('#tb_ds_card_history', {
+        dtOptions: {
+        searching: true,
         ajax: {
             url: `${BASE_URL}/api/master-data-sync.history`,
             type: 'POST',
@@ -451,9 +418,7 @@ function dsOpenCardHistory(type) {
         ],
         order: [[5, 'desc']],
         responsive: true,
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
+        }
     });
 }
 $(document).on('click', '.ds-view-history-btn', function () {
@@ -466,6 +431,9 @@ function initDataSyncPage() {
         initDatepicker('#dsHistoryFilterDateFrom');
         initDatepicker('#dsHistoryFilterDateTo');
     }
+    initFilterBar('#dsHistoryFilterBar', {
+        onChange: function () { if (tb_data_sync_history) tb_data_sync_history.ajax.reload(); },
+    });
     // Lazy-init on first shown -- this table is no longer the default-active tab (Sync is), and this
     // app has hit the "DataTable constructed inside a display:none Bootstrap tab collapses every
     // column to 0 width" bug enough times elsewhere that it's a standing habit to guard against here

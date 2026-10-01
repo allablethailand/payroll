@@ -254,7 +254,7 @@
             <div class="dash-section-card mb-4 d-none" id="dashOnlineUsersSection">
                 <div class="dash-section-card-header">
                     <h6 class="mb-0"><i class="fa-solid fa-circle-user me-2 text-warning"></i><span data-i18n="dash_online_now">Online Now</span></h6>
-                    <span class="badge bg-success-subtle text-success" id="dashOnlineUsersCount">0</span>
+                    <span class="count-inline" id="dashOnlineUsersCount">0</span>
                 </div>
                 <div class="dash-online-users-list" id="dashOnlineUsersList"></div>
             </div>
@@ -295,7 +295,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title text-secondary"><i class="fa-solid fa-bullhorn me-2 text-warning"></i><span data-i18n="announcement_menu">Announcement</span></h5>
-                <span class="badge bg-secondary-subtle text-secondary" id="dashAnnModalCount"></span>
+                <span class="count-inline" id="dashAnnModalCount"></span>
             </div>
             <div class="modal-body">
                 <!-- 2026-09-07, "สามารถแนบปกได้" -->

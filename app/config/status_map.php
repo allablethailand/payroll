@@ -295,4 +295,131 @@ return [
         // transfer-in earning line is the third source a line can have, alongside custom/other.
         'transfer' => ['label_key' => 'transfer_in_badge', 'tone' => 'neutral'],
     ],
+
+    // >>> ZONE-1 (badge consolidation, Round 3) -- new contexts for this slice go between these markers <<<
+    // Employee Detail header: employees.is_payroll_ready verify result.
+    'profile_verify' => [
+        'ready' => ['label_key' => 'verify_status_ready', 'tone' => 'success'],
+        'not_ready' => ['label_key' => 'verify_status_not_ready', 'tone' => 'danger'],
+    ],
+    // Employee Recheck list: is_ready column.
+    'recheck_ready' => [
+        'ready' => ['label_key' => 'ready', 'tone' => 'success'],
+        'not_ready' => ['label_key' => 'not_ready', 'tone' => 'danger'],
+    ],
+    // Employee Recheck list: bank account completeness for transfer/mixed payment.
+    'bank_account_readiness' => [
+        'set' => ['label_key' => 'payment_type_bank_ready', 'tone' => 'success'],
+        'missing' => ['label_key' => 'payment_type_bank_missing', 'tone' => 'danger'],
+    ],
+    // Employee Recheck list: EmployeeModel::recheckList() sso_status (missing number is the only real gap).
+    'sso_enrollment' => [
+        'enrolled_complete' => ['label_key' => 'sso_status_enrolled', 'tone' => 'success'],
+        'enrolled_missing_no' => ['label_key' => 'sso_status_missing_no', 'tone' => 'danger'],
+        'never_enrolled' => ['label_key' => 'sso_status_not_enrolled', 'tone' => 'neutral'],
+    ],
+    // Employee Recheck list: OT eligibility.
+    'ot_eligibility' => [
+        'eligible' => ['label_key' => 'ot_eligible_short', 'tone' => 'success'],
+        'not_eligible' => ['label_key' => 'ot_not_eligible_short', 'tone' => 'neutral'],
+    ],
+    // Employee List: is_payroll_participant flag.
+    'payroll_participant' => [
+        'yes' => ['label_key' => 'payroll_participant_yes', 'tone' => 'success'],
+        'no' => ['label_key' => 'payroll_participant_no', 'tone' => 'neutral'],
+    ],
+    // Employee Reports: statutory enrollment flag.
+    'enrollment_status' => [
+        'enrolled' => ['label_key' => 'enrollment_enrolled', 'tone' => 'success'],
+        'not_enrolled' => ['label_key' => 'enrollment_not_enrolled', 'tone' => 'neutral'],
+    ],
+    // Login sessions: active, or how it ended (only timeout needs attention).
+    'session_status' => [
+        'active' => ['label_key' => 'session_status_active', 'tone' => 'success'],
+        'new_login' => ['label_key' => 'session_reason_new_login', 'tone' => 'neutral'],
+        'switch_app' => ['label_key' => 'session_reason_switch_app', 'tone' => 'neutral'],
+        'timeout' => ['label_key' => 'session_reason_timeout', 'tone' => 'warning'],
+        'ended' => ['label_key' => 'session_status_ended', 'tone' => 'neutral'],
+    ],
+    // <<< ZONE-1 <<<
+
+    // >>> ZONE-2 (badge consolidation, Round 3) -- new contexts for this slice go between these markers <<<
+    // Manual Entry import row/history result: tones keep the old red/amber/green meaning.
+    'import_activity_status' => [
+        'ok' => ['label_key' => 'success', 'tone' => 'success'],
+        'conflict' => ['label_key' => 'conflict', 'tone' => 'warning'],
+        'error' => ['label_key' => 'error', 'tone' => 'danger'],
+        'running' => ['label_key' => 'status_pending', 'tone' => 'warning'],
+        'completed' => ['label_key' => 'status_approved', 'tone' => 'success'],
+        'failed' => ['label_key' => 'status_rejected', 'tone' => 'danger'],
+    ],
+
+    // Origami sync detail: derived probation outcome per employee row.
+    'sync_probation_status' => [
+        'on_probation' => ['label_key' => 'sync_probation_on_probation', 'tone' => 'warning'],
+        'failed' => ['label_key' => 'sync_probation_failed', 'tone' => 'danger'],
+        'passed' => ['label_key' => 'sync_probation_passed', 'tone' => 'success'],
+    ],
+
+    // Origami sync detail: whether a synced item is mapped to a local master record.
+    'sync_mapping_status' => [
+        'mapped' => ['label_key' => 'sync_detail_mapped', 'tone' => 'success'],
+        'unmapped' => ['label_key' => 'sync_detail_unmapped', 'tone' => 'danger'],
+    ],
+    // <<< ZONE-2 <<<
+
+    // >>> ZONE-3 (badge consolidation, Round 3) -- new contexts for this slice go between these markers <<<
+    // Bank file format template: verified against the bank's spec, still a draft, or no own override yet.
+    'bff_verification' => [
+        'verified' => ['label_key' => 'verified', 'tone' => 'success'],
+        'draft' => ['label_key' => 'draft_not_verified', 'tone' => 'warning'],
+        'default_template' => ['label_key' => 'using_default_template', 'tone' => 'neutral'],
+    ],
+    // Setup Guide checklist item that is already configured.
+    'setup_guide_status' => [
+        'done' => ['label_key' => 'setup_guide_done', 'tone' => 'success'],
+    ],
+    // <<< ZONE-3 <<<
+
+    // >>> ZONE-4 (badge consolidation, Round 3) -- new contexts for this slice go between these markers <<<
+    // email_queue.status: outbound email delivery outcome.
+    'email_queue_status' => [
+        'sent' => ['label_key' => 'email_queue_status_sent', 'tone' => 'success'],
+        'failed' => ['label_key' => 'email_queue_status_failed', 'tone' => 'danger'],
+        'pending' => ['label_key' => 'email_queue_status_pending', 'tone' => 'neutral'],
+    ],
+    // Notification read state; unread is warning (needs a look).
+    'notification_read_status' => [
+        'unread' => ['label_key' => 'notif_status_unread', 'tone' => 'warning'],
+        'read' => ['label_key' => 'notif_status_read', 'tone' => 'neutral'],
+    ],
+    // announcements.status (admin list).
+    'announcement_status' => [
+        'published' => ['label_key' => 'announcement_status_published', 'tone' => 'success'],
+        'draft' => ['label_key' => 'announcement_status_draft', 'tone' => 'neutral'],
+    ],
+    // Employee-side announcement acknowledgement.
+    'announcement_ack_status' => [
+        'acknowledged' => ['label_key' => 'announcement_acknowledged', 'tone' => 'success'],
+        'pending' => ['label_key' => 'announcement_pending', 'tone' => 'warning'],
+    ],
+    // Approval workflow flow on/off.
+    'workflow_flow_status' => [
+        'active' => ['label_key' => 'active', 'tone' => 'success'],
+        'inactive' => ['label_key' => 'inactive', 'tone' => 'neutral'],
+    ],
+    // Statutory export format version verification.
+    'statutory_format_verify' => [
+        'verified' => ['label_key' => 'verified', 'tone' => 'success'],
+        'draft_not_verified' => ['label_key' => 'draft_not_verified', 'tone' => 'warning'],
+    ],
+    // <<< ZONE-4 <<<
+
+    // >>> ZONE-5 (badge consolidation, Round 3) -- new contexts for this slice go between these markers <<<
+    // Holiday/org-structure sync candidate rows: has the master record changed since last sync.
+    'sync_update_state' => [
+        'update_available' => ['label_key' => 'employee_sync_update_available', 'tone' => 'warning'],
+        'up_to_date' => ['label_key' => 'employee_sync_up_to_date', 'tone' => 'success'],
+    ],
+    // <<< ZONE-5 <<<
 ];

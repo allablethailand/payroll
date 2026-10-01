@@ -17,10 +17,7 @@ let tb_payslip_delivery_log;
 
 
 function deliveryStatusBadge(status) {
-    if (status === 'success') {
-        return `<span class="badge bg-success-subtle text-success">${langData['status_sent'] || 'Sent'}</span>`;
-    }
-    return `<span class="badge bg-danger-subtle text-danger">${langData['status_send_failed'] || 'Send Failed'}</span>`;
+    return statusBadgeHtml(status === 'success' ? 'success' : 'failed', 'document_delivery_status');
 }
 
 function sourceLabel(source) {
@@ -45,21 +42,44 @@ function formatReferenceDlog(row) {
     return `${escapeAttr(row.reference_label)} <span class="text-secondary small">(${formatDisplayDate(row.period_start_date)} - ${formatDisplayDate(row.period_end_date)})</span>`;
 }
 
+// The filter-bar's "no filter" option is 'all'; the API expects it empty.
+function dlogFilterValue(selector) {
+    const v = $(selector).val();
+    return v === 'all' ? '' : (v || '');
+}
+
 function initPayslipDeliveryLogTable() {
     if ($.fn.DataTable.isDataTable('#tb_payslip_delivery_log')) {
         $('#tb_payslip_delivery_log').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_payslip_delivery_log = $('#tb_payslip_delivery_log').DataTable({
+    initFilterBar('#dlogFilterBar', { onChange: function () { if (tb_payslip_delivery_log) tb_payslip_delivery_log.ajax.reload(null, true); } });
+    tb_payslip_delivery_log = initSharedDataTable('#tb_payslip_delivery_log', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'employee' },
+                { index: 1, key: 'document_type' },
+                { index: 2, key: 'reference' },
+                { index: 3, key: 'source' },
+                { index: 4, key: 'channel_code' },
+                { index: 5, key: 'recipient' },
+                { index: 6, key: 'status' },
+                { index: 7, key: 'sent_at' },
+                { index: 8, key: 'sent_by' },
+            ]
+        },
+        dtOptions: {
+        searching: true,
         responsive: true,
         ajax: {
             url: `${BASE_URL}/api/document-delivery-log.list`,
             dataSrc: 'data',
             data: function (d) {
-                d.document_type = $('#dlog_filter_document_type').val() || '';
-                d.status = $('#dlog_filter_status').val() || '';
+                d.document_type = dlogFilterValue('#dlog_filter_document_type');
+                d.status = dlogFilterValue('#dlog_filter_status');
                 d.channel_code = $('#dlog_filter_channel').val() || '';
-                d.source = $('#dlog_filter_source').val() || '';
+                d.source = dlogFilterValue('#dlog_filter_source');
             }
         },
         columns: [
@@ -83,7 +103,7 @@ function initPayslipDeliveryLogTable() {
                 render: (d, t, row) => {
                     if (row.document_type === 'employment_certificate') {
                         return row.status === 'success'
-                            ? `<a class="btn btn-sm btn-outline-success" href="${BASE_URL}/api/employment-certificate-request.download?id=${row.id}" target="_blank" title="${langData['download'] || 'Download'}"><i class="fa-solid fa-download"></i></a>`
+                            ? `<a class="btn btn-sm btn-outline-secondary" href="${BASE_URL}/api/employment-certificate-request.download?id=${row.id}" target="_blank" title="${langData['download'] || 'Download'}"><i class="fa-solid fa-download"></i></a>`
                             : '';
                     }
                     return row.status === 'failed'
@@ -92,52 +112,10 @@ function initPayslipDeliveryLogTable() {
                 }
             }
         ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        order: [[7, 'desc']],
-        // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-        // rollout, client mode.
-        initComplete: function () {
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'employee' },
-                    { index: 1, key: 'document_type' },
-                    { index: 2, key: 'reference' },
-                    { index: 3, key: 'source' },
-                    { index: 4, key: 'channel_code' },
-                    { index: 5, key: 'recipient' },
-                    { index: 6, key: 'status' },
-                    { index: 7, key: 'sent_at' },
-                    { index: 8, key: 'sent_by' },
-                ]
-            });
+        order: [[7, 'desc']]
         }
     });
 }
-
-function updateClearDlogFilterVisibility() {
-    const hasFilter = !!($('#dlog_filter_document_type').val() || $('#dlog_filter_status').val() || $('#dlog_filter_channel').val() || $('#dlog_filter_source').val());
-    $('#dlogFilterClearRow').toggleClass('d-none', !hasFilter);
-}
-
-$(document).on('click', '#dlogStationFilterToggle', function () {
-    const $filter = $('#dlogStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-
-$(document).on('change', '#dlog_filter_document_type, #dlog_filter_status, #dlog_filter_channel, #dlog_filter_source', function () {
-    updateClearDlogFilterVisibility();
-    if (tb_payslip_delivery_log) tb_payslip_delivery_log.ajax.reload(null, true);
-});
-
-$(document).on('click', '#btnClearDlogFilter', function () {
-    $('#dlog_filter_document_type, #dlog_filter_status, #dlog_filter_channel, #dlog_filter_source').val(null).trigger('change.select2');
-    updateClearDlogFilterVisibility();
-    if (tb_payslip_delivery_log) tb_payslip_delivery_log.ajax.reload(null, true);
-});
 
 $(document).on('click', '.btn-resend-dlog', function () {
     const id = $(this).data('id');

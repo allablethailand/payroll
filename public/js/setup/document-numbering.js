@@ -67,7 +67,7 @@ function renderDocumentNumberingCards() {
         // why nothing ever actually gets stamped with this number, same "config-only, no consumer
         // yet" badge convention this app uses elsewhere for a built-ahead-of-its-consumer feature.
         const notWiredBadge = isWht
-            ? `<span class="badge bg-secondary-subtle text-secondary mt-2" data-i18n="doc_numbering_not_wired">${langData['doc_numbering_not_wired'] || 'Not yet connected to a document'}</span>`
+            ? `<span class="text-muted d-block mt-2" data-i18n="doc_numbering_not_wired">${langData['doc_numbering_not_wired'] || 'Not yet connected to a document'}</span>`
             : '';
         $wrap.append(`
             <div class="col-lg-3 col-md-6">
@@ -84,7 +84,7 @@ function renderDocumentNumberingCards() {
                         <div class="fw-bold mb-2">${escapeAttr(formatDocNumberPreview(row))}</div>
                         ${notWiredBadge}
                         <div class="d-flex justify-content-end mt-2">
-                            <button type="button" class="btn btn-outline-brand btn-sm btn-edit-doc-numbering" data-code="${row.document_type_code}">
+                            <button type="button" class="btn btn-outline-secondary btn-sm btn-edit-doc-numbering" data-code="${row.document_type_code}">
                                 <i class="fa-solid fa-pen me-1"></i><span data-i18n="edit">Edit</span>
                             </button>
                         </div>

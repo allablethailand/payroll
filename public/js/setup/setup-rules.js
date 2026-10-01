@@ -25,7 +25,7 @@ function actionBtns(editFn, delFn, extraBtns) {
 }
 function structureAssignExtraBtns(type, id, label) {
     return `
-        <button type="button" class="btn btn-link btn-circle-action text-primary btn-structure-assign" data-type="${type}" data-id="${id}" data-label="${escapeAttr(label)}" data-i18n-title="assign_employees"><i class="fa-solid fa-user-plus"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action btn-structure-assign" data-type="${type}" data-id="${id}" data-label="${escapeAttr(label)}" data-i18n-title="assign_employees"><i class="fa-solid fa-user-plus"></i></button>
         <button type="button" class="btn btn-link btn-circle-action text-secondary btn-structure-view-assigned" data-type="${type}" data-id="${id}" data-label="${escapeAttr(label)}" data-i18n-title="view_assigned_employees"><i class="fa-solid fa-users"></i></button>
     `;
 }
@@ -116,7 +116,7 @@ function getShiftWorkDaysPayload() {
 }
 function renderShift() {
     if ($.fn.DataTable.isDataTable('#tb_shift')) { $('#tb_shift').DataTable().ajax.reload(null, false); return; }
-    dtShift = $('#tb_shift').DataTable({
+    dtShift = initSharedDataTable('#tb_shift', { dtOptions: {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/shift.list`, dataSrc: 'data' },
         columns: [
@@ -141,8 +141,8 @@ function renderShift() {
             // API consumer wants bulk-assign later.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openShiftModal(${row.id})`, `askDelete('shift', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.shift_name_th : row.shift_name_en)}')`, structureAssignExtraBtns('shift', row.id, currentLang === 'th' ? row.shift_name_th : row.shift_name_en)) }
         ],
-        ordering: false, lengthChange: false, pageLength: 10,
-        language: { ...getTableLang(), emptyTable: langData['no_shifts_yet'] || 'No shifts have been added yet.' },
+        searching: true, ordering: false, lengthChange: false, pageLength: 10,
+        language: { emptyTable: langData['no_shifts_yet'] || 'No shifts have been added yet.' },
         initComplete: function () {
             addButtonInitComplete('btn-add-shift', 'fa-solid fa-plus', 'add_shift', 'Shift', 'openShiftModal()').call(this);
             // 2026-09-04, Backlog Phase 9, T050 -- Shift has a real Origami-side master
@@ -182,7 +182,7 @@ function renderShift() {
                 ]
             });
         }
-    });
+    } });
 }
 // 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
 // .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).
@@ -264,10 +264,9 @@ function holidayScopeSelector(type) {
 }
 function holidayScopeSummary(row) {
     const modeLabel = row.assignment_mode === 'exclude' ? (langData['exclude_mode'] || 'Exclude') : (langData['include_mode'] || 'Include');
-    const modeCls = row.assignment_mode === 'exclude' ? 'badge-unpaid' : 'badge-paid';
     const count = parseInt(row.assignment_count || 0);
     const countText = count > 0 ? `${count} ${langData['scopes_selected'] || 'scope(s) selected'}` : (langData['no_scope_selected'] || 'No specific scope');
-    return `<span class="badge-soft ${modeCls} me-1">${modeLabel.split(' (')[0]}</span><span class="text-faint">${countText}</span>`;
+    return `<span class="text-muted me-1">${modeLabel.split(' (')[0]}</span><span class="text-faint">${countText}</span>`;
 }
 function initHolidayScopeSelects() {
     initSelect2('#holidayRecurring', { mode: 'static' });
@@ -281,7 +280,7 @@ function updateHolidayModeHint() {
 }
 function renderHoliday() {
     if ($.fn.DataTable.isDataTable('#tb_holiday')) { $('#tb_holiday').DataTable().ajax.reload(null, false); return; }
-    dtHoliday = $('#tb_holiday').DataTable({
+    dtHoliday = initSharedDataTable('#tb_holiday', { dtOptions: {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/holiday.list`, dataSrc: 'data' },
         columns: [
@@ -290,14 +289,14 @@ function renderHoliday() {
             { data: 'status', className: 'text-center', render: (d, t, row) => renderStatusToggleHtml(row.id, d === 'active', '/api/holiday.toggle-status') },
             { data: null, render: (d, t, row) => `<div class="row-name">${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}</div>` },
             { data: null, render: (d, t, row) => `<span class="text-faint"><i class="fa-regular fa-calendar me-1"></i>${fmtDate(row.holiday_date)}</span>` },
-            { data: null, render: (d, t, row) => parseInt(row.is_recurring) === 1 ? `<span class="badge-soft badge-paid">${langData['recurring_every_year'] || 'Recurring'}</span>` : `<span class="badge-soft badge-unpaid">${langData['one_time_only'] || 'One-time'}</span>` },
+            { data: null, render: (d, t, row) => parseInt(row.is_recurring) === 1 ? `<span class="text-muted">${langData['recurring_every_year'] || 'Recurring'}</span>` : `<span class="text-muted">${langData['one_time_only'] || 'One-time'}</span>` },
             { data: null, render: (d, t, row) => holidayScopeSummary(row) },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openHolidayModal(${row.id})`, `askDelete('holiday', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
         ],
-        ordering: false, lengthChange: false, pageLength: 10,
-        language: { ...getTableLang(), emptyTable: langData['no_holidays_found'] || 'No holidays found.' },
+        searching: true, ordering: false, lengthChange: false, pageLength: 10,
+        language: { emptyTable: langData['no_holidays_found'] || 'No holidays found.' },
         initComplete: function () {
             addButtonInitComplete('btn-add-holiday', 'fa-solid fa-plus', 'add_holiday', 'Holiday', 'openHolidayModal()').call(this);
             // 2026-08-28, explicit request: "เพิ่มให้ Sync ข้อมูลวันหยุดตามประกาศจาก API ที่มี" -- see
@@ -352,7 +351,7 @@ function renderHoliday() {
                 ]
             });
         }
-    });
+    } });
 }
 // 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
 // .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).
@@ -450,7 +449,7 @@ function saveHoliday(btnEl) {
 let dtWorkLocation;
 function renderWorkLocation() {
     if ($.fn.DataTable.isDataTable('#tb_work_location')) { $('#tb_work_location').DataTable().ajax.reload(null, false); return; }
-    dtWorkLocation = $('#tb_work_location').DataTable({
+    dtWorkLocation = initSharedDataTable('#tb_work_location', { dtOptions: {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/work-location.list`, dataSrc: 'data' },
         columns: [
@@ -464,8 +463,8 @@ function renderWorkLocation() {
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openWorkLocationModal(${row.id})`, `askDelete('location', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.location_name_th : row.location_name_en)}')`, structureAssignExtraBtns('work_location', row.id, currentLang === 'th' ? row.location_name_th : row.location_name_en)) }
         ],
-        ordering: false, lengthChange: false, pageLength: 10,
-        language: { ...getTableLang(), emptyTable: langData['no_work_locations_yet'] || 'No work locations have been added yet.' },
+        searching: true, ordering: false, lengthChange: false, pageLength: 10,
+        language: { emptyTable: langData['no_work_locations_yet'] || 'No work locations have been added yet.' },
         initComplete: function () {
             addButtonInitComplete('btn-add-location', 'fa-solid fa-plus', 'add_work_location', 'Location', 'openWorkLocationModal()').call(this);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
@@ -481,7 +480,7 @@ function renderWorkLocation() {
                 ]
             });
         }
-    });
+    } });
 }
 // 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
 // .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).
@@ -547,7 +546,7 @@ function leaveQuotaUnitLabel(unit) {
 }
 function renderLeave() {
     if ($.fn.DataTable.isDataTable('#tb_leave')) { $('#tb_leave').DataTable().ajax.reload(null, false); return; }
-    dtLeave = $('#tb_leave').DataTable({
+    dtLeave = initSharedDataTable('#tb_leave', { dtOptions: {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/leave-type.list`, dataSrc: 'data' },
         columns: [
@@ -558,14 +557,14 @@ function renderLeave() {
             { data: 'code', render: d => `<span class="row-code">${escapeAttr(d)}</span>` },
             { data: null, render: (d, t, row) => `<span class="text-faint">${escapeAttr(currentLang === 'th' ? row.category_name_th : row.category_name_en)}</span>` },
             { data: null, className: 'text-end', render: (d, t, row) => `<span class="text-faint">${parseFloat(row.quota_amount)} ${leaveQuotaUnitLabel(row.unit_type)}</span>` },
-            { data: null, render: (d, t, row) => parseInt(row.is_paid) === 1 ? `<span class="badge-soft badge-paid">${langData['leave_pay_paid'] || 'Paid'}</span>` : `<span class="badge-soft badge-unpaid">${langData['leave_pay_unpaid'] || 'Unpaid'}</span>` },
-            { data: null, render: (d, t, row) => parseInt(row.allow_carry_over) === 1 ? `<span class="text-faint"><i class="fa-solid fa-check text-success me-1"></i>${langData['allowed'] || 'Allowed'}</span>` : `<span class="text-faint">-</span>` },
+            { data: null, render: (d, t, row) => parseInt(row.is_paid) === 1 ? `<span class="text-muted">${langData['leave_pay_paid'] || 'Paid'}</span>` : `<span class="text-muted">${langData['leave_pay_unpaid'] || 'Unpaid'}</span>` },
+            { data: null, render: (d, t, row) => parseInt(row.allow_carry_over) === 1 ? `<span class="text-faint"><i class="fa-solid fa-check text-muted me-1"></i>${langData['allowed'] || 'Allowed'}</span>` : `<span class="text-faint">-</span>` },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openLeaveModal(${row.id})`, `askDelete('leave', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
         ],
-        ordering: false, lengthChange: false, pageLength: 10,
-        language: { ...getTableLang(), emptyTable: langData['no_leave_types_found'] || 'No leave types found.' },
+        searching: true, ordering: false, lengthChange: false, pageLength: 10,
+        language: { emptyTable: langData['no_leave_types_found'] || 'No leave types found.' },
         initComplete: function () {
             addButtonInitComplete('btn-add-leave', 'fa-solid fa-plus', 'add_leave_type', 'Leave Type', 'openLeaveModal()').call(this);
             // "Apply Default" (2026-08-28) -- seeds the 10 starter leave types (see
@@ -599,7 +598,7 @@ function renderLeave() {
                 ]
             });
         }
-    });
+    } });
 }
 // 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
 // .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).
@@ -743,21 +742,21 @@ function otScopeOptionsPromise() {
 function otItemBadge(item) {
     if (!item) { return `<span class="text-muted small">${langData['ot_rate_set_not_configured'] || 'Not set'}</span>`; }
     return item.calculation_method === 'flat_amount'
-        ? `<span class="row-code">${parseFloat(item.flat_amount_rate || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/${item.calculation_base === 'daily' ? (langData['ot_base_daily'] || 'Daily') : (langData['ot_base_hourly'] || 'Hourly')}</span>`
+        ? `<span class="row-code">${fmtNum(parseFloat(item.flat_amount_rate || 0))}/${item.calculation_base === 'daily' ? (langData['ot_base_daily'] || 'Daily') : (langData['ot_base_hourly'] || 'Hourly')}</span>`
         : `<span class="row-code">${parseFloat(item.multiplier_rate).toFixed(1)}x</span>`;
 }
 function otItemByScopeCode(row, code) {
     return (row.items || []).find(i => i.scope_code === code) || null;
 }
 function otAssignSummary(row) {
-    if (row.is_default) { return `<span class="badge-soft badge-weekday"><i class="fa-solid fa-star me-1"></i>${langData['ot_rate_set_unassigned'] || 'Unassigned'}</span>`; }
+    if (row.is_default) { return `<span class="text-muted">${langData['ot_rate_set_unassigned'] || 'Unassigned'}</span>`; }
     const n = (row.assignments || []).length;
     if (n === 0) { return `<span class="text-muted small">-</span>`; }
     return `<span class="row-code">${n} ${langData['ot_rate_set_assignments_summary'] || 'assigned'}</span>`;
 }
 function renderOt() {
     if ($.fn.DataTable.isDataTable('#tb_ot')) { $('#tb_ot').DataTable().ajax.reload(null, false); return; }
-    dtOt = $('#tb_ot').DataTable({
+    dtOt = initSharedDataTable('#tb_ot', { dtOptions: {
         responsive: true,
         ajax: { url: `${BASE_URL}/api/ot-rate.list`, dataSrc: 'data' },
         columns: [
@@ -778,8 +777,8 @@ function renderOt() {
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-end all', render: (d, t, row) => actionBtns(`openOtModal(${row.id})`, `askDelete('ot', ${row.id}, '${escapeAttr(currentLang === 'th' ? row.name_th : row.name_en)}')`) }
         ],
-        ordering: false, lengthChange: false, pageLength: 10,
-        language: { ...getTableLang(), emptyTable: langData['no_ot_rate_sets_yet'] || 'No OT Rate Sets have been added yet.' },
+        searching: true, ordering: false, lengthChange: false, pageLength: 10,
+        language: { emptyTable: langData['no_ot_rate_sets_yet'] || 'No OT Rate Sets have been added yet.' },
         initComplete: function () {
             addButtonInitComplete('btn-add-ot', 'fa-solid fa-plus', 'add_ot_rate', 'OT Rate Set', 'openOtModal()').call(this);
             // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
@@ -798,7 +797,7 @@ function renderOt() {
                 ]
             });
         }
-    });
+    } });
 }
 // 2026-09-02, Platform Hardening Phase 1.1 -- upgraded to the shared renderStatusToggleHtml()/
 // .status-toggle-switch handler in app.js (confirm-before-deactivate + toast + revert-on-failure).
@@ -1014,7 +1013,7 @@ function saveOt(btnEl) {
  * same formula real OT payroll uses) against a fixed 30,000/2h sample scenario, shown in a small popup. */
 function otCalcPreviewFormulaStepsHtml(formula) {
     if (!formula) return '';
-    const fmt = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt = (n) => fmtNum(Number(n));
     const baseLabel = formula.is_daily_base ? (langData['ot_base_daily'] || 'Daily') : (langData['ot_base_hourly'] || 'Hourly');
     if (formula.type === 'ot_flat') {
         const unitHours = formula.is_daily_base ? fmt(formula.hours / formula.hours_divisor) : fmt(formula.hours);
@@ -1058,12 +1057,11 @@ $(document).on('click', '.ot-item-preview-btn', function () {
     const calcMethod = $row.find('.ot-item-method').val() || 'multiplier';
     const rate = parseFloat($row.find('.ot-item-rate').val());
     const calcBase = $row.find('.ot-item-base').val() || 'hourly';
-    Swal.fire({
-        icon: 'question', title: langData['calc_preview_title'] || 'Calculation Preview',
+    showConfirm({
+        title: langData['calc_preview_title'] || 'Calculation Preview',
         html: otItemPreviewPromptHtml(),
-        showCancelButton: true,
-        confirmButtonText: langData['calc_preview_button'] || 'Preview',
-        cancelButtonText: langData['close'] || 'Close',
+        confirmText: langData['calc_preview_button'] || 'Preview',
+        cancelText: langData['close'] || 'Close',
         showLoaderOnConfirm: true,
         allowOutsideClick: () => !Swal.isLoading(),
         preConfirm: () => {
@@ -1085,7 +1083,7 @@ $(document).on('click', '.ot-item-preview-btn', function () {
                     Swal.showValidationMessage(res.message || langData['save_failed'] || 'An error occurred.');
                     return false;
                 }
-                const amount = Number(res.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                const amount = fmtNum(Number(res.amount));
                 $('#swalOtPreviewResult').removeClass('d-none').html(
                     `<div class="calc-preview-amount mb-1">${langData['calc_preview_result_label'] || 'Result'}: ${amount}</div>` +
                     otCalcPreviewFormulaStepsHtml(res.formula)

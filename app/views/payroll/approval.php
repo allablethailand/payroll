@@ -22,35 +22,23 @@
          .station-row/.station-card component already built for the Payroll Process list page
          (app/views/payroll/index.php), trimmed to only the 3 states relevant to an approver. Wired
          the same way in approval.js: registerApprovalStationFilter()/updateApprovalStationCounts(). -->
-    <div class="station-filter" id="approvalStationFilter">
-        <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-        <button type="button" class="station-filter-toggle" id="approvalStationFilterToggle" title="Toggle filter">
-            <i class="fas fa-chevron-up"></i>
-        </button>
-        <div class="station-filter-body">
-            <div class="row g-2">
-                <div class="col-sm-4 col-md-3">
-                    <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker" id="approval_filter_date_from" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
-                </div>
-                <div class="col-sm-4 col-md-3">
-                    <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-                    <div class="input-group">
-                        <input type="text" class="form-control datepicker" id="approval_filter_date_to" autocomplete="off">
-                        <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                    </div>
-                </div>
-            </div>
+    <?php
+    ob_start(); ?>
+    <div class="row g-2">
+        <div class="col-sm-4 col-md-3">
+            <label class="form-label small mb-1" for="approval_filter_date_from" data-i18n="filter_date_from">From</label>
+            <input type="text" class="form-control datepicker" id="approval_filter_date_from" autocomplete="off">
+        </div>
+        <div class="col-sm-4 col-md-3">
+            <label class="form-label small mb-1" for="approval_filter_date_to" data-i18n="filter_date_to">To</label>
+            <input type="text" class="form-control datepicker" id="approval_filter_date_to" autocomplete="off">
         </div>
     </div>
-    <div class="station-filter-clear-row d-none" id="approvalDateFilterClearRow">
-        <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearApprovalDateFilter">
-            <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-        </button>
-    </div>
+    <?php
+    $filter_fields_html = ob_get_clean();
+    $id = 'approvalFilterBar';
+    include __DIR__ . '/../partials/filter-bar.php';
+    ?>
 
     <!-- Card labels use page-scoped lang keys (approval_station_*), not the global state_* keys
          used elsewhere in the app (status badges, Detail page timeline, Process List's own station
@@ -95,7 +83,7 @@
              Pending Sync picker on the Process list, reused here for consistency. -->
         <div class="d-none align-items-center mb-3 bulk-pull-bar" id="approvalBulkBar">
             <span class="bulk-pull-bar-count"><strong id="approvalBulkCount">0</strong> <span data-i18n="bulk_pull_selected_label">selected</span></span>
-            <button type="button" class="btn btn-sm btn-success" id="btnBulkApprove">
+            <button type="button" class="btn btn-sm btn-primary" id="btnBulkApprove">
                 <i class="fa-solid fa-check me-1"></i><span data-i18n="approval_bulk_approve">Approve Selected</span>
             </button>
             <button type="button" class="btn btn-sm btn-primary" id="btnBulkRequestInfo">

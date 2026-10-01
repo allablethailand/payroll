@@ -21,19 +21,19 @@
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu active" id="setup-tab-p1" type="button" role="tab"
                     aria-controls="setup-pane" aria-selected="true" data-page="p1">
-                <i class="fa-solid fa-id-card me-2"></i><span data-i18n="company_profile">Company Profile</span>
+                <span data-i18n="company_profile">Company Profile</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="setup-tab-p2" type="button" role="tab"
                     aria-controls="setup-pane" aria-selected="false" data-page="p2">
-                <i class="fa-solid fa-credit-card me-2"></i><span data-i18n="bank_accounts">Bank Accounts</span>
+                <span data-i18n="bank_accounts">Bank Accounts</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu" id="setup-tab-p3" type="button" role="tab"
                     aria-controls="setup-pane" aria-selected="false" data-page="p3">
-                <i class="fa-solid fa-building me-2"></i><span data-i18n="organization_structure">Organization Structure</span>
+                <span data-i18n="organization_structure">Organization Structure</span>
             </button>
         </li>
     </ul>
@@ -75,17 +75,17 @@
         <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" id="cpProfileSubTabs" role="tablist">
             <li class="nav-item" role="presentation">
                 <button class="nav-link structure-menu active" id="cpSub-info-tab" data-bs-toggle="tab" data-bs-target="#cpSub-info-pane" type="button" role="tab" aria-controls="cpSub-info-pane" aria-selected="true">
-                    <i class="fa-solid fa-building me-2"></i><span data-i18n="company_information">Company Information</span>
+                    <span data-i18n="company_information">Company Information</span>
                 </button>
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link structure-menu" id="cpSub-statutory-tab" data-bs-toggle="tab" data-bs-target="#cpSub-statutory-pane" type="button" role="tab" aria-controls="cpSub-statutory-pane" aria-selected="false">
-                    <i class="fa-solid fa-landmark me-2"></i><span data-i18n="local_statutory_and_tax_settings">Local Statutory &amp; Tax Settings</span>
+                    <span data-i18n="local_statutory_and_tax_settings">Local Statutory &amp; Tax Settings</span>
                 </button>
             </li>
             <li class="nav-item" role="presentation">
                 <button class="nav-link structure-menu" id="cpSub-brand-tab" data-bs-toggle="tab" data-bs-target="#cpSub-brand-pane" type="button" role="tab" aria-controls="cpSub-brand-pane" aria-selected="false">
-                    <i class="fa-solid fa-signature me-2"></i><span data-i18n="cp_signatory_branding_tab">Signatory &amp; Branding</span>
+                    <span data-i18n="cp_signatory_branding_tab">Signatory &amp; Branding</span>
                 </button>
             </li>
         </ul>
@@ -225,7 +225,7 @@
                 </div>
                 <div class="col-sm-4 mt-3 position-relative">
                     <input type="text" class="form-control required autocomplete-address" id="search_address" autocomplete="off" data-i18n="map_search_placeholder" placeholder="Search for an address...">
-                    <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none" style="z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
+                    <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none"></div>
                     <input type="hidden" name="master_address_id" class="master-address-id-field" id="master_address_id">
                     <p class="text-muted small mt-2"><i class="fa-solid fa-circle-info me-1"></i><span data-i18n="address_guide">Please enter your postal code, city/district, and state/province.</span></p>
                 </div>
@@ -291,7 +291,7 @@
                                     <label class="btn btn-outline-secondary btn-sm" for="cp_logo_file">
                                         <i class="fa-solid fa-upload me-1"></i><span data-i18n="upload_logo">Upload Logo</span>
                                     </label>
-                                    <button type="button" class="btn btn-outline-danger btn-sm d-none" id="cpLogoRemoveBtn">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="cpLogoRemoveBtn">
                                         <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
                                     </button>
                                     <input type="file" id="cp_logo_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
@@ -333,7 +333,7 @@
                                     <button type="button" class="btn btn-outline-primary btn-sm" id="cpDrawSignatureBtn">
                                         <i class="fa-solid fa-pen-nib me-1"></i><span data-i18n="draw_signature">Draw Signature</span>
                                     </button>
-                                    <button type="button" class="btn btn-outline-danger btn-sm d-none" id="cpSignatureRemoveBtn">
+                                    <button type="button" class="btn btn-outline-secondary btn-sm d-none" id="cpSignatureRemoveBtn">
                                         <i class="fa-solid fa-trash me-1"></i><span data-i18n="remove">Remove</span>
                                     </button>
                                     <input type="file" id="cp_signature_file" accept=".jpg,.jpeg,.png,.svg" class="d-none">
@@ -358,7 +358,7 @@
     </div>
     <div class="text-end">
         <button type="button" class="btn btn-primary save-company-profile"><i class="fa-solid fa-floppy-disk me-1"></i><span data-i18n="save">Save</span></button>
-        <button type="button" class="btn btn-light cancel-company-profile" data-i18n="cancel">Cancel</button>
+        <button type="button" class="btn btn-outline-secondary cancel-company-profile" data-i18n="cancel">Cancel</button>
     </div>
     </div>
 </template>
@@ -371,12 +371,12 @@
             <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" role="tablist">
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu active" id="bank-sub-tab-accounts" type="button" role="tab" aria-controls="bank-sub-pane" aria-selected="true" data-bank-page="accounts">
-                        <i class="fa-solid fa-credit-card me-2"></i><span data-i18n="bank_accounts">Bank Accounts</span>
+                        <span data-i18n="bank_accounts">Bank Accounts</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="bank-sub-tab-format" type="button" role="tab" aria-controls="bank-sub-pane" aria-selected="false" data-bank-page="format">
-                        <i class="fa-solid fa-file-lines me-2"></i><span data-i18n="bank_file_format">Bank File Format</span>
+                        <span data-i18n="bank_file_format">Bank File Format</span>
                     </button>
                 </li>
             </ul>
@@ -423,7 +423,7 @@
                     <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
                         <div>
                             <h6 class="fw-bold mb-0"><span id="bffDetailFormatName"></span></h6>
-                            <span class="badge bg-warning-subtle text-warning" id="bffDraftBadge" data-i18n="draft_not_verified">DRAFT — not verified</span>
+                            <span id="bffDraftBadge"><?= statusBadge('draft', 'bff_verification') ?></span>
                         </div>
                         <div class="btn-group border rounded-3 bg-white">
                             <button type="button" class="btn btn-link btn-sm" id="bffViewLogBtn"><i class="fa-solid fa-clock-rotate-left me-1"></i><span data-i18n="edit_log">Edit Log</span></button>
@@ -509,27 +509,27 @@
             <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" role="tablist">
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu active" id="structure-tab-p1" type="button" role="tab" aria-controls="structure-pane-content" aria-selected="true" data-page="p1">
-                        <i class="fa-solid fa-code-branch me-2"></i><span data-i18n="branch">Branch</span>
+                        <span data-i18n="branch">Branch</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="structure-tab-p2" type="button" role="tab" aria-controls="structure-pane-content" aria-selected="false" data-page="p2">
-                        <i class="fa-solid fa-user-tag me-2"></i><span data-i18n="role">Role</span>
+                        <span data-i18n="role">Role</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="structure-tab-p3" type="button" role="tab" aria-controls="structure-pane-content" aria-selected="false" data-page="p3">
-                        <i class="fa-solid fa-sitemap me-2"></i><span data-i18n="department">Department</span>
+                        <span data-i18n="department">Department</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="structure-tab-p4" type="button" role="tab" aria-controls="structure-pane-content" aria-selected="false" data-page="p4">
-                        <i class="fa-solid fa-briefcase me-2"></i><span data-i18n="position">Position</span>
+                        <span data-i18n="position">Position</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="structure-tab-p5" type="button" role="tab" aria-controls="structure-pane-content" aria-selected="false" data-page="p5">
-                        <i class="fa-solid fa-ranking-star me-2"></i><span data-i18n="rank">Rank</span>
+                        <span data-i18n="rank">Rank</span>
                     </button>
                 </li>
                 <!-- 2026-08-24, explicit request: "ในหน้าตั้งค่าพนักงาน ให้เพิ่ม Team เข้าไปได้ด้วย...ทีมให้
@@ -543,7 +543,7 @@
                      all; only visual tab order moved. -->
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="structure-tab-p7" type="button" role="tab" aria-controls="structure-pane-content" aria-selected="false" data-page="p7">
-                        <i class="fa-solid fa-people-group me-2"></i><span data-i18n="team">Team</span>
+                        <span data-i18n="team">Team</span>
                     </button>
                 </li>
                 <!-- 2026-08-31, explicit request: "สิทธิ์การใช้งาน...อยากให้แยกออกมาเป็นอีก Menu ไปเลย" --
@@ -555,7 +555,7 @@
                      unrelated to RBAC, a role-level notification default, not moved. -->
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="structure-tab-p6" type="button" role="tab" aria-controls="structure-pane-content" aria-selected="false" data-page="p6">
-                        <i class="fa-solid fa-bell me-2"></i><span data-i18n="notification_role_matrix_title">Notification Preferences by Role</span>
+                        <span data-i18n="notification_role_matrix_title">Notification Preferences by Role</span>
                     </button>
                 </li>
             </ul>

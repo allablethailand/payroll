@@ -71,7 +71,7 @@ function initOrigamiSyncButton(opts) {
     if ($existing.length > 0) { return $existing; }
     const label = (typeof langData !== 'undefined' && langData['sync_from_origami']) || 'Sync from Origami';
     const $btn = $(`
-        <button type="button" class="btn btn-outline-brand btn-sm ms-1 origami-sync-btn">
+        <button type="button" class="btn btn-outline-secondary btn-sm ms-1 origami-sync-btn">
             <i class="fa-solid fa-rotate me-1"></i><span data-i18n="sync_from_origami">${escapeHtml(label)}</span>
         </button>
     `);

@@ -33,22 +33,10 @@ function toLocalDateOnlyPr(value) {
 }
 // 2026-08-31, explicit request ("สิทธิ์ในการมองเห็นเงินเดือน...จะเห็นเป็น XXXX"): PayrollController may
 // send the literal string "XXXX" instead of a real number for a masked figure -- passed through
-// as-is rather than formatted (Number('XXXX') is NaN, which .toLocaleString() would otherwise
+// as-is rather than formatted (Number('XXXX') is NaN, which number formatting would otherwise
 // render as the confusing literal text "NaN").
 function stateBadgePr(state) {
-    const map = {
-        draft: 'bg-secondary-subtle text-secondary',
-        pending_approval: 'bg-warning-subtle text-warning',
-        approved: 'bg-info-subtle text-info',
-        paid: 'bg-success-subtle text-success',
-        locked: 'bg-dark-subtle text-dark',
-        rejected: 'bg-danger-subtle text-danger',
-        cancelled: 'bg-dark-subtle text-muted',
-        need_info: 'bg-primary-subtle text-primary',
-    };
-    const cls = map[state] || 'bg-light text-dark';
-    const text = langData['state_' + state] || state;
-    return `<span class="badge ${cls}">${text}</span>`;
+    return statusBadgeHtml(state, 'run_state');
 }
 // 2026-08-28, explicit request: "ใน Process List ให้มีสัญลักษณ์บอกด้วยครับ" (whether this run
 // computes full payroll or is an off-cycle Incentive/Other Payment pull -- see
@@ -74,7 +62,7 @@ function runOriginBadgePr(row) {
     if (!row.sync_process_id) {
         return '';
     }
-    return `<span class="badge bg-light text-dark border ms-1" title="${escapeHtml(langData['run_origin_sync'] || 'Pulled from Origami')}">${escapeHtml(langData['run_origin_origami'] || 'Origami')}</span>`;
+    return `<span class="text-muted ms-1" title="${escapeHtml(langData['run_origin_sync'] || 'Pulled from Origami')}">${escapeHtml(langData['run_origin_origami'] || 'Origami')}</span>`;
 }
 // 2026-09-01: pure classification helper (no markup) -- shared between the badge above and the new
 // Origin filter's own client-side DataTables search function, so the 2 never define "what counts as
@@ -96,7 +84,7 @@ function runTypeIconPr(row) {
     if (Number(row.include_attendance_pay) === 1) parts.push(langData['include_attendance_pay_label'] || 'Include attendance pay');
     const label = langData['run_purpose_incentive'] || 'Incentive / Other Payment';
     const title = parts.length ? `${label}: ${parts.join(', ')}` : label;
-    return `<span class="badge bg-light text-dark border ms-1" title="${escapeHtml(title)}">${escapeHtml(langData['run_type_special'] || 'Special run')}</span>`;
+    return `<span class="text-muted ms-1" title="${escapeHtml(title)}">${escapeHtml(langData['run_type_special'] || 'Special run')}</span>`;
 }
 // 2026-09-01, explicit request: "หน้า List page ควรมี indicator บอกด้วยว่ารอบนี้ตั้งค่าไว้ให้ไปรวมกับรอบไหน" --
 // this was the 2nd of the 2 known gaps flagged after the Detail-page merge-target-editing feature
@@ -112,12 +100,12 @@ function runTypeIconPr(row) {
 // sentence-form copy (merge_target_banner_text) on the Detail page, which stays as-is.
 function runCodeCellHtmlPr(row) {
     const ownCode = row.run_code
-        ? `<span class="badge bg-light text-dark border font-monospace fw-normal">${escapeHtml(row.run_code)}</span>`
+        ? `<span class="text-muted font-monospace">${escapeHtml(row.run_code)}</span>`
         : '<span class="text-muted">-</span>';
     if (row.merge_target_run_id) {
         const targetLabel = row.merge_target_run_code || row.merge_target_run_name || `#${row.merge_target_run_id}`;
         const tpl = langData['run_merge_reference_inline'] || 'Merges into: {target}';
-        const refLine = `<div class="small text-primary mt-1" title="${escapeHtml(targetLabel)}"><i class="fa-solid fa-code-merge me-1"></i>${escapeHtml(tpl.replace('{target}', targetLabel))}</div>`;
+        const refLine = `<div class="small mt-1" title="${escapeHtml(targetLabel)}"><i class="fa-solid fa-code-merge me-1"></i>${escapeHtml(tpl.replace('{target}', targetLabel))}</div>`;
         return ownCode + refLine;
     }
     // 2026-09-06: the "future cycle" merge-target form -- merge_target_run_id is still null (no
@@ -437,9 +425,9 @@ function renderRunActionsPr(row) {
     // copy of the same pattern Process Detail's #reportPreviewModal already established -- see
     // runRegisterPdfPreview()); Excel stays a direct one-click download.
     html += `<div class="dropdown">
-        <button type="button" class="btn btn-link btn-circle-action text-primary dropdown-toggle" data-bs-toggle="dropdown" title="${langData['export'] || 'Export'}"><i class="fa-solid fa-file-export"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action dropdown-toggle" data-bs-toggle="dropdown" title="${langData['export'] || 'Export'}"><i class="fa-solid fa-file-export"></i></button>
         <ul class="dropdown-menu">
-            <li><button type="button" class="dropdown-item btn-export-run-register" data-id="${row.id}"><i class="fa-solid fa-file-excel text-success me-2"></i>${langData['export_excel'] || 'Export Excel'}</button></li>
+            <li><button type="button" class="dropdown-item btn-export-run-register" data-id="${row.id}"><i class="fa-solid fa-file-excel text-muted me-2"></i>${langData['export_excel'] || 'Export Excel'}</button></li>
             <li><button type="button" class="dropdown-item btn-preview-run-register-pdf" data-id="${row.id}"><i class="fa-solid fa-file-pdf text-danger me-2"></i>${langData['export_pdf'] || 'Export PDF'}</button></li>
         </ul>
     </div>`;
@@ -448,7 +436,7 @@ function renderRunActionsPr(row) {
     // without opening the run first. Draft-only (PayrollRunModel::setEmployeeVerified() itself
     // refuses any other state), matching the Detail-page button's own visibility gate.
     if (isDraft) {
-        html += `<button type="button" class="btn btn-link btn-circle-action text-success btn-verify-all-run" data-id="${row.id}" title="${langData['action_verify_all'] || 'Verify All'}"><i class="fa-solid fa-check-double"></i></button>`;
+        html += `<button type="button" class="btn btn-link btn-circle-action btn-verify-all-run" data-id="${row.id}" title="${langData['action_verify_all'] || 'Verify All'}"><i class="fa-solid fa-check-double"></i></button>`;
     }
     if (['draft', 'pending_approval', 'approved', 'rejected'].includes(row.state)) {
         html += `<button type="button" class="btn btn-link btn-circle-action text-danger btn-cancel-run" data-id="${row.id}" title="${langData['action_cancel'] || 'Cancel'}"><i class="fa-solid fa-ban"></i></button>`;
@@ -494,10 +482,6 @@ function registerStationSearchFilter() {
         return true;
     });
 }
-$(document).on('change', '#filter_run_origin, #filter_run_cycle, #filter_run_purpose', function () {
-    updateClearFilterVisibility();
-    if (tb_payroll_run) tb_payroll_run.draw();
-});
 
 function updateStationCounts() {
     if (!tb_payroll_run) return;
@@ -518,155 +502,146 @@ function initPayrollRunTable() {
         $('#tb_payroll_run').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_payroll_run = $('#tb_payroll_run').DataTable({
-        responsive: true,
-        // Sorts by Pay Period (index 2) descending -- unaffected by the 2026-09-10 column reorder,
-        // since Pay Period's own position (Code, Run Name, Pay Period, ...) didn't change.
-        order: [[2, 'desc']],
-        ajax: {
-            url: `${BASE_URL}/api/payroll-run.list`,
-            dataSrc: 'data',
-            data: function (d) {
-                d.state = '';
-                d.date_from = toIsoDatePr($('#filter_date_from').val());
-                d.date_to = toIsoDatePr($('#filter_date_to').val());
-            }
+    tb_payroll_run = initSharedDataTable('#tb_payroll_run', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'run_code' },
+                { index: 1, key: 'run_name' },
+                { index: 2, key: 'period' },
+                { index: 4, key: 'employee_count' },
+                { index: 5, key: 'total_net_amount' },
+                { index: 6, key: 'updated_at' },
+                { index: 7, key: 'updated_by' },
+            ]
         },
-        columns: [
-            // 2026-09-02, explicit request: "ในตารางให้แสดง Code ของรอบด้วยครับ และถ้ามีการอ้างอิงถึงรอบก็ให้แสดง
-            // ด้วยครับ" -- new dedicated Code column (run_code + a visible reference line when this run
-            // has a merge_target_run_id set) -- see runCodeCellHtmlPr()'s own comment for why this
-            // replaced the old hover-only icon on Run Name. Object-form render for the same sort-safety
-            // reason as run_name below -- sort/filter key off the raw run_code, not the badge HTML.
-            { data: 'run_code', render: {
-                display: (d, t, row) => runCodeCellHtmlPr(row),
-                sort: d => d || '',
-                filter: d => d || '',
-            } },
-            // 2026-09-10, explicit request: "ตัด column ผู้สร้าง ออกจากตาราง...ย้ายไปแสดงเป็น tooltip ที่
-            // ชื่อรอบ" -- the Created By column (employeeNamePr(row)) is gone from this table entirely;
-            // its own value is now a native `title` attribute on this cell's <strong> instead, shown
-            // on hover, reusing the existing table_created_by i18n key (no new key needed). Object-form
-            // render unchanged (same sort-safety reason as before) -- only the display branch changed.
-            { data: 'run_name', render: {
-                display: (d, t, row) => `<strong class="text-dark" title="${escapeHtml((langData['table_created_by'] || 'Created By') + ': ' + employeeNamePr(row))}">${escapeHtml(d)}</strong>${runOriginBadgePr(row)}${runTypeIconPr(row)}`,
-                sort: d => d,
-                filter: d => d,
-            } },
-            { data: null, render: (d, t, row) => `${toDisplayDatePr(row.period_start_date)} - ${toDisplayDatePr(row.period_end_date)}` },
-            // 2026-09-10, explicit request: "เรียง column ใหม่...สถานะ...จำนวนพนักงาน...ยอดสุทธิรวม" --
-            // moved back up to right after Pay Period (was right before Updated By per the 2026-09-02
-            // request this one explicitly supersedes) -- orderable:false/no-single-filterable-value,
-            // same as before, still excluded from initExcelColumnFilters() below, only its position
-            // changed.
-            { data: null, orderable: false, render: (d, t, row) => renderStatusTimelineCell(row) },
-            // 2026-08-29, explicit request: "ต้องดึงไปแสดงผลในหน้า List ด้วยว่า Verify ไปแล้วกี่คน Lock
-            // ข้อมูลแล้วกี่คน" -- object-form render (display/sort/filter split, same DataTables sort-
-            // safety convention this app already uses for formatted date/badge columns) so sorting by
-            // this column still sorts numerically by the raw employee_count, not by the rendered HTML string.
-            // 2026-08-29, explicit follow-up: "ปรับ Column จำนวนพนักงาน Verify Lock ให้ดูง่ายขึ้น และถ้า
-            // ข้อมูลไม่สมบูรณ์ให้มีบอกด้วย ว่าไม่สมบูรณ์กี่คนและมีปุ่ม i ให้คลิกดูรายละเอียดในหน้ารายการได้เลย"
-            // -- redesigned from the previous inline-badge layout into a clearer stacked block (total
-            // count as its own line, verify/lock/error as a wrapped pill row underneath), plus a new
-            // red error_employee_count pill with a clickable "i" that opens #runErrorEmployeesModal
-            // (fetched on demand via api/payroll-run.error-employees -- never pre-fetched per row).
-            // 2026-09-10, explicit report: "แสดง '11 [icon]' บรรทัดหนึ่ง และ '[check] 11' อีกบรรทัด" --
-            // consolidated into one line, no icon. Which form shows is keyed on the RUN'S OWN STATE,
-            // not the verified count: draft/pending_approval/need_info/rejected (not yet approved --
-            // employees can still be verified/unverified on this run) always show
-            // "{verify_status_verified} {verified}/{total}", even when verified is 0; approved/paid/
-            // locked/cancelled (decided -- verification no longer applies) show just "{total}". The
-            // error pill (a real interactive button, not just an icon) is unrelated to this complaint
-            // and stays on its own line underneath when there's incomplete data to flag -- unchanged.
-            { data: 'employee_count', className: 'text-end', render: {
-                display: (d, t, row) => {
-                    const total = Number(d || 0);
-                    const verified = Number(row.verified_employee_count || 0);
-                    const errors = Number(row.error_employee_count || 0);
-                    const preApprovalStates = ['draft', 'pending_approval', 'need_info', 'rejected'];
-                    // 2026-09-09, round-creation flow copy audit round 3: dedicated key, NOT the
-                    // shared 'verified' key (also used by Company Profile/Tax & Statutory for
-                    // unrelated "verified" badges where "ยืนยันแล้ว" is the correct word) -- this
-                    // app's own Verify-run action is standardized on "ตรวจสอบ" everywhere else.
-                    const mainLine = preApprovalStates.includes(row.state)
-                        ? escapeHtml(`${langData['verify_status_verified'] || 'Verified'} ${verified}/${total}`)
-                        : escapeHtml(String(total));
-                    // 2026-09-21, 3e-2b: the pill goes through the shared countBadgeHtml() (§5) with
-                    // a `{n}` label instead of a badge span written out by hand here -- it stands
-                    // alone in this cell, so the bare number would not say what it counts, and the
-                    // 2 icons it used to wear said nothing the words do not (§0.3). Still the same
-                    // `<button>`, same id-less `.btn-view-run-errors` + `data-id` handler as before.
-                    const errorLabel = langData['run_error_employee_count'] || '{n} with errors';
-                    const errorHtml = errors
-                        ? `<div class="mt-1"><button type="button" class="btn btn-link p-0 border-0 align-baseline btn-view-run-errors" data-id="${row.id}" title="${escapeAttr(langData['incomplete_data'] || 'Incomplete data')}">${countBadgeHtml(errors, { tone: 'danger', label: errorLabel })}</button></div>`
-                        : '';
-                    return `<div class="fw-semibold">${mainLine}</div>${errorHtml}`;
-                },
-                sort: d => d,
-                filter: d => d,
-            } },
-            // 2026-08-29, real bug found via a system-wide table audit: sort-safety fix -- plain
-            // `render: fn` meant client-side sort/filter operated on the formatted string, not the
-            // raw numeric amount (same class of bug already documented in CLAUDE.md).
-            { data: 'total_net_amount', className: 'text-end', render: { display: d => fmtNum(d), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
-            // 2026-08-29, explicit request: "ช่วยเพิ่ม Column ว่า Update ข้อมูลล่าสุดเมื่อไหร่ และใครเป็นคน
-            // Update" -- object-form render (sort-safety, same convention as every other formatted-
-            // date column in this app) so client-side sort operates on the raw updated_at timestamp,
-            // not the dd/mm/yyyy display string.
-            { data: 'updated_at', render: { display: (v) => v ? formatDisplayDateTime(v) : '-', sort: (v) => v || '', filter: (v) => v || '' } },
-            // 2026-09-10, Batch 3A item 4: plain name text -> clickable employee avatar + name
-            // (apvPersonLineHtml(..., {employeeId}), app.js) opening the quick-view modal. Object-
-            // form render (this app's own DataTables sort-safety convention) since the display side
-            // is now HTML, not plain text -- sort/filter still key off the raw name string.
-            { data: null, render: {
-                // 2026-09-11, Batch 3C item 3, explicit instruction: "+8px" over the previous 24.
-                display: (d, t, row) => apvPersonLineHtml(updatedByNamePr(row), 32, row.updated_by_profile_photo_path, row.updated_by ? { employeeId: row.updated_by } : null),
-                sort: (d, t, row) => updatedByNamePr(row),
-                filter: (d, t, row) => updatedByNamePr(row),
-            } },
-            // 2026-08-28, explicit request: "Column ท้ายสุดต้องเป็นปุ่มดำเนินการ...hidden ส่วนอื่นเป็น
-            // ตัว expand แทน" -- className:'all' (dtr-all) keeps this last, already-actions column
-            // from ever collapsing into the Responsive expand row, same fix as employee/list.js's
-            // own 2026-08-27 precedent.
-            { data: null, className: 'text-center all', orderable: false, render: (d, t, row) => renderRunActionsPr(row) },
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        initComplete: function () {
-            const self = this.api();
-            const $wrapper = $(self.table().container());
-            const $searchDiv = $wrapper.find('.dt-search');
-            if ($searchDiv.find('.btn-add-run').length === 0) {
-                $searchDiv.append(`
-                    <button type="button" class="btn btn-primary ms-1 btn-add-run">
-                        <i class="fa-solid fa-plus me-1"></i><span data-i18n="payroll_run">${langData['payroll_run'] || 'Payroll Run'}</span>
-                    </button>
-                `);
-            }
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the status-timeline widget (a visual component with no
-            // single filterable value) and the actions column.
-            // 2026-09-10: Created By column removed entirely (moved to a run_name tooltip, see that
-            // column's own render comment) and Status moved from index 7 back to index 3, right after
-            // Pay Period -- indices below updated to match the new column order exactly: run_code(0)/
-            // run_name(1)/period(2)/[status(3), skipped -- same "no single filterable value" reason as
-            // before, only its index changed]/employee_count(4)/total_net_amount(5)/updated_at(6)/
-            // updated_by(7)/[actions(8), skipped].
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'run_code' },
-                    { index: 1, key: 'run_name' },
-                    { index: 2, key: 'period' },
-                    { index: 4, key: 'employee_count' },
-                    { index: 5, key: 'total_net_amount' },
-                    { index: 6, key: 'updated_at' },
-                    { index: 7, key: 'updated_by' },
-                ]
-            });
+        dtOptions: {
+            responsive: true,
+            // Sorts by Pay Period (index 2) descending -- unaffected by the 2026-09-10 column reorder,
+            // since Pay Period's own position (Code, Run Name, Pay Period, ...) didn't change.
+            order: [[2, 'desc']],
+            ajax: {
+                url: `${BASE_URL}/api/payroll-run.list`,
+                dataSrc: 'data',
+                data: function (d) {
+                    d.state = '';
+                    d.date_from = toIsoDatePr($('#filter_date_from').val());
+                    d.date_to = toIsoDatePr($('#filter_date_to').val());
+                }
+            },
+            columns: [
+                // 2026-09-02, explicit request: "ในตารางให้แสดง Code ของรอบด้วยครับ และถ้ามีการอ้างอิงถึงรอบก็ให้แสดง
+                // ด้วยครับ" -- new dedicated Code column (run_code + a visible reference line when this run
+                // has a merge_target_run_id set) -- see runCodeCellHtmlPr()'s own comment for why this
+                // replaced the old hover-only icon on Run Name. Object-form render for the same sort-safety
+                // reason as run_name below -- sort/filter key off the raw run_code, not the badge HTML.
+                { data: 'run_code', render: {
+                    display: (d, t, row) => runCodeCellHtmlPr(row),
+                    sort: d => d || '',
+                    filter: d => d || '',
+                } },
+                // 2026-09-10, explicit request: "ตัด column ผู้สร้าง ออกจากตาราง...ย้ายไปแสดงเป็น tooltip ที่
+                // ชื่อรอบ" -- the Created By column (employeeNamePr(row)) is gone from this table entirely;
+                // its own value is now a native `title` attribute on this cell's <strong> instead, shown
+                // on hover, reusing the existing table_created_by i18n key (no new key needed). Object-form
+                // render unchanged (same sort-safety reason as before) -- only the display branch changed.
+                { data: 'run_name', render: {
+                    display: (d, t, row) => `<strong class="text-dark" title="${escapeHtml((langData['table_created_by'] || 'Created By') + ': ' + employeeNamePr(row))}">${escapeHtml(d)}</strong>${runOriginBadgePr(row)}${runTypeIconPr(row)}`,
+                    sort: d => d,
+                    filter: d => d,
+                } },
+                { data: null, render: (d, t, row) => `${toDisplayDatePr(row.period_start_date)} - ${toDisplayDatePr(row.period_end_date)}` },
+                // 2026-09-10, explicit request: "เรียง column ใหม่...สถานะ...จำนวนพนักงาน...ยอดสุทธิรวม" --
+                // moved back up to right after Pay Period (was right before Updated By per the 2026-09-02
+                // request this one explicitly supersedes) -- orderable:false/no-single-filterable-value,
+                // same as before, still excluded from initExcelColumnFilters() below, only its position
+                // changed.
+                { data: null, orderable: false, render: (d, t, row) => renderStatusTimelineCell(row) },
+                // 2026-08-29, explicit request: "ต้องดึงไปแสดงผลในหน้า List ด้วยว่า Verify ไปแล้วกี่คน Lock
+                // ข้อมูลแล้วกี่คน" -- object-form render (display/sort/filter split, same DataTables sort-
+                // safety convention this app already uses for formatted date/badge columns) so sorting by
+                // this column still sorts numerically by the raw employee_count, not by the rendered HTML string.
+                // 2026-08-29, explicit follow-up: "ปรับ Column จำนวนพนักงาน Verify Lock ให้ดูง่ายขึ้น และถ้า
+                // ข้อมูลไม่สมบูรณ์ให้มีบอกด้วย ว่าไม่สมบูรณ์กี่คนและมีปุ่ม i ให้คลิกดูรายละเอียดในหน้ารายการได้เลย"
+                // -- redesigned from the previous inline-badge layout into a clearer stacked block (total
+                // count as its own line, verify/lock/error as a wrapped pill row underneath), plus a new
+                // red error_employee_count pill with a clickable "i" that opens #runErrorEmployeesModal
+                // (fetched on demand via api/payroll-run.error-employees -- never pre-fetched per row).
+                // 2026-09-10, explicit report: "แสดง '11 [icon]' บรรทัดหนึ่ง และ '[check] 11' อีกบรรทัด" --
+                // consolidated into one line, no icon. Which form shows is keyed on the RUN'S OWN STATE,
+                // not the verified count: draft/pending_approval/need_info/rejected (not yet approved --
+                // employees can still be verified/unverified on this run) always show
+                // "{verify_status_verified} {verified}/{total}", even when verified is 0; approved/paid/
+                // locked/cancelled (decided -- verification no longer applies) show just "{total}". The
+                // error pill (a real interactive button, not just an icon) is unrelated to this complaint
+                // and stays on its own line underneath when there's incomplete data to flag -- unchanged.
+                { data: 'employee_count', className: 'text-end', render: {
+                    display: (d, t, row) => {
+                        const total = Number(d || 0);
+                        const verified = Number(row.verified_employee_count || 0);
+                        const errors = Number(row.error_employee_count || 0);
+                        const preApprovalStates = ['draft', 'pending_approval', 'need_info', 'rejected'];
+                        // 2026-09-09, round-creation flow copy audit round 3: dedicated key, NOT the
+                        // shared 'verified' key (also used by Company Profile/Tax & Statutory for
+                        // unrelated "verified" badges where "ยืนยันแล้ว" is the correct word) -- this
+                        // app's own Verify-run action is standardized on "ตรวจสอบ" everywhere else.
+                        const mainLine = preApprovalStates.includes(row.state)
+                            ? escapeHtml(`${langData['verify_status_verified'] || 'Verified'} ${verified}/${total}`)
+                            : escapeHtml(String(total));
+                        // 2026-09-21, 3e-2b: the pill goes through the shared countBadgeHtml() (§5) with
+                        // a `{n}` label instead of a badge span written out by hand here -- it stands
+                        // alone in this cell, so the bare number would not say what it counts, and the
+                        // 2 icons it used to wear said nothing the words do not (§0.3). Still the same
+                        // `<button>`, same id-less `.btn-view-run-errors` + `data-id` handler as before.
+                        const errorLabel = langData['run_error_employee_count'] || '{n} with errors';
+                        const errorHtml = errors
+                            ? `<div class="mt-1"><button type="button" class="btn btn-link p-0 border-0 align-baseline btn-view-run-errors" data-id="${row.id}" title="${escapeAttr(langData['incomplete_data'] || 'Incomplete data')}">${countBadgeHtml(errors, { tone: 'danger', label: errorLabel })}</button></div>`
+                            : '';
+                        return `<div class="fw-semibold">${mainLine}</div>${errorHtml}`;
+                    },
+                    sort: d => d,
+                    filter: d => d,
+                } },
+                // 2026-08-29, real bug found via a system-wide table audit: sort-safety fix -- plain
+                // `render: fn` meant client-side sort/filter operated on the formatted string, not the
+                // raw numeric amount (same class of bug already documented in CLAUDE.md).
+                { data: 'total_net_amount', className: 'text-end', render: { display: d => fmtNum(d), sort: d => Number(d || 0), filter: d => Number(d || 0) } },
+                // 2026-08-29, explicit request: "ช่วยเพิ่ม Column ว่า Update ข้อมูลล่าสุดเมื่อไหร่ และใครเป็นคน
+                // Update" -- object-form render (sort-safety, same convention as every other formatted-
+                // date column in this app) so client-side sort operates on the raw updated_at timestamp,
+                // not the dd/mm/yyyy display string.
+                { data: 'updated_at', render: { display: (v) => v ? formatDisplayDateTime(v) : '-', sort: (v) => v || '', filter: (v) => v || '' } },
+                // 2026-09-10, Batch 3A item 4: plain name text -> clickable employee avatar + name
+                // (apvPersonLineHtml(..., {employeeId}), app.js) opening the quick-view modal. Object-
+                // form render (this app's own DataTables sort-safety convention) since the display side
+                // is now HTML, not plain text -- sort/filter still key off the raw name string.
+                { data: null, render: {
+                    // 2026-09-11, Batch 3C item 3, explicit instruction: "+8px" over the previous 24.
+                    display: (d, t, row) => apvPersonLineHtml(updatedByNamePr(row), 32, row.updated_by_profile_photo_path, row.updated_by ? { employeeId: row.updated_by } : null),
+                    sort: (d, t, row) => updatedByNamePr(row),
+                    filter: (d, t, row) => updatedByNamePr(row),
+                } },
+                // 2026-08-28, explicit request: "Column ท้ายสุดต้องเป็นปุ่มดำเนินการ...hidden ส่วนอื่นเป็น
+                // ตัว expand แทน" -- className:'all' (dtr-all) keeps this last, already-actions column
+                // from ever collapsing into the Responsive expand row, same fix as employee/list.js's
+                // own 2026-08-27 precedent.
+                { data: null, className: 'text-center all', orderable: false, render: (d, t, row) => renderRunActionsPr(row) },
+            ],
+            initComplete: function () {
+                const self = this.api();
+                const $wrapper = $(self.table().container());
+                const $searchDiv = $wrapper.find('.dt-search');
+                if ($searchDiv.find('.btn-add-run').length === 0) {
+                    $searchDiv.append(`
+                        <button type="button" class="btn btn-primary ms-1 btn-add-run">
+                            <i class="fa-solid fa-plus me-1"></i><span data-i18n="payroll_run">${langData['payroll_run'] || 'Payroll Run'}</span>
+                        </button>
+                    `);
+                }
+            },
+            drawCallback: function () { getTableLang(); updateStationCounts(); },
+            searching: true,
         },
-        drawCallback: function () { getTableLang(); updateStationCounts(); }
     });
     // 2026-08-21, real bug fix (explicit report: "คลิกที่ Column ไม่ได้...ไม่ขึ้น Tab ใหม่") --
     // was window.location.href (same-tab navigation), inconsistent with the Actions column's own
@@ -746,185 +721,181 @@ function initPendingSyncTable() {
         $('#tb_pending_sync').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_pending_sync = $('#tb_pending_sync').DataTable({
-        responsive: true,
-        order: [[7, 'desc']],
-        ajax: {
-            url: `${BASE_URL}/api/payroll-sync.pending-list`,
-            data: function (d) {
-                d.date_from = toIsoDatePr($('#filter_date_from').val());
-                d.date_to = toIsoDatePr($('#filter_date_to').val());
-            },
-            dataSrc: function (json) {
-                const rows = json.data || [];
-                $('.station-card[data-state="pending_sync"] .station-count').text(rows.length);
-                return rows;
-            }
+    tb_pending_sync = initSharedDataTable('#tb_pending_sync', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 1, key: 'process_no' },
+                { index: 2, key: 'period_name' },
+                { index: 3, key: 'frequency_type' },
+                { index: 4, key: 'item_count' },
+                { index: 5, key: 'unmapped_item_count' },
+                { index: 6, key: 'received_at' },
+            ]
         },
-        columns: [
-            { data: 'id', orderable: false, className: 'text-center', render: d => `<input type="checkbox" class="pending-sync-checkbox" value="${d}">` },
-            {
-                // 2026-08-29, see PAYROLL_SYNC_API.md's own run_kind field -- small badge next to
-                // the process number so it's obvious at a glance which pending items are a normal
-                // period-matched pull vs a standalone/ad-hoc one (e.g. OT-only, Trip-only).
-                data: 'process_no', render: (d, t, row) => {
-                    const isSupplemental = row.run_kind === 'supplemental';
-                    const badge = isSupplemental
-                        ? `<span class="badge bg-warning-subtle text-warning ms-1">${langData['sync_run_kind_supplemental'] || 'Supplemental'}</span>`
-                        : '';
-                    // 2026-08-31, PAYROLL_SYNC_API.md `attribution` revision -- a second badge on a
-                    // supplemental row showing its routing intent BEFORE an admin pulls it, so
-                    // "→ Merge into ORIGAMI-2026-00024" or "→ Separate" is visible at a glance
-                    // instead of only surfacing after the fact. Only ever set on a supplemental row
-                    // (see PayrollSyncModel::normalizeAttribution()'s own docblock).
-                    //
-                    // 2026-09-06: confirmed with Origami that a "merge" attribution's own target
-                    // regular process can legitimately not exist on our side YET (no guaranteed send
-                    // order between the two payloads -- e.g. a mid-month trip-allowance batch
-                    // attributed to "next month's regular cycle" arrives before that cycle's own
-                    // payload does). row.attribution_target_status (see PayrollSyncModel::
-                    // attributionTargetStatus()) now distinguishes that from "ready to merge right
-                    // now" so the badge/button reflect reality up front instead of the admin only
-                    // finding out by clicking Merge and getting a refusal.
-                    let attrBadge = '';
-                    if (isSupplemental && row.attribution_tax_treatment === 'merge') {
-                        // 2026-09-08, Origami email exchange (2 rounds) -- 'pending_fold_in' means
-                        // Origami itself hasn't chosen a target AT ALL yet (no target id/no to show
-                        // at all, unlike 'waiting_unknown' below which at least has a target NAME,
-                        // just not received yet) -- resolves only via a future attribution_update
-                        // event, checked first since there's no target to build the other badges'
-                        // own {target} text from.
-                        if (row.attribution_target_status === 'pending_fold_in') {
-                            attrBadge = `<span class="badge bg-secondary-subtle text-secondary ms-1" title="${langData['sync_attribution_pending_fold_in_tooltip'] || 'Origami has not chosen a target regular cycle for this item yet. It will notify us automatically once a target is chosen.'}">${langData['sync_attribution_pending_fold_in'] || '→ Waiting for Origami to choose a target'}</span>`;
-                            return `<strong class="text-dark">${escapeHtml(d)}</strong>${badge}${attrBadge}`;
+        dtOptions: {
+            responsive: true,
+            order: [[7, 'desc']],
+            ajax: {
+                url: `${BASE_URL}/api/payroll-sync.pending-list`,
+                data: function (d) {
+                    d.date_from = toIsoDatePr($('#filter_date_from').val());
+                    d.date_to = toIsoDatePr($('#filter_date_to').val());
+                },
+                dataSrc: function (json) {
+                    const rows = json.data || [];
+                    $('.station-card[data-state="pending_sync"] .station-count').text(rows.length);
+                    return rows;
+                }
+            },
+            columns: [
+                { data: 'id', orderable: false, className: 'text-center', render: d => `<input type="checkbox" class="pending-sync-checkbox" value="${d}">` },
+                {
+                    // 2026-08-29, see PAYROLL_SYNC_API.md's own run_kind field -- small badge next to
+                    // the process number so it's obvious at a glance which pending items are a normal
+                    // period-matched pull vs a standalone/ad-hoc one (e.g. OT-only, Trip-only).
+                    data: 'process_no', render: (d, t, row) => {
+                        const isSupplemental = row.run_kind === 'supplemental';
+                        const badge = isSupplemental
+                            ? `<span class="text-muted ms-1">${langData['sync_run_kind_supplemental'] || 'Supplemental'}</span>`
+                            : '';
+                        // 2026-08-31, PAYROLL_SYNC_API.md `attribution` revision -- a second badge on a
+                        // supplemental row showing its routing intent BEFORE an admin pulls it, so
+                        // "→ Merge into ORIGAMI-2026-00024" or "→ Separate" is visible at a glance
+                        // instead of only surfacing after the fact. Only ever set on a supplemental row
+                        // (see PayrollSyncModel::normalizeAttribution()'s own docblock).
+                        //
+                        // 2026-09-06: confirmed with Origami that a "merge" attribution's own target
+                        // regular process can legitimately not exist on our side YET (no guaranteed send
+                        // order between the two payloads -- e.g. a mid-month trip-allowance batch
+                        // attributed to "next month's regular cycle" arrives before that cycle's own
+                        // payload does). row.attribution_target_status (see PayrollSyncModel::
+                        // attributionTargetStatus()) now distinguishes that from "ready to merge right
+                        // now" so the badge/button reflect reality up front instead of the admin only
+                        // finding out by clicking Merge and getting a refusal.
+                        let attrBadge = '';
+                        if (isSupplemental && row.attribution_tax_treatment === 'merge') {
+                            // 2026-09-08, Origami email exchange (2 rounds) -- 'pending_fold_in' means
+                            // Origami itself hasn't chosen a target AT ALL yet (no target id/no to show
+                            // at all, unlike 'waiting_unknown' below which at least has a target NAME,
+                            // just not received yet) -- resolves only via a future attribution_update
+                            // event, checked first since there's no target to build the other badges'
+                            // own {target} text from.
+                            if (row.attribution_target_status === 'pending_fold_in') {
+                                attrBadge = `<span class="text-muted ms-1" title="${langData['sync_attribution_pending_fold_in_tooltip'] || 'Origami has not chosen a target regular cycle for this item yet. It will notify us automatically once a target is chosen.'}">${langData['sync_attribution_pending_fold_in'] || '→ Waiting for Origami to choose a target'}</span>`;
+                                return `<strong class="text-dark">${escapeHtml(d)}</strong>${badge}${attrBadge}`;
+                            }
+                            const target = escapeHtml(row.attribution_target_process_no || `#${row.attribution_target_origami_process_id}`);
+                            if (row.attribution_target_status === 'ready') {
+                                attrBadge = `<span class="text-muted ms-1">${(langData['sync_attribution_merge_into'] || '→ Merge into {target}').replace('{target}', target)}</span>`;
+                            } else if (row.attribution_target_status === 'waiting_known') {
+                                attrBadge = `<span class="text-muted ms-1" title="${langData['sync_attribution_waiting_known_tooltip'] || 'The target regular cycle has been received from Origami but not pulled into a run yet.'}">${(langData['sync_attribution_waiting_known'] || '→ Waiting: {target} not pulled yet').replace('{target}', target)}</span>`;
+                            } else if (row.attribution_target_status === 'target_rejected') {
+                                // 2026-09-06: the target regular process was received but has since been
+                                // REJECTED at Pending Pull -- a real dead end (no un-reject action exists),
+                                // deliberately styled/worded differently from "waiting" so this doesn't read
+                                // as "will become ready eventually" -- it never will on its own.
+                                attrBadge = `<span class="text-muted ms-1" title="${langData['sync_attribution_target_rejected_tooltip'] || 'The target regular cycle was rejected and will never be pulled into a run. Pull this as its own standalone run instead, or ask Origami to re-attribute it.'}">${(langData['sync_attribution_target_rejected'] || '→ {target} was rejected').replace('{target}', target)}</span>`;
+                            } else {
+                                attrBadge = `<span class="text-muted ms-1" title="${langData['sync_attribution_waiting_unknown_tooltip'] || 'The target regular cycle has not been received from Origami yet.'}">${(langData['sync_attribution_waiting_unknown'] || '→ Waiting for {target}').replace('{target}', target)}</span>`;
+                            }
+                        } else if (isSupplemental && row.attribution_tax_treatment === 'separate') {
+                            attrBadge = `<span class="text-muted ms-1">${langData['sync_attribution_separate'] || '→ Separate'}</span>`;
                         }
-                        const target = escapeHtml(row.attribution_target_process_no || `#${row.attribution_target_origami_process_id}`);
-                        if (row.attribution_target_status === 'ready') {
-                            attrBadge = `<span class="badge bg-info-subtle text-info ms-1">${(langData['sync_attribution_merge_into'] || '→ Merge into {target}').replace('{target}', target)}</span>`;
-                        } else if (row.attribution_target_status === 'waiting_known') {
-                            attrBadge = `<span class="badge bg-warning-subtle text-warning ms-1" title="${langData['sync_attribution_waiting_known_tooltip'] || 'The target regular cycle has been received from Origami but not pulled into a run yet.'}">${(langData['sync_attribution_waiting_known'] || '→ Waiting: {target} not pulled yet').replace('{target}', target)}</span>`;
-                        } else if (row.attribution_target_status === 'target_rejected') {
-                            // 2026-09-06: the target regular process was received but has since been
-                            // REJECTED at Pending Pull -- a real dead end (no un-reject action exists),
-                            // deliberately styled/worded differently from "waiting" so this doesn't read
-                            // as "will become ready eventually" -- it never will on its own.
-                            attrBadge = `<span class="badge bg-danger-subtle text-danger ms-1" title="${langData['sync_attribution_target_rejected_tooltip'] || 'The target regular cycle was rejected and will never be pulled into a run. Pull this as its own standalone run instead, or ask Origami to re-attribute it.'}">${(langData['sync_attribution_target_rejected'] || '→ {target} was rejected').replace('{target}', target)}</span>`;
-                        } else {
-                            attrBadge = `<span class="badge bg-secondary-subtle text-secondary ms-1" title="${langData['sync_attribution_waiting_unknown_tooltip'] || 'The target regular cycle has not been received from Origami yet.'}">${(langData['sync_attribution_waiting_unknown'] || '→ Waiting for {target}').replace('{target}', target)}</span>`;
-                        }
-                    } else if (isSupplemental && row.attribution_tax_treatment === 'separate') {
-                        attrBadge = `<span class="badge bg-secondary-subtle text-secondary ms-1">${langData['sync_attribution_separate'] || '→ Separate'}</span>`;
+                        return `<strong class="text-dark">${escapeHtml(d)}</strong>${badge}${attrBadge}`;
                     }
-                    return `<strong class="text-dark">${escapeHtml(d)}</strong>${badge}${attrBadge}`;
+                },
+                { data: 'period_name', render: d => escapeHtml(d || '-') },
+                { data: 'frequency_type', render: d => escapeHtml(frequencyLabelPr(d)) },
+                { data: 'item_count', className: 'text-end' },
+                { data: 'unmapped_item_count', className: 'text-end', render: d => Number(d) > 0 ? `<span class="text-danger fw-semibold">${d}</span>` : d },
+                // 2026-08-29, real bug found and fixed: raw UTC time with no timezone conversion, see
+                // renderStatusTimelineCell()'s own comment above for the full reasoning.
+                // 2026-08-29, real bug found via a system-wide table audit: sort-safety fix -- sort/
+                // filter now key off the raw ISO datetime (sorts correctly as a string) instead of the
+                // dd/mm/yyyy display string.
+                { data: 'received_at', render: { display: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-', sort: d => d || '', filter: d => d || '' } },
+                {
+                    // 2026-08-28: className:'all' keeps this last actions column from collapsing into
+                    // the Responsive expand row (dtr-all convention).
+                    data: null, orderable: false, className: 'text-center all',
+                    // 2026-08-29, see PAYROLL_SYNC_API.md -- data-subject/start/end/paid/run-kind carry
+                    // this row's own Origami cycle identity through to .btn-pull-sync's click handler,
+                    // which pre-fills (regular) or unlocks run_purpose (supplemental) from them --
+                    // explicit request: use what Origami already sent instead of re-entering by hand.
+                    render: (d, t, row) => {
+                        // 2026-08-31, PAYROLL_SYNC_API.md `attribution` revision -- a supplemental row
+                        // attributed tax_treatment='merge' gets an extra "Merge into Target" action
+                        // alongside the existing "Pull to Run" (which still pulls it as its own
+                        // standalone run -- always left available, e.g. for when the target run isn't
+                        // draft anymore, see PayrollRunModel::mergeSupplementalIntoRun()'s own refusal
+                        // paths).
+                        // 2026-09-02, explicit request: "ไม่ต้องมี Word ก็ได้มันต่างเพื่อน" -- Pull to
+                        // Run/Merge into Target used to carry their own text label while their sibling
+                        // View/Reject buttons in the SAME group were already icon-only, making the group
+                        // look inconsistent. Dropped the text (title="" tooltip still carries the label)
+                        // so every button in this row-actions group is icon-only, matching its neighbors.
+                        // 2026-09-06: disabled (not hidden) with an explanatory tooltip while
+                        // attribution_target_status isn't 'ready' -- clicking used to just round-trip to
+                        // the server and come back with PayrollRunModel::mergeSupplementalIntoRun()'s own
+                        // refusal message; now the admin sees WHY up front (matches the badge above).
+                        const mergeReady = row.attribution_target_status === 'ready';
+                        const mergeBtn = (row.run_kind === 'supplemental' && row.attribution_tax_treatment === 'merge')
+                            ? `<button type="button" class="btn btn-outline-secondary btn-merge-sync" data-id="${row.id}"
+                                data-label="${escapeHtml(row.process_subject || row.process_no)}"
+                                data-target="${escapeHtml(row.attribution_target_process_no || ('#' + row.attribution_target_origami_process_id))}"
+                                ${mergeReady ? '' : 'disabled'}
+                                title="${mergeReady ? (langData['btn_merge_sync'] || 'Merge into Target') : (langData['btn_merge_sync_not_ready'] || 'The target round is not ready yet -- see the badge above. You can still use "Pull to Run" to pull this as its own standalone round instead.')}"><i class="fa-solid fa-code-merge"></i></button>`
+                            : '';
+                        return `
+                        <div class="btn-group rounded-3 row-actions" role="group">
+                            <button type="button" class="btn btn-outline-secondary btn-pull-sync" data-id="${row.id}"
+                                data-label="${escapeHtml(row.process_subject || row.process_no)}"
+                                data-subject="${escapeHtml(row.process_subject || '')}"
+                                data-description="${escapeHtml(row.process_description || '')}"
+                                data-start="${row.process_start || ''}" data-end="${row.process_end || ''}" data-paid="${row.process_paid || ''}"
+                                data-run-kind="${row.run_kind || 'regular'}"
+                                data-tax-treatment="${row.attribution_tax_treatment || ''}"
+                                data-matched-cycle-id="${row.matched_cycle_id || ''}"
+                                data-matched-cycle-name="${escapeHtml(row.matched_cycle_name || '')}"
+                                title="${langData['btn_pull_to_run'] || 'Pull to Run'}"><i class="fa-solid fa-arrow-right-to-bracket"></i></button>
+                            ${mergeBtn}
+                            <button type="button" class="btn btn-outline-secondary btn-view-sync" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
+                            <button type="button" class="btn btn-outline-secondary btn-reject-sync" data-id="${row.id}" data-label="${escapeHtml(row.process_subject || row.process_no)}" title="${langData['btn_reject_sync'] || 'Reject'}"><i class="fa-solid fa-reply"></i></button>
+                        </div>
+                    `;
+                    }
+                },
+            ],
+            initComplete: function () {
+                // Relocate the bulk-pull bar (static markup above the table) into the DataTables
+                // length control row so the selection count/button sit next to "Show N entries"
+                // instead of on their own line -- the bar keeps its d-none/d-inline-flex toggling
+                // untouched since this only moves the existing DOM node, not a copy.
+                const self = this.api();
+                const $wrapper = $(self.table().container());
+                const $lengthDiv = $wrapper.find('.dt-length');
+                if ($lengthDiv.length && $('#bulkPullBar').closest('.dt-length').length === 0) {
+                    $lengthDiv.append($('#bulkPullBar'));
                 }
             },
-            { data: 'period_name', render: d => escapeHtml(d || '-') },
-            { data: 'frequency_type', render: d => escapeHtml(frequencyLabelPr(d)) },
-            { data: 'item_count', className: 'text-end' },
-            { data: 'unmapped_item_count', className: 'text-end', render: d => Number(d) > 0 ? `<span class="text-danger fw-semibold">${d}</span>` : d },
-            // 2026-08-29, real bug found and fixed: raw UTC time with no timezone conversion, see
-            // renderStatusTimelineCell()'s own comment above for the full reasoning.
-            // 2026-08-29, real bug found via a system-wide table audit: sort-safety fix -- sort/
-            // filter now key off the raw ISO datetime (sorts correctly as a string) instead of the
-            // dd/mm/yyyy display string.
-            { data: 'received_at', render: { display: d => d ? (typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : d) : '-', sort: d => d || '', filter: d => d || '' } },
-            {
-                // 2026-08-28: className:'all' keeps this last actions column from collapsing into
-                // the Responsive expand row (dtr-all convention).
-                data: null, orderable: false, className: 'text-center all',
-                // 2026-08-29, see PAYROLL_SYNC_API.md -- data-subject/start/end/paid/run-kind carry
-                // this row's own Origami cycle identity through to .btn-pull-sync's click handler,
-                // which pre-fills (regular) or unlocks run_purpose (supplemental) from them --
-                // explicit request: use what Origami already sent instead of re-entering by hand.
-                render: (d, t, row) => {
-                    // 2026-08-31, PAYROLL_SYNC_API.md `attribution` revision -- a supplemental row
-                    // attributed tax_treatment='merge' gets an extra "Merge into Target" action
-                    // alongside the existing "Pull to Run" (which still pulls it as its own
-                    // standalone run -- always left available, e.g. for when the target run isn't
-                    // draft anymore, see PayrollRunModel::mergeSupplementalIntoRun()'s own refusal
-                    // paths).
-                    // 2026-09-02, explicit request: "ไม่ต้องมี Word ก็ได้มันต่างเพื่อน" -- Pull to
-                    // Run/Merge into Target used to carry their own text label while their sibling
-                    // View/Reject buttons in the SAME group were already icon-only, making the group
-                    // look inconsistent. Dropped the text (title="" tooltip still carries the label)
-                    // so every button in this row-actions group is icon-only, matching its neighbors.
-                    // 2026-09-06: disabled (not hidden) with an explanatory tooltip while
-                    // attribution_target_status isn't 'ready' -- clicking used to just round-trip to
-                    // the server and come back with PayrollRunModel::mergeSupplementalIntoRun()'s own
-                    // refusal message; now the admin sees WHY up front (matches the badge above).
-                    const mergeReady = row.attribution_target_status === 'ready';
-                    const mergeBtn = (row.run_kind === 'supplemental' && row.attribution_tax_treatment === 'merge')
-                        ? `<button type="button" class="btn btn-info btn-merge-sync" data-id="${row.id}"
-                            data-label="${escapeHtml(row.process_subject || row.process_no)}"
-                            data-target="${escapeHtml(row.attribution_target_process_no || ('#' + row.attribution_target_origami_process_id))}"
-                            ${mergeReady ? '' : 'disabled'}
-                            title="${mergeReady ? (langData['btn_merge_sync'] || 'Merge into Target') : (langData['btn_merge_sync_not_ready'] || 'The target round is not ready yet -- see the badge above. You can still use "Pull to Run" to pull this as its own standalone round instead.')}"><i class="fa-solid fa-code-merge"></i></button>`
-                        : '';
-                    return `
-                    <div class="btn-group rounded-3 row-actions" role="group">
-                        <button type="button" class="btn btn-warning btn-pull-sync" data-id="${row.id}"
-                            data-label="${escapeHtml(row.process_subject || row.process_no)}"
-                            data-subject="${escapeHtml(row.process_subject || '')}"
-                            data-description="${escapeHtml(row.process_description || '')}"
-                            data-start="${row.process_start || ''}" data-end="${row.process_end || ''}" data-paid="${row.process_paid || ''}"
-                            data-run-kind="${row.run_kind || 'regular'}"
-                            data-tax-treatment="${row.attribution_tax_treatment || ''}"
-                            data-matched-cycle-id="${row.matched_cycle_id || ''}"
-                            data-matched-cycle-name="${escapeHtml(row.matched_cycle_name || '')}"
-                            title="${langData['btn_pull_to_run'] || 'Pull to Run'}"><i class="fa-solid fa-arrow-right-to-bracket"></i></button>
-                        ${mergeBtn}
-                        <button type="button" class="btn btn-outline-info btn-view-sync" data-id="${row.id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
-                        <button type="button" class="btn btn-outline-danger btn-reject-sync" data-id="${row.id}" data-label="${escapeHtml(row.process_subject || row.process_no)}" title="${langData['btn_reject_sync'] || 'Reject'}"><i class="fa-solid fa-reply"></i></button>
-                    </div>
-                `;
-                }
+            drawCallback: function () {
+                getTableLang();
+                // Restore checked state across redraws (page/search/reload) from the tracked
+                // selection, and keep the header checkbox in sync with the current page's rows.
+                const $rowBoxes = $('#tb_pending_sync tbody .pending-sync-checkbox');
+                $rowBoxes.each(function () {
+                    $(this).prop('checked', Object.prototype.hasOwnProperty.call(selectedPendingSync, $(this).val()));
+                });
+                $('#pendingSyncSelectAll').prop('checked', $rowBoxes.length > 0 && $rowBoxes.filter(':not(:checked)').length === 0);
             },
-        ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        initComplete: function () {
-            // Relocate the bulk-pull bar (static markup above the table) into the DataTables
-            // length control row so the selection count/button sit next to "Show N entries"
-            // instead of on their own line -- the bar keeps its d-none/d-inline-flex toggling
-            // untouched since this only moves the existing DOM node, not a copy.
-            const self = this.api();
-            const $wrapper = $(self.table().container());
-            const $lengthDiv = $wrapper.find('.dt-length');
-            if ($lengthDiv.length && $('#bulkPullBar').closest('.dt-length').length === 0) {
-                $lengthDiv.append($('#bulkPullBar'));
-            }
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode. Excludes the row-select checkbox (0) and actions column (7).
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 1, key: 'process_no' },
-                    { index: 2, key: 'period_name' },
-                    { index: 3, key: 'frequency_type' },
-                    { index: 4, key: 'item_count' },
-                    { index: 5, key: 'unmapped_item_count' },
-                    { index: 6, key: 'received_at' },
-                ]
-            });
+            searching: true,
         },
-        drawCallback: function () {
-            getTableLang();
-            // Restore checked state across redraws (page/search/reload) from the tracked
-            // selection, and keep the header checkbox in sync with the current page's rows.
-            const $rowBoxes = $('#tb_pending_sync tbody .pending-sync-checkbox');
-            $rowBoxes.each(function () {
-                $(this).prop('checked', Object.prototype.hasOwnProperty.call(selectedPendingSync, $(this).val()));
-            });
-            $('#pendingSyncSelectAll').prop('checked', $rowBoxes.length > 0 && $rowBoxes.filter(':not(:checked)').length === 0);
-        }
     });
 }
 
 function mappingStatusBadgePr(isMapped) {
-    return isMapped
-        ? `<span class="badge rounded-pill bg-success-subtle text-success"><i class="fa-solid fa-check me-1"></i>${langData['sync_detail_mapped'] || 'Mapped'}</span>`
-        : `<span class="badge rounded-pill bg-danger-subtle text-danger"><i class="fa-solid fa-triangle-exclamation me-1"></i>${langData['sync_detail_unmapped'] || 'Unmapped'}</span>`;
+    return statusBadgeHtml(isMapped ? 'mapped' : 'unmapped', 'sync_mapping_status');
 }
 function syncUnitLabelPr(unitType) {
     if (!unitType) return '';
@@ -1041,15 +1012,8 @@ function syncDetailSectionHeaderPr(num, i18nKey, fallback) {
 // getProcessDetail() attaches item.probation_status ('on_probation'/'failed'/'passed'/null, null
 // when pass_pro was never sent/not on file for this employee, nothing to show then).
 function renderProbationStatusCellPr(item) {
-    const map = {
-        on_probation: ['bg-warning-subtle text-warning', 'sync_probation_on_probation', 'On Probation'],
-        failed: ['bg-danger-subtle text-danger', 'sync_probation_failed', 'Did Not Pass Probation'],
-        passed: ['bg-success-subtle text-success', 'sync_probation_passed', 'Passed Probation'],
-    };
-    const entry = map[item.probation_status];
-    if (!entry) return '';
-    const [cls, key, fallback] = entry;
-    return `<span class="badge rounded-pill ${cls}">${langData[key] || fallback}</span>`;
+    if (!item.probation_status) return '';
+    return statusBadgeHtml(item.probation_status, 'sync_probation_status');
 }
 function renderIdCardCellPr(item) {
     if (!item.id_card_no_masked) {
@@ -1064,12 +1028,12 @@ function renderIdCardCellPr(item) {
 // output) so the new #tb_sync_items table's own SSO column can reuse it without the payment line.
 function syncSsoBadgePr(item) {
     if (item.deduct_sso === null || item.deduct_sso === undefined) {
-        return `<span class="badge rounded-pill bg-light text-muted border">${langData['sync_sso_not_set'] || 'SSO: Not Set'}</span>`;
+        return `<span class="text-muted">${langData['sync_sso_not_set'] || 'SSO: Not Set'}</span>`;
     }
     if (Number(item.deduct_sso) === 1) {
-        return `<span class="badge rounded-pill bg-info-subtle text-info">${langData['sync_sso_deduct'] || 'SSO: Deduct'}</span>`;
+        return `<span class="text-muted">${langData['sync_sso_deduct'] || 'SSO: Deduct'}</span>`;
     }
-    return `<span class="badge rounded-pill bg-light text-secondary border">${langData['sync_sso_no_deduct'] || 'SSO: No Deduct'}</span>`;
+    return `<span class="text-muted">${langData['sync_sso_no_deduct'] || 'SSO: No Deduct'}</span>`;
 }
 function renderPaymentSsoCellPr(item) {
     let payLine;
@@ -1092,7 +1056,7 @@ function renderSyncStatusRowPr(row) {
             <td>${escapeHtml(row.dept_description || '-')}<br><span class="text-muted small">${escapeHtml(row.position_name || '-')}</span></td>
             <td>${row.emp_start_date ? toDisplayDatePr(row.emp_start_date) : '-'}</td>
             <td>${row.emp_resign_date ? toDisplayDatePr(row.emp_resign_date) : '-'}</td>
-            <td class="text-center">${Number(row.is_new_hire) === 1 ? '<i class="fa-solid fa-circle-check text-success"></i>' : '<span class="text-muted">-</span>'}</td>
+            <td class="text-center">${Number(row.is_new_hire) === 1 ? '<i class="fa-solid fa-circle-check text-muted"></i>' : '<span class="text-muted">-</span>'}</td>
             <td class="text-center">${Number(row.is_resigned_this_period) === 1 ? '<i class="fa-solid fa-circle-check text-danger"></i>' : '<span class="text-muted">-</span>'}</td>
             <td>${escapeHtml(row.status_text || '-')}</td>
         </tr>
@@ -1133,70 +1097,72 @@ function initSyncItemsTable(items) {
     if ($.fn.DataTable.isDataTable('#tb_sync_items')) {
         $('#tb_sync_items').DataTable().destroy();
     }
-    tb_sync_items = $('#tb_sync_items').DataTable({
-        data: items,
-        responsive: false,
-        paging: items.length > 10,
-        info: items.length > 10,
-        order: [[9, 'asc']], // unmapped rows first by default; any column header remains clickable
-        language: getTableLang(),
-        columns: [
-            // Expand/collapse toggle -- icon only, no header text, not sortable/searchable.
-            { data: null, orderable: false, className: 'text-center sync-item-toggle-col',
-              defaultContent: '<button type="button" class="btn btn-link btn-sm p-0 sync-item-toggle-btn"><i class="fa-solid fa-chevron-right"></i></button>' },
-            { data: null, render: {
-                display: (d, t, row) => escapeHtml(row.matched_employee_no || row.payroll_code),
-                sort: (d, t, row) => row.matched_employee_no || row.payroll_code || '',
-                filter: (d, t, row) => row.matched_employee_no || row.payroll_code || '',
-            } },
-            { data: null, render: {
-                display: (d, t, row) => escapeHtml(syncItemDisplayNamePr(row)),
-                sort: (d, t, row) => syncItemDisplayNamePr(row),
-                filter: (d, t, row) => syncItemDisplayNamePr(row),
-            } },
-            { data: null, render: {
-                display: (d, t, row) => `${escapeHtml(row.dept_description || '-')}<br><span class="text-muted small">${escapeHtml(row.position_name || '-')}</span>`,
-                sort: (d, t, row) => row.dept_description || '',
-                filter: (d, t, row) => `${row.dept_description || ''} ${row.position_name || ''}`,
-            } },
-            { data: null, className: 'text-end text-nowrap', render: {
-                display: (d, t, row) => fmtNum(row.working_days),
-                sort: (d, t, row) => Number(row.working_days || 0),
-                filter: (d, t, row) => String(row.working_days ?? ''),
-            } },
-            { data: null, className: 'text-end text-nowrap', render: {
-                display: (d, t, row) => fmtNum(row.absent_days),
-                sort: (d, t, row) => Number(row.absent_days || 0),
-                filter: (d, t, row) => String(row.absent_days ?? ''),
-            } },
-            { data: null, className: 'text-end text-nowrap', render: {
-                display: (d, t, row) => fmtNum(row.late_mins),
-                sort: (d, t, row) => Number(row.late_mins || 0),
-                filter: (d, t, row) => String(row.late_mins ?? ''),
-            } },
-            { data: null, className: 'text-end text-nowrap', render: {
-                display: (d, t, row) => fmtNum(syncOtTotalHrsPr(row)),
-                sort: (d, t, row) => syncOtTotalHrsPr(row),
-                filter: (d, t, row) => String(syncOtTotalHrsPr(row)),
-            } },
-            { data: null, className: 'text-end text-nowrap', render: {
-                display: (d, t, row) => fmtNum(row.trip_allowance),
-                sort: (d, t, row) => Number(row.trip_allowance || 0),
-                filter: (d, t, row) => String(row.trip_allowance ?? ''),
-            } },
-            { data: null, render: {
-                display: (d, t, row) => mappingStatusBadgePr(!!row.matched_employee_no),
-                sort: (d, t, row) => row.matched_employee_no ? 1 : 0,
-                filter: (d, t, row) => row.matched_employee_no ? (langData['sync_detail_mapped'] || 'Mapped') : (langData['sync_detail_unmapped'] || 'Unmapped'),
-            } },
-            { data: null, render: {
-                display: (d, t, row) => syncSsoBadgePr(row),
-                sort: (d, t, row) => (row.deduct_sso === null || row.deduct_sso === undefined) ? -1 : Number(row.deduct_sso),
-                filter: (d, t, row) => (row.deduct_sso === null || row.deduct_sso === undefined) ? 'not set' : String(row.deduct_sso),
-            } },
-        ],
-        createdRow: function (row, data) {
-            if (!data.matched_employee_no) $(row).addClass('table-danger');
+    tb_sync_items = initSharedDataTable('#tb_sync_items', {
+        dtOptions: {
+            data: items,
+            responsive: false,
+            paging: items.length > 10,
+            info: items.length > 10,
+            order: [[9, 'asc']], // unmapped rows first by default; any column header remains clickable
+            columns: [
+                // Expand/collapse toggle -- icon only, no header text, not sortable/searchable.
+                { data: null, orderable: false, className: 'text-center sync-item-toggle-col',
+                  defaultContent: '<button type="button" class="btn btn-link btn-sm p-0 sync-item-toggle-btn"><i class="fa-solid fa-chevron-right"></i></button>' },
+                { data: null, render: {
+                    display: (d, t, row) => escapeHtml(row.matched_employee_no || row.payroll_code),
+                    sort: (d, t, row) => row.matched_employee_no || row.payroll_code || '',
+                    filter: (d, t, row) => row.matched_employee_no || row.payroll_code || '',
+                } },
+                { data: null, render: {
+                    display: (d, t, row) => escapeHtml(syncItemDisplayNamePr(row)),
+                    sort: (d, t, row) => syncItemDisplayNamePr(row),
+                    filter: (d, t, row) => syncItemDisplayNamePr(row),
+                } },
+                { data: null, render: {
+                    display: (d, t, row) => `${escapeHtml(row.dept_description || '-')}<br><span class="text-muted small">${escapeHtml(row.position_name || '-')}</span>`,
+                    sort: (d, t, row) => row.dept_description || '',
+                    filter: (d, t, row) => `${row.dept_description || ''} ${row.position_name || ''}`,
+                } },
+                { data: null, className: 'text-end text-nowrap', render: {
+                    display: (d, t, row) => fmtNum(row.working_days),
+                    sort: (d, t, row) => Number(row.working_days || 0),
+                    filter: (d, t, row) => String(row.working_days ?? ''),
+                } },
+                { data: null, className: 'text-end text-nowrap', render: {
+                    display: (d, t, row) => fmtNum(row.absent_days),
+                    sort: (d, t, row) => Number(row.absent_days || 0),
+                    filter: (d, t, row) => String(row.absent_days ?? ''),
+                } },
+                { data: null, className: 'text-end text-nowrap', render: {
+                    display: (d, t, row) => fmtNum(row.late_mins),
+                    sort: (d, t, row) => Number(row.late_mins || 0),
+                    filter: (d, t, row) => String(row.late_mins ?? ''),
+                } },
+                { data: null, className: 'text-end text-nowrap', render: {
+                    display: (d, t, row) => fmtNum(syncOtTotalHrsPr(row)),
+                    sort: (d, t, row) => syncOtTotalHrsPr(row),
+                    filter: (d, t, row) => String(syncOtTotalHrsPr(row)),
+                } },
+                { data: null, className: 'text-end text-nowrap', render: {
+                    display: (d, t, row) => fmtNum(row.trip_allowance),
+                    sort: (d, t, row) => Number(row.trip_allowance || 0),
+                    filter: (d, t, row) => String(row.trip_allowance ?? ''),
+                } },
+                { data: null, render: {
+                    display: (d, t, row) => mappingStatusBadgePr(!!row.matched_employee_no),
+                    sort: (d, t, row) => row.matched_employee_no ? 1 : 0,
+                    filter: (d, t, row) => row.matched_employee_no ? (langData['sync_detail_mapped'] || 'Mapped') : (langData['sync_detail_unmapped'] || 'Unmapped'),
+                } },
+                { data: null, render: {
+                    display: (d, t, row) => syncSsoBadgePr(row),
+                    sort: (d, t, row) => (row.deduct_sso === null || row.deduct_sso === undefined) ? -1 : Number(row.deduct_sso),
+                    filter: (d, t, row) => (row.deduct_sso === null || row.deduct_sso === undefined) ? 'not set' : String(row.deduct_sso),
+                } },
+            ],
+            createdRow: function (row, data) {
+                if (!data.matched_employee_no) $(row).addClass('table-danger');
+            },
+            searching: true,
         },
     });
     // 2026-09-10, Batch 2 item 5 part B, explicit requirement: "filter pill และ search ต้องยังทำงาน
@@ -1265,7 +1231,7 @@ function renderSyncDetail(data) {
                 <input type="radio" class="btn-check sync-item-filter-radio" name="syncItemFilter" id="syncItemFilterAll" value="all" autocomplete="off" checked>
                 <label class="btn btn-outline-secondary btn-sm" for="syncItemFilterAll">${langData['filter_all'] || 'All'} (<span id="syncItemFilterAllCount">0</span>)</label>
                 <input type="radio" class="btn-check sync-item-filter-radio" name="syncItemFilter" id="syncItemFilterUnmapped" value="unmapped" autocomplete="off">
-                <label class="btn btn-outline-danger btn-sm" for="syncItemFilterUnmapped">${langData['sync_detail_unmapped'] || 'Unmapped'} (<span id="syncItemFilterUnmappedCount">0</span>)</label>
+                <label class="btn btn-outline-secondary btn-sm" for="syncItemFilterUnmapped">${langData['sync_detail_unmapped'] || 'Unmapped'} (<span id="syncItemFilterUnmappedCount">0</span>)</label>
                 <input type="radio" class="btn-check sync-item-filter-radio" name="syncItemFilter" id="syncItemFilterSsoNotSet" value="sso_not_set" autocomplete="off">
                 <label class="btn btn-outline-secondary btn-sm" for="syncItemFilterSsoNotSet">${langData['sync_sso_not_set'] || 'SSO: Not Set'} (<span id="syncItemFilterSsoNotSetCount">0</span>)</label>
             </div>
@@ -1356,57 +1322,6 @@ function showStation(state, opts) {
 
 $(document).on('click', '.station-card', function () {
     showStation($(this).data('state') || '');
-});
-$(document).on('click', '#stationFilterToggle', function () {
-    const $filter = $('#stationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-// bootstrap-datepicker's core _setDate() fires BOTH 'changeDate' and the native 'change' event
-// together, unconditionally, for every date-picked interaction (confirmed in the bundled
-// library's own source) -- binding to both (an earlier fix here) double-fired this handler,
-// causing two back-to-back ajax.reload() calls per pick (visible in Network as one cancelled
-// request immediately followed by one 200). 'changeDate' alone is reliable on its own since it's
-// the one _setDate() always fires regardless of code path (clicking a day, clearDates(), etc.).
-// Clear Filter only makes sense (and only shows) once at least one of the two fields actually has
-// a value -- per explicit request, hidden by default rather than always visible.
-function updateClearFilterVisibility() {
-    // 2026-09-01: widened to cover the 3 new filters too, not just the date range -- one shared
-    // "Clear Filter" button/visibility rule for the whole station-filter box, same convention this
-    // app's own .station-filter component uses elsewhere (e.g. Employee List). Origin/Run Purpose
-    // are select2-static with a literal "all" option as their own neutral/no-op value (same
-    // "all" convention #employee_filter_payroll_participant already established) -- excluded here
-    // the same way, or the button would show permanently from page load.
-    const origin = $('#filter_run_origin').val();
-    const purpose = $('#filter_run_purpose').val();
-    const hasFilter = !!($('#filter_date_from').val() || $('#filter_date_to').val()
-        || (origin && origin !== 'all') || $('#filter_run_cycle').val() || (purpose && purpose !== 'all'));
-    $('#dateFilterClearRow').toggleClass('d-none', !hasFilter);
-}
-$(document).on('changeDate', '#filter_date_from, #filter_date_to', function () {
-    updateClearFilterVisibility();
-    if (tb_payroll_run) tb_payroll_run.ajax.reload(null, true);
-    // Also reload the Pending Pull ("Wait") table -- its own ajax now sends the same date_from/
-    // date_to (filtered on received_at, its only real date field -- payroll_sync_processes has no
-    // period_start/end of its own). Blindly reloading it unfiltered here used to make a genuinely
-    // empty result on the main table look like "the filter gave up and fetched everything", since
-    // this table would always come back full regardless of the date picked -- per explicit
-    // feedback, a filter that matches nothing should just show nothing, not fall back to showing
-    // everything.
-    if (tb_pending_sync) tb_pending_sync.ajax.reload(null, true);
-});
-$(document).on('click', '#btnClearDateFilter', function () {
-    // .datepicker('clearDates') goes through the same library API used to set them, so it fires
-    // 'changeDate' itself and the handler above reloads both tables (and re-hides this button)
-    // automatically -- no need to duplicate that here.
-    $('#filter_date_from, #filter_date_to').datepicker('clearDates');
-    // 2026-09-01: clears the 3 new filters too -- 'all' is Origin/Run Purpose's own neutral value
-    // (see updateClearFilterVisibility()'s own comment), an empty selection is Payroll Schedule's.
-    // .trigger('change') fires the '#filter_run_origin, #filter_run_cycle, #filter_run_purpose'
-    // handler above, which redraws the table -- no separate reload call needed here either.
-    $('#filter_run_origin').val('all').trigger('change');
-    $('#filter_run_cycle').val(null).trigger('change');
-    $('#filter_run_purpose').val('all').trigger('change');
 });
 $(document).on('click', '.btn-add-run', function () {
     resetRunForm();
@@ -1522,8 +1437,8 @@ $(document).on('click', '.btn-view-sync', function () {
 $(document).on('click', '.btn-reject-sync', function () {
     const id = $(this).data('id');
     const label = $(this).data('label');
-    Swal.fire({
-        icon: 'warning',
+    showConfirm({
+        tone: 'danger',
         title: (langData['confirm_reject_sync_title'] || 'Reject "{label}"?').replace('{label}', label),
         input: 'textarea',
         inputPlaceholder: langData['reject_sync_comment_placeholder'] || 'Reason for rejecting this document...',
@@ -1532,10 +1447,8 @@ $(document).on('click', '.btn-reject-sync', function () {
                 return langData['reject_sync_comment_required'] || 'A comment is required.';
             }
         },
-        showCancelButton: true,
-        confirmButtonText: langData['btn_reject_sync'] || 'Reject',
-        cancelButtonText: langData['cancel'] || 'Cancel',
-        confirmButtonColor: '#dc3545',
+        confirmText: langData['btn_reject_sync'] || 'Reject',
+        cancelText: langData['cancel'] || 'Cancel',
     }).then(function (result) {
         if (!result.isConfirmed) return;
         $.ajax({
@@ -1559,13 +1472,12 @@ $(document).on('click', '.btn-reject-sync', function () {
 // docblock).
 $(document).on('click', '.btn-apply-blocked-update', function () {
     const id = $(this).data('id');
-    Swal.fire({
-        icon: 'warning',
+    showConfirm({
+        tone: 'warning',
         title: langData['confirm_apply_blocked_update_title'] || 'Apply this update?',
-        text: langData['confirm_apply_blocked_update_message'] || 'This will overwrite the sync data for the linked run with what Origami sent. The run itself will NOT be recalculated automatically -- do that separately afterward.',
-        showCancelButton: true,
-        confirmButtonText: langData['btn_apply_update'] || 'Apply',
-        cancelButtonText: langData['cancel'] || 'Cancel',
+        message: langData['confirm_apply_blocked_update_message'] || 'This will overwrite the sync data for the linked run with what Origami sent. The run itself will NOT be recalculated automatically -- do that separately afterward.',
+        confirmText: langData['btn_apply_update'] || 'Apply',
+        cancelText: langData['cancel'] || 'Cancel',
     }).then(function (result) {
         if (!result.isConfirmed) return;
         $.ajax({
@@ -1765,15 +1677,15 @@ $(document).on('click', '#btnBulkPull', function () {
                     </div>
                     <div class="col-sm-4">
                         <label class="form-label mb-1">${langData['modal_period_start'] || 'Period Start Date'} <span class="text-danger">*</span></label>
-                        <div class="input-group"><input type="text" class="form-control datepicker bulk-period-start required" autocomplete="off"><span class="input-group-text"><i class="fas fa-calendar"></i></span></div>
+                        <input type="text" class="form-control datepicker bulk-period-start required" autocomplete="off">
                     </div>
                     <div class="col-sm-4">
                         <label class="form-label mb-1">${langData['modal_period_end'] || 'Period End Date'} <span class="text-danger">*</span></label>
-                        <div class="input-group"><input type="text" class="form-control datepicker bulk-period-end required" autocomplete="off"><span class="input-group-text"><i class="fas fa-calendar"></i></span></div>
+                        <input type="text" class="form-control datepicker bulk-period-end required" autocomplete="off">
                     </div>
                     <div class="col-sm-4">
                         <label class="form-label mb-1">${langData['modal_payment_date'] || 'Payment Date'} <span class="text-danger">*</span></label>
-                        <div class="input-group"><input type="text" class="form-control datepicker bulk-payment-date required" autocomplete="off"><span class="input-group-text"><i class="fas fa-calendar"></i></span></div>
+                        <input type="text" class="form-control datepicker bulk-payment-date required" autocomplete="off">
                     </div>
                 </div>
                 <div class="bulk-pull-row-status mt-2"></div>
@@ -1863,7 +1775,7 @@ $(document).on('click', '#btnBulkPullSubmit', function () {
                     if ((res.pending_merges_ready || []).length > 0) {
                         pendingMergesAll = pendingMergesAll.concat(res.pending_merges_ready);
                     }
-                    $row.find('.bulk-pull-row-status').html(`<span class="text-success small"><i class="fa-solid fa-check me-1"></i>${langData['bulk_pull_result_success'] || 'created'}</span>`);
+                    $row.find('.bulk-pull-row-status').html(`<span class="small"><i class="fa-solid fa-check me-1"></i>${langData['bulk_pull_result_success'] || 'created'}</span>`);
                 } else {
                     failCount++;
                     $row.find('.bulk-pull-row-status').html(`<span class="text-danger small"><i class="fa-solid fa-xmark me-1"></i>${escapeHtml(res.message || 'failed')}</span>`);
@@ -1933,13 +1845,11 @@ function requestMergeIntoExisting(sourceRunId, targetRunId, allowRevert, allowRe
 }
 function promptPendingMergesReady(items) {
     const listHtml = items.map(it => `<li>${escapeHtml(it.label)}</li>`).join('');
-    Swal.fire({
-        icon: 'info',
+    showConfirm({
         title: langData['pending_merges_ready_title'] || 'Waiting Supplemental Item(s) Found',
         html: `<p>${(langData['pending_merges_ready_message'] || 'The following supplemental item(s) were waiting for this round and can now be merged:').replace('{count}', items.length)}</p><ul class="text-start">${listHtml}</ul>`,
-        showCancelButton: true,
-        confirmButtonText: langData['pending_merges_ready_confirm'] || 'Merge Now',
-        cancelButtonText: langData['pending_merges_ready_later'] || 'Later',
+        confirmText: langData['pending_merges_ready_confirm'] || 'Merge Now',
+        cancelText: langData['pending_merges_ready_later'] || 'Later',
     }).then(function (result) {
         if (!result.isConfirmed) return;
         let i = 0;
@@ -2204,6 +2114,19 @@ $(document).ready(function () {
         initDatepicker('#filter_date_to');
         initDatepicker('#run_mark_paid_date');
     }
-    updateClearFilterVisibility();
+    // Date changes reload both tables server-side; select changes are client-side only (ext.search redraw).
+    let runListFilterDates = ($('#filter_date_from').val() || '') + '|' + ($('#filter_date_to').val() || '');
+    initFilterBar('#runListFilterBar', {
+        onChange: function () {
+            const dates = ($('#filter_date_from').val() || '') + '|' + ($('#filter_date_to').val() || '');
+            if (dates !== runListFilterDates) {
+                runListFilterDates = dates;
+                if (tb_payroll_run) tb_payroll_run.ajax.reload(null, true);
+                if (tb_pending_sync) tb_pending_sync.ajax.reload(null, true);
+            } else if (tb_payroll_run) {
+                tb_payroll_run.draw();
+            }
+        },
+    });
     });
 });

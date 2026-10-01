@@ -13,16 +13,7 @@ let tb_payslip_request;
 
 
 function payslipRequestStatusBadge(status) {
-    const map = {
-        pending: { cls: 'bg-warning-subtle text-warning', key: 'status_pending', fallback: 'Pending' },
-        approved: { cls: 'bg-success-subtle text-success', key: 'status_approved', fallback: 'Approved' },
-        rejected: { cls: 'bg-danger-subtle text-danger', key: 'status_rejected', fallback: 'Rejected' },
-        cancelled: { cls: 'bg-secondary-subtle text-secondary', key: 'cancelled', fallback: 'Cancelled' },
-        sent: { cls: 'bg-success-subtle text-success', key: 'status_sent', fallback: 'Sent' },
-        send_failed: { cls: 'bg-danger-subtle text-danger', key: 'status_send_failed', fallback: 'Send Failed' }
-    };
-    const m = map[status] || { cls: 'bg-secondary-subtle text-secondary', key: '', fallback: status };
-    return `<span class="badge ${m.cls}">${langData[m.key] || m.fallback}</span>`;
+    return statusBadgeHtml(status, 'payslip_request_status');
 }
 
 function formatPayPeriod(row) {
@@ -35,7 +26,19 @@ function initPayslipRequestTable() {
         $('#tb_payslip_request').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_payslip_request = $('#tb_payslip_request').DataTable({
+    tb_payslip_request = initSharedDataTable('#tb_payslip_request', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 0, key: 'employee' },
+                { index: 1, key: 'pay_period' },
+                { index: 2, key: 'requested_by' },
+                { index: 3, key: 'status' },
+                { index: 4, key: 'created_at' },
+            ]
+        },
+        dtOptions: {
+        searching: true,
         responsive: true,
         ajax: { url: `${BASE_URL}/api/payslip-request.list`, dataSrc: 'data' },
         columns: [
@@ -56,9 +59,6 @@ function initPayslipRequestTable() {
                     : ''
             }
         ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         order: [[4, 'desc']],
         initComplete: function () {
             const self = this.api();
@@ -71,18 +71,7 @@ function initPayslipRequestTable() {
                     </button>
                 `);
             }
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, client mode (this table already loads its full dataset into the browser).
-            initExcelColumnFilters(self, {
-                mode: 'client',
-                columns: [
-                    { index: 0, key: 'employee' },
-                    { index: 1, key: 'pay_period' },
-                    { index: 2, key: 'requested_by' },
-                    { index: 3, key: 'status' },
-                    { index: 4, key: 'created_at' },
-                ]
-            });
+        }
         }
     });
 }

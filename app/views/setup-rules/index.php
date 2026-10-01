@@ -20,31 +20,31 @@
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active" id="shift-tab" data-bs-toggle="tab" data-bs-target="#shift-pane" type="button" role="tab" aria-controls="shift-pane" aria-selected="true">
-                <i class="fa-regular fa-calendar-days me-2"></i><span data-i18n="shift">Shift</span>
+                <span data-i18n="shift">Shift</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="holiday-tab" data-bs-toggle="tab" data-bs-target="#holiday-pane" type="button" role="tab" aria-controls="holiday-pane" aria-selected="false">
-                <i class="fa-solid fa-calendar-day me-2"></i><span data-i18n="holiday">Holiday</span>
+                <span data-i18n="holiday">Holiday</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="leave-type-tab" data-bs-toggle="tab" data-bs-target="#leave-type-pane" type="button" role="tab" aria-controls="leave-type-pane" aria-selected="false">
-                <i class="fa-regular fa-calendar-check me-2"></i><span data-i18n="leave_type">Leave Type</span>
+                <span data-i18n="leave_type">Leave Type</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="ot-rate-tab" data-bs-toggle="tab" data-bs-target="#ot-rate-pane" type="button" role="tab" aria-controls="ot-rate-pane" aria-selected="false">
-                <i class="fa-solid fa-coins me-2"></i><span data-i18n="ot_rate">OT Rate</span>
+                <span data-i18n="ot_rate">OT Rate</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="work-location-tab" data-bs-toggle="tab" data-bs-target="#work-location-pane" type="button" role="tab" aria-controls="work-location-pane" aria-selected="false">
-                <i class="fa-solid fa-location-dot me-2"></i><span data-i18n="work_location">Work Location</span>
+                <span data-i18n="work_location">Work Location</span>
             </button>
         </li>
     </ul>
-    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
+    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 rounded-top-0">
         <div class="tab-pane fade show active" id="shift-pane" role="tabpanel" aria-labelledby="shift-tab" tabindex="0">
             <div class="mt-5 mb-5 table-responsive">
                 <table class="table" id="tb_shift" style="width:100%">
@@ -182,13 +182,13 @@
                              -- see toggleShiftWorkDay() in setup-rules.js. Defaults to Mon-Fri active for a
                              brand-new shift, matching the DB column defaults. -->
                         <div class="btn-group btn-group-sm" role="group" id="shiftWorkDaysToggle">
-                            <button type="button" class="btn btn-outline-brand active" data-day="monday"><span data-i18n="day_mon_short">Mon</span></button>
-                            <button type="button" class="btn btn-outline-brand active" data-day="tuesday"><span data-i18n="day_tue_short">Tue</span></button>
-                            <button type="button" class="btn btn-outline-brand active" data-day="wednesday"><span data-i18n="day_wed_short">Wed</span></button>
-                            <button type="button" class="btn btn-outline-brand active" data-day="thursday"><span data-i18n="day_thu_short">Thu</span></button>
-                            <button type="button" class="btn btn-outline-brand active" data-day="friday"><span data-i18n="day_fri_short">Fri</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-day="saturday"><span data-i18n="day_sat_short">Sat</span></button>
-                            <button type="button" class="btn btn-outline-brand" data-day="sunday"><span data-i18n="day_sun_short">Sun</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-day="monday"><span data-i18n="day_mon_short">Mon</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-day="tuesday"><span data-i18n="day_tue_short">Tue</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-day="wednesday"><span data-i18n="day_wed_short">Wed</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-day="thursday"><span data-i18n="day_thu_short">Thu</span></button>
+                            <button type="button" class="btn btn-outline-secondary active" data-day="friday"><span data-i18n="day_fri_short">Fri</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-day="saturday"><span data-i18n="day_sat_short">Sat</span></button>
+                            <button type="button" class="btn btn-outline-secondary" data-day="sunday"><span data-i18n="day_sun_short">Sun</span></button>
                         </div>
                     </div>
                     <div class="col-12">
@@ -204,7 +204,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveShift(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -248,7 +248,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveWorkLocation(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -316,7 +316,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveHoliday(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -420,7 +420,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveLeave(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -493,7 +493,7 @@
                             <label class="form-check-label small mb-0" for="otAssignSelectAllDepartments" data-i18n="select_all">Select All</label>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-1 ot-assign-search" data-scope-type="department" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
-                        <div class="ot-assign-list border rounded-3 p-2" id="otAssignDepartments" style="max-height:150px;overflow-y:auto;"></div>
+                        <div class="ot-assign-list border rounded-3 p-2 overflow-y-auto" id="otAssignDepartments" style="max-height:150px"></div>
                     </div>
                     <div class="col-md-3">
                         <div class="fw-bold small mb-1" data-i18n="team">Team</div>
@@ -502,7 +502,7 @@
                             <label class="form-check-label small mb-0" for="otAssignSelectAllTeams" data-i18n="select_all">Select All</label>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-1 ot-assign-search" data-scope-type="team" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
-                        <div class="ot-assign-list border rounded-3 p-2" id="otAssignTeams" style="max-height:150px;overflow-y:auto;"></div>
+                        <div class="ot-assign-list border rounded-3 p-2 overflow-y-auto" id="otAssignTeams" style="max-height:150px"></div>
                     </div>
                     <div class="col-md-3">
                         <div class="fw-bold small mb-1" data-i18n="position">Position</div>
@@ -511,7 +511,7 @@
                             <label class="form-check-label small mb-0" for="otAssignSelectAllPositions" data-i18n="select_all">Select All</label>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-1 ot-assign-search" data-scope-type="position" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
-                        <div class="ot-assign-list border rounded-3 p-2" id="otAssignPositions" style="max-height:150px;overflow-y:auto;"></div>
+                        <div class="ot-assign-list border rounded-3 p-2 overflow-y-auto" id="otAssignPositions" style="max-height:150px"></div>
                     </div>
                     <div class="col-md-3">
                         <div class="fw-bold small mb-1" data-i18n="employee">Employee</div>
@@ -520,12 +520,12 @@
                             <label class="form-check-label small mb-0" for="otAssignSelectAllEmployees" data-i18n="select_all">Select All</label>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-1 ot-assign-search" data-scope-type="employee" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
-                        <div class="ot-assign-list border rounded-3 p-2" id="otAssignEmployees" style="max-height:150px;overflow-y:auto;"></div>
+                        <div class="ot-assign-list border rounded-3 p-2 overflow-y-auto" id="otAssignEmployees" style="max-height:150px"></div>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+                <button class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
                 <button class="btn btn-primary" onclick="saveOt(this)"><i class="fa-solid fa-check"></i> <span data-i18n="save">Save</span></button>
             </div>
         </div>
@@ -576,11 +576,11 @@
                         <div class="row g-3">
                             <div class="col-lg-6">
                                 <div class="d-flex align-items-center mb-2">
-                                    <h6 class="mb-0 text-success"><span data-i18n="employee_sync_tab_new">New</span> <span class="badge bg-success ms-1" id="holidaySyncNewCount">0</span></h6>
+                                    <h6 class="mb-0"><span data-i18n="employee_sync_tab_new">New</span> <span class="count-inline" id="holidaySyncNewCount">0</span></h6>
                                 </div>
-                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                <div class="border rounded overflow-y-auto" style="max-height: 420px">
                                     <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_holiday_sync_new">
-                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                        <thead class="table-light text-secondary sticky-top">
                                             <tr>
                                                 <th style="width:3%;"><input type="checkbox" id="holidaySyncNewSelectAll"></th>
                                                 <th data-i18n="holiday">Holiday</th>
@@ -593,11 +593,11 @@
                             </div>
                             <div class="col-lg-6">
                                 <div class="d-flex align-items-center mb-2">
-                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="badge bg-secondary ms-1" id="holidaySyncExistingCount">0</span></h6>
+                                    <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="count-inline" id="holidaySyncExistingCount">0</span></h6>
                                 </div>
-                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                <div class="border rounded overflow-y-auto" style="max-height: 420px">
                                     <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_holiday_sync_existing">
-                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                        <thead class="table-light text-secondary sticky-top">
                                             <tr>
                                                 <th style="width:3%;"><input type="checkbox" id="holidaySyncExistingSelectAll"></th>
                                                 <th data-i18n="holiday">Holiday</th>
@@ -619,7 +619,7 @@
                     <button type="button" class="btn btn-primary d-none" id="btnApplyHolidaySync">
                         <i class="fa-solid fa-download me-1"></i><span data-i18n="employee_sync_apply_button">Sync Selected</span> (<span id="holidaySyncSelectedCount">0</span>)
                     </button>
-                    <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
                 </div>
             </div>
         </div>
@@ -652,7 +652,7 @@
                 </table>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="close">Close</button>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="close">Close</button>
             </div>
         </div>
     </div>

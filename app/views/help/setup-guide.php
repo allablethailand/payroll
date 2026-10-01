@@ -19,7 +19,7 @@
     <div class="card-surface mb-4 sg-progress-card">
         <div class="d-flex justify-content-between align-items-center mb-2">
             <span class="fw-semibold" data-i18n="setup_guide_progress_label">Setup progress</span>
-            <span id="sgProgressText" class="fw-bold text-primary">0%</span>
+            <span id="sgProgressText" class="fw-bold">0%</span>
         </div>
         <div class="progress" style="height: 10px;">
             <div id="sgProgressBar" class="progress-bar bg-warning" role="progressbar" style="width: 0%"></div>

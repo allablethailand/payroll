@@ -84,8 +84,8 @@
      strip+content with a single toggle, same as it already does for #ectEditorArea alone. -->
 <div id="ectMainTabsWrap">
 <ul class="nav nav-tabs setup-tabs mb-3" id="ectEditorTabs" role="tablist">
-  <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#ectTabDesign" type="button" role="tab"><i class="fa-solid fa-pen-ruler me-1"></i><span data-i18n="ect_design_tab">Design</span></button></li>
-  <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#ectTabAssign" type="button" role="tab"><i class="fa-solid fa-users-rectangle me-1"></i><span data-i18n="pst_assign_to">Assign To</span></button></li>
+  <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#ectTabDesign" type="button" role="tab"><span data-i18n="ect_design_tab">Design</span></button></li>
+  <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#ectTabAssign" type="button" role="tab"><span data-i18n="pst_assign_to">Assign To</span></button></li>
 </ul>
 
 <div class="tab-content">
@@ -120,8 +120,8 @@
         <label class="form-check-label small" for="ectIsDefaultSwitch" data-i18n="set_as_default_template">Set as default template</label>
       </div>
       <div class="btn-group btn-group-sm pst-publish-toggle-group" role="group" id="ectPublishToggleGroup">
-        <button type="button" class="btn btn-outline-warning pst-publish-option" data-value="draft" disabled><i class="fa-solid fa-pen me-1"></i><span data-i18n="ect_publish_draft">Draft</span></button>
-        <button type="button" class="btn btn-outline-success pst-publish-option" data-value="public" disabled><i class="fa-solid fa-globe me-1"></i><span data-i18n="ect_publish_public">Public</span></button>
+        <button type="button" class="btn btn-outline-secondary pst-publish-option" data-value="draft" disabled><i class="fa-solid fa-pen me-1"></i><span data-i18n="ect_publish_draft">Draft</span></button>
+        <button type="button" class="btn btn-outline-secondary pst-publish-option" data-value="public" disabled><i class="fa-solid fa-globe me-1"></i><span data-i18n="ect_publish_public">Public</span></button>
       </div>
       <div class="form-check form-switch mb-0" data-i18n-title="ect_auto_save_hint" title="Automatically save changes while editing, instead of only on Save.">
         <input class="form-check-input" type="checkbox" id="ectAutoSaveSwitch">
@@ -296,7 +296,7 @@
       </div>
     </div>
     <div class="ect-ribbon-group">
-      <button type="button" class="btn btn-outline-danger btn-sm" id="ectDeleteElementBtn" disabled>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="ectDeleteElementBtn" disabled>
         <i class="fa-solid fa-trash me-1"></i><span data-i18n="delete">Delete</span>
       </button>
     </div>
@@ -392,7 +392,7 @@
         <button type="button" class="btn btn-link btn-sm" id="ectPageNextBtn" title="Next page"><i class="fa-solid fa-chevron-right"></i></button>
         <span class="ect-page-nav-sep"></span>
         <button type="button" class="btn btn-outline-secondary btn-sm" id="ectPageAddBtn" title="Add page"><i class="fa-solid fa-plus me-1"></i><span data-i18n="ect_add_page">Add Page</span></button>
-        <button type="button" class="btn btn-outline-danger btn-sm" id="ectPageRemoveBtn" title="Remove this page"><i class="fa-solid fa-trash me-1"></i><span data-i18n="ect_remove_page">Remove Page</span></button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="ectPageRemoveBtn" title="Remove this page"><i class="fa-solid fa-trash me-1"></i><span data-i18n="ect_remove_page">Remove Page</span></button>
       </div>
     </div>
 

@@ -47,19 +47,7 @@ function toLocalDateOnlyRd(value) {
 // escapeHtmlRd/escapeAttrRd/fmtNumRd were confirmed byte-identical/behavior-preserving before the
 // merge, see that file's own docblock.
 function stateBadgeRd(state) {
-    const map = {
-        draft: 'bg-secondary-subtle text-secondary',
-        pending_approval: 'bg-warning-subtle text-warning',
-        approved: 'bg-info-subtle text-info',
-        paid: 'bg-success-subtle text-success',
-        locked: 'bg-dark-subtle text-dark',
-        rejected: 'bg-danger-subtle text-danger',
-        cancelled: 'bg-dark-subtle text-muted',
-        need_info: 'bg-primary-subtle text-primary',
-    };
-    const cls = map[state] || 'bg-light text-dark';
-    const text = langData['state_' + state] || state;
-    return `<span class="badge ${cls} fs-6">${text}</span>`;
+    return statusBadgeHtml(state, 'run_state');
 }
 // 2026-09-13, Round 3 item 3b: calcStatusBadgeRd() (its own hardcoded pending/calculated/error map)
 // retired -- its one caller (initRunDetailTable()'s calc_status column) now routes through the shared
@@ -1080,84 +1068,59 @@ function rdReportLanguageLabel(l) {
 function reloadReportHistoryTable() {
     if (dtReportHistory) { dtReportHistory.ajax.reload(null, false); }
 }
-function updateReportHistoryClearFilterVisibility() {
-    const active = !!($('#reportHistoryDateFrom').val() || $('#reportHistoryDateTo').val());
-    $('#reportHistoryFilterClearRow').toggleClass('d-none', !active);
-}
 $(document).on('click', '.btn-report-history', function () {
     const row = rdReportsRows.find(r => r.code === $(this).data('code'));
     if (!row) return;
     rdReportHistoryCode = row.code;
     $('#reportHistoryModalTitle').text(`${langData['report_view_history'] || 'View Download History'} - ${rdReportLabel(row)}`);
-    $('#reportHistoryDateFrom, #reportHistoryDateTo').val('');
-    updateReportHistoryClearFilterVisibility();
+    // A bar left filled from the previous open is cleared through its own clear routine so chips/count reset too.
+    const reportHistBarClear = $('#reportHistoryFilterBar').data('filterBarClear');
+    if (($('#reportHistoryDateFrom').val() || $('#reportHistoryDateTo').val()) && reportHistBarClear) reportHistBarClear();
     initDatepicker('#reportHistoryDateFrom');
     initDatepicker('#reportHistoryDateTo');
+    initFilterBar('#reportHistoryFilterBar', { onChange: reloadReportHistoryTable });
     new bootstrap.Modal(document.getElementById('reportHistoryModal')).show();
     if (dtReportHistory) { dtReportHistory.destroy(); dtReportHistory = null; }
-    dtReportHistory = $('#tb_report_history').DataTable({
-        responsive: true,
-        order: [[0, 'desc']],
-        ajax: {
-            url: `${BASE_URL}/api/report.export-logs`,
-            dataSrc: 'data',
-            data: function (d) {
-                d.report_code = rdReportHistoryCode;
-                d.payroll_run_id = PAYROLL_RUN_ID;
-                d.date_from = toIsoDateRd($('#reportHistoryDateFrom').val());
-                d.date_to = toIsoDateRd($('#reportHistoryDateTo').val());
-            },
+    dtReportHistory = initSharedDataTable('#tb_report_history', {
+        columnFilters: {
+            mode: 'client',
+            columns: [
+                { index: 1, key: 'downloaded_by' },
+                { index: 2, key: 'language' },
+                { index: 3, key: 'device' },
+                { index: 4, key: 'browser' },
+                { index: 5, key: 'ip_address' },
+                { index: 6, key: 'source' },
+            ]
         },
-        columns: [
-            // object-form render: client-side sort/filter must use the raw ISO datetime (sorts
-            // correctly as a string already), not the dd/mm/yyyy display string -- same gotcha
-            // documented in this project's own date-format-audit history.
-            { data: 'generated_at', render: { display: (v) => formatDisplayDateTime(v), sort: (v) => v, filter: (v) => v } },
-            { data: null, render: (l) => escapeHtml(rdReportByLabel(l)) },
-            { data: null, render: (l) => escapeHtml(rdReportLanguageLabel(l)) },
-            { data: null, render: (l) => escapeHtml(rdReportDeviceLabel(l)) },
-            { data: null, render: (l) => escapeHtml(rdReportBrowserLabel(l)) },
-            { data: 'ip_address', render: (v) => escapeHtml(v || '-') },
-            { data: 'source', render: (v) => escapeHtml(v || '-') },
-        ],
-        // 2026-08-30, real gap found and fixed (full-codebase pageLength audit) -- was missing
-        // entirely, silently falling back to DataTables' own built-in default of 10.
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        initComplete: function () {
-            // 2026-08-29, same-day follow-up: system-wide table audit punch-list item -- every
-            // categorical column here (By/Language/Device/Browser/IP/Source) is a real filter
-            // candidate that had none at all; the date-range fields above already cover Date/Time.
-            // mode:'client' since this table is loaded whole (not serverSide:true) even though the
-            // date range itself is filtered server-side -- the Excel-filter operates on whatever
-            // rows are currently loaded, same as tb_payroll_run's own client-side station filter.
-            initExcelColumnFilters(this.api(), {
-                mode: 'client',
-                columns: [
-                    { index: 1, key: 'downloaded_by' },
-                    { index: 2, key: 'language' },
-                    { index: 3, key: 'device' },
-                    { index: 4, key: 'browser' },
-                    { index: 5, key: 'ip_address' },
-                    { index: 6, key: 'source' },
-                ]
-            });
+        dtOptions: {
+            responsive: true,
+            order: [[0, 'desc']],
+            ajax: {
+                url: `${BASE_URL}/api/report.export-logs`,
+                dataSrc: 'data',
+                data: function (d) {
+                    d.report_code = rdReportHistoryCode;
+                    d.payroll_run_id = PAYROLL_RUN_ID;
+                    d.date_from = toIsoDateRd($('#reportHistoryDateFrom').val());
+                    d.date_to = toIsoDateRd($('#reportHistoryDateTo').val());
+                },
+            },
+            columns: [
+                // object-form render: client-side sort/filter must use the raw ISO datetime (sorts
+                // correctly as a string already), not the dd/mm/yyyy display string -- same gotcha
+                // documented in this project's own date-format-audit history.
+                { data: 'generated_at', render: { display: (v) => formatDisplayDateTime(v), sort: (v) => v, filter: (v) => v } },
+                { data: null, render: (l) => escapeHtml(rdReportByLabel(l)) },
+                { data: null, render: (l) => escapeHtml(rdReportLanguageLabel(l)) },
+                { data: null, render: (l) => escapeHtml(rdReportDeviceLabel(l)) },
+                { data: null, render: (l) => escapeHtml(rdReportBrowserLabel(l)) },
+                { data: 'ip_address', render: (v) => escapeHtml(v || '-') },
+                { data: 'source', render: (v) => escapeHtml(v || '-') },
+            ],
+            searching: true,
         },
     });
-});
-$(document).on('click', '#reportHistoryStationFilterToggle', function () {
-    const $filter = $('#reportHistoryStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('change', '#reportHistoryDateFrom, #reportHistoryDateTo', function () {
-    updateReportHistoryClearFilterVisibility();
-    reloadReportHistoryTable();
-});
-$(document).on('click', '#btnReportHistoryClearFilter', function () {
-    $('#reportHistoryDateFrom, #reportHistoryDateTo').val('');
-    updateReportHistoryClearFilterVisibility();
-    reloadReportHistoryTable();
 });
 function renderSectionButtons(run) {
     const $editWrap = $('#runEditButtonWrap').empty();
@@ -1594,7 +1557,7 @@ function itemChecklistBoxesHtml(itemOptions, opts) {
     return `${baseSalaryHtml}<div class="row g-2">
         <div class="col-md-6">
             <div class="border rounded-3 p-2 h-100">
-                <div class="fw-bold small text-success mb-1"><i class="fa-solid fa-arrow-trend-up me-1"></i>${langData['breakdown_earnings'] || 'Income'}</div>
+                <div class="fw-bold small mb-1"><i class="fa-solid fa-arrow-trend-up me-1"></i>${langData['breakdown_earnings'] || 'Income'}</div>
                 ${rowsHtml(earningItems)}
             </div>
         </div>
@@ -1616,7 +1579,7 @@ function itemChecklistBoxesHtml(itemOptions, opts) {
 // condition was actually picked (never all 3 radio choices, never blank -- "Each Employee's Own
 // Setting" is itself a real, correctly-worded condition, not an absence of one).
 function runSettingsConditionHtml(value, yesKey, yesFallback, noKey, noFallback) {
-    if (value === 'yes') return `<span class="text-success fw-semibold"><i class="fa-solid fa-check me-1"></i>${langData[yesKey] || yesFallback}</span>`;
+    if (value === 'yes') return `<span class="fw-semibold"><i class="fa-solid fa-check me-1"></i>${langData[yesKey] || yesFallback}</span>`;
     if (value === 'no') return `<span class="text-danger fw-semibold"><i class="fa-solid fa-xmark me-1"></i>${langData[noKey] || noFallback}</span>`;
     return `<span class="text-secondary"><i class="fa-solid fa-users me-1"></i>${langData['calc_default_use_employee'] || "Each Employee's Own Setting"}</span>`;
 }
@@ -1624,7 +1587,7 @@ function runSettingsConditionHtml(value, yesKey, yesFallback, noKey, noFallback)
 // "ถ้าไม่เลือกก็ให้แสดงคำให้ถูกต้อง" -- a correct sentence (not a blank box) when nothing is excluded.
 function runSettingsExcludedItemsSummaryHtml(itemOptions, excludedCodes) {
     if (!excludedCodes.length) {
-        return `<div class="text-muted small"><i class="fa-solid fa-circle-check me-1 text-success"></i>${langData['run_settings_no_excluded_items'] || "Nothing is excluded -- every item is included in this run's calculation."}</div>`;
+        return `<div class="text-muted small"><i class="fa-solid fa-circle-check me-1 text-muted"></i>${langData['run_settings_no_excluded_items'] || "Nothing is excluded -- every item is included in this run's calculation."}</div>`;
     }
     // 2026-09-20, 3e-1 (rules.md §5: "Badge = สถานะเท่านั้น ไม่ใช่ label ทั่วไป (ประเภท, หมวด, ที่มา
     // -> เป็นข้อความธรรมดาหรือคอลัมน์)"). These pills carried an ITEM NAME coloured by its item_type --
@@ -1784,7 +1747,7 @@ $(document).on('click', '#btnSaveRunSettings', function () {
 function renderRunTimelineModal(run) {
     const buttons = [];
     if (run.state === 'pending_approval' && run.can_approve_payroll) {
-        buttons.push(`<button type="button" class="btn btn-sm btn-success btn-tl-approve"><i class="fa-solid fa-check me-1"></i>${langData['action_approve'] || 'Approve'}</button>`);
+        buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-approve"><i class="fa-solid fa-check me-1"></i>${langData['action_approve'] || 'Approve'}</button>`);
         buttons.push(`<button type="button" class="btn btn-sm btn-primary btn-tl-request-info"><i class="fa-solid fa-circle-info me-1"></i>${langData['action_request_info'] || 'Request Info'}</button>`);
         buttons.push(`<button type="button" class="btn btn-sm btn-danger btn-tl-reject"><i class="fa-solid fa-xmark me-1"></i>${langData['action_reject'] || 'Reject'}</button>`);
     }
@@ -2374,13 +2337,11 @@ $(document).on('click', '#btnBreakdownUnverify', function () {
     const $btn = $(this);
     const employeeId = breakdownRowRd.employee_id;
     const name = employeeDisplayNameRd(breakdownRowRd);
-    Swal.fire({
-        icon: 'info',
+    showConfirm({
         title: (langData['confirm_unverify_employee_title'] || 'Unverify {name}').replace('{name}', name),
-        text: langData['confirm_unverify_employee_message'] || 'This employee will resume normal recalculation and can be edited again.',
-        showCancelButton: true,
-        confirmButtonText: langData['action_unverify'] || 'Unverify',
-        cancelButtonText: langData['cancel'] || 'Cancel',
+        message: langData['confirm_unverify_employee_message'] || 'This employee will resume normal recalculation and can be edited again.',
+        confirmText: langData['action_unverify'] || 'Unverify',
+        cancelText: langData['cancel'] || 'Cancel',
     }).then(function (result) {
         if (!result.isConfirmed) return;
         setButtonLoading($btn, true);
@@ -7254,10 +7215,8 @@ function initJoinEmployeesTable() {
         $('#tb_join_employees').DataTable().ajax.reload();
         return;
     }
-    tb_join_employees = $('#tb_join_employees').DataTable({
-        responsive: true,
+    tb_join_employees = initSharedDataTable('#tb_join_employees', {
         serverSide: true,
-        processing: true,
         ajax: {
             url: `${BASE_URL}/api/payroll-run.manual-employee-options`,
             type: 'POST',
@@ -7276,104 +7235,102 @@ function initJoinEmployeesTable() {
                 d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
             }
         },
-        columns: [
-            {
-                data: null, orderable: false, render: (d, t, row) => {
-                    const checked = joinSelectedEmployees[row.id] ? 'checked' : '';
-                    return `<input type="checkbox" class="join-emp-checkbox" data-id="${row.id}" data-employee-no="${escapeHtml(row.employee_no)}" ${checked}>`;
-                }
-            },
-            { data: 'employee_no' },
-            // 2026-09-22, n: avatar + name, the same line every other employee list in the app shows
-            // (apvPersonLineHtml(), app.js) -- in BOTH modes, not just the new one, so the picker
-            // does not look like two different tables. `employeeId: null` deliberately: a clickable
-            // avatar here would stack the app-wide quick-view modal on top of an open picker, which
-            // is a separate decision (see BACKLOG). Object-form render (this app's DataTables
-            // sort-safety convention) since display is now HTML -- filter stays the plain name.
-            { data: null, render: {
-                display: (d, t, row) => apvPersonLineHtml(joinEmployeeNameRd(row), 24, row.profile_photo_path, { employeeId: null }),
-                filter: (d, t, row) => joinEmployeeNameRd(row),
-            } },
-            { data: 'department', render: d => escapeHtml(d || '-') },
-            { data: 'team', render: d => escapeHtml(d || '-') },
-            { data: 'position', render: d => escapeHtml(d || '-') },
-            { data: 'cycle_name', render: d => escapeHtml(d || '-') },
-            // Column 7 -- `missing` mode only (hidden by DataTables' own column visibility in `all`
-            // mode, not by a second table). One row = one employee this run is missing, so "pull this
-            // one in" belongs on the row; the footer button stays for pulling several at once.
-            {
-                data: null, orderable: false, className: 'text-center',
-                visible: joinEmployeesModeIsMissingRd(),
-                // Responsive drops columns right-to-left, so this one -- the rightmost -- would be the
-                // first to fold into a child row on a phone. An action you have to expand a row to
-                // reach is not reachable; it keeps its place at every width.
-                responsivePriority: 1,
-                render: function (d, t, row) {
-                    const label = escapeAttr(langData['action_pull_one'] || 'Pull this employee into the run');
-                    return `<button type="button" class="btn-icon btn-icon-ghost join-emp-pull-one" data-id="${row.id}" title="${label}" aria-label="${label}"><i class="fa-solid fa-arrow-right-to-bracket"></i></button>`;
-                }
-            },
-        ],
-        order: [],
-        searching: false,
-        // 2026-08-30, real gap found and fixed (full-codebase pageLength audit) -- was missing
-        // entirely, silently falling back to DataTables' own built-in default of 10.
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
-        initComplete: function () {
-            const self = this.api();
-            // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
-            // rollout, server mode. Excludes the row-select checkbox (0) -- no actions column on
-            // this picker.
-            initExcelColumnFilters(self, {
-                mode: 'server',
-                columns: [
-                    { index: 1, key: 'employee_no' },
-                    { index: 2, key: 'name' },
-                    { index: 3, key: 'department' },
-                    { index: 4, key: 'team' },
-                    { index: 5, key: 'position' },
-                    { index: 6, key: 'cycle_name' },
-                ],
-                fetchValues: function (key, done) {
-                    $.ajax({
-                        url: `${BASE_URL}/api/payroll-run.manual-employee-column-values`,
-                        method: 'POST',
-                        data: {
-                            run_id: PAYROLL_RUN_ID,
-                            department_id: $('#joinFilterDepartment').val() || '',
-                            team_id: $('#joinFilterTeam').val() || '',
-                            position_id: $('#joinFilterPosition').val() || '',
-                            emp_cycle_id: $('#joinFilterCycle').val() || '',
-                            column: key,
-                            missing_only: joinEmployeesModeIsMissingRd() ? 1 : 0,
-                            column_filters: getColumnFilterValues(self)
-                        },
-                        dataType: 'json'
-                    }).done(function (res) {
-                        done((res && res.values) || []);
-                    }).fail(function () {
-                        done([]);
-                    });
+        dtOptions: {
+            responsive: true,
+            columns: [
+                {
+                    data: null, orderable: false, render: (d, t, row) => {
+                        const checked = joinSelectedEmployees[row.id] ? 'checked' : '';
+                        return `<input type="checkbox" class="join-emp-checkbox" data-id="${row.id}" data-employee-no="${escapeHtml(row.employee_no)}" ${checked}>`;
+                    }
                 },
-                onApply: function () { self.ajax.reload(null, false); }
-            });
+                { data: 'employee_no' },
+                // 2026-09-22, n: avatar + name, the same line every other employee list in the app shows
+                // (apvPersonLineHtml(), app.js) -- in BOTH modes, not just the new one, so the picker
+                // does not look like two different tables. `employeeId: null` deliberately: a clickable
+                // avatar here would stack the app-wide quick-view modal on top of an open picker, which
+                // is a separate decision (see BACKLOG). Object-form render (this app's DataTables
+                // sort-safety convention) since display is now HTML -- filter stays the plain name.
+                { data: null, render: {
+                    display: (d, t, row) => apvPersonLineHtml(joinEmployeeNameRd(row), 24, row.profile_photo_path, { employeeId: null }),
+                    filter: (d, t, row) => joinEmployeeNameRd(row),
+                } },
+                { data: 'department', render: d => escapeHtml(d || '-') },
+                { data: 'team', render: d => escapeHtml(d || '-') },
+                { data: 'position', render: d => escapeHtml(d || '-') },
+                { data: 'cycle_name', render: d => escapeHtml(d || '-') },
+                // Column 7 -- `missing` mode only (hidden by DataTables' own column visibility in `all`
+                // mode, not by a second table). One row = one employee this run is missing, so "pull this
+                // one in" belongs on the row; the footer button stays for pulling several at once.
+                {
+                    data: null, orderable: false, className: 'text-center',
+                    visible: joinEmployeesModeIsMissingRd(),
+                    // Responsive drops columns right-to-left, so this one -- the rightmost -- would be the
+                    // first to fold into a child row on a phone. An action you have to expand a row to
+                    // reach is not reachable; it keeps its place at every width.
+                    responsivePriority: 1,
+                    render: function (d, t, row) {
+                        const label = escapeAttr(langData['action_pull_one'] || 'Pull this employee into the run');
+                        return `<button type="button" class="btn-icon btn-icon-ghost join-emp-pull-one" data-id="${row.id}" title="${label}" aria-label="${label}"><i class="fa-solid fa-arrow-right-to-bracket"></i></button>`;
+                    }
+                },
+            ],
+            order: [],
+            searching: false,
+            initComplete: function () {
+                const self = this.api();
+                // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
+                // rollout, server mode. Excludes the row-select checkbox (0) -- no actions column on
+                // this picker.
+                initExcelColumnFilters(self, {
+                    mode: 'server',
+                    columns: [
+                        { index: 1, key: 'employee_no' },
+                        { index: 2, key: 'name' },
+                        { index: 3, key: 'department' },
+                        { index: 4, key: 'team' },
+                        { index: 5, key: 'position' },
+                        { index: 6, key: 'cycle_name' },
+                    ],
+                    fetchValues: function (key, done) {
+                        $.ajax({
+                            url: `${BASE_URL}/api/payroll-run.manual-employee-column-values`,
+                            method: 'POST',
+                            data: {
+                                run_id: PAYROLL_RUN_ID,
+                                department_id: $('#joinFilterDepartment').val() || '',
+                                team_id: $('#joinFilterTeam').val() || '',
+                                position_id: $('#joinFilterPosition').val() || '',
+                                emp_cycle_id: $('#joinFilterCycle').val() || '',
+                                column: key,
+                                missing_only: joinEmployeesModeIsMissingRd() ? 1 : 0,
+                                column_filters: getColumnFilterValues(self)
+                            },
+                            dataType: 'json'
+                        }).done(function (res) {
+                            done((res && res.values) || []);
+                        }).fail(function () {
+                            done([]);
+                        });
+                    },
+                    onApply: function () { self.ajax.reload(null, false); }
+                });
+            },
+            drawCallback: function () {
+                getTableLang();
+                $('#joinSelectAll').prop('checked', false);
+                // 2026-08-24, explicit request ("จัดรูปแบบให้การดึงพนักงานเข้ามาในการคำนวณดำเนินการได้ง่าย
+                // ที่สุด") -- recordsDisplay (post-filter, pre-pagination total) is exactly what "Select
+                // All Matching" would select, shown right next to that button so the number it acts on
+                // is never a guess.
+                $('#joinFilteredCount').text(this.api().page.info().recordsDisplay);
+                // 2026-09-22, n: the shared empty state (11), on every draw rather than once at
+                // construction -- so it follows the mode AND the language with nothing to invalidate. It
+                // no-ops unless the table really is empty, and falls back to the app-wide "narrowed to
+                // nothing + clear filter" copy by itself when a filter is what emptied it.
+                dtRenderEmptyState(this.api(), joinEmptyStateRd());
+            }
         },
-        drawCallback: function () {
-            getTableLang();
-            $('#joinSelectAll').prop('checked', false);
-            // 2026-08-24, explicit request ("จัดรูปแบบให้การดึงพนักงานเข้ามาในการคำนวณดำเนินการได้ง่าย
-            // ที่สุด") -- recordsDisplay (post-filter, pre-pagination total) is exactly what "Select
-            // All Matching" would select, shown right next to that button so the number it acts on
-            // is never a guess.
-            $('#joinFilteredCount').text(this.api().page.info().recordsDisplay);
-            // 2026-09-22, n: the shared empty state (11), on every draw rather than once at
-            // construction -- so it follows the mode AND the language with nothing to invalidate. It
-            // no-ops unless the table really is empty, and falls back to the app-wide "narrowed to
-            // nothing + clear filter" copy by itself when a filter is what emptied it.
-            dtRenderEmptyState(this.api(), joinEmptyStateRd());
-        }
     });
 }
 $(document).on('click', '#btnJoinEmployees', function () {

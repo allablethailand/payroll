@@ -33,11 +33,6 @@ function loginHistoryOverviewCurrentFilters() {
         browser_name: $('#loginHistoryOverviewFilterBrowser').val() || '',
     };
 }
-function updateClearLoginHistoryOverviewFilterVisibility() {
-    const f = loginHistoryOverviewCurrentFilters();
-    const hasFilter = !!(f.employee_id || f.date_from || f.date_to || f.device_type || f.browser_name);
-    $('#loginHistoryOverviewFilterClearRow').toggleClass('d-none', !hasFilter);
-}
 function loadLoginHistoryOverviewFilterOptions() {
     $.getJSON(`${BASE_URL}/api/employee-login-log.filter-options-company-wide`, function (res) {
         if (!res.status) return;
@@ -52,47 +47,39 @@ function loadLoginHistoryOverviewFilterOptions() {
 // 2026-08-30, Phase 7 (T037/T038 follow-up) -- see employee/detail.js's own equivalent comment.
 function loginHistoryOverviewStatusBadge(row) {
     if (Number(row.is_active) === 1) {
-        return `<span class="badge bg-success-subtle text-success">${langData['session_status_active'] || 'Active'}</span>`;
+        return statusBadgeHtml('active', 'session_status');
     }
-    const reasonKey = { new_login: 'session_reason_new_login', switch_app: 'session_reason_switch_app', timeout: 'session_reason_timeout' }[row.ended_reason];
-    const label = (reasonKey && langData[reasonKey]) || langData['session_status_ended'] || 'Ended';
-    const tone = row.ended_reason === 'timeout' ? 'bg-warning-subtle text-warning' : 'bg-secondary-subtle text-secondary';
-    return `<span class="badge ${tone}">${$('<div>').text(label).html()}</span>`;
+    const known = ['new_login', 'switch_app', 'timeout'].indexOf(row.ended_reason) !== -1;
+    return statusBadgeHtml(known ? row.ended_reason : 'ended', 'session_status');
 }
 function initLoginHistoryOverviewTable() {
     if ($.fn.DataTable.isDataTable('#tb_login_history_overview')) {
         tb_login_history_overview.ajax.reload();
         return;
     }
-    tb_login_history_overview = $('#tb_login_history_overview').DataTable({
-        responsive: true,
+    tb_login_history_overview = initSharedDataTable('#tb_login_history_overview', {
         serverSide: true,
-        processing: true,
-        order: [[1, 'desc']],
         ajax: {
             url: `${BASE_URL}/api/employee-login-log.list-company-wide`,
             type: 'POST',
             data: function (d) { Object.assign(d, loginHistoryOverviewCurrentFilters()); }
         },
-        columns: [
-            { data: null, render: (d, t, row) => `<div class="fw-semibold">${$('<div>').text(loginHistoryOverviewEmployeeName(row)).html()}</div><div class="small text-muted">${$('<div>').text(row.employee_no || '').html()}</div>` },
-            { data: 'login_at', render: d => $('<div>').text(typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : (d || '-')).html() },
-            { data: 'logout_at', render: d => $('<div>').text(d && typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : '-').html() },
-            { data: 'ip_address', render: d => $('<div>').text(d || '-').html() },
-            { data: null, render: (d, t, row) => $('<div>').text([row.location_city, row.location_country].filter(Boolean).join(', ') || '-').html() },
-            { data: 'timezone', render: d => $('<div>').text(d || '-').html() },
-            { data: 'device_type', render: d => { const m = loginHistoryOverviewDeviceIcon(d); return `<span class="row-type-icon ${m.rt}"><i class="fa-solid ${m.icon}"></i></span>${$('<div>').text(d || '-').html()}`; } },
-            { data: null, render: (d, t, row) => $('<div>').text([row.os_name, row.os_version].filter(Boolean).join(' ') || '-').html() },
-            { data: null, render: (d, t, row) => $('<div>').text([row.browser_name, row.browser_version].filter(Boolean).join(' ') || '-').html() },
-            { data: null, orderable: false, render: (d, t, row) => loginHistoryOverviewStatusBadge(row) },
-        ],
-        // 2026-08-30, real gap found and fixed (explicit request: "จำนวนแสดงต่อหน้า 50 รายการเป็น
-        // Default...มีตารางอื่นที่ยังไม่ใช้ Format เดียวกันอีกไหมครับ") -- was missing entirely, silently
-        // falling back to DataTables' own built-in default of 10 instead of this app's real system-
-        // wide default (see app.js's own `const pageLength = 50`/`lengthMenu`, loaded on every page).
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
+        dtOptions: {
+            responsive: true,
+            order: [[1, 'desc']],
+            columns: [
+                { data: null, render: (d, t, row) => `<div class="fw-semibold">${$('<div>').text(loginHistoryOverviewEmployeeName(row)).html()}</div><div class="small text-muted">${$('<div>').text(row.employee_no || '').html()}</div>` },
+                { data: 'login_at', render: d => $('<div>').text(typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : (d || '-')).html() },
+                { data: 'logout_at', render: d => $('<div>').text(d && typeof formatDisplayDateTime === 'function' ? formatDisplayDateTime(d) : '-').html() },
+                { data: 'ip_address', render: d => $('<div>').text(d || '-').html() },
+                { data: null, render: (d, t, row) => $('<div>').text([row.location_city, row.location_country].filter(Boolean).join(', ') || '-').html() },
+                { data: 'timezone', render: d => $('<div>').text(d || '-').html() },
+                { data: 'device_type', render: d => { const m = loginHistoryOverviewDeviceIcon(d); return `<span class="row-type-icon ${m.rt}"><i class="fa-solid ${m.icon}"></i></span>${$('<div>').text(d || '-').html()}`; } },
+                { data: null, render: (d, t, row) => $('<div>').text([row.os_name, row.os_version].filter(Boolean).join(' ') || '-').html() },
+                { data: null, render: (d, t, row) => $('<div>').text([row.browser_name, row.browser_version].filter(Boolean).join(' ') || '-').html() },
+                { data: null, orderable: false, render: (d, t, row) => loginHistoryOverviewStatusBadge(row) },
+            ],
+        },
     });
 }
 // 2026-09-02, 3-way Employee submenu split -- this used to be a shown.bs.tab lazy-init (this app's
@@ -104,28 +91,8 @@ $(document).ready(function () {
     (window.langReady || Promise.resolve()).then(function () {
     loadLoginHistoryOverviewFilterOptions();
     initLoginHistoryOverviewTable();
+    initFilterBar('#employeeLoginHistoryFilterBar', {
+        onChange: function () { if (tb_login_history_overview) tb_login_history_overview.ajax.reload(); },
+    });
     });
 });
-$(document).on('click', '#employeeLoginHistoryStationFilterToggle', function () {
-    const $filter = $('#employeeLoginHistoryStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-$(document).on('changeDate', '#loginHistoryOverviewFilterDateFrom, #loginHistoryOverviewFilterDateTo', function () {
-    updateClearLoginHistoryOverviewFilterVisibility();
-    if (tb_login_history_overview) tb_login_history_overview.ajax.reload();
-});
-$(document).on('change', '#loginHistoryOverviewFilterEmployee, #loginHistoryOverviewFilterDevice, #loginHistoryOverviewFilterBrowser', function () {
-    updateClearLoginHistoryOverviewFilterVisibility();
-    if (tb_login_history_overview) tb_login_history_overview.ajax.reload();
-});
-$(document).on('click', '#btnClearLoginHistoryOverviewFilter', function () {
-    $('#loginHistoryOverviewFilterEmployee').val(null).trigger('change');
-    $('#loginHistoryOverviewFilterDateFrom').val('');
-    if (typeof $.fn.datepicker === 'function') $('#loginHistoryOverviewFilterDateFrom').datepicker('update');
-    $('#loginHistoryOverviewFilterDateTo').val('');
-    if (typeof $.fn.datepicker === 'function') $('#loginHistoryOverviewFilterDateTo').datepicker('update');
-    $('#loginHistoryOverviewFilterDevice').val(null).trigger('change');
-    $('#loginHistoryOverviewFilterBrowser').val(null).trigger('change');
-});
-

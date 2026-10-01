@@ -68,8 +68,8 @@ function saRenderList($container, rows, emptyKey, listPrefix) {
     }
     $container.html(rows.map(row => {
         const badge = row.current_row_name
-            ? `<span class="badge bg-secondary-subtle text-secondary ms-1">${escapeHtml(row.current_row_name)}</span>`
-            : (row.current_row_id === null || row.current_row_id === undefined ? `<span class="badge bg-light text-muted ms-1">${langData['sa_unassigned'] || 'Unassigned'}</span>` : '');
+            ? `<span class="text-muted ms-1">${escapeHtml(row.current_row_name)}</span>`
+            : (row.current_row_id === null || row.current_row_id === undefined ? `<span class="text-muted ms-1">${langData['sa_unassigned'] || 'Unassigned'}</span>` : '');
         const cbId = `saEmpChk_${listPrefix}_${row.id}`;
         return `<div class="form-check border-bottom py-1">
             <input class="form-check-input sa-emp-checkbox" type="checkbox" value="${row.id}" id="${cbId}">
@@ -150,7 +150,7 @@ $(document).on('click', '#btnSaMoveOut', function () {
     const $btn = $(this);
     const title = (langData['sa_confirm_move_out_title'] || 'Move Out of {label}').replace('{label}', saCurrentLabel);
     const destApi = SA_DESTINATION_API[saCurrentType] || '';
-    Swal.fire({
+    showConfirm({
         title: title,
         html: `<div class="text-start">
             <p>${(langData['sa_confirm_move_out_message'] || 'Move {count} employee(s) out of "{label}"?').replace('{count}', ids.length).replace('{label}', saCurrentLabel)}</p>
@@ -158,9 +158,8 @@ $(document).on('click', '#btnSaMoveOut', function () {
             <select class="form-select" id="swalSaDestSelect" data-api="${destApi}" data-type="${saCurrentType}"></select>
             <div class="form-text mt-1">${langData['sa_move_to_blank_hint'] || 'Leave blank and the employee will have no assignment.'}</div>
         </div>`,
-        showCancelButton: true,
-        confirmButtonText: langData['confirm'] || 'Confirm',
-        cancelButtonText: langData['cancel'] || 'Cancel',
+        confirmText: langData['confirm'] || 'Confirm',
+        cancelText: langData['cancel'] || 'Cancel',
         didOpen: function () {
             if (typeof initSelect2 === 'function') {
                 initSelect2('#swalSaDestSelect', { mode: 'ajax', allowClear: true });

@@ -1157,7 +1157,7 @@
                     </div>
                     <div class="modal-body p-0">
                         <div id="reportPreviewLoading" class="text-center text-muted py-5"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>
-                        <iframe id="reportPreviewFrame" class="d-none" style="width:100%; height:70vh; border:0;" title="Report preview"></iframe>
+                        <iframe id="reportPreviewFrame" class="d-none border-0" style="width:100%; height:70vh" title="Report preview"></iframe>
                         <div id="reportPreviewUnavailable" class="text-center d-none py-4 px-4">
                             <div class="report-preview-unavailable-icon mx-auto mb-3">
                                 <i class="fa-solid fa-file-circle-exclamation"></i>
@@ -1197,35 +1197,23 @@
                              active). The categorical columns (By/Language/Device/Browser/Source)
                              additionally get the system's per-column Excel-style filter
                              (initExcelColumnFilters(), see detail.js) instead of duplicating them here. -->
-                        <div class="station-filter mb-2" id="reportHistoryStationFilter">
-                            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                            <button type="button" class="station-filter-toggle" id="reportHistoryStationFilterToggle" title="Toggle filter">
-                                <i class="fas fa-chevron-up"></i>
-                            </button>
-                            <div class="station-filter-body">
-                                <div class="row g-2">
-                                    <div class="col-6 col-md-4">
-                                        <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_from">From</span></label>
-                                        <div class="input-group">
-                                            <input type="text" class="form-control datepicker" id="reportHistoryDateFrom" autocomplete="off">
-                                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                                        </div>
-                                    </div>
-                                    <div class="col-6 col-md-4">
-                                        <label class="form-label mb-1"><i class="fa-solid fa-calendar-days me-1 text-muted"></i><span data-i18n="filter_date_to">To</span></label>
-                                        <div class="input-group">
-                                            <input type="text" class="form-control datepicker" id="reportHistoryDateTo" autocomplete="off">
-                                            <span class="input-group-text"><i class="fas fa-calendar"></i></span>
-                                        </div>
-                                    </div>
-                                </div>
+                        <?php
+                        ob_start(); ?>
+                        <div class="row g-2">
+                            <div class="col-6 col-md-4">
+                                <label class="form-label small mb-1" for="reportHistoryDateFrom" data-i18n="filter_date_from">From</label>
+                                <input type="text" class="form-control datepicker" id="reportHistoryDateFrom" autocomplete="off">
+                            </div>
+                            <div class="col-6 col-md-4">
+                                <label class="form-label small mb-1" for="reportHistoryDateTo" data-i18n="filter_date_to">To</label>
+                                <input type="text" class="form-control datepicker" id="reportHistoryDateTo" autocomplete="off">
                             </div>
                         </div>
-                        <div class="station-filter-clear-row d-none" id="reportHistoryFilterClearRow">
-                            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnReportHistoryClearFilter">
-                                <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                            </button>
-                        </div>
+                        <?php
+                        $filter_fields_html = ob_get_clean();
+                        $id = 'reportHistoryFilterBar';
+                        include __DIR__ . '/../partials/filter-bar.php';
+                        ?>
                         <div class="table-responsive">
                             <table class="table table-sm align-middle w-100" id="tb_report_history">
                                 <thead class="table-light text-secondary small">

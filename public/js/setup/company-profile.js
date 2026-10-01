@@ -121,11 +121,11 @@ function initCpSignaturePad() {
     const canvas = document.getElementById('cpSignaturePadCanvas');
     if (!canvas) return;
     cpSignaturePadCtx = canvas.getContext('2d');
-    cpSignaturePadCtx.fillStyle = '#ffffff';
+    cpSignaturePadCtx.fillStyle = tokenColor('--hex-ffffff');
     cpSignaturePadCtx.fillRect(0, 0, canvas.width, canvas.height);
     cpSignaturePadCtx.lineWidth = 2.5;
     cpSignaturePadCtx.lineCap = 'round';
-    cpSignaturePadCtx.strokeStyle = '#1a1a1a';
+    cpSignaturePadCtx.strokeStyle = tokenColor('--hex-1a1a1a');
     cpSignaturePadHasStrokes = false;
     const startDraw = function (e) {
         e.preventDefault();
@@ -483,17 +483,8 @@ function initBankAccountTable() {
         $(tableId).DataTable().ajax.reload(null, false);
         return;
     }
-    structureTables['bank_account'] = $(tableId).DataTable({
-        processing: true,
+    structureTables['bank_account'] = initSharedDataTable(tableId, {
         serverSide: true,
-        responsive: true,
-        // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- default sort points to column 1
-        // (bank) now that column 0 is the non-orderable status switch. BankAccountModel::list()'s
-        // own sortColumns[1] already resolves to `mb.bank_name_th` (the bank column's real content),
-        // so this is not a regression the way PED Type's own equivalent change was (see that
-        // table's own comment) -- if anything a slight improvement over the old default (colIndex 0
-        // resolved to a bare `ba.id` sort, not a meaningful column to sort by at all).
-        order: [[1, 'asc']],
         ajax: {
             url: `${BASE_URL}/api/bank_account.list`,
             type: 'POST',
@@ -503,6 +494,16 @@ function initBankAccountTable() {
                 d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
             }
         },
+        searchThreshold: -1,
+        dtOptions: {
+        responsive: true,
+        // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- default sort points to column 1
+        // (bank) now that column 0 is the non-orderable status switch. BankAccountModel::list()'s
+        // own sortColumns[1] already resolves to `mb.bank_name_th` (the bank column's real content),
+        // so this is not a regression the way PED Type's own equivalent change was (see that
+        // table's own comment) -- if anything a slight improvement over the old default (colIndex 0
+        // resolved to a bare `ba.id` sort, not a meaningful column to sort by at all).
+        order: [[1, 'asc']],
         columns: [
             // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- status switch is the first
             // column now, same shared mechanism as every other table already converted.
@@ -536,7 +537,7 @@ function initBankAccountTable() {
                 data: 'is_default',
                 className: 'text-center',
                 render: function (data) {
-                    return data ? `<span class="badge bg-primary" data-i18n="default">Default</span>` : `-`;
+                    return data ? `<span class="text-muted" data-i18n="default">Default</span>` : `-`;
                 }
             },
             {
@@ -559,9 +560,6 @@ function initBankAccountTable() {
                 `
             }
         ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         initComplete: function () {
             let self = this.api();
             let $wrapper = $(self.table().container());
@@ -615,6 +613,7 @@ function initBankAccountTable() {
             let self = this.api();
             let $wrapper = $(self.table().container());
             updateText($wrapper[0]);
+        }
         }
     });
 }
@@ -745,15 +744,8 @@ function initStructureTable(type, tableId) {
         $(tableId).DataTable().ajax.reload(null, false);
         return;
     }
-    structureTables[type] = $(tableId).DataTable({
-        processing: true,
+    structureTables[type] = initSharedDataTable(tableId, {
         serverSide: true,
-        responsive: true,
-        // 2026-09-02, Platform Hardening Phase 1.1 -- was `[[0, 'asc']]` back when column 0 was
-        // always the entity's own code/name column; now column 0 is the (non-orderable) status
-        // switch, so the default landing sort moves to column 1 (still each type's own code/name
-        // column in every case, see getStructureColumns()'s own new column order).
-        order: [[1, 'asc']],
         ajax: {
             url: `${BASE_URL}/api/structure.${type}`,
             type: "POST",
@@ -766,10 +758,15 @@ function initStructureTable(type, tableId) {
                 d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
             }
         },
+        searchThreshold: -1,
+        dtOptions: {
+        responsive: true,
+        // 2026-09-02, Platform Hardening Phase 1.1 -- was `[[0, 'asc']]` back when column 0 was
+        // always the entity's own code/name column; now column 0 is the (non-orderable) status
+        // switch, so the default landing sort moves to column 1 (still each type's own code/name
+        // column in every case, see getStructureColumns()'s own new column order).
+        order: [[1, 'asc']],
         columns: getStructureColumns(type),
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         initComplete: function () {
             let self = this.api();
             let $wrapper = $(self.table().container());
@@ -853,6 +850,7 @@ function initStructureTable(type, tableId) {
             let $wrapper = $(self.table().container());
             updateText($wrapper[0]);
         }
+        }
     });
 }
 // 2026-08-31, explicit request: Assign Employees modal -- attribute-safe escaping for the button's
@@ -883,7 +881,7 @@ function getStructureColumns(type) {
                 <button class="btn btn-link btn-circle-action text-warning btn-open-modal manage-${type}" data-action="edit" data-type="${type}" data-id="${row.id}" data-i18n-title="edit">
                     <i class="fa-solid fa-pen-to-square"></i>
                 </button>
-                <button class="btn btn-link btn-circle-action text-primary btn-structure-assign" data-type="${type}" data-id="${row.id}" data-label="${escapeAttr(label)}" data-i18n-title="assign_employees">
+                <button class="btn btn-link btn-circle-action btn-structure-assign" data-type="${type}" data-id="${row.id}" data-label="${escapeAttr(label)}" data-i18n-title="assign_employees">
                     <i class="fa-solid fa-user-plus"></i>
                 </button>
                 <button class="btn btn-link btn-circle-action text-secondary btn-structure-view-assigned" data-type="${type}" data-id="${row.id}" data-label="${escapeAttr(label)}" data-i18n-title="view_assigned_employees">
@@ -928,7 +926,7 @@ function getStructureColumns(type) {
                     data: "is_default",
                     className: "text-center",
                     render: function (data) {
-                        return data ? `<span class="badge bg-primary" data-i18n="default">Default</span>` : `-`;
+                        return data ? `<span class="text-muted" data-i18n="default">Default</span>` : `-`;
                     }
                 },
                 { data: "location", defaultContent: "-" },
@@ -957,9 +955,9 @@ function getStructureColumns(type) {
                     data: "salary_access",
                     render: function (data) {
                         return data ? `
-                            <span class="badge bg-info" data-i18n="allowed">Allowed</span>
+                            <span class="text-muted" data-i18n="allowed">Allowed</span>
                         ` : `
-                            <span class="badge bg-secondary" data-i18n="restricted">Restricted</span>
+                            <span class="text-muted" data-i18n="restricted">Restricted</span>
                         `;
                     }
                 },
@@ -999,7 +997,7 @@ function getStructureColumns(type) {
                     className: "text-end",
                     render: function (data) {
                         let amount = data ? parseFloat(data) : 0;
-                        return amount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                        return fmtNum(amount);
                     }
                 },
                 {
@@ -1021,8 +1019,8 @@ function getStructureColumns(type) {
                     data: null,
                     className: 'text-end',
                     render: function (data, type, row) {
-                        let min = row.salary_min ? parseFloat(row.salary_min).toLocaleString('th-TH') : '0';
-                        let max = row.salary_max ? parseFloat(row.salary_max).toLocaleString('th-TH') : 'Max';
+                        let min = row.salary_min ? fmtNum(parseFloat(row.salary_min), 0, 3) : '0';
+                        let max = row.salary_max ? fmtNum(parseFloat(row.salary_max), 0, 3) : 'Max';
                         return `${min} - ${max}`;
                     }
                 },
@@ -1030,7 +1028,7 @@ function getStructureColumns(type) {
                     data: "ot_eligible",
                     className: "text-center",
                     render: function (data) {
-                        return data ? `<span class="badge bg-info" data-i18n="yes">Yes</span>` : `<span class="badge bg-light text-dark" data-i18n="no">No</span>`;
+                        return data ? `<span class="text-muted" data-i18n="yes">Yes</span>` : `<span class="text-muted" data-i18n="no">No</span>`;
                     }
                 },
                 {
@@ -1209,7 +1207,7 @@ $(document).on('click', '.btn-open-modal', function (e) {
     $('#systemModal .modal-body').html(bodyHtml);
     $('#systemModal .modal-footer').html(`
         <button type="button" class="btn btn-primary" id="btnSubmitModalForm" data-i18n="save">Save</button>
-        <button type="button" class="btn btn-light" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" data-i18n="cancel">Cancel</button>
     `);
     if (typeof initSelect2 === 'function') {
         initSelect2('#systemModal .select2-remote', { mode: 'ajax' });
@@ -1385,12 +1383,10 @@ function bffRenderFormatList(defaultFormatId) {
         const isDefault = defaultFormatId && f.id === defaultFormatId;
         const isActive = f.id === bffSelectedFormatId;
         const verifiedBadge = f.has_own_override
-            ? (f.is_verified
-                ? `<span class="badge bg-success-subtle text-success" data-i18n="verified">Verified</span>`
-                : `<span class="badge bg-warning-subtle text-warning" data-i18n="draft_not_verified">DRAFT — not verified</span>`)
-            : `<span class="badge bg-secondary-subtle text-secondary" data-i18n="using_default_template">Using default template</span>`;
+            ? statusBadgeHtml(f.is_verified ? 'verified' : 'draft', 'bff_verification')
+            : statusBadgeHtml('default_template', 'bff_verification');
         const $item = $(`
-            <button type="button" class="btn btn-light text-start bff-format-item ${isActive ? 'active border-warning' : ''}" data-id="${f.id}">
+            <button type="button" class="btn btn-outline-secondary text-start bff-format-item ${isActive ? 'active border-warning' : ''}" data-id="${f.id}">
                 <div class="d-flex justify-content-between align-items-center">
                     <span class="fw-semibold small">${escapeHtml(bffFormatLabel(f))}</span>
                     ${isDefault ? `<i class="fa-solid fa-star text-warning ms-1" title="${langData['default'] || 'Default'}"></i>` : ''}
@@ -1484,8 +1480,7 @@ $(document).on('click', '#bffSaveConfigBtn', function () {
 });
 
 function bffRowTypeBadge(rowType) {
-    const map = { header: 'bg-info-subtle text-info', detail: 'bg-primary-subtle text-primary', trailer: 'bg-secondary-subtle text-secondary' };
-    return `<span class="badge ${map[rowType] || 'bg-light text-dark'}" data-i18n="row_type_${rowType}">${langData['row_type_' + rowType] || rowType}</span>`;
+    return `<span class="text-muted" data-i18n="row_type_${rowType}">${langData['row_type_' + rowType] || rowType}</span>`;
 }
 function bffSourceSummary(field) {
     if (field.source_type === 'constant') {

@@ -40,7 +40,7 @@ function itemNameTs(row) {
 }
 function categoryBadgeTs(cat) {
     const key = 'category_' + cat;
-    return `<span class="badge bg-light text-dark border">${langData[key] || cat}</span>`;
+    return `<span class="text-muted">${langData[key] || cat}</span>`;
 }
 // 2026-08-28, explicit request: "เก็บ Log ดำเนินการว่าแก้ไขล่าสุดเมื่อไหร่" -- updated_at/updated_by
 // (falling back to created_at/created_by, see TaxStatutoryModel/CompanyStatutorySettingModel's own
@@ -81,8 +81,8 @@ function csIsCustomizedTs(row) {
 }
 function csRateInUseCellTs(row) {
     const badge = csIsCustomizedTs(row)
-        ? `<span class="badge bg-warning-subtle text-warning border me-1">${langData['sr_source_customized'] || 'Customized'}</span>`
-        : `<span class="badge bg-light text-dark border me-1">${langData['sr_source_default'] || 'Default'}</span>`;
+        ? `<span class="text-muted me-1">${langData['sr_source_customized'] || 'Customized'}</span>`
+        : `<span class="text-muted me-1">${langData['sr_source_default'] || 'Default'}</span>`;
     let valueText = '';
     if (row.calc_method === 'flat_rate') {
         const empRate = row.effective_employee_rate;
@@ -137,7 +137,7 @@ function csActionButtonsTs(row) {
         : '';
     return `<div class="d-flex gap-1 justify-content-center">
         <button type="button" class="btn btn-link btn-circle-action text-secondary btn-view-sr-current" data-id="${row.statutory_item_id}" title="${langData['view'] || 'View'}"><i class="fa-solid fa-eye"></i></button>
-        <button type="button" class="btn btn-link btn-circle-action text-primary btn-manage-sr" data-id="${row.statutory_item_id}" title="${csManageButtonTitleTs(row)}"><i class="fa-solid fa-sliders"></i></button>
+        <button type="button" class="btn btn-link btn-circle-action btn-manage-sr" data-id="${row.statutory_item_id}" title="${csManageButtonTitleTs(row)}"><i class="fa-solid fa-sliders"></i></button>
         ${deleteBtn}
     </div>`;
 }
@@ -146,7 +146,8 @@ function initCompanySettingTable() {
         $('#tb_company_setting').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_company_setting = $('#tb_company_setting').DataTable({
+    tb_company_setting = initSharedDataTable('#tb_company_setting', {
+        dtOptions: {
         responsive: true,
         paging: false,
         info: false,
@@ -184,7 +185,6 @@ function initCompanySettingTable() {
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => csActionButtonsTs(row) }
         ],
-        language: getTableLang(),
         drawCallback: function () { getTableLang(); },
         // 2026-08-27, explicit request: "นำไปปรับใช้กับทุกตาราง" -- Excel-style column filter
         // rollout. Same `searching:false` gotcha as `tb_rate_history` above (see that table's own
@@ -224,6 +224,7 @@ function initCompanySettingTable() {
                     { index: 5, key: 'adjustable' },
                 ]
             });
+        }
         }
     });
 }
@@ -369,8 +370,8 @@ function srRateSummaryTs(row) {
 // "Customized" -- the badge the user explicitly asked for ("ต้องมีบอกว่า ปรับแต่งหรือ Default").
 function srSourceBadgeTs(source) {
     return source === 'company_custom'
-        ? `<span class="badge bg-warning-subtle text-warning border">${langData['sr_source_customized'] || 'Customized'}</span>`
-        : `<span class="badge bg-light text-dark border">${langData['sr_source_default'] || 'Default'}</span>`;
+        ? `<span class="text-muted">${langData['sr_source_customized'] || 'Customized'}</span>`
+        : `<span class="text-muted">${langData['sr_source_default'] || 'Default'}</span>`;
 }
 function srViewFieldHtml(label, value) {
     return `<div class="sr-view-field"><div class="sr-view-label">${label}</div><div class="sr-view-value">${value}</div></div>`;
@@ -388,7 +389,7 @@ function renderSrVersionViewCard(row) {
     }
     const isMaster = currentSrItem && currentSrItem.scope === 'master';
     const calcMethod = currentSrItem ? currentSrItem.calc_method : row.calc_method;
-    const endLabel = row.end_date ? formatDisplayDate(row.end_date) : `<span class="badge bg-success-subtle text-success">${langData['current_version'] || 'Current'}</span>`;
+    const endLabel = row.end_date ? formatDisplayDate(row.end_date) : `<span class="text-muted">${langData['current_version'] || 'Current'}</span>`;
 
     let valuesHtml = '';
     if (calcMethod === 'flat_rate') {
@@ -564,7 +565,7 @@ function addSrBracketRow(min, max, rate) {
         <td><input type="number" step="0.01" class="form-control form-control-sm sr-bracket-min" value="${min !== undefined ? min : ''}" ${idx > 0 ? 'readonly' : ''}></td>
         <td><input type="number" step="0.01" class="form-control form-control-sm sr-bracket-max" value="${max !== undefined && max !== null ? max : ''}" placeholder="${langData['no_upper_limit'] || 'No upper limit'}"></td>
         <td><input type="number" step="0.0001" min="0" max="100" class="form-control form-control-sm sr-bracket-rate" value="${rate !== undefined ? rate : ''}"></td>
-        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger btn-remove-sr-bracket"><i class="fa-solid fa-trash"></i></button></td>
+        <td class="text-center"><button type="button" class="btn btn-sm btn-outline-secondary btn-remove-sr-bracket"><i class="fa-solid fa-trash"></i></button></td>
     </tr>`);
     $('#srBracketBody').append($row);
     if (idx === 0 && min === undefined) {
@@ -989,14 +990,10 @@ function initStatutoryRateModalUI() {
     $(document).on('click', '#srPullFromMasterBtn', function () {
         if (!currentSrItem || !currentSrItem.id) return;
         const today = new Date().toISOString().slice(0, 10);
-        Swal.fire({
-            icon: 'info',
+        showConfirm({
             title: langData['sr_pull_from_master_confirm_title'] || "Pull Master's current rate as a new version?",
             html: `<label class="form-label small mb-1 d-block text-start">${langData['modal_effective_date'] || 'Effective Date'}</label>
                    <input type="date" id="swalSrPullDate" class="swal2-input" value="${today}">`,
-            showCancelButton: true,
-            confirmButtonText: langData.yes || 'Yes',
-            cancelButtonText: langData.no || 'No',
             preConfirm: () => {
                 const val = document.getElementById('swalSrPullDate').value;
                 if (!val) { Swal.showValidationMessage(langData['required_star_message'] || 'Please fill all fields marked with *'); }
@@ -1029,15 +1026,11 @@ function initStatutoryRateModalUI() {
         const versionId = $(this).data('id');
         if (!versionId) return;
         const today = new Date().toISOString().slice(0, 10);
-        Swal.fire({
-            icon: 'info',
+        showConfirm({
             title: langData['sr_promote_override_confirm_title'] || 'Promote your override to system default?',
             html: `<p>${langData['sr_promote_override_confirm_message'] || 'Your own rate override becomes the new master default for EVERY company in this country from this date onward. This cannot be undone.'}</p>
                    <label class="form-label small mb-1 d-block text-start">${langData['modal_effective_date'] || 'Effective Date'}</label>
                    <input type="date" id="swalSrPromoteDate" class="swal2-input" value="${today}">`,
-            showCancelButton: true,
-            confirmButtonText: langData.yes || 'Yes',
-            cancelButtonText: langData.no || 'No',
             preConfirm: () => {
                 const val = document.getElementById('swalSrPromoteDate').value;
                 if (!val) { Swal.showValidationMessage(langData['required_star_message'] || 'Please fill all fields marked with *'); }
@@ -1339,14 +1332,14 @@ function pvdLadderRowHtml(row, index, isLast) {
         </div>
         <div class="col-3">
             <label class="form-label small mb-0" data-i18n="pvd_ladder_to_years">${langData['pvd_ladder_to_years'] || 'To (yrs)'}</label>
-            <input type="number" class="form-control form-control-sm pvd-ladder-max" step="0.01" min="0" value="${maxVal}" placeholder="&#8734;" ${isLast ? 'disabled' : ''}>
+            <input type="number" class="form-control form-control-sm pvd-ladder-max" step="0.01" min="0" value="${maxVal}" placeholder="&infin;" ${isLast ? 'disabled' : ''}>
         </div>
         <div class="col-4">
             <label class="form-label small mb-0" data-i18n="pvd_ladder_rate_percent">${langData['pvd_ladder_rate_percent'] || 'Employer Rate (%)'}</label>
             <input type="number" class="form-control form-control-sm pvd-ladder-rate" step="0.01" min="0" max="100" value="${rateVal}">
         </div>
         <div class="col-2">
-            ${isLast && index > 0 ? `<button type="button" class="btn btn-sm btn-outline-danger pvd-ladder-remove-row w-100"><i class="fa-solid fa-trash"></i></button>` : ''}
+            ${isLast && index > 0 ? `<button type="button" class="btn btn-sm btn-outline-secondary pvd-ladder-remove-row w-100"><i class="fa-solid fa-trash"></i></button>` : ''}
         </div>
     </div>`;
 }
@@ -1588,8 +1581,8 @@ function renderStatutoryFormatCard(item) {
         // (implying a real choice) would be worse UX than none. Still shown so the checklist is
         // complete, not just the 2 forms that happen to have a picker.
         const verifiedBadge = item.is_verified
-            ? `<span class="badge bg-success-subtle text-success mt-2" data-i18n="verified">${langData['verified'] || 'Verified'}</span>`
-            : `<span class="badge bg-warning-subtle text-warning mt-2" data-i18n="draft_not_verified">${langData['draft_not_verified'] || 'DRAFT — not verified'}</span>`;
+            ? statusBadgeHtml('verified', 'statutory_format_verify')
+            : statusBadgeHtml('draft_not_verified', 'statutory_format_verify');
         return $(`
             <div class="col-md-6">
                 <div class="card-surface p-3 h-100 d-flex flex-column bg-light bg-opacity-50">
@@ -1613,8 +1606,8 @@ function renderStatutoryFormatCard(item) {
     }).join('');
     const selectedVersion = item.versions.find(v => v.id === item.selected_version_id);
     const verifiedBadge = selectedVersion && !selectedVersion.is_verified
-        ? `<span class="badge bg-warning-subtle text-warning mt-2" data-i18n="draft_not_verified">${langData['draft_not_verified'] || 'DRAFT — not verified'}</span>`
-        : (selectedVersion ? `<span class="badge bg-success-subtle text-success mt-2" data-i18n="verified">${langData['verified'] || 'Verified'}</span>` : '');
+        ? statusBadgeHtml('draft_not_verified', 'statutory_format_verify')
+        : (selectedVersion ? statusBadgeHtml('verified', 'statutory_format_verify') : '');
     const $card = $(`
         <div class="col-md-6">
             <div class="card-surface p-3 h-100 d-flex flex-column">
@@ -1642,8 +1635,8 @@ $(document).on('change', '.statutory-format-version-select', function () {
     const $badgeWrap = $card.find('.statutory-format-badge-wrap');
     if (selected) {
         $badgeWrap.html(selected.is_verified
-            ? `<span class="badge bg-success-subtle text-success mt-2" data-i18n="verified">${langData['verified'] || 'Verified'}</span>`
-            : `<span class="badge bg-warning-subtle text-warning mt-2" data-i18n="draft_not_verified">${langData['draft_not_verified'] || 'DRAFT — not verified'}</span>`);
+            ? statusBadgeHtml('verified', 'statutory_format_verify')
+            : statusBadgeHtml('draft_not_verified', 'statutory_format_verify'));
     }
 });
 $(document).on('click', '.statutory-format-save-btn', function () {

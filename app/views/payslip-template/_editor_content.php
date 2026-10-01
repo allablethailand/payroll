@@ -96,8 +96,8 @@
      strip+content with a single toggle, same as Employment Certificate Template's own #ectMainTabsWrap. -->
 <div id="pstMainTabsWrap">
 <ul class="nav nav-tabs setup-tabs mb-3" id="pstEditorTabs" role="tablist">
-  <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#pstTabDesign" type="button" role="tab"><i class="fa-solid fa-pen-ruler me-1"></i><span data-i18n="ect_design_tab">Design</span></button></li>
-  <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#pstTabAssign" type="button" role="tab"><i class="fa-solid fa-users-rectangle me-1"></i><span data-i18n="pst_assign_to">Assign To</span></button></li>
+  <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#pstTabDesign" type="button" role="tab"><span data-i18n="ect_design_tab">Design</span></button></li>
+  <li class="nav-item"><button class="nav-link setup-menu" data-bs-toggle="tab" data-bs-target="#pstTabAssign" type="button" role="tab"><span data-i18n="pst_assign_to">Assign To</span></button></li>
 </ul>
 
 <div class="tab-content">
@@ -127,8 +127,8 @@
            api/payslip-template.publish-toggle IMMEDIATELY (not gated behind Save), same as the List
            page's own badge. Disabled until the template has a real id (see updatePstPublishUi()). -->
       <div class="btn-group btn-group-sm pst-publish-toggle-group" role="group" id="pstPublishToggleGroup">
-        <button type="button" class="btn btn-outline-warning pst-publish-option" data-value="draft" disabled><i class="fa-solid fa-pen me-1"></i><span data-i18n="ect_publish_draft">Draft</span></button>
-        <button type="button" class="btn btn-outline-success pst-publish-option" data-value="public" disabled><i class="fa-solid fa-globe me-1"></i><span data-i18n="ect_publish_public">Public</span></button>
+        <button type="button" class="btn btn-outline-secondary pst-publish-option" data-value="draft" disabled><i class="fa-solid fa-pen me-1"></i><span data-i18n="ect_publish_draft">Draft</span></button>
+        <button type="button" class="btn btn-outline-secondary pst-publish-option" data-value="public" disabled><i class="fa-solid fa-globe me-1"></i><span data-i18n="ect_publish_public">Public</span></button>
       </div>
       <div class="form-check form-switch" data-i18n-title="ect_auto_save_hint" title="Automatically save changes while editing, instead of only on Save.">
         <input class="form-check-input" type="checkbox" id="pstAutoSaveSwitch">
@@ -279,7 +279,7 @@
       </div>
     </div>
     <div class="pst-ribbon-group">
-      <button type="button" class="btn btn-outline-danger btn-sm" id="pstDeleteElementBtn" disabled>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="pstDeleteElementBtn" disabled>
         <i class="fa-solid fa-trash me-1"></i><span data-i18n="delete">Delete</span>
       </button>
     </div>
@@ -349,7 +349,7 @@
         <button type="button" class="btn btn-link btn-sm" id="pstPageNextBtn" title="Next page"><i class="fa-solid fa-chevron-right"></i></button>
         <span class="pst-page-nav-sep"></span>
         <button type="button" class="btn btn-outline-secondary btn-sm" id="pstPageAddBtn" title="Add page"><i class="fa-solid fa-plus me-1"></i><span data-i18n="ect_add_page">Add Page</span></button>
-        <button type="button" class="btn btn-outline-danger btn-sm" id="pstPageRemoveBtn" title="Remove this page"><i class="fa-solid fa-trash me-1"></i><span data-i18n="ect_remove_page">Remove Page</span></button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" id="pstPageRemoveBtn" title="Remove this page"><i class="fa-solid fa-trash me-1"></i><span data-i18n="ect_remove_page">Remove Page</span></button>
       </div>
     </div>
 

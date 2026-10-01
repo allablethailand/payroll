@@ -33,7 +33,7 @@
             <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" id="employeeReportsSubTabs" role="tablist">
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu active" id="empReportSub-standing-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-standing-pane" type="button" role="tab" aria-controls="empReportSub-standing-pane" aria-selected="true">
-                        <i class="fa-solid fa-calculator me-1"></i><span data-i18n="standing_items_summary">Standing Items Summary</span>
+                        <span data-i18n="standing_items_summary">Standing Items Summary</span>
                     </button>
                 </li>
                 <!-- 2026-09-02, Phase 1 of the Employee Reports plan -- "Report คนเข้าคนออกประจำเดือน
@@ -41,7 +41,7 @@
                      own docblock for the backend design. -->
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-headcount-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-headcount-pane" type="button" role="tab" aria-controls="empReportSub-headcount-pane" aria-selected="false">
-                        <i class="fa-solid fa-people-arrows me-1"></i><span data-i18n="headcount_movement_report">Headcount Movement</span>
+                        <span data-i18n="headcount_movement_report">Headcount Movement</span>
                     </button>
                 </li>
                 <!-- 2026-09-02, Phase 2 of the Employee Reports plan -- 3 quick-win reports, data
@@ -49,34 +49,34 @@
                      EmployeeModel method's own docblock for the backend design. -->
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-expiry-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-expiry-pane" type="button" role="tab" aria-controls="empReportSub-expiry-pane" aria-selected="false">
-                        <i class="fa-solid fa-triangle-exclamation me-1"></i><span data-i18n="expiry_report">Expiry Alerts</span>
+                        <span data-i18n="expiry_report">Expiry Alerts</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-probation-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-probation-pane" type="button" role="tab" aria-controls="empReportSub-probation-pane" aria-selected="false">
-                        <i class="fa-solid fa-hourglass-half me-1"></i><span data-i18n="probation_report">Probation Status</span>
+                        <span data-i18n="probation_report">Probation Status</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-enrollment-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-enrollment-pane" type="button" role="tab" aria-controls="empReportSub-enrollment-pane" aria-selected="false">
-                        <i class="fa-solid fa-shield-heart me-1"></i><span data-i18n="statutory_enrollment_report">SSO/PVD Enrollment</span>
+                        <span data-i18n="statutory_enrollment_report">SSO/PVD Enrollment</span>
                     </button>
                 </li>
                 <!-- 2026-09-02, Phase 3 of the Employee Reports plan -- structural/analytical
                      reports. See each EmployeeModel method's own docblock for the backend design. -->
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-structure-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-structure-pane" type="button" role="tab" aria-controls="empReportSub-structure-pane" aria-selected="false">
-                        <i class="fa-solid fa-sitemap me-1"></i><span data-i18n="headcount_structure_report">Headcount Structure</span>
+                        <span data-i18n="headcount_structure_report">Headcount Structure</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-tenure-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-tenure-pane" type="button" role="tab" aria-controls="empReportSub-tenure-pane" aria-selected="false">
-                        <i class="fa-solid fa-award me-1"></i><span data-i18n="tenure_report">Tenure</span>
+                        <span data-i18n="tenure_report">Tenure</span>
                     </button>
                 </li>
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-birthday-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-birthday-pane" type="button" role="tab" aria-controls="empReportSub-birthday-pane" aria-selected="false">
-                        <i class="fa-solid fa-cake-candles me-1"></i><span data-i18n="birthday_anniversary_report">Birthday &amp; Anniversary</span>
+                        <span data-i18n="birthday_anniversary_report">Birthday &amp; Anniversary</span>
                     </button>
                 </li>
                 <!-- 2026-09-02, Phase 4 (the final phase) of the Employee Reports plan -- company-wide
@@ -85,55 +85,41 @@
                      docblock. -->
                 <li class="nav-item" role="presentation">
                     <button class="nav-link structure-menu" id="empReportSub-completeness-tab" data-bs-toggle="tab" data-bs-target="#empReportSub-completeness-pane" type="button" role="tab" aria-controls="empReportSub-completeness-pane" aria-selected="false">
-                        <i class="fa-solid fa-clipboard-check me-1"></i><span data-i18n="completeness_overview_report">Data Completeness</span>
+                        <span data-i18n="completeness_overview_report">Data Completeness</span>
                     </button>
                 </li>
             </ul>
         </div>
         <div class="tab-content" id="employeeReportsSubTabsContent">
         <div class="tab-pane fade show active" id="empReportSub-standing-pane" role="tabpanel" aria-labelledby="empReportSub-standing-tab" tabindex="0">
-        <div class="station-filter" id="employeeSummaryStationFilter">
-            <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-            <button type="button" class="station-filter-toggle" id="employeeSummaryStationFilterToggle" title="Toggle filter">
-                <i class="fas fa-chevron-up"></i>
-            </button>
-            <div class="station-filter-body">
-                <div class="row g-2">
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-user-tag me-1 text-muted"></i><span data-i18n="role">Role</span></label>
-                        <select class="form-select select2-remote" id="employee_summary_filter_role" data-api="/api/role.get" data-type="role"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
-                        <select class="form-select select2-remote" id="employee_summary_filter_department" data-api="/api/department.get" data-type="department"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-people-group me-1 text-muted"></i><span data-i18n="team">Team</span></label>
-                        <select class="form-select select2-remote" id="employee_summary_filter_team" data-api="/api/team.get" data-type="team"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-clock me-1 text-muted"></i><span data-i18n="shift">Shift</span></label>
-                        <select class="form-select select2-remote" id="employee_summary_filter_shift" data-api="/api/shift.options" data-type="shift"></select>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
-                        <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
-                        <select class="form-select select2-remote" id="employee_summary_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
-                    </div>
-                </div>
+        <?php ob_start(); ?>
+        <div class="row g-2">
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_summary_filter_role" data-i18n="role">Role</label>
+                <select class="form-select select2-remote" id="employee_summary_filter_role" data-api="/api/role.get" data-type="role"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_summary_filter_department" data-i18n="department">Department</label>
+                <select class="form-select select2-remote" id="employee_summary_filter_department" data-api="/api/department.get" data-type="department"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_summary_filter_team" data-i18n="team">Team</label>
+                <select class="form-select select2-remote" id="employee_summary_filter_team" data-api="/api/team.get" data-type="team"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_summary_filter_shift" data-i18n="shift">Shift</label>
+                <select class="form-select select2-remote" id="employee_summary_filter_shift" data-api="/api/shift.options" data-type="shift"></select>
+            </div>
+            <div class="col-6 col-md-4 col-lg-2">
+                <label class="form-label small mb-1" for="employee_summary_filter_branch" data-i18n="branch">Branch</label>
+                <select class="form-select select2-remote" id="employee_summary_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
             </div>
         </div>
-        <div class="station-filter-clear-row d-none" id="employeeSummaryFilterClearRow">
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmployeeSummaryFilter">
-                <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-            </button>
-        </div>
-        <!-- 2026-09-02, explicit request: "อยากให้มี Card Summary อยู่ที่หัวตารางครับ" -- same
-             `.stat-card` shape/colors the Dashboard already established (public/js/dashboard.js's
-             own DASH_STATE_COLORS block, `#dashStatRow`), reusing numbers that are ALREADY computed
-             server-side and returned on every ajax response (EmployeeModel::standingSummaryList()'s
-             own `totals`/`filtered` keys -- renderEmployeeSummaryCards() in list.js just reads them,
-             zero new backend query). Updates on every filter change / page navigation, same as the
-             tfoot totals right below already do -- both read the SAME response object. -->
+        <?php
+        $filter_fields_html = ob_get_clean();
+        $id = 'employeeSummaryFilterBar';
+        include __DIR__ . '/../partials/filter-bar.php';
+        ?>
         <div class="row g-3 mb-4" id="employeeSummaryStatRow">
             <div class="col-6 col-lg-3">
                 <div class="stat-card stat-card-info h-100">
@@ -235,43 +221,38 @@
              "monthly" and "annual" framing of the original request in one view). Summary cards +
              chart per explicit follow-up request: "อยากให้เพิ่มให้ด้วย...ไม่อยากให้เป็นตารางโล้นๆ". -->
         <div class="tab-pane fade" id="empReportSub-headcount-pane" role="tabpanel" aria-labelledby="empReportSub-headcount-tab" tabindex="0">
-            <div class="station-filter" id="employeeHeadcountStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="employeeHeadcountStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar me-1 text-muted"></i><span data-i18n="year">Year</span></label>
-                            <select class="form-select select2-native" id="employee_headcount_filter_year">
-                                <?php
-                                    // Native-populated (not select2-static's i18n-key lookup -- these
-                                    // are plain numbers, nothing to translate) -- last 5 years through
-                                    // next year, defaulting to the current year.
-                                    $hcmCurrentYear = (int)date('Y');
-                                    for ($hcmY = $hcmCurrentYear - 5; $hcmY <= $hcmCurrentYear + 1; $hcmY++):
-                                ?>
-                                    <option value="<?=$hcmY?>" <?=$hcmY === $hcmCurrentYear ? 'selected' : ''?>><?=$hcmY?></option>
-                                <?php endfor; ?>
-                            </select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
-                            <select class="form-select select2-remote" id="employee_headcount_filter_department" data-api="/api/department.get" data-type="department"></select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
-                            <select class="form-select select2-remote" id="employee_headcount_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
-                        </div>
-                    </div>
+            <div class="row g-3 mb-3">
+                <div class="col-sm-2">
+                    <label class="form-label small mb-1" for="employee_headcount_filter_year" data-i18n="year">Year</label>
+                    <select class="form-select select2-native" id="employee_headcount_filter_year">
+                        <?php
+                            // Native-populated (not select2-static's i18n-key lookup -- these
+                            // are plain numbers, nothing to translate) -- last 5 years through
+                            // next year, defaulting to the current year.
+                            $hcmCurrentYear = (int)date('Y');
+                            for ($hcmY = $hcmCurrentYear - 5; $hcmY <= $hcmCurrentYear + 1; $hcmY++):
+                        ?>
+                            <option value="<?=$hcmY?>" <?=$hcmY === $hcmCurrentYear ? 'selected' : ''?>><?=$hcmY?></option>
+                        <?php endfor; ?>
+                    </select>
                 </div>
             </div>
-            <div class="station-filter-clear-row d-none" id="employeeHeadcountFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmployeeHeadcountFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
+            <?php ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="employee_headcount_filter_department" data-i18n="department">Department</label>
+                    <select class="form-select select2-remote" id="employee_headcount_filter_department" data-api="/api/department.get" data-type="department"></select>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="employee_headcount_filter_branch" data-i18n="branch">Branch</label>
+                    <select class="form-select select2-remote" id="employee_headcount_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
+                </div>
             </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'employeeHeadcountFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="row g-3 mb-4" id="employeeHeadcountStatRow">
                 <div class="col-6 col-lg-3">
                     <div class="stat-card stat-card-success h-100">
@@ -337,33 +318,28 @@
 
         <!-- 2026-09-02, Phase 2 -- Contract/Work Permit/Visa/Passport Expiry Alerts. -->
         <div class="tab-pane fade" id="empReportSub-expiry-pane" role="tabpanel" aria-labelledby="empReportSub-expiry-tab" tabindex="0">
-            <div class="station-filter" id="employeeExpiryStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="employeeExpiryStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-hourglass-half me-1 text-muted"></i><span data-i18n="expiry_within_days">Expiring Within</span></label>
-                            <select class="form-select select2-static" id="employee_expiry_filter_within_days" data-option-keys="expiry_within_30,expiry_within_60,expiry_within_90" data-option-values="30,60,90"></select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
-                            <select class="form-select select2-remote" id="employee_expiry_filter_department" data-api="/api/department.get" data-type="department"></select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
-                            <select class="form-select select2-remote" id="employee_expiry_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
-                        </div>
-                    </div>
+            <div class="row g-3 mb-3">
+                <div class="col-sm-2">
+                    <label class="form-label small mb-1" for="employee_expiry_filter_within_days" data-i18n="expiry_within_days">Expiring Within</label>
+                    <select class="form-select select2-static" id="employee_expiry_filter_within_days" data-option-keys="expiry_within_30,expiry_within_60,expiry_within_90" data-option-values="30,60,90"></select>
                 </div>
             </div>
-            <div class="station-filter-clear-row d-none" id="employeeExpiryFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmployeeExpiryFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
+            <?php ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="employee_expiry_filter_department" data-i18n="department">Department</label>
+                    <select class="form-select select2-remote" id="employee_expiry_filter_department" data-api="/api/department.get" data-type="department"></select>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="employee_expiry_filter_branch" data-i18n="branch">Branch</label>
+                    <select class="form-select select2-remote" id="employee_expiry_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
+                </div>
             </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'employeeExpiryFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="row g-3 mb-4" id="employeeExpiryStatRow">
                 <div class="col-6 col-lg-3">
                     <div class="stat-card stat-card-warning h-100">
@@ -424,29 +400,22 @@
              AskUserQuestion, no probation-period-length setting exists anywhere in this app yet, see
              EmployeeModel::probationReport()'s own docblock. -->
         <div class="tab-pane fade" id="empReportSub-probation-pane" role="tabpanel" aria-labelledby="empReportSub-probation-tab" tabindex="0">
-            <div class="station-filter" id="employeeProbationStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="employeeProbationStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
-                            <select class="form-select select2-remote" id="employee_probation_filter_department" data-api="/api/department.get" data-type="department"></select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
-                            <select class="form-select select2-remote" id="employee_probation_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
-                        </div>
-                    </div>
+            <?php ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="employee_probation_filter_department" data-i18n="department">Department</label>
+                    <select class="form-select select2-remote" id="employee_probation_filter_department" data-api="/api/department.get" data-type="department"></select>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="employee_probation_filter_branch" data-i18n="branch">Branch</label>
+                    <select class="form-select select2-remote" id="employee_probation_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
                 </div>
             </div>
-            <div class="station-filter-clear-row d-none" id="employeeProbationFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmployeeProbationFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
-            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'employeeProbationFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="row g-3 mb-4" id="employeeProbationStatRow">
                 <div class="col-6 col-lg-3">
                     <div class="stat-card stat-card-warning h-100">
@@ -478,29 +447,22 @@
         <!-- 2026-09-02, Phase 2 -- SSO/PVD Enrollment ("which people," distinct from the existing
              statutory SSO 1-10 FORM exports). -->
         <div class="tab-pane fade" id="empReportSub-enrollment-pane" role="tabpanel" aria-labelledby="empReportSub-enrollment-tab" tabindex="0">
-            <div class="station-filter" id="employeeEnrollmentStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="employeeEnrollmentStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
-                            <select class="form-select select2-remote" id="employee_enrollment_filter_department" data-api="/api/department.get" data-type="department"></select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
-                            <select class="form-select select2-remote" id="employee_enrollment_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
-                        </div>
-                    </div>
+            <?php ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="employee_enrollment_filter_department" data-i18n="department">Department</label>
+                    <select class="form-select select2-remote" id="employee_enrollment_filter_department" data-api="/api/department.get" data-type="department"></select>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="employee_enrollment_filter_branch" data-i18n="branch">Branch</label>
+                    <select class="form-select select2-remote" id="employee_enrollment_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
                 </div>
             </div>
-            <div class="station-filter-clear-row d-none" id="employeeEnrollmentFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmployeeEnrollmentFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
-            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'employeeEnrollmentFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="row g-3 mb-4" id="employeeEnrollmentStatRow">
                 <div class="col-6 col-lg-3">
                     <div class="stat-card stat-card-success h-100">
@@ -581,18 +543,10 @@
         <!-- 2026-09-02, Phase 3 -- Headcount Structure, a current (not date-scoped) snapshot grouped
              by one dimension at a time. -->
         <div class="tab-pane fade" id="empReportSub-structure-pane" role="tabpanel" aria-labelledby="empReportSub-structure-tab" tabindex="0">
-            <div class="station-filter" id="employeeStructureStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="employeeStructureStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-3">
-                            <label class="form-label mb-1"><i class="fa-solid fa-layer-group me-1 text-muted"></i><span data-i18n="structure_group_by">Group By</span></label>
-                            <select class="form-select select2-static" id="employee_structure_filter_group_by" data-option-keys="structure_group_department,structure_group_position,structure_group_branch,structure_group_employment_type" data-option-values="department,position,branch,employment_type"></select>
-                        </div>
-                    </div>
+            <div class="row g-3 mb-3">
+                <div class="col-6 col-md-4 col-lg-3">
+                    <label class="form-label small mb-1" for="employee_structure_filter_group_by" data-i18n="structure_group_by">Group By</label>
+                    <select class="form-select select2-static" id="employee_structure_filter_group_by" data-option-keys="structure_group_department,structure_group_position,structure_group_branch,structure_group_employment_type" data-option-values="department,position,branch,employment_type"></select>
                 </div>
             </div>
             <div class="row g-3 mb-4" id="employeeStructureStatRow">
@@ -648,29 +602,22 @@
 
         <!-- 2026-09-02, Phase 3 -- Tenure (อายุงาน), bucketed years-of-service. -->
         <div class="tab-pane fade" id="empReportSub-tenure-pane" role="tabpanel" aria-labelledby="empReportSub-tenure-tab" tabindex="0">
-            <div class="station-filter" id="employeeTenureStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="employeeTenureStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
-                            <select class="form-select select2-remote" id="employee_tenure_filter_department" data-api="/api/department.get" data-type="department"></select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
-                            <select class="form-select select2-remote" id="employee_tenure_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
-                        </div>
-                    </div>
+            <?php ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="employee_tenure_filter_department" data-i18n="department">Department</label>
+                    <select class="form-select select2-remote" id="employee_tenure_filter_department" data-api="/api/department.get" data-type="department"></select>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="employee_tenure_filter_branch" data-i18n="branch">Branch</label>
+                    <select class="form-select select2-remote" id="employee_tenure_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
                 </div>
             </div>
-            <div class="station-filter-clear-row d-none" id="employeeTenureFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmployeeTenureFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
-            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'employeeTenureFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="row g-3 mb-4" id="employeeTenureStatRow">
                 <div class="col-6 col-lg-4">
                     <div class="stat-card stat-card-info h-100">
@@ -729,41 +676,36 @@
         <!-- 2026-09-02, Phase 3 -- Birthday & Work Anniversary, a simple monthly reminder list (no
              chart -- adds no decision-making value for this kind of report). -->
         <div class="tab-pane fade" id="empReportSub-birthday-pane" role="tabpanel" aria-labelledby="empReportSub-birthday-tab" tabindex="0">
-            <div class="station-filter" id="employeeBirthdayStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="employeeBirthdayStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-calendar-week me-1 text-muted"></i><span data-i18n="month">Month</span></label>
-                            <select class="form-select select2-native" id="employee_birthday_filter_month">
-                                <?php
-                                    $bdayMonthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-                                    $bdayCurrentMonth = (int)date('n');
-                                    for ($bm = 1; $bm <= 12; $bm++):
-                                ?>
-                                    <option value="<?=$bm?>" <?=$bm === $bdayCurrentMonth ? 'selected' : ''?>><?=$bdayMonthNames[$bm]?></option>
-                                <?php endfor; ?>
-                            </select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
-                            <select class="form-select select2-remote" id="employee_birthday_filter_department" data-api="/api/department.get" data-type="department"></select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
-                            <select class="form-select select2-remote" id="employee_birthday_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
-                        </div>
-                    </div>
+            <div class="row g-3 mb-3">
+                <div class="col-sm-2">
+                    <label class="form-label small mb-1" for="employee_birthday_filter_month" data-i18n="month">Month</label>
+                    <select class="form-select select2-native" id="employee_birthday_filter_month">
+                        <?php
+                            $bdayMonthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+                            $bdayCurrentMonth = (int)date('n');
+                            for ($bm = 1; $bm <= 12; $bm++):
+                        ?>
+                            <option value="<?=$bm?>" <?=$bm === $bdayCurrentMonth ? 'selected' : ''?>><?=$bdayMonthNames[$bm]?></option>
+                        <?php endfor; ?>
+                    </select>
                 </div>
             </div>
-            <div class="station-filter-clear-row d-none" id="employeeBirthdayFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmployeeBirthdayFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
+            <?php ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="employee_birthday_filter_department" data-i18n="department">Department</label>
+                    <select class="form-select select2-remote" id="employee_birthday_filter_department" data-api="/api/department.get" data-type="department"></select>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="employee_birthday_filter_branch" data-i18n="branch">Branch</label>
+                    <select class="form-select select2-remote" id="employee_birthday_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
+                </div>
             </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'employeeBirthdayFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="row g-3 mb-4" id="employeeBirthdayStatRow">
                 <div class="col-6 col-lg-3">
                     <div class="stat-card stat-card-warning h-100">
@@ -824,29 +766,22 @@
         <!-- 2026-09-02, Phase 4 (the final phase) -- Data Completeness overview, current snapshot
              only (resigned/terminated excluded, same convention as the other Phase 3/4 reports). -->
         <div class="tab-pane fade" id="empReportSub-completeness-pane" role="tabpanel" aria-labelledby="empReportSub-completeness-tab" tabindex="0">
-            <div class="station-filter" id="employeeCompletenessStationFilter">
-                <span class="station-filter-label" data-i18n="label_filter">Filter</span>
-                <button type="button" class="station-filter-toggle" id="employeeCompletenessStationFilterToggle" title="Toggle filter">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-                <div class="station-filter-body">
-                    <div class="row g-2">
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-sitemap me-1 text-muted"></i><span data-i18n="department">Department</span></label>
-                            <select class="form-select select2-remote" id="employee_completeness_filter_department" data-api="/api/department.get" data-type="department"></select>
-                        </div>
-                        <div class="col-6 col-md-4 col-lg-2">
-                            <label class="form-label mb-1"><i class="fa-solid fa-code-branch me-1 text-muted"></i><span data-i18n="branch">Branch</span></label>
-                            <select class="form-select select2-remote" id="employee_completeness_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
-                        </div>
-                    </div>
+            <?php ob_start(); ?>
+            <div class="row g-2">
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="employee_completeness_filter_department" data-i18n="department">Department</label>
+                    <select class="form-select select2-remote" id="employee_completeness_filter_department" data-api="/api/department.get" data-type="department"></select>
+                </div>
+                <div class="col-6 col-md-4 col-lg-2">
+                    <label class="form-label small mb-1" for="employee_completeness_filter_branch" data-i18n="branch">Branch</label>
+                    <select class="form-select select2-remote" id="employee_completeness_filter_branch" data-api="/api/branch.get" data-type="branch"></select>
                 </div>
             </div>
-            <div class="station-filter-clear-row d-none" id="employeeCompletenessFilterClearRow">
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btnClearEmployeeCompletenessFilter">
-                    <i class="fa-solid fa-filter-circle-xmark me-1"></i><span data-i18n="clear_filter">Clear Filter</span>
-                </button>
-            </div>
+            <?php
+            $filter_fields_html = ob_get_clean();
+            $id = 'employeeCompletenessFilterBar';
+            include __DIR__ . '/../partials/filter-bar.php';
+            ?>
             <div class="row g-3 mb-4" id="employeeCompletenessStatRow">
                 <div class="col-6 col-lg-4">
                     <div class="stat-card stat-card-info h-100">

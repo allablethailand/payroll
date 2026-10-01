@@ -211,20 +211,19 @@ function notifToIsoDate(displayVal) {
     return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
 }
 function notifStatusBadge(isRead) {
-    return Number(isRead) === 0
-        ? `<span class="badge bg-warning-subtle text-warning">${langData['notif_status_unread'] || 'Unread'}</span>`
-        : `<span class="badge bg-secondary-subtle text-secondary">${langData['notif_status_read'] || 'Read'}</span>`;
+    return statusBadgeHtml(Number(isRead) === 0 ? 'unread' : 'read', 'notification_read_status');
+}
+// The filter-bar's "no filter" option is 'all'; the API expects it empty.
+function notifIsReadFilterValue() {
+    const v = $('#notif_filter_is_read').val();
+    return v === 'all' ? '' : (v || '');
 }
 function notifPageCurrentFilters() {
     return {
         date_from: notifToIsoDate($('#notif_filter_date_from').val()),
         date_to: notifToIsoDate($('#notif_filter_date_to').val()),
-        is_read: $('#notif_filter_is_read').val() || '',
+        is_read: notifIsReadFilterValue(),
     };
-}
-function updateClearNotifFilterVisibility() {
-    const f = notifPageCurrentFilters();
-    $('#notifFilterClearRow').toggleClass('d-none', !(f.date_from || f.date_to || f.is_read));
 }
 function notifPageTableInit() {
     if ($.fn.DataTable.isDataTable('#tb_notification')) {
@@ -235,17 +234,20 @@ function notifPageTableInit() {
         initDatepicker('#notif_filter_date_from');
         initDatepicker('#notif_filter_date_to');
     }
-    tb_notification = $('#tb_notification').DataTable({
+    initFilterBar('#notifFilterBar', { onChange: function () { if (tb_notification) tb_notification.ajax.reload(null, true); } });
+    tb_notification = initSharedDataTable('#tb_notification', {
         serverSide: true,
-        processing: true,
-        responsive: true,
+        // 0 keeps the search box visible as before (helper hides it at <=10 rows by default)
+        searchThreshold: 0,
         ajax: {
             url: `${BASE_URL}/api/notification.datatable`,
             type: 'POST',
             data: function (d) { Object.assign(d, notifPageCurrentFilters()); }
         },
+        dtOptions: {
+        responsive: true,
         columns: [
-            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => { const m = notifTypeMeta(row); return `<span class="row-type-icon ${m.rt}" style="margin-right:0;"><i class="fa-solid ${notifEscapeHtml(row.icon || m.icon)}"></i></span>`; } },
+            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => { const m = notifTypeMeta(row); return `<span class="row-type-icon notif-type-icon-flush ${m.rt}"><i class="fa-solid ${notifEscapeHtml(row.icon || m.icon)}"></i></span>`; } },
             {
                 data: null,
                 render: (d, t, row) => {
@@ -265,33 +267,10 @@ function notifPageTableInit() {
         order: [[2, 'desc']],
         createdRow: function (rowEl, row) {
             if (Number(row.is_read) === 0) $(rowEl).addClass('notif-row-unread');
-        },
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
+        }
+        }
     });
 }
-$(document).on('click', '#notifStationFilterToggle', function () {
-    const $filter = $('#notifStationFilter').toggleClass('collapsed');
-    const collapsed = $filter.hasClass('collapsed');
-    $(this).find('i').toggleClass('fa-chevron-up', !collapsed).toggleClass('fa-chevron-down', collapsed);
-});
-// 'changeDate' alone (not the native 'change' bootstrap-datepicker also fires alongside it) -- same
-// reasoning as Employee List's own identical date-filter wiring, avoids a double reload.
-$(document).on('changeDate', '#notif_filter_date_from, #notif_filter_date_to', function () {
-    updateClearNotifFilterVisibility();
-    if (tb_notification) tb_notification.ajax.reload(null, true);
-});
-$(document).on('change', '#notif_filter_is_read', function () {
-    updateClearNotifFilterVisibility();
-    if (tb_notification) tb_notification.ajax.reload(null, true);
-});
-$(document).on('click', '#btnClearNotifFilter', function () {
-    $('#notif_filter_date_from, #notif_filter_date_to').datepicker('clearDates');
-    $('#notif_filter_is_read').val(null).trigger('change');
-    updateClearNotifFilterVisibility();
-    if (tb_notification) tb_notification.ajax.reload(null, true);
-});
 // Same click-to-mark-read-then-navigate as .nav-notif-item (dropdown/dashboard), reusing the same
 // sendBeacon-before-unload fix -- see that handler's own docblock above for the full explanation.
 $(document).on('click', '.btn-open-notif-row', function (e) {

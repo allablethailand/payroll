@@ -3,14 +3,14 @@ let tb_deduction_type;
 
 function calcMethodBadge(row) {
     if (row.calculation_method === 'fixed_amount') {
-        const amt = parseFloat(row.fixed_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        return `<span class="badge bg-info-subtle text-info">${amt}</span>`;
+        const amt = fmtNum(parseFloat(row.fixed_amount || 0));
+        return `<span class="text-muted">${amt}</span>`;
     }
     if (row.calculation_method === 'percent_of_base_salary') {
         const rate = parseFloat(row.percent_rate || 0);
-        return `<span class="badge bg-info-subtle text-info">${rate}%</span>`;
+        return `<span class="text-muted">${rate}%</span>`;
     }
-    return `<span class="badge bg-light text-dark border">${langData['manual_short'] || 'Manual'}</span>`;
+    return `<span class="text-muted">${langData['manual_short'] || 'Manual'}</span>`;
 }
 function sourceEventTag(row) {
     if (!row.source_event_code) return '';
@@ -78,9 +78,18 @@ function initEarningTypeTable() {
         $('#tb_earning_type').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_earning_type = $('#tb_earning_type').DataTable({
-        processing: true,
+    tb_earning_type = initSharedDataTable('#tb_earning_type', {
         serverSide: true,
+        ajax: {
+            url: `${BASE_URL}/api/ped-type.list`,
+            type: 'POST',
+            data: function (d, settings) {
+                d.item_type = 'earning';
+                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
+            }
+        },
+        searchThreshold: -1,
+        dtOptions: {
         responsive: true,
         // 2026-09-02, Platform Hardening Phase 1.1 follow-up (explicit request: finish repositioning
         // the status switch to column 0 on every remaining table) -- default sort points to column 1
@@ -92,14 +101,6 @@ function initEarningTypeTable() {
         // fixing that separate sortColumns map here (same "don't take on that bug as a prerequisite"
         // decision already applied to Branch/Role/Department/Position/Rank/Team above).
         order: [[1, 'asc']],
-        ajax: {
-            url: `${BASE_URL}/api/ped-type.list`,
-            type: 'POST',
-            data: function (d, settings) {
-                d.item_type = 'earning';
-                d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
-            }
-        },
         columns: [
             { data: null, orderable: false, render: (d, t, row) => pcRowStatusBadge(row) },
             { data: 'item_code', render: d => `<code class="fw-bold text-dark">${d}</code>` },
@@ -111,18 +112,15 @@ function initEarningTypeTable() {
             {
                 data: 'tax_treatment',
                 render: d => d === 'taxable'
-                    ? `<span class="badge bg-success-subtle text-success">${langData['taxable'] || 'Taxable'}</span>`
-                    : `<span class="badge bg-secondary-subtle text-secondary">${langData['non_taxable'] || 'Tax-exempt'}</span>`
+                    ? `<span class="text-muted">${langData['taxable'] || 'Taxable'}</span>`
+                    : `<span class="text-muted">${langData['non_taxable'] || 'Tax-exempt'}</span>`
             },
-            { data: 'calc_sso', className: 'text-center', render: d => Number(d) ? '<i class="fa-solid fa-circle-check text-success fs-5"></i>' : '<i class="fa-solid fa-circle-xmark text-muted fs-5"></i>' },
-            { data: 'calc_pf', className: 'text-center', render: d => Number(d) ? '<i class="fa-solid fa-circle-check text-success fs-5"></i>' : '<i class="fa-solid fa-circle-xmark text-muted fs-5"></i>' },
+            { data: 'calc_sso', className: 'text-center', render: d => Number(d) ? '<i class="fa-solid fa-circle-check text-muted fs-5"></i>' : '<i class="fa-solid fa-circle-xmark text-muted fs-5"></i>' },
+            { data: 'calc_pf', className: 'text-center', render: d => Number(d) ? '<i class="fa-solid fa-circle-check text-muted fs-5"></i>' : '<i class="fa-solid fa-circle-xmark text-muted fs-5"></i>' },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => actionButtons(row) }
         ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         initComplete: function () {
             const self = this.api();
             injectAddButton(self, 'earning', 'earning_type', 'Income Type');
@@ -156,6 +154,7 @@ function initEarningTypeTable() {
             });
         },
         drawCallback: function () { getTableLang(); }
+        }
     });
 }
 function initDeductionTypeTable() {
@@ -163,13 +162,8 @@ function initDeductionTypeTable() {
         $('#tb_deduction_type').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_deduction_type = $('#tb_deduction_type').DataTable({
-        processing: true,
+    tb_deduction_type = initSharedDataTable('#tb_deduction_type', {
         serverSide: true,
-        responsive: true,
-        // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- same repositioning + same accepted
-        // default-sort side effect as initEarningTypeTable()'s own identical change just above.
-        order: [[1, 'asc']],
         ajax: {
             url: `${BASE_URL}/api/ped-type.list`,
             type: 'POST',
@@ -178,6 +172,12 @@ function initDeductionTypeTable() {
                 d.column_filters = getColumnFilterValues(new $.fn.dataTable.Api(settings));
             }
         },
+        searchThreshold: -1,
+        dtOptions: {
+        responsive: true,
+        // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- same repositioning + same accepted
+        // default-sort side effect as initEarningTypeTable()'s own identical change just above.
+        order: [[1, 'asc']],
         columns: [
             { data: null, orderable: false, render: (d, t, row) => pcRowStatusBadge(row) },
             { data: 'item_code', render: d => `<code class="fw-bold text-dark">${d}</code>` },
@@ -189,16 +189,13 @@ function initDeductionTypeTable() {
             {
                 data: 'tax_deduction_impact',
                 render: d => d === 'before_tax'
-                    ? `<span class="badge bg-danger-subtle text-danger">${langData['impact_before_tax'] || 'Before Tax'}</span>`
-                    : `<span class="badge bg-secondary-subtle text-secondary">${langData['impact_after_tax'] || 'After Tax'}</span>`
+                    ? `<span class="text-muted">${langData['impact_before_tax'] || 'Before Tax'}</span>`
+                    : `<span class="text-muted">${langData['impact_after_tax'] || 'After Tax'}</span>`
             },
             // 2026-08-28: className:'all' keeps this last actions column from collapsing into the
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => actionButtons(row) }
         ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         initComplete: function () {
             const self = this.api();
             injectAddButton(self, 'deduction', 'deduction_type', 'Deduction Type');
@@ -231,6 +228,7 @@ function initDeductionTypeTable() {
             });
         },
         drawCallback: function () { getTableLang(); }
+        }
     });
 }
 // 2026-09-03, Manual Entry / Employee Salary tab review Phase 1B -- same conditional-field-visibility
@@ -296,8 +294,6 @@ function applyPedTypeModalBadge(itemType) {
     $('#ped_item_type').val(itemType);
     const isEarning = itemType === 'earning';
     $('#pedTypeModalBadge')
-        .removeClass('bg-success-subtle text-success bg-danger-subtle text-danger')
-        .addClass(isEarning ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger')
         .text(isEarning ? (langData['earning_singular'] || 'Income') : (langData['deduction_singular'] || 'Deduction'));
 }
 // 2026-08-30 (T017b, leftover from T008's audit): re-applies the badge text in the NEW language
@@ -635,12 +631,12 @@ function probationSetSummaryHtml(s) {
     if (s.probation_defer_pvd) parts.push(langData['probation_summary_defer_pvd'] || 'Defer PVD');
     if (s.probation_defer_sso) parts.push(langData['probation_summary_defer_sso'] || 'Defer SSO');
     if (s.probation_defer_recurring_earning) parts.push(langData['probation_summary_defer_recurring'] || 'Defer Recurring Allowances');
-    return parts.length ? parts.map(p => `<span class="badge bg-light text-dark border me-1 mb-1">${escapeHtml(p)}</span>`).join('') : `<span class="text-muted small">${langData['policy_probation_base_salary_ratio_placeholder'] || '100 (no reduction)'}</span>`;
+    return parts.length ? parts.map(p => `<span class="text-muted me-1 mb-1">${escapeHtml(p)}</span>`).join('') : `<span class="text-muted small">${langData['policy_probation_base_salary_ratio_placeholder'] || '100 (no reduction)'}</span>`;
 }
 function probationSetCardHtml(s) {
-    const defaultBadge = s.is_default ? `<span class="badge bg-primary-subtle text-primary border me-2">${langData['default'] || 'Default'}</span>` : '';
+    const defaultBadge = s.is_default ? `<span class="text-muted me-2">${langData['default'] || 'Default'}</span>` : '';
     const assignBtn = s.is_default ? '' : `<button type="button" class="btn btn-link btn-circle-action text-secondary" onclick="openProbationSetAssignModal(${s.id})" title="${langData['assign'] || 'Assign'}"><i class="fa-solid fa-user-shield"></i></button>`;
-    const setDefaultBtn = s.is_default ? '' : `<button type="button" class="btn btn-link btn-circle-action text-primary" onclick="setDefaultProbationSet(${s.id})" title="${langData['probation_set_as_default'] || 'Set as Default'}"><i class="fa-solid fa-star"></i></button>`;
+    const setDefaultBtn = s.is_default ? '' : `<button type="button" class="btn btn-link btn-circle-action" onclick="setDefaultProbationSet(${s.id})" title="${langData['probation_set_as_default'] || 'Set as Default'}"><i class="fa-solid fa-star"></i></button>`;
     const deleteBtn = s.is_default ? '' : `<button type="button" class="btn btn-link btn-circle-action text-danger" onclick="deleteProbationSet(${s.id})" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>`;
     return `<div class="adr-variant-row mb-2" data-set-id="${s.id}">
         <div class="adr-variant-main">
@@ -652,7 +648,7 @@ function probationSetCardHtml(s) {
         <div class="adr-variant-actions">
             <div class="d-flex gap-1 justify-content-center flex-wrap">
                 <button type="button" class="btn btn-link btn-circle-action text-warning" onclick="openProbationSetModal(${s.id})" title="${langData['edit'] || 'Edit'}"><i class="fas fa-edit"></i></button>
-                <button type="button" class="btn btn-link btn-circle-action text-info" onclick="cloneProbationSet(${s.id})" title="${langData['clone'] || 'Clone'}"><i class="fa-solid fa-clone"></i></button>
+                <button type="button" class="btn btn-link btn-circle-action" onclick="cloneProbationSet(${s.id})" title="${langData['clone'] || 'Clone'}"><i class="fa-solid fa-clone"></i></button>
                 ${assignBtn}
                 ${setDefaultBtn}
                 ${deleteBtn}
@@ -991,8 +987,7 @@ function cyclePaymentCell(row) {
 }
 function cycleFrequencyBadge(freq) {
     const key = 'freq_' + freq;
-    const cls = freq === 'weekly' ? 'bg-info-subtle text-info' : 'bg-primary-subtle text-primary';
-    return `<span class="badge ${cls} px-2 py-1">${langData[key] || freq}</span>`;
+    return `<span class="text-muted">${langData[key] || freq}</span>`;
 }
 // 2026-09-02, explicit request: circular row-action buttons (see style.css's own
 // ".btn-circle-action" section) replace the old adjacent .btn-group.
@@ -1008,7 +1003,9 @@ function initPayrollCycleTable() {
         $('#tb_payroll_cycle').DataTable().ajax.reload(null, false);
         return;
     }
-    tb_payroll_cycle = $('#tb_payroll_cycle').DataTable({
+    tb_payroll_cycle = initSharedDataTable('#tb_payroll_cycle', {
+        dtOptions: {
+        searching: true,
         responsive: true,
         ajax: {
             url: `${BASE_URL}/api/payroll-cycle.list`,
@@ -1032,9 +1029,6 @@ function initPayrollCycleTable() {
             // Responsive expand row.
             { data: null, orderable: false, className: 'text-center all', render: (d, t, row) => cycleActionButtons(row) }
         ],
-        pageLength: pageLength,
-        lengthMenu: lengthMenu,
-        language: getTableLang(),
         initComplete: function () {
             const self = this.api();
             const $wrapper = $(self.table().container());
@@ -1065,6 +1059,7 @@ function initPayrollCycleTable() {
             });
         },
         drawCallback: function () { getTableLang(); }
+        }
     });
 }
 // 2026-09-02, Platform Hardening Phase 1.1 follow-up -- reload after a successful status toggle,
@@ -1494,10 +1489,10 @@ function findAttendanceVariant(eventCode, id) {
 }
 function attendanceScopeBadgeHtml(row) {
     if (!row || row.scope_type === null) {
-        return `<span class="badge bg-secondary-subtle text-secondary">${langData['attendance_deduction_scope_default'] || 'Company-wide Default'}</span>`;
+        return `<span class="text-muted">${langData['attendance_deduction_scope_default'] || 'Company-wide Default'}</span>`;
     }
     const scopeLabel = row.scope_type === 'team' ? (langData['team'] || 'Team') : (langData['department'] || 'Department');
-    return `<span class="badge bg-info-subtle text-info">${scopeLabel}: ${escapeHtml(row.scope_label || '?')}</span>`;
+    return `<span class="text-muted">${scopeLabel}: ${escapeHtml(row.scope_label || '?')}</span>`;
 }
 
 const ATTENDANCE_DEFAULT_RATE_UNIT = { late: 'minute', early_leave: 'minute', absent: 'day', unpaid_leave: 'day', leave_pending: 'day' };
@@ -1600,7 +1595,7 @@ function renderAttendanceBracketRows() {
             <td><input type="number" min="0" class="form-control form-control-sm" value="${b.min_units ?? ''}" onchange="updateAttendanceBracketField(${i}, 'min_units', this.value)"></td>
             <td><input type="number" min="0" class="form-control form-control-sm" value="${b.max_units ?? ''}" placeholder="${langData['no_limit'] || 'No limit'}" onchange="updateAttendanceBracketField(${i}, 'max_units', this.value)"></td>
             <td><input type="number" step="0.01" min="0" class="form-control form-control-sm" value="${b.deduction_amount ?? ''}" onchange="updateAttendanceBracketField(${i}, 'deduction_amount', this.value)"></td>
-            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removeAttendanceBracketRow(${i})"><i class="fa-solid fa-trash"></i></button></td>
+            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary" onclick="removeAttendanceBracketRow(${i})"><i class="fa-solid fa-trash"></i></button></td>
         </tr>
     `).join(''));
 }
@@ -1652,10 +1647,10 @@ $(document).on('change', '#attendanceRuleScopeType', function () {
 });
 function attendanceScopeBadgeParts(row) {
     if (!row || row.scope_type === null || row.scope_type === undefined) {
-        return { cls: 'badge bg-secondary-subtle text-secondary', text: langData['attendance_deduction_scope_default'] || 'Company-wide Default' };
+        return { cls: 'text-muted', text: langData['attendance_deduction_scope_default'] || 'Company-wide Default' };
     }
     const scopeLabel = row.scope_type === 'team' ? (langData['team'] || 'Team') : (langData['department'] || 'Department');
-    return { cls: 'badge bg-info-subtle text-info', text: `${scopeLabel}: ${row.scope_label || '?'}` };
+    return { cls: 'text-muted', text: `${scopeLabel}: ${row.scope_label || '?'}` };
 }
 function attendanceScopeBadgeHtml(row) {
     const parts = attendanceScopeBadgeParts(row);
@@ -1746,7 +1741,7 @@ function openAttendanceDeductionRuleModal(eventCode, variantId, cloneFromRow) {
  * to (see style.css's own comment on that class). */
 function attendanceCalcPreviewFormulaStepsHtml(formula) {
     if (!formula) return '';
-    const fmt = (n) => Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const fmt = (n) => fmtNum(Number(n));
     if (formula.type === 'attendance_flat') {
         return `<div class="calc-preview-step">${(langData['calc_preview_step_quantity'] || 'Quantity in {unit}').replace('{unit}', attendanceRateUnitShortLabel(formula.rate_unit))}: <code>${formula.minutes} ${langData['minutes_short'] || 'min'} = ${fmt(formula.quantity_in_rate_unit)} ${attendanceRateUnitShortLabel(formula.rate_unit)}</code></div>
             <div class="calc-preview-step">${langData['calc_preview_step_rate'] || 'Rate'}: <code>${fmt(formula.rate_per_unit)}</code></div>
@@ -1807,7 +1802,7 @@ $(document).on('click', '#btnAttendanceCalcPreview', function () {
                 showWarning(res.message || langData['save_failed'] || 'An error occurred.');
                 return;
             }
-            const amount = Number(res.amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const amount = fmtNum(Number(res.amount));
             $result.removeClass('d-none').html(
                 `<div class="calc-preview-amount mb-1">${langData['calc_preview_result_label'] || 'Result'}: ${amount}</div>` +
                 attendanceCalcPreviewFormulaStepsHtml(res.formula)
@@ -1906,14 +1901,12 @@ function submitAttendanceDeductionRule(payload) {
                 if (modalInstance) { modalInstance.hide(); }
                 loadAttendanceDeductionCards();
             } else if (res.conflict_id) {
-                Swal.fire({
-                    icon: 'warning',
+                showConfirm({
+                    tone: 'warning',
                     title: langData['attendance_deduction_conflict_title'] || 'A Rule Already Exists',
-                    text: res.message,
-                    showCancelButton: true,
-                    confirmButtonText: langData['attendance_deduction_conflict_confirm'] || 'Update the Existing Rule',
-                    cancelButtonText: langData['cancel'] || 'Cancel',
-                    confirmButtonColor: '#FF9900',
+                    message: res.message,
+                    confirmText: langData['attendance_deduction_conflict_confirm'] || 'Update the Existing Rule',
+                    cancelText: langData['cancel'] || 'Cancel',
                 }).then(function (result) {
                     if (result.isConfirmed) {
                         submitAttendanceDeductionRule(Object.assign({}, payload, { id: res.conflict_id }));
@@ -1934,33 +1927,33 @@ function submitAttendanceDeductionRule(payload) {
  * docblock) -- every function below takes the specific ROW OBJECT, not an eventCode lookup. */
 function attendanceDeductionMethodSummary(r) {
     if (!r || !r.id) {
-        return `<span class="badge bg-secondary-subtle text-secondary">${langData['attendance_deduction_default_badge'] || 'Default'}</span> <span class="text-muted small ms-1">${langData['attendance_deduction_method_percent_of_rate'] || 'Percent of Rate'} (1.00x)</span>`;
+        return `<span class="text-muted">${langData['attendance_deduction_default_badge'] || 'Default'}</span> <span class="text-muted small ms-1">${langData['attendance_deduction_method_percent_of_rate'] || 'Percent of Rate'} (1.00x)</span>`;
     }
     if (r.method_code === 'flat_amount') {
         const unitLabel = (ATTENDANCE_RATE_UNIT_LABELS[r.rate_unit] || ATTENDANCE_RATE_UNIT_LABELS.minute).flat();
-        const amt = parseFloat(r.rate_per_unit || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-        return `<span class="badge bg-info-subtle text-info">${langData['attendance_deduction_method_flat_amount'] || 'Flat Amount'}</span> <span class="text-muted small ms-1">${unitLabel}: ${amt}</span>`;
+        const amt = fmtNum(parseFloat(r.rate_per_unit || 0));
+        return `<span class="text-muted">${langData['attendance_deduction_method_flat_amount'] || 'Flat Amount'}</span> <span class="text-muted small ms-1">${unitLabel}: ${amt}</span>`;
     }
     if (r.method_code === 'tiered_bracket') {
         const n = (r.brackets || []).length;
-        return `<span class="badge bg-warning-subtle text-warning">${langData['attendance_deduction_method_tiered_bracket'] || 'Tiered Brackets'}</span> <span class="text-muted small ms-1">${n} ${langData['attendance_deduction_brackets'] || 'Brackets'}</span>`;
+        return `<span class="text-muted">${langData['attendance_deduction_method_tiered_bracket'] || 'Tiered Brackets'}</span> <span class="text-muted small ms-1">${n} ${langData['attendance_deduction_brackets'] || 'Brackets'}</span>`;
     }
     // 2026-08-30 (T015, "เพิ่มตัวเลือก 'ไม่หัก'") -- checked explicitly, NOT folded into the trailing
     // percent_of_rate fallback below (that fallback used to be an unconditional catch-all -- a real
     // bug this new method_code would have hit immediately, showing a misleading "Percent of Rate
     // (1.00x)" badge for a rule actually configured to deduct nothing at all).
     if (r.method_code === 'no_deduction') {
-        return `<span class="badge bg-secondary-subtle text-secondary">${langData['attendance_deduction_method_no_deduction'] || 'No Deduction'}</span>`;
+        return `<span class="text-muted">${langData['attendance_deduction_method_no_deduction'] || 'No Deduction'}</span>`;
     }
     const mult = parseFloat(r.multiplier_rate || 1).toFixed(2);
-    return `<span class="badge bg-success-subtle text-success">${langData['attendance_deduction_method_percent_of_rate'] || 'Percent of Rate'}</span> <span class="text-muted small ms-1">${mult}x</span>`;
+    return `<span class="text-muted">${langData['attendance_deduction_method_percent_of_rate'] || 'Percent of Rate'}</span> <span class="text-muted small ms-1">${mult}x</span>`;
 }
 function attendanceDeductionExemptionsSummary(r) {
     const exemptions = (r && r.exemptions) || [];
     if (!exemptions.length) {
         return `<span class="text-muted small">${langData['attendance_deduction_no_exemptions'] || 'None'}</span>`;
     }
-    const labels = exemptions.slice(0, 3).map(ex => `<span class="badge bg-light text-secondary border me-1 mb-1">${escapeHtml(ex.label || '?')}</span>`).join('');
+    const labels = exemptions.slice(0, 3).map(ex => `<span class="text-muted me-1 mb-1">${escapeHtml(ex.label || '?')}</span>`).join('');
     const more = exemptions.length > 3 ? `<span class="text-muted small">+${exemptions.length - 3}</span>` : '';
     return labels + more;
 }
@@ -2023,7 +2016,7 @@ function attendanceDeductionVariantRowHtml(eventCode, r) {
                  so it's included in the same rollout for consistency within this settings page. -->
             <div class="d-flex gap-1 justify-content-center flex-wrap">
                 ${editBtn}
-                <button type="button" class="btn btn-link btn-circle-action text-primary" onclick="cloneAttendanceDeductionRule('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['clone'] || 'Clone'}"><i class="fa-solid fa-clone"></i></button>
+                <button type="button" class="btn btn-link btn-circle-action" onclick="cloneAttendanceDeductionRule('${eventCode}', ${r.id ? r.id : 'null'})" title="${langData['clone'] || 'Clone'}"><i class="fa-solid fa-clone"></i></button>
                 ${assignBtn}
                 ${canDelete ? `<button type="button" class="btn btn-link btn-circle-action text-danger" onclick="deleteAttendanceDeductionVariant(${r.id})" title="${langData['delete'] || 'Delete'}"><i class="fa-solid fa-trash-can"></i></button>` : ''}
             </div>

@@ -45,6 +45,11 @@ foreach ($result['files'] as $path => $info) {
 
 check('no design:clean file has any lint hit (overall)', $result['failed'], []);
 
+// Rule 5 counts a construction only, not a getter or a comment.
+check('rule 5: a DataTable construction is a hit', count(designLintRule5(["$('#t').DataTable({ paging: false });"])), 1);
+check('rule 5: a bare getter is not a hit', count(designLintRule5(["$('#t').DataTable().ajax.reload();"])), 0);
+check('rule 5: a comment line is not a hit', count(designLintRule5(["// was $('#t').DataTable({ ... })"])), 0);
+
 // The exact file list Round 2 item 8 was told to mark clean and make genuinely pass.
 $mustBeCleanAndPassing = [
     'docs/design/components.php',

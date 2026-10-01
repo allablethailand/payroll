@@ -49,7 +49,7 @@ function esRenderEmployeeCell(row, employeeNo, type) {
     const typeBadge = type ? ` ${esTypeBadgeHtml(type)}` : '';
     return `
         <div class="d-flex align-items-center gap-2 py-1">
-            <div class="es-sync-avatar rounded-circle d-flex align-items-center justify-content-center fw-bold text-white flex-shrink-0" style="background-color:#007aff;">${esEscapeHtml(letter)}</div>
+            <div class="apv-person-avatar es-sync-avatar">${esEscapeHtml(letter)}</div>
             <div class="lh-sm">
                 <div class="fw-semibold">${esEscapeHtml(name)}${typeBadge}</div>
                 <div class="text-muted small">${esEscapeHtml(employeeNo || '-')}</div>
@@ -68,8 +68,7 @@ function esRenderDeptPositionCell(row) {
     `;
 }
 function esTypeBadgeHtml(type) {
-    const cls = type === 'support' ? 'bg-info-subtle text-info' : 'bg-primary-subtle text-primary';
-    return `<span class="badge ${cls}">${esEscapeHtml(esTypeLabel(type))}</span>`;
+    return `<span class="text-muted">${esEscapeHtml(esTypeLabel(type))}</span>`;
 }
 
 function esResetModal() {
@@ -119,31 +118,35 @@ function esCheckboxCellHtml(refId) {
 
 function esUpdateBadgeHtml(row) {
     return row.has_update
-        ? `<span class="badge bg-warning-subtle text-warning" title="${esEscapeHtml((row.changed_fields || []).join(', '))}"><i class="fa-solid fa-rotate me-1"></i>${langData['employee_sync_update_available'] || 'Update available'}</span>`
-        : `<span class="badge bg-success-subtle text-success">${langData['employee_sync_up_to_date'] || 'Up to date'}</span>`;
+        ? `<span title="${esEscapeHtml((row.changed_fields || []).join(', '))}">${statusBadgeHtml('update_available', 'sync_update_state')}</span>`
+        : statusBadgeHtml('up_to_date', 'sync_update_state');
 }
 
 function renderSyncTables() {
-    $('#tb_sync_new').DataTable({
-        destroy: true, responsive: true, paging: false, info: false, searching: false, ordering: false,
-        data: syncLastNewRows,
-        language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
-        columns: [
-            { data: 'ref_id', orderable: false, className: 'text-center', render: d => esCheckboxCellHtml(d) },
-            { data: null, render: (d, t, row) => esRenderEmployeeCell(row, row.employee_no, row.type) },
-            { data: null, render: (d, t, row) => esRenderDeptPositionCell(row) },
-        ],
+    initSharedDataTable('#tb_sync_new', {
+        dtOptions: {
+            destroy: true, responsive: true, paging: false, info: false, searching: false, ordering: false,
+            data: syncLastNewRows,
+            language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
+            columns: [
+                { data: 'ref_id', orderable: false, className: 'text-center', render: d => esCheckboxCellHtml(d) },
+                { data: null, render: (d, t, row) => esRenderEmployeeCell(row, row.employee_no, row.type) },
+                { data: null, render: (d, t, row) => esRenderDeptPositionCell(row) },
+            ],
+        },
     });
-    $('#tb_sync_existing').DataTable({
-        destroy: true, responsive: true, paging: false, info: false, searching: false, ordering: false,
-        data: syncLastExistingRows,
-        language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
-        columns: [
-            { data: 'ref_id', orderable: false, className: 'text-center', render: d => esCheckboxCellHtml(d) },
-            { data: null, render: (d, t, row) => esRenderEmployeeCell(row, row.existing_employee_no || row.employee_no, row.type) },
-            { data: null, render: (d, t, row) => esEscapeHtml(esCandidateDepartment(row)) },
-            { data: null, render: (d, t, row) => esUpdateBadgeHtml(row) },
-        ],
+    initSharedDataTable('#tb_sync_existing', {
+        dtOptions: {
+            destroy: true, responsive: true, paging: false, info: false, searching: false, ordering: false,
+            data: syncLastExistingRows,
+            language: { emptyTable: langData['employee_sync_no_candidates'] || 'No candidates found.' },
+            columns: [
+                { data: 'ref_id', orderable: false, className: 'text-center', render: d => esCheckboxCellHtml(d) },
+                { data: null, render: (d, t, row) => esRenderEmployeeCell(row, row.existing_employee_no || row.employee_no, row.type) },
+                { data: null, render: (d, t, row) => esEscapeHtml(esCandidateDepartment(row)) },
+                { data: null, render: (d, t, row) => esUpdateBadgeHtml(row) },
+            ],
+        },
     });
 }
 
@@ -355,10 +358,8 @@ $(document).on('click', '#btnApplyEmployeeSync', function () {
 });
 
 function esSyncLogStatusBadge(status) {
-    const map = { completed: 'bg-success-subtle text-success', running: 'bg-warning-subtle text-warning', failed: 'bg-danger-subtle text-danger' };
-    const cls = map[status] || 'bg-light text-dark';
-    const text = langData['sync_log_status_' + status] || status;
-    return `<span class="badge ${cls}">${text}</span>`;
+    if (['completed', 'running', 'failed'].indexOf(status) !== -1) return statusBadgeHtml(status, 'sync_batch_status');
+    return `<span class="text-muted">${esEscapeHtml(langData['sync_log_status_' + status] || status)}</span>`;
 }
 
 // 2026-08-29, explicit request: "Employee Sync Log ปรับจากตารางให้เป็น Card และดูได้ว่า Failed จาก
