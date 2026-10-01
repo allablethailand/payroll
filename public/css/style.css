@@ -482,7 +482,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     transition: background-color .12s ease;
 }
 .qlc-item:hover {
-    background-color: color-mix(in srgb, var(--bs-primary) 6%, transparent);
+    background-color: color-mix(in srgb, var(--c-brand-primary) 6%, transparent);
 }
 .qlc-item .form-check-input {
     float: none;
@@ -620,7 +620,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     grid-template-columns: repeat(3, 1fr);
     /* Firefox scrollbar */
     scrollbar-width: thin;
-    scrollbar-color: var(--c-primary) color-mix(in srgb, var(--bs-primary) 10%, transparent);
+    scrollbar-color: var(--c-primary) color-mix(in srgb, var(--c-brand-primary) 10%, transparent);
 }
 .nav-hub-menu.active {
     display: grid;
@@ -683,7 +683,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     width: 6px;
 }
 .nav-hub-menu::-webkit-scrollbar-track {
-    background: color-mix(in srgb, var(--bs-primary) 10%, transparent);
+    background: color-mix(in srgb, var(--c-brand-primary) 10%, transparent);
     border-radius: 10px;
 }
 .nav-hub-menu::-webkit-scrollbar-thumb {
@@ -767,7 +767,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     max-height: 340px;
     overflow-y: auto;
     scrollbar-width: thin;
-    scrollbar-color: var(--c-primary) color-mix(in srgb, var(--bs-primary) 10%, transparent);
+    scrollbar-color: var(--c-primary) color-mix(in srgb, var(--c-brand-primary) 10%, transparent);
 }
 .nav-notif-menu-list::-webkit-scrollbar { width: 6px; }
 .nav-notif-menu-list::-webkit-scrollbar-thumb { background: var(--c-primary); border-radius: 10px; }
@@ -788,8 +788,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     position: relative;
     transition: background-color .12s ease;
 }
-.nav-notif-item:hover { background: color-mix(in srgb, var(--bs-primary) 6%, transparent); }
-.nav-notif-item-unread { background: color-mix(in srgb, var(--bs-primary) 4%, transparent); }
+.nav-notif-item:hover { background: color-mix(in srgb, var(--c-brand-primary) 6%, transparent); }
+.nav-notif-item-unread { background: color-mix(in srgb, var(--c-brand-primary) 4%, transparent); }
 /* .nav-notif-item-icon removed 2026-08-30 -- superseded by the shared .row-type-icon component (see
    its own definition above + notifications.js's 2026-08-30 comment); this class is no longer
    referenced anywhere in the app. */
@@ -810,7 +810,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    the dot's own flex-layout margin-top corrected for inline usage next to a title instead of stacked
    in a flex column. */
 #tb_notification .nav-notif-item-dot { margin-top: 0; display: inline-block; vertical-align: middle; }
-#tb_notification tr.notif-row-unread { background: color-mix(in srgb, var(--bs-primary) 4%, transparent); }
+#tb_notification tr.notif-row-unread { background: color-mix(in srgb, var(--c-brand-primary) 4%, transparent); }
 .nav-notif-menu-footer {
     text-align: center;
     padding: 10px;
@@ -994,7 +994,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     transition: background-color 0.15s ease;
 }
 .nav-hub-tile a:hover {
-    background-color: color-mix(in srgb, var(--bs-primary) 10%, transparent);
+    background-color: color-mix(in srgb, var(--c-brand-primary) 10%, transparent);
     color: var(--hex-1a202c);
 }
 .nav-hub-tile-icon {
@@ -1325,8 +1325,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     transition: border-color .15s ease, background .15s ease;
 }
 .cp-logo-upload-card:hover {
-    border-color: color-mix(in srgb, var(--bs-primary) 50%, transparent);
-    background: color-mix(in srgb, var(--bs-primary) 3%, transparent);
+    border-color: color-mix(in srgb, var(--c-brand-primary) 50%, transparent);
+    background: color-mix(in srgb, var(--c-brand-primary) 3%, transparent);
 }
 .cp-logo-preview-box {
     flex: none;
@@ -1384,8 +1384,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .bulk-import-dropzone:hover,
 .bulk-import-dropzone.bulk-import-dropzone-filled {
-    border-color: color-mix(in srgb, var(--bs-primary) 50%, transparent);
-    background: color-mix(in srgb, var(--bs-primary) 3%, transparent);
+    border-color: color-mix(in srgb, var(--c-brand-primary) 50%, transparent);
+    background: color-mix(in srgb, var(--c-brand-primary) 3%, transparent);
 }
 .bulk-import-dropzone i {
     font-size: 1.8rem;
@@ -1416,7 +1416,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     align-items: flex-start;
     gap: .75rem;
     padding: .9rem 1.25rem;
-    background: linear-gradient(135deg, color-mix(in srgb, var(--bs-primary) 10%, transparent), color-mix(in srgb, var(--bs-primary) 3%, transparent));
+    background: linear-gradient(135deg, color-mix(in srgb, var(--c-brand-primary) 10%, transparent), color-mix(in srgb, var(--c-brand-primary) 3%, transparent));
     border-bottom: 1px solid var(--app-border);
 }
 .settings-info-card-header i {
@@ -1489,7 +1489,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
    late/absent/unpaid_leave/leave_pending, so the color language matches the icon shown in the header.
    Each event card's BODY lists that event's rule variants (company-wide default + any team/
    department-scoped overrides) as compact rows, not nested cards -- avoids excessive visual nesting. */
-.settings-info-card-header.adr-hdr-1 { background: linear-gradient(135deg, color-mix(in srgb, var(--bs-primary) 12%, transparent), color-mix(in srgb, var(--bs-primary) 3%, transparent)); }
+.settings-info-card-header.adr-hdr-1 { background: linear-gradient(135deg, color-mix(in srgb, var(--c-brand-primary) 12%, transparent), color-mix(in srgb, var(--c-brand-primary) 3%, transparent)); }
 .settings-info-card-header.adr-hdr-3 { background: linear-gradient(135deg, color-mix(in srgb, var(--hex-6366f1) 12%, transparent), color-mix(in srgb, var(--hex-6366f1) 3%, transparent)); }
 .settings-info-card-header.adr-hdr-4 { background: linear-gradient(135deg, color-mix(in srgb, var(--hex-f04438) 12%, transparent), color-mix(in srgb, var(--hex-f04438) 3%, transparent)); }
 .settings-info-card-header.adr-hdr-5 { background: linear-gradient(135deg, color-mix(in srgb, var(--hex-0ba5ec) 12%, transparent), color-mix(in srgb, var(--hex-0ba5ec) 3%, transparent)); }
@@ -1657,7 +1657,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     color: var(--hex-cccccc);
 }
 .bc-current {
-    background-color: color-mix(in srgb, var(--hex-ff9900) 12%, transparent);
+    background-color: color-mix(in srgb, var(--c-brand-primary) 12%, transparent);
     color: var(--c-primary);
     padding: 4px 12px;
     border-radius: 10px;
@@ -1672,7 +1672,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
        so this was always a no-op here. #profilePreview's own rule below is the one that actually
        matters. Left here unchanged in case another page ever puts this class directly on an <img>. */
     object-fit: cover;
-    border: 2px dashed color-mix(in srgb, var(--bs-primary) 35%, transparent) !important;
+    border: 2px dashed color-mix(in srgb, var(--c-brand-primary) 35%, transparent) !important;
     background: linear-gradient(135deg, var(--hex-fff8ee), var(--hex-fff1dc)) !important;
     transition: border-color .15s ease, box-shadow .15s ease;
 }
@@ -1693,7 +1693,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 .profile-upload-circle:hover {
     border-color: var(--c-primary) !important;
-    box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--bs-primary) 15%, transparent);
+    box-shadow: 0 0 0 .2rem color-mix(in srgb, var(--c-brand-primary) 15%, transparent);
 }
 .profile-upload-circle #profilePlaceholder i {
     color: var(--c-primary);
@@ -1746,7 +1746,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     font-weight: 600;
 }
 .structure-tabs-wrap .structure-tabs .nav-link:hover:not(.active) {
-    background-color: color-mix(in srgb, var(--bs-primary) 12%, transparent);
+    background-color: color-mix(in srgb, var(--c-brand-primary) 12%, transparent);
 }
 
 /* Select2 — brand orange theme (applies app-wide, all Select2 instances share this design system) */
@@ -1765,7 +1765,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 .select2-container--bootstrap-5.select2-container--open .select2-selection,
 .select2-container--bootstrap-5 .select2-dropdown .select2-search .select2-search__field:focus {
     border-color: var(--c-primary);
-    box-shadow: 0 0 0 .25rem color-mix(in srgb, var(--bs-primary) 25%, transparent);
+    box-shadow: 0 0 0 .25rem color-mix(in srgb, var(--c-brand-primary) 25%, transparent);
 }
 /* 2026-09-14, Phase Design Round 3 item 3c-1 follow-up -- REAL BUG FOUND AND FIXED (explicit report:
    "option ที่ highlight เป็นฟ้า (Bootstrap/select2 default)"): both rules below were silently losing
@@ -2147,8 +2147,8 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 }
 
 .sync-summary-card {
-    background: color-mix(in srgb, var(--bs-primary) 6%, transparent);
-    border: 1px solid color-mix(in srgb, var(--bs-primary) 20%, transparent);
+    background: color-mix(in srgb, var(--c-brand-primary) 6%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c-brand-primary) 20%, transparent);
     border-radius: 14px;
     margin-left: 0;
     margin-right: 0;
@@ -2167,7 +2167,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: color-mix(in srgb, var(--bs-primary) 15%, transparent);
+    background: color-mix(in srgb, var(--c-brand-primary) 15%, transparent);
     color: var(--hex-ec6622);
     font-size: 1.05rem;
 }
@@ -2264,7 +2264,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
 
 .datepicker table tr td.day.focused,
 .datepicker table tr td.day:focus {
-    background-color: color-mix(in srgb, var(--bs-primary) 12%, transparent);
+    background-color: color-mix(in srgb, var(--c-brand-primary) 12%, transparent);
 }
 
 /* ==========================================================================
@@ -2514,7 +2514,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
        (the "one token, change it once" contract this file already keeps for every other Bootstrap var)
        AND explicitly wired into `.nav-link:focus-visible`/`.btn-icon:focus-visible` below, since setting
        the variable alone would silently fix nothing for those. */
-    --bs-focus-ring-color: color-mix(in srgb, var(--bs-primary) 35%, transparent);
+    --bs-focus-ring-color: var(--c-focus-ring);
 }
 /* `.btn`'s own base rule (bootstrap.min.css) only ever sets `z-index` on plain `:focus` -- no outline
    reset, no ring -- relying entirely on `:focus-visible` (below) to decide when a ring is warranted.
@@ -2638,7 +2638,7 @@ html[data-font-size="l"], html[data-font-size="l"] body {
     --bs-pagination-hover-bg: var(--c-bg-hover);
     --bs-pagination-hover-border-color: var(--c-border-strong);
     --bs-pagination-hover-color: var(--c-text);
-    --bs-pagination-focus-box-shadow: 0 0 0 .25rem color-mix(in srgb, var(--bs-primary) 25%, transparent);
+    --bs-pagination-focus-box-shadow: 0 0 0 .25rem color-mix(in srgb, var(--c-brand-primary) 25%, transparent);
 }
 /* 2026-09-14, Round 3 "เก็บตกรอบ 6" item 2, real gap found -- ยังไม่เคย implement เป็น CSS จริงเลยแม้จะ
    ระบุไว้แล้วใน §7's own layout diagram ("หัวตาราง พื้น --c-bg-subtle ตัวหนังสือ --c-text-muted ไม่หนา") --
@@ -2665,7 +2665,7 @@ table.dataTable thead th .dt-column-order {
 .form-control:focus,
 .form-select:focus {
     border-color: var(--c-primary);
-    box-shadow: 0 0 0 .25rem color-mix(in srgb, var(--bs-primary) 25%, transparent);
+    box-shadow: 0 0 0 .25rem color-mix(in srgb, var(--c-brand-primary) 25%, transparent);
 }
 /* Checkbox/Radio/Switch (Round 2 item (2), §3/§9) -- §3's own explicit exception: a "เลือก/เปิด"
    state is allowed to use brand orange, same as an active tab. Bootstrap hardcodes --hex-0d6efd directly
@@ -2682,7 +2682,7 @@ table.dataTable thead th .dt-column-order {
 }
 .form-check-input:focus {
     border-color: var(--c-primary);
-    box-shadow: 0 0 0 .25rem color-mix(in srgb, var(--bs-primary) 25%, transparent);
+    box-shadow: 0 0 0 .25rem color-mix(in srgb, var(--c-brand-primary) 25%, transparent);
 }
 /* 2026-09-13, Round 3 "เก็บตกรอบ 4", real bug found and fixed (explicit repro: check a switch on --
    its own white knob disappears until you click somewhere else). Root cause confirmed by reading
@@ -5962,7 +5962,7 @@ html, body {
     border-color: var(--c-primary);
     background: linear-gradient(135deg, var(--hex-ffab26), var(--c-primary));
     color: var(--hex-ffffff);
-    box-shadow: 0 3px 8px color-mix(in srgb, var(--bs-primary) 35%, transparent);
+    box-shadow: 0 3px 8px color-mix(in srgb, var(--c-brand-primary) 35%, transparent);
     animation: process-tl-pulse 1.8s infinite;
 }
 .process-timeline .tl-step.rejected .tl-icon {
@@ -6047,7 +6047,7 @@ html, body {
     white-space: normal;
 }
 @keyframes process-tl-pulse {
-    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--bs-primary) 45%, transparent); }
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--c-brand-primary) 45%, transparent); }
     70% { box-shadow: 0 0 0 8px transparent; }
     100% { box-shadow: 0 0 0 0 transparent; }
 }
@@ -6200,7 +6200,7 @@ html, body {
     border-color: var(--c-primary);
     background: var(--c-primary);
     color: var(--hex-ffffff);
-    box-shadow: 0 0 0 2px var(--hex-ffffff), 0 0 0 4px color-mix(in srgb, var(--bs-primary) 30%, transparent);
+    box-shadow: 0 0 0 2px var(--hex-ffffff), 0 0 0 4px color-mix(in srgb, var(--c-brand-primary) 30%, transparent);
     animation: process-tl-pulse 1.8s infinite;
 }
 .mini-timeline .mt-step.rejected .mt-dot {
@@ -6972,7 +6972,7 @@ html, body {
     background: var(--app-hover-bg);
 }
 .sr-version-item.sr-selected {
-    background: color-mix(in srgb, var(--bs-primary) 10%, transparent);
+    background: color-mix(in srgb, var(--c-brand-primary) 10%, transparent);
     border-left-color: var(--c-primary);
 }
 /* Delete now only appears on hover/selection (was always visible at reduced opacity) -- a quieter
@@ -7120,7 +7120,7 @@ html, body {
     gap: .5rem;
     background: var(--app-accent-soft-bg);
     color: var(--app-accent-soft-text);
-    border: 1px solid color-mix(in srgb, var(--bs-primary) 25%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c-brand-primary) 25%, transparent);
     border-radius: 10px;
     padding: .5rem .8rem;
     font-size: .85rem;
@@ -7128,7 +7128,7 @@ html, body {
     white-space: nowrap;
 }
 .dash-period-picker-btn:hover {
-    border-color: color-mix(in srgb, var(--bs-primary) 50%, transparent);
+    border-color: color-mix(in srgb, var(--c-brand-primary) 50%, transparent);
 }
 /* Green = "right now" (live), amber = a past period is being viewed -- same live/historical
    distinction the old .dash-historical-badge used to spell out in text, now a quiet dot instead of
@@ -7202,7 +7202,7 @@ html, body {
     text-overflow: ellipsis;
 }
 .dash-period-picker-month-btn:hover {
-    border-color: color-mix(in srgb, var(--bs-primary) 50%, transparent);
+    border-color: color-mix(in srgb, var(--c-brand-primary) 50%, transparent);
     background: var(--app-accent-soft-bg);
 }
 .dash-period-picker-month-btn.active {
@@ -7270,7 +7270,7 @@ html, body {
 .dash-calendar-nav-btn:hover {
     background: var(--app-accent-soft-bg);
     color: var(--hex-b45f00);
-    border-color: color-mix(in srgb, var(--bs-primary) 40%, transparent);
+    border-color: color-mix(in srgb, var(--c-brand-primary) 40%, transparent);
 }
 
 /* ==========================================================================
@@ -7818,7 +7818,7 @@ html, body {
     transition: box-shadow .15s ease, border-color .15s ease;
 }
 .awf-step-card:hover {
-    border-color: color-mix(in srgb, var(--bs-primary) 35%, transparent);
+    border-color: color-mix(in srgb, var(--c-brand-primary) 35%, transparent);
     box-shadow: 0 4px 14px color-mix(in srgb, var(--hex-101828) 7%, transparent);
 }
 .awf-step-card.sortable-ghost {
@@ -7842,7 +7842,7 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 2px 6px color-mix(in srgb, var(--bs-primary) 35%, transparent);
+    box-shadow: 0 2px 6px color-mix(in srgb, var(--c-brand-primary) 35%, transparent);
 }
 .awf-step-connector {
     width: 2px;
@@ -7888,7 +7888,7 @@ html, body {
     align-items: center;
     justify-content: center;
     flex: none;
-    background: color-mix(in srgb, var(--bs-primary) 12%, transparent);
+    background: color-mix(in srgb, var(--c-brand-primary) 12%, transparent);
     color: var(--hex-b45f00);
     font-size: .75rem;
 }
@@ -7926,13 +7926,13 @@ html, body {
 }
 .awf-step-remove {
     flex: none;
-    color: var(--hex-d92d20);
+    color: var(--c-status-danger);
     background: transparent;
     border: none;
     padding: .25rem .4rem;
 }
 .awf-step-remove:hover {
-    background: color-mix(in srgb, var(--hex-d92d20) 8%, transparent);
+    background: color-mix(in srgb, var(--c-status-danger) 8%, transparent);
     border-radius: 8px;
 }
 .awf-flow-status-wrap {
@@ -10511,7 +10511,7 @@ html, body {
 .pst-assign-item:hover,
 .ect-assign-item:hover,
 .ada-assign-item:hover {
-    background: color-mix(in srgb, var(--bs-primary) 8%, transparent);
+    background: color-mix(in srgb, var(--c-brand-primary) 8%, transparent);
 }
 .pst-assign-item .form-check-label,
 .ect-assign-item .form-check-label,
@@ -10654,7 +10654,7 @@ html, body {
     background: color-mix(in srgb, var(--c-bg-surface) 70%, transparent);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    border: 1px solid color-mix(in srgb, var(--bs-primary) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--c-brand-primary) 18%, transparent);
     border-radius: 20px;
     box-shadow: 0 8px 32px color-mix(in srgb, var(--hex-101828) 8%, transparent);
     padding: 3rem 2.5rem;
@@ -10673,7 +10673,7 @@ html, body {
     font-size: 2rem;
     color: var(--hex-ffffff);
     background: linear-gradient(135deg, var(--c-primary), var(--hex-ffb84d));
-    box-shadow: 0 6px 18px color-mix(in srgb, var(--bs-primary) 35%, transparent);
+    box-shadow: 0 6px 18px color-mix(in srgb, var(--c-brand-primary) 35%, transparent);
 }
 .error-page-code {
     font-weight: 800;
@@ -10889,11 +10889,11 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 }
 .tcf-filter-btn:hover {
     color: var(--c-primary);
-    background: color-mix(in srgb, var(--bs-primary) 10%, transparent);
+    background: color-mix(in srgb, var(--c-brand-primary) 10%, transparent);
 }
 .tcf-filter-btn.tcf-filter-active {
     color: var(--c-primary);
-    background: color-mix(in srgb, var(--bs-primary) 15%, transparent);
+    background: color-mix(in srgb, var(--c-brand-primary) 15%, transparent);
 }
 /* 2026-09-13, item 2c, explicit instruction: "กล่อง: ขอบ --c-border เงา --shadow-soft radius --radius
    padding --sp-3" -- was a hardcoded 10px radius / raw rgba-fn() shadow / .6rem padding, none from any
@@ -10974,7 +10974,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 .tcf-search-wrap input:focus {
     outline: none;
     border-color: var(--c-primary);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--bs-primary) 15%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-brand-primary) 15%, transparent);
 }
 .tcf-select-all-row {
     border-bottom: 1px solid var(--c-border);
@@ -11028,8 +11028,8 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     display: flex;
     align-items: center;
     gap: 1rem;
-    background: linear-gradient(135deg, color-mix(in srgb, var(--bs-primary) 8%, transparent), color-mix(in srgb, var(--bs-primary) 2%, transparent));
-    border: 1px solid color-mix(in srgb, var(--bs-primary) 18%, transparent);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--c-brand-primary) 8%, transparent), color-mix(in srgb, var(--c-brand-primary) 2%, transparent));
+    border: 1px solid color-mix(in srgb, var(--c-brand-primary) 18%, transparent);
     border-radius: 14px;
     padding: 1rem 1.25rem;
     flex-wrap: wrap;
@@ -11045,7 +11045,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     justify-content: center;
     font-size: 1.1rem;
     flex: none;
-    box-shadow: 0 4px 10px color-mix(in srgb, var(--bs-primary) 30%, transparent);
+    box-shadow: 0 4px 10px color-mix(in srgb, var(--c-brand-primary) 30%, transparent);
 }
 .reports-period-bar-body {
     flex: 1;
@@ -11739,18 +11739,18 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
 }
 .dash-calendar-today {
     background: var(--app-accent-soft-bg);
-    border-color: color-mix(in srgb, var(--bs-primary) 40%, transparent);
+    border-color: color-mix(in srgb, var(--c-brand-primary) 40%, transparent);
     color: var(--app-accent-soft-text) !important;
     font-weight: 800;
 }
 .dash-calendar-day:hover {
-    border-color: color-mix(in srgb, var(--bs-primary) 35%, transparent);
+    border-color: color-mix(in srgb, var(--c-brand-primary) 35%, transparent);
 }
 .dash-calendar-has-events {
     cursor: pointer;
 }
 .dash-calendar-has-events:hover {
-    background: color-mix(in srgb, var(--bs-primary) 12%, transparent);
+    background: color-mix(in srgb, var(--c-brand-primary) 12%, transparent);
 }
 .dash-calendar-day-selected {
     outline: 2px solid var(--c-primary);
@@ -11858,7 +11858,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     border-radius: 6px;
     cursor: pointer;
 }
-.ais-cell-clickable:hover, .ais-annual-total-clickable:hover { background: color-mix(in srgb, var(--bs-primary) 8%, transparent); }
+.ais-cell-clickable:hover, .ais-annual-total-clickable:hover { background: color-mix(in srgb, var(--c-brand-primary) 8%, transparent); }
 .ais-table td:last-child { background: var(--hex-fffaf1); }
 .ais-table thead th:last-child { background: var(--hex-fff1db); }
 
@@ -12133,14 +12133,14 @@ tfoot .tbl-sticky-col {
     transition: border-color .15s, box-shadow .15s, transform .15s, background .15s;
 }
 .run-choice-card:hover {
-    border-color: color-mix(in srgb, var(--bs-primary) 50%, transparent);
+    border-color: color-mix(in srgb, var(--c-brand-primary) 50%, transparent);
     transform: translateY(-1px);
     box-shadow: 0 4px 14px color-mix(in srgb, var(--hex-101828) 8%, transparent);
 }
 .run-choice-card.active {
     border-color: var(--c-primary);
-    background: linear-gradient(135deg, color-mix(in srgb, var(--bs-primary) 9%, transparent), color-mix(in srgb, var(--bs-primary) 2%, transparent));
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--bs-primary) 20%, transparent);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--c-brand-primary) 9%, transparent), color-mix(in srgb, var(--c-brand-primary) 2%, transparent));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-brand-primary) 20%, transparent);
 }
 .run-choice-card input[type="radio"] {
     margin: 0;
@@ -12241,9 +12241,9 @@ tfoot .tbl-sticky-col {
    "options that appeared because you picked off-schedule" rather than more plain form rows
    indistinguishable from the always-shown fields around them. */
 .run-offcycle-panel {
-    border: 1.5px dashed color-mix(in srgb, var(--bs-primary) 35%, transparent);
+    border: 1.5px dashed color-mix(in srgb, var(--c-brand-primary) 35%, transparent);
     border-radius: 12px;
-    background: color-mix(in srgb, var(--bs-primary) 3.5%, transparent);
+    background: color-mix(in srgb, var(--c-brand-primary) 3.5%, transparent);
     padding: 1rem 1.1rem .1rem;
     margin-bottom: 1rem;
 }
@@ -12294,7 +12294,7 @@ tfoot .tbl-sticky-col {
    artwork. */
 .om-loader {
     display: inline-block; vertical-align: middle; border-radius: 50%;
-    border: 2px solid color-mix(in srgb, var(--bs-primary) 22%, transparent); border-top-color: var(--c-primary);
+    border: 2px solid color-mix(in srgb, var(--c-brand-primary) 22%, transparent); border-top-color: var(--c-primary);
     animation: om-spin .75s linear infinite;
 }
 .om-loader--sm { width: 16px; height: 16px; }
@@ -12393,7 +12393,7 @@ div.dt-processing {
 }
 .om-page-loader-ring {
     position: absolute; inset: 0; border-radius: 50%;
-    border: 3px solid color-mix(in srgb, var(--bs-primary) 22%, transparent); border-top-color: var(--c-primary);
+    border: 3px solid color-mix(in srgb, var(--c-brand-primary) 22%, transparent); border-top-color: var(--c-primary);
     animation: om-spin 1.2s linear infinite;
 }
 .om-page-loader-logo {
