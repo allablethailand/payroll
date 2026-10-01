@@ -83,7 +83,7 @@
             </button>
         </li>
     </ul>
-    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
+    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 rounded-top-0">
         <div class="tab-pane fade show active" id="cycle-pane" role="tabpanel" aria-labelledby="cycle-tab" tabindex="0">
             <!-- 2026-09-07, explicit request: "Menu สร้างรายงาน ถ้าเปลี่ยนเป็น ตารางแสดงรอบที่สามารถพิมพ์ได้
                  แล้วให้มี column พิมพ์ตามแบบที่พิมพ์ได้ น่าจะใช้งานง่ายกว่าครับ และ filter ก็ต้องปรับให้รองรับ

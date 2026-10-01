@@ -247,7 +247,7 @@ function notifPageTableInit() {
         dtOptions: {
         responsive: true,
         columns: [
-            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => { const m = notifTypeMeta(row); return `<span class="row-type-icon ${m.rt}" style="margin-right:0;"><i class="fa-solid ${notifEscapeHtml(row.icon || m.icon)}"></i></span>`; } },
+            { data: null, orderable: false, className: 'text-center', render: (d, t, row) => { const m = notifTypeMeta(row); return `<span class="row-type-icon notif-type-icon-flush ${m.rt}"><i class="fa-solid ${notifEscapeHtml(row.icon || m.icon)}"></i></span>`; } },
             {
                 data: null,
                 render: (d, t, row) => {

@@ -80,7 +80,7 @@
          of the 3 panes below no longer sits flush against the tab bar above it. Only the TOP side --
          left/right/bottom spacing wasn't part of the complaint, and each pane already manages its
          own internal spacing (table margins, .card-surface padding, etc.). -->
-    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 pt-3" style="border-top-left-radius:0;border-top-right-radius:0;">
+    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 pt-3 rounded-top-0">
     <div class="tab-pane fade show active" id="company-setting-pane" role="tabpanel" aria-labelledby="company-setting-tab" tabindex="0">
         <p class="text-muted small mb-2" data-i18n="company_setting_description">Enable/disable statutory items for your company and adjust rates where the law permits, based on your company's registered country.</p>
         <!-- 2026-09-03, Backlog Phase 9, T044 -- relocated here from the removed Master Rates tab
@@ -101,7 +101,7 @@
                     <th scope="col" style="width: 15%;" data-i18n="table_current_rate">Rate in Use</th>
                     <th scope="col" style="width: 7%;" data-i18n="modal_company_rate_editable_short">Adjustable</th>
                     <th scope="col" style="width: 13%;" data-i18n="table_last_updated">Last Updated</th>
-                    <th scope="col" style="width: 8%; text-align: center;"></th>
+                    <th class="text-center" scope="col" style="width: 8%"></th>
                 </tr>
             </thead>
             <tbody></tbody>

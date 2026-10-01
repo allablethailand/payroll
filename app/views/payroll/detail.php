@@ -1157,7 +1157,7 @@
                     </div>
                     <div class="modal-body p-0">
                         <div id="reportPreviewLoading" class="text-center text-muted py-5"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>
-                        <iframe id="reportPreviewFrame" class="d-none" style="width:100%; height:70vh; border:0;" title="Report preview"></iframe>
+                        <iframe id="reportPreviewFrame" class="d-none border-0" style="width:100%; height:70vh" title="Report preview"></iframe>
                         <div id="reportPreviewUnavailable" class="text-center d-none py-4 px-4">
                             <div class="report-preview-unavailable-icon mx-auto mb-3">
                                 <i class="fa-solid fa-file-circle-exclamation"></i>

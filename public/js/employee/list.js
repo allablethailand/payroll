@@ -17,8 +17,8 @@ function completenessColor(percent) {
 function completenessRingHtml(percent) {
     const p = Math.max(0, Math.min(100, Number(percent) || 0));
     const color = completenessColor(p);
-    return `<div class="employee-completeness-ring" style="background:conic-gradient(${color} ${p}%, #e9ecef ${p}% 100%);" role="progressbar" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100" title="${p}%">
-        <span class="employee-completeness-ring-value" style="color:${color};">${p}%</span>
+    return `<div class="employee-completeness-ring" style="--ring-color:${color};--ring-p:${p}%;" role="progressbar" aria-valuenow="${p}" aria-valuemin="0" aria-valuemax="100" title="${p}%">
+        <span class="employee-completeness-ring-value">${p}%</span>
     </div>`;
 }
 // Reload after coming back from Employee Detail (2026-08-19, explicit request: "บันทึกหน้า Detail

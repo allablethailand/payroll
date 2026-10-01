@@ -515,7 +515,7 @@ function aisRenderAnnualDetail(row) {
         const hasData = aisMonthHasData(cell);
         const cls = idx === stats.peakIdx && hasData ? ' class="table-warning"' : '';
         const clickableAttrs = hasData ? ` data-employee-id="${row.employee_id}" data-year="${m.year}" data-month="${m.month}"` : '';
-        const rowTag = hasData ? `<tr class="ais-cell-clickable"${clickableAttrs} style="cursor:pointer;"${cls}>` : `<tr${cls}>`;
+        const rowTag = hasData ? `<tr class="ais-cell-clickable"${clickableAttrs}${cls}>` : `<tr${cls}>`;
         return `${rowTag}
             <td>${escapeHtml(aisMonthLabel(m))}</td>
             <td class="text-end">${hasData ? aisFmt(cell.gross) : '-'}</td>

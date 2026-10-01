@@ -15,6 +15,7 @@
     align-items: center;
     justify-content: center;
     flex: none;
+    background: conic-gradient(var(--ring-color) var(--ring-p), var(--c-border) var(--ring-p) 100%);
 }
 .employee-completeness-ring::before {
     content: '';
@@ -28,6 +29,7 @@
     z-index: 1;
     font-size: .6rem;
     font-weight: 700;
+    color: var(--ring-color);
 }
 /* 2026-08-30, real photo (synced or manually uploaded) shown in place of the initial-letter avatar
    circle once profile_photo_path is set -- object-fit:cover so a non-square upload still fills the

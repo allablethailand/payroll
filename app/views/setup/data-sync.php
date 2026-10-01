@@ -34,7 +34,7 @@
       </button>
     </li>
   </ul>
-  <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 p-3" style="border-top-left-radius:0;border-top-right-radius:0;">
+  <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 p-3 rounded-top-0">
     <div class="tab-pane fade show active" id="ds-sync-pane" role="tabpanel" aria-labelledby="ds-sync-tab" tabindex="0">
       <div class="d-flex justify-content-end align-items-center gap-2 mb-3">
         <!-- 2026-09-02, explicit request: "ตอน Sync อยากให้มี % บอกด้วยครับ" -- "Sync All" walks the 6
@@ -42,9 +42,9 @@
              instead of the single all-in-one api/master-data-sync.sync-all call, so this bar
              reflects REAL step progress (N of 6 done), not a fake animation. See data-sync.js's own
              dsSyncAll() docblock. -->
-        <div class="ds-progress-wrap align-items-center" id="dsSyncAllProgressWrap" style="display:none;">
+        <div class="ds-progress-wrap align-items-center" id="dsSyncAllProgressWrap">
           <div class="progress" style="height:6px; width:160px;">
-            <div class="progress-bar" role="progressbar" id="dsSyncAllProgressBar" style="width:0%; background-color:#FF9900;"></div>
+            <div class="progress-bar" role="progressbar" id="dsSyncAllProgressBar" style="width:0%"></div>
           </div>
           <span class="small text-muted ms-2" id="dsSyncAllProgressLabel">0%</span>
         </div>

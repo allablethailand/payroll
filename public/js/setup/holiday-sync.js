@@ -46,9 +46,9 @@ function hsRenderHolidayCell(row) {
     const name = hsHolidayName(row);
     return `
         <div class="d-flex align-items-center gap-2 py-1">
-            <div class="text-center rounded flex-shrink-0" style="width:42px;background:#fff3e0;border:1px solid #ffe0b2;">
-                <div class="text-uppercase fw-bold" style="color:#FF9900;font-size:.62rem;line-height:1.3;">${hsEscapeHtml(monthAbbr)}</div>
-                <div class="fw-bold" style="font-size:1rem;line-height:1.2;">${d.getDate()}</div>
+            <div class="text-center rounded flex-shrink-0 hs-date-tile">
+                <div class="text-uppercase fw-bold hs-date-month">${hsEscapeHtml(monthAbbr)}</div>
+                <div class="fw-bold hs-date-day">${d.getDate()}</div>
             </div>
             <div class="lh-sm">
                 <div class="fw-semibold">${hsEscapeHtml(name)}</div>

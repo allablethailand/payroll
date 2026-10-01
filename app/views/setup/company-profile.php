@@ -225,7 +225,7 @@
                 </div>
                 <div class="col-sm-4 mt-3 position-relative">
                     <input type="text" class="form-control required autocomplete-address" id="search_address" autocomplete="off" data-i18n="map_search_placeholder" placeholder="Search for an address...">
-                    <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none" style="z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
+                    <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none"></div>
                     <input type="hidden" name="master_address_id" class="master-address-id-field" id="master_address_id">
                     <p class="text-muted small mt-2"><i class="fa-solid fa-circle-info me-1"></i><span data-i18n="address_guide">Please enter your postal code, city/district, and state/province.</span></p>
                 </div>

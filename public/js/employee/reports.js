@@ -611,7 +611,7 @@ function loadEmployeeStructureReport() {
                                 data: 'share',
                                 className: 'text-end',
                                 render: {
-                                    display: d => `<div class="d-flex align-items-center justify-content-end gap-2"><span class="small text-muted">${(Number(d) || 0).toFixed(1)}%</span><span class="mini-progress-track"><span class="mini-progress-fill" style="width:${Math.min(100, Number(d) || 0)}%; background:#FF9900;"></span></span></div>`,
+                                    display: d => `<div class="d-flex align-items-center justify-content-end gap-2"><span class="small text-muted">${(Number(d) || 0).toFixed(1)}%</span><span class="mini-progress-track"><span class="mini-progress-fill" style="width:${Math.min(100, Number(d) || 0)}%;"></span></span></div>`,
                                     sort: d => Number(d) || 0,
                                     filter: d => Number(d) || 0,
                                 }
@@ -698,7 +698,7 @@ function initEmployeeTenureTable(items) {
                         const key = employeeTenureBucketKey(d);
                         const label = langData[EMP_TENURE_BUCKET_LABEL_KEYS[key]] || key;
                         const color = EMP_TENURE_BUCKET_COLORS[key] || '#6c757d';
-                        return `<span class="tenure-bucket-chip" style="background:${color};">${escapeHtml(label)}</span>`;
+                        return `<span class="tenure-bucket-chip" style="--chip-color:${color};">${escapeHtml(label)}</span>`;
                     }
                 },
             ],
@@ -914,7 +914,7 @@ function initEmployeeCompletenessTable(items) {
                         display: d => {
                             const pct = Number(d) || 0;
                             const color = employeeCompletenessColor(pct);
-                            return `<div class="d-flex align-items-center justify-content-end gap-2"><span class="fw-semibold small" style="color:${color};">${pct}%</span><span class="mini-progress-track"><span class="mini-progress-fill" style="width:${Math.min(100, pct)}%; background:${color};"></span></span></div>`;
+                            return `<div class="d-flex align-items-center justify-content-end gap-2"><span class="fw-semibold small mini-progress-pct" style="--bar-color:${color};">${pct}%</span><span class="mini-progress-track"><span class="mini-progress-fill" style="width:${Math.min(100, pct)}%; --bar-color:${color};"></span></span></div>`;
                         },
                         sort: d => Number(d) || 0,
                         filter: d => Number(d) || 0,

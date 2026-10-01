@@ -210,7 +210,7 @@
                 </div>
                 <div class="modal-body p-0">
                     <div id="runRegisterPdfPreviewLoading" class="text-center text-muted py-5"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>
-                    <iframe id="runRegisterPdfPreviewFrame" class="d-none" style="width:100%; height:70vh; border:0;" title="Payroll Register preview"></iframe>
+                    <iframe id="runRegisterPdfPreviewFrame" class="d-none border-0" style="width:100%; height:70vh" title="Payroll Register preview"></iframe>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary me-auto" data-bs-dismiss="modal" data-i18n="close">Close</button>

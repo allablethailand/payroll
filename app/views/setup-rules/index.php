@@ -44,7 +44,7 @@
             </button>
         </li>
     </ul>
-    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
+    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 rounded-top-0">
         <div class="tab-pane fade show active" id="shift-pane" role="tabpanel" aria-labelledby="shift-tab" tabindex="0">
             <div class="mt-5 mb-5 table-responsive">
                 <table class="table" id="tb_shift" style="width:100%">
@@ -493,7 +493,7 @@
                             <label class="form-check-label small mb-0" for="otAssignSelectAllDepartments" data-i18n="select_all">Select All</label>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-1 ot-assign-search" data-scope-type="department" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
-                        <div class="ot-assign-list border rounded-3 p-2" id="otAssignDepartments" style="max-height:150px;overflow-y:auto;"></div>
+                        <div class="ot-assign-list border rounded-3 p-2 overflow-y-auto" id="otAssignDepartments" style="max-height:150px"></div>
                     </div>
                     <div class="col-md-3">
                         <div class="fw-bold small mb-1" data-i18n="team">Team</div>
@@ -502,7 +502,7 @@
                             <label class="form-check-label small mb-0" for="otAssignSelectAllTeams" data-i18n="select_all">Select All</label>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-1 ot-assign-search" data-scope-type="team" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
-                        <div class="ot-assign-list border rounded-3 p-2" id="otAssignTeams" style="max-height:150px;overflow-y:auto;"></div>
+                        <div class="ot-assign-list border rounded-3 p-2 overflow-y-auto" id="otAssignTeams" style="max-height:150px"></div>
                     </div>
                     <div class="col-md-3">
                         <div class="fw-bold small mb-1" data-i18n="position">Position</div>
@@ -511,7 +511,7 @@
                             <label class="form-check-label small mb-0" for="otAssignSelectAllPositions" data-i18n="select_all">Select All</label>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-1 ot-assign-search" data-scope-type="position" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
-                        <div class="ot-assign-list border rounded-3 p-2" id="otAssignPositions" style="max-height:150px;overflow-y:auto;"></div>
+                        <div class="ot-assign-list border rounded-3 p-2 overflow-y-auto" id="otAssignPositions" style="max-height:150px"></div>
                     </div>
                     <div class="col-md-3">
                         <div class="fw-bold small mb-1" data-i18n="employee">Employee</div>
@@ -520,7 +520,7 @@
                             <label class="form-check-label small mb-0" for="otAssignSelectAllEmployees" data-i18n="select_all">Select All</label>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-1 ot-assign-search" data-scope-type="employee" data-i18n="pst_assign_search_placeholder" placeholder="Search...">
-                        <div class="ot-assign-list border rounded-3 p-2" id="otAssignEmployees" style="max-height:150px;overflow-y:auto;"></div>
+                        <div class="ot-assign-list border rounded-3 p-2 overflow-y-auto" id="otAssignEmployees" style="max-height:150px"></div>
                     </div>
                 </div>
             </div>
@@ -578,9 +578,9 @@
                                 <div class="d-flex align-items-center mb-2">
                                     <h6 class="mb-0"><span data-i18n="employee_sync_tab_new">New</span> <span class="count-inline" id="holidaySyncNewCount">0</span></h6>
                                 </div>
-                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                <div class="border rounded overflow-y-auto" style="max-height: 420px">
                                     <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_holiday_sync_new">
-                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                        <thead class="table-light text-secondary sticky-top">
                                             <tr>
                                                 <th style="width:3%;"><input type="checkbox" id="holidaySyncNewSelectAll"></th>
                                                 <th data-i18n="holiday">Holiday</th>
@@ -595,9 +595,9 @@
                                 <div class="d-flex align-items-center mb-2">
                                     <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="count-inline" id="holidaySyncExistingCount">0</span></h6>
                                 </div>
-                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                <div class="border rounded overflow-y-auto" style="max-height: 420px">
                                     <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_holiday_sync_existing">
-                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                        <thead class="table-light text-secondary sticky-top">
                                             <tr>
                                                 <th style="width:3%;"><input type="checkbox" id="holidaySyncExistingSelectAll"></th>
                                                 <th data-i18n="holiday">Holiday</th>

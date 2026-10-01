@@ -48,7 +48,7 @@
             </button>
         </li>
     </ul>
-    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
+    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 rounded-top-0">
         <div class="tab-pane fade show active" id="attendance-pane" role="tabpanel" aria-labelledby="attendance-tab" tabindex="0">
             <!-- 2026-08-29, same-day follow-up: system-wide page-level filter audit -- was a bare
                  `row mt-5 mb-3 g-2` with no collapse/Clear Filter, now the same .station-filter

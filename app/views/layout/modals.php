@@ -396,7 +396,7 @@
             </div>
             <div class="modal-body p-0">
                 <div id="reportsPreviewLoading" class="text-center text-muted py-5"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></div>
-                <iframe id="reportsPreviewFrame" class="d-none" style="width:100%; height:70vh; border:0;" title="Report preview"></iframe>
+                <iframe id="reportsPreviewFrame" class="d-none border-0" style="width:100%; height:70vh" title="Report preview"></iframe>
                 <div id="reportsPreviewUnavailable" class="text-center d-none py-4 px-4">
                     <div class="report-preview-unavailable-icon mx-auto mb-3">
                         <i class="fa-solid fa-file-circle-exclamation"></i>
@@ -445,7 +445,7 @@
                         <button type="button" class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown" data-bs-auto-close="outside" id="reportsPreviewDeductionCodesBtn">
                             <span data-i18n="deduction_report_types">Deduction Types</span> (<span id="reportsPreviewDeductionCodesCount">0</span>)
                         </button>
-                        <div class="dropdown-menu p-2" id="reportsPreviewDeductionCodesMenu" style="min-width:280px; max-height:320px; overflow-y:auto;"></div>
+                        <div class="dropdown-menu p-2 overflow-y-auto" id="reportsPreviewDeductionCodesMenu" style="min-width:280px; max-height:320px"></div>
                     </div>
                 </div>
                 <div class="d-flex flex-wrap gap-2">
@@ -694,7 +694,7 @@
                             </div>
                             <div class="card-body p-2">
                                 <input type="text" class="form-control form-control-sm mb-2" id="saOutsideSearch" placeholder="Search...">
-                                <div class="sa-list" id="saOutsideList" style="max-height:340px;overflow-y:auto;"></div>
+                                <div class="sa-list overflow-y-auto" id="saOutsideList" style="max-height:340px"></div>
                             </div>
                             <div class="card-footer text-end bg-white">
                                 <button type="button" class="btn btn-primary btn-sm" id="btnSaPullIn" disabled>
@@ -710,7 +710,7 @@
                             </div>
                             <div class="card-body p-2">
                                 <input type="text" class="form-control form-control-sm mb-2" id="saInSearch" placeholder="Search...">
-                                <div class="sa-list" id="saInList" style="max-height:340px;overflow-y:auto;"></div>
+                                <div class="sa-list overflow-y-auto" id="saInList" style="max-height:340px"></div>
                             </div>
                             <div class="card-footer text-end bg-white">
                                 <button type="button" class="btn btn-outline-secondary btn-sm" id="btnSaMoveOut" disabled>
@@ -913,7 +913,7 @@
                             <label class="form-label mb-1" data-i18n="modal_cycle_bank_account">Bank Accounts</label>
                         </div>
                         <div class="col-sm-9">
-                            <div id="cycleBankAccountsList" class="border rounded-3 p-2" style="max-height:180px;overflow-y:auto;">
+                            <div id="cycleBankAccountsList" class="border rounded-3 p-2 overflow-y-auto" style="max-height:180px">
                                 <div class="text-muted small" data-i18n="loading">Loading...</div>
                             </div>
                             <div id="cycleBankAccountsHint" class="form-text" data-i18n="modal_cycle_bank_account_hint">Leave every account unchecked to use the company's default bank account.</div>
@@ -1204,7 +1204,7 @@
                             <div class="form-check form-check-sm mb-0"><input class="form-check-input ada-select-all" type="checkbox" data-scope="department" id="adaSelectAllDept"><label class="form-check-label small" for="adaSelectAllDept" data-i18n="select_all">Select All</label></div>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-2 ada-scope-search" data-scope="department" data-i18n="search" placeholder="Search...">
-                        <div class="ada-scope-list border rounded-2 p-2" id="adaScopeListDepartment" style="max-height:280px;overflow-y:auto;"></div>
+                        <div class="ada-scope-list border rounded-2 p-2 overflow-y-auto" id="adaScopeListDepartment" style="max-height:280px"></div>
                     </div>
                     <div class="col-md-4">
                         <div class="d-flex justify-content-between align-items-center mb-1">
@@ -1212,7 +1212,7 @@
                             <div class="form-check form-check-sm mb-0"><input class="form-check-input ada-select-all" type="checkbox" data-scope="team" id="adaSelectAllTeam"><label class="form-check-label small" for="adaSelectAllTeam" data-i18n="select_all">Select All</label></div>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-2 ada-scope-search" data-scope="team" data-i18n="search" placeholder="Search...">
-                        <div class="ada-scope-list border rounded-2 p-2" id="adaScopeListTeam" style="max-height:280px;overflow-y:auto;"></div>
+                        <div class="ada-scope-list border rounded-2 p-2 overflow-y-auto" id="adaScopeListTeam" style="max-height:280px"></div>
                     </div>
                     <div class="col-md-4">
                         <div class="d-flex justify-content-between align-items-center mb-1">
@@ -1220,7 +1220,7 @@
                             <div class="form-check form-check-sm mb-0"><input class="form-check-input ada-select-all" type="checkbox" data-scope="employee" id="adaSelectAllEmployee"><label class="form-check-label small" for="adaSelectAllEmployee" data-i18n="select_all">Select All</label></div>
                         </div>
                         <input type="text" class="form-control form-control-sm mb-2 ada-scope-search" data-scope="employee" data-i18n="search" placeholder="Search...">
-                        <div class="ada-scope-list border rounded-2 p-2" id="adaScopeListEmployee" style="max-height:280px;overflow-y:auto;"></div>
+                        <div class="ada-scope-list border rounded-2 p-2 overflow-y-auto" id="adaScopeListEmployee" style="max-height:280px"></div>
                     </div>
                 </div>
             </div>
@@ -2136,7 +2136,7 @@
                 <div id="bulkImportReviewStep" class="d-none">
                     <div class="row g-2 mb-3" id="bulkImportSummaryCards"></div>
                     <div class="alert alert-warning d-none" id="bulkImportUnmappedAlert"></div>
-                    <div class="table-responsive" style="max-height:340px;overflow-y:auto;">
+                    <div class="table-responsive overflow-y-auto" style="max-height:340px">
                         <table class="table table-sm" id="tb_bulk_import_preview">
                             <thead class="table-light">
                                 <tr>
@@ -2854,7 +2854,7 @@
             </div>
             <div class="modal-body">
                 <input type="text" class="form-control mb-2" id="empMapSearchInput" data-i18n="map_search_placeholder" placeholder="Search for an address...">
-                <div id="empMapPinContainer" style="width:100%;height:360px;border-radius:8px;overflow:hidden;"></div>
+                <div class="overflow-hidden" id="empMapPinContainer" style="width:100%; height:360px; border-radius:8px"></div>
                 <p class="text-muted small mt-2 mb-0" data-i18n="map_pin_hint">Click anywhere on the map, or drag the marker, to set the location.</p>
             </div>
             <div class="modal-footer">
@@ -3007,9 +3007,9 @@
                                 <div class="d-flex align-items-center mb-2">
                                     <h6 class="mb-0"><span data-i18n="employee_sync_tab_new">New</span> <span class="count-inline" id="orgSyncNewCount">0</span></h6>
                                 </div>
-                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                <div class="border rounded overflow-y-auto" style="max-height: 420px">
                                     <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_org_sync_new">
-                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                        <thead class="table-light text-secondary sticky-top">
                                             <tr>
                                                 <th style="width:3%;"><input type="checkbox" id="orgSyncNewSelectAll"></th>
                                                 <th><span data-i18n="name">Name</span></th>
@@ -3023,9 +3023,9 @@
                                 <div class="d-flex align-items-center mb-2">
                                     <h6 class="mb-0 text-secondary"><span data-i18n="employee_sync_tab_existing">Already Exists</span> <span class="count-inline" id="orgSyncExistingCount">0</span></h6>
                                 </div>
-                                <div class="border rounded" style="max-height: 420px; overflow-y: auto;">
+                                <div class="border rounded overflow-y-auto" style="max-height: 420px">
                                     <table class="table table-hover table-sm align-middle w-100 mb-0" id="tb_org_sync_existing">
-                                        <thead class="table-light text-secondary" style="position: sticky; top: 0; z-index: 1;">
+                                        <thead class="table-light text-secondary sticky-top">
                                             <tr>
                                                 <th style="width:3%;"><input type="checkbox" id="orgSyncExistingSelectAll"></th>
                                                 <th><span data-i18n="name">Name</span></th>
@@ -3931,7 +3931,7 @@
                             <input type="checkbox" class="form-check-input eaw-assign-select-all mt-0" data-scope-type="department" title="Select All">
                             <input type="text" class="form-control form-control-sm eaw-assign-search" data-scope-type="department" data-i18n="select_option" placeholder="Search...">
                         </div>
-                        <div class="border rounded p-2" style="max-height:180px;overflow-y:auto;" id="eawAssignDepartments"></div>
+                        <div class="border rounded p-2 overflow-y-auto" style="max-height:180px" id="eawAssignDepartments"></div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-semibold small mb-1" data-i18n="position">Position</label>
@@ -3939,7 +3939,7 @@
                             <input type="checkbox" class="form-check-input eaw-assign-select-all mt-0" data-scope-type="position" title="Select All">
                             <input type="text" class="form-control form-control-sm eaw-assign-search" data-scope-type="position" data-i18n="select_option" placeholder="Search...">
                         </div>
-                        <div class="border rounded p-2" style="max-height:180px;overflow-y:auto;" id="eawAssignPositions"></div>
+                        <div class="border rounded p-2 overflow-y-auto" style="max-height:180px" id="eawAssignPositions"></div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-semibold small mb-1" data-i18n="team">Team</label>
@@ -3947,7 +3947,7 @@
                             <input type="checkbox" class="form-check-input eaw-assign-select-all mt-0" data-scope-type="team" title="Select All">
                             <input type="text" class="form-control form-control-sm eaw-assign-search" data-scope-type="team" data-i18n="select_option" placeholder="Search...">
                         </div>
-                        <div class="border rounded p-2" style="max-height:180px;overflow-y:auto;" id="eawAssignTeams"></div>
+                        <div class="border rounded p-2 overflow-y-auto" style="max-height:180px" id="eawAssignTeams"></div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-semibold small mb-1" data-i18n="table_employee">Employee</label>
@@ -3955,7 +3955,7 @@
                             <input type="checkbox" class="form-check-input eaw-assign-select-all mt-0" data-scope-type="employee" title="Select All">
                             <input type="text" class="form-control form-control-sm eaw-assign-search" data-scope-type="employee" data-i18n="select_option" placeholder="Search...">
                         </div>
-                        <div class="border rounded p-2" style="max-height:180px;overflow-y:auto;" id="eawAssignEmployees"></div>
+                        <div class="border rounded p-2 overflow-y-auto" style="max-height:180px" id="eawAssignEmployees"></div>
                     </div>
                 </div>
             </div>

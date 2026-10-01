@@ -1979,12 +1979,12 @@ function renderPermissionOverridesTable() {
             </td>
             <td class="text-center">`;
         if (isApprovalAct) {
-            html += `<select class="form-select form-select-sm po-scope-select ${showScope ? '' : 'd-none'}" style="width:auto;margin:0 auto;">
+            html += `<select class="form-select form-select-sm po-scope-select ${showScope ? '' : 'd-none'}">
                     <option value="all" ${state.allow_scope === 'own_department' ? '' : 'selected'}>${langData['scope_all'] || 'All'}</option>
                     <option value="own_department" ${state.allow_scope === 'own_department' ? 'selected' : ''}>${langData['scope_own_department'] || 'Own Dept.'}</option>
                 </select>`;
         } else if (isSalaryAmount) {
-            html += `<select class="form-select form-select-sm po-scope-select ${showScope ? '' : 'd-none'}" style="width:auto;margin:0 auto;">
+            html += `<select class="form-select form-select-sm po-scope-select ${showScope ? '' : 'd-none'}">
                     <option value="all" ${state.allow_scope === 'all' ? 'selected' : ''}>${langData['scope_all'] || 'All'}</option>
                     <option value="own_only" ${state.allow_scope === 'own_only' ? 'selected' : ''}>${langData['scope_own_only'] || 'Own Only'}</option>
                 </select>`;
@@ -2650,7 +2650,7 @@ function eedInstallmentProgressCell(row) {
     return `
         <div class="d-flex flex-column align-items-center" style="min-width:90px;">
             <div class="progress w-100" style="height:6px;">
-                <div class="progress-bar" role="progressbar" style="width:${pct}%;background-color:#FF9900;"></div>
+                <div class="progress-bar" role="progressbar" style="width:${pct}%;"></div>
             </div>
             <span class="text-muted small mt-1">${current}/${total}</span>
         </div>

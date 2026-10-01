@@ -4388,29 +4388,22 @@ function apvApprovalStageInfo(state) {
 // apvCreatedStageHtml() and the new apvPaidStageHtml()/apvLockedStageHtml() split below, all of
 // which build on these -- writing that fix 3x instead of once would repeat exactly the mirror-copy
 // pattern CLAUDE.md now says not to.
-const APV_COLORS = {
-    done: { icon: '#16a34a', badgeBg: '#dcfce7', badgeText: '#15803d' },
-    pending: { icon: '#f59e0b', badgeBg: '#fef3c7', badgeText: '#b45309' },
-    rejected: { icon: '#ef4444', badgeBg: '#fee2e2', badgeText: '#b91c1c' },
-    info: { icon: '#0d6efd', badgeBg: '#cfe2ff', badgeText: '#0a58ca' },
-    muted: { icon: '#cbd5e1', badgeBg: '#f1f5f9', badgeText: '#64748b' },
-};
+const APV_TONES = ['done', 'pending', 'rejected', 'info', 'muted'];
 function apvBadgeHtml(tone, label) {
-    const c = APV_COLORS[tone] || APV_COLORS.muted;
-    return `<span class="apv-badge" style="background:${c.badgeBg};color:${c.badgeText};">${escapeHtml(label)}</span>`;
+    const t = APV_TONES.includes(tone) ? tone : 'muted';
+    return `<span class="apv-badge apv-badge--${t}">${escapeHtml(label)}</span>`;
 }
 function apvIconHtml(tone, icon) {
-    const c = APV_COLORS[tone] || APV_COLORS.muted;
-    return `<div class="apv-stage-icon" style="background:${c.icon};"><i class="fa-solid ${icon}"></i></div>`;
+    const t = APV_TONES.includes(tone) ? tone : 'muted';
+    return `<div class="apv-stage-icon apv-stage-icon--${t}"><i class="fa-solid ${icon}"></i></div>`;
 }
 function apvAvatarImgError(img) {
     const size = img.getAttribute('data-size');
     const initial = img.getAttribute('data-initial');
     const employeeId = img.getAttribute('data-employee-id');
     const clickAttr = employeeId ? ` data-employee-id="${employeeId}"` : '';
-    const clickClass = employeeId ? ' emp-avatar-link' : '';
-    const clickStyle = employeeId ? 'cursor:pointer;' : '';
-    img.outerHTML = `<span class="apv-person-avatar${clickClass}"${clickAttr} style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;${clickStyle}">${initial}</span>`;
+    const clickClass = employeeId ? ' emp-avatar-link apv-person-avatar--clickable' : '';
+    img.outerHTML = `<span class="apv-person-avatar${clickClass}"${clickAttr} style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
 }
 // 2026-09-10, Batch 3A item 4 (explicit instruction: "ต่อยอดจาก apvAvatarHtml ที่เพิ่งรวม ไม่สร้าง
 // avatar function ตัวที่สอง...ให้เพิ่มเป็น option ของตัวเดิม") -- `options.employeeId` is the ONLY
@@ -4443,7 +4436,7 @@ function apvAvatarHtml(name, size, photoPath, options) {
     return `<span class="apv-person-avatar${clickClass}"${clickAttr} style="width:${size}px;height:${size}px;min-width:${size}px;font-size:${Math.round(size * 0.42)}px;">${initial}</span>`;
 }
 function apvPersonLineHtml(name, size, photoPath, options) {
-    return `<div style="display:flex;align-items:center;gap:8px;">${apvAvatarHtml(name, size, photoPath, options)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
+    return `<div class="apv-person-line">${apvAvatarHtml(name, size, photoPath, options)}<span class="apv-person-name">${escapeHtml(name || '-')}</span></div>`;
 }
 // 2026-09-10, Batch 3A item 4 -- app-wide employee quick-view modal, opened by clicking ANY avatar
 // rendered via apvAvatarHtml(..., {employeeId}) (Process List's Updated By column, Process Detail's
@@ -4716,7 +4709,7 @@ function apvStepDotsHtml(steps) {
 }
 function apvStepGroupHtml(step) {
     const badgeHtml = !step.unlocked
-        ? `<span class="apv-badge" style="background:#f1f5f9;color:#64748b;"><i class="fa-solid fa-lock me-1"></i>${langData['step_locked'] || 'Locked'}</span>`
+        ? `<span class="apv-badge apv-badge--muted"><i class="fa-solid fa-lock me-1"></i>${langData['step_locked'] || 'Locked'}</span>`
         : apvBadgeHtml(apvApproverTone(step.status), apvApproverLabel(step.status));
     const stepLabel = (langData['step_label'] || 'Step {n}').replace('{n}', step.step_order);
     const approversHtml = step.approvers.length

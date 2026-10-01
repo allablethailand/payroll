@@ -411,12 +411,12 @@ function tableElementBodyHtml(el) {
     const borderColor = data.border_color || '#000000';
     const borderWidth = Number(data.border_width) || 1;
     const cells = Array.isArray(data.cells) ? data.cells : [];
-    let html = `<table style="width:100%;height:100%;border-collapse:collapse;">`;
+    let html = `<table class="tpl-preview-table">`;
     for (let r = 0; r < rows; r++) {
         html += '<tr>';
         for (let c = 0; c < cols; c++) {
             const text = escapeHtml((cells[r] && cells[r][c]) || '').replace(/\n/g, '<br>');
-            html += `<td style="border:${borderWidth}px solid ${borderColor};padding:2px 4px;">${text}</td>`;
+            html += `<td style="--cell-bw:${borderWidth}px;--cell-bc:${borderColor};">${text}</td>`;
         }
         html += '</tr>';
     }
@@ -2063,7 +2063,7 @@ function renderPresetMockup(code) {
     }
     const bars = cfg.bars.map(b => {
         const radius = b.box ? '3px' : '1px';
-        return `<span style="position:absolute;left:${b.left}%;top:${b.top}%;width:${b.width}%;height:${b.height}%;background:${b.color};border-radius:${radius};"></span>`;
+        return `<span class="ect-preset-bar" style="--bar-l:${b.left}%;--bar-t:${b.top}%;--bar-w:${b.width}%;--bar-h:${b.height}%;--bar-bg:${b.color};--bar-r:${radius};"></span>`;
     }).join('');
     return `<div class="pst-preset-mock">${bars}</div>`;
 }

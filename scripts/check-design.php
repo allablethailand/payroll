@@ -151,7 +151,7 @@ function designLintLineIgnored(string $line): bool {
 /** Extracts every `attr="value"`/`attr='value'` match for the given attribute name on one line. */
 function designLintExtractAttr(string $line, string $attr): array {
     $values = [];
-    if (preg_match_all('/\b' . $attr . '\s*=\s*(["\'])(.*?)\1/i', $line, $m)) {
+    if (preg_match_all('/(?<![\w-])' . $attr . '\s*=\s*(["\'])(.*?)\1/i', $line, $m)) {
         $values = $m[2];
     }
     return $values;
@@ -240,6 +240,8 @@ function designLintStyleValueExempt(string $value, string $type): bool {
         $val = trim($m[2]);
         if (in_array($prop, $dimensionProps, true)) continue;
         if (preg_match('/^var\(\s*--[a-z0-9-]+\s*(,\s*[^)]+)?\)$/i', $val)) continue;
+        // (e) a custom-property declaration is the sanctioned way to hand a runtime number/colour to a CSS class.
+        if (strpos($prop, '--') === 0) continue;
         return false;
     }
     return true;

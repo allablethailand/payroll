@@ -922,7 +922,7 @@
                     </div>
                     <div class="col-sm-4 mt-3 position-relative">
                         <input type="text" class="form-control autocomplete-address" id="search_address_register" autocomplete="off" data-i18n="map_search_placeholder" placeholder="Search for an address...">
-                        <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none" style="z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
+                        <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none"></div>
                         <input type="hidden" name="master_address_id_register" class="master-address-id-field" id="master_address_id_register">
                     </div>
                 </div>
@@ -975,7 +975,7 @@
                     </div>
                     <div class="col-sm-4 mt-3 position-relative">
                         <input type="text" class="form-control autocomplete-address" id="search_address_contact" autocomplete="off" data-i18n="map_search_placeholder" placeholder="Search for an address...">
-                        <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none" style="z-index: 1050; max-height: 250px; overflow-y: auto;"></div>
+                        <div class="address-suggestions-box list-group position-absolute w-100 mt-1 shadow-sm d-none"></div>
                         <input type="hidden" name="master_address_id_contact" class="master-address-id-field" id="master_address_id_contact">
                     </div>
                 </div>

@@ -96,7 +96,7 @@ function dsRenderCards(statusData) {
                     <div class="settings-info-card-body">
                         <div class="ds-progress-wrap d-none mb-2" data-ds-progress="${type}">
                             <div class="progress" style="height:6px;">
-                                <div class="progress-bar" role="progressbar" style="width:0%; background-color:#FF9900;"></div>
+                                <div class="progress-bar" role="progressbar" style="width:0%;"></div>
                             </div>
                         </div>
                         <div class="d-flex justify-content-between align-items-center">

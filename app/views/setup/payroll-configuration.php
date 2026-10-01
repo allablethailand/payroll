@@ -66,7 +66,7 @@
             </button>
         </li>
     </ul>
-    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0" style="border-top-left-radius:0;border-top-right-radius:0;">
+    <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 rounded-top-0">
         <div class="tab-pane fade show active" id="cycle-pane" role="tabpanel" aria-labelledby="cycle-tab" tabindex="0">
             <div class="mt-5 mb-5">
                 <div class="mt-5 mb-5">
@@ -82,7 +82,7 @@
                                 <th scope="col" style="width: 15%;" data-i18n="table_cutoff">Attendance Cut-off</th>
                                 <th scope="col" style="width: 15%;" data-i18n="table_payment_day">Payment Day</th>
                                 <th scope="col" style="width: 13%;" data-i18n="table_bank_format">Bank Format</th>
-                                <th scope="col" style="width: 8%; text-align: center;"></th>
+                                <th class="text-center" scope="col" style="width: 8%"></th>
                             </tr>
                         </thead>
                         <tbody></tbody>
@@ -103,7 +103,7 @@
                             <th scope="col" style="width: 16%;" data-i18n="col_tax_type">Tax Treatment</th>
                             <th scope="col" style="width: 10%;" data-i18n="col_sso">SSO Cal</th>
                             <th scope="col" style="width: 10%;" data-i18n="col_pf">Provident Fund</th>
-                            <th scope="col" style="width: 4%; text-align: center;"></th>
+                            <th class="text-center" scope="col" style="width: 4%"></th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -120,7 +120,7 @@
                             <th scope="col" style="width: 30%;" data-i18n="col_name">Item Name</th>
                             <th scope="col" style="width: 20%;" data-i18n="col_calc_method">Calculation</th>
                             <th scope="col" style="width: 20%;" data-i18n="col_deduct_type">Tax Deduction Impact</th>
-                            <th scope="col" style="width: 5%; text-align: center;"></th>
+                            <th class="text-center" scope="col" style="width: 5%"></th>
                         </tr>
                     </thead>
                     <tbody></tbody>

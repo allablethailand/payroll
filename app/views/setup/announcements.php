@@ -49,7 +49,7 @@
                 <th scope="col" style="width: 14%;" data-i18n="announcement_recipients">Recipients</th>
                 <th scope="col" style="width: 10%;" data-i18n="announcement_featured">Featured</th>
                 <th scope="col" style="width: 15%;" data-i18n="table_last_updated">Last Updated</th>
-                <th scope="col" style="width: 15%; text-align: center;"></th>
+                <th class="text-center" scope="col" style="width: 15%"></th>
             </tr>
         </thead>
         <tbody></tbody>

@@ -6439,7 +6439,13 @@ html, body {
     display: flex; align-items: center; justify-content: center;
     color: #fff; font-size: 1.1667rem; position: relative; z-index: 2;
     box-shadow: 0 0 0 4px #fff;
+    background: var(--apv-icon-bg, var(--c-text-faint));
 }
+.apv-stage-icon--done { --apv-icon-bg: var(--c-success); }
+.apv-stage-icon--pending { --apv-icon-bg: var(--c-warning); }
+.apv-stage-icon--rejected { --apv-icon-bg: var(--c-danger); }
+.apv-stage-icon--info { --apv-icon-bg: var(--c-info); }
+.apv-stage-icon--muted { --apv-icon-bg: var(--c-text-faint); }
 .apv-stage-line {
     position: absolute; top: 38px; bottom: -30px; left: 18px; width: 2px;
     background: #e5e7eb; z-index: 1;
@@ -6450,7 +6456,13 @@ html, body {
 .apv-badge {
     font-size: 0.9167rem; font-weight: 600; padding: 3px 10px; border-radius: 999px;
     white-space: nowrap;
+    background: var(--c-bg-subtle); color: var(--c-text-muted);
 }
+.apv-badge--done { background: var(--c-success-soft); color: var(--c-success); }
+.apv-badge--pending { background: var(--c-warning-soft); color: var(--c-warning); }
+.apv-badge--rejected { background: var(--c-danger-soft); color: var(--c-danger); }
+.apv-badge--info { background: var(--c-info-soft); color: var(--c-info); }
+.apv-badge--muted { background: var(--c-bg-subtle); color: var(--c-text-muted); }
 .apv-stage-date { font-size: 1rem; color: #9ca3af; margin-top: 3px; }
 .apv-stage-body { margin-top: 8px; }
 .apv-substep {
@@ -11280,7 +11292,9 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     inset: 0 auto 0 0;
     border-radius: 4px;
     transition: width .3s ease;
+    background: var(--bar-color, var(--c-primary));
 }
+.mini-progress-pct { color: var(--bar-color, inherit); }
 
 .tenure-bucket-chip {
     display: inline-block;
@@ -11290,6 +11304,7 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     font-weight: 600;
     color: #fff;
     white-space: nowrap;
+    background: var(--chip-color, var(--c-text-faint));
 }
 .milestone-star {
     color: var(--c-primary);
@@ -12541,3 +12556,24 @@ div.dt-processing {
     border-radius: 10px;
     margin-bottom: .75rem;
 }
+
+/* Round 3 Task 5 -- moved out of inline style="" (rules.md 12.2). */
+.address-suggestions-box {
+    z-index: 1050;
+    max-height: 250px;
+    overflow-y: auto;
+}
+.ds-progress-wrap {
+    display: none;
+}
+
+.po-scope-select { width: auto; margin: 0 auto; }
+.ais-cell-clickable { cursor: pointer; }
+.apv-person-line { display: flex; align-items: center; gap: 8px; }
+.notif-type-icon-flush { margin-right: 0; }
+.hs-date-tile { width: 42px; background: var(--c-bg-subtle); border: 1px solid var(--c-border); }
+.hs-date-month { color: var(--c-primary); font-size: .62rem; line-height: 1.3; }
+.hs-date-day { font-size: 1rem; line-height: 1.2; }
+.tpl-preview-table { width: 100%; height: 100%; border-collapse: collapse; }
+.tpl-preview-table td { border: var(--cell-bw, 1px) solid var(--cell-bc, currentColor); padding: 2px 4px; }
+.ect-preset-bar { position: absolute; left: var(--bar-l); top: var(--bar-t); width: var(--bar-w); height: var(--bar-h); background: var(--bar-bg); border-radius: var(--bar-r); }
