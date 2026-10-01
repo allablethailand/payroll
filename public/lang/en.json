@@ -2582,6 +2582,8 @@
     "pst_group_deduction": "Deduction",
     "pst_group_statutory": "Statutory",
     "pst_group_summary": "Summary",
+    "pst_group_work_summary": "Work Summary",
+    "pst_group_ytd": "Year-to-Date",
     "ect_symbol": "Symbol",
     "ect_shape": "Shape",
     "ect_shape_rectangle": "Rectangle",

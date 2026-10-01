@@ -78,7 +78,13 @@ try {
     // new company_signature ("เพิ่มให้แนบลายเซ็นต์...และเพิ่มใน Item ในการจัดการ Template") +
     // 2026-09-04's new payslip_number (Backlog Phase 11, T061 -- DocumentNumberingModel wired to
     // PaySlipReport, selectable on the canvas as {{payslip_number}}).
-    check('23 field types seeded (20 original + static_text + company_signature + payslip_number)', count($fieldOptions), 23);
+    // 2026-10-01: +20 Dual-Column rows (needs migration 2026-10-01_payslip_dual_column_fields.sql applied).
+    check('43 field types seeded (23 earlier + 20 dual-column tokens)', count($fieldOptions), 43);
+    $fieldCodes = array_column($fieldOptions, 'code');
+    foreach (['status', 'paid_date', 'bank_name', 'bank_account_no', 'income_deduction_table', 'base_salary_rate', 'daily_rate', 'hourly_rate', 'working_days', 'absent_days', 'total_ot_hours', 'late_hours',
+        'ytd_earnings', 'ytd_gross_income', 'ytd_tax', 'ytd_social_security', 'ytd_provident_fund', 'ytd_guarantee_fund', 'ytd_loan_repayment_1', 'ytd_loan_repayment_2'] as $newCode) {
+        checkTrue("field type '{$newCode}' is registered", in_array($newCode, $fieldCodes, true));
+    }
     checkTrue('static_text field type is present', in_array('static_text', array_column($fieldOptions, 'code'), true));
     checkTrue('company_logo/company_signature are element_type=image, everything else is text', (function () use ($fieldOptions) {
         $imageCodes = ['company_logo', 'company_signature'];
@@ -89,8 +95,8 @@ try {
         return true;
     })());
     $presets = $model->presetOptions();
-    check('4 presets available (blank + classic/modern/minimal)', count($presets), 4);
-    foreach (['classic', 'modern', 'minimal'] as $code) {
+    check('6 presets available (blank + classic/modern/minimal + 2 dual-column)', count($presets), 6);
+    foreach (['classic', 'modern', 'minimal', 'dual_column_classic', 'dual_column_modern'] as $code) {
         checkTrue("preset '{$code}' has real elements (th)", count($model->presetPreviewElements($code, 'th')) > 0);
         checkTrue("preset '{$code}' has real elements (en)", count($model->presetPreviewElements($code, 'en')) > 0);
     }
@@ -308,6 +314,59 @@ try {
     check('ytd_summary is "-" when no YTD data is passed', $tokensTh['ytd_summary'], '-');
     $tokensYtd = $renderer->buildTokens('th', $fakeCompany, $fakeRun, $fakeDetail, ['ytd_gross' => 90000.0, 'ytd_deduction' => 6000.0, 'ytd_net' => 84000.0]);
     checkTrue('ytd_summary is a combined formatted string when YTD data IS passed', strpos($tokensYtd['ytd_summary'], '90,000.00') !== false && strpos($tokensYtd['ytd_summary'], '84,000.00') !== false);
+
+    echo "=== Dual-Column payslip: new tokens + fixed-height income/deduction table ===\n";
+    $dualDetail = $fakeDetail;
+    $dualDetail['employee_status'] = 'active';
+    $dualDetail['bank_name_th'] = 'กสิกรไทย';
+    $dualDetail['prorate_days'] = 22;
+    $dualDetail['employee_salary_enc'] = '30000';
+    $dualDetail['salary_type'] = 'monthly';
+    $dualDetail['earning_breakdown'] = [['code' => 'OT', 'name_th' => 'OT', 'amount' => 2000, 'formula' => ['type' => 'ot_multiplier', 'hours' => 6.5]]];
+    $dualDetail['deduction_breakdown'] = [
+        ['code' => 'LATE_DEDUCT', 'name_th' => 'หักมาสาย', 'amount' => 100, 'formula' => ['type' => 'attendance_flat', 'minutes' => 90]],
+        ['code' => 'ABSENT_DEDUCT', 'name_th' => 'หักขาดงาน', 'amount' => 1000, 'formula' => ['type' => 'attendance_flat', 'minutes' => 960]],
+    ];
+    $ytdSlip = ['base' => 90000.0, 'gross' => 96000.0, 'tax' => 1500.0, 'sso' => 2250.0, 'pvd' => 0.0, 'guarantee' => 900.0, 'loan1' => 1500.0, 'loan2' => 0.0];
+    $dt = $renderer->buildTokens('th', $fakeCompany, $fakeRun, $dualDetail, null, $ytdSlip);
+    check('status token = Thai label', $dt['status'], 'ปฏิบัติงาน');
+    check('paid_date is dd/mm/yyyy', $dt['paid_date'], '01/09/2026');
+    check('bank_name picks Thai name', $dt['bank_name'], 'กสิกรไทย');
+    check('bank_account_no is - when employee has none', $dt['bank_account_no'], '-');
+    check('base_salary_rate = employee rate', $dt['base_salary_rate'], '30,000.00');
+    check('daily_rate = rate / 30', $dt['daily_rate'], '1,000.00');
+    check('hourly_rate = daily / 8', $dt['hourly_rate'], '125.00');
+    check('working_days from prorate_days', $dt['working_days'], '22');
+    check('absent_days = 960 min / 480', $dt['absent_days'], '2');
+    check('total_ot_hours from ot formula hours', $dt['total_ot_hours'], '6:30');
+    check('late_hours from 90 late minutes', $dt['late_hours'], '1:30');
+    check('ytd_earnings = base ytd', $dt['ytd_earnings'], '90,000.00');
+    check('ytd_gross_income', $dt['ytd_gross_income'], '96,000.00');
+    check('ytd_guarantee_fund', $dt['ytd_guarantee_fund'], '900.00');
+    check('ytd_loan_repayment_1', $dt['ytd_loan_repayment_1'], '1,500.00');
+    check('ytd tokens are - when no YTD data passed', $renderer->buildTokens('th', $fakeCompany, $fakeRun, $dualDetail, null)['ytd_tax'], '-');
+    $hourlyDetail = array_merge($dualDetail, ['employee_salary_enc' => '150', 'salary_type' => 'hourly']);
+    $ht = $renderer->buildTokens('th', $fakeCompany, $fakeRun, $hourlyDetail, null);
+    check('hourly employee: hourly_rate = own rate', $ht['hourly_rate'], '150.00');
+    check('hourly employee: daily_rate = rate x 8', $ht['daily_rate'], '1,200.00');
+
+    $dualTpl = ['page_size' => 'A4', 'orientation' => 'portrait', 'language' => 'th'];
+    $dualEl = array_merge($baseEl, ['element_type' => 'text', 'content' => '{{income_deduction_table}}', 'pos_x_pct' => 6, 'pos_y_pct' => 30, 'width_pct' => 88, 'height_pct' => 26, 'font_size' => 11, 'text_align' => 'left']);
+    $fewHtml = $renderer->buildHtml($dualTpl, [$dualEl], $fakeCompany, $fakeRun, $fakeDetail, [], null, [], null);
+    $manyDetail = $fakeDetail;
+    $manyDetail['earning_breakdown'] = array_map(fn($i) => ['code' => 'E' . $i, 'name_th' => 'Earn' . $i, 'amount' => 10], range(1, 5));
+    $manyHtml = $renderer->buildHtml($dualTpl, [$dualEl], $fakeCompany, $fakeRun, $manyDetail, [], null, [], null);
+    check('dual table has the same row count with 1 line or 5 lines (padded)', substr_count($fewHtml, '<tr>'), substr_count($manyHtml, '<tr>'));
+    checkTrue('dual table pads to at least 8 body rows + header', substr_count($fewHtml, '<tr>') >= 9);
+    checkTrue('dual table lists earning, deduction and base salary side by side', strpos($fewHtml, 'OT') !== false && strpos($fewHtml, 'Loan') !== false && strpos($fewHtml, '30,000.00') !== false);
+    checkTrue('dual table PDF renders', strpos($renderer->renderPdf($dualTpl, $fewHtml), '%PDF') === 0);
+    foreach (['dual_column_classic', 'dual_column_modern'] as $presetCode) {
+        foreach (['th', 'en'] as $presetLang) {
+            $presetHtml = $renderer->buildHtml(array_merge($dualTpl, ['language' => $presetLang]), $model->presetPreviewElements($presetCode, $presetLang), $fakeCompany, $fakeRun, $dualDetail, [], null, [], null, null, $ytdSlip);
+            checkTrue("preset {$presetCode}/{$presetLang} has no unresolved token left", strpos($presetHtml, '{{') === false);
+            checkTrue("preset {$presetCode}/{$presetLang} renders a PDF", strpos($renderer->renderPdf($dualTpl, $presetHtml), '%PDF') === 0);
+        }
+    }
 
     echo "=== Assign To (department/team/employee scoping, explicit request: \"สามารถ Assign ตั้งค่าให้พนักงาน เป็นรายแผนก รายทีม หรือรายคน หรือใช้งานร่วมกันทั้งหมดก็ได้\") ===\n";
     // Fresh fixtures: a department, a team, and 3 employees -- one in the department only, one in

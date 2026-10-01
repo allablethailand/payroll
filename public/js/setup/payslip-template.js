@@ -262,10 +262,13 @@ const FONT_FAMILY_CSS_STACK = CanvasDesignerCore.FONT_FAMILY_CSS_STACK;
 /* ---------- Field palette (click OR native drag-and-drop onto the canvas), grouped by category --
    master_payslip_field_types.field_group has 7 values (vs Employment Certificate's 3) -- one extra
    group ("document") added specifically for the new static_text field this feature introduced. ---------- */
+// Fields that expand into an itemized table at generate time (PayslipTemplateRenderer::BLOCK_FIELD_KEYS).
+const BLOCK_FIELD_CODES = ['earning_lines_all', 'deduction_lines_all', 'statutory_lines_all', 'income_deduction_table'];
 function paletteIcon(ft) {
     if (ft.element_type === 'image') return 'fa-image';
     if (ft.code === 'static_text') return 'fa-font';
-    if (['earning_lines_all', 'deduction_lines_all', 'statutory_lines_all'].includes(ft.code)) return 'fa-list';
+    if (ft.code === 'income_deduction_table') return 'fa-table-columns';
+    if (BLOCK_FIELD_CODES.includes(ft.code)) return 'fa-list';
     return 'fa-tag';
 }
 const PALETTE_GROUP_META = {
@@ -275,9 +278,11 @@ const PALETTE_GROUP_META = {
     deduction: { icon: 'fa-minus-circle', labelKey: 'pst_group_deduction' },
     statutory: { icon: 'fa-landmark', labelKey: 'pst_group_statutory' },
     summary: { icon: 'fa-calculator', labelKey: 'pst_group_summary' },
+    work_summary: { icon: 'fa-user-clock', labelKey: 'pst_group_work_summary' },
+    ytd: { icon: 'fa-chart-line', labelKey: 'pst_group_ytd' },
     document: { icon: 'fa-file-lines', labelKey: 'ect_group_document' }
 };
-const PALETTE_GROUP_ORDER = ['employee_info', 'company_info', 'earning', 'deduction', 'statutory', 'summary', 'document'];
+const PALETTE_GROUP_ORDER = ['employee_info', 'company_info', 'earning', 'deduction', 'statutory', 'summary', 'work_summary', 'ytd', 'document'];
 function renderPalette() {
     const $wrap = $('#pstFieldPalette').empty();
     const groups = {};
@@ -321,12 +326,13 @@ function addElementFromPalette(code, elementType, posX, posY) {
         // PayslipTemplateRenderer expands them into a real itemized table at generate time; on the
         // canvas they're an ordinary bound {{token}} text element like any other, no special JS
         // handling needed (isBoundFieldElement() already locks them the same way).
-        const isBlockField = ['earning_lines_all', 'deduction_lines_all', 'statutory_lines_all'].includes(code);
+        const isBlockField = BLOCK_FIELD_CODES.includes(code);
+        const isDualTable = code === 'income_deduction_table';
         el = Object.assign(emptyElementBase(), {
             key: newElementKey(), id: null, element_type: 'text', field_key: null, image_asset_id: null,
             content: code === 'static_text' ? '' : `{{${code}}}`,
             pos_x_pct: clampPst(posX, 0, 60), pos_y_pct: clampPst(posY, 0, 94),
-            width_pct: isBlockField ? 60 : 40, height_pct: isBlockField ? 18 : 6
+            width_pct: isDualTable ? 88 : (isBlockField ? 60 : 40), height_pct: isDualTable ? 26 : (isBlockField ? 18 : 6)
         });
     }
     pushUndo();
@@ -2025,6 +2031,36 @@ function loadPresets() {
     });
 }
 const PRESET_MOCKUPS = {
+    dual_column_classic: { bars: [
+        { left: 6, top: 3, width: 88, height: 5, color: 'var(--hex-333333)' },
+        { left: 6, top: 15, width: 44, height: 3, color: 'var(--hex-bbbbbb)' },
+        { left: 52, top: 15, width: 42, height: 3, color: 'var(--hex-bbbbbb)' },
+        { left: 6, top: 23, width: 44, height: 3, color: 'var(--hex-bbbbbb)' },
+        { left: 52, top: 23, width: 42, height: 3, color: 'var(--hex-bbbbbb)' },
+        { left: 6, top: 32, width: 43, height: 26, color: 'var(--hex-eeeeee)', box: true },
+        { left: 51, top: 32, width: 43, height: 26, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 63, width: 88, height: 5, color: 'var(--hex-333333)' },
+        { left: 6, top: 75, width: 44, height: 8, color: 'var(--hex-eeeeee)', box: true },
+        { left: 52, top: 75, width: 42, height: 8, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 89, width: 44, height: 8, color: 'var(--hex-eeeeee)', box: true },
+        { left: 52, top: 89, width: 42, height: 8, color: 'var(--hex-eeeeee)', box: true },
+    ] },
+    dual_column_modern: { bars: [
+        { left: 6, top: 3, width: 14, height: 8, color: 'var(--hex-e2e2e2)', box: true },
+        { left: 23, top: 3, width: 60, height: 5, color: 'var(--hex-333333)' },
+        { left: 6, top: 12, width: 88, height: 1, color: 'var(--hex-ff9900)' },
+        { left: 6, top: 15, width: 44, height: 3, color: 'var(--hex-bbbbbb)' },
+        { left: 52, top: 15, width: 42, height: 3, color: 'var(--hex-bbbbbb)' },
+        { left: 6, top: 23, width: 44, height: 3, color: 'var(--hex-bbbbbb)' },
+        { left: 52, top: 23, width: 42, height: 3, color: 'var(--hex-bbbbbb)' },
+        { left: 6, top: 32, width: 43, height: 26, color: 'var(--hex-eeeeee)', box: true },
+        { left: 51, top: 32, width: 43, height: 26, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 63, width: 88, height: 5, color: 'var(--hex-ff9900)' },
+        { left: 6, top: 75, width: 44, height: 8, color: 'var(--hex-eeeeee)', box: true },
+        { left: 52, top: 75, width: 42, height: 8, color: 'var(--hex-eeeeee)', box: true },
+        { left: 6, top: 89, width: 44, height: 8, color: 'var(--hex-eeeeee)', box: true },
+        { left: 52, top: 89, width: 42, height: 8, color: 'var(--hex-eeeeee)', box: true },
+    ] },
     classic: { bars: [
         { left: 8, top: 3, width: 60, height: 6, color: 'var(--hex-333333)' },
         { left: 8, top: 18, width: 40, height: 4, color: 'var(--hex-bbbbbb)' },

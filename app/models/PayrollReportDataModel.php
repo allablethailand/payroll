@@ -248,6 +248,8 @@ class PayrollReportDataModel {
                     e.profile_photo_path,
                     e.tax_id_no, e.sso_no, e.id_card_no, e.key_version, e.department_id, e.branch_id, e.position_id,
                     e.bank_id, e.bank_account_no, e.bank_account_name,
+                    -- employee's own salary rate/type (NOT d.base_salary_amount, already prorated) -- feeds the payslip daily/hourly rate tokens
+                    e.salary_type, e.employee_status, e.base_salary_amount AS employee_salary_enc,
                     e.payment_method_id, mpm.code AS payment_method_code,
                     e.address_line_1_register, e.address_line_2_register,
                     dep.department_name_th, dep.department_name_en,
@@ -410,18 +412,20 @@ class PayrollReportDataModel {
         ];
     }
 
-    /** Year-to-date base salary / gross / PIT / SSO / PVD (employee share) for the Monthly Report slip's Yearly Summary. */
+    /** Year-to-date base salary / gross / PIT / SSO / PVD (employee share) for the Monthly Report slip's Yearly Summary,
+     *  plus guarantee-deposit and the first two loan-repayment deduction codes for the Dual-Column payslip tokens. */
     public function getYtdSlipTotals(int $compId, int $employeeId, string $uptoDate, array $allowedStates): array {
         $placeholders = implode(',', array_fill(0, count($allowedStates), '?'));
-        $sql = "SELECT d.base_salary_amount, d.gross_amount, d.statutory_breakdown
+        $sql = "SELECT d.base_salary_amount, d.gross_amount, d.statutory_breakdown, d.deduction_breakdown
                 FROM `payroll_run_details` d
                 JOIN `payroll_runs` r ON r.id = d.run_id
                 WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
                     AND YEAR(r.payment_date) = ? AND r.payment_date <= ? AND d.employee_id = ?";
         $stmt = $this->db->prepare($sql);
         $stmt->execute(array_merge([$compId], $allowedStates, [(int)substr($uptoDate, 0, 4), $uptoDate, $employeeId]));
-        $out = ['base' => 0.0, 'gross' => 0.0, 'tax' => 0.0, 'sso' => 0.0, 'pvd' => 0.0];
+        $out = ['base' => 0.0, 'gross' => 0.0, 'tax' => 0.0, 'sso' => 0.0, 'pvd' => 0.0, 'guarantee' => 0.0, 'loan1' => 0.0, 'loan2' => 0.0];
         $byCode = ['TH_PIT' => 'tax', 'TH_SSO' => 'sso', 'TH_PVD' => 'pvd'];
+        $loanByCode = [];
         foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
             $out['base'] += (float)$row['base_salary_amount'];
             $out['gross'] += (float)$row['gross_amount'];
@@ -430,7 +434,21 @@ class PayrollReportDataModel {
                     $out[$byCode[$item['code']]] += (float)($item['employee_amount'] ?? 0);
                 }
             }
+            foreach (json_decode((string)$row['deduction_breakdown'], true) ?? [] as $line) {
+                $code = (string)($line['code'] ?? '');
+                $hay = $code . ' ' . (string)($line['name_th'] ?? '');
+                if (preg_match('/DEPOSIT|เงินประกัน/iu', $hay)) {
+                    $out['guarantee'] += (float)($line['amount'] ?? 0);
+                } elseif (preg_match('/LOAN|เงินกู้/iu', $hay)) {
+                    $loanByCode[$code] = ($loanByCode[$code] ?? 0.0) + (float)($line['amount'] ?? 0);
+                }
+            }
         }
+        // loan 1/2 = the first two distinct loan codes by code order, so a slip's slot is stable across months
+        ksort($loanByCode);
+        $loans = array_values($loanByCode);
+        $out['loan1'] = $loans[0] ?? 0.0;
+        $out['loan2'] = $loans[1] ?? 0.0;
         return $out;
     }
 
