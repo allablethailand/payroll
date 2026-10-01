@@ -534,4 +534,144 @@ class AnnualIncomeSummaryModel {
         }
         return $out;
     }
+
+    /**
+     * Annual figures for ONE employee in a calendar tax year: this system's finalized runs paid in the year plus the
+     * opening balance imported for a mid-year go-live (employee_ytd_opening_balances). Feeds the 50 Tawi.
+     *
+     * Keys: sys_* (runs here), ytd_* (opening balance, 0 when none), final_* (sys + ytd) for gross/tax/sso/pvd, plus
+     * has_ytd_included, ytd_as_of_date, ytd_periods_paid, sys_run_count. gross is the TAXABLE gross
+     * (COALESCE(taxable_gross_amount, gross_amount)) so it sits on the same basis as the imported ytd_taxable_gross.
+     * Returns [] when the employee does not exist.
+     * @return array<string, mixed>
+     */
+    public function getEmployeeAnnualSummary(int $empId, int $taxYear): array {
+        $stmt = $this->db->prepare("SELECT comp_id FROM employees WHERE id = ? AND deleted_at IS NULL");
+        $stmt->execute([$empId]);
+        $compId = $stmt->fetchColumn();
+        if ($compId === false) {
+            return [];
+        }
+        $rows = $this->annualRows((int)$compId, $taxYear, $empId);
+        return $rows[0] ?? [];
+    }
+
+    /**
+     * Same figures for every employee of a company who has system runs or an opening balance in the tax year
+     * (feeds the P.N.D.1 Kor). Takes $compId explicitly: this model never reads the session, and a missing tenant would leak across companies.
+     * @return array{tax_year:int, employees: array<int, array<string,mixed>>, totals: array<string,mixed>}
+     */
+    public function getCompanyAnnualSummary(int $compId, int $taxYear): array {
+        $employees = $this->annualRows($compId, $taxYear, null);
+        $totals = $this->zeroAnnual();
+        foreach ($employees as $e) {
+            foreach (self::ANNUAL_AMOUNT_KEYS as $k) {
+                $totals[$k] = round($totals[$k] + $e[$k], 2);
+            }
+            $totals['sys_run_count'] += $e['sys_run_count'];
+            $totals['has_ytd_included'] = $totals['has_ytd_included'] || $e['has_ytd_included'];
+        }
+        $totals['employee_count'] = count($employees);
+        return ['tax_year' => $taxYear, 'employees' => $employees, 'totals' => $totals];
+    }
+
+    private const ANNUAL_AMOUNT_KEYS = [
+        'sys_gross', 'sys_tax', 'sys_sso', 'sys_pvd', 'ytd_gross', 'ytd_tax', 'ytd_sso', 'ytd_pvd',
+        'final_gross', 'final_tax', 'final_sso', 'final_pvd',
+    ];
+
+    private function zeroAnnual(): array {
+        return array_fill_keys(self::ANNUAL_AMOUNT_KEYS, 0.0) + ['sys_run_count' => 0, 'has_ytd_included' => false, 'ytd_as_of_date' => null, 'ytd_periods_paid' => null];
+    }
+
+    /** employee_ytd_opening_balances is optional until its migration is applied: without it every employee simply has no opening balance. */
+    private function ytdSource(): string {
+        try {
+            $this->db->query("SELECT 1 FROM `employee_ytd_opening_balances` LIMIT 0")->closeCursor();
+            return '`employee_ytd_opening_balances`';
+        } catch (PDOException $e) {
+            if ($e->getCode() !== '42S02') {
+                throw $e;
+            }
+            return "(SELECT 0 AS id, 0 AS comp_id, 0 AS employee_id, 0 AS tax_year, NULL AS as_of_date, 0 AS periods_paid, 0 AS ytd_taxable_gross,
+                0 AS ytd_pit_withheld, NULL AS ytd_sso_employee, NULL AS ytd_pvd_employee FROM DUAL WHERE 1 = 0)";
+        }
+    }
+
+    /** @return array<int, array<string,mixed>> one row per employee, in employee_no order */
+    private function annualRows(int $compId, int $taxYear, ?int $employeeId): array {
+        $placeholders = implode(',', array_fill(0, count(self::ALLOWED_STATES), '?'));
+        $dateFrom = sprintf('%04d-01-01', $taxYear);
+        $dateTo = sprintf('%04d-12-31', $taxYear);
+        $runWhere = "r.comp_id = ? AND r.status = 'active' AND r.deleted_at IS NULL AND r.state IN ({$placeholders}) AND r.payment_date >= ? AND r.payment_date <= ?";
+        $runParams = array_merge([$compId], self::ALLOWED_STATES, [$dateFrom, $dateTo]);
+
+        $sql = "SELECT e.id AS employee_id, e.employee_no, e.name_th, e.surname_th, e.name_en, e.surname_en,
+                    COALESCE(s.sys_gross, 0) AS sys_gross, COALESCE(s.run_count, 0) AS sys_run_count,
+                    y.id AS ytd_id, y.as_of_date, y.periods_paid, y.ytd_taxable_gross, y.ytd_pit_withheld, y.ytd_sso_employee, y.ytd_pvd_employee
+                FROM employees e
+                LEFT JOIN (
+                    SELECT d.employee_id, SUM(COALESCE(d.taxable_gross_amount, d.gross_amount)) AS sys_gross, COUNT(*) AS run_count
+                    FROM payroll_run_details d INNER JOIN payroll_runs r ON r.id = d.run_id
+                    WHERE {$runWhere}
+                    GROUP BY d.employee_id
+                ) s ON s.employee_id = e.id
+                LEFT JOIN " . $this->ytdSource() . " y ON y.employee_id = e.id AND y.comp_id = e.comp_id AND y.tax_year = ?
+                WHERE e.comp_id = ? AND e.deleted_at IS NULL"
+            . ($employeeId !== null ? " AND e.id = ?" : " AND (s.employee_id IS NOT NULL OR y.id IS NOT NULL)")
+            . " ORDER BY e.employee_no, e.id";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array_merge($runParams, [$taxYear, $compId], $employeeId !== null ? [$employeeId] : []));
+
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+            $row = $this->zeroAnnual();
+            $row['employee_id'] = (int)$r['employee_id'];
+            foreach (['employee_no', 'name_th', 'surname_th', 'name_en', 'surname_en'] as $k) {
+                $row[$k] = $r[$k];
+            }
+            $row['tax_year'] = $taxYear;
+            $row['sys_gross'] = (float)$r['sys_gross'];
+            $row['sys_run_count'] = (int)$r['sys_run_count'];
+            if ($r['ytd_id'] !== null) {
+                $row['has_ytd_included'] = true;
+                $row['ytd_as_of_date'] = $r['as_of_date'];
+                $row['ytd_periods_paid'] = (int)$r['periods_paid'];
+                $row['ytd_gross'] = (float)$r['ytd_taxable_gross'];
+                $row['ytd_tax'] = (float)$r['ytd_pit_withheld'];
+                $row['ytd_sso'] = (float)($r['ytd_sso_employee'] ?? 0);
+                $row['ytd_pvd'] = (float)($r['ytd_pvd_employee'] ?? 0);
+            }
+            $out[(int)$r['employee_id']] = $row;
+        }
+        if (!$out) {
+            return [];
+        }
+
+        // Statutory amounts live in statutory_breakdown JSON, summed PHP-side like the rest of this class (no in-SQL JSON functions).
+        $stmt = $this->db->prepare("SELECT d.employee_id, d.statutory_breakdown FROM payroll_run_details d INNER JOIN payroll_runs r ON r.id = d.run_id
+            WHERE {$runWhere}" . ($employeeId !== null ? " AND d.employee_id = ?" : ""));
+        $stmt->execute(array_merge($runParams, $employeeId !== null ? [$employeeId] : []));
+        $codeToKey = ['TH_PIT' => 'sys_tax', 'TH_SSO' => 'sys_sso', 'TH_PVD' => 'sys_pvd'];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $d) {
+            $empId = (int)$d['employee_id'];
+            if (!isset($out[$empId])) {
+                continue;
+            }
+            foreach (json_decode((string)$d['statutory_breakdown'], true) ?? [] as $item) {
+                $key = $codeToKey[$item['code'] ?? ''] ?? null;
+                if ($key !== null) {
+                    $out[$empId][$key] += (float)($item['employee_amount'] ?? 0);
+                }
+            }
+        }
+        foreach ($out as &$row) {
+            foreach (['gross', 'tax', 'sso', 'pvd'] as $f) {
+                $row["sys_{$f}"] = round($row["sys_{$f}"], 2);
+                $row["final_{$f}"] = round($row["sys_{$f}"] + $row["ytd_{$f}"], 2);
+            }
+        }
+        unset($row);
+        return array_values($out);
+    }
 }
