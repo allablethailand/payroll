@@ -70,8 +70,8 @@ declare(strict_types=1);
 class SyncPayResolver {
     private PDO $db;
 
-    private const STANDARD_WORKING_DAYS_PER_MONTH = 30.0;
-    private const STANDARD_HOURS_PER_DAY = 8.0;
+    public const STANDARD_WORKING_DAYS_PER_MONTH = 30.0;
+    public const STANDARD_HOURS_PER_DAY = 8.0;
 
     /** payroll_sync_items column => master_ot_scope_types.code */
     private const OT_SCOPE_COLUMNS = [

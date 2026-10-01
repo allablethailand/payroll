@@ -152,7 +152,15 @@ class PaySlipReport implements ReportGeneratorInterface {
                     break;
                 }
             }
-            $content = (new PayslipTemplateRenderer())->renderForRun($compId, $template, $template['elements'], $company ?? [], $run, $detail, $ytd);
+            // The 8 Dual-Column ytd_* tokens (everything except ytd_summary) share one query, run only when a text element uses one.
+            $ytdSlip = null;
+            foreach ($template['elements'] as $el) {
+                if (($el['element_type'] ?? '') === 'text' && preg_match('/\{\{ytd_(?!summary\})/', (string)($el['content'] ?? ''))) {
+                    $ytdSlip = $dataModel->getYtdSlipTotals($compId, (int)$detail['employee_id'], (string)$run['payment_date'], self::ALLOWED_STATES);
+                    break;
+                }
+            }
+            $content = (new PayslipTemplateRenderer())->renderForRun($compId, $template, $template['elements'], $company ?? [], $run, $detail, $ytd, $ytdSlip);
         } else {
             $earningRows = '';
             foreach ($detail['earning_breakdown'] as $line) {
