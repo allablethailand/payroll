@@ -7064,8 +7064,8 @@ html, body {
     display: flex;
     align-items: center;
     gap: 1rem;
-    background: var(--app-surface-bg);
-    border: 1px solid var(--app-border);
+    background: var(--c-bg-surface);
+    border: 1px solid var(--c-border-default);
     border-left: 4px solid var(--c-primary);
     border-radius: 8px;
     padding: 1rem 1.3rem;
@@ -7086,13 +7086,13 @@ html, body {
     min-width: 0;
 }
 .page-header-card-title {
-    color: var(--app-heading);
+    color: var(--c-text-primary);
     font-weight: 700;
     margin: 0;
     letter-spacing: -.005em;
 }
 .page-header-card-desc {
-    color: var(--app-text-muted);
+    color: var(--c-text-muted);
     margin: .2rem 0 0;
 }
 /* 2026-09-07, Dashboard redesign: the old "powered by Origami" brandmark that used to occupy this
