@@ -3148,5 +3148,6 @@
     "import_rollback_title": "ย้อนกลับการนำเข้านี้หรือไม่?",
     "import_rollback_message": "รายการที่นำเข้าจะถูกลบออกจากรอบเงินเดือนฉบับร่าง แล้วคำนวณรอบนั้นใหม่",
     "import_rollback_done": "ย้อนกลับแล้ว",
-    "import_action_rollback": "ย้อนกลับ"
+    "import_action_rollback": "ย้อนกลับ",
+    "import_entity_attendance_summary": "ข้อมูลสรุปเวลาทำงาน/OT ประจำงวด (Attendance Summary)"
 }

@@ -17,9 +17,11 @@ require_once __DIR__ . '/../services/import/ImportFileParser.php';
  */
 class ImportController extends Controller {
     /** employee_import has its own importer (EmployeeImporter) and extra permission gate. */
-    private const STAGING_ENTITY_TYPES = ['attendance', 'leave', 'overtime', 'employee_import', 'ytd_opening', 'adhoc_item'];
-    // ytd_opening changes the tax withheld on every later period, so it needs the permission that gates running payroll.
-    private const ENTITY_EXTRA_PERMISSION = ['employee_import' => 'employee.edit', 'ytd_opening' => 'payroll_run.process', 'adhoc_item' => 'payroll_run.process'];
+    private const STAGING_ENTITY_TYPES = ['attendance', 'leave', 'overtime', 'employee_import', 'ytd_opening', 'adhoc_item', 'attendance_summary'];
+    // ytd_opening and the two payroll-run imports change what a run pays, so they need the permission that gates editing a run.
+    private const ENTITY_EXTRA_PERMISSION = ['employee_import' => 'employee.edit', 'ytd_opening' => 'payroll_run.process', 'adhoc_item' => 'payroll_run.process', 'attendance_summary' => 'payroll_run.process'];
+    /** entity type => PayrollRunModel method that deletes one committed batch of that import */
+    private const ROLLBACK_METHOD = ['adhoc_item' => 'rollbackManualLineImportBatch', 'attendance_summary' => 'rollbackAttendanceOverrideImportBatch'];
     private const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
     private ImportStagingModel $staging;
@@ -112,6 +114,8 @@ class ImportController extends Controller {
             return [
                 'id' => (int)$r['id'], 'performed_at' => $r['performed_at'], 'action' => $r['action'], 'outcome' => $r['outcome'], 'entity_type' => $r['entity_type'],
                 'performed_by_name_th' => $r['performed_by_name_th'], 'performed_by_name_en' => $r['performed_by_name_en'],
+                'can_rollback' => $r['action'] === 'commit' && $r['outcome'] === 'success' && isset(self::ROLLBACK_METHOD[$r['entity_type']])
+                    && !empty($payload['sync_batch_id']) && !isset($rolledBack[(int)$payload['sync_batch_id']]),
                 'sync_batch_id' => $payload['sync_batch_id'] ?? null, 'rolled_back' => !empty($payload['sync_batch_id']) && isset($rolledBack[(int)$payload['sync_batch_id']]),
                 'file_name' => $payload['file_name'] ?? null, 'total' => $payload['total'] ?? null, 'success' => $payload['success'] ?? null, 'failed' => $payload['failed'] ?? null,
                 'ip_address' => $r['ip_address'], 'browser' => trim(($ua['browser_name'] ?? '') . ' ' . ($ua['browser_version'] ?? '')) ?: null, 'os' => $ua['os_name'] ?? null,
@@ -302,18 +306,20 @@ class ImportController extends Controller {
         $this->json(['status' => true, 'total' => $result['total'], 'success' => $result['success'], 'error' => $result['error'], 'sync_batch_id' => $result['batch_id'] ?? null]);
     }
 
-    /** POST json: sync_batch_id. Undoes a committed ad-hoc item import: removes its manual lines from the (still draft) runs and recalculates them. */
+    /** POST json: sync_batch_id. Undoes a committed payroll-run import (ad-hoc items or attendance summary): removes what it wrote from the (still draft) runs and recalculates them. */
     public function rollback() {
         $body = $this->jsonBody();
         $syncBatchId = (int)($body['sync_batch_id'] ?? 0);
         $compId = (int)getCompId();
-        if (!$this->requireImportAccess('adhoc_item')) return;
-        $stmt = (Database::getInstance()->pdo)->prepare("SELECT id FROM `sync_batches` WHERE id = :id AND comp_id = :c AND source = 'import' AND entity_type = 'adhoc_item'");
+        $stmt = (Database::getInstance()->pdo)->prepare("SELECT entity_type FROM `sync_batches` WHERE id = :id AND comp_id = :c AND source = 'import'");
         $stmt->execute([':id' => $syncBatchId, ':c' => $compId]);
-        if ($syncBatchId <= 0 || !$stmt->fetch()) { $this->fail('Import batch not found.'); return; }
+        $entityType = $syncBatchId > 0 ? $stmt->fetchColumn() : false;
+        if ($entityType === false || !isset(self::ROLLBACK_METHOD[$entityType])) { $this->fail('Import batch not found.'); return; }
+        if (!$this->requireImportAccess($entityType)) return;
         $isAdmin = ($_SESSION['user']['role'] ?? '') === 'admin';
-        $result = (new PayrollRunModel())->rollbackManualLineImportBatch($syncBatchId, $compId, $this->userId(), $isAdmin);
-        $this->log($compId, 'adhoc_item', 'rollback', [
+        $method = self::ROLLBACK_METHOD[$entityType];
+        $result = (new PayrollRunModel())->$method($syncBatchId, $compId, $this->userId(), $isAdmin);
+        $this->log($compId, $entityType, 'rollback', [
             'sync_batch_id' => $syncBatchId, 'lines_removed' => $result['lines_removed'] ?? 0, 'runs_recalculated' => $result['runs_recalculated'] ?? 0, 'error' => $result['message'] ?? null,
         ], !empty($result['status']), $syncBatchId);
         $this->json($result);

@@ -4,6 +4,7 @@ require_once __DIR__ . '/ImportFileParser.php';
 require_once __DIR__ . '/EmployeeImporter.php';
 require_once __DIR__ . '/YtdImporter.php';
 require_once __DIR__ . '/AdHocItemImportEntity.php';
+require_once __DIR__ . '/AttendanceSummaryImportEntity.php';
 require_once __DIR__ . '/../sync/MasterDataSyncRegistry.php';
 require_once __DIR__ . '/../sync/TransactionDataSyncRegistry.php';
 require_once __DIR__ . '/../../models/SyncBatchModel.php';
@@ -40,6 +41,9 @@ class ImportService {
         }
         if ($entityType === 'adhoc_item') {
             return new AdHocItemImportEntity($this->db);
+        }
+        if ($entityType === 'attendance_summary') {
+            return new AttendanceSummaryImportEntity($this->db);
         }
         $master = (new MasterDataSyncRegistry($this->db))->get($entityType);
         if ($master) {

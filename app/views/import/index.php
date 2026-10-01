@@ -30,7 +30,7 @@
             <form id="impUploadForm" class="row g-3 mt-0" novalidate>
                 <div class="col-md-4">
                     <label class="form-label" for="impEntityType" data-i18n="import_entity_type">Data type</label>
-                    <select class="form-select" id="impEntityType" data-option-keys="<?=htmlspecialchars(implode(',', array_map(fn($t) => ['employee_import' => 'import_entity_employees', 'ytd_opening' => 'import_entity_ytd', 'adhoc_item' => 'import_entity_adhoc'][$t] ?? $t, $entityTypes)))?>" data-option-values="<?=htmlspecialchars(implode(',', $entityTypes))?>"></select>
+                    <select class="form-select" id="impEntityType" data-option-keys="<?=htmlspecialchars(implode(',', array_map(fn($t) => ['employee_import' => 'import_entity_employees', 'ytd_opening' => 'import_entity_ytd', 'adhoc_item' => 'import_entity_adhoc', 'attendance_summary' => 'import_entity_attendance_summary'][$t] ?? $t, $entityTypes)))?>" data-option-values="<?=htmlspecialchars(implode(',', $entityTypes))?>"></select>
                 </div>
                 <div class="col-md-8">
                     <label class="form-label" for="impFile" data-i18n="import_file">File (.csv, .xlsx)</label>

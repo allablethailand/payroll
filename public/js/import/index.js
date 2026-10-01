@@ -245,7 +245,7 @@ $('#impDiscard, #impWizardClose').on('click', impRequestClose);
 
 // Only a successful commit of an ad-hoc item import that has not been rolled back yet can be undone.
 function impLogActionsHtml(row) {
-    if (row.action === 'commit' && row.outcome === 'success' && row.entity_type === 'adhoc_item' && row.sync_batch_id && !row.rolled_back) {
+    if (row.can_rollback) {
         return `<button type="button" class="btn btn-link btn-circle-action imp-rollback" data-batch="${Number(row.sync_batch_id)}" title="${escapeAttr(impT('import_rollback', 'Roll back'))}"><i class="fa-solid fa-rotate-left"></i></button>`;
     }
     return row.rolled_back ? escapeAttr(impT('import_rolled_back', 'Rolled back')) : '';
@@ -289,7 +289,7 @@ function impInitLogTable() {
             columns: [
                 { data: 'performed_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => formatDisplayDateTime(d) } },
                 { data: null, render: (d, t, row) => escapeAttr((currentLang === 'th' ? row.performed_by_name_th : row.performed_by_name_en) || '-') },
-                { data: 'entity_type', render: d => escapeAttr(impT({ employee_import: 'import_entity_employees', ytd_opening: 'import_entity_ytd', adhoc_item: 'import_entity_adhoc' }[d] || d, d)) },
+                { data: 'entity_type', render: d => escapeAttr(impT({ employee_import: 'import_entity_employees', ytd_opening: 'import_entity_ytd', adhoc_item: 'import_entity_adhoc', attendance_summary: 'import_entity_attendance_summary' }[d] || d, d)) },
                 { data: 'action', render: d => escapeAttr(impT('import_action_' + d, d)) },
                 { data: 'outcome', render: { display: d => statusBadgeHtml(d, 'import_outcome'), sort: d => d, filter: d => impT('import_outcome_' + d, d) } },
                 { data: 'file_name', render: d => escapeAttr(d || '-') },

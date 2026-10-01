@@ -34,7 +34,7 @@ function check(string $label, $actual, $expected): void {
     }
 }
 function errorKey(callable $fn): ?string {
-    try { $fn(); } catch (AdHocItemValidationException $e) { return $e->getErrorKey(); }
+    try { $fn(); } catch (ImportRowValidationException $e) { return $e->getErrorKey(); }
     return null;
 }
 

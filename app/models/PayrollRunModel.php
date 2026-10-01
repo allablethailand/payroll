@@ -7583,6 +7583,21 @@ class PayrollRunModel {
         if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
+        $written = $this->writeAttendanceOverride($runId, $compId, $employeeId, $fields, $note, $userId);
+        if (!$written['status']) {
+            return $written;
+        }
+        return $this->recalculate($runId, $compId, $userId, $isAdmin);
+    }
+
+    /**
+     * attendanceOverrideSave() minus the permission check and minus the recalculation: validates (draft run, employee not verified, numbers >= 0)
+     * and writes the override row with its audit note and history. With $importBatchId (the Data Import, entity attendance_summary) it
+     * only INSERTs, tags the row with the batch, and refuses an employee that already has an override; the importer recalculates once
+     * afterwards and the caller owns the permission gate.
+     * @return array{status:bool, message?:string}
+     */
+    public function writeAttendanceOverride(int $runId, int $compId, int $employeeId, array $fields, ?string $note, int $userId, ?int $importBatchId = null): array {
         $run = $this->get($runId, $compId);
         if (!$run) {
             return ['status' => false, 'message' => 'Record not found.'];
@@ -7651,6 +7666,11 @@ class PayrollRunModel {
                 $fieldBound[":{$field}"] = $value;
             }
 
+            if ($importBatchId !== null && $existingId) {
+                // The Data Import only ever creates rows, so a batch can be undone by deleting its own rows.
+                if ($own && $this->db->inTransaction()) { $this->db->rollBack(); }
+                return ['status' => false, 'message' => 'This employee already has an attendance override on this run.'];
+            }
             if ($existingId) {
                 $setSql = implode(', ', array_map(fn($f) => "{$f} = :{$f}", self::ATTENDANCE_OVERRIDE_FIELDS));
                 $this->db->prepare("UPDATE `payroll_run_sync_item_overrides` SET {$setSql}, note = :note, updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id")
@@ -7658,9 +7678,11 @@ class PayrollRunModel {
             } else {
                 $cols = implode(', ', self::ATTENDANCE_OVERRIDE_FIELDS);
                 $placeholders = implode(', ', array_map(fn($f) => ":{$f}", self::ATTENDANCE_OVERRIDE_FIELDS));
-                $this->db->prepare("INSERT INTO `payroll_run_sync_item_overrides` (run_id, employee_id, {$cols}, note, created_by)
-                    VALUES (:run_id, :employee_id, {$placeholders}, :note, :created_by)")
-                    ->execute(array_merge($fieldBound, [':run_id' => $runId, ':employee_id' => $employeeId, ':created_by' => $userId]));
+                $batchCol = $importBatchId !== null ? ', import_batch_id' : '';
+                $batchVal = $importBatchId !== null ? ', :import_batch_id' : '';
+                $this->db->prepare("INSERT INTO `payroll_run_sync_item_overrides` (run_id, employee_id, {$cols}, note, created_by{$batchCol})
+                    VALUES (:run_id, :employee_id, {$placeholders}, :note, :created_by{$batchVal})")
+                    ->execute(array_merge($fieldBound, [':run_id' => $runId, ':employee_id' => $employeeId, ':created_by' => $userId], $importBatchId !== null ? [':import_batch_id' => $importBatchId] : []));
             }
 
             $summary = implode(', ', array_filter(array_map(
@@ -7691,8 +7713,69 @@ class PayrollRunModel {
             return ['status' => false, 'message' => 'Database operation failed.'];
         }
 
-        return $this->recalculate($runId, $compId, $userId, $isAdmin);
+        return ['status' => true];
     }
+
+    /**
+     * Undoes one committed attendance-summary import batch: deletes every payroll_run_sync_item_overrides row tagged with
+     * $importBatchId and recalculates each affected run once. All-or-nothing, like rollbackManualLineImportBatch(): if any row sits on a
+     * run that is no longer a draft, or whose employee is verified, nothing is touched. The caller owns the permission gate.
+     * @return array{status:bool, message?:string, lines_removed?:int, runs_recalculated?:int}
+     */
+    public function rollbackAttendanceOverrideImportBatch(int $importBatchId, int $compId, int $userId, bool $isAdmin): array {
+        $stmt = $this->db->prepare("SELECT o.id, o.run_id, o.employee_id, o.ot_req_working_day_hrs, o.ot_req_weekend_hrs, o.ot_req_holiday_hrs,
+                o.trip_allowance, o.late_mins, o.absent_days, o.leave_without_pay_days, e.employee_no, r.state
+            FROM `payroll_run_sync_item_overrides` o
+            JOIN `payroll_runs` r ON r.id = o.run_id
+            JOIN `employees` e ON e.id = o.employee_id
+            WHERE o.import_batch_id = :b AND r.comp_id = :c");
+        $stmt->execute([':b' => $importBatchId, ':c' => $compId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (!$rows) {
+            return ['status' => false, 'message' => 'No rows from this import remain to roll back.'];
+        }
+        foreach ($rows as $row) {
+            if ($row['state'] !== 'draft') {
+                return ['status' => false, 'message' => 'Only draft payroll runs can be rolled back -- a run this import wrote to has moved on. Nothing was changed.'];
+            }
+            if ($this->isEmployeeVerifiedForRun((int)$row['run_id'], (int)$row['employee_id'])) {
+                return ['status' => false, 'message' => 'An employee on this import is verified for the run and cannot be edited. Unverify first. Nothing was changed.'];
+            }
+        }
+        $own = !$this->db->inTransaction();
+        if ($own) { $this->db->beginTransaction(); }
+        try {
+            $del = $this->db->prepare("DELETE FROM `payroll_run_sync_item_overrides` WHERE id = :id AND import_batch_id = :b");
+            $runIds = [];
+            foreach ($rows as $row) {
+                $del->execute([':id' => $row['id'], ':b' => $importBatchId]);
+                $runId = (int)$row['run_id'];
+                $runIds[$runId] = true;
+                $this->logAudit($runId, 'draft', 'draft', 'attendance_override_remove', $userId,
+                    "Employee {$row['employee_no']}: all fields reset to synced values (rolled back import batch {$importBatchId})");
+                $syncedAfter = $this->attendanceDataForEmployee($compId, $runId, (int)$row['employee_id'])['synced'] ?? [];
+                foreach (self::ATTENDANCE_OVERRIDE_FIELDS as $field) {
+                    if ($row[$field] === null) {
+                        continue;
+                    }
+                    $this->recordLineOverrideHistory($runId, (int)$row['employee_id'], 'attendance', $field, 'restore',
+                        (float)$row[$field], isset($syncedAfter[$field]) ? (float)$syncedAfter[$field] : null, $userId);
+                }
+            }
+            foreach (array_keys($runIds) as $runId) {
+                $result = $this->recalculate($runId, $compId, $userId, $isAdmin);
+                if (empty($result['status'])) {
+                    throw new RuntimeException($result['message'] ?? 'Recalculation failed.');
+                }
+            }
+            if ($own) { $this->db->commit(); }
+        } catch (Throwable $e) {
+            if ($own && $this->db->inTransaction()) { $this->db->rollBack(); }
+            return ['status' => false, 'message' => 'Rollback failed: ' . $e->getMessage() . ' Nothing was changed.'];
+        }
+        return ['status' => true, 'lines_removed' => count($rows), 'runs_recalculated' => count($runIds)];
+    }
+
 
     /** Reverts every field back to whatever Origami actually sent, then recalculates. */
     public function attendanceOverrideRemove(int $runId, int $compId, int $employeeId, int $userId, bool $isAdmin): array {
