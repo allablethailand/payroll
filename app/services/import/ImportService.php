@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/ImportFileParser.php';
 require_once __DIR__ . '/EmployeeImporter.php';
 require_once __DIR__ . '/YtdImporter.php';
+require_once __DIR__ . '/AdHocItemImportEntity.php';
 require_once __DIR__ . '/../sync/MasterDataSyncRegistry.php';
 require_once __DIR__ . '/../sync/TransactionDataSyncRegistry.php';
 require_once __DIR__ . '/../../models/SyncBatchModel.php';
@@ -36,6 +37,9 @@ class ImportService {
         }
         if ($entityType === 'ytd_opening') {
             return new YtdImporter($this->db);
+        }
+        if ($entityType === 'adhoc_item') {
+            return new AdHocItemImportEntity($this->db);
         }
         $master = (new MasterDataSyncRegistry($this->db))->get($entityType);
         if ($master) {
@@ -159,6 +163,11 @@ class ImportService {
                     $errors[] = ['row' => $rowNumber, 'message' => $e->getMessage()];
                     $rowResults[] = ['row' => $rowNumber, 'status' => 'error', 'message' => $e->getMessage()];
                 }
+            }
+
+            // Optional hook: an importer that writes without recalculating (adhoc_item) finishes the batch here, inside the same transaction.
+            if (method_exists($importer, 'afterBatch')) {
+                $importer->afterBatch($compId, $commit, $triggeredBy);
             }
 
             $batchModel->complete($batchId, count($mappedRows), $success, count($errors), $errors);

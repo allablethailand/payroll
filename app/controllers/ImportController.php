@@ -5,6 +5,7 @@ require_once __DIR__ . '/../models/ImportAuditLogModel.php';
 require_once __DIR__ . '/../models/PermissionModel.php';
 require_once __DIR__ . '/../models/EmployeeLoginLogModel.php';
 require_once __DIR__ . '/../models/ImportTemplateDownloadLogModel.php';
+require_once __DIR__ . '/../models/PayrollRunModel.php';
 require_once __DIR__ . '/../services/import/ImportService.php';
 require_once __DIR__ . '/../services/import/ImportFileParser.php';
 
@@ -16,9 +17,9 @@ require_once __DIR__ . '/../services/import/ImportFileParser.php';
  */
 class ImportController extends Controller {
     /** employee_import has its own importer (EmployeeImporter) and extra permission gate. */
-    private const STAGING_ENTITY_TYPES = ['attendance', 'leave', 'overtime', 'employee_import', 'ytd_opening'];
+    private const STAGING_ENTITY_TYPES = ['attendance', 'leave', 'overtime', 'employee_import', 'ytd_opening', 'adhoc_item'];
     // ytd_opening changes the tax withheld on every later period, so it needs the permission that gates running payroll.
-    private const ENTITY_EXTRA_PERMISSION = ['employee_import' => 'employee.edit', 'ytd_opening' => 'payroll_run.process'];
+    private const ENTITY_EXTRA_PERMISSION = ['employee_import' => 'employee.edit', 'ytd_opening' => 'payroll_run.process', 'adhoc_item' => 'payroll_run.process'];
     private const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
     private ImportStagingModel $staging;
@@ -97,16 +98,25 @@ class ImportController extends Controller {
     /** GET: import_audit_logs for this company, payload flattened for the Activity Log table. */
     public function activityLog() {
         if (!$this->requirePermission('import.view_log')) return;
-        $rows = array_map(function (array $r): array {
+        $entries = $this->audit->list((int)getCompId(), [], 500);
+        // A batch counts as rolled back once a successful 'rollback' audit row names it.
+        $rolledBack = [];
+        foreach ($entries as $e) {
+            if ($e['action'] === 'rollback' && $e['outcome'] === 'success' && $e['batch_id'] !== null) {
+                $rolledBack[(int)$e['batch_id']] = true;
+            }
+        }
+        $rows = array_map(function (array $r) use ($rolledBack): array {
             $payload = $r['payload_json'] ? (array)json_decode($r['payload_json'], true) : [];
             $ua = $r['user_agent'] ? EmployeeLoginLogModel::parseUserAgent($r['user_agent']) : [];
             return [
                 'id' => (int)$r['id'], 'performed_at' => $r['performed_at'], 'action' => $r['action'], 'outcome' => $r['outcome'], 'entity_type' => $r['entity_type'],
                 'performed_by_name_th' => $r['performed_by_name_th'], 'performed_by_name_en' => $r['performed_by_name_en'],
+                'sync_batch_id' => $payload['sync_batch_id'] ?? null, 'rolled_back' => !empty($payload['sync_batch_id']) && isset($rolledBack[(int)$payload['sync_batch_id']]),
                 'file_name' => $payload['file_name'] ?? null, 'total' => $payload['total'] ?? null, 'success' => $payload['success'] ?? null, 'failed' => $payload['failed'] ?? null,
                 'ip_address' => $r['ip_address'], 'browser' => trim(($ua['browser_name'] ?? '') . ' ' . ($ua['browser_version'] ?? '')) ?: null, 'os' => $ua['os_name'] ?? null,
             ];
-        }, $this->audit->list((int)getCompId(), [], 500));
+        }, $entries);
         $this->json(['status' => true, 'data' => $rows]);
     }
 
@@ -288,8 +298,25 @@ class ImportController extends Controller {
         }
         $this->staging->markCommitted($id, isset($result['batch_id']) ? (int)$result['batch_id'] : null);
         $this->log($compId, $batch['entity_type'], 'commit', ['file_name' => $batch['file_name'], 'mapped_fields' => array_values((array)json_decode((string)$batch['mapping_json'], true)),
-            'total' => $result['total'], 'success' => $result['success'], 'failed' => $result['error']], true, $id);
+            'total' => $result['total'], 'success' => $result['success'], 'failed' => $result['error'], 'sync_batch_id' => $result['batch_id'] ?? null], true, $id);
         $this->json(['status' => true, 'total' => $result['total'], 'success' => $result['success'], 'error' => $result['error'], 'sync_batch_id' => $result['batch_id'] ?? null]);
+    }
+
+    /** POST json: sync_batch_id. Undoes a committed ad-hoc item import: removes its manual lines from the (still draft) runs and recalculates them. */
+    public function rollback() {
+        $body = $this->jsonBody();
+        $syncBatchId = (int)($body['sync_batch_id'] ?? 0);
+        $compId = (int)getCompId();
+        if (!$this->requireImportAccess('adhoc_item')) return;
+        $stmt = (Database::getInstance()->pdo)->prepare("SELECT id FROM `sync_batches` WHERE id = :id AND comp_id = :c AND source = 'import' AND entity_type = 'adhoc_item'");
+        $stmt->execute([':id' => $syncBatchId, ':c' => $compId]);
+        if ($syncBatchId <= 0 || !$stmt->fetch()) { $this->fail('Import batch not found.'); return; }
+        $isAdmin = ($_SESSION['user']['role'] ?? '') === 'admin';
+        $result = (new PayrollRunModel())->rollbackManualLineImportBatch($syncBatchId, $compId, $this->userId(), $isAdmin);
+        $this->log($compId, 'adhoc_item', 'rollback', [
+            'sync_batch_id' => $syncBatchId, 'lines_removed' => $result['lines_removed'] ?? 0, 'runs_recalculated' => $result['runs_recalculated'] ?? 0, 'error' => $result['message'] ?? null,
+        ], !empty($result['status']), $syncBatchId);
+        $this->json($result);
     }
 
     /** POST json: batch_id. Deletes the staged rows (personal data); the batch row stays as history. */

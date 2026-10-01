@@ -415,6 +415,7 @@
     $router->get('api/import.rows', 'ImportController@rows');
     $router->post('api/import.commit', 'ImportController@commit');
     $router->post('api/import.discard', 'ImportController@discard');
+    $router->post('api/import.rollback', 'ImportController@rollback');
     // Manual Entry Phase 1A -- Attendance Shift auto-fill lookup.
     $router->get('api/manual-entry.employee-context', 'ManualEntryController@employeeContext');
 

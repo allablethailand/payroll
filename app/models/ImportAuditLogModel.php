@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /** Insert-only audit trail for every Import Framework action; a write failure never blocks the import itself. */
 class ImportAuditLogModel {
-    public const ACTIONS = ['download_template', 'upload', 'map', 'validate', 'edit_row', 'commit', 'discard'];
+    public const ACTIONS = ['download_template', 'upload', 'map', 'validate', 'edit_row', 'commit', 'discard', 'rollback'];
 
     private PDO $db;
 

@@ -3140,5 +3140,13 @@
     "import_entity_employees": "พนักงาน",
     "import_entity_ytd": "ยอดสะสมต้นปี (YTD)",
     "error_employee_not_found": "ไม่พบพนักงาน",
-    "error_unsupported_format": "รายงานนี้ไม่รองรับรูปแบบไฟล์ดังกล่าว"
+    "error_unsupported_format": "รายงานนี้ไม่รองรับรูปแบบไฟล์ดังกล่าว",
+    "import_entity_adhoc": "รายได้/รายการหักเฉพาะกิจ",
+    "import_log_actions": "การดำเนินการ",
+    "import_rollback": "ย้อนกลับ",
+    "import_rolled_back": "ย้อนกลับแล้ว",
+    "import_rollback_title": "ย้อนกลับการนำเข้านี้หรือไม่?",
+    "import_rollback_message": "รายการที่นำเข้าจะถูกลบออกจากรอบเงินเดือนฉบับร่าง แล้วคำนวณรอบนั้นใหม่",
+    "import_rollback_done": "ย้อนกลับแล้ว",
+    "import_action_rollback": "ย้อนกลับ"
 }

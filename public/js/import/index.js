@@ -137,19 +137,21 @@ function impSyncVerifyControls() {
 
 function impBuildRowsTable() {
     if (impRowsTable) { impRowsTable.destroy(); impRowsTable = null; }
-    const keys = Object.keys(impBatch.columns).filter(k => Object.values(impBatch.mapping).includes(k));
+    const labels = impBatch.columns; // captured: a late redraw after the wizard closed must not read the (now null) impBatch
+    const keys = Object.keys(labels).filter(k => Object.values(impBatch.mapping).includes(k));
     $('#tb_import_rows').empty().append(
-        `<thead><tr><th><span>#</span></th><th><span data-i18n="status">Status</span></th>${keys.map(k => `<th><span>${escapeAttr(impBatch.columns[k])}</span></th>`).join('')}<th><span data-i18n="import_col_messages">Messages</span></th></tr></thead><tbody></tbody>`);
+        `<thead><tr><th><span>#</span></th><th><span data-i18n="status">Status</span></th>${keys.map(k => `<th><span>${escapeAttr(labels[k])}</span></th>`).join('')}<th><span data-i18n="import_col_messages">Messages</span></th></tr></thead><tbody></tbody>`);
     const columns = [{ data: 'row_no', className: 'text-end' }, { data: 'status', render: s => statusBadgeHtml(s, 'import_row_status') }]
         .concat(keys.map(k => ({
             data: null, orderable: false,
-            render: (d, t, row) => `<input type="text" class="form-control imp-cell" data-row="${row.row_no}" data-field="${escapeAttr(k)}" value="${escapeAttr((row.data && row.data[k]) ?? '')}" aria-label="${escapeAttr(impBatch.columns[k])}">`,
+            render: (d, t, row) => `<input type="text" class="form-control imp-cell" data-row="${row.row_no}" data-field="${escapeAttr(k)}" value="${escapeAttr((row.data && row.data[k]) ?? '')}" aria-label="${escapeAttr(labels[k])}">`,
         })))
         .concat([{ data: 'messages', orderable: false, render: m => escapeAttr((m || []).join(' ')) }]);
     impRowsTable = initSharedDataTable('#tb_import_rows', {
         serverSide: true,
         // Top-level status filter + typed cells replace per-column filters; row order is fixed (errors first).
         ajax: function (dtData, callback) {
+            if (!impBatch) { callback({ draw: dtData.draw, recordsTotal: 0, recordsFiltered: 0, data: [] }); return; }
             $.getJSON(`${BASE_URL}/api/import.rows`, { batch_id: impBatch.id, status: $('#impRowStatus').val() === 'all' ? '' : $('#impRowStatus').val(), offset: dtData.start, limit: dtData.length })
                 .done(res => callback({ draw: dtData.draw, recordsTotal: res.total || 0, recordsFiltered: res.total || 0, data: res.rows || [] }))
                 .fail(() => callback({ draw: dtData.draw, recordsTotal: 0, recordsFiltered: 0, data: [] }));
@@ -241,6 +243,34 @@ $('#impDiscard, #impWizardClose').on('click', impRequestClose);
 
 /* ---------- Activity Log tab ---------- */
 
+// Only a successful commit of an ad-hoc item import that has not been rolled back yet can be undone.
+function impLogActionsHtml(row) {
+    if (row.action === 'commit' && row.outcome === 'success' && row.entity_type === 'adhoc_item' && row.sync_batch_id && !row.rolled_back) {
+        return `<button type="button" class="btn btn-link btn-circle-action imp-rollback" data-batch="${Number(row.sync_batch_id)}" title="${escapeAttr(impT('import_rollback', 'Roll back'))}"><i class="fa-solid fa-rotate-left"></i></button>`;
+    }
+    return row.rolled_back ? escapeAttr(impT('import_rolled_back', 'Rolled back')) : '';
+}
+
+$(document).on('click', '.imp-rollback', function () {
+    const syncBatchId = Number($(this).data('batch'));
+    showConfirm({
+        title: impT('import_rollback_title', 'Roll back this import?'),
+        message: impT('import_rollback_message', 'Its lines are removed from the draft payroll runs and the runs are recalculated.'),
+        tone: 'warning',
+        confirmText: impT('import_rollback', 'Roll back'),
+        cancelText: impT('cancel', 'Cancel'),
+        onYes: function () {
+            impPost('import.rollback', { sync_batch_id: syncBatchId })
+                .done(function (res) {
+                    if (!res.status) { impFail(res); return; }
+                    showSuccess(impT('import_rollback_done', 'Rolled back'));
+                    if (impLogTable) impLogTable.ajax.reload(null, false);
+                })
+                .fail(res => impFail(res && res.responseJSON ? res.responseJSON : res));
+        },
+    });
+});
+
 function impInitLogTable() {
     if (impLogTable) return;
     impLogTable = initSharedDataTable('#tb_import_log', {
@@ -259,7 +289,7 @@ function impInitLogTable() {
             columns: [
                 { data: 'performed_at', render: { display: d => formatDisplayDateTime(d), sort: d => d, filter: d => formatDisplayDateTime(d) } },
                 { data: null, render: (d, t, row) => escapeAttr((currentLang === 'th' ? row.performed_by_name_th : row.performed_by_name_en) || '-') },
-                { data: 'entity_type', render: d => escapeAttr(impT({ employee_import: 'import_entity_employees', ytd_opening: 'import_entity_ytd' }[d] || d, d)) },
+                { data: 'entity_type', render: d => escapeAttr(impT({ employee_import: 'import_entity_employees', ytd_opening: 'import_entity_ytd', adhoc_item: 'import_entity_adhoc' }[d] || d, d)) },
                 { data: 'action', render: d => escapeAttr(impT('import_action_' + d, d)) },
                 { data: 'outcome', render: { display: d => statusBadgeHtml(d, 'import_outcome'), sort: d => d, filter: d => impT('import_outcome_' + d, d) } },
                 { data: 'file_name', render: d => escapeAttr(d || '-') },
@@ -267,6 +297,7 @@ function impInitLogTable() {
                 { data: 'failed', className: 'text-end', render: { display: d => d === null ? '-' : fmtNum(Number(d), 0, 3), sort: d => Number(d || 0), filter: d => d === null ? '-' : String(d) } },
                 { data: 'ip_address', render: d => escapeAttr(d || '-') },
                 { data: null, render: (d, t, row) => escapeAttr([row.browser, row.os].filter(Boolean).join(' / ') || '-') },
+                { data: null, orderable: false, className: 'text-center', render: (d, t, row) => impLogActionsHtml(row) },
             ],
         },
     });

@@ -5736,6 +5736,20 @@ class PayrollRunModel {
         if (!$this->userCan($userId, 'payroll_run.process', $isAdmin)) {
             return ['status' => false, 'message' => 'You do not have permission to edit this payroll run.'];
         }
+        $added = $this->insertManualLine($id, $compId, $employeeId, $pedTypeId, $amount, $userId, $note, $customItemName, $customItemType, $payeeEmployeeId, $payeeType, $includeInCashSummary, $destinationData, $isOther, $bankAccountId);
+        if (!$added['status']) {
+            return $added;
+        }
+        return $this->recalculate($id, $compId, $userId, $isAdmin);
+    }
+
+    /**
+     * addManualLine() minus the permission check and minus the recalculation: validates (draft run, employee in it, not verified,
+     * item valid) and inserts ONE line with its audit note and history row. The Data Import (entity adhoc_item) calls this per row, tags the
+     * line with $importBatchId, and recalculates each touched run once at the end instead of once per row; the caller owns the permission gate.
+     * @return array{status:bool, message?:string, line_id?:int}
+     */
+    public function insertManualLine(int $id, int $compId, int $employeeId, ?int $pedTypeId, float $amount, int $userId, ?string $note = null, ?string $customItemName = null, ?string $customItemType = null, ?int $payeeEmployeeId = null, ?string $payeeType = null, ?bool $includeInCashSummary = null, ?array $destinationData = null, ?bool $isOther = null, ?int $bankAccountId = null, ?int $importBatchId = null): array {
         [$run, $err] = $this->assertManualLinesEditable($id, $compId, $employeeId);
         if ($err !== null) {
             return ['status' => false, 'message' => $err];
@@ -5746,10 +5760,12 @@ class PayrollRunModel {
         }
         $fields = $resolved['fields'];
 
+        $batchCol = $importBatchId !== null ? ', import_batch_id' : '';
+        $batchVal = $importBatchId !== null ? ', :import_batch_id' : '';
         $this->db->prepare("INSERT INTO `payroll_run_manual_lines`
-                (run_id, employee_id, ped_type_id, custom_item_name, custom_item_type, is_other, amount, note, payee_employee_id, payee_type, destination_id, bank_account_id, include_in_cash_summary, created_by)
-            VALUES (:run_id, :employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :is_other, :amount, :note, :payee_employee_id, :payee_type, :destination_id, :bank_account_id, :include_in_cash_summary, :created_by)")
-            ->execute($this->manualLineParams($fields, [':run_id' => $id, ':employee_id' => $employeeId, ':created_by' => $userId]));
+                (run_id, employee_id, ped_type_id, custom_item_name, custom_item_type, is_other, amount, note, payee_employee_id, payee_type, destination_id, bank_account_id, include_in_cash_summary, created_by{$batchCol})
+            VALUES (:run_id, :employee_id, :ped_type_id, :custom_item_name, :custom_item_type, :is_other, :amount, :note, :payee_employee_id, :payee_type, :destination_id, :bank_account_id, :include_in_cash_summary, :created_by{$batchVal})")
+            ->execute($this->manualLineParams($fields, [':run_id' => $id, ':employee_id' => $employeeId, ':created_by' => $userId] + ($importBatchId !== null ? [':import_batch_id' => $importBatchId] : [])));
         $newLineId = (int)$this->db->lastInsertId();
 
         // 2026-08-21, explicit request ("ต้องเก็บ Log ว่าใครแก้ไขข้อมูลอะไรไปเมื่อไหร่") -- addManualLine()/
@@ -5761,7 +5777,7 @@ class PayrollRunModel {
             "Employee {$resolved['employee_no']}: added \"{$resolved['item_label']}\" amount " . number_format($fields['amount'], 2) . ($fields['note'] ? " (note: {$fields['note']})" : ''));
         $this->recordManualLineHistory($id, $employeeId, $newLineId, $fields + ['item_code' => $resolved['item_label']], 'add', null, (float)$fields['amount'], $userId);
 
-        return $this->recalculate($id, $compId, $userId, $isAdmin);
+        return ['status' => true, 'line_id' => $newLineId];
     }
 
     /**
@@ -6217,6 +6233,60 @@ class PayrollRunModel {
             ]);
     }
 
+    /**
+     * Undoes one committed Data Import batch (entity adhoc_item): deletes every payroll_run_manual_lines row tagged with
+     * $importBatchId and recalculates each affected run once. All-or-nothing: if any tagged line sits on a run that is no longer a
+     * draft, or whose employee is verified, nothing is touched (an approved run's numbers must not move). The caller owns the
+     * permission gate. Lines already deleted by hand are simply gone; a batch with no lines left reports that instead of succeeding.
+     * @return array{status:bool, message?:string, lines_removed?:int, runs_recalculated?:int}
+     */
+    public function rollbackManualLineImportBatch(int $importBatchId, int $compId, int $userId, bool $isAdmin): array {
+        $stmt = $this->db->prepare("SELECT pml.id, pml.run_id, pml.employee_id, pml.amount, pml.note, pml.custom_item_name, pml.ped_type_id,
+                pml.custom_item_type, pml.is_other, pt.item_code, e.employee_no, r.state
+            FROM `payroll_run_manual_lines` pml
+            JOIN `payroll_runs` r ON r.id = pml.run_id
+            JOIN `employees` e ON e.id = pml.employee_id
+            LEFT JOIN `payroll_earning_deduction_types` pt ON pt.id = pml.ped_type_id
+            WHERE pml.import_batch_id = :b AND r.comp_id = :c");
+        $stmt->execute([':b' => $importBatchId, ':c' => $compId]);
+        $lines = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (!$lines) {
+            return ['status' => false, 'message' => 'No lines from this import remain to roll back.'];
+        }
+        foreach ($lines as $line) {
+            if ($line['state'] !== 'draft') {
+                return ['status' => false, 'message' => 'Only draft payroll runs can be rolled back -- a run this import wrote to has moved on. Nothing was changed.'];
+            }
+            if ($this->isEmployeeVerifiedForRun((int)$line['run_id'], (int)$line['employee_id'])) {
+                return ['status' => false, 'message' => 'An employee on this import is verified for the run and cannot be edited. Unverify first. Nothing was changed.'];
+            }
+        }
+        $own = !$this->db->inTransaction();
+        if ($own) { $this->db->beginTransaction(); }
+        try {
+            $del = $this->db->prepare("DELETE FROM `payroll_run_manual_lines` WHERE id = :id AND import_batch_id = :b");
+            $runIds = [];
+            foreach ($lines as $line) {
+                $del->execute([':id' => $line['id'], ':b' => $importBatchId]);
+                $runId = (int)$line['run_id'];
+                $runIds[$runId] = true;
+                $this->logAudit($runId, 'draft', 'draft', 'remove_manual_line', $userId,
+                    "Employee {$line['employee_no']}: removed \"" . ($line['item_code'] ?? $line['custom_item_name']) . '" amount ' . number_format((float)$line['amount'], 2) . " (rolled back import batch {$importBatchId})");
+                $this->recordManualLineHistory($runId, (int)$line['employee_id'], (int)$line['id'], $line, 'delete', (float)$line['amount'], null, $userId);
+            }
+            foreach (array_keys($runIds) as $runId) {
+                $result = $this->recalculate($runId, $compId, $userId, $isAdmin);
+                if (empty($result['status'])) {
+                    throw new RuntimeException($result['message'] ?? 'Recalculation failed.');
+                }
+            }
+            if ($own) { $this->db->commit(); }
+        } catch (Throwable $e) {
+            if ($own && $this->db->inTransaction()) { $this->db->rollBack(); }
+            return ['status' => false, 'message' => 'Rollback failed: ' . $e->getMessage() . ' Nothing was changed.'];
+        }
+        return ['status' => true, 'lines_removed' => count($lines), 'runs_recalculated' => count($runIds)];
+    }
     /** Removes one manually-added line, then recalculates. No employee-membership check needed here
      *  (unlike addManualLine()) -- the line already exists, so its employee was already validated
      *  when it was added; removing it is always safe once the run itself is still draft. */
