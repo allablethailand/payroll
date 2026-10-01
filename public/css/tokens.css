@@ -511,7 +511,7 @@
 [data-bs-theme="dark"] {
     --c-text: #E6E8EB;
     --c-text-muted: #9AA3AE;
-    --c-text-faint: #6B7480;
+    --c-text-faint: #838C98;
     --c-border: #2A2F36;
     --c-border-strong: #3A414A;
     --c-bg: #15181C;
@@ -559,7 +559,7 @@
     :root:not([data-bs-theme="light"]) {
         --c-text: #E6E8EB;
         --c-text-muted: #9AA3AE;
-        --c-text-faint: #6B7480;
+        --c-text-faint: #838C98;
         --c-border: #2A2F36;
         --c-border-strong: #3A414A;
         --c-bg: #15181C;
