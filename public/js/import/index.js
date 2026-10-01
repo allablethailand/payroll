@@ -111,6 +111,8 @@ function impShowStep(step) {
     $('#impStepVerify').toggleClass('d-none', step !== 'verify');
     $('#impPrimary').attr('data-i18n', step === 'map' ? 'import_continue' : 'import_confirm')
         .text(step === 'map' ? impT('import_continue', 'Continue') : impT('import_confirm', 'Confirm Import'));
+    // The verify step disables Confirm while errors remain; a new upload must start with Continue usable again.
+    if (step === 'map') $('#impPrimary, #impDiscard').prop('disabled', false);
     impSyncVerifyControls();
 }
 

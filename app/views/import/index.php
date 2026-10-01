@@ -44,6 +44,7 @@
         </div>
 
         <div class="tab-pane fade" id="imp-log-pane" role="tabpanel" aria-labelledby="imp-log-tab" tabindex="0">
+            <div class="table-responsive">
             <table class="table table-hover w-100" id="tb_import_log">
                 <thead>
                     <tr>
@@ -62,6 +63,7 @@
                 </thead>
                 <tbody></tbody>
             </table>
+            </div>
         </div>
     </div>
 </div>
