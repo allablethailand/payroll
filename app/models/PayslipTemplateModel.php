@@ -71,7 +71,7 @@ class PayslipTemplateModel {
     private const ORIENTATIONS = ['portrait', 'landscape'];
     private const LANGUAGES = ['th', 'en'];
     private const MAX_PAGE_NUMBER = 20;
-    public const PRESETS = ['blank', 'classic', 'modern', 'minimal'];
+    public const PRESETS = ['blank', 'classic', 'modern', 'minimal', 'dual_column_classic', 'dual_column_modern'];
     // 2026-08-25, explicit request: "สามารถ Assign ตั้งค่าให้พนักงาน เป็นรายแผนก รายทีม หรือรายคน หรือ
     // ใช้งานร่วมกันทั้งหมดก็ได้" -- mirrors holidays/holiday_assignments' own polymorphic scope
     // pattern (see SetupRulesModel), deliberately WITHOUT an include/exclude mode -- see the
@@ -785,6 +785,8 @@ class PayslipTemplateModel {
             ['code' => 'classic', 'name_th' => 'คลาสสิก (ตารางเต็มหน้า)', 'name_en' => 'Classic (full-width tables)'],
             ['code' => 'modern', 'name_th' => 'โมเดิร์น (โลโก้มุมซ้าย)', 'name_en' => 'Modern (logo top-left)'],
             ['code' => 'minimal', 'name_th' => 'มินิมอล (กะทัดรัด)', 'name_en' => 'Minimal (compact)'],
+            ['code' => 'dual_column_classic', 'name_th' => '2 คอลัมน์ คลาสสิก (เงินได้ | เงินหัก)', 'name_en' => 'Dual-Column Classic (Income | Deductions)'],
+            ['code' => 'dual_column_modern', 'name_th' => '2 คอลัมน์ โมเดิร์น (โลโก้มุมซ้าย)', 'name_en' => 'Dual-Column Modern (logo top-left)'],
         ];
     }
 
@@ -841,10 +843,81 @@ class PayslipTemplateModel {
                     $base + ['element_type' => 'text', 'content' => $tok('statutory_lines_all'), 'pos_x_pct' => 6, 'pos_y_pct' => 62, 'width_pct' => 88, 'height_pct' => 14, 'font_size' => 11, 'text_align' => 'left'],
                     $base + ['element_type' => 'text', 'content' => $tok('net_amount'), 'pos_x_pct' => 6, 'pos_y_pct' => 80, 'width_pct' => 88, 'height_pct' => 6, 'font_size' => 14, 'text_align' => 'right', 'font_weight' => 'bold'],
                 ];
+            case 'dual_column_classic':
+                return $this->dualColumnPresetElements($base, $language, false);
+            case 'dual_column_modern':
+                return $this->dualColumnPresetElements($base, $language, true);
             case 'blank':
             default:
                 return [];
         }
+    }
+
+    /** Header + employee info + the fixed Income | Deductions table + totals + work summary + YTD, all
+     *  at fixed positions: the table is one block element that pads itself with blank rows (see
+     *  PayslipTemplateRenderer::renderDualColumnTable()), so nothing below it moves with the line count. */
+    private function dualColumnPresetElements(array $base, string $language, bool $modern): array {
+        $th = $language === 'th';
+        $t = fn(string $thText, string $enText) => $th ? $thText : $enText;
+        $text = fn(string $content, float $x, float $y, float $w, float $h, int $size, array $extra = []) => array_merge($base, [
+            'element_type' => 'text', 'content' => $content, 'pos_x_pct' => $x, 'pos_y_pct' => $y, 'width_pct' => $w, 'height_pct' => $h,
+            'font_size' => $size, 'text_align' => 'left',
+        ], $extra);
+        $els = [];
+        if ($modern) {
+            $els[] = $base + ['element_type' => 'image', 'field_key' => 'company_logo', 'content' => null, 'pos_x_pct' => 6, 'pos_y_pct' => 3, 'width_pct' => 14, 'height_pct' => 8, 'font_size' => 14, 'text_align' => 'left'];
+            $els[] = $text('{{company_name}}', 23, 3.5, 71, 5, 16, ['font_weight' => 'bold']);
+            $els[] = $text($t('สลิปเงินเดือน', 'Pay Slip') . '  {{payslip_number}}', 23, 8.5, 71, 3.5, 12);
+            $els[] = $base + ['element_type' => 'shape', 'field_key' => 'line', 'font_color' => '#FF9900', 'pos_x_pct' => 6, 'pos_y_pct' => 12.5, 'width_pct' => 88, 'height_pct' => 0.5, 'font_size' => 12, 'text_align' => 'left'];
+        } else {
+            $els[] = $text('{{company_name}}', 6, 3, 88, 5, 16, ['font_weight' => 'bold']);
+            $els[] = $text($t('สลิปเงินเดือน', 'Pay Slip') . '  {{payslip_number}}', 6, 8.5, 88, 3.5, 12);
+        }
+        $els[] = $text($t('รหัสพนักงาน: ', 'Employee No.: ') . '{{employee_no}}', 6, 15, 44, 3.5, 11);
+        $els[] = $text($t('ชื่อ-นามสกุล: ', 'Name: ') . '{{employee_name}}', 52, 15, 42, 3.5, 11);
+        $els[] = $text($t('แผนก: ', 'Department: ') . '{{department}}', 6, 19, 44, 3.5, 11);
+        $els[] = $text($t('ตำแหน่ง: ', 'Position: ') . '{{position}}', 52, 19, 42, 3.5, 11);
+        $els[] = $text($t('งวดการจ่าย: ', 'Pay Period: ') . '{{pay_period}}', 6, 23, 44, 3.5, 11);
+        $els[] = $text($t('วันที่จ่ายเงิน: ', 'Paid Date: ') . '{{paid_date}}', 52, 23, 42, 3.5, 11);
+        $els[] = $text($t('สถานะ: ', 'Status: ') . '{{status}}', 6, 27, 44, 3.5, 11);
+        $els[] = $text($t('ธนาคาร: ', 'Bank: ') . '{{bank_name}} {{bank_account_no}}', 52, 27, 42, 3.5, 11);
+        $els[] = $text('{{income_deduction_table}}', 6, 32, 88, 26, 11);
+        $els[] = $text($t('รวมเงินได้: ', 'Total Earnings: ') . '{{gross_amount}}', 6, 59, 44, 3.5, 12, ['font_weight' => 'bold']);
+        $els[] = $text($t('รวมรายการหัก: ', 'Total Deductions: ') . '{{total_deduction_amount}}', 52, 59, 42, 3.5, 12, ['font_weight' => 'bold']);
+        $els[] = $text($t('เงินได้สุทธิ: ', 'Net Pay: ') . '{{net_amount}}', 6, 63.5, 88, 5, 15, ['font_weight' => 'bold', 'text_align' => 'right'] + ($modern ? ['font_color' => '#FF9900'] : []));
+        $els[] = $text($t('สรุปการทำงาน', 'Work Summary'), 6, 71, 88, 3.5, 12, ['font_weight' => 'bold']);
+        $els[] = $text($t("ฐานเงินเดือน: {{base_salary_rate}}
+ค่าแรงต่อวัน: {{daily_rate}}
+ค่าแรงต่อชั่วโมง: {{hourly_rate}}
+วันทำงาน: {{working_days}} วัน",
+            "Base Salary: {{base_salary_rate}}
+Daily Rate: {{daily_rate}}
+Hourly Rate: {{hourly_rate}}
+Working Days: {{working_days}}"), 6, 75, 44, 8, 11);
+        $els[] = $text($t("ขาดงาน: {{absent_days}} วัน
+ชั่วโมง OT: {{total_ot_hours}}
+ชั่วโมงมาสาย: {{late_hours}}",
+            "Absent Days: {{absent_days}}
+OT Hours: {{total_ot_hours}}
+Late Hours: {{late_hours}}"), 52, 75, 42, 8, 11);
+        $els[] = $text($t('ยอดสะสมทั้งปี', 'Year-to-Date'), 6, 85, 88, 3.5, 12, ['font_weight' => 'bold']);
+        $els[] = $text($t("เงินเดือน/ค่าแรงสะสม: {{ytd_earnings}}
+เงินได้รวมสะสม: {{ytd_gross_income}}
+ภาษีสะสม: {{ytd_tax}}
+ประกันสังคมสะสม: {{ytd_social_security}}",
+            "Salary/Wages: {{ytd_earnings}}
+Gross Income: {{ytd_gross_income}}
+Tax: {{ytd_tax}}
+Social Security: {{ytd_social_security}}"), 6, 89, 44, 8, 11);
+        $els[] = $text($t("กองทุนสำรองเลี้ยงชีพสะสม: {{ytd_provident_fund}}
+เงินประกันทำงานสะสม: {{ytd_guarantee_fund}}
+คืนเงินกู้ยืม 1 สะสม: {{ytd_loan_repayment_1}}
+คืนเงินกู้ยืม 2 สะสม: {{ytd_loan_repayment_2}}",
+            "Provident Fund: {{ytd_provident_fund}}
+Guarantee Fund: {{ytd_guarantee_fund}}
+Loan Repayment 1: {{ytd_loan_repayment_1}}
+Loan Repayment 2: {{ytd_loan_repayment_2}}"), 52, 89, 42, 8, 11);
+        return $els;
     }
 
     /** Creates a new template pre-populated from one of presetOptions()'s layouts (or empty for

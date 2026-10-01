@@ -3,6 +3,8 @@ declare(strict_types=1);
 require_once __DIR__ . '/reports/EmployeePiiTrait.php';
 require_once __DIR__ . '/PdfCanvasRendererTrait.php';
 require_once __DIR__ . '/../models/PayrollSyncModel.php';
+require_once __DIR__ . '/../models/EmployeeModel.php';
+require_once __DIR__ . '/SyncPayResolver.php';
 
 /**
  * Renders a Payslip Template's canvas elements (see PayslipTemplateModel) into a PDF -- the exact
@@ -94,7 +96,24 @@ class PayslipTemplateRenderer {
 
     /** The 3 "block" field_keys that expand into a real itemized table instead of a single
      *  substituted value -- see this class's own docblock for why these need no special schema. */
-    private const BLOCK_FIELD_KEYS = ['earning_lines_all', 'deduction_lines_all', 'statutory_lines_all'];
+    private const BLOCK_FIELD_KEYS = ['earning_lines_all', 'deduction_lines_all', 'statutory_lines_all', 'income_deduction_table'];
+
+    /** Dual-column block never prints fewer body rows than this, so 2 earnings and 10 earnings give
+     *  the same table height -- the rest is blank rows. */
+    private const DUAL_MIN_ROWS = 8;
+
+    /** employees.salary_type => days the salary covers (same divisors PayrollRunModel::recalculate()
+     *  uses; monthly takes the OT formula's 30) -- turns the employee's own rate into a daily rate. */
+    private const SALARY_TYPE_DAY_DIVISORS = ['monthly' => SyncPayResolver::STANDARD_WORKING_DAYS_PER_MONTH, 'weekly' => 7, 'semi_monthly' => 15, 'bi_weekly' => 14, 'daily' => 1];
+
+    private const EMPLOYEE_STATUS_LABELS = [
+        'active' => ['ปฏิบัติงาน', 'Active'], 'probation' => ['ทดลองงาน', 'Probation'], 'suspended' => ['พักงาน', 'Suspended'],
+        'resigned' => ['ลาออก', 'Resigned'], 'terminated' => ['เลิกจ้าง', 'Terminated'],
+    ];
+
+    /** Height in mm of the page being rendered, set by buildHtml() so the dual-column block can size
+     *  its blank-row padding to its own box. */
+    private float $pageHeightMm = 297.0;
 
     // 2026-08-26, explicit request: "ตรง Page Setup ให้เพิ่ม A3 A5 และอื่นๆ เหมือนใน Word" -- standard
     // ISO 216 (A3/A5/B4/B5) and ANSI (Tabloid/Executive/Statement) dimensions, portrait orientation
@@ -151,7 +170,7 @@ class PayslipTemplateRenderer {
     /** @return array<string,string> field_key => resolved display value, for substituteTokens().
      *  $ytd is null when the template has no ytd_summary field at all (PayrollReportDataModel::
      *  getYtdTotals() is only ever queried when needed, same as the old buildTemplatedHtml() did). */
-    public function buildTokens(string $language, array $company, array $run, array $detail, ?array $ytd): array {
+    public function buildTokens(string $language, array $company, array $run, array $detail, ?array $ytd, ?array $ytdSlip = null): array {
         $employeeNameTh = $this->employeeDisplayName($detail, 'th');
         $employeeNameEn = $this->employeeDisplayName($detail, 'en');
         $rawBank = $this->decryptEmployeeField($detail, 'bank_account_no');
@@ -184,7 +203,11 @@ class PayslipTemplateRenderer {
             'gross_amount' => number_format((float)($detail['gross_amount'] ?? 0), 2),
             'total_deduction_amount' => number_format((float)($detail['total_deduction_amount'] ?? 0), 2),
             'net_amount' => number_format((float)($detail['net_amount'] ?? 0), 2),
-        ];
+            'status' => $this->employeeStatusLabel((string)($detail['employee_status'] ?? ''), $language),
+            'paid_date' => $this->formatDate($run['payment_date'] ?? null),
+            'bank_name' => $this->pick((string)($detail['bank_name_th'] ?? ''), (string)($detail['bank_name_en'] ?? ''), $language) ?: '-',
+            'bank_account_no' => $rawBank ? (string)$rawBank : '-',
+        ] + $this->workSummaryTokens($detail) + $this->ytdSlipTokens($ytdSlip);
         if ($ytd !== null) {
             $gLabel = $this->pick('รายได้สะสม', 'YTD Gross', $language);
             $dLabel = $this->pick('หักสะสม', 'YTD Deduction', $language);
@@ -199,6 +222,92 @@ class PayslipTemplateRenderer {
             $tokens['ytd_summary'] = '-';
         }
         return $tokens;
+    }
+
+    private function employeeStatusLabel(string $status, string $language): string {
+        $pair = self::EMPLOYEE_STATUS_LABELS[$status] ?? null;
+        return $pair === null ? '-' : $this->pick($pair[0], $pair[1], $language);
+    }
+
+    private function formatHoursMinutes(float $hours): string {
+        $totalMinutes = (int)round($hours * 60);
+        return sprintf('%d:%02d', intdiv($totalMinutes, 60), $totalMinutes % 60);
+    }
+
+    /** Daily/hourly rate come from the employee's OWN salary rate (not the run's prorated base),
+     *  converted by employees.salary_type; falls back to the run's base amount as a monthly salary when
+     *  the detail carries no employee rate (preview mock, hand-built details). */
+    private function workSummaryTokens(array $detail): array {
+        $hasRate = isset($detail['employee_salary_enc']);
+        $rate = $hasRate
+            ? (float)EmployeeModel::decryptSalaryValue((string)$detail['employee_salary_enc'], isset($detail['key_version']) ? (int)$detail['key_version'] : null)
+            : (float)($detail['base_salary_amount'] ?? 0);
+        $salaryType = $hasRate ? (string)($detail['salary_type'] ?? 'monthly') : 'monthly';
+        $hoursPerDay = SyncPayResolver::STANDARD_HOURS_PER_DAY;
+        if ($salaryType === 'hourly') {
+            $hourly = $rate;
+            $daily = $rate * $hoursPerDay;
+        } else {
+            $daily = $rate / (self::SALARY_TYPE_DAY_DIVISORS[$salaryType] ?? SyncPayResolver::STANDARD_WORKING_DAYS_PER_MONTH);
+            $hourly = $daily / $hoursPerDay;
+        }
+        $att = $this->attendanceTotals($detail);
+        $absentDays = rtrim(rtrim(number_format($att['absent_days'], 2, '.', ''), '0'), '.');
+        return [
+            'base_salary_rate' => number_format($rate, 2),
+            'daily_rate' => number_format($daily, 2),
+            'hourly_rate' => number_format($hourly, 2),
+            'working_days' => isset($detail['prorate_days']) ? (string)(int)$detail['prorate_days'] : '-',
+            'absent_days' => $absentDays === '' ? '0' : $absentDays,
+            'total_ot_hours' => $this->formatHoursMinutes($att['ot_hours']),
+            'late_hours' => $this->formatHoursMinutes($att['late_minutes'] / 60.0),
+        ];
+    }
+
+    /** OT hours / late minutes / absent days summed from the persisted line formulas -- the run stores
+     *  no attendance totals of its own, so a line without a formula (manual line, override) adds 0. */
+    private function attendanceTotals(array $detail): array {
+        $out = ['ot_hours' => 0.0, 'late_minutes' => 0.0, 'absent_days' => 0.0];
+        foreach (($detail['earning_breakdown'] ?? []) as $line) {
+            $f = $line['formula'] ?? null;
+            if (is_array($f) && in_array($f['type'] ?? '', ['ot_flat', 'ot_multiplier'], true)) {
+                $out['ot_hours'] += (float)($f['hours'] ?? 0);
+            }
+        }
+        $minutesPerDay = SyncPayResolver::STANDARD_HOURS_PER_DAY * 60.0;
+        foreach (($detail['deduction_breakdown'] ?? []) as $line) {
+            $f = $line['formula'] ?? null;
+            if (!is_array($f)) {
+                continue;
+            }
+            $hay = (string)($line['code'] ?? '') . ' ' . (string)($line['name_th'] ?? '');
+            $minutes = isset($f['minutes']) ? (float)$f['minutes']
+                : (($f['type'] ?? '') === 'passthrough' && in_array($f['unit'] ?? '', ['minutes', 'mins'], true) ? (float)($f['raw_value'] ?? 0) : null);
+            if (preg_match('/LATE|สาย/iu', $hay)) {
+                $out['late_minutes'] += $minutes ?? 0.0;
+            } elseif (preg_match('/ABSENT|ขาดงาน/iu', $hay)) {
+                if ($minutes !== null) {
+                    $out['absent_days'] += $minutes / $minutesPerDay;
+                } elseif (($f['type'] ?? '') === 'passthrough' && ($f['unit'] ?? '') === 'days') {
+                    $out['absent_days'] += (float)($f['raw_value'] ?? 0);
+                }
+            }
+        }
+        return $out;
+    }
+
+    /** @param array<string,float>|null $y PayrollReportDataModel::getYtdSlipTotals() result */
+    private function ytdSlipTokens(?array $y): array {
+        $keys = [
+            'ytd_earnings' => 'base', 'ytd_gross_income' => 'gross', 'ytd_tax' => 'tax', 'ytd_social_security' => 'sso',
+            'ytd_provident_fund' => 'pvd', 'ytd_guarantee_fund' => 'guarantee',
+            'ytd_loan_repayment_1' => 'loan1', 'ytd_loan_repayment_2' => 'loan2',
+        ];
+        $out = [];
+        foreach ($keys as $token => $field) {
+            $out[$token] = $y === null ? '-' : number_format((float)($y[$field] ?? 0), 2);
+        }
+        return $out;
     }
 
     private function substituteTokens(string $content, array $tokens): string {
@@ -240,35 +349,77 @@ class PayslipTemplateRenderer {
         return $detail;
     }
 
-    /** Renders one of the 3 BLOCK_FIELD_KEYS as a real itemized `<table>` at the bound element's own
-     *  position/size/font -- this is the one piece of rendering logic Employment Certificate Template
-     *  has no equivalent of at all (see this class's own docblock). */
-    private function renderBlockTable(string $fieldKey, array $detail, array $statutoryLabels, string $language, string $style): string {
-        $rows = '';
-        if ($fieldKey === 'earning_lines_all') {
-            foreach (($detail['earning_breakdown'] ?? []) as $line) {
-                $label = htmlspecialchars((string)($line['name_th'] ?? $line['code'] ?? ''), ENT_QUOTES, 'UTF-8');
-                $rows .= '<tr><td>' . $label . '</td><td class="amount">' . number_format((float)($line['amount'] ?? 0), 2) . '</td></tr>';
-                $rows .= $this->renderOccurrenceSubRows($line['occurrences'] ?? null);
-            }
-        } elseif ($fieldKey === 'deduction_lines_all') {
-            foreach (($detail['deduction_breakdown'] ?? []) as $line) {
-                $label = htmlspecialchars((string)($line['name_th'] ?? $line['code'] ?? ''), ENT_QUOTES, 'UTF-8');
-                $rows .= '<tr><td>' . $label . '</td><td class="amount">' . number_format((float)($line['amount'] ?? 0), 2) . '</td></tr>';
-                $rows .= $this->renderOccurrenceSubRows($line['occurrences'] ?? null);
+    /** @return array<int,array{label:string,amount:float,occurrences:?array}> one entry per printed line
+     *  of the earning / deduction / statutory blocks -- shared by the 3 single-column blocks and the
+     *  dual-column table so both always print the same lines. */
+    private function blockLines(string $fieldKey, array $detail, array $statutoryLabels, string $language): array {
+        $lines = [];
+        if ($fieldKey === 'earning_lines_all' || $fieldKey === 'deduction_lines_all') {
+            $col = $fieldKey === 'earning_lines_all' ? 'earning_breakdown' : 'deduction_breakdown';
+            foreach (($detail[$col] ?? []) as $line) {
+                $lines[] = ['label' => (string)($line['name_th'] ?? $line['code'] ?? ''), 'amount' => (float)($line['amount'] ?? 0), 'occurrences' => $line['occurrences'] ?? null];
             }
         } elseif ($fieldKey === 'statutory_lines_all') {
             foreach (($detail['statutory_breakdown'] ?? []) as $item) {
                 if ((float)($item['employee_amount'] ?? 0) <= 0) continue;
                 $names = $statutoryLabels[$item['code']] ?? ['th' => $item['code'], 'en' => $item['code']];
-                $label = htmlspecialchars($this->pick($names['th'], $names['en'], $language), ENT_QUOTES, 'UTF-8');
-                $rows .= '<tr><td>' . $label . '</td><td class="amount">' . number_format((float)$item['employee_amount'], 2) . '</td></tr>';
+                $lines[] = ['label' => $this->pick($names['th'], $names['en'], $language), 'amount' => (float)$item['employee_amount'], 'occurrences' => null];
             }
+        }
+        return $lines;
+    }
+
+    /** Renders one of the BLOCK_FIELD_KEYS as a real itemized `<table>` at the bound element's own
+     *  position/size/font -- this is the one piece of rendering logic Employment Certificate Template
+     *  has no equivalent of at all (see this class's own docblock). */
+    private function renderBlockTable(string $fieldKey, array $detail, array $statutoryLabels, string $language, string $style, array $el): string {
+        if ($fieldKey === 'income_deduction_table') {
+            return $this->renderDualColumnTable($detail, $statutoryLabels, $language, $style, $el);
+        }
+        $rows = '';
+        foreach ($this->blockLines($fieldKey, $detail, $statutoryLabels, $language) as $line) {
+            $rows .= '<tr><td>' . htmlspecialchars($line['label'], ENT_QUOTES, 'UTF-8') . '</td><td class="amount">' . number_format($line['amount'], 2) . '</td></tr>';
+            $rows .= $this->renderOccurrenceSubRows($line['occurrences']);
         }
         if ($rows === '') {
             return '';
         }
         return '<div style="' . $style . 'overflow:visible;"><table style="width:100%;border-collapse:collapse;font-size:inherit;">' . $rows . '</table></div>';
+    }
+
+    /** Income | Deductions side by side in ONE table, body padded with blank rows to fill the element's
+     *  own box (never fewer than DUAL_MIN_ROWS), so the table height no longer depends on how many
+     *  lines this employee has. Income = base salary + earnings; deductions = statutory + other. */
+    private function renderDualColumnTable(array $detail, array $statutoryLabels, string $language, string $style, array $el): string {
+        $income = [];
+        if (empty($detail['base_salary_excluded'])) {
+            $income[] = ['label' => $this->pick('เงินเดือน', 'Salary', $language), 'amount' => (float)($detail['base_salary_amount'] ?? 0)];
+        }
+        $income = array_merge($income, $this->blockLines('earning_lines_all', $detail, $statutoryLabels, $language));
+        $deduct = array_merge(
+            $this->blockLines('statutory_lines_all', $detail, $statutoryLabels, $language),
+            $this->blockLines('deduction_lines_all', $detail, $statutoryLabels, $language)
+        );
+        $fontPx = max(1, (int)$el['font_size']);
+        $rowPx = (int)ceil($fontPx * 1.5);
+        $boxPx = ((float)$el['height_pct'] / 100) * $this->pageHeightMm * 96 / 25.4;
+        $bodyRows = max(self::DUAL_MIN_ROWS, count($income), count($deduct), (int)floor($boxPx / ($rowPx + 1)) - 1); // +1 = collapsed cell border
+        $cell = 'border:1px solid #999999;padding:0 4px;height:' . $rowPx . 'px;';
+        $th = $cell . 'font-weight:bold;background-color:#f2f2f2;';
+        $e = fn(string $v): string => htmlspecialchars($v, ENT_QUOTES, 'UTF-8');
+        $rows = '<tr><td style="' . $th . '">' . $e($this->pick('รายได้', 'Earnings', $language)) . '</td><td style="' . $th . 'text-align:right;">' . $e($this->pick('จำนวนเงิน', 'Amount', $language))
+            . '</td><td style="' . $th . '">' . $e($this->pick('รายการหัก', 'Deductions', $language)) . '</td><td style="' . $th . 'text-align:right;">' . $e($this->pick('จำนวนเงิน', 'Amount', $language)) . '</td></tr>';
+        for ($i = 0; $i < $bodyRows; $i++) {
+            $l = $income[$i] ?? null;
+            $r = $deduct[$i] ?? null;
+            $rows .= '<tr>'
+                . '<td style="' . $cell . '">' . ($l ? $e($l['label']) : '&nbsp;') . '</td>'
+                . '<td style="' . $cell . 'text-align:right;">' . ($l ? number_format($l['amount'], 2) : '&nbsp;') . '</td>'
+                . '<td style="' . $cell . '">' . ($r ? $e($r['label']) : '&nbsp;') . '</td>'
+                . '<td style="' . $cell . 'text-align:right;">' . ($r ? number_format($r['amount'], 2) : '&nbsp;') . '</td></tr>';
+        }
+        return '<div style="' . $style . 'overflow:visible;"><table style="width:100%;border-collapse:collapse;table-layout:fixed;font-size:inherit;">'
+            . '<colgroup><col style="width:30%"><col style="width:20%"><col style="width:30%"><col style="width:20%"></colgroup>' . $rows . '</table></div>';
     }
 
     /** Small indented/muted sub-rows under a line that has an occurrence breakdown (e.g. "Loan
@@ -367,17 +518,18 @@ class PayslipTemplateRenderer {
         $trimmed = trim((string)($el['content'] ?? ''));
         foreach (self::BLOCK_FIELD_KEYS as $blockKey) {
             if ($trimmed === '{{' . $blockKey . '}}') {
-                return $this->renderBlockTable($blockKey, $detail, $statutoryLabels, $language, $style);
+                return $this->renderBlockTable($blockKey, $detail, $statutoryLabels, $language, $style, $el);
             }
         }
         return '<div style="' . $style . '">' . $this->substituteTokens((string)($el['content'] ?? ''), $tokens) . '</div>';
     }
 
     /** @param array{page_size?:string, orientation?:string} $template */
-    public function buildHtml(array $template, array $elements, array $company, array $run, array $detail, array $statutoryLabels, ?string $logoAbsPath, array $imageAssetPaths, ?array $ytd, ?string $watermarkText = null): string {
+    public function buildHtml(array $template, array $elements, array $company, array $run, array $detail, array $statutoryLabels, ?string $logoAbsPath, array $imageAssetPaths, ?array $ytd, ?string $watermarkText = null, ?array $ytdSlip = null): string {
         $language = (string)($template['language'] ?? 'th');
-        $tokens = $this->buildTokens($language, $company, $run, $detail, $ytd);
+        $tokens = $this->buildTokens($language, $company, $run, $detail, $ytd, $ytdSlip);
         [$pageW, $pageH] = self::pageDimensionsMm((string)($template['page_size'] ?? 'A4'), (string)($template['orientation'] ?? 'portrait'));
+        $this->pageHeightMm = (float)$pageH;
 
         $byPage = [];
         foreach ($elements as $el) {
@@ -460,13 +612,13 @@ class PayslipTemplateRenderer {
 
     /** Full render for a real payroll run + employee -- called by PaySlipReport::generate() once it
      *  has resolved the company's default template + real run/detail data. */
-    public function renderForRun(int $compId, array $template, array $elements, array $company, array $run, array $detail, ?array $ytd): string {
+    public function renderForRun(int $compId, array $template, array $elements, array $company, array $run, array $detail, ?array $ytd, ?array $ytdSlip = null): string {
         $detail = $this->attachOccurrenceBreakdown($run, $detail);
         $statutoryLabels = $this->statutoryLabelMap((string)($template['country_code'] ?? $company['registered_country'] ?? ''));
         $imageAssetIds = array_map(fn($el) => (int)($el['image_asset_id'] ?? 0), $elements);
         $imageAssetPaths = $this->resolveImageAssetPaths($compId, $imageAssetIds);
         $logoAbsPath = $this->resolveTemplateOrCompanyLogo($template['logo_path'] ?? null, $company['logo_path'] ?? null);
-        $html = $this->buildHtml($template, $elements, $company, $run, $detail, $statutoryLabels, $logoAbsPath, $imageAssetPaths, $ytd, null);
+        $html = $this->buildHtml($template, $elements, $company, $run, $detail, $statutoryLabels, $logoAbsPath, $imageAssetPaths, $ytd, null, $ytdSlip);
         return $this->renderPdf($template, $html);
     }
 
@@ -490,7 +642,7 @@ class PayslipTemplateRenderer {
         $run = ['id' => 0, 'comp_id' => $compId, 'period_start_date' => date('Y-m-01'), 'period_end_date' => date('Y-m-t'), 'payment_date' => date('Y-m-d')];
         $basicSalary = 30000.00;
         $earningBreakdown = [
-            ['code' => 'OT', 'name_th' => 'ค่าล่วงเวลา (ตัวอย่าง)', 'amount' => 1500.00],
+            ['code' => 'OT', 'name_th' => 'ค่าล่วงเวลา (ตัวอย่าง)', 'amount' => 1500.00, 'formula' => ['type' => 'ot_multiplier', 'hours' => 6.0]],
             ['code' => 'TRIP', 'name_th' => 'ค่าเที่ยว (ตัวอย่าง)', 'amount' => 800.00],
         ];
         $deductionBreakdown = [['code' => 'LOAN', 'name_th' => 'เงินกู้พนักงาน (ตัวอย่าง)', 'amount' => 500.00]];
@@ -514,6 +666,7 @@ class PayslipTemplateRenderer {
             'earning_breakdown' => $earningBreakdown, 'deduction_breakdown' => $deductionBreakdown, 'statutory_breakdown' => $statutoryBreakdown,
             'gross_amount' => $grossAmount, 'total_deduction_amount' => $totalDeduction, 'net_amount' => $netAmount,
             'bank_account_no' => $encryptedBank['value'] ?? null, 'key_version' => $encryptedBank['key_version'] ?? null,
+            'employee_status' => 'active', 'bank_name_th' => 'ธนาคารกสิกรไทย', 'bank_name_en' => 'Kasikornbank', 'prorate_days' => 30,
         ];
         $ytd = null;
         foreach ($elements as $el) {
@@ -522,12 +675,13 @@ class PayslipTemplateRenderer {
                 break;
             }
         }
+        $ytdSlip = ['base' => $basicSalary * 3, 'gross' => $grossAmount * 3, 'tax' => 750.0 * 3, 'sso' => 750.0 * 3, 'pvd' => 600.0 * 3, 'guarantee' => 300.0 * 3, 'loan1' => 500.0 * 3, 'loan2' => 0.0];
         $mergedTemplate = array_merge($template, ['country_code' => $countryCode]);
         $statutoryLabels = $this->statutoryLabelMap($countryCode);
         $imageAssetIds = array_map(fn($el) => (int)($el['image_asset_id'] ?? 0), $elements);
         $imageAssetPaths = $this->resolveImageAssetPaths($compId, $imageAssetIds);
         $logoAbsPath = $this->resolveTemplateOrCompanyLogo($logoPath, $company['logo_path'] ?? null);
-        $html = $this->buildHtml($mergedTemplate, $elements, $company, $run, $detail, $statutoryLabels, $logoAbsPath, $imageAssetPaths, $ytd, $watermarkText);
+        $html = $this->buildHtml($mergedTemplate, $elements, $company, $run, $detail, $statutoryLabels, $logoAbsPath, $imageAssetPaths, $ytd, $watermarkText, $ytdSlip);
         return $this->renderPdf($template, $html);
     }
 }
