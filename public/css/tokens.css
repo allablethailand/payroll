@@ -197,6 +197,57 @@
   --chart-5: #334155;
   --chart-grid: var(--c-border);
 
+  /* ---- Semantic roles (Phase 1 of the colour migration) ------------------------------------------
+     A second, role-named layer over the tokens above. Nothing consumes it yet -- later phases move
+     style.css onto these names so a component says WHAT a colour is for (surface, secondary text,
+     subtle divider), not which raw swatch it happens to be.
+     Rules for this layer: (1) a role that already has a --c- token is an ALIAS of it (var), so it
+     follows the dark theme with no second declaration; (2) a role with no existing token maps to a
+     raw --hex- swatch here, and gets its own dark value in the 2 dark blocks below; (3) light mode
+     values are unchanged from what the app renders today, this block only adds names. */
+
+  /* backgrounds / surfaces */
+  --c-bg-app: var(--c-bg-subtle);              /* canvas behind cards */
+  --c-bg-surface: var(--c-bg);                 /* cards, modals, inputs */
+  --c-bg-raised: var(--hex-ffffff);            /* dropdown, popover, toast: floats over the page */
+  --c-bg-selected: var(--c-primary-soft);      /* current tab, step or row */
+  --c-bg-inverse: var(--hex-101828);           /* tooltip, dark chip */
+  --c-bg-overlay: color-mix(in srgb, var(--hex-000000) 50%, transparent);   /* modal scrim */
+
+  /* text / icons */
+  --c-text-primary: var(--c-text);
+  --c-text-secondary: var(--hex-495057);
+  --c-text-disabled: var(--c-text-faint);
+  --c-text-inverse: var(--hex-ffffff);         /* on --c-bg-inverse */
+  --c-text-on-brand: var(--hex-ffffff);        /* on the brand fill */
+  --c-text-link: var(--c-text);                /* links are text colour, underline on hover */
+  --c-icon-default: var(--c-text-muted);
+  --c-icon-strong: var(--c-text);
+  --c-icon-faint: var(--c-text-faint);
+
+  /* borders / dividers */
+  --c-border-default: var(--c-border);
+  --c-border-subtle: var(--hex-eef0f2);        /* row separators, inner dividers */
+  --c-border-focus: var(--c-primary);
+
+  /* interactive / brand */
+  --c-brand-primary: var(--c-primary);
+  --c-brand-primary-hover: var(--c-primary-hover);
+  --c-brand-primary-soft: var(--c-primary-soft);
+  --c-focus-ring: color-mix(in srgb, var(--c-primary) 35%, transparent);
+  --c-interactive-disabled-bg: var(--c-bg-hover);
+  --c-interactive-disabled-text: var(--c-text-faint);
+
+  /* status -- same meaning rules as --c-danger and friends (docs/design/rules.md section 3) */
+  --c-status-success: var(--c-success);
+  --c-status-success-soft: var(--c-success-soft);
+  --c-status-warning: var(--c-warning);
+  --c-status-warning-soft: var(--c-warning-soft);
+  --c-status-danger: var(--c-danger);
+  --c-status-danger-soft: var(--c-danger-soft);
+  --c-status-info: var(--c-info);
+  --c-status-info-soft: var(--c-info-soft);
+
   /* Raw palette (Round 3 Task 6) -- one token per colour literal that used to sit in style.css, same value in light
      and dark so tone is unchanged; the semantic --c-* tokens above stay the first choice for new work. */
   --hex-000000: #000000;
@@ -489,6 +540,12 @@
     --c-danger-hover: #E5675E;
     --c-warning-fill: #C26A05;
     --c-warning-fill-hover: #B26205;
+    /* semantic roles with their own dark value; every other role above is an alias and follows --c- tokens */
+    --c-bg-raised: #1C2026;
+    --c-bg-inverse: #E6E8EB;
+    --c-text-secondary: #C5CAD1;
+    --c-text-inverse: #1F2328;
+    --c-border-subtle: #22262D;
     --shadow-modal: 0 8px 24px rgba(0, 0, 0, .6);
     --shadow-soft: 0 12px 32px rgba(0, 0, 0, .5);
     /* chart grays -- ramp inverted vs. light mode (light-to-dark becomes dark-to-light) so all 4
@@ -525,6 +582,12 @@
         --c-danger-hover: #E5675E;
         --c-warning-fill: #C26A05;
         --c-warning-fill-hover: #B26205;
+        /* semantic roles with their own dark value; every other role above is an alias and follows --c- tokens */
+        --c-bg-raised: #1C2026;
+        --c-bg-inverse: #E6E8EB;
+        --c-text-secondary: #C5CAD1;
+        --c-text-inverse: #1F2328;
+        --c-border-subtle: #22262D;
         --shadow-modal: 0 8px 24px rgba(0, 0, 0, .6);
         --shadow-soft: 0 12px 32px rgba(0, 0, 0, .5);
         --chart-2: #334155;
