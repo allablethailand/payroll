@@ -51,22 +51,17 @@
 .employee-recheck-identity-name { color: #64748b; font-size: .8rem; }
 </style>
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" data-i18n="employee">Employee</span>
-        </h5>
-    </nav>
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon">
-            <i class="fa-solid fa-users-gear"></i>
-        </div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="employee_management_title">Employee Management</h5>
-            <p class="page-header-card-desc small" data-i18n="employee_management_description">Configure and manage employee profiles, tax identifications, and bank accounts for payroll processing.</p>
-        </div>
-    </div>
+    <?php
+    $title = 'Employee Management';
+    $title_i18n = 'employee_management_title';
+    $breadcrumb = [
+        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Employee', 'href' => null, 'i18n' => 'employee'],
+    ];
+    $description = 'Configure and manage employee profiles, tax identifications, and bank accounts for payroll processing.';
+    $description_i18n = 'employee_management_description';
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
 
     <!-- 2026-08-29, explicit request: "ในหน้า employee list ก็ให้แยกเป็น 2 tab tab employee กับประวัติการ
          เข้าใช้ ดูภาพรวมของทุกคน มี Filter ด้วย" -- top-level page tab (per this project's own Tab
