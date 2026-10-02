@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/StatutoryCalculationEngine.php';
+require_once __DIR__ . '/../models/EmployeeYtdOpeningBalanceModel.php';
 
 /**
  * Computes a single payroll period's TH personal income tax (PIT, มาตรา 50 ทวิ) withholding
@@ -55,7 +56,7 @@ class ThPitCalculator {
     private const SPOUSE_ALLOWANCE = 60000.0;
     private const CHILD_ALLOWANCE = 30000.0;
     private const CHILD_RELATIONSHIPS = ['child_legitimate', 'child_adopted'];
-    private const YTD_STATES = ['approved', 'paid', 'locked'];
+    public const YTD_STATES = ['approved', 'paid', 'locked'];
 
     public function __construct(?PDO $pdo = null, ?StatutoryCalculationEngine $engine = null) {
         $this->db = $pdo ?? Database::getInstance()->pdo;
@@ -138,8 +139,12 @@ class ThPitCalculator {
      * remaining catch-up across whatever periods are left instead of a single lump correction.
      */
     private function calculateActual(int $compId, int $employeeId, float $periodGrossAmount, int $periodsPerYear, float $allowances, string $periodStartDate, string $calcDate): array {
-        $ytdGrossPrior = $this->ytdGrossPriorToThisPeriod($compId, $employeeId, $periodStartDate);
-        $periodsElapsed = $this->periodsElapsedThisYear($compId, $employeeId, $periodStartDate) + 1;
+        // Mid-year go-live: an imported opening balance stands in for everything before its as_of_date (see migration
+        // 2026-10-01_4). It applies only to periods starting on/after as_of_date, and then this system's own runs are
+        // counted from as_of_date too, so nothing is ever counted twice. No row (every monthly company today) = unchanged.
+        $opening = $this->openingBalanceFor($compId, $employeeId, $periodStartDate);
+        $ytdGrossPrior = $this->ytdGrossPriorToThisPeriod($compId, $employeeId, $periodStartDate, $opening);
+        $periodsElapsed = $this->periodsElapsedThisYear($compId, $employeeId, $periodStartDate, $opening) + 1;
         $ytdGrossIncludingThis = $ytdGrossPrior + $periodGrossAmount;
         $remainingPeriods = max(0, $periodsPerYear - $periodsElapsed);
 
@@ -148,7 +153,7 @@ class ThPitCalculator {
         $annualTax = $this->annualTax($compId, $netTaxable, $calcDate);
 
         $cumulativeTaxDue = round(($annualTax / $periodsPerYear) * $periodsElapsed, 2);
-        $ytdPitWithheldPrior = $this->ytdPitWithheldPriorToThisPeriod($compId, $employeeId, $periodStartDate);
+        $ytdPitWithheldPrior = $this->ytdPitWithheldPriorToThisPeriod($compId, $employeeId, $periodStartDate, $opening);
 
         return [
             'employee_amount' => max(0.0, round($cumulativeTaxDue - $ytdPitWithheldPrior, 2)),
@@ -157,6 +162,12 @@ class ThPitCalculator {
             'method' => 'actual',
             'periods_elapsed' => $periodsElapsed,
         ];
+    }
+
+    /** @return ?array opening balance row when one exists for this tax year and this period starts on/after its as_of_date */
+    private function openingBalanceFor(int $compId, int $employeeId, string $periodStartDate): ?array {
+        $opening = (new EmployeeYtdOpeningBalanceModel($this->db))->find($compId, $employeeId, (int)substr($periodStartDate, 0, 4));
+        return ($opening !== null && $periodStartDate >= $opening['as_of_date']) ? $opening : null;
     }
 
     private function dependentChildCount(int $employeeId): int {
@@ -176,40 +187,40 @@ class ThPitCalculator {
      *  real, tax_treatment-filtered taxable_gross_amount; a historical period computed BEFORE that
      *  fix has it NULL, so falls back to its own (imperfect, pre-fix) gross_amount rather than
      *  breaking the YTD sum with a NULL. */
-    private function ytdGrossPriorToThisPeriod(int $compId, int $employeeId, string $periodStartDate): float {
+    private function ytdGrossPriorToThisPeriod(int $compId, int $employeeId, string $periodStartDate, ?array $opening = null): float {
         $year = (int)substr($periodStartDate, 0, 4);
         $placeholders = implode(',', array_fill(0, count(self::YTD_STATES), '?'));
         $stmt = $this->db->prepare("SELECT COALESCE(SUM(COALESCE(d.taxable_gross_amount, d.gross_amount)), 0) FROM `payroll_run_details` d
             JOIN `payroll_runs` r ON r.id = d.run_id
             WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
-                AND YEAR(r.period_start_date) = ? AND r.period_start_date < ? AND d.employee_id = ?");
-        $stmt->execute(array_merge([$compId], self::YTD_STATES, [$year, $periodStartDate, $employeeId]));
-        return (float)$stmt->fetchColumn();
+                AND YEAR(r.period_start_date) = ? AND r.period_start_date < ? AND d.employee_id = ?" . ($opening ? " AND r.period_start_date >= ?" : ""));
+        $stmt->execute(array_merge([$compId], self::YTD_STATES, [$year, $periodStartDate, $employeeId], $opening ? [$opening['as_of_date']] : []));
+        return (float)$stmt->fetchColumn() + ($opening['ytd_taxable_gross'] ?? 0.0);
     }
 
-    private function periodsElapsedThisYear(int $compId, int $employeeId, string $periodStartDate): int {
+    private function periodsElapsedThisYear(int $compId, int $employeeId, string $periodStartDate, ?array $opening = null): int {
         $year = (int)substr($periodStartDate, 0, 4);
         $placeholders = implode(',', array_fill(0, count(self::YTD_STATES), '?'));
         $stmt = $this->db->prepare("SELECT COUNT(*) FROM `payroll_run_details` d
             JOIN `payroll_runs` r ON r.id = d.run_id
             WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
-                AND YEAR(r.period_start_date) = ? AND r.period_start_date < ? AND d.employee_id = ?");
-        $stmt->execute(array_merge([$compId], self::YTD_STATES, [$year, $periodStartDate, $employeeId]));
-        return (int)$stmt->fetchColumn();
+                AND YEAR(r.period_start_date) = ? AND r.period_start_date < ? AND d.employee_id = ?" . ($opening ? " AND r.period_start_date >= ?" : ""));
+        $stmt->execute(array_merge([$compId], self::YTD_STATES, [$year, $periodStartDate, $employeeId], $opening ? [$opening['as_of_date']] : []));
+        return (int)$stmt->fetchColumn() + ($opening['periods_paid'] ?? 0);
     }
 
     /** Sums the TH_PIT line's employee_amount out of statutory_breakdown (JSON, decoded PHP-side
      *  -- same pattern this codebase already uses elsewhere rather than fragile in-SQL JSON
      *  functions) across prior periods this year, up to (not including) this one. */
-    private function ytdPitWithheldPriorToThisPeriod(int $compId, int $employeeId, string $periodStartDate): float {
+    private function ytdPitWithheldPriorToThisPeriod(int $compId, int $employeeId, string $periodStartDate, ?array $opening = null): float {
         $year = (int)substr($periodStartDate, 0, 4);
         $placeholders = implode(',', array_fill(0, count(self::YTD_STATES), '?'));
         $stmt = $this->db->prepare("SELECT d.statutory_breakdown FROM `payroll_run_details` d
             JOIN `payroll_runs` r ON r.id = d.run_id
             WHERE r.comp_id = ? AND r.deleted_at IS NULL AND r.state IN ({$placeholders})
-                AND YEAR(r.period_start_date) = ? AND r.period_start_date < ? AND d.employee_id = ?");
-        $stmt->execute(array_merge([$compId], self::YTD_STATES, [$year, $periodStartDate, $employeeId]));
-        $total = 0.0;
+                AND YEAR(r.period_start_date) = ? AND r.period_start_date < ? AND d.employee_id = ?" . ($opening ? " AND r.period_start_date >= ?" : ""));
+        $stmt->execute(array_merge([$compId], self::YTD_STATES, [$year, $periodStartDate, $employeeId], $opening ? [$opening['as_of_date']] : []));
+        $total = $opening['ytd_pit_withheld'] ?? 0.0;
         foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $json) {
             $items = json_decode((string)$json, true);
             if (!is_array($items)) {

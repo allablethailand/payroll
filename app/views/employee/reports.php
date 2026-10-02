@@ -1,20 +1,13 @@
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" data-i18n="employee_reports">Reports</span>
-        </h5>
-    </nav>
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon">
-            <i class="fa-solid fa-chart-column"></i>
-        </div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="employee_reports">Reports</h5>
-            <p class="page-header-card-desc small" data-i18n="employee_reports_description">Headcount movement, expiry alerts, probation status, statutory enrollment, structure, tenure, birthdays, and data completeness -- one report per tab.</p>
-        </div>
-    </div>
+    <?php
+    $breadcrumb = [
+        ['label' => 'Employees', 'href' => null, 'i18n' => 'employees'],
+        ['label' => 'Reports', 'href' => null, 'i18n' => 'employee_reports'],
+    ];
+    $description = 'Headcount movement, expiry alerts, probation status, statutory enrollment, structure, tenure, birthdays, and data completeness -- one report per tab.';
+    $description_i18n = 'employee_reports_description';
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
 
     <!-- 2026-09-02, 3-way Employee submenu split -- this used to be the "Reports" tab-pane inside
          /payroll/employees (built across Phases 0-4 of the Employee Reports plan, see each

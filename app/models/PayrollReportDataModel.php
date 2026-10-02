@@ -27,6 +27,21 @@ class PayrollReportDataModel {
         return $row ?: null;
     }
 
+    /** Title, encrypted ID-card number (with key_version, for EmployeePiiTrait::decryptEmployeeField) and addresses by employee id. @return array<int, array> */
+    public function getEmployeesPii(array $employeeIds): array {
+        $ids = array_values(array_unique(array_map('intval', $employeeIds)));
+        if (!$ids) {
+            return [];
+        }
+        $stmt = $this->db->prepare('SELECT id, title, id_card_no, key_version, address_line_1_register, address_line_2_register, address_line_1_contact, address_line_2_contact FROM `employees` WHERE id IN (' . implode(',', array_fill(0, count($ids), '?')) . ')');
+        $stmt->execute($ids);
+        $out = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            $out[(int)$row['id']] = $row;
+        }
+        return $out;
+    }
+
     public function getRun(int $runId, int $compId): ?array {
         // c.bank_file_format_id (2026-08-29) -- lets BankTransferFileReport resolve which company-
         // configured bank file layout (BankFileFormatModel) to render this run's transfer file with.

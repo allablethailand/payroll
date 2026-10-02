@@ -13,15 +13,13 @@
  */
 ?>
 <div class="container container-body designer-light-scope" data-bs-theme="light">
-  <nav aria-label="breadcrumb">
-    <h5 class="payroll-breadcrumb mt-5 mb-5">
-      <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-      <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-      <span class="bc-parent" data-i18n="payslip_menu">Payslip</span>
-      <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-      <span class="bc-current"><?=htmlspecialchars($pair['template_name'] ?? 'Edit', ENT_QUOTES, 'UTF-8')?></span>
-    </h5>
-  </nav>
+  <?php
+  $breadcrumb = [
+      ['label' => 'Payslip', 'href' => null, 'i18n' => 'payslip_menu'],
+      ['label' => $pair['template_name'] ?? 'Edit', 'href' => null],
+  ];
+  include __DIR__ . '/../partials/page-header.php';
+  ?>
 
   <?php if ($pair === null): ?>
   <div class="card-surface p-5 text-center text-secondary">

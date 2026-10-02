@@ -2,20 +2,15 @@
 #tb_payroll_approval tbody tr { cursor: pointer; }
 </style>
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" data-i18n="payroll_approval">Payroll Approval</span>
-        </h5>
-    </nav>
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon"><i class="fa-solid fa-clipboard-check"></i></div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="payroll_approval">Payroll Approval</h5>
-            <p class="page-header-card-desc" data-i18n="payroll_approval_description">Payroll runs waiting for your approval. Click a row to review, or use the checkboxes to approve/reject several at once.</p>
-        </div>
-    </div>
+    <?php
+    $breadcrumb = [
+        ['label' => 'Payroll', 'href' => null, 'i18n' => 'payroll_menu'],
+        ['label' => 'Payroll Approval', 'href' => null, 'i18n' => 'payroll_approval'],
+    ];
+    $description = 'Payroll runs waiting for your approval. Click a row to review, or use the checkboxes to approve/reject several at once.';
+    $description_i18n = 'payroll_approval_description';
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
 
     <!-- 2026-08-22, explicit request ("ในหน้า Approve ให้มี Filter และมี Station Status เพื่อให้
          กรองข้อมูลได้ด้วย รูปแบบการแสดงผลให้เหมือน [Origami]") -- exact same .station-filter/

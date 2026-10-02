@@ -3,6 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/ReportGeneratorInterface.php';
 require_once __DIR__ . '/statutory/th/PndOneReport.php';
 require_once __DIR__ . '/statutory/th/PndOneKorSummaryReport.php';
+require_once __DIR__ . '/statutory/th/Tawi50PdfReport.php';
 require_once __DIR__ . '/statutory/th/Sso110Report.php';
 require_once __DIR__ . '/statutory/th/Sso609Report.php';
 require_once __DIR__ . '/statutory/th/Kor20KorReport.php';
@@ -34,6 +35,7 @@ class ReportRegistry {
         }
         self::register(new PndOneReport());
         self::register(new PndOneKorSummaryReport());
+        self::register(new Tawi50PdfReport());
         self::register(new Sso110Report());
         self::register(new Sso609Report());
         self::register(new Kor20KorReport());

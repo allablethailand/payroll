@@ -43,6 +43,7 @@ class ManualEntryController extends Controller {
     private ImportService $importService;
     private ImportTemplateDownloadLogModel $downloadLogModel;
     private ImportActivityLogModel $activityLogModel;
+    private ImportAuditLogModel $auditLogModel;
     private EmployeeModel $employeeModel;
 
     private const IMPORTABLE_TRANSACTION_TYPES = ['attendance', 'leave', 'overtime'];
@@ -56,6 +57,7 @@ class ManualEntryController extends Controller {
         $this->importService = new ImportService();
         $this->downloadLogModel = new ImportTemplateDownloadLogModel();
         $this->activityLogModel = new ImportActivityLogModel();
+        $this->auditLogModel = new ImportAuditLogModel();
         $this->employeeModel = new EmployeeModel();
     }
 
@@ -65,6 +67,13 @@ class ManualEntryController extends Controller {
             (string)($_SERVER['REMOTE_ADDR'] ?? '') ?: null,
             (string)($_SERVER['HTTP_USER_AGENT'] ?? '') ?: null,
         ];
+    }
+
+    /** Writes one import_audit_logs row with the request's own route/IP/User-Agent. */
+    private function auditImport(int $compId, string $entityType, string $action, array $payload = [], bool $success = true, ?int $batchId = null): void {
+        [$ip, $ua] = $this->requestFingerprint();
+        $route = strtok((string)($_SERVER['REQUEST_URI'] ?? ''), '?') ?: null;
+        $this->auditLogModel->log($compId, $this->userId(), $entityType, $action, $payload, $success, $batchId, $route, $ip, $ua);
     }
 
     private function modelForEntityType(string $entityType) {
@@ -266,6 +275,7 @@ class ManualEntryController extends Controller {
         if ($compId) {
             [$ip, $ua] = $this->requestFingerprint();
             $this->downloadLogModel->log($compId, $entityType, $file['file_name'], $this->userId(), $ip, $ua, 'manual_entry_import_tab');
+            $this->auditImport($compId, $entityType, 'download_template', ['file_name' => $file['file_name']]);
         }
         header('Content-Type: ' . $file['mime_type']);
         header('Content-Disposition: attachment; filename="' . $file['file_name'] . '"');
@@ -325,7 +335,15 @@ class ManualEntryController extends Controller {
             // established. Stored regardless of whether the admin ever actually commits -- an
             // abandoned preview simply leaves an orphaned file, same "no cleanup job" precedent this
             // app already accepts for logo/signature re-uploads (see CLAUDE.md).
-            $storedFile = $this->storeImportOriginal($compId, $_FILES['file']);
+            $storedFile = $this->importService->storeOriginal($compId, $_FILES['file']);
+            $this->auditImport($compId, $entityType, 'validate', [
+                'file_name' => (string)$_FILES['file']['name'],
+                'mapped_fields' => array_keys($mapResult['rows'][0] ?? []),
+                'unmapped_headers' => $mapResult['unmapped_headers'],
+                'total' => $previewResult['total'] ?? count($mapResult['rows']),
+                'success' => $previewResult['success'] ?? null,
+                'failed' => $previewResult['error'] ?? null,
+            ]);
             $this->json([
                 'status' => true,
                 'columns' => $columns,
@@ -336,47 +354,12 @@ class ManualEntryController extends Controller {
                 'stored_file_name' => $storedFile['name'] ?? null,
             ]);
         } catch (InvalidArgumentException $e) {
+            $this->auditImport($compId, $entityType, 'validate', ['file_name' => (string)$_FILES['file']['name'], 'error' => $e->getMessage()], false);
             $this->json(['status' => false, 'message' => $e->getMessage()]);
         } catch (Throwable $e) {
+            $this->auditImport($compId, $entityType, 'validate', ['file_name' => (string)$_FILES['file']['name'], 'error' => $e->getMessage()], false);
             $this->json(['status' => false, 'message' => 'Import preview failed: ' . $e->getMessage()]);
         }
-    }
-
-    /** Copies the just-uploaded import file to a durable location (storage/uploads/import_originals/
-     *  {comp_id}/{hex}.{ext}, random-hex-name convention every other upload site in this app already
-     *  uses) so it survives past this one request -- PHP's own upload temp file is auto-cleaned the
-     *  moment the request ends. Returns null (never fatal) on any filesystem failure -- retaining the
-     *  original is a nice-to-have for audit, not a requirement for the import itself to work.
-     *  @return ?array{token:string,name:string} */
-    private function storeImportOriginal(int $compId, array $file): ?array {
-        $ext = strtolower((string)pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION));
-        if (!in_array($ext, ['xlsx', 'xls', 'csv'], true)) {
-            $ext = 'dat';
-        }
-        $dir = __DIR__ . '/../../storage/uploads/import_originals/' . $compId . '/';
-        if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
-            return null;
-        }
-        $token = bin2hex(random_bytes(16)) . '.' . $ext;
-        if (!copy($file['tmp_name'], $dir . $token)) {
-            return null;
-        }
-        return ['token' => $token, 'name' => basename((string)($file['name'] ?? $token))];
-    }
-
-    /** Resolves a stored_file_token (from storeImportOriginal() above) back to an absolute path,
-     *  validated via realpath containment against the import_originals root -- never trusts the
-     *  token as a literal filesystem path. */
-    private function resolveImportOriginalPath(int $compId, string $token): ?string {
-        $root = realpath(__DIR__ . '/../../storage/uploads/import_originals/' . $compId);
-        if ($root === false) {
-            return null;
-        }
-        $candidate = realpath($root . '/' . $token);
-        if ($candidate === false || strpos($candidate, $root) !== 0 || !is_file($candidate)) {
-            return null;
-        }
-        return $candidate;
     }
 
     /** T032 (commit half): re-runs the SAME mapped-rows array the preview step already validated -- through the real, persisting ImportService::commit(), creating a real sync_batches row (source='import') that T033/T034 list below. */
@@ -403,7 +386,7 @@ class ManualEntryController extends Controller {
         $originalFile = null;
         $storedFileToken = (string)($_POST['stored_file_token'] ?? '');
         if ($storedFileToken !== '') {
-            $resolvedPath = $this->resolveImportOriginalPath($compId, $storedFileToken);
+            $resolvedPath = $this->importService->resolveOriginalPath($compId, $storedFileToken);
             if ($resolvedPath !== null) {
                 $originalFile = [
                     'path' => 'storage/uploads/import_originals/' . $compId . '/' . $storedFileToken,
@@ -413,6 +396,13 @@ class ManualEntryController extends Controller {
             }
         }
         $result = $this->importService->commit($compId, $entityType, $mappedRows, $this->userId(), $ip, $ua, $originalFile);
+        $this->auditImport($compId, $entityType, 'commit', [
+            'file_name' => $originalFile['name'] ?? null,
+            'mapped_fields' => array_keys($mappedRows[0] ?? []),
+            'total' => $result['total'] ?? count($mappedRows),
+            'success' => $result['success'] ?? null,
+            'failed' => $result['error'] ?? null,
+        ], !empty($result['status']), isset($result['batch_id']) ? (int)$result['batch_id'] : null);
         $this->json($result);
     }
 

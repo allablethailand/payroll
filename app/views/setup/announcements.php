@@ -1,20 +1,13 @@
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-parent" data-i18n="settings">Settings</span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" data-i18n="announcement_menu">Announcements</span>
-        </h5>
-    </nav>
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon"><i class="fa-solid fa-bullhorn"></i></div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="announcement_menu">Announcements</h5>
-            <p class="page-header-card-desc" data-i18n="announcement_page_description">Create and publish company-wide announcements. Once published, an announcement's content and recipient list can no longer be edited.</p>
-        </div>
-    </div>
+    <?php
+    $breadcrumb = [
+        ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
+        ['label' => 'Announcements', 'href' => null, 'i18n' => 'announcement_menu'],
+    ];
+    $description = 'Create and publish company-wide announcements. Once published, an announcement\'s content and recipient list can no longer be edited.';
+    $description_i18n = 'announcement_page_description';
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
 
     <!-- 2026-09-04, Backlog Phase 11, T066: this page had no filter at all (the only list-style page
          in an app-wide audit with no filter bar and no documented exemption). Client-side

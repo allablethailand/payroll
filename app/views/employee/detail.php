@@ -170,18 +170,15 @@
 }
 </style>
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-parent" data-i18n="employee">Employee</span>
-            <!-- New-employee flow (2026-08-19, explicit request): no "New Employee" placeholder --
-                 the 3rd breadcrumb level simply doesn't exist until a real employee_no is assigned by
-                 the first save. Revealed by saveEmployee()'s success handler in detail.js. -->
-            <span class="bc-separator<?= $employee_no ? '' : ' d-none' ?>" id="bcSeparatorCurrent"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current<?= $employee_no ? '' : ' d-none' ?>" id="bcCurrent"><?= htmlspecialchars($employee_no ?? '', ENT_QUOTES, 'UTF-8') ?></span>
-        </h5>
-    </nav>
+    <?php
+    // Create mode shows just Employees; the employee_no crumb is rendered hidden and revealed by
+    // saveEmployee() (detail.js) once the first save assigns a real employee_no.
+    $breadcrumb = [
+        ['label' => 'Employees', 'href' => BASE_URL . '/employees', 'i18n' => 'employees'],
+        ['label' => (string)($employee_no ?? ''), 'href' => null, 'hidden' => !$employee_no],
+    ];
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
     <!-- No .page-header-card here (2026-08-19, explicit follow-up request: "ไม่ต้องมี head ครับ
          ตอนนี้ขึ้นเป็นณุปกับชื่อสวยแล้ว") -- tried it, but #employeeProfileHeader below already reads
          as this page's header (avatar + name) once an employee exists, and duplicating a second

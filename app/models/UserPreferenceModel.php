@@ -167,6 +167,7 @@ class UserPreferenceModel {
             ['key' => 'time_leave.manual_entry', 'url' => '/manual-entry', 'icon' => 'TIME.SVG', 'label' => 'manual_time_entry', 'group' => 'time_and_leave'],
             ['key' => 'settings.company_profile', 'url' => '/setup/company-profile', 'icon' => 'COMPANY.SVG', 'label' => 'company_profile', 'group' => 'settings'],
             ['key' => 'settings.data_sync', 'url' => '/setup/data-sync', 'icon' => 'ORIGAMI_APP.SVG', 'label' => 'data_sync_menu', 'group' => 'settings'],
+            ['key' => 'settings.data_import', 'url' => '/imports', 'icon' => 'ORIGAMI_APP.SVG', 'label' => 'data_import_menu', 'group' => 'settings'],
             ['key' => 'settings.payroll_configuration', 'url' => '/setup/payroll-configuration', 'icon' => 'ORIGAMI_APP.SVG', 'label' => 'payroll_configuration', 'group' => 'settings'],
             ['key' => 'settings.tax_statutory', 'url' => '/setup/tax-statutory', 'icon' => 'TAX.SVG', 'label' => 'tax_and_statutory', 'group' => 'settings'],
             ['key' => 'help.setup_guide', 'url' => '/help/setup-guide', 'icon' => 'REPORT.SVG', 'label' => 'setup_guide_menu', 'group' => 'help_menu'],
