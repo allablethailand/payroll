@@ -7032,69 +7032,6 @@ html, body {
     word-break: break-word;
 }
 
-/* ==========================================================================
-   .page-header-card -- the distinctive page-title header block (icon + title + description) that
-   sits under the breadcrumb at the top of a page. Split out of plain .card-surface (2026-08-19,
-   explicit request: "card-surface ที่เป็น head ของแต่ละหน้าช่วยหา Design ที่เป็นเอกลักษณ์") -- .card-
-   surface itself stays a neutral, content-agnostic wrapper used all over the app for unrelated
-   section cards, so it couldn't be the thing restyled here without changing dozens of other cards
-   that have nothing to do with page titles. This is deliberately its own class instead.
-   STANDING CONVENTION: every page's top header block uses this pattern (25 view files as of
-   2026-09-02) -- markup shape unchanged since 2026-08-19:
-     <div class="page-header-card mb-4">
-       <div class="page-header-card-icon"><i class="fa-solid fa-xxx"></i></div>
-       <div class="page-header-card-body">
-         <h5 class="page-header-card-title" data-i18n="...">Title</h5>
-         <p class="page-header-card-desc" data-i18n="...">Description</p>
-       </div>
-     </div>
-   2026-09-02, Platform Hardening Phase 1.4, explicit request: "ดูเก่า...โมเดิร์นแต่ไม่ดูเป็น AI มากเกินไป
-   หลีกเลี่ยง gradient สีรุ้งฉูดฉาด, glass-blur เว่อร์, เงา neon" -- confirmed via a 4-way side-by-side
-   mockup (current + 3 proposals), user picked "Option A / Flat Accent": the old warm gradient
-   background + radial glow blob (a soft blurry corner glow behind a gradient is exactly the kind of
-   generic-SaaS-hero motif the request was naming) is GONE -- flat white surface, a solid 4px left
-   accent bar (reuses THIS app's own existing .border-start.border-4 convention, e.g.
-   .employee-payroll-participant-bar a few sections down in this file -- not a new pattern), and a
-   flat icon tile (solid tint, no gradient, no drop-shadow, smaller/tighter radius) instead of the
-   old glossy gradient badge. Zero markup change needed -- every one of the 25 existing
-   .page-header-card usages gets this automatically just by this CSS changing. Still light-mode only
-   (matches the rest of this stylesheet, no dark-mode variants exist anywhere in it).
-   ========================================================================== */
-.page-header-card {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    background: var(--c-bg-surface);
-    border: 1px solid var(--c-border-default);
-    border-left: 4px solid var(--c-primary);
-    border-radius: 8px;
-    padding: 1rem 1.3rem;
-}
-.page-header-card-icon {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    border-radius: 8px;
-    background: var(--app-accent-soft-bg);
-    color: var(--app-accent-soft-text);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 1.15rem;
-}
-.page-header-card-body {
-    min-width: 0;
-}
-.page-header-card-title {
-    color: var(--c-text-primary);
-    font-weight: 700;
-    margin: 0;
-    letter-spacing: -.005em;
-}
-.page-header-card-desc {
-    color: var(--c-text-muted);
-    margin: .2rem 0 0;
-}
 /* 2026-09-07, Dashboard redesign: the old "powered by Origami" brandmark that used to occupy this
    header-card corner is removed outright (explicit request: "ตัด Origami Payroll Logo ออก ดูไม่เข้ากับ
    เพื่อนครับ") -- that slot is empty again now (see the follow-up comment below on where the picker
