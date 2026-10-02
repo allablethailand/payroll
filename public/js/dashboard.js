@@ -324,7 +324,7 @@ function dashOnlineUserAvatarHtml(row) {
     const photo = row.profile_photo_thumbnail_path || row.profile_photo_path;
     const inner = photo
         ? `<img src="${BASE_URL}/${dashEscapeHtml(photo)}" alt="">`
-        : `<span class="apv-person-avatar" style="width:30px;height:30px;min-width:30px;font-size:0.95rem;">${dashEscapeHtml((dashOnlineDisplayName(row) || '?').trim().charAt(0).toUpperCase() || '?')}</span>`;
+        : `<span class="apv-person-avatar">${dashEscapeHtml((dashOnlineDisplayName(row) || '?').trim().charAt(0).toUpperCase() || '?')}</span>`;
     return `<div class="dash-online-avatar-wrap">${inner}<span class="dash-online-dot"></span></div>`;
 }
 function renderOnlineUsers(rows, total) {

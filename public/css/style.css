@@ -11400,6 +11400,12 @@ table.dataTable thead > tr > th.tcf-th.dt-orderable-desc:hover {
     width: 30px;
     height: 30px;
 }
+.dash-online-avatar-wrap .apv-person-avatar {
+    width: 30px;
+    height: 30px;
+    min-width: 30px;
+    font-size: 0.95rem;
+}
 .dash-online-avatar-wrap img {
     width: 30px;
     height: 30px;
