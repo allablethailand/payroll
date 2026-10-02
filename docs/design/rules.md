@@ -152,9 +152,8 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 
 ```
 ┌ Sidebar ─┬────────────────────────────────────────────────────────┐
-│          │ Breadcrumb (เทา, ตัวเล็ก)                               │
-│          │ H1 หน้า                              [ปุ่มหลัก ส้ม 1 ตัว] │
-│          │ คำอธิบาย 1 บรรทัด (ถ้าจำเป็นจริง)                       │
+│          │ Origami Payroll / เมนู / เมนูย่อย (เทา, ตัวเล็ก)         │
+│          │ คำอธิบาย 1 บรรทัด (เล็ก/เทา)         [ปุ่มหลัก ส้ม 1 ตัว] │
 │          ├────────────────────────────────────────────────────────┤
 │          │ Stat cards (ถ้ามี) — แถวเดียว การ์ดเท่ากัน ไม่มีสีพื้น    │
 │          │ Tabs (ไม่มีไอคอน)                                       │
@@ -163,6 +162,7 @@ light/dark อยู่ใน `tokens.css` ไฟล์เดียว ผ่า
 └──────────┴────────────────────────────────────────────────────────┘
 ```
 
+- **Page header ไม่มี H1 (REVISED 2026-10-02 — ทับทุกข้อในหัวข้อนี้ที่พูดถึง H1/`$title`/`#phTitle` ของ partial)** — ชื่อหน้า = crumb สุดท้ายของ breadcrumb; crumb แรกคือ "Origami Payroll" (key `app_name`, ลิงก์ไป `/dashboard`) ที่ `page-header.php` เติมให้เอง ห้าม view ใส่ซ้ำ; โครงสร้างคือ `Origami Payroll / เมนู / เมนูย่อย` (3 ระดับ) หรือ `Origami Payroll / เมนู` (2 ระดับ) ตามชื่อเมนู sidebar; `$breadcrumb` ของ view ใส่แค่ระดับเมนู→หน้าปัจจุบัน; `$description` ใช้ `font-size:.8125rem` สีเทา วางซ้ายแถวเดียวกับปุ่ม action; `$title`/`$title_i18n` partial ไม่อ่านแล้ว; หน้าที่ต้องมีหัวข้อที่เป็นข้อมูลจริง (ชื่อรอบ+badge ของ Payroll Detail, คำทักทายของ Dashboard) วาด heading เองใน view (`.entity-title`/`.dash-greeting-title`) ไม่ใช่ใน partial — ตรวจอัตโนมัติด้วย `php scripts/check-design.php` (หัวข้อ "§2 page header")
 - **Page header = partial เดียว** `app/views/partials/page-header.php` รับ `title`, `breadcrumb[]`, `secondary_actions[]` (ไม่เกิน 2, label + id/href + icon optional, render `.btn-outline-secondary`, วางซ้ายของ `primary_action` เสมอ — ตัดสินใจแล้วรอบ 2 item 4; item ยังรับ `items[]` ให้เป็น dropdown ได้, และมี slot แยก `overflow_actions[]`/`overflow_label` สำหรับ action เปลี่ยนสถานะ — เพิ่มรอบ 3 item 3a), `primary_action` (label + id/href + icon optional), `description`, `id_prefix` (optional, default `'ph'` — ให้หน้าเดียวกัน include ซ้ำได้โดยไม่ id ชน เช่น demo หลายชุดใน components.php) — **ไม่มี card ครอบ ไม่มีไอคอนหน้า ไม่มีพื้นหลังสี** (ของเดิม "การ์ดหัวหน้า + ไอคอน" ทุกหน้าให้แทนด้วย partial นี้) **ปุ่มทุกตัวใน header เป็นขนาดปกติเสมอ ห้าม `btn-sm`** (item A.4, 2026-09-13 — partial ไม่เคยใช้ `btn-sm` มาตั้งแต่แรกอยู่แล้ว ตรวจสอบแล้ว ไม่ต้องแก้โค้ด)
   - **`decision_actions[]` (ใหม่, item 3a follow-up ข้อ 1, 2026-09-13; REVISED ข้อ "แก้ decision set" วัน
     เดียวกัน)** — แยกจาก `secondary_actions` โดยตั้งใจ: ใช้เมื่อผู้ใช้ต้องเห็น**ทุกทางเลือกของการตัดสินใจ

@@ -6,11 +6,14 @@ require_once __DIR__ . '/../../ExcelRendererTrait.php';
 require_once __DIR__ . '/../../EmployeePiiTrait.php';
 require_once __DIR__ . '/../../../export/th/PndOneKorExporter.php';
 require_once __DIR__ . '/../../../../models/PayrollReportDataModel.php';
+require_once __DIR__ . '/../../../../models/AnnualIncomeSummaryModel.php';
 require_once __DIR__ . '/../../LocalizedException.php';
 
 /**
- * ภ.ง.ด.1ก annual summary — aggregates TH_PIT withheld per employee across every payroll run
- * in a calendar year. PDF/Excel formats are a human-readable summary of this system's own
+ * ภ.ง.ด.1ก annual summary — one row per employee: income and TH_PIT withheld across every payroll run
+ * paid in the calendar year PLUS any opening YTD balance imported for a mid-year go-live
+ * (AnnualIncomeSummaryModel::getCompanyAnnualSummary(), final_* keys). Income is the taxable gross.
+ * PDF/Excel formats are a human-readable summary of this system's own
  * data (fully our own layout, not an official form reproduction). The 'txt' format delegates
  * to PndOneKorExporter (2026-09-05, Phase 12 T071, rewritten against a real reference spec — see
  * that class's own docblock).
@@ -89,8 +92,9 @@ class PndOneKorSummaryReport implements ReportGeneratorInterface {
         $yearAd = $yearBe - 543;
 
         $dataModel = new PayrollReportDataModel();
-        $runs = $dataModel->getRunsInYear($compId, $yearAd, self::ALLOWED_STATES);
-        if (empty($runs)) {
+        // One consolidated row per employee: runs paid in the year plus any imported opening YTD balance (final_* = sys_* + ytd_*).
+        $annual = (new AnnualIncomeSummaryModel())->getCompanyAnnualSummary($compId, $yearAd);
+        if (empty($annual['employees'])) {
             $allowedLabel = implode('/', self::ALLOWED_STATES);
             throw new LocalizedException("No payroll runs in state {$allowedLabel} were found for B.E. {$yearBe}.", 'no_runs_in_state_for_year', ['states' => self::ALLOWED_STATES, 'year' => $yearBe]);
         }
@@ -98,35 +102,22 @@ class PndOneKorSummaryReport implements ReportGeneratorInterface {
         // 2026-09-05, Phase 12 T071: Thai prefix TEXT, not the raw title code -- see this class's
         // own top-of-file docblock for the real display bug this fixes.
         $prefixMap = ['mr' => 'นาย', 'mrs' => 'นาง', 'ms' => 'นางสาว'];
-        $employees = []; // keyed by employee_id, accumulated across runs
-        foreach ($runs as $run) {
-            foreach ($dataModel->getRunDetails((int)$run['id']) as $detail) {
-                $empId = (int)$detail['employee_id'];
-                if (!isset($employees[$empId])) {
-                    $employees[$empId] = [
-                        'tax_id' => $this->decryptEmployeeField($detail, 'id_card_no') ?? '',
-                        'prefix' => $prefixMap[$detail['title'] ?? ''] ?? '',
-                        'first_name' => $detail['name_th'] ?? '',
-                        'last_name' => $detail['surname_th'] ?? '',
-                        'total_income' => 0.0,
-                        'tax_withheld' => 0.0,
-                    ];
-                }
-                $employees[$empId]['total_income'] += (float)$detail['gross_amount'];
-                foreach ($detail['statutory_breakdown'] as $sItem) {
-                    if ($sItem['code'] === 'TH_PIT') {
-                        $employees[$empId]['tax_withheld'] += (float)$sItem['employee_amount'];
-                    }
-                }
-            }
+        $pii = $dataModel->getEmployeesPii(array_column($annual['employees'], 'employee_id'));
+        $employees = [];
+        foreach ($annual['employees'] as $row) {
+            $person = $pii[$row['employee_id']] ?? [];
+            $employees[] = [
+                'tax_id' => $this->decryptEmployeeField($person, 'id_card_no') ?? '',
+                'prefix' => $prefixMap[$person['title'] ?? ''] ?? '',
+                'first_name' => $row['name_th'] ?? '',
+                'last_name' => $row['surname_th'] ?? '',
+                'total_income' => $row['final_gross'],
+                'tax_withheld' => $row['final_tax'],
+                'has_ytd_included' => $row['has_ytd_included'],
+            ];
         }
-        foreach ($employees as &$emp) {
-            $emp['total_income'] = round($emp['total_income'], 2);
-            $emp['tax_withheld'] = round($emp['tax_withheld'], 2);
-        }
-        unset($emp);
-
-        $employeeList = array_values($employees);
+        $hasYtdIncluded = $annual['totals']['has_ytd_included'];
+        $employeeList = $employees;
 
         if ($format === 'txt') {
             $exporter = new PndOneKorExporter();
@@ -147,6 +138,8 @@ class PndOneKorSummaryReport implements ReportGeneratorInterface {
         $rowsHtml = '';
         $totalIncome = 0.0;
         $totalTax = 0.0;
+        $ytdCount = count(array_filter($employeeList, fn($e) => $e['has_ytd_included']));
+        $ytdNote = $hasYtdIncluded ? '<div>* รวมยอดสะสมต้นปีที่นำเข้าจากระบบเดิม ' . $ytdCount . ' คน</div>' : '';
         foreach ($employeeList as $e) {
             $totalIncome += $e['total_income'];
             $totalTax += $e['tax_withheld'];
@@ -157,12 +150,12 @@ class PndOneKorSummaryReport implements ReportGeneratorInterface {
                 . '<td class="amount">' . number_format($e['tax_withheld'], 2) . '</td>'
                 . '</tr>';
         }
-        $html = $this->buildPdfHtml($companyName, $yearBe, $rowsHtml, $totalIncome, $totalTax);
+        $html = $this->buildPdfHtml($companyName, $yearBe, $rowsHtml, $totalIncome, $totalTax, $ytdNote);
         $content = $this->renderPdfFromHtml($html, 'A4', 'landscape');
         return ['content' => $content, 'file_name' => "PND1K_Summary_{$yearBe}.pdf", 'mime_type' => 'application/pdf'];
     }
 
-    private function buildPdfHtml(string $companyName, int $yearBe, string $rowsHtml, float $totalIncome, float $totalTax): string {
+    private function buildPdfHtml(string $companyName, int $yearBe, string $rowsHtml, float $totalIncome, float $totalTax, string $ytdNote): string {
         return <<<HTML
 <html>
 <head><style>
@@ -177,6 +170,7 @@ tfoot td { font-weight: bold; }
 <body>
 <h1>{$companyName}</h1>
 <div>สรุป ภ.ง.ด.1ก ประจำปี {$yearBe}</div>
+{$ytdNote}
 <table>
 <thead><tr><th>เลขประจำตัวผู้เสียภาษี</th><th>ชื่อ-สกุล</th><th>เงินได้รวมทั้งปี</th><th>ภาษีหัก ณ ที่จ่ายรวม</th></tr></thead>
 <tbody>{$rowsHtml}</tbody>

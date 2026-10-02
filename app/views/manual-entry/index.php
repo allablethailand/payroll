@@ -1,22 +1,13 @@
 ﻿<div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-parent" data-i18n="time_and_leave">Time & Leave</span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" data-i18n="manual_time_entry">Manual Time Entry</span>
-        </h5>
-    </nav>
-    <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
-         app/views/payroll/index.php). -->
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon"><i class="fa-solid fa-pen-to-square"></i></div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="manual_time_entry">Manual Time Entry</h5>
-            <p class="page-header-card-desc" data-i18n="manual_time_entry_description">Manually record attendance, leave, and overtime for employees when there is no HR system integration.</p>
-        </div>
-    </div>
+    <?php
+    $breadcrumb = [
+        ['label' => 'Time & Leave', 'href' => null, 'i18n' => 'time_and_leave'],
+        ['label' => 'Manual Time Entry', 'href' => null, 'i18n' => 'manual_time_entry'],
+    ];
+    $description = 'Manually record attendance, leave, and overtime for employees when there is no HR system integration.';
+    $description_i18n = 'manual_time_entry_description';
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active" id="attendance-tab" data-bs-toggle="tab" data-bs-target="#attendance-pane" type="button" role="tab" aria-controls="attendance-pane" aria-selected="true">

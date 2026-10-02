@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/ImportFileParser.php';
+require_once __DIR__ . '/EmployeeImporter.php';
+require_once __DIR__ . '/YtdImporter.php';
+require_once __DIR__ . '/AdHocItemImportEntity.php';
+require_once __DIR__ . '/AttendanceSummaryImportEntity.php';
 require_once __DIR__ . '/../sync/MasterDataSyncRegistry.php';
 require_once __DIR__ . '/../sync/TransactionDataSyncRegistry.php';
 require_once __DIR__ . '/../../models/SyncBatchModel.php';
@@ -29,6 +33,18 @@ class ImportService {
 
     /** @return MasterDataSyncerInterface|TransactionDataSyncerInterface|null */
     private function getImporter(string $entityType) {
+        if ($entityType === 'employee_import') {
+            return new EmployeeImporter($this->db);
+        }
+        if ($entityType === 'ytd_opening') {
+            return new YtdImporter($this->db);
+        }
+        if ($entityType === 'adhoc_item') {
+            return new AdHocItemImportEntity($this->db);
+        }
+        if ($entityType === 'attendance_summary') {
+            return new AttendanceSummaryImportEntity($this->db);
+        }
         $master = (new MasterDataSyncRegistry($this->db))->get($entityType);
         if ($master) {
             return $master;
@@ -153,6 +169,11 @@ class ImportService {
                 }
             }
 
+            // Optional hook: an importer that writes without recalculating (adhoc_item) finishes the batch here, inside the same transaction.
+            if (method_exists($importer, 'afterBatch')) {
+                $importer->afterBatch($compId, $commit, $triggeredBy);
+            }
+
             $batchModel->complete($batchId, count($mappedRows), $success, count($errors), $errors);
 
             if ($nested) {
@@ -189,5 +210,42 @@ class ImportService {
      *  @param ?array{path:string,name:string,size:int} $originalFile Platform Hardening Phase 5C -- the already-stored original upload (see ManualEntryController::importPreview()/importCommit()), threaded through to SyncBatchModel::start(). */
     public function commit(int $compId, string $entityType, array $mappedRows, ?int $triggeredBy, ?string $ipAddress = null, ?string $userAgent = null, ?array $originalFile = null): array {
         return $this->runImport($compId, $entityType, $mappedRows, $triggeredBy, true, $ipAddress, $userAgent, $originalFile);
+    }
+
+    /** Copies the just-uploaded import file to a durable location (storage/uploads/import_originals/
+     *  {comp_id}/{hex}.{ext}, random-hex-name convention every other upload site in this app already
+     *  uses) so it survives past this one request -- PHP's own upload temp file is auto-cleaned the
+     *  moment the request ends. Returns null (never fatal) on any filesystem failure -- retaining the
+     *  original is a nice-to-have for audit, not a requirement for the import itself to work.
+     *  @return ?array{token:string,name:string} */
+    public function storeOriginal(int $compId, array $file): ?array {
+        $ext = strtolower((string)pathinfo((string)($file['name'] ?? ''), PATHINFO_EXTENSION));
+        if (!in_array($ext, ['xlsx', 'xls', 'csv'], true)) {
+            $ext = 'dat';
+        }
+        $dir = __DIR__ . '/../../../storage/uploads/import_originals/' . $compId . '/';
+        if (!is_dir($dir) && !mkdir($dir, 0750, true) && !is_dir($dir)) {
+            return null;
+        }
+        $token = bin2hex(random_bytes(16)) . '.' . $ext;
+        if (!copy($file['tmp_name'], $dir . $token)) {
+            return null;
+        }
+        return ['token' => $token, 'name' => basename((string)($file['name'] ?? $token))];
+    }
+
+    /** Resolves a stored_file_token (from storeOriginal() above) back to an absolute path,
+     *  validated via realpath containment against the import_originals root -- never trusts the
+     *  token as a literal filesystem path. */
+    public function resolveOriginalPath(int $compId, string $token): ?string {
+        $root = realpath(__DIR__ . '/../../../storage/uploads/import_originals/' . $compId);
+        if ($root === false) {
+            return null;
+        }
+        $candidate = realpath($root . '/' . $token);
+        if ($candidate === false || strpos($candidate, $root) !== 0 || !is_file($candidate)) {
+            return null;
+        }
+        return $candidate;
     }
 }

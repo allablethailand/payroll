@@ -429,6 +429,97 @@ try {
     checkTrue('summary(): an employee with no photo still carries the profile_photo_path KEY (value null, not a missing key)', $emp3RowForPhoto !== null && array_key_exists('profile_photo_path', $emp3RowForPhoto));
     check('summary(): ...and that value is genuinely null, not some other falsy placeholder', $emp3RowForPhoto['profile_photo_path'], null);
 
+    /* ---------- getEmployeeAnnualSummary() / getCompanyAnnualSummary(): system runs + opening YTD balance ---------- */
+    echo "=== Annual summary: system + opening YTD balance ===\n";
+    $insRun = $pdo->prepare("INSERT INTO payroll_runs (comp_id, cycle_id, run_name, period_start_date, period_end_date, payment_date, state, status)
+        VALUES (:c, :cy, :n, :ps, :pe, :pd, :st, 'active')");
+    $insDetail = $pdo->prepare("INSERT INTO payroll_run_details (run_id, employee_id, gross_amount, taxable_gross_amount, total_deduction_amount, net_amount, statutory_breakdown)
+        VALUES (:r, :e, :g, :tg, 0, :g, :sb)");
+    $addRunLine = function (int $empId, string $paymentDate, string $state, float $gross, ?float $taxableGross, float $pit, float $sso, float $pvd)
+        use ($pdo, $insRun, $insDetail, $compId, $cycleId): void {
+        $insRun->execute([':c' => $compId, ':cy' => $cycleId, ':n' => 'AIS_SYN_' . uniqid(), ':ps' => substr($paymentDate, 0, 8) . '01', ':pe' => $paymentDate, ':pd' => $paymentDate, ':st' => $state]);
+        $insDetail->execute([':r' => (int)$pdo->lastInsertId(), ':e' => $empId, ':g' => $gross, ':tg' => $taxableGross, ':sb' => json_encode([
+            ['code' => 'TH_PIT', 'employee_amount' => $pit], ['code' => 'TH_SSO', 'employee_amount' => $sso], ['code' => 'TH_PVD', 'employee_amount' => $pvd],
+            ['code' => 'TH_OTHER', 'employee_amount' => 99999],
+        ])]);
+    };
+    $insOpening = $pdo->prepare("INSERT INTO employee_ytd_opening_balances (comp_id, employee_id, tax_year, as_of_date, periods_paid, ytd_taxable_gross, ytd_pit_withheld, ytd_sso_employee, ytd_pvd_employee)
+        VALUES (:c, :e, :y, :a, :pp, :g, :t, :s, :p)");
+    $addOpening = fn(int $empId, int $year, string $asOf, int $periods, float $g, float $t, ?float $s, ?float $p) =>
+        $insOpening->execute([':c' => $compId, ':e' => $empId, ':y' => $year, ':a' => $asOf, ':pp' => $periods, ':g' => $g, ':t' => $t, ':s' => $s, ':p' => $p]);
+
+    $empSys = insertAisEmployee($pdo, $compId, $deptId);       // system runs only
+    $empMix = insertAisEmployee($pdo, $compId, $deptId);       // opening balance + a system run
+    $empYtdOnly = insertAisEmployee($pdo, $compId, $deptId);   // opening balance, no system run at all
+    $empYears = insertAisEmployee($pdo, $compId, $deptId);     // runs on both sides of a year boundary
+    $empNothing = insertAisEmployee($pdo, $compId, $deptId);   // nothing anywhere
+
+    $addRunLine($empSys, '2026-01-31', 'approved', 30000, 28000, 1000, 750, 300);   // taxable gross wins over gross
+    $addRunLine($empSys, '2026-02-28', 'paid', 30000, null, 1100, 750, 300);        // NULL taxable gross falls back to gross
+    $addRunLine($empSys, '2026-04-30', 'locked', 30000, 30000, 1200, 750, 300);     // locked is finalized, counts
+    $addRunLine($empSys, '2026-03-31', 'draft', 99000, 99000, 9000, 9000, 9000);    // not finalized, must not count
+    $addRunLine($empSys, '2026-05-31', 'cancelled', 99000, 99000, 9000, 9000, 9000);
+
+    $addOpening($empMix, 2026, '2026-08-01', 7, 210000, 5000, 5250, 2100);
+    $addRunLine($empMix, '2026-08-31', 'approved', 30000, 30000, 800, 750, 0);
+
+    $addOpening($empYtdOnly, 2026, '2026-07-01', 6, 100000, 2000, null, null);
+
+    $addOpening($empYears, 2025, '2025-12-01', 11, 50000, 1500, 1000, 0);
+    $addRunLine($empYears, '2025-12-31', 'paid', 20000, 20000, 600, 500, 0);
+    $addRunLine($empYears, '2026-01-01', 'paid', 25000, 25000, 700, 750, 0);
+
+    // System only
+    $s = $model->getEmployeeAnnualSummary($empSys, 2026);
+    check('system-only: sys_gross sums approved + paid + locked on taxable basis', $s['sys_gross'], 88000.0);
+    check('system-only: sys_tax / sso / pvd come from statutory_breakdown, other codes ignored', [$s['sys_tax'], $s['sys_sso'], $s['sys_pvd']], [3300.0, 2250.0, 900.0]);
+    check('system-only: no opening balance', [$s['ytd_gross'], $s['ytd_tax'], $s['ytd_sso'], $s['ytd_pvd'], $s['has_ytd_included']], [0.0, 0.0, 0.0, 0.0, false]);
+    check('system-only: final equals sys', [$s['final_gross'], $s['final_tax'], $s['final_sso'], $s['final_pvd']], [88000.0, 3300.0, 2250.0, 900.0]);
+    check('system-only: run count excludes draft and cancelled', $s['sys_run_count'], 3);
+
+    // Opening balance + system
+    $m = $model->getEmployeeAnnualSummary($empMix, 2026);
+    check('YTD + system: ytd_* from the opening balance', [$m['ytd_gross'], $m['ytd_tax'], $m['ytd_sso'], $m['ytd_pvd']], [210000.0, 5000.0, 5250.0, 2100.0]);
+    check('YTD + system: sys_* from the run', [$m['sys_gross'], $m['sys_tax'], $m['sys_sso'], $m['sys_pvd']], [30000.0, 800.0, 750.0, 0.0]);
+    check('YTD + system: final = sys + ytd', [$m['final_gross'], $m['final_tax'], $m['final_sso'], $m['final_pvd']], [240000.0, 5800.0, 6000.0, 2100.0]);
+    check('YTD + system: has_ytd_included and the opening metadata', [$m['has_ytd_included'], $m['ytd_as_of_date'], $m['ytd_periods_paid']], [true, '2026-08-01', 7]);
+
+    // Opening balance only
+    $y = $model->getEmployeeAnnualSummary($empYtdOnly, 2026);
+    check('YTD-only: appears with zero system figures', [$y['sys_gross'], $y['sys_tax'], $y['sys_run_count']], [0.0, 0.0, 0]);
+    check('YTD-only: NULL optional sso/pvd count as 0', [$y['ytd_sso'], $y['ytd_pvd']], [0.0, 0.0]);
+    check('YTD-only: final = ytd', [$y['final_gross'], $y['final_tax'], $y['has_ytd_included']], [100000.0, 2000.0, true]);
+
+    // Year boundaries
+    $y25 = $model->getEmployeeAnnualSummary($empYears, 2025);
+    $y26 = $model->getEmployeeAnnualSummary($empYears, 2026);
+    check('boundary: 2025-12-31 payment + the 2025 opening belong to 2025', [$y25['sys_gross'], $y25['ytd_gross'], $y25['final_gross'], $y25['has_ytd_included']], [20000.0, 50000.0, 70000.0, true]);
+    check('boundary: 2026-01-01 payment belongs to 2026 and the 2025 opening does not follow it', [$y26['sys_gross'], $y26['ytd_gross'], $y26['final_gross'], $y26['has_ytd_included']], [25000.0, 0.0, 25000.0, false]);
+    check('boundary: sso/tax split by year too', [$y25['sys_tax'], $y25['final_sso'], $y26['sys_tax'], $y26['final_sso']], [600.0, 1500.0, 700.0, 750.0]);
+    $y27 = $model->getEmployeeAnnualSummary($empYears, 2027);
+    check('boundary: a year with nothing is all zeros', [$y27['final_gross'], $y27['sys_run_count'], $y27['has_ytd_included']], [0.0, 0, false]);
+
+    // Edge cases
+    $n = $model->getEmployeeAnnualSummary($empNothing, 2026);
+    check('an employee with nothing still returns a zero row', [$n['final_gross'], $n['final_tax'], $n['has_ytd_included']], [0.0, 0.0, false]);
+    check('unknown employee returns []', $model->getEmployeeAnnualSummary(999999999, 2026), []);
+
+    // Company summary
+    $co = $model->getCompanyAnnualSummary($compId, 2026);
+    $byId = [];
+    foreach ($co['employees'] as $row) { $byId[$row['employee_id']] = $row; }
+    checkTrue('company: includes system-only, mixed, YTD-only and the 2026 side of the boundary employee', isset($byId[$empSys], $byId[$empMix], $byId[$empYtdOnly], $byId[$empYears]));
+    checkTrue('company: leaves out the employee with neither runs nor an opening balance', !isset($byId[$empNothing]));
+    check('company: per-employee rows equal the single-employee calls', [$byId[$empMix]['final_gross'], $byId[$empYtdOnly]['final_tax'], $byId[$empYears]['final_gross']], [240000.0, 2000.0, 25000.0]);
+    $sumFinal = 0.0; $sumTax = 0.0; $anyYtd = false;
+    foreach ($co['employees'] as $row) { $sumFinal += $row['final_gross']; $sumTax += $row['final_tax']; $anyYtd = $anyYtd || $row['has_ytd_included']; }
+    check('company: totals are the sum of the rows', [$co['totals']['final_gross'], $co['totals']['final_tax'], $co['totals']['employee_count']], [round($sumFinal, 2), round($sumTax, 2), count($co['employees'])]);
+    check('company: totals.has_ytd_included true when any row has one', [$co['totals']['has_ytd_included'], $anyYtd], [true, true]);
+    check('company: final = sys + ytd in the totals', $co['totals']['final_gross'], round($co['totals']['sys_gross'] + $co['totals']['ytd_gross'], 2));
+    $other = $model->getCompanyAnnualSummary($compId + 987654, 2026);
+    check('company: another company sees none of it', [count($other['employees']), $other['totals']['final_gross'], $other['totals']['has_ytd_included']], [0, 0.0, false]);
+    check('company: 2025 holds only the 2025 side', [isset($model->getCompanyAnnualSummary($compId, 2025)['employees'][0]), $model->getCompanyAnnualSummary($compId, 2025)['totals']['ytd_gross']], [true, 50000.0]);
+
     echo "\n--------------------------------------------------\n";
     echo "Passed: {$passes}, Failed: {$failures}\n";
     if ($failures > 0) {

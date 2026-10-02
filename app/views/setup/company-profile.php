@@ -1,22 +1,13 @@
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i><span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-parent"><span data-i18n="settings">Settings</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current"><span data-i18n="company_setup">Company Setup</span></span>
-        </h5>
-    </nav>
-    <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
-         app/views/payroll/index.php). -->
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon"><i class="fa-solid fa-building"></i></div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="company_management">Company Management</h5>
-            <p class="page-header-card-desc" data-i18n="company_management_description">Configure and manage corporate profile, local tax identification, and primary bank accounts for payroll processing.</p>
-        </div>
-    </div>
+    <?php
+    $breadcrumb = [
+        ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
+        ['label' => 'Company Profile', 'href' => null, 'i18n' => 'company_profile'],
+    ];
+    $description = 'Configure and manage corporate profile, local tax identification, and primary bank accounts for payroll processing.';
+    $description_i18n = 'company_management_description';
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu active" id="setup-tab-p1" type="button" role="tab"

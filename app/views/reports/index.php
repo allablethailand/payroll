@@ -1,20 +1,13 @@
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" data-i18n="reports">Reports</span>
-        </h5>
-    </nav>
-    <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
-         app/views/payroll/index.php). -->
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon"><i class="fa-solid fa-file-invoice"></i></div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="reports">Reports</h5>
-            <p class="page-header-card-desc" data-i18n="reports_description">Split into per-schedule reports (pulled from a payroll run) and annual reports (issued once a year) -- pick the period once, then generate whichever reports you need for it.</p>
-        </div>
-    </div>
+    <?php
+    $breadcrumb = [
+        ['label' => 'Reports', 'href' => null, 'i18n' => 'reports'],
+        ['label' => 'Generate Reports', 'href' => null, 'i18n' => 'generate_reports'],
+    ];
+    $description = 'Split into per-schedule reports (pulled from a payroll run) and annual reports (issued once a year) -- pick the period once, then generate whichever reports you need for it.';
+    $description_i18n = 'reports_description';
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
 
     <!-- 2026-08-27, explicit request: "ปรับ Design และโครงสร้างให้หน่อยครับ...แบ่งเป็น Report ที่ต้องดึง
          จากรอบการจ่าย และ Report ประจำปีที่ต้องออก ให้รูปแบบการใช้งานดูง่าย และรู้ว่าต้องทำอะไร" -- Phase 1

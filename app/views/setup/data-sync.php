@@ -1,18 +1,13 @@
 <div class="container container-body">
-  <nav aria-label="breadcrumb">
-    <h5 class="payroll-breadcrumb mt-5 mb-5">
-      <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-      <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-      <span class="bc-current" data-i18n="data_sync_menu">Data Sync</span>
-    </h5>
-  </nav>
-  <div class="page-header-card mb-4">
-    <div class="page-header-card-icon"><i class="fa-solid fa-rotate"></i></div>
-    <div class="page-header-card-body">
-      <h5 class="page-header-card-title" data-i18n="data_sync_menu">Data Sync</h5>
-      <p class="page-header-card-desc" data-i18n="data_sync_description">Pull department, position, shift, branch, team, and holiday master data from Origami. Employee sync has its own page (Employee List → Sync Employee from Origami).</p>
-    </div>
-  </div>
+  <?php
+  $breadcrumb = [
+        ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
+        ['label' => 'Data Sync', 'href' => null, 'i18n' => 'data_sync_menu'],
+  ];
+  $description = 'Pull department, position, shift, branch, team, and holiday master data from Origami. Employee sync has its own page (Employee List → Sync Employee from Origami).';
+  $description_i18n = 'data_sync_description';
+  include __DIR__ . '/../partials/page-header.php';
+  ?>
 
   <div id="dsConnectionAlert" class="alert alert-warning d-none mb-4">
     <i class="fa-solid fa-triangle-exclamation me-1"></i>

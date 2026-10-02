@@ -58,6 +58,7 @@ const REPORT_META = {
     // step is server-driven via ReportsController::CYCLE_REPORT_NEEDS_CONFIG, not this map's `extra`.
     DEDUCTION_BREAKDOWN: { frequency: 'cycle', extra: [] },
     TH_PND1K_SUMMARY: { frequency: 'annual', extra: [] },
+    TH_WHT50: { frequency: 'annual', extra: ['employee'] },
     TH_KOR20KOR: { frequency: 'annual', extra: [] },
     TH_SSO609: { frequency: 'annual', extra: ['month'] },
     PAYMENT_VOUCHER: { frequency: 'annual', extra: ['employee'] },

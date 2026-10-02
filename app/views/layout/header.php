@@ -786,6 +786,14 @@ if ($compIdForOrigamiFlags > 0 && $navUserId > 0) {
                     </a>
                 </li>
                 <li>
+                    <a href="<?=BASE_URL?>/imports" class="submenu-link">
+                        <span class="submenu-icon">
+                            <img src="<?=BASE_URL?>/public/images/menu/ORIGAMI_APP.SVG" alt="Data Import">
+                        </span>
+                        <span class="submenu-text" data-i18n="data_import_menu">Data Import</span>
+                    </a>
+                </li>
+                <li>
                     <a href="<?=BASE_URL?>/setup/payroll-configuration" class="submenu-link">
                         <span class="submenu-icon">
                             <img src="<?=BASE_URL?>/public/images/menu/ORIGAMI_APP.SVG" alt="Payroll Configuration">

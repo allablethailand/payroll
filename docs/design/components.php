@@ -341,7 +341,6 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
     <?php
     $title = 'ประมวลผลเงินเดือน';
     $breadcrumb = [
-        ['label' => 'หน้าหลัก', 'href' => '#'],
         ['label' => 'ประมวลผลเงินเดือน', 'href' => null],
     ];
     $secondary_actions = [
@@ -758,7 +757,6 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
     <?php
     $title = 'พนักงาน';
     $breadcrumb = [
-        ['label' => 'หน้าหลัก', 'href' => '#'],
         ['label' => 'พนักงาน', 'href' => null],
     ];
     $secondary_actions = [
@@ -785,7 +783,6 @@ foreach ($cpProcessStatusTabLabels as $cpKey => $cpLabel) {
     // ("รายละเอียดรอบ") อีกต่อไป -- H1 = ชื่อแสดงผลจริง (คนละค่ากับ crumb ตอนนี้).
     $title = 'รอบเงินเดือน มิถุนายน 2569';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => '#'],
         ['label' => 'Payroll Process', 'href' => '#'],
         ['label' => 'RUN-2026-06-A', 'href' => null],
     ];

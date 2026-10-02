@@ -144,6 +144,9 @@ check(
     count($result['files'])
 );
 
+// §2 page header (2026-10-02): partial has no H1 + prepends the app crumb, callers don't repeat it.
+check('§2 page-header structure: 0 violations app-wide', designLintPageHeaderChecks(dirname(__DIR__)), []);
+
 echo "\n--------------------------------------------------\n";
 echo "Passed: {$passes}, Failed: {$failures}\n";
 if ($failures > 0) {

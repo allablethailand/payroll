@@ -557,6 +557,53 @@ function designLintFormatUnmarkedSection(array $unmarkedFiles, string $root, boo
     return $out;
 }
 
+/**
+ * §2 page-header structure checks (2026-10-02 revision), separate from the 8 per-line rules above
+ * because they assert the shape of one partial and of every caller, not a pattern per line.
+ * Returns a flat list of violation strings (empty = clean):
+ *   - partials/page-header.php renders no H1/title element and prepends the app-name crumb
+ *     (`app_name`, "Origami Payroll") itself;
+ *   - every view including the partial lists its own crumbs WITHOUT repeating the app/home crumb
+ *     (`'i18n' => 'payroll'`) and with at least one crumb (the current page is the last crumb);
+ *   - `.ph-description` in style.css is at most 0.8125rem.
+ */
+function designLintPageHeaderChecks(string $root): array {
+    $v = [];
+    $partial = $root . '/app/views/partials/page-header.php';
+    $src = is_file($partial) ? (string) file_get_contents($partial) : '';
+    if ($src === '') {
+        return ['partials/page-header.php missing'];
+    }
+    // The only H1 allowed is the opt-in $entity_title block (detail pages whose heading is a data value).
+    $srcNoEntity = preg_replace('/<\?php if \(isset\(\$entity_title\)\): \?>.*?<\?php endif; \?>/s', '', $src);
+    if (preg_match('/<h1\b|class="ph-title|Title"/', $srcNoEntity)) {
+        $v[] = 'partials/page-header.php: renders an H1/title element outside the opt-in $entity_title block (§2)';
+    }
+    if (strpos($src, 'array_unshift($breadcrumb') === false || strpos($src, "'app_name'") === false || strpos($src, 'Origami Payroll') === false) {
+        $v[] = 'partials/page-header.php: does not prepend the "Origami Payroll" (app_name) crumb';
+    }
+    foreach (designLintGlobRecursive($root . '/app/views', 'php') as $view) {
+        $rel = ltrim(substr(str_replace(chr(92), '/', $view), strlen(rtrim(str_replace(chr(92), '/', $root), '/'))), '/');
+        if (strpos($rel, 'app/views/partials/') === 0) continue;
+        $code = (string) file_get_contents($view);
+        if (strpos($code, 'partials/page-header.php') === false) continue;
+        if (!preg_match('/\$breadcrumb = \[(.*?)\n\s*\];/s', $code, $m) || strpos($m[1], "'label'") === false) {
+            $v[] = "$rel: \$breadcrumb has no crumb (current page must be the last crumb)";
+        } elseif (strpos($m[1], "'i18n' => 'payroll'") !== false) {
+            $v[] = "$rel: \$breadcrumb repeats the app/home crumb (page-header.php prepends it)";
+        }
+    }
+    $css = $root . '/public/css/style.css';
+    if (is_file($css) && preg_match('/\n\.ph-description \{[^}]*font-size:\s*([0-9.]+)rem/', (string) file_get_contents($css), $m)) {
+        if ((float) $m[1] > 0.8125) {
+            $v[] = '.ph-description font-size is ' . $m[1] . 'rem (§2: at most 0.8125rem)';
+        }
+    } else {
+        $v[] = '.ph-description font-size (rem) not found in style.css';
+    }
+    return $v;
+}
+
 if (php_sapi_name() === 'cli' && isset($argv[0]) && realpath($argv[0]) === __FILE__) {
     $root = dirname(__DIR__);
     $result = designLintRun($root);
@@ -595,6 +642,11 @@ if (php_sapi_name() === 'cli' && isset($argv[0]) && realpath($argv[0]) === __FIL
         echo "  §12.$rule ({$label}): {$result['totalsByRule'][$rule]}\n";
     }
 
+    $phViolations = designLintPageHeaderChecks($root);
+    echo "\n-- §2 page header (structure) --\n";
+    foreach ($phViolations as $pv) echo "  [FAIL] $pv\n";
+    if (!$phViolations) echo "  [PASS] partial + every caller\n";
+
     echo "\n=== Summary ===\n";
     echo 'Files scanned: ' . count($result['files']) . ' (' . count($markedFiles) . " marked design:clean)\n";
     if ($result['failed']) {
@@ -602,6 +654,10 @@ if (php_sapi_name() === 'cli' && isset($argv[0]) && realpath($argv[0]) === __FIL
         foreach ($result['failed'] as $path) {
             echo '  - ' . str_replace('\\', '/', str_replace($root . DIRECTORY_SEPARATOR, '', $path)) . "\n";
         }
+        exit(1);
+    }
+    if ($phViolations) {
+        echo 'FAILED -- ' . count($phViolations) . " §2 page-header violation(s).\n";
         exit(1);
     }
     echo "PASSED -- every design:clean file has 0 hits.\n";

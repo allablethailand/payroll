@@ -130,6 +130,20 @@ return [
         'failed' => ['label_key' => 'data_sync_status_failed', 'tone' => 'danger'],
     ],
 
+    // import_staging_rows.status -- the Data Import verification grid.
+    'import_row_status' => [
+        'pending' => ['label_key' => 'import_row_pending', 'tone' => 'neutral'],
+        'valid' => ['label_key' => 'import_row_valid', 'tone' => 'success'],
+        'warning' => ['label_key' => 'import_row_warning', 'tone' => 'warning'],
+        'error' => ['label_key' => 'import_row_error', 'tone' => 'danger'],
+    ],
+
+    // import_audit_logs.outcome.
+    'import_outcome' => [
+        'success' => ['label_key' => 'import_outcome_success', 'tone' => 'success'],
+        'failed' => ['label_key' => 'import_outcome_failed', 'tone' => 'danger'],
+    ],
+
     // payroll_run_details.calc_status.
     'payroll_calc_status' => [
         'pending' => ['label_key' => 'calc_status_pending', 'tone' => 'neutral'],

@@ -404,6 +404,18 @@
     $router->get('api/manual-import.batch-detail', 'ManualEntryController@importBatchDetail');
     $router->get('api/manual-import.activity-log', 'ManualEntryController@importActivityLog');
     $router->get('api/manual-import.download-original', 'ManualEntryController@downloadImportOriginal');
+    // Import Framework -- staged upload/map/validate/edit/commit (ImportController).
+    $router->get('imports', 'ImportController@index');
+    $router->get('api/import.activity-log', 'ImportController@activityLog');
+    $router->get('api/import.template', 'ImportController@template');
+    $router->post('api/import.upload', 'ImportController@upload');
+    $router->post('api/import.map', 'ImportController@map');
+    $router->post('api/import.validate', 'ImportController@validate');
+    $router->post('api/import.edit-rows', 'ImportController@editRows');
+    $router->get('api/import.rows', 'ImportController@rows');
+    $router->post('api/import.commit', 'ImportController@commit');
+    $router->post('api/import.discard', 'ImportController@discard');
+    $router->post('api/import.rollback', 'ImportController@rollback');
     // Manual Entry Phase 1A -- Attendance Shift auto-fill lookup.
     $router->get('api/manual-entry.employee-context', 'ManualEntryController@employeeContext');
 
