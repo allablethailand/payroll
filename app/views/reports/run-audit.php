@@ -1,10 +1,8 @@
 <div class="container container-body">
     <?php
-    $title = 'Payroll Run Audit';
-    $title_i18n = 'payroll_run_audit_menu';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
         ['label' => 'Reports', 'href' => BASE_URL . '/reports', 'i18n' => 'reports'],
+        ['label' => 'Payroll Run Audit', 'href' => null, 'i18n' => 'payroll_run_audit_menu'],
     ];
     $description = 'Which payroll runs were manually edited, by whom, and what changed -- drill into any run for a before/after breakdown.';
     $description_i18n = 'run_audit_page_description';

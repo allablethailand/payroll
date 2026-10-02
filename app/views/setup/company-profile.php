@@ -1,11 +1,8 @@
 <div class="container container-body">
     <?php
-    $title = 'Company Management';
-    $title_i18n = 'company_management';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
         ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
-        ['label' => 'Company Setup', 'href' => null, 'i18n' => 'company_setup'],
+        ['label' => 'Company Profile', 'href' => null, 'i18n' => 'company_profile'],
     ];
     $description = 'Configure and manage corporate profile, local tax identification, and primary bank accounts for payroll processing.';
     $description_i18n = 'company_management_description';

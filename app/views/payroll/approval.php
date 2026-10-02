@@ -3,10 +3,9 @@
 </style>
 <div class="container container-body">
     <?php
-    $title = 'Payroll Approval';
-    $title_i18n = 'payroll_approval';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Payroll', 'href' => null, 'i18n' => 'payroll_menu'],
+        ['label' => 'Payroll Approval', 'href' => null, 'i18n' => 'payroll_approval'],
     ];
     $description = 'Payroll runs waiting for your approval. Click a row to review, or use the checkboxes to approve/reject several at once.';
     $description_i18n = 'payroll_approval_description';

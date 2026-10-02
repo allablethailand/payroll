@@ -14,10 +14,9 @@
 ?>
 <div class="container container-body designer-light-scope" data-bs-theme="light">
   <?php
-  $title = $pair['template_name'] ?? 'Edit';
   $breadcrumb = [
-      ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
       ['label' => 'Payslip', 'href' => null, 'i18n' => 'payslip_menu'],
+      ['label' => $pair['template_name'] ?? 'Edit', 'href' => null],
   ];
   include __DIR__ . '/../partials/page-header.php';
   ?>

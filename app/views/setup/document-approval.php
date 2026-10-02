@@ -1,10 +1,8 @@
 <div class="container container-body">
   <?php
-  $title = 'Document & Approval';
-  $title_i18n = 'document_and_approval';
   $breadcrumb = [
-      ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
       ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
+      ['label' => 'Document & Approval', 'href' => null, 'i18n' => 'document_and_approval'],
   ];
   $description = 'Configure approval workflows and document numbering for payroll documents.';
   $description_i18n = 'document_and_approval_description';

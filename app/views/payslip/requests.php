@@ -1,9 +1,6 @@
 <div class="container container-body">
   <?php
-  $title = 'Document Requests';
-  $title_i18n = 'document_requests_title';
   $breadcrumb = [
-      ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
       ['label' => 'Payslip', 'href' => null, 'i18n' => 'payslip_menu'],
       ['label' => 'Requests', 'href' => null, 'i18n' => 'requests'],
   ];

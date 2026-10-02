@@ -1,9 +1,6 @@
 <div class="container container-body">
   <?php
-  $title = 'Employment Certificate Template';
-  $title_i18n = 'employment_certificate_template';
   $breadcrumb = [
-      ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
       ['label' => 'Employment Certificate', 'href' => null, 'i18n' => 'employment_certificate_menu'],
       ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
   ];

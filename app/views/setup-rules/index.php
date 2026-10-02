@@ -1,10 +1,8 @@
 <div class="container container-body">
     <?php
-    $title = 'Setup & Rules';
-    $title_i18n = 'setup_and_rules';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
         ['label' => 'Time & Leave', 'href' => null, 'i18n' => 'time_and_leave'],
+        ['label' => 'Setup & Rules', 'href' => null, 'i18n' => 'setup_and_rules'],
     ];
     $description = 'Define work shifts, public holidays, leave types, and overtime (OT) calculation rates for employees.';
     $description_i18n = 'setup_and_rules_description';

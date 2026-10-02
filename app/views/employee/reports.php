@@ -1,9 +1,8 @@
 <div class="container container-body">
     <?php
-    $title = 'Reports';
-    $title_i18n = 'employee_reports';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Employees', 'href' => null, 'i18n' => 'employees'],
+        ['label' => 'Reports', 'href' => null, 'i18n' => 'employee_reports'],
     ];
     $description = 'Headcount movement, expiry alerts, probation status, statutory enrollment, structure, tenure, birthdays, and data completeness -- one report per tab.';
     $description_i18n = 'employee_reports_description';

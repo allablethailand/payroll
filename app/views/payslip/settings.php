@@ -1,9 +1,6 @@
 <div class="container container-body">
   <?php
-  $title = 'Payslip Settings';
-  $title_i18n = 'payslip_settings';
   $breadcrumb = [
-      ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
       ['label' => 'Payslip', 'href' => null, 'i18n' => 'payslip_menu'],
       ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
   ];

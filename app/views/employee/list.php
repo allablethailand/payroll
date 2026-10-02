@@ -52,11 +52,9 @@
 </style>
 <div class="container container-body">
     <?php
-    $title = 'Employee Management';
-    $title_i18n = 'employee_management_title';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
-        ['label' => 'Employee', 'href' => null, 'i18n' => 'employee'],
+        ['label' => 'Employees', 'href' => null, 'i18n' => 'employees'],
+        ['label' => 'Employee List', 'href' => null, 'i18n' => 'employee_list_menu'],
     ];
     $description = 'Configure and manage employee profiles, tax identifications, and bank accounts for payroll processing.';
     $description_i18n = 'employee_management_description';

@@ -1,10 +1,8 @@
 <div class="container container-body">
     <?php
-    $title = 'Annual Income & Tax Summary';
-    $title_i18n = 'annual_income_summary';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
         ['label' => 'Reports', 'href' => BASE_URL . '/reports', 'i18n' => 'reports'],
+        ['label' => 'Annual Income & Tax Summary', 'href' => null, 'i18n' => 'annual_income_summary'],
     ];
     $description = 'Each employee\'s income, deductions, and withholding tax, month by month across a fiscal year.';
     $description_i18n = 'annual_income_summary_description';

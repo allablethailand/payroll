@@ -3,10 +3,9 @@
 </style>
 <div class="container container-body">
     <?php
-    $title = 'Payroll Process';
-    $title_i18n = 'payroll_process';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Payroll', 'href' => null, 'i18n' => 'payroll_menu'],
+        ['label' => 'Payroll Process', 'href' => null, 'i18n' => 'payroll_process'],
     ];
     $description = 'Manage payroll runs from draft through approval, payment, and closing. Click a row to open its management page.';
     $description_i18n = 'payroll_process_description';

@@ -1,10 +1,8 @@
 <div class="container container-body">
     <?php
-    $title = 'Announcements';
-    $title_i18n = 'announcement_menu';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
         ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
+        ['label' => 'Announcements', 'href' => null, 'i18n' => 'announcement_menu'],
     ];
     $description = 'Create and publish company-wide announcements. Once published, an announcement\'s content and recipient list can no longer be edited.';
     $description_i18n = 'announcement_page_description';

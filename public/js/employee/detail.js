@@ -890,7 +890,7 @@ function applyEmployeeSaveSuccess(res, wasNew) {
         if (window.location.pathname !== newPath) {
             history.replaceState(null, '', newPath);
         }
-        $('#bcCurrent').text(res.employee_no);
+        $('#phBreadcrumbCurrent').text(res.employee_no);
         refreshProfileHeader();
         // 2026-09-10, Batch 3A item 7a: the tenure-based tier (if any) can change after a save that
         // edited pvd_start_date/pvd_employer_rate itself -- re-fetch so the helper text under the
@@ -902,7 +902,7 @@ function applyEmployeeSaveSuccess(res, wasNew) {
     // included) stays on whichever tab's Save button was clicked, it never auto-navigates anywhere.
     if (wasNew && res.id) {
         $('.employee-secondary-tab').removeClass('d-none');
-        $('#bcSeparatorCurrent, #bcCurrent').removeClass('d-none');
+        $('#phBreadcrumbSep, #phBreadcrumbCurrent').removeClass('d-none');
         // 2026-08-30 (T020) -- the blanket reveal just above would incorrectly re-show the payroll-
         // specific tabs (Salary/Income & Deductions/Social Security/Family-Tax Allowance) even when
         // this brand-new employee was created as "No Salary" -- re-apply right after so they stay

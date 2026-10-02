@@ -26,7 +26,6 @@
            (page-header.php was never designed with a "Home" icon crumb in mind to begin with; no
            other Round-4 candidate page's breadcrumb has one either, confirmed via grep). -->
     <?php
-    $title = '-';
     // 2026-09-13, §2 REVISED (supersedes the previous "crumb สุดท้าย = ชนิดหน้า" decision entirely, not
     // just this page's own use of it) -- the last crumb is now the entity's own CODE (here, the run's
     // `run_code`), not a generic static page-type label -- $title (the H1) is the run's own DISPLAY
@@ -34,7 +33,6 @@
     // crumb is a placeholder here too now, filled in by renderRunHeader() (detail.js) alongside $title
     // -- see that function's own comment for the exact fallback chain on each.
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => null, 'i18n' => 'payroll'],
         ['label' => 'Payroll Process', 'href' => BASE_URL . '/payroll-process', 'i18n' => 'payroll_process'],
         ['label' => '-', 'href' => null],
     ];
@@ -43,6 +41,8 @@
     // (detail.js) populates #phActions via renderPageHeaderActions() (app.js) once it does, and again
     // after every state-changing action (submit/approve/reject/mark paid/lock/reopen/...).
     $description = null;
+    // Run name + state badge: placeholders filled by renderRunHeader() (detail.js) via #phTitle/#phTitleBadge.
+    $entity_title = '-';
     include __DIR__ . '/../partials/page-header.php';
     ?>
 

@@ -1,10 +1,8 @@
 <div class="container container-body">
     <?php
-    $title = 'Setup Guide';
-    $title_i18n = 'setup_guide_title';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
         ['label' => 'Help', 'href' => null, 'i18n' => 'help_menu'],
+        ['label' => 'Setup Guide', 'href' => null, 'i18n' => 'setup_guide_title'],
     ];
     $description = 'Checklist of the essential settings a company needs before running a real payroll round.';
     $description_i18n = 'setup_guide_description';

@@ -1,10 +1,8 @@
 <div class="container container-body">
     <?php
-    $title = 'Tax & Statutory';
-    $title_i18n = 'tax_and_statutory';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
         ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
+        ['label' => 'Tax & Statutory', 'href' => null, 'i18n' => 'tax_and_statutory'],
     ];
     $description = 'Configure statutory items (tax, social insurance, provident fund) per country, with rate history and progressive tax brackets.';
     $description_i18n = 'tax_statutory_description';

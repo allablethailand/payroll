@@ -1,9 +1,8 @@
 <div class="container container-body">
     <?php
-    $title = 'Login History';
-    $title_i18n = 'login_history';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Employees', 'href' => null, 'i18n' => 'employees'],
+        ['label' => 'Login History', 'href' => null, 'i18n' => 'login_history'],
     ];
     $description = 'Company-wide login and session history across every employee, with filters by employee, date range, device, and browser.';
     $description_i18n = 'employee_login_history_description';

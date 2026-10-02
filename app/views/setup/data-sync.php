@@ -1,9 +1,8 @@
 <div class="container container-body">
   <?php
-  $title = 'Data Sync';
-  $title_i18n = 'data_sync_menu';
   $breadcrumb = [
-      ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
+        ['label' => 'Data Sync', 'href' => null, 'i18n' => 'data_sync_menu'],
   ];
   $description = 'Pull department, position, shift, branch, team, and holiday master data from Origami. Employee sync has its own page (Employee List → Sync Employee from Origami).';
   $description_i18n = 'data_sync_description';

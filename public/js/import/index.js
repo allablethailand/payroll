@@ -308,7 +308,6 @@ function impInitLogTable() {
 $('#imp-log-tab').on('shown.bs.tab', impInitLogTable);
 
 $(function () {
-    $('#phTitle').attr('data-i18n', 'data_import_menu').text(impT('data_import_menu', 'Data Import'));
     $('#phDescription').attr('data-i18n', 'data_import_description');
     initSelect2('#impEntityType', { mode: 'static' });
     initSelect2('#impRowStatus', { mode: 'static' });

@@ -3,7 +3,6 @@
 ?>
 <div class="container container-body">
     <?php
-    $title = 'Data Import';
     $breadcrumb = [
         ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
         ['label' => 'Data Import', 'href' => null, 'i18n' => 'data_import_menu'],

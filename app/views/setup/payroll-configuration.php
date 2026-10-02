@@ -1,11 +1,8 @@
 <div class="container container-body">
     <?php
-    $title = 'Payroll Configuration';
-    $title_i18n = 'payroll_configuration';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
         ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
-        ['label' => 'Payroll Schedule', 'href' => null, 'i18n' => 'payroll_cycle'],
+        ['label' => 'Payroll Configuration', 'href' => null, 'i18n' => 'payroll_configuration'],
     ];
     $description = 'Set up payroll schedules, income types, and deduction types by employee group or employment type.';
     $description_i18n = 'payroll_configuration_description';

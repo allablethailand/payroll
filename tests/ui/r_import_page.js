@@ -39,7 +39,7 @@ async function cell(name, opts) {
     await page.goto(`${process.env.UI_BASE_URL}/imports`, { waitUntil: 'networkidle' });
     if (opts.colorScheme === 'dark') await applyAppTheme(page, 'dark');
 
-    check(name, 'page title', (await page.textContent('#phTitle')).trim().length > 0, true);
+    check(name, 'page crumb', (await page.textContent('#phBreadcrumbCurrent')).trim().length > 0, true);
     check(name, 'two tabs', await page.locator('#imp-upload-tab, #imp-log-tab').count(), 2);
     check(name, 'no page-header primary button', await page.locator('#phActions .btn-primary').count(), 0);
 

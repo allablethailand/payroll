@@ -1,9 +1,8 @@
 <div class="container container-body">
     <?php
-    $title = 'Permissions';
-    $title_i18n = 'permissions_menu';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
+        ['label' => 'Permissions', 'href' => null, 'i18n' => 'permissions_menu'],
     ];
     $description = 'Grant each role access to specific features, grouped by module.';
     $description_i18n = 'permissions_menu_description';

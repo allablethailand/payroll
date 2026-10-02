@@ -1,9 +1,7 @@
 <div class="container container-body">
     <?php
-    $title = 'Announcements';
-    $title_i18n = 'announcement_menu';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Announcements', 'href' => null, 'i18n' => 'announcement_menu'],
     ];
     $description = 'Announcements published to you.';
     $description_i18n = 'announcement_my_list_description';

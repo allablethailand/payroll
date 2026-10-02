@@ -9,10 +9,8 @@
      alone now calls the new `api/notification.datatable` endpoint. -->
 <div class="container container-body">
     <?php
-    $title = 'Notifications';
-    $title_i18n = 'notifications';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Notifications', 'href' => null, 'i18n' => 'notifications'],
     ];
     $description = 'All your notifications in one place -- click any item to jump straight to it.';
     $description_i18n = 'notif_page_description';

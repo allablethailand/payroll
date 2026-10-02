@@ -3475,7 +3475,7 @@ async function loadLang(lang) {
 // (no `#phTitle`, or one that duplicates the crumb) simply gets no 2nd entry appended.
 function updateDocumentTitleFromBreadcrumb() {
     const parts = [];
-    $('.payroll-breadcrumb .bc-parent, .ph-breadcrumb .ph-breadcrumb-link').each(function () {
+    $('.payroll-breadcrumb .bc-parent, .ph-breadcrumb .ph-breadcrumb-link:not([data-ph-app])').each(function () {
         const t = $(this).text().trim();
         if (t) parts.push(t);
     });
@@ -3496,7 +3496,7 @@ function updateDocumentTitleFromBreadcrumb() {
 // SIBLING of `.ph-breadcrumb`, not a descendant of it -- a `.ph-breadcrumb`-only observer would never
 // see #phTitle's own text change at all.
 $(function () {
-    const breadcrumbEls = document.querySelectorAll('.payroll-breadcrumb, .ph-header');
+    const breadcrumbEls = document.querySelectorAll('.payroll-breadcrumb, .ph-header, .entity-title-wrap');
     if (breadcrumbEls.length && typeof MutationObserver !== 'undefined') {
         breadcrumbEls.forEach(function (el) {
             new MutationObserver(updateDocumentTitleFromBreadcrumb).observe(el, { characterData: true, childList: true, subtree: true });

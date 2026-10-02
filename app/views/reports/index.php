@@ -1,9 +1,8 @@
 <div class="container container-body">
     <?php
-    $title = 'Reports';
-    $title_i18n = 'reports';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Reports', 'href' => null, 'i18n' => 'reports'],
+        ['label' => 'Generate Reports', 'href' => null, 'i18n' => 'generate_reports'],
     ];
     $description = 'Split into per-schedule reports (pulled from a payroll run) and annual reports (issued once a year) -- pick the period once, then generate whichever reports you need for it.';
     $description_i18n = 'reports_description';

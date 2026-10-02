@@ -3721,17 +3721,20 @@ th.col-money div.dt-column-header .dt-column-title {
 .ph-breadcrumb-current {
     color: var(--c-text);
 }
-.ph-title-row {
+/* Description (left) + action buttons (right) share one row below the breadcrumb. */
+.ph-body-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: var(--sp-3);
     flex-wrap: wrap;
 }
-/* 2026-09-13, Round 3 item 3a -- wraps $title + the optional #phTitleBadge slot so a state badge
-   next to the H1 (e.g. Payroll Detail's run-state badge) doesn't get pulled apart from it by
-   `.ph-title-row`'s own `justify-content: space-between`. */
-.ph-title-wrap {
+/* Left column of the header body row: optional data-driven heading ($entity_title, Payroll Detail's run
+   name + state badge) above the description. */
+.ph-body-text {
+    min-width: 0;
+}
+.entity-title-wrap {
     display: flex;
     align-items: center;
     gap: var(--sp-2);
@@ -3826,41 +3829,48 @@ th.col-money div.dt-column-header .dt-column-title {
     border-color: var(--c-danger-hover);
     color: var(--c-danger-on-fill);
 }
-.ph-title {
+.entity-title {
     font-size: var(--fs-xl);
     font-weight: 700;
     color: var(--c-text);
     margin: 0;
 }
 .ph-description {
-    font-size: var(--fs-sm);
+    font-size: 0.8125rem;
+    color: var(--c-text-muted);
+    margin: 0;
+}
+.dash-greeting-title {
+    font-size: var(--fs-xl);
+    font-weight: 700;
+    color: var(--c-text);
+    margin: 0;
+}
+.dash-greeting-desc {
+    font-size: 0.8125rem;
     color: var(--c-text-muted);
     margin: var(--sp-1) 0 0;
 }
 /* 2026-09-15, below `md`: the header reads top-to-bottom -- breadcrumb, title + state badge,
-   description, then the action row. `.ph-title-row` becomes `display: contents` so its 2 children
-   join the header's own column flow and the actions can be ordered BELOW the description, which is
-   its sibling, not its child. Buttons keep their normal size and simply wrap onto another row when
+   description, then the action row. `.ph-body-row` becomes `display: contents` so its 2 children
+   join the header's own column flow. Buttons keep their normal size and simply wrap onto another row when
    they run out of width. */
 @media (max-width: 767.98px) {
     .ph-header {
         display: flex;
         flex-direction: column;
     }
-    .ph-title-row {
+    .ph-body-row {
         display: contents;
     }
     .ph-breadcrumb {
         order: 1;
     }
-    .ph-title-wrap {
+    .ph-body-text {
         order: 2;
     }
-    .ph-description {
-        order: 3;
-    }
     .ph-actions {
-        order: 4;
+        order: 3;
         justify-content: flex-end;
         flex-wrap: wrap;
         gap: var(--sp-2);

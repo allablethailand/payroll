@@ -14,6 +14,7 @@
     "info": "แสดงรายการที่ _START_ ถึง _END_ จากทั้งหมด _TOTAL_ รายการ",
     "infoEmpty": "แสดงรายการที่ 0 ถึง 0 จากทั้งหมด 0 รายการ",
     "infoFiltered": "(กรองจากรายการทั้งหมด _MAX_ รายการ)",
+    "app_name": "Origami Payroll",
     "dashboard": "แดชบอร์ด",
     "employees": "พนักงาน",
     "employee_list_menu": "รายชื่อพนักงาน",

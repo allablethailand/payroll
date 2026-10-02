@@ -1,10 +1,8 @@
 <div class="container container-body">
     <?php
-    $title = 'Version';
-    $title_i18n = 'version_title';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
         ['label' => 'Help', 'href' => null, 'i18n' => 'help_menu'],
+        ['label' => 'Version', 'href' => null, 'i18n' => 'version_title'],
     ];
     $description = 'What\'s new in Origami Payroll, most recent first.';
     $description_i18n = 'version_description';

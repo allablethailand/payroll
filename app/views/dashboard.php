@@ -1,10 +1,16 @@
 <div class="container container-body">
     <?php
-    $title = 'Welcome';
-    $breadcrumb = [];
-    $description = 'Here is an overview of your payroll workspace.';
+    $breadcrumb = [
+        ['label' => 'Dashboard', 'href' => null, 'i18n' => 'dashboard'],
+    ];
     include __DIR__ . '/partials/page-header.php';
     ?>
+
+    <!-- Greeting is data (name + today's date), written only by dashboard.js renderDashboard(). -->
+    <div class="mb-4">
+        <h2 class="dash-greeting-title" id="dashGreetingTitle">Welcome</h2>
+        <p class="dash-greeting-desc" id="dashGreetingDesc">Here is an overview of your payroll workspace.</p>
+    </div>
 
     <div class="row g-3 mb-4" id="dashStatRow">
         <div class="col-6 col-lg-3">

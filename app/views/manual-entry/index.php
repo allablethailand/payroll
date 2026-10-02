@@ -1,10 +1,8 @@
 ﻿<div class="container container-body">
     <?php
-    $title = 'Manual Time Entry';
-    $title_i18n = 'manual_time_entry';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
         ['label' => 'Time & Leave', 'href' => null, 'i18n' => 'time_and_leave'],
+        ['label' => 'Manual Time Entry', 'href' => null, 'i18n' => 'manual_time_entry'],
     ];
     $description = 'Manually record attendance, leave, and overtime for employees when there is no HR system integration.';
     $description_i18n = 'manual_time_entry_description';

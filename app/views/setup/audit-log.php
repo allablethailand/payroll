@@ -1,9 +1,8 @@
 <div class="container container-body">
     <?php
-    $title = 'Audit Log';
-    $title_i18n = 'audit_log_title';
     $breadcrumb = [
-        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Reports', 'href' => null, 'i18n' => 'reports'],
+        ['label' => 'Audit Log', 'href' => null, 'i18n' => 'audit_log_menu'],
     ];
     $description = 'Field-level history of changes to Employee, Company Profile, and Payroll Configuration records.';
     $description_i18n = 'audit_log_description';

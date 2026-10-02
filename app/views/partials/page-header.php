@@ -20,11 +20,18 @@
  *
  * Variables the calling view must set BEFORE including this file:
  *
- * @var string $title                Required. The page's H1. Must NOT repeat the breadcrumb's own
- *                                    last item verbatim (§2: "Breadcrumb กับ H1 ห้ามพูดซ้ำกัน").
+ * 2026-10-02, §2 REVISED: NO H1 here by default. EXCEPTION: a detail page whose heading is a data value
+ * (Payroll Detail's run name + state badge) sets `$entity_title` (placeholder string) and gets that H1 + the
+ * `#{prefix}TitleBadge` slot in the header; JS fills `#{prefix}Title`/`#{prefix}TitleBadge` after its fetch.
+ * Otherwise: The page name is the LAST breadcrumb crumb, and the
+ * first crumb (app name, `app_name`, links to /dashboard) is prepended by this partial itself --
+ * a caller's `$breadcrumb` lists only `Menu` / `Sub menu` (or just `Menu`), ending with the current page.
+ * `$title`/`$title_i18n` are no longer read; a page whose data-driven name needs a heading renders
+ * its own (e.g. payroll/detail.php's run name + state badge, dashboard.php's greeting).
  * @var array  $breadcrumb           Required (may be an empty array for a page with no real trail).
  *                                    List of ['label' => string, 'href' => string|null,
- *                                    'i18n' => string|null]. The LAST entry is rendered as plain text
+ *                                    'i18n' => string|null, 'hidden' => bool|null (renders the crumb and its
+ *                                    separator `d-none`; JS reveals them via #{prefix}BreadcrumbSep/Current)]. The LAST entry is rendered as plain text
  *                                    (the current page), every entry before it as a link when 'href'
  *                                    is set. 'i18n' (2026-09-13, Round 3 item 3a -- the OLD
  *                                    `.payroll-breadcrumb` markup this replaces on Payroll Detail had
@@ -135,7 +142,7 @@
  *                                         ['label' => 'ขอข้อมูลเพิ่มเติม', 'id' => 'btnRequestInfoRunHeader', 'tone' => 'warning'],
  *                                         ['label' => 'ไม่อนุมัติ', 'id' => 'btnRejectRunHeader', 'tone' => 'danger'],
  *                                     ];
- * @var string|null $title_i18n, $description_i18n  Optional lang keys -> `data-i18n` on the H1 / description, for static (non-JS-written) text.
+ * @var string|null $description_i18n  Optional lang key -> `data-i18n` on the description, for static (non-JS-written) text.
  * @var string|null $description     Optional, ONE line (§2: "คำอธิบาย 1 บรรทัด (ถ้าจำเป็นจริง)"). Only
  *                                    set this when the title alone genuinely doesn't explain the page.
  *
@@ -178,6 +185,7 @@
  *                              "full page mockup" illustration).
  */
 $breadcrumb = $breadcrumb ?? [];
+// (title is intentionally not read -- see the docblock)
 $primary_action = $primary_action ?? null;
 $secondary_actions = $secondary_actions ?? [];
 $id_prefix = $id_prefix ?? 'ph';
@@ -225,22 +233,26 @@ if ($decision_actions) {
     $phActionQueue[] = ['action' => $primary_action, 'class' => 'btn-primary', 'group' => null];
 }
 ?>
+<?php
+// §2 (2026-10-02): the first crumb is ALWAYS the app name, prepended here so no view repeats it.
+array_unshift($breadcrumb, ['label' => 'Origami Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'app_name', 'app' => true]);
+?>
 <div class="ph-header">
-    <?php if ($breadcrumb): ?>
     <nav class="ph-breadcrumb" aria-label="breadcrumb">
         <?php $phCrumbCount = count($breadcrumb); foreach ($breadcrumb as $i => $crumb):
             $phIsLastCrumb = $i === $phCrumbCount - 1;
             $phCrumbI18nAttr = !empty($crumb['i18n']) ? ' data-i18n="' . htmlspecialchars($crumb['i18n']) . '"' : '';
         ?>
-            <?php if ($i > 0): ?><span class="ph-breadcrumb-sep">/</span><?php endif; ?>
+            <?php $phCrumbHidden = !empty($crumb['hidden']) ? ' d-none' : ''; // hidden crumb: JS reveals it later (Employee Detail create flow) ?>
+            <?php if ($i > 0): ?><span class="ph-breadcrumb-sep<?=$phCrumbHidden?>"<?=$phIsLastCrumb ? ' id="' . htmlspecialchars($id_prefix) . 'BreadcrumbSep"' : ''?>>/</span><?php endif; ?>
             <?php if ($phIsLastCrumb): ?>
                 <!-- id="phBreadcrumbCurrent" (2026-09-13, Round 3 item 3a) -- a stable hook for a page
                      whose current-crumb text is only known after an async fetch (e.g. Payroll
                      Detail's own run name) to update it client-side, same "starts as a placeholder,
                      JS fills it in" pattern the old .bc-current convention already used. -->
-                <span class="ph-breadcrumb-current" id="<?=htmlspecialchars($id_prefix)?>BreadcrumbCurrent"<?=$phCrumbI18nAttr?>><?=htmlspecialchars($crumb['label'])?></span>
+                <span class="ph-breadcrumb-current<?=$phCrumbHidden?>" id="<?=htmlspecialchars($id_prefix)?>BreadcrumbCurrent"<?=$phCrumbI18nAttr?>><?=htmlspecialchars($crumb['label'])?></span>
             <?php elseif (!empty($crumb['href'])): ?>
-                <a href="<?=htmlspecialchars($crumb['href'])?>" class="ph-breadcrumb-link"<?=$phCrumbI18nAttr?>><?=htmlspecialchars($crumb['label'])?></a>
+                <a href="<?=htmlspecialchars($crumb['href'])?>" class="ph-breadcrumb-link"<?=!empty($crumb['app']) ? ' data-ph-app="1"' : ''?><?=$phCrumbI18nAttr?>><?=htmlspecialchars($crumb['label'])?></a>
             <?php else: ?>
                 <!-- 2026-09-13, Round 3 item 3a, real gap found in this partial's OWN original logic:
                      a non-last crumb with no href (e.g. a plain "Home" label that isn't itself a
@@ -256,16 +268,20 @@ if ($decision_actions) {
             <?php endif; ?>
         <?php endforeach; ?>
     </nav>
-    <?php endif; ?>
-    <div class="ph-title-row">
-        <!-- id="phTitle"/"phTitleBadge" (2026-09-13, Round 3 item 3a) -- same "stable hook for a
-             value only known after an async fetch" reasoning as phBreadcrumbCurrent above (Payroll
-             Detail's own run name + state badge, e.g. "อนุมัติแล้ว"). phTitleBadge has no styling of
-             its own here -- a page sets whatever badge markup it needs via statusBadge()/
-             statusBadgeHtml() (§5) into it, this partial just reserves the slot next to the title. -->
-        <div class="ph-title-wrap">
-            <h1 class="ph-title" id="<?=htmlspecialchars($id_prefix)?>Title"<?=!empty($title_i18n) ? ' data-i18n="' . htmlspecialchars($title_i18n) . '"' : ''?>><?=htmlspecialchars($title)?></h1>
-            <span id="<?=htmlspecialchars($id_prefix)?>TitleBadge"></span>
+    <div class="ph-body-row">
+        <div class="ph-body-text">
+<?php if (isset($entity_title)): ?>
+            <div class="entity-title-wrap">
+                <h1 class="entity-title" id="<?=htmlspecialchars($id_prefix)?>Title"><?=htmlspecialchars((string)$entity_title)?></h1>
+                <span id="<?=htmlspecialchars($id_prefix)?>TitleBadge"></span>
+            </div>
+<?php endif; ?>
+            <!-- id="phDescription" always rendered (2026-09-13, Round 3 item 3a) -- same stable-hook
+                 reasoning as phTitle/phBreadcrumbCurrent above, for a description only known after an async
+                 fetch (Payroll Detail's own "งวด · วันจ่าย"). `d-none` when $description starts empty/null,
+                 a page fetching its real value client-side removes that class itself alongside setting the
+                 text -- same pattern this app's own reject/cancel-reason boxes already use. -->
+            <p class="ph-description<?=$description ? '' : ' d-none'?>" id="<?=htmlspecialchars($id_prefix)?>Description"<?=!empty($description_i18n) ? ' data-i18n="' . htmlspecialchars($description_i18n) . '"' : ''?>><?=htmlspecialchars($description ?? '')?></p>
         </div>
         <!-- id="phActions" always rendered, even with an empty queue (2026-09-13, Round 3 item 3a) --
              a page whose actions are only knowable after an async fetch (e.g. Payroll Detail's own
@@ -335,10 +351,4 @@ if ($decision_actions) {
             <?php endif; ?>
         </div>
     </div>
-    <!-- id="phDescription" always rendered (2026-09-13, Round 3 item 3a) -- same stable-hook
-         reasoning as phTitle/phBreadcrumbCurrent above, for a description only known after an async
-         fetch (Payroll Detail's own "งวด · วันจ่าย"). `d-none` when $description starts empty/null,
-         a page fetching its real value client-side removes that class itself alongside setting the
-         text -- same pattern this app's own reject/cancel-reason boxes already use. -->
-    <p class="ph-description<?=$description ? '' : ' d-none'?>" id="<?=htmlspecialchars($id_prefix)?>Description"<?=!empty($description_i18n) ? ' data-i18n="' . htmlspecialchars($description_i18n) . '"' : ''?>><?=htmlspecialchars($description ?? '')?></p>
 </div>
