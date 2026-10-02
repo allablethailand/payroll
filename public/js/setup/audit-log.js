@@ -69,7 +69,7 @@ function renderAuditLogTable() {
 }
 $(document).ready(function () {
     (window.langReady || Promise.resolve()).then(function () {
-    if (!$('#tb_audit_log').length) return;
+    initTabPaneOnce('#audit-general-tab', function () {
     initDatepicker('#filter_al_date_from, #filter_al_date_to');
     if (typeof initSelect2 === 'function') initSelect2('#filter_al_table_name', { mode: 'static', selectedValue: 'all' });
     renderAuditLogTable();
@@ -78,5 +78,6 @@ $(document).ready(function () {
     });
     // The bar listens to change only; the old filter reloaded while typing.
     $('#filter_al_record_id').on('input', function () { $(this).trigger('change'); });
+    });
     });
 });

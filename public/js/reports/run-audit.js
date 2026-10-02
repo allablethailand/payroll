@@ -188,7 +188,7 @@ $(document).on('click', '#runAuditExportBtn', function () {
 
 $(document).ready(function () {
     (window.langReady || Promise.resolve()).then(function () {
-    if (!$('#tb_run_audit_list').length) return;
+    initTabPaneOnce('#audit-run-tab', function () {
     runAuditDiffModal = new bootstrap.Modal(document.getElementById('runAuditDiffModal'));
     if (typeof initDatepicker === 'function') {
         initDatepicker('#runAuditFilterDateFrom');
@@ -199,5 +199,6 @@ $(document).ready(function () {
     });
     registerRunAuditStationSearchFilter();
     initRunAuditTable();
+    });
     });
 });

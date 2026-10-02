@@ -161,13 +161,13 @@ async function reportsCell(cell, opts) {
 async function annualSummaryCell(cell, opts) {
     const { page, report } = await openContext({ sessionId, ...opts });
     await page.context().addInitScript((l) => { try { localStorage.setItem('preferred_language', l); } catch (e) { /* storage blocked */ } }, opts.lang);
-    await page.goto(`${process.env.UI_BASE_URL}/reports/annual-summary`, { waitUntil: 'networkidle' });
+    await page.goto(`${process.env.UI_BASE_URL}/reports?tab=annual`, { waitUntil: 'networkidle' });
     if (opts.colorScheme === 'dark') await applyAppTheme(page, 'dark');
-    check(cell, 'annual summary: 4 tabs', await page.locator('#aisTopTabs .nav-link').count(), 4);
+    check(cell, 'annual summary: 3 top tabs', await page.locator('#reportsTopTabs .nav-link').count(), 3);
     await page.waitForFunction(() => document.querySelectorAll('#aisFiscalYear option').length > 0);
     check(cell, 'annual summary: fiscal-year list is filled', await page.locator('#aisFiscalYear option').count() > 0, true);
     await page.waitForFunction(() => /\d/.test(document.querySelector('#aisSummaryEmployeeCount').textContent));
-    for (const tab of ['#ais-pit-tab', '#ais-sso-tab', '#ais-monthly-pit-tab', '#ais-income-tab']) {
+    for (const tab of ['#ais-metric-pit-tab', '#ais-metric-sso-tab', '#ais-monthly-pit-tab', '#ais-annual-tab']) {
         await page.click(tab);
         await page.waitForTimeout(500);
         check(cell, `annual summary: ${tab} opens its pane`, await page.locator(tab).getAttribute('aria-selected'), 'true');

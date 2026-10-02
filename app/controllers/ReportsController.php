@@ -65,8 +65,19 @@ class ReportsController extends Controller {
         return true;
     }
 
+    /** One page, 3 top tabs: Generate Reports (payroll_run.view), Annual Summary + Monthly Withholding Tax (annual_income_summary.view); a tab renders only if permitted. */
     public function index() {
-        $this->view('reports/index');
+        $compId = (int)getCompId();
+        $canReports = $this->payrollRunModel->canView($this->userId(), $this->isAdmin())
+            && $this->permissionModel->checkPermission($this->userId(), 'payroll_run.view', $this->isAdmin(), $compId)['allowed'];
+        $canAnnual = $this->permissionModel->checkPermission($this->userId(), 'annual_income_summary.view', $this->isAdmin(), $compId)['allowed'];
+        if (!$canReports && !$canAnnual) {
+            $this->view('permission');
+            return;
+        }
+        $requested = (string)($_GET['tab'] ?? '');
+        $activeTab = (in_array($requested, ['annual', 'monthly'], true) && $canAnnual) ? $requested : ($canReports ? 'reports' : 'annual');
+        $this->view('reports/index', ['canReports' => $canReports, 'canAnnual' => $canAnnual, 'activeTab' => $activeTab]);
     }
 
     /**
@@ -675,16 +686,6 @@ class ReportsController extends Controller {
        AnnualIncomeSummaryController already established). Reuses requireViewAccess() (same gate
        every other report in this controller already uses) rather than inventing a new permission
        key nothing in this batch's request asked for. */
-
-    public function runAudit() {
-        $compId = (int)getCompId();
-        $check = $this->permissionModel->checkPermission($this->userId(), 'payroll_run.view', $this->isAdmin(), $compId);
-        if (!$this->payrollRunModel->canView($this->userId(), $this->isAdmin()) || !$check['allowed']) {
-            $this->view('permission');
-            return;
-        }
-        $this->view('reports/run-audit');
-    }
 
     public function runAuditList() {
         if (!$this->requireViewAccess()) return;

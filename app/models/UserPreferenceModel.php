@@ -78,6 +78,12 @@ class UserPreferenceModel {
         return ['status' => true, 'message' => 'Saved successfully.'];
     }
 
+    /** Retired Quick Link keys -> the key that replaced them, so a saved selection survives a menu merge. */
+    private const QUICK_LINK_KEY_ALIASES = [
+        'reports.run_audit' => 'audit',
+        'audit_log' => 'audit',
+    ];
+
     /**
      * 2026-09-07, explicit request: "ทางลัด...ปรับเป็นให้อยู่บน header ไปเลย...โดยให้ผู้ใช้เลือกได้ว่าจะโชว์
      * หรือไม่โชว์เมนูไหน" -- per-user header Quick Links selection, same `employees` table as
@@ -103,7 +109,8 @@ class UserPreferenceModel {
         if (!is_array($decoded)) {
             return null;
         }
-        return array_values(array_filter($decoded, 'is_string'));
+        $keys = array_map(fn($k) => self::QUICK_LINK_KEY_ALIASES[$k] ?? $k, array_filter($decoded, 'is_string'));
+        return array_values(array_unique($keys));
     }
 
     /** @param string[] $keys catalog keys (see layout/header.php's own $quickLinkCatalog), in the
@@ -174,13 +181,11 @@ class UserPreferenceModel {
             ['key' => 'help.version', 'url' => '/help/version', 'icon' => 'REPORT.SVG', 'label' => 'version_menu', 'group' => 'help_menu'],
         ];
         if ($can('payroll_run.view')) {
-            $catalog[] = ['key' => 'reports.generate', 'url' => '/reports', 'icon' => 'REPORT.SVG', 'label' => 'generate_reports', 'group' => 'reports'];
+            $catalog[] = ['key' => 'reports.generate', 'url' => '/reports', 'icon' => 'REPORT.SVG', 'label' => 'payroll_tax_reports_menu', 'group' => 'reports'];
         }
+        // Annual Summary is a tab of /reports now; its own Quick Link stays so a saved selection lands on that tab.
         if ($can('annual_income_summary.view')) {
-            $catalog[] = ['key' => 'reports.annual_summary', 'url' => '/reports/annual-summary', 'icon' => 'REPORT.SVG', 'label' => 'annual_income_summary', 'group' => 'reports'];
-        }
-        if ($can('payroll_run.view')) {
-            $catalog[] = ['key' => 'reports.run_audit', 'url' => '/reports/run-audit', 'icon' => 'REPORT.SVG', 'label' => 'payroll_run_audit_menu', 'group' => 'reports'];
+            $catalog[] = ['key' => 'reports.annual_summary', 'url' => '/reports?tab=annual', 'icon' => 'REPORT.SVG', 'label' => 'ais_tab_annual', 'group' => 'reports'];
         }
         if ($can('approval_workflow.view')) {
             $catalog[] = ['key' => 'settings.document_approval', 'url' => '/setup/document-approval', 'icon' => 'APPROVAL.SVG', 'label' => 'document_and_approval', 'group' => 'settings'];
@@ -192,8 +197,8 @@ class UserPreferenceModel {
         // respectively) during that day's menu consolidation; `group` updated to match so the
         // Customize modal lists them under the correct heading (see header.php's own sidebar
         // comments on each move for the reasoning).
-        if ($can('audit_log.view')) {
-            $catalog[] = ['key' => 'audit_log', 'url' => '/audit-log', 'icon' => 'REPORT.SVG', 'label' => 'audit_log_menu', 'group' => 'reports'];
+        if ($can('payroll_run.view') || $can('audit_log.view')) {
+            $catalog[] = ['key' => 'audit', 'url' => '/audit', 'icon' => 'REPORT.SVG', 'label' => 'audit_center_menu', 'group' => 'reports'];
         }
         if ($can('announcement.manage')) {
             $catalog[] = ['key' => 'announcements', 'url' => '/setup/announcements', 'icon' => 'APPROVAL.SVG', 'label' => 'announcement_menu', 'group' => 'settings'];

@@ -36,10 +36,6 @@ class AuditLogController extends Controller {
         return true;
     }
 
-    public function index() {
-        $this->view('setup/audit-log');
-    }
-
     /** Server-side DataTable feed -- no per-column Excel filter (this is an intentionally-exempt
      *  table with a top-level filter bar instead, ordering:false, same "not every table needs
      *  per-column filters" exempt category CLAUDE.md's own Table convention already documents for

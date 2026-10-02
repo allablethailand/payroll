@@ -420,7 +420,8 @@
     $router->get('api/manual-entry.employee-context', 'ManualEntryController@employeeContext');
 
     // Platform Hardening Phase 6 pilot -- field-level audit log viewer.
-    $router->get('audit-log', 'AuditLogController@index');
+    $router->get('audit', 'AuditCenterController@index');
+    $router->get('audit-log', 'AuditCenterController@legacyAuditLog');
     $router->get('api/audit-log.list', 'AuditLogController@list');
     // 2026-09-05, Backlog Phase 13 -- Terms & Conditions (login-gate modal + Profile menu),
     // Help > Setup Guide/Version pages, and the Help Drawer's own content endpoint.
@@ -463,7 +464,7 @@
     $router->get('reports', 'ReportsController@index');
     // Annual Income Summary (2026-08-29) -- separate interactive page (live filter/scroll table,
     // not a generate-and-download document like the rest of the Reports module).
-    $router->get('reports/annual-summary', 'AnnualIncomeSummaryController@index');
+    $router->get('reports/annual-summary', 'AnnualIncomeSummaryController@legacyIndex');
     $router->get('api/annual-income-summary.years', 'AnnualIncomeSummaryController@years');
     $router->get('api/annual-income-summary.summary', 'AnnualIncomeSummaryController@summary');
     $router->get('api/annual-income-summary.cell-detail', 'AnnualIncomeSummaryController@cellDetail');
@@ -489,7 +490,7 @@
     $router->get('api/report.run-summary', 'ReportsController@runReportsSummary');
     $router->get('api/report.payslip-roster', 'ReportsController@payslipRoster');
     // 2026-08-31, same-day follow-up (item 10) -- Payroll Run Audit diff-history page.
-    $router->get('reports/run-audit', 'ReportsController@runAudit');
+    $router->get('reports/run-audit', 'AuditCenterController@legacyRunAudit');
     $router->get('api/report.run-audit-list', 'ReportsController@runAuditList');
     $router->get('api/report.run-audit-diff', 'ReportsController@runAuditDiff');
     $router->get('api/report.run-audit-export', 'ReportsController@runAuditExport');

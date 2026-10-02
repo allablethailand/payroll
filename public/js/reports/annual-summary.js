@@ -15,9 +15,8 @@
  * filter/year change since the header/column set itself can change (month state colors depend on
  * "today" relative to the selected year; the column count doesn't change, but the styling per
  * header cell does), not just the row data. */
-let aisTable = null;
 // 2026-09-12, Batch 5 item 6 -- module-level so this SURVIVES a year/filter re-render (explicit
-// instruction: the display-toggle state must not reset on reload) -- aisRenderTable() only ever
+// instruction: the display-toggle state must not reset on reload) -- aisRenderMetricTable() only ever
 // READS these, never resets them. "All" (#aisShowAll) has no state of its own; it's always DERIVED
 // from these 2 (see the checkbox handlers further down), so it can never drift out of sync.
 let aisShowIncome = true;
@@ -87,16 +86,88 @@ function aisStatusFilterValue(selector) {
     return v === 'all' ? '' : (v || '');
 }
 
-function aisCurrentFilters() {
+// Shared by the Annual Summary and Monthly Withholding Tax filter bars (same field set, different id prefix).
+function aisFilterValues(prefix) {
     return {
-        fiscal_year: $('#aisFiscalYear').val(),
-        cycle_id: $('#aisFilterCycle').val() || '',
-        department_id: $('#aisFilterDepartment').val() || '',
-        team_id: $('#aisFilterTeam').val() || '',
-        branch_id: $('#aisFilterBranch').val() || '',
-        role_id: $('#aisFilterRole').val() || '',
-        employee_status: aisStatusFilterValue('#aisFilterStatus'),
+        cycle_id: $(`#${prefix}Cycle`).val() || '',
+        department_id: $(`#${prefix}Department`).val() || '',
+        team_id: $(`#${prefix}Team`).val() || '',
+        branch_id: $(`#${prefix}Branch`).val() || '',
+        role_id: $(`#${prefix}Role`).val() || '',
+        employee_status: aisStatusFilterValue(`#${prefix}Status`),
     };
+}
+function aisInitFilterSelects(prefix) {
+    if (typeof initSelect2 !== 'function') return;
+    ['Cycle', 'Department', 'Team', 'Branch', 'Role'].forEach(function (s) {
+        initSelect2(`#${prefix}${s}`, { mode: 'ajax', allowClear: true });
+    });
+    initSelect2(`#${prefix}Status`, { mode: 'static' });
+}
+function aisCurrentFilters() {
+    return Object.assign({ fiscal_year: $('#aisFiscalYear').val() }, aisFilterValues('aisFilter'));
+}
+
+/* ==================== Annual Summary: one filter bar, one fiscal year, one table per metric ====================
+   Income / Tax / Social Security share the filters, the fiscal-year select and the card row; each metric
+   has its own pill pane + table and its own API endpoint (summary / pit-summary / sso-summary). A metric's
+   table is (re)built only while its pane is visible (first shown.bs.tab, or after a filter/year change made
+   since it last loaded); showing an already-current metric just re-measures columns. */
+function aisSimpleMonthCellHtml(row, val, month) {
+    if (!val) return '<span class="text-muted">-</span>';
+    return `<button type="button" class="ais-cell-clickable" data-employee-id="${row.employee_id}" data-year="${month.year}" data-month="${month.month}">
+        <span class="ais-cell-net">${aisFmt(val)}</span>
+    </button>`;
+}
+function aisSimpleMetric(opts) {
+    return Object.assign({
+        monthCell: (row, idx, m) => aisSimpleMonthCellHtml(row, row.months[idx], m),
+        monthSort: (row, idx) => row.months[idx] || 0,
+        footMonth: (data, m) => aisFmt((data.totals.months || {})[m.key] || 0),
+        totalCell: (row) => `<span class="ais-total-value">${aisFmt(row[opts.totalKey])}</span>`,
+        totalSort: (row) => row[opts.totalKey],
+        footTotal: (data) => `<span class="ais-total-value">${aisFmt(data.totals[opts.totalKey])}</span>`,
+    }, opts);
+}
+const AIS_METRICS = {
+    income: {
+        endpoint: 'summary', table: '#tb_annual_summary', pane: '#ais-metric-income-pane', empty: '#aisTableEmpty',
+        monthCell: (row, idx, m) => aisEmployeeMonthCellHtml(row, row.months[idx], m),
+        monthSort: (row, idx) => row.months[idx] ? row.months[idx].net : 0,
+        footMonth: (data, m) => aisMoneyCellHtml(data.totals.months[m.key] || { gross: 0, deduction: 0, net: 0 }),
+        totalCell: (row) => aisAnnualTotalCellHtml(row),
+        totalSort: (row) => row.annual_net,
+        footTotal: (data) => `<span class="ais-cell-sub">+${aisFmt(data.totals.annual_gross)}</span>
+        <span class="ais-cell-sub ais-cell-deduction">-${aisFmt(data.totals.annual_deduction)}</span>
+        <span class="ais-total-value">${aisFmt(data.totals.annual_net)}</span>`,
+        renderCards: function (t) {
+            $('#aisSummaryGross').text(aisFmt(t.annual_gross));
+            $('#aisSummaryDeduction').text(aisFmt(t.annual_deduction));
+            $('#aisSummaryNet').text(aisFmt(t.annual_net));
+        },
+    },
+    pit: aisSimpleMetric({
+        endpoint: 'pit-summary', table: '#tb_ais_pit', pane: '#ais-metric-pit-pane', empty: '#aisPitTableEmpty',
+        totalKey: 'annual_tax_withheld',
+        renderCards: (t) => $('#aisSummaryTax').text(aisFmt(t.annual_tax_withheld)),
+    }),
+    sso: aisSimpleMetric({
+        endpoint: 'sso-summary', table: '#tb_ais_sso', pane: '#ais-metric-sso-pane', empty: '#aisSsoTableEmpty',
+        totalKey: 'annual_sso_amount',
+        renderCards: (t) => $('#aisSummarySso').text(aisFmt(t.annual_sso_amount)),
+    }),
+};
+Object.keys(AIS_METRICS).forEach(function (k) { AIS_METRICS[k].dt = null; AIS_METRICS[k].loadedVersion = -1; });
+// Bumped on every filter/year change; a metric whose loadedVersion lags behind reloads when next shown.
+let aisVersion = 0;
+
+function aisActiveMetric() {
+    return $('#aisMetricTabs .nav-link.active').data('ais-metric-tab') || 'income';
+}
+function aisShowMetricCards(key) {
+    $('#aisSummaryCards [data-ais-metric]').each(function () {
+        $(this).toggleClass('d-none', $(this).data('ais-metric') !== key);
+    });
 }
 
 function loadAisFiscalYears() {
@@ -107,15 +178,11 @@ function loadAisFiscalYears() {
         success: function (res) {
             if (!res.status) return;
             const $select = $('#aisFiscalYear').empty();
-            const years = res.data || [];
-            if (!years.length) {
-                const currentYear = new Date().getFullYear();
-                years.push(currentYear);
-            }
+            const years = res.data && res.data.length ? res.data : [new Date().getFullYear()];
             years.forEach(function (y) {
                 $select.append(new Option('FY ' + y, y));
             });
-            loadAisSummary();
+            loadAisMetric(aisActiveMetric());
         },
         error: function () {
             showWarning(langData['save_failed'] || 'An error occurred while loading the data.');
@@ -123,68 +190,83 @@ function loadAisFiscalYears() {
     });
 }
 
-function loadAisSummary() {
+function aisReloadActiveMetric() {
+    aisVersion++;
+    loadAisMetric(aisActiveMetric());
+}
+
+function loadAisMetric(key) {
+    const cfg = AIS_METRICS[key];
     const filters = aisCurrentFilters();
     if (!filters.fiscal_year) return;
-    $('.ais-table-wrap').addClass('d-none');
-    $('#aisTableEmpty').addClass('d-none');
+    cfg.loadedVersion = aisVersion;
+    $(`${cfg.pane} .ais-table-wrap`).addClass('d-none');
+    $(cfg.empty).addClass('d-none');
     $.ajax({
-        url: `${BASE_URL}/api/annual-income-summary.summary`,
+        url: `${BASE_URL}/api/annual-income-summary.${cfg.endpoint}`,
         method: 'GET',
         dataType: 'json',
         data: filters,
         success: function (res) {
             if (!res.status) {
+                cfg.loadedVersion = -1;
                 showWarning(res.message || langData['save_failed'] || 'An error occurred while loading the data.');
                 return;
             }
-            aisRenderSummaryCards(res.data.totals);
-            aisRenderTable(res.data);
+            $('#aisSummaryEmployeeCount').text(res.data.totals.employee_count || 0);
+            cfg.renderCards(res.data.totals);
+            aisRenderMetricTable(key, res.data);
         },
         error: function () {
+            cfg.loadedVersion = -1;
             showWarning(langData['save_failed'] || 'An error occurred while loading the data.');
         }
     });
 }
 
-function aisRenderSummaryCards(totals) {
-    $('#aisSummaryEmployeeCount').text(totals.employee_count || 0);
-    $('#aisSummaryGross').text(aisFmt(totals.annual_gross));
-    $('#aisSummaryDeduction').text(aisFmt(totals.annual_deduction));
-    $('#aisSummaryNet').text(aisFmt(totals.annual_net));
+function aisIdentityColumns() {
+    const nameOf = (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '';
+    const lbl = (row, k) => escapeHtml((currentLang === 'th' ? row[k + '_name_th'] : row[k + '_name_en']) || row[k + '_name_th'] || '-');
+    return [
+        { data: null, render: (row) => `<span class="ais-employee-no">${escapeHtml(row.employee_no)}</span>` },
+        {
+            data: null,
+            render: {
+                display: (row) => apvPersonLineHtml(nameOf(row), 32, row.profile_photo_path, row.employee_id ? { employeeId: row.employee_id } : null),
+                sort: nameOf,
+                filter: nameOf,
+            }
+        },
+        { data: null, render: (row) => lbl(row, 'department') },
+        { data: null, render: (row) => lbl(row, 'team') },
+        { data: null, render: (row) => lbl(row, 'position') },
+    ];
 }
 
-function aisRenderTable(data) {
+function aisRenderMetricTable(key, data) {
+    const cfg = AIS_METRICS[key];
     const months = data.months || [];
     const employees = data.employees || [];
-    // 2026-09-12, Batch 5 item 6 -- kept for the Annual Total click-through modal, see this
-    // variable's own top-of-file docblock. Updated on every render (year/filter change) so the
-    // modal always reads the CURRENTLY-shown data, not a stale snapshot from an earlier load.
-    aisCurrentMonths = months;
-    aisCurrentEmployeesById = {};
-    employees.forEach(function (e) { aisCurrentEmployeesById[e.employee_id] = e; });
-
-    if (aisTable) {
-        aisTable.destroy();
-        aisTable = null;
-        $('#tb_annual_summary').empty().append('<thead></thead><tfoot></tfoot>');
+    if (key === 'income') {
+        // Kept for the Annual Total click-through modal (reads the CURRENTLY shown data, no extra endpoint).
+        aisCurrentMonths = months;
+        aisCurrentEmployeesById = {};
+        employees.forEach(function (e) { aisCurrentEmployeesById[e.employee_id] = e; });
     }
 
+    if (cfg.dt) {
+        cfg.dt.destroy();
+        cfg.dt = null;
+        $(cfg.table).empty().append('<thead></thead><tfoot></tfoot>');
+    }
     if (!employees.length) {
-        $('#aisTableEmpty').removeClass('d-none');
-        $('.ais-table-wrap').addClass('d-none');
+        $(cfg.empty).removeClass('d-none');
+        $(`${cfg.pane} .ais-table-wrap`).addClass('d-none');
         return;
     }
-    $('.ais-table-wrap').removeClass('d-none');
+    $(`${cfg.pane} .ais-table-wrap`).removeClass('d-none');
 
-    // ---- head (built directly, before DataTable init -- column count/labels are dynamic per
-    // fiscal year, so this isn't the usual "static thead in the view" DataTables setup) ----
-    // 2026-09-08, explicit request: "แยก code กับ ชื่อพนักงานเป็นคนละ column กันครับ แผนก ทีม ตำแหน่ง
-    // ไม่ต้อง fixed column ครับ ให้เลื่อนได้เหมือนเดือน" -- Employee No./Employee (name) split into 2 real
-    // columns (matches every other table in this app's own "code and name are separate columns"
-    // convention, e.g. Employee Recheck Data) and are the only 2 columns still frozen left (see
-    // `left: 2` on the DataTable init below, down from 4) -- Department/Team/Position moved OUT of
-    // the frozen group entirely, scrolling together with the month columns instead.
+    // Employee No./Employee are frozen left, Annual Total frozen right; Department/Team/Position scroll with the months.
     let headHtml = '<tr><th>' + (langData['employee_no'] || 'Employee No.') + '</th>'
         + '<th>' + (langData['employee'] || 'Employee') + '</th>'
         + '<th>' + (langData['department'] || 'Department') + '</th>'
@@ -194,121 +276,43 @@ function aisRenderTable(data) {
         headHtml += `<th class="ais-month-${m.state}">${escapeHtml(aisMonthLabel(m))}</th>`;
     });
     headHtml += '<th>' + (langData['annual_total'] || 'Annual Total') + '</th></tr>';
-    $('#tb_annual_summary thead').html(headHtml);
+    $(`${cfg.table} thead`).html(headHtml);
 
-    // ---- foot (real totals from the server -- reflects every filtered employee, not just what
-    // DataTable's own client-side search box currently shows) ----
-    // Plain empty <td>s (one per identity column: Employee No./Employee/Department/Team/Position) --
-    // keeping the footer's own cell count identical to the header's (rather than collapsing these
-    // into the "Total" label's own colspan) is what keeps each column's <td> lined up under its own
-    // <th> in a plain (non-scrollX) table.
+    // Footer totals come from the server (every filtered employee, not just what the search box leaves visible).
     let footHtml = '<tr><td>' + (langData['total'] || 'Total') + '</td><td></td><td></td><td></td><td></td>';
-    months.forEach(function (m) {
-        const mt = data.totals.months[m.key] || { gross: 0, deduction: 0, net: 0 };
-        footHtml += `<td class="text-end">${aisMoneyCellHtml(mt)}</td>`;
-    });
-    footHtml += `<td class="text-end">
-        <span class="ais-cell-sub">+${aisFmt(data.totals.annual_gross)}</span>
-        <span class="ais-cell-sub ais-cell-deduction">-${aisFmt(data.totals.annual_deduction)}</span>
-        <span class="ais-total-value">${aisFmt(data.totals.annual_net)}</span>
-    </td></tr>`;
-    $('#tb_annual_summary tfoot').html(footHtml);
+    months.forEach(function (m) { footHtml += `<td class="text-end">${cfg.footMonth(data, m)}</td>`; });
+    footHtml += `<td class="text-end">${cfg.footTotal(data)}</td></tr>`;
+    $(`${cfg.table} tfoot`).html(footHtml);
 
-    // ---- columns ----
-    // 2026-09-12, Batch 5 item 5 step 2 -- Employee column now shows the SAME avatar+name treatment
-    // Process Detail's own "Updated By" column already uses (apvPersonLineHtml(), app.js -- no
-    // second avatar function). Object-form render (not plain render:) since embedding the avatar's
-    // <img>/initial-span markup directly into `display` would otherwise make DataTables sort/search
-    // against that raw HTML string instead of the employee's own name.
-    const columns = [
-        { data: null, render: (row) => `<span class="ais-employee-no">${escapeHtml(row.employee_no)}</span>` },
-        {
-            data: null,
-            render: {
-                display: (row) => apvPersonLineHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '', 32, row.profile_photo_path, row.employee_id ? { employeeId: row.employee_id } : null),
-                sort: (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '',
-                filter: (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '',
-            }
-        },
-        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
-        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
-        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
-    ];
+    // Object-form render (display/sort/filter) so money columns sort numerically, not by formatted string.
+    const columns = aisIdentityColumns();
     months.forEach(function (m, idx) {
-        // Object-form render (display/sort/filter split, same DataTables sort-safety convention
-        // this app already uses for formatted date columns) -- sorting/filtering a money column by
-        // its comma-formatted display string would sort lexicographically instead of numerically.
         columns.push({
             data: null,
             className: 'text-end',
             render: {
-                display: (row) => aisEmployeeMonthCellHtml(row, row.months[idx], m),
-                sort: (row) => row.months[idx] ? row.months[idx].net : 0,
-                filter: (row) => row.months[idx] ? row.months[idx].net : 0,
+                display: (row) => cfg.monthCell(row, idx, m),
+                sort: (row) => cfg.monthSort(row, idx),
+                filter: (row) => cfg.monthSort(row, idx),
             }
         });
     });
     columns.push({
         data: null,
         className: 'text-end',
-        render: {
-            display: (row) => aisAnnualTotalCellHtml(row),
-            sort: (row) => row.annual_net,
-            filter: (row) => row.annual_net,
-        }
+        render: { display: cfg.totalCell, sort: cfg.totalSort, filter: cfg.totalSort }
     });
 
-    // 2026-09-12, Batch 5 item 5 step 1 (step 3/4 follow-up) -- routed through the shared
-    // initSharedDataTable() helper (app.js, Batch 3C item 6) for the common bits (language/
-    // pageLength/lengthMenu/ordering defaults, row-count-based `searching`) while every option this
-    // table's OWN shape genuinely needs (data/columns, paging:false, info:false, order:[],
-    // drawCallback/initComplete) is passed as an explicit override -- the helper itself gained ONE
-    // fix (step 3/4: prefer `options.dtOptions.data.length` -- the SAME array DataTables itself
-    // ends up using, no separate/duplicate `data` needed here -- over an always-empty-at-that-point
-    // tbody count) rather than forcing `searching` true here, so this table's own search-box
-    // visibility now follows the SAME row-count threshold every other table using this helper
-    // already does.
-    aisTable = initSharedDataTable('#tb_annual_summary', {
+    cfg.dt = initSharedDataTable(cfg.table, {
         dtOptions: {
             data: employees,
             columns: columns,
             paging: false,
             info: false,
             order: [],
-            // 2026-09-08, explicit follow-up request ("column ทั้ง 3 Tab พนักงาน fixed และ column รวมทั้งปี
-            // fixed ขวา ส่วนของเดือนใช้เมาส์ลากดูได้เหมือนหน้า employee tab ตรวจสอบข้อมูล") -- was DataTables'
-            // own core `scrollX`+`scrollY`+the FixedColumns extension (`fixedColumns: {left:4, right:1}`),
-            // confirmed BROKEN app-wide for 2 independent reasons (see public/js/sticky-table-columns.js's
-            // own docblock): FixedColumns itself throws on load (missing `DataTable.Dom` in the installed
-            // `datatables.net` core), and `scrollX`/`scrollY` need CSS this app never actually loads
-            // (the base `datatables.net` skin's own stylesheet, only its bs5 skin was ever installed) --
-            // so neither the frozen columns nor the vertical 60vh cap were ever actually working, despite
-            // being configured. Rebuilt on the SAME plain-CSS-position:sticky pattern Employee Recheck
-            // Data already uses -- `initStickyColumns()` freezes columns on the left/right,
-            // `initTableDragScroll()` wraps the table in `.table-responsive` and adds real click-and-drag
-            // panning for the columns in between. The old `scrollY:'60vh'` vertical cap is NOT replaced --
-            // it was never actually capping anything either (same missing-CSS reason), so dropping it is
-            // not a real behavior change.
-            // 2026-09-08, same-day follow-up ("แยก code กับ ชื่อพนักงานเป็นคนละ column กันครับ แผนก ทีม ตำแหน่ง
-            // ไม่ต้อง fixed column ครับ ให้เลื่อนได้เหมือนเดือน") -- left dropped from 4 to 2 (Employee No.+
-            // Employee only, now that they're 2 real columns instead of 1 combined one -- see the head/
-            // columns above) -- Department/Team/Position are no longer part of the frozen group at all,
-            // they scroll together with the month columns now.
-            drawCallback: function () { initStickyColumns('#tb_annual_summary', { left: 2, right: 1 }); },
-            // 2026-09-04, Backlog Phase 11, T067 -- Department/Team/Position are genuinely categorical
-            // (a small, real distinct-value set), the confirmed real gap in this table. Employee (name+
-            // no, effectively unique per row) and the 12 month/annual-total money columns are
-            // deliberately NOT included -- they already sort/filter correctly via their own object-form
-            // {display,sort,filter} render (CLAUDE.md's own formatted-column convention, already
-            // correct here), but a discrete Excel-style checkbox list of every distinct MONEY amount
-            // across all employees has no real user value the way it does for a handful of department
-            // names -- same "widget/no-single-filterable-value" exemption spirit CLAUDE.md's own Table
-            // convention already carves out elsewhere (mini-timeline/progress-bar/avatar columns), even
-            // though a money column isn't literally named in that list. Re-applied on every rebuild
-            // (destroy:true + initComplete, not a one-time init) since this table's own column set/data
-            // changes on every filter/year change -- initComplete fires again each time.
-            // 2026-09-08: indices shifted 1,2,3 -> 2,3,4 now that Employee No./Employee are 2 separate
-            // columns instead of 1.
+            // Sticky columns are plain CSS (sticky-table-columns.js), not DataTables' FixedColumns, which is broken in this build.
+            drawCallback: function () { initStickyColumns(cfg.table, { left: 2, right: 1 }); },
+            // Department/Team/Position are the categorical columns; rebuilt on every render, so initComplete re-applies them.
             initComplete: function () {
                 initExcelColumnFilters(this.api(), {
                     mode: 'client',
@@ -318,20 +322,15 @@ function aisRenderTable(data) {
                         { index: 4, key: 'position' },
                     ],
                 });
-                // Re-run AFTER initExcelColumnFilters rebuilds the header cells' own inner markup (sort
-                // arrow + filter icon), which can nudge their rendered width slightly -- drawCallback's
-                // own call above (which fires BEFORE initComplete on the very first draw) would otherwise
-                // compute the left offsets from marginally-stale widths.
-                initStickyColumns('#tb_annual_summary', { left: 2, right: 1 });
-                initTableDragScroll('#tb_annual_summary');
+                // Re-run after the filter icons change header widths.
+                initStickyColumns(cfg.table, { left: 2, right: 1 });
+                initTableDragScroll(cfg.table);
             },
         },
     });
-    updateText($('#tb_annual_summary')[0]);
-    // 2026-09-12, Batch 5 item 6 -- re-applied on EVERY render (not just once) so the display-toggle
-    // state survives a year/filter change exactly as instructed: the checkboxes/module state above
-    // are never reset here, only re-synced onto whatever fresh <table> this render just built.
-    applyAisColumnDisplayToggle();
+    updateText($(cfg.table)[0]);
+    // Display-toggle state (module-level) survives a reload; it only ever applies to the income table.
+    if (key === 'income') applyAisColumnDisplayToggle();
 }
 
 // 2026-08-30, explicit request: "ในแต่ละช่องถ้ามีข้อมูลให้สามารถกดดู Detail ได้ด้วยครับ" -- opens
@@ -584,266 +583,6 @@ $(document).on('click', '.ais-annual-total-clickable', function () {
     bootstrap.Modal.getOrCreateInstance(document.getElementById('aisAnnualDetailModal')).show();
 });
 
-$(document).on('change', '#aisFiscalYear', loadAisSummary);
-
-/* ==================== Tab 2: Annual Withholding Tax (PIT) Summary (Phase 4, T027) ====================
-   Same shape/conventions as Tab 1 above (client-side, un-paginated, FixedColumns) -- tracking a
-   single tax_withheld figure per employee per month instead of gross/deduction/net. Cell click-to-
-   drill-down reuses the EXACT same #aisCellDetailModal/cellDetail() endpoint as Tab 1 -- that
-   endpoint already returns the full per-run breakdown (earning/deduction/statutory lines,
-   statutory including the TH_PIT line), so no separate PIT-specific detail view was needed.
-   Lazy-loaded on first shown.bs.tab (this app's own standing habit for a table built while its own
-   tab-pane is display:none -- see T018's own Recheck tab for the identical reasoning). ==================== */
-let aisPitTable = null;
-let aisPitLoaded = false;
-
-function aisPitCurrentFilters() {
-    return {
-        fiscal_year: $('#aisPitFiscalYear').val(),
-        cycle_id: $('#aisPitFilterCycle').val() || '',
-        department_id: $('#aisPitFilterDepartment').val() || '',
-        team_id: $('#aisPitFilterTeam').val() || '',
-        branch_id: $('#aisPitFilterBranch').val() || '',
-        role_id: $('#aisPitFilterRole').val() || '',
-        employee_status: aisStatusFilterValue('#aisPitFilterStatus'),
-    };
-}
-function loadAisPitFiscalYears() {
-    $.ajax({
-        url: `${BASE_URL}/api/annual-income-summary.years`, method: 'GET', dataType: 'json',
-        success: function (res) {
-            if (!res.status) return;
-            const $select = $('#aisPitFiscalYear').empty();
-            const years = res.data && res.data.length ? res.data : [new Date().getFullYear()];
-            years.forEach(y => $select.append(new Option('FY ' + y, y)));
-            loadAisPitSummary();
-        },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
-    });
-}
-function loadAisPitSummary() {
-    const filters = aisPitCurrentFilters();
-    if (!filters.fiscal_year) return;
-    $('#ais-pit-pane .ais-table-wrap').addClass('d-none');
-    $('#aisPitTableEmpty').addClass('d-none');
-    $.ajax({
-        url: `${BASE_URL}/api/annual-income-summary.pit-summary`, method: 'GET', dataType: 'json', data: filters,
-        success: function (res) {
-            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred while loading the data.'); return; }
-            $('#aisPitSummaryEmployeeCount').text(res.data.totals.employee_count || 0);
-            $('#aisPitSummaryTotal').text(aisFmt(res.data.totals.annual_tax_withheld));
-            aisRenderPitTable(res.data);
-        },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
-    });
-}
-function aisPitCellHtml(row, val, month) {
-    if (!val) return '<span class="text-muted">-</span>';
-    return `<button type="button" class="ais-cell-clickable" data-employee-id="${row.employee_id}" data-year="${month.year}" data-month="${month.month}">
-        <span class="ais-cell-net">${aisFmt(val)}</span>
-    </button>`;
-}
-function aisRenderPitTable(data) {
-    const months = data.months || [];
-    const employees = data.employees || [];
-
-    if (aisPitTable) {
-        aisPitTable.destroy();
-        aisPitTable = null;
-        $('#tb_ais_pit').empty().append('<thead></thead><tfoot></tfoot>');
-    }
-    if (!employees.length) {
-        $('#aisPitTableEmpty').removeClass('d-none');
-        $('#ais-pit-pane .ais-table-wrap').addClass('d-none');
-        return;
-    }
-    $('#ais-pit-pane .ais-table-wrap').removeClass('d-none');
-
-    // 2026-09-08, explicit request: "แยก code กับ ชื่อพนักงานเป็นคนละ column กันครับ แผนก ทีม ตำแหน่ง ไม่ต้อง
-    // fixed column ครับ ให้เลื่อนได้เหมือนเดือน" -- same split as Tab 1's own aisTable above.
-    let headHtml = '<tr><th>' + (langData['employee_no'] || 'Employee No.') + '</th>'
-        + '<th>' + (langData['employee'] || 'Employee') + '</th>'
-        + '<th>' + (langData['department'] || 'Department') + '</th>'
-        + '<th>' + (langData['team'] || 'Team') + '</th>'
-        + '<th>' + (langData['position'] || 'Position') + '</th>';
-    months.forEach(m => { headHtml += `<th class="ais-month-${m.state}">${escapeHtml(aisMonthLabel(m))}</th>`; });
-    headHtml += '<th>' + (langData['annual_total'] || 'Annual Total') + '</th></tr>';
-    $('#tb_ais_pit thead').html(headHtml);
-
-    let footHtml = '<tr><td>' + (langData['total'] || 'Total') + '</td><td></td><td></td><td></td><td></td>';
-    months.forEach(m => { footHtml += `<td class="text-end">${aisFmt((data.totals.months || {})[m.key] || 0)}</td>`; });
-    footHtml += `<td class="text-end"><span class="ais-total-value">${aisFmt(data.totals.annual_tax_withheld)}</span></td></tr>`;
-    $('#tb_ais_pit tfoot').html(footHtml);
-
-    // 2026-09-12, Batch 5 item 5 step 2 -- same avatar+name Employee column as Tab 1's own aisTable
-    // above (apvPersonLineHtml(), app.js -- no second avatar function), object-form render for the
-    // same sort/search-safety reason.
-    const columns = [
-        { data: null, render: (row) => `<span class="ais-employee-no">${escapeHtml(row.employee_no)}</span>` },
-        {
-            data: null,
-            render: {
-                display: (row) => apvPersonLineHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '', 32, row.profile_photo_path, row.employee_id ? { employeeId: row.employee_id } : null),
-                sort: (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '',
-                filter: (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '',
-            }
-        },
-        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
-        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
-        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
-    ];
-    months.forEach(function (m, idx) {
-        columns.push({
-            data: null, className: 'text-end',
-            render: { display: (row) => aisPitCellHtml(row, row.months[idx], m), sort: (row) => row.months[idx] || 0, filter: (row) => row.months[idx] || 0 }
-        });
-    });
-    columns.push({
-        data: null, className: 'text-end',
-        render: { display: (row) => `<span class="ais-total-value">${aisFmt(row.annual_tax_withheld)}</span>`, sort: (row) => row.annual_tax_withheld, filter: (row) => row.annual_tax_withheld }
-    });
-
-    // 2026-09-12, Batch 5 item 5 step 1 (step 3 follow-up) -- routed through the shared
-    // initSharedDataTable() helper, same reasoning as Tab 1's own aisTable above -- the helper reads
-    // the row count straight from `dtOptions.data` below (the same array DataTables itself uses).
-    aisPitTable = initSharedDataTable('#tb_ais_pit', {
-        dtOptions: {
-            data: employees, columns: columns, paging: false, info: false, order: [],
-            // 2026-09-08, same fix as Tab 1's own aisTable above -- see that DataTable's own comment for
-            // the full "scrollX/FixedColumns confirmed broken app-wide" reasoning, unchanged here. left:2
-            // (Employee No.+Employee only, not Department/Team/Position) matches Tab 1's own same-day
-            // follow-up too.
-            drawCallback: function () { initStickyColumns('#tb_ais_pit', { left: 2, right: 1 }); },
-            initComplete: function () { initTableDragScroll('#tb_ais_pit'); },
-        },
-    });
-    updateText($('#tb_ais_pit')[0]);
-}
-
-/* ==================== Tab: Annual SSO Contribution Summary (Batch 2, item 6, 2026-09-10) ====================
-   Direct structural mirror of the Annual Withholding Tax (PIT) Summary tab above -- same fiscal-
-   year concept, same client-side/un-paginated/FixedColumns table, same #aisCellDetailModal cell
-   click-to-drill-down (that modal already returns the full statutory breakdown, TH_SSO line
-   included, so no SSO-specific detail view was needed here either). Tracks employee-side SSO
-   contribution only (AnnualIncomeSummaryModel::rawDeductionRows()'s own `employee_amount`, confirmed via
-   AskUserQuestion -- not employee+employer combined). ==================== */
-let aisSsoTable = null;
-let aisSsoLoaded = false;
-
-function aisSsoCurrentFilters() {
-    return {
-        fiscal_year: $('#aisSsoFiscalYear').val(),
-        cycle_id: $('#aisSsoFilterCycle').val() || '',
-        department_id: $('#aisSsoFilterDepartment').val() || '',
-        team_id: $('#aisSsoFilterTeam').val() || '',
-        branch_id: $('#aisSsoFilterBranch').val() || '',
-        role_id: $('#aisSsoFilterRole').val() || '',
-        employee_status: aisStatusFilterValue('#aisSsoFilterStatus'),
-    };
-}
-function loadAisSsoFiscalYears() {
-    $.ajax({
-        url: `${BASE_URL}/api/annual-income-summary.years`, method: 'GET', dataType: 'json',
-        success: function (res) {
-            if (!res.status) return;
-            const $select = $('#aisSsoFiscalYear').empty();
-            const years = res.data && res.data.length ? res.data : [new Date().getFullYear()];
-            years.forEach(y => $select.append(new Option('FY ' + y, y)));
-            loadAisSsoSummary();
-        },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
-    });
-}
-function loadAisSsoSummary() {
-    const filters = aisSsoCurrentFilters();
-    if (!filters.fiscal_year) return;
-    $('#ais-sso-pane .ais-table-wrap').addClass('d-none');
-    $('#aisSsoTableEmpty').addClass('d-none');
-    $.ajax({
-        url: `${BASE_URL}/api/annual-income-summary.sso-summary`, method: 'GET', dataType: 'json', data: filters,
-        success: function (res) {
-            if (!res.status) { showWarning(res.message || langData['save_failed'] || 'An error occurred while loading the data.'); return; }
-            $('#aisSsoSummaryEmployeeCount').text(res.data.totals.employee_count || 0);
-            $('#aisSsoSummaryTotal').text(aisFmt(res.data.totals.annual_sso_amount));
-            aisRenderSsoTable(res.data);
-        },
-        error: function () { showWarning(langData['save_failed'] || 'An error occurred while loading the data.'); }
-    });
-}
-function aisSsoCellHtml(row, val, month) {
-    if (!val) return '<span class="text-muted">-</span>';
-    return `<button type="button" class="ais-cell-clickable" data-employee-id="${row.employee_id}" data-year="${month.year}" data-month="${month.month}">
-        <span class="ais-cell-net">${aisFmt(val)}</span>
-    </button>`;
-}
-function aisRenderSsoTable(data) {
-    const months = data.months || [];
-    const employees = data.employees || [];
-
-    if (aisSsoTable) {
-        aisSsoTable.destroy();
-        aisSsoTable = null;
-        $('#tb_ais_sso').empty().append('<thead></thead><tfoot></tfoot>');
-    }
-    if (!employees.length) {
-        $('#aisSsoTableEmpty').removeClass('d-none');
-        $('#ais-sso-pane .ais-table-wrap').addClass('d-none');
-        return;
-    }
-    $('#ais-sso-pane .ais-table-wrap').removeClass('d-none');
-
-    let headHtml = '<tr><th>' + (langData['employee_no'] || 'Employee No.') + '</th>'
-        + '<th>' + (langData['employee'] || 'Employee') + '</th>'
-        + '<th>' + (langData['department'] || 'Department') + '</th>'
-        + '<th>' + (langData['team'] || 'Team') + '</th>'
-        + '<th>' + (langData['position'] || 'Position') + '</th>';
-    months.forEach(m => { headHtml += `<th class="ais-month-${m.state}">${escapeHtml(aisMonthLabel(m))}</th>`; });
-    headHtml += '<th>' + (langData['annual_total'] || 'Annual Total') + '</th></tr>';
-    $('#tb_ais_sso thead').html(headHtml);
-
-    let footHtml = '<tr><td>' + (langData['total'] || 'Total') + '</td><td></td><td></td><td></td><td></td>';
-    months.forEach(m => { footHtml += `<td class="text-end">${aisFmt((data.totals.months || {})[m.key] || 0)}</td>`; });
-    footHtml += `<td class="text-end"><span class="ais-total-value">${aisFmt(data.totals.annual_sso_amount)}</span></td></tr>`;
-    $('#tb_ais_sso tfoot').html(footHtml);
-
-    // 2026-09-12, Batch 5 item 5 step 2 -- same avatar+name Employee column as Tab 1/2 above
-    // (apvPersonLineHtml(), app.js -- no second avatar function).
-    const columns = [
-        { data: null, render: (row) => `<span class="ais-employee-no">${escapeHtml(row.employee_no)}</span>` },
-        {
-            data: null,
-            render: {
-                display: (row) => apvPersonLineHtml((currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '', 32, row.profile_photo_path, row.employee_id ? { employeeId: row.employee_id } : null),
-                sort: (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '',
-                filter: (row) => (currentLang === 'th' ? row.name_th : row.name_en) || row.name_th || row.name_en || '',
-            }
-        },
-        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.department_name_th : row.department_name_en) || row.department_name_th || '-') },
-        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.team_name_th : row.team_name_en) || row.team_name_th || '-') },
-        { data: null, render: (row) => escapeHtml((currentLang === 'th' ? row.position_name_th : row.position_name_en) || row.position_name_th || '-') },
-    ];
-    months.forEach(function (m, idx) {
-        columns.push({
-            data: null, className: 'text-end',
-            render: { display: (row) => aisSsoCellHtml(row, row.months[idx], m), sort: (row) => row.months[idx] || 0, filter: (row) => row.months[idx] || 0 }
-        });
-    });
-    columns.push({
-        data: null, className: 'text-end',
-        render: { display: (row) => `<span class="ais-total-value">${aisFmt(row.annual_sso_amount)}</span>`, sort: (row) => row.annual_sso_amount, filter: (row) => row.annual_sso_amount }
-    });
-
-    // 2026-09-12, Batch 5 item 5 step 1 (step 3/4 follow-up) -- routed through the shared
-    // initSharedDataTable() helper, same reasoning as Tab 1/2 above.
-    aisSsoTable = initSharedDataTable('#tb_ais_sso', {
-        dtOptions: {
-            data: employees, columns: columns, paging: false, info: false, order: [],
-            drawCallback: function () { initStickyColumns('#tb_ais_sso', { left: 2, right: 1 }); },
-            initComplete: function () { initTableDragScroll('#tb_ais_sso'); },
-        },
-    });
-    updateText($('#tb_ais_sso')[0]);
-}
 
 /* ==================== Tab 3: Monthly Withholding Tax (Phase 4, T026) ====================
    Plain calendar year+month, not the fiscal-year abstraction -- see AnnualIncomeSummaryModel::
@@ -854,18 +593,7 @@ let aisMonthlyLoaded = false;
 let aisMonthlyTable = null;
 
 function aisMonthlyCurrentFilters() {
-    return {
-        year: $('#aisMonthlyYear').val(),
-        month: $('#aisMonthlyMonth').val(),
-        cycle_id: $('#aisMonthlyFilterCycle').val() || '',
-        department_id: $('#aisMonthlyFilterDepartment').val() || '',
-        team_id: $('#aisMonthlyFilterTeam').val() || '',
-        branch_id: $('#aisMonthlyFilterBranch').val() || '',
-        role_id: $('#aisMonthlyFilterRole').val() || '',
-        // 2026-09-12, Batch 5 item 5 step 2 -- genuinely missing before this (Branch above already
-        // existed; Status did not -- see the view's own comment on this correction).
-        employee_status: aisStatusFilterValue('#aisMonthlyFilterStatus'),
-    };
+    return Object.assign({ year: $('#aisMonthlyYear').val(), month: $('#aisMonthlyMonth').val() }, aisFilterValues('aisMonthlyFilter'));
 }
 function loadAisMonthlyYears() {
     $.ajax({
@@ -977,70 +705,51 @@ function aisRenderMonthlyTable(employees) {
     updateText($('#tb_ais_monthly')[0]);
 }
 
-$(document).on('change', '#aisPitFiscalYear', loadAisPitSummary);
 
-$(document).on('change', '#aisSsoFiscalYear', loadAisSsoSummary);
-
+$(document).on('change', '#aisFiscalYear', aisReloadActiveMetric);
 $(document).on('change', '#aisMonthlyYear, #aisMonthlyMonth', loadAisMonthlySummary);
 
-// Lazy-init every non-default tab (including the SSO tab added in Batch 2, item 6) on first
-// shown.bs.tab (same "DataTable built while display:none collapses every column" gotcha this app
-// has hit and documented many times already -- see docs/ui-standards.md).
-$(document).on('shown.bs.tab', '#ais-pit-tab', function () {
-    if (aisPitLoaded) return;
-    aisPitLoaded = true;
-    if (typeof initSelect2 === 'function') {
-        initSelect2('#aisPitFilterCycle', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisPitFilterDepartment', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisPitFilterTeam', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisPitFilterBranch', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisPitFilterRole', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisPitFilterStatus', { mode: 'static' });
-    }
-    initFilterBar('#aisPitFilterBar', { onChange: loadAisPitSummary });
-    loadAisPitFiscalYears();
+// A metric pill's table is built while its pane is visible: reload if filters changed since it last loaded,
+// else just re-measure columns (a table sized while hidden collapses every column).
+$(document).on('shown.bs.tab', '[data-ais-metric-tab]', function () {
+    const key = $(this).data('ais-metric-tab');
+    const cfg = AIS_METRICS[key];
+    aisShowMetricCards(key);
+    if (cfg.loadedVersion !== aisVersion) loadAisMetric(key);
+    else if (cfg.dt) cfg.dt.columns.adjust();
 });
-$(document).on('shown.bs.tab', '#ais-sso-tab', function () {
-    if (aisSsoLoaded) return;
-    aisSsoLoaded = true;
-    if (typeof initSelect2 === 'function') {
-        initSelect2('#aisSsoFilterCycle', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisSsoFilterDepartment', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisSsoFilterTeam', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisSsoFilterBranch', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisSsoFilterRole', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisSsoFilterStatus', { mode: 'static' });
-    }
-    initFilterBar('#aisSsoFilterBar', { onChange: loadAisSsoSummary });
-    loadAisSsoFiscalYears();
+// Annual Summary is a top tab of /reports: filters + first load happen when its pane is first visible, later shows re-measure the active table.
+let aisAnnualInited = false;
+function aisInitAnnual() {
+    if (aisAnnualInited || !$('#aisFilterBar').length) return;
+    aisAnnualInited = true;
+    aisInitFilterSelects('aisFilter');
+    initFilterBar('#aisFilterBar', { onChange: aisReloadActiveMetric });
+    aisShowMetricCards('income');
+    loadAisFiscalYears();
+}
+$(document).on('shown.bs.tab', '#ais-annual-tab', function () {
+    if (!aisAnnualInited) { aisInitAnnual(); return; }
+    const cfg = AIS_METRICS[aisActiveMetric()];
+    if (cfg.dt) cfg.dt.columns.adjust();
 });
-$(document).on('shown.bs.tab', '#ais-monthly-pit-tab', function () {
-    if (aisMonthlyLoaded) return;
+// Monthly tab is lazy: filters + data load on first show, columns re-measured on later shows.
+function aisInitMonthly() {
+    if (aisMonthlyLoaded || !$('#aisMonthlyFilterBar').length) return;
     aisMonthlyLoaded = true;
-    if (typeof initSelect2 === 'function') {
-        initSelect2('#aisMonthlyFilterCycle', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisMonthlyFilterDepartment', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisMonthlyFilterTeam', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisMonthlyFilterBranch', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisMonthlyFilterRole', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisMonthlyMonth', { mode: 'static' });
-        initSelect2('#aisMonthlyFilterStatus', { mode: 'static' });
-    }
+    aisInitFilterSelects('aisMonthlyFilter');
+    if (typeof initSelect2 === 'function') initSelect2('#aisMonthlyMonth', { mode: 'static' });
     initFilterBar('#aisMonthlyFilterBar', { onChange: loadAisMonthlySummary });
     loadAisMonthlyYears();
+}
+$(document).on('shown.bs.tab', '#ais-monthly-pit-tab', function () {
+    if (!aisMonthlyLoaded) { aisInitMonthly(); return; }
+    if (aisMonthlyTable) aisMonthlyTable.columns.adjust();
 });
 
 $(document).ready(function () {
     (window.langReady || Promise.resolve()).then(function () {
-    if (typeof initSelect2 === 'function') {
-        initSelect2('#aisFilterCycle', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisFilterDepartment', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisFilterTeam', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisFilterBranch', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisFilterRole', { mode: 'ajax', allowClear: true });
-        initSelect2('#aisFilterStatus', { mode: 'static' });
-    }
-    initFilterBar('#aisFilterBar', { onChange: loadAisSummary });
-    loadAisFiscalYears();
+    if ($('#ais-annual-tab').hasClass('active')) aisInitAnnual();
+    if ($('#ais-monthly-pit-tab').hasClass('active')) aisInitMonthly();
     });
 });

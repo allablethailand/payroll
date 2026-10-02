@@ -32,14 +32,9 @@ class AnnualIncomeSummaryController extends Controller {
         return true;
     }
 
-    public function index() {
-        $compId = (int)getCompId();
-        $check = $this->permissionModel->checkPermission($this->userId(), 'annual_income_summary.view', $this->isAdmin(), $compId);
-        if (!$check['allowed']) {
-            $this->view('permission');
-            return;
-        }
-        $this->view('reports/annual-summary');
+    /** Old /reports/annual-summary URL (bookmarks, saved links); the page is a tab of /reports now, which re-checks permission. */
+    public function legacyIndex() {
+        $this->redirect(BASE_URL . '/reports?tab=annual');
     }
 
     private function fiscalStartMonth(int $compId): int {

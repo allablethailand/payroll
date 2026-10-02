@@ -259,6 +259,8 @@ if ($compIdForOrigamiFlags > 0) {
     $canViewAnnualIncomeSummaryMenu = (new PermissionModel())->checkPermission($menuUserId, 'annual_income_summary.view', $menuIsAdmin, $compIdForOrigamiFlags)['allowed'];
 }
 $canViewReportsMenu = $canViewReportsGenerateMenu || $canViewAnnualIncomeSummaryMenu;
+// "Audit & Activity Logs" (/audit) merges Payroll Run Audit (payroll_run.view) + Audit Log (audit_log.view); the page re-checks each tab itself.
+$canViewAuditMenu = $canViewReportsGenerateMenu || $canViewAuditLogMenu;
 
 // 2026-09-07, explicit request: "ทางลัด วางอยู่ล่างเกินไป ใช้งานไม่สะดวกครับ...ปรับเป็นให้อยู่บน header ไปเลย
 // ให้เรียงอยู่ก่อนหน้า notification โดยให้ผู้ใช้เลือกได้ว่าจะโชว์ หรือไม่โชว์เมนูไหน เลือกได้ทั้งเมนู และ sub menu
@@ -614,7 +616,7 @@ if ($compIdForOrigamiFlags > 0 && $navUserId > 0) {
              widened to `$canViewReportsMenu || $canViewAuditLogMenu` so the parent still shows for
              someone who can see ONLY Audit Log (e.g. no payroll_run.view/annual_income_summary.view
              grant at all) with nothing else in the submenu visible to them. -->
-        <?php if ($canViewReportsMenu || $canViewAuditLogMenu): ?>
+        <?php if ($canViewReportsMenu || $canViewAuditMenu): ?>
         <li class="menu-item has-submenu">
             <a href="javascript:void(0);" class="menu-link submenu-toggle">
                 <span class="menu-icon">
@@ -624,49 +626,24 @@ if ($compIdForOrigamiFlags > 0 && $navUserId > 0) {
                 <span class="menu-arrow"><i class="fas fa-chevron-down"></i></span>
             </a>
             <ul class="submenu">
-                <?php if ($canViewReportsGenerateMenu): ?>
+                <?php if ($canViewReportsMenu): ?>
                 <li>
                     <a href="<?=BASE_URL?>/reports" class="submenu-link">
                         <span class="submenu-icon">
-                            <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Generate Reports">
+                            <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Payroll & Tax Reports">
                         </span>
-                        <span class="submenu-text" data-i18n="generate_reports">Generate Reports</span>
+                        <span class="submenu-text" data-i18n="payroll_tax_reports_menu">Payroll & Tax Reports</span>
                     </a>
                 </li>
                 <?php endif; ?>
-                <?php if ($canViewAnnualIncomeSummaryMenu): ?>
+                <!-- Payroll Run Audit + Audit Log merged into one page with sub-tabs; old URLs redirect to it. -->
+                <?php if ($canViewAuditMenu): ?>
                 <li>
-                    <a href="<?=BASE_URL?>/reports/annual-summary" class="submenu-link">
+                    <a href="<?=BASE_URL?>/audit" class="submenu-link">
                         <span class="submenu-icon">
-                            <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Annual Income Summary">
+                            <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Audit & Activity Logs">
                         </span>
-                        <span class="submenu-text" data-i18n="annual_income_summary">Annual Income Summary</span>
-                    </a>
-                </li>
-                <?php endif; ?>
-                <!-- 2026-08-31, same-day follow-up (item 10, explicit request: "Design ให้หน่อยครับ No
-                     Idea" -- diff-history audit of every payroll run's manual edits). Same "interactive
-                     page, not a generate-and-download document" reasoning as Annual Income Summary
-                     above -- hangs off the same Reports submenu rather than a new top-level icon.
-                     Gated by $canViewReportsGenerateMenu (payroll_run.view) since ReportsController::
-                     runAudit() checks the same permission, not its own separate one. -->
-                <?php if ($canViewReportsGenerateMenu): ?>
-                <li>
-                    <a href="<?=BASE_URL?>/reports/run-audit" class="submenu-link">
-                        <span class="submenu-icon">
-                            <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Payroll Run Audit">
-                        </span>
-                        <span class="submenu-text" data-i18n="payroll_run_audit_menu">Payroll Run Audit</span>
-                    </a>
-                </li>
-                <?php endif; ?>
-                <?php if ($canViewAuditLogMenu): ?>
-                <li>
-                    <a href="<?=BASE_URL?>/audit-log" class="submenu-link">
-                        <span class="submenu-icon">
-                            <img src="<?=BASE_URL?>/public/images/menu/REPORT.SVG" alt="Audit Log">
-                        </span>
-                        <span class="submenu-text" data-i18n="audit_log_menu">Audit Log</span>
+                        <span class="submenu-text" data-i18n="audit_center_menu">Audit & Activity Logs</span>
                     </a>
                 </li>
                 <?php endif; ?>

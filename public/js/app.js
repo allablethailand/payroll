@@ -379,6 +379,16 @@ $(document).on('shown.bs.tab', function (e) {
 $(document).on('shown.bs.modal', function (e) {
     scrollActiveTabIntoView(e.target);
 });
+/** Runs initFn once, when the tab's pane is first visible (already active at load, or first shown.bs.tab) so DataTables never measures a hidden pane; later shows re-measure columns. */
+function initTabPaneOnce(tabButtonSelector, initFn) {
+    const $btn = $(tabButtonSelector);
+    if (!$btn.length) return;
+    const $pane = $($btn.attr('data-bs-target'));
+    let done = false;
+    const run = function () { if (!done) { done = true; initFn(); } else { $pane.find('table.dataTable').each(function () { $(this).DataTable().columns.adjust(); }); } };
+    if ($btn.hasClass('active')) run();
+    $btn.on('shown.bs.tab', run);
+}
 $(document).ready(function () {
     scrollActiveTabIntoView(document);
 });

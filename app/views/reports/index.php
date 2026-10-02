@@ -2,7 +2,7 @@
     <?php
     $breadcrumb = [
         ['label' => 'Reports', 'href' => null, 'i18n' => 'reports'],
-        ['label' => 'Generate Reports', 'href' => null, 'i18n' => 'generate_reports'],
+        ['label' => 'Payroll & Tax Reports', 'href' => null, 'i18n' => 'payroll_tax_reports_menu'],
     ];
     $description = 'Split into per-schedule reports (pulled from a payroll run) and annual reports (issued once a year) -- pick the period once, then generate whichever reports you need for it.';
     $description_i18n = 'reports_description';
@@ -54,28 +54,49 @@
            comment for why this is what actually pulls the 3 buttons into a tight cluster. */
         .reports-matrix-group-col { width: 64px; }
     </style>
-    <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="reportsTabs" role="tablist">
+    <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" id="reportsTopTabs" role="tablist">
+        <?php if ($canReports): ?>
         <li class="nav-item" role="presentation">
-            <button class="nav-link setup-menu active" id="cycle-tab" data-bs-toggle="tab" data-bs-target="#cycle-pane" type="button" role="tab" aria-controls="cycle-pane" aria-selected="true">
+            <button class="nav-link setup-menu<?= $activeTab === 'reports' ? ' active' : '' ?>" id="reports-main-tab" data-bs-toggle="tab" data-bs-target="#reports-main-pane" type="button" role="tab" aria-controls="reports-main-pane" aria-selected="<?= $activeTab === 'reports' ? 'true' : 'false' ?>"><span data-i18n="reports_tab_generate">Generate Reports</span></button>
+        </li>
+        <?php endif; ?>
+        <?php if ($canAnnual): ?>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link setup-menu<?= $activeTab === 'annual' ? ' active' : '' ?>" id="ais-annual-tab" data-bs-toggle="tab" data-bs-target="#ais-annual-pane" type="button" role="tab" aria-controls="ais-annual-pane" aria-selected="<?= $activeTab === 'annual' ? 'true' : 'false' ?>"><span data-i18n="ais_tab_annual">Annual Summary</span></button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link setup-menu<?= $activeTab === 'monthly' ? ' active' : '' ?>" id="ais-monthly-pit-tab" data-bs-toggle="tab" data-bs-target="#ais-monthly-pit-pane" type="button" role="tab" aria-controls="ais-monthly-pit-pane" aria-selected="<?= $activeTab === 'monthly' ? 'true' : 'false' ?>"><span data-i18n="ais_tab_pit_monthly">Monthly Withholding Tax</span></button>
+        </li>
+        <?php endif; ?>
+    </ul>
+    <div class="tab-content" id="reportsTopContent">
+    <?php if ($canReports): ?>
+    <div class="tab-pane fade<?= $activeTab === 'reports' ? ' show active' : '' ?>" id="reports-main-pane" role="tabpanel" aria-labelledby="reports-main-tab" tabindex="0">
+    <!-- The 4 report tabs below are sub-tabs of "Generate Reports" (pills); ids unchanged. -->
+    <div class="bg-light rounded-3 p-2 mb-4 structure-tabs-wrap">
+    <ul class="nav nav-pills flex-nowrap scrollable-tabs structure-tabs" id="reportsTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link structure-menu active" id="cycle-tab" data-bs-toggle="tab" data-bs-target="#cycle-pane" type="button" role="tab" aria-controls="cycle-pane" aria-selected="true">
                 <span data-i18n="tab_cycle_reports">Per-Schedule Reports</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link setup-menu" id="annual-tab" data-bs-toggle="tab" data-bs-target="#annual-pane" type="button" role="tab" aria-controls="annual-pane" aria-selected="false">
+            <button class="nav-link structure-menu" id="annual-tab" data-bs-toggle="tab" data-bs-target="#annual-pane" type="button" role="tab" aria-controls="annual-pane" aria-selected="false">
                 <span data-i18n="tab_annual_reports">Annual Reports</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link setup-menu" id="monthly-tab" data-bs-toggle="tab" data-bs-target="#monthly-pane" type="button" role="tab" aria-controls="monthly-pane" aria-selected="false">
+            <button class="nav-link structure-menu" id="monthly-tab" data-bs-toggle="tab" data-bs-target="#monthly-pane" type="button" role="tab" aria-controls="monthly-pane" aria-selected="false">
                 <span data-i18n="tab_monthly_reports">Monthly Report</span>
             </button>
         </li>
         <li class="nav-item" role="presentation">
-            <button class="nav-link setup-menu" id="history-tab" data-bs-toggle="tab" data-bs-target="#history-pane" type="button" role="tab" aria-controls="history-pane" aria-selected="false">
+            <button class="nav-link structure-menu" id="history-tab" data-bs-toggle="tab" data-bs-target="#history-pane" type="button" role="tab" aria-controls="history-pane" aria-selected="false">
                 <span data-i18n="tab_export_history">Export History</span>
             </button>
         </li>
     </ul>
+    </div>
     <div class="tab-content border-top-0 bg-white rounded-bottom mb-5 mt-0 rounded-top-0">
         <div class="tab-pane fade show active" id="cycle-pane" role="tabpanel" aria-labelledby="cycle-tab" tabindex="0">
             <!-- 2026-09-07, explicit request: "Menu สร้างรายงาน ถ้าเปลี่ยนเป็น ตารางแสดงรอบที่สามารถพิมพ์ได้
@@ -234,8 +255,17 @@
             </div>
         </div>
     </div>
+    </div>
+    <?php endif; ?>
+    <?php if ($canAnnual) include __DIR__ . '/_annual_summary_panes.php'; ?>
+    </div>
 
     <!-- payslipRosterModal / annualReportConfigModal / reportsPreviewModal / cycleReportHistoryModal
          moved to app/views/layout/modals.php (2026-08-30, modal consolidation). -->
 </div>
+<?php if ($canReports): ?>
 <script src="<?=asset('public/js/reports/index.js')?>"></script>
+<?php endif; ?>
+<?php if ($canAnnual): ?>
+<script src="<?=asset('public/js/reports/annual-summary.js')?>"></script>
+<?php endif; ?>
