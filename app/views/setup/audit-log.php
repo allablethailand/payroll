@@ -1,18 +1,14 @@
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" data-i18n="audit_log_title">Audit Log</span>
-        </h5>
-    </nav>
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon"><i class="fa-solid fa-clock-rotate-left"></i></div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="audit_log_title">Audit Log</h5>
-            <p class="page-header-card-desc" data-i18n="audit_log_description">Field-level history of changes to Employee, Company Profile, and Payroll Configuration records.</p>
-        </div>
-    </div>
+    <?php
+    $title = 'Audit Log';
+    $title_i18n = 'audit_log_title';
+    $breadcrumb = [
+        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+    ];
+    $description = 'Field-level history of changes to Employee, Company Profile, and Payroll Configuration records.';
+    $description_i18n = 'audit_log_description';
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
 
     <!-- 2026-09-07, explicit report: "/payroll/audit-log filter ไม่เหมือนเพื่อน และส่วนของตารางตัด
          card-surface ออก" -- was a plain always-open `.row` bar with a bare native `<select>`

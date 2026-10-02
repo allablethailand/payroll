@@ -1,20 +1,14 @@
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" data-i18n="login_history">Login History</span>
-        </h5>
-    </nav>
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon">
-            <i class="fa-solid fa-clock-rotate-left"></i>
-        </div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="login_history">Login History</h5>
-            <p class="page-header-card-desc small" data-i18n="employee_login_history_description">Company-wide login and session history across every employee, with filters by employee, date range, device, and browser.</p>
-        </div>
-    </div>
+    <?php
+    $title = 'Login History';
+    $title_i18n = 'login_history';
+    $breadcrumb = [
+        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+    ];
+    $description = 'Company-wide login and session history across every employee, with filters by employee, date range, device, and browser.';
+    $description_i18n = 'employee_login_history_description';
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
 
     <!-- 2026-09-02, 3-way Employee submenu split -- this used to be the "Login History" tab-pane
          inside /payroll/employees (see EmployeeLoginLogModel::listForCompany()'s own docblock for
