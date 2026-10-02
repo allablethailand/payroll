@@ -1,68 +1,31 @@
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" data-i18n="dashboard">Dashboard</span>
-        </h5>
-    </nav>
-
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon"><i class="fa-solid fa-gauge-high"></i></div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" id="dashGreetingTitle">Welcome</h5>
-            <p class="page-header-card-desc small" id="dashGreetingDesc">Here is an overview of your payroll workspace.</p>
-        </div>
-    </div>
+    <?php
+    $title = 'Welcome';
+    $breadcrumb = [];
+    $description = 'Here is an overview of your payroll workspace.';
+    include __DIR__ . '/partials/page-header.php';
+    ?>
 
     <div class="row g-3 mb-4" id="dashStatRow">
         <div class="col-6 col-lg-3">
-            <div class="stat-card stat-card-gold h-100">
-                <div class="stat-card-icon"><i class="fa-solid fa-users"></i></div>
-                <div>
-                    <div class="stat-card-label" data-i18n="dash_active_employees">Active Employees</div>
-                    <div class="stat-card-value" id="dashActiveEmployees">-</div>
-                </div>
-            </div>
+            <?php $stat = ['label' => 'Active Employees', 'label_i18n' => 'dash_active_employees', 'value' => '-', 'value_id' => 'dashActiveEmployees', 'icon' => 'fa-solid fa-users'];
+            include __DIR__ . '/partials/stat-card.php'; ?>
         </div>
         <div class="col-6 col-lg-3">
-            <div class="stat-card stat-card-success h-100">
-                <div class="stat-card-icon"><i class="fa-solid fa-user-plus"></i></div>
-                <div>
-                    <div class="stat-card-label" data-i18n="dash_new_hires_month">New Hires This Month</div>
-                    <div class="stat-card-value" id="dashNewHires">-</div>
-                </div>
-            </div>
+            <?php $stat = ['label' => 'New Hires This Month', 'label_i18n' => 'dash_new_hires_month', 'value' => '-', 'value_id' => 'dashNewHires', 'icon' => 'fa-solid fa-user-plus'];
+            include __DIR__ . '/partials/stat-card.php'; ?>
         </div>
-        <!-- 2026-08-28, explicit request: "อยากให้เห็นเหมือนกันทั้งหมด แต่ตรงตัวเลขเงินเดือนให้เป็นไปตาม
-             Role ที่ Set ไว้" -- this whole widget block used to start d-none and only get shown by
-             dashboard.js when the acting employee had a payroll role at all; now always visible for
-             everyone, the money figure inside Recent Runs is the only part still role-gated (see
-             DashboardController::summary()'s own docblock). -->
+        <!-- Visible to everyone; only the money figure inside Recent Runs is role-gated (DashboardController::summary()). -->
         <div class="col-6 col-lg-3" id="dashStatPendingApprovalCol">
-            <a href="<?=BASE_URL?>/payroll-approval" class="text-decoration-none">
-                <div class="stat-card stat-card-danger h-100">
-                    <div class="stat-card-icon"><i class="fa-solid fa-clipboard-check"></i></div>
-                    <div>
-                        <div class="stat-card-label" data-i18n="dash_pending_my_approval">Pending My Approval</div>
-                        <div class="stat-card-value" id="dashPendingApproval">-</div>
-                    </div>
-                </div>
+            <a href="<?=BASE_URL?>/payroll-approval" class="d-block h-100 text-decoration-none">
+                <?php $stat = ['label' => 'Pending My Approval', 'label_i18n' => 'dash_pending_my_approval', 'value' => '-', 'value_id' => 'dashPendingApproval', 'icon' => 'fa-solid fa-clipboard-check'];
+                include __DIR__ . '/partials/stat-card.php'; ?>
             </a>
         </div>
+        <!-- Countdown text is filled by dashboard.js renderPayrollWidgets(); the single space keeps the sub slot rendered. -->
         <div class="col-6 col-lg-3" id="dashStatUpcomingPayCol">
-            <div class="stat-card stat-card-primary h-100">
-                <div class="stat-card-icon"><i class="fa-solid fa-calendar-day"></i></div>
-                <div>
-                    <div class="stat-card-label" data-i18n="dash_upcoming_pay_date">Upcoming Pay Date</div>
-                    <div class="stat-card-value" id="dashUpcomingPayDate">-</div>
-                    <!-- 2026-09-02, explicit request: "อยากให้ดูเป็น Payroll มากขึ้น...ถ้าเพิ่มอะไรได้ก็อยากให้เพิ่ม" --
-                         a countdown ("N day(s) left"/"Pay day is today"), computed purely client-side
-                         from the same upcoming_run.payment_date the value above already renders (no
-                         new backend field) -- see dashboard.js's own renderPayrollWidgets(). -->
-                    <div class="stat-card-sub" id="dashUpcomingPayCountdown"></div>
-                </div>
-            </div>
+            <?php $stat = ['label' => 'Upcoming Pay Date', 'label_i18n' => 'dash_upcoming_pay_date', 'value' => '-', 'value_id' => 'dashUpcomingPayDate', 'icon' => 'fa-solid fa-calendar-day', 'sub' => ' ', 'sub_id' => 'dashUpcomingPayCountdown'];
+            include __DIR__ . '/partials/stat-card.php'; ?>
         </div>
     </div>
 

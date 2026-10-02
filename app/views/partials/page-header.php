@@ -135,6 +135,7 @@
  *                                         ['label' => 'ขอข้อมูลเพิ่มเติม', 'id' => 'btnRequestInfoRunHeader', 'tone' => 'warning'],
  *                                         ['label' => 'ไม่อนุมัติ', 'id' => 'btnRejectRunHeader', 'tone' => 'danger'],
  *                                     ];
+ * @var string|null $title_i18n, $description_i18n  Optional lang keys -> `data-i18n` on the H1 / description, for static (non-JS-written) text.
  * @var string|null $description     Optional, ONE line (§2: "คำอธิบาย 1 บรรทัด (ถ้าจำเป็นจริง)"). Only
  *                                    set this when the title alone genuinely doesn't explain the page.
  *
@@ -263,7 +264,7 @@ if ($decision_actions) {
              its own here -- a page sets whatever badge markup it needs via statusBadge()/
              statusBadgeHtml() (§5) into it, this partial just reserves the slot next to the title. -->
         <div class="ph-title-wrap">
-            <h1 class="ph-title" id="<?=htmlspecialchars($id_prefix)?>Title"><?=htmlspecialchars($title)?></h1>
+            <h1 class="ph-title" id="<?=htmlspecialchars($id_prefix)?>Title"<?=!empty($title_i18n) ? ' data-i18n="' . htmlspecialchars($title_i18n) . '"' : ''?>><?=htmlspecialchars($title)?></h1>
             <span id="<?=htmlspecialchars($id_prefix)?>TitleBadge"></span>
         </div>
         <!-- id="phActions" always rendered, even with an empty queue (2026-09-13, Round 3 item 3a) --
@@ -339,5 +340,5 @@ if ($decision_actions) {
          fetch (Payroll Detail's own "งวด · วันจ่าย"). `d-none` when $description starts empty/null,
          a page fetching its real value client-side removes that class itself alongside setting the
          text -- same pattern this app's own reject/cancel-reason boxes already use. -->
-    <p class="ph-description<?=$description ? '' : ' d-none'?>" id="<?=htmlspecialchars($id_prefix)?>Description"><?=htmlspecialchars($description ?? '')?></p>
+    <p class="ph-description<?=$description ? '' : ' d-none'?>" id="<?=htmlspecialchars($id_prefix)?>Description"<?=!empty($description_i18n) ? ' data-i18n="' . htmlspecialchars($description_i18n) . '"' : ''?>><?=htmlspecialchars($description ?? '')?></p>
 </div>

@@ -1,18 +1,14 @@
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" data-i18n="announcement_menu">Announcements</span>
-        </h5>
-    </nav>
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon"><i class="fa-solid fa-bullhorn"></i></div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="announcement_menu">Announcements</h5>
-            <p class="page-header-card-desc" data-i18n="announcement_my_list_description">Announcements published to you.</p>
-        </div>
-    </div>
+    <?php
+    $title = 'Announcements';
+    $title_i18n = 'announcement_menu';
+    $breadcrumb = [
+        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+    ];
+    $description = 'Announcements published to you.';
+    $description_i18n = 'announcement_my_list_description';
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
     <div id="annMyListContainer" class="d-flex flex-column gap-3"></div>
     <p class="text-muted small d-none" id="annMyListEmpty" data-i18n="announcement_none">No announcements yet.</p>
 </div>

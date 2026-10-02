@@ -154,7 +154,7 @@ function loadDashboardSummary(year, month) {
     });
 }
 
-// 2026-08-29, real bug found and fixed: #dashGreetingTitle/#dashGreetingDesc used to carry
+// 2026-08-29, real bug found and fixed: #phTitle/#phDescription used to carry
 // data-i18n too (in dashboard.php) -- applyLanguage()'s generic updateText() sweep (public/js/
 // app.js) runs on every language switch and just does .text(rawLangValue) for any data-i18n
 // element, with no knowledge that this particular template still has an un-interpolated {date}
@@ -166,11 +166,11 @@ function loadDashboardSummary(year, month) {
 function renderDashboard(data) {
     const name = dashEmployeeDisplayName(data.employee);
     const greetPrefix = langData[dashGreetingKey()] || langData['dashboard_greeting_default'] || 'Welcome';
-    $('#dashGreetingTitle').text(name ? `${greetPrefix}, ${name}` : greetPrefix);
+    $('#phTitle').text(name ? `${greetPrefix}, ${name}` : greetPrefix);
 
     const dateStr = dashToDisplayDate(new Date().toISOString().slice(0, 10));
     const descTpl = langData['dashboard_greeting_description'] || 'Today is {date}. Here is an overview of your payroll workspace.';
-    $('#dashGreetingDesc').text(descTpl.replace('{date}', dateStr));
+    $('#phDescription').text(descTpl.replace('{date}', dateStr));
 
     // 2026-09-07, Dashboard redesign: syncs the month/year picker itself to whatever the backend
     // says is authoritative (matters both on first load -- defaults to today -- and after "Back to
