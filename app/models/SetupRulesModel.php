@@ -242,6 +242,7 @@ class SetupRulesModel {
         $start = (string)($data['start_time'] ?? '');
         $end = (string)($data['end_time'] ?? '');
         $breakMinutes = max(0, (int)($data['break_minutes'] ?? 0));
+        $baseHours = (isset($data['base_hours']) && is_numeric($data['base_hours']) && (float)$data['base_hours'] > 0 && (float)$data['base_hours'] <= 24) ? round((float)$data['base_hours'], 2) : null;
         $description = trim((string)($data['description'] ?? ''));
         $status = in_array($data['status'] ?? '', ['active', 'inactive'], true) ? $data['status'] : 'active';
         $workLocationId = (!empty($data['work_location_id']) && is_numeric($data['work_location_id'])) ? (int)$data['work_location_id'] : null;
@@ -275,13 +276,13 @@ class SetupRulesModel {
                     return ['status' => false, 'message' => 'Record not found.'];
                 }
                 $stmt = $this->db->prepare("UPDATE shifts SET shift_code = :code, shift_name_th = :th, shift_name_en = :en,
-                    start_time = :start, end_time = :end, break_minutes = :brk, work_location_id = :wl, description = :desc, status = :status,
+                    start_time = :start, end_time = :end, break_minutes = :brk, base_hours = COALESCE(:base_hours, base_hours), work_location_id = :wl, description = :desc, status = :status,
                     works_monday = :mon, works_tuesday = :tue, works_wednesday = :wed, works_thursday = :thu, works_friday = :fri,
                     works_saturday = :sat, works_sunday = :sun,
                     updated_by = :updated_by, updated_at = CURRENT_TIMESTAMP WHERE id = :id");
                 $stmt->execute([
                     ':code' => $code, ':th' => $nameTh, ':en' => $nameEn, ':start' => $start, ':end' => $end,
-                    ':brk' => $breakMinutes, ':wl' => $workLocationId, ':desc' => $description !== '' ? $description : null, ':status' => $status,
+                    ':brk' => $breakMinutes, ':base_hours' => $baseHours, ':wl' => $workLocationId, ':desc' => $description !== '' ? $description : null, ':status' => $status,
                     ':mon' => $worksMonday, ':tue' => $worksTuesday, ':wed' => $worksWednesday, ':thu' => $worksThursday,
                     ':fri' => $worksFriday, ':sat' => $worksSaturday, ':sun' => $worksSunday,
                     ':updated_by' => $userId, ':id' => $id
@@ -289,13 +290,13 @@ class SetupRulesModel {
                 return ['status' => true, 'message' => 'Updated successfully.', 'id' => $id];
             }
             $stmt = $this->db->prepare("INSERT INTO shifts (comp_id, shift_code, shift_name_th, shift_name_en, start_time,
-                end_time, break_minutes, work_location_id, description, status,
+                end_time, break_minutes, base_hours, work_location_id, description, status,
                 works_monday, works_tuesday, works_wednesday, works_thursday, works_friday, works_saturday, works_sunday, created_by)
-                VALUES (:comp_id, :code, :th, :en, :start, :end, :brk, :wl, :desc, :status,
+                VALUES (:comp_id, :code, :th, :en, :start, :end, :brk, COALESCE(:base_hours, 8.00), :wl, :desc, :status,
                 :mon, :tue, :wed, :thu, :fri, :sat, :sun, :created_by)");
             $stmt->execute([
                 ':comp_id' => $compId, ':code' => $code, ':th' => $nameTh, ':en' => $nameEn, ':start' => $start,
-                ':end' => $end, ':brk' => $breakMinutes, ':wl' => $workLocationId, ':desc' => $description !== '' ? $description : null,
+                ':end' => $end, ':brk' => $breakMinutes, ':base_hours' => $baseHours, ':wl' => $workLocationId, ':desc' => $description !== '' ? $description : null,
                 ':status' => $status,
                 ':mon' => $worksMonday, ':tue' => $worksTuesday, ':wed' => $worksWednesday, ':thu' => $worksThursday,
                 ':fri' => $worksFriday, ':sat' => $worksSaturday, ':sun' => $worksSunday,

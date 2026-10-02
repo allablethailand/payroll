@@ -330,13 +330,15 @@ class SyncPayResolver {
      *              doesn't already cover.
      * @return array{earning:array,deduction:array,errors:array}
      */
-    public function resolve(int $compId, array $syncItemRow, float $baseSalary, array $attendanceOverrides = [], array $exemptEventCodes = [], ?int $departmentId = null, ?int $teamId = null, bool $otEligible = true, array $otOverridesByScope = [], array $otRateSetRatesByScope = []): array {
+    public function resolve(int $compId, array $syncItemRow, float $baseSalary, array $attendanceOverrides = [], array $exemptEventCodes = [], ?int $departmentId = null, ?int $teamId = null, bool $otEligible = true, array $otOverridesByScope = [], array $otRateSetRatesByScope = [], ?float $shiftBaseHours = null, ?int $divisorDays = null): array {
         $earning = [];
         $deduction = [];
         $errors = [];
 
-        $dailyRate = $this->dailyRate($baseSalary, $syncItemRow);
-        $hourlyRate = $this->hourlyRate($baseSalary, $syncItemRow);
+        // Config fallbacks only matter when Origami sends no working_days/working_mins; null = old 8h/30d constants.
+        $hoursPerDay = ($shiftBaseHours !== null && $shiftBaseHours > 0) ? $shiftBaseHours : self::STANDARD_HOURS_PER_DAY;
+        $dailyRate = $this->dailyRate($baseSalary, $syncItemRow, $divisorDays);
+        $hourlyRate = $this->hourlyRate($baseSalary, $syncItemRow, $divisorDays, $hoursPerDay);
         // 2026-08-29, real bug found and fixed (explicit report with the exact expected math worked
         // out by hand: baseSalary(13,500) / 30 / 8 = 56.25/hr, x1.5 OT multiplier = 84.375/hr, x1.5
         // hours = 126.5625 -> 126.56) -- OT premium pay must always be computed off the FIXED
@@ -483,7 +485,7 @@ class SyncPayResolver {
             $overrideMinutes = null;
             foreach ($def['structured'] as $s) {
                 if (array_key_exists($s['column'], $attendanceOverrides) && $attendanceOverrides[$s['column']] !== null) {
-                    $overrideMinutes = $this->candidateToMinutes(['unit' => $s['unit'], 'value' => (float)$attendanceOverrides[$s['column']]]);
+                    $overrideMinutes = $this->candidateToMinutes(['unit' => $s['unit'], 'value' => (float)$attendanceOverrides[$s['column']]], $hoursPerDay);
                     break;
                 }
             }
@@ -507,7 +509,7 @@ class SyncPayResolver {
                 if ($best === null) {
                     continue;
                 }
-                $minutes = $this->candidateToMinutes($best);
+                $minutes = $this->candidateToMinutes($best, $hoursPerDay);
             }
             if ($minutes <= 0) {
                 continue;
@@ -770,14 +772,14 @@ class SyncPayResolver {
      * null/unrecognized unit is treated as already-minutes, the safest defensive fallback since
      * there is no "money" concept for lateness itself.
      */
-    private function candidateToMinutes(array $candidate): float {
+    private function candidateToMinutes(array $candidate, float $hoursPerDay = self::STANDARD_HOURS_PER_DAY): float {
         $unit = $candidate['unit'];
         $value = (float)$candidate['value'];
         if ($unit === 'hours') {
             return $value * 60.0;
         }
         if ($unit === 'days') {
-            return $value * self::STANDARD_HOURS_PER_DAY * 60.0;
+            return $value * $hoursPerDay * 60.0;
         }
         return $value; // 'minutes'/'mins'/null/unrecognized.
     }
@@ -1031,22 +1033,22 @@ class SyncPayResolver {
      * when working_days isn't present in this row (defensive, same "may not send everything"
      * caution as the multi-unit dedup above).
      */
-    private function dailyRate(float $baseSalary, array $syncItemRow = []): float {
+    private function dailyRate(float $baseSalary, array $syncItemRow = [], ?int $divisorDays = null): float {
         $workingDays = (float)($syncItemRow['working_days'] ?? 0);
         if ($workingDays > 0) {
             return $baseSalary / $workingDays;
         }
-        return $baseSalary / self::STANDARD_WORKING_DAYS_PER_MONTH;
+        return $baseSalary / (($divisorDays !== null && $divisorDays > 0) ? (float)$divisorDays : self::STANDARD_WORKING_DAYS_PER_MONTH);
     }
 
     /** Same reasoning as dailyRate() above, but keyed off working_mins (more precise than
      *  working_days*8 whenever Origami's actual scheduled hours/day isn't exactly 8). */
-    private function hourlyRate(float $baseSalary, array $syncItemRow = []): float {
+    private function hourlyRate(float $baseSalary, array $syncItemRow = [], ?int $divisorDays = null, float $hoursPerDay = self::STANDARD_HOURS_PER_DAY): float {
         $workingMins = (float)($syncItemRow['working_mins'] ?? 0);
         if ($workingMins > 0) {
             return $baseSalary / ($workingMins / 60.0);
         }
-        return $this->dailyRate($baseSalary, $syncItemRow) / self::STANDARD_HOURS_PER_DAY;
+        return $this->dailyRate($baseSalary, $syncItemRow, $divisorDays) / $hoursPerDay;
     }
 
     private function normalizeCode(string $code): string {
