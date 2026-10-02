@@ -1,22 +1,15 @@
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-parent" data-i18n="settings">Settings</span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" data-i18n="tax_and_statutory">Tax & Statutory</span>
-        </h5>
-    </nav>
-    <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
-         app/views/payroll/index.php). -->
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon"><i class="fa-solid fa-scale-balanced"></i></div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="tax_and_statutory">Tax & Statutory</h5>
-            <p class="page-header-card-desc" data-i18n="tax_statutory_description">Configure statutory items (tax, social insurance, provident fund) per country, with rate history and progressive tax brackets.</p>
-        </div>
-    </div>
+    <?php
+    $title = 'Tax & Statutory';
+    $title_i18n = 'tax_and_statutory';
+    $breadcrumb = [
+        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
+    ];
+    $description = 'Configure statutory items (tax, social insurance, provident fund) per country, with rate history and progressive tax brackets.';
+    $description_i18n = 'tax_statutory_description';
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
 
     <!-- 2026-09-03, Backlog Phase 9, T044, explicit request: "ให้ยุบ 2 Tab แรกเข้าด้วยกันเลย ไม่ต้องมี
          Master เพราะ Master ให้เป็นตัวกลางไป ให้เหลือแค่ Rate ที่ตั้งค่าได้ โดย Default ดึงมาจาก Master" --

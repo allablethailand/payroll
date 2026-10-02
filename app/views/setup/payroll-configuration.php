@@ -1,22 +1,16 @@
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-parent" data-i18n="settings">Settings</span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" data-i18n="payroll_cycle">Payroll Schedule</span>
-        </h5>
-    </nav>
-    <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
-         app/views/payroll/index.php). -->
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon"><i class="fa-solid fa-calendar-day"></i></div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="payroll_configuration">Payroll Configuration</h5>
-            <p class="page-header-card-desc" data-i18n="payroll_configuration_description">Set up payroll schedules, income types, and deduction types by employee group or employment type.</p>
-        </div>
-    </div>
+    <?php
+    $title = 'Payroll Configuration';
+    $title_i18n = 'payroll_configuration';
+    $breadcrumb = [
+        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
+        ['label' => 'Payroll Schedule', 'href' => null, 'i18n' => 'payroll_cycle'],
+    ];
+    $description = 'Set up payroll schedules, income types, and deduction types by employee group or employment type.';
+    $description_i18n = 'payroll_configuration_description';
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs" id="companySetupTabs" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link setup-menu active" id="cycle-tab" data-bs-toggle="tab" data-bs-target="#cycle-pane" type="button" role="tab" aria-controls="cycle-pane" aria-selected="true">

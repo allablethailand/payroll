@@ -1,22 +1,15 @@
 <div class="container container-body">
-  <nav aria-label="breadcrumb">
-    <h5 class="payroll-breadcrumb mt-5 mb-5">
-      <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-      <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-      <span class="bc-parent" data-i18n="settings">Settings</span>
-      <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-      <span class="bc-current" data-i18n="document_and_approval">Document &amp; Approval</span>
-    </h5>
-  </nav>
-  <!-- .page-header-card rollout (2026-08-21, explicit request -- see the matching comment in
-       app/views/payroll/index.php). -->
-  <div class="page-header-card mb-4">
-    <div class="page-header-card-icon"><i class="fa-solid fa-file-signature"></i></div>
-    <div class="page-header-card-body">
-      <h5 class="page-header-card-title" data-i18n="document_and_approval">Document &amp; Approval</h5>
-      <p class="page-header-card-desc" data-i18n="document_and_approval_description">Configure approval workflows and document numbering for payroll documents.</p>
-    </div>
-  </div>
+  <?php
+  $title = 'Document & Approval';
+  $title_i18n = 'document_and_approval';
+  $breadcrumb = [
+      ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+      ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
+  ];
+  $description = 'Configure approval workflows and document numbering for payroll documents.';
+  $description_i18n = 'document_and_approval_description';
+  include __DIR__ . '/../partials/page-header.php';
+  ?>
 
   <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" role="tablist">
     <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-flow" type="button" role="tab"><span data-i18n="approval_workflow">Approval Workflow</span></button></li>
