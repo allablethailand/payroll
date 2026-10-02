@@ -1,24 +1,16 @@
 <div class="container container-body">
-  <nav aria-label="breadcrumb">
-    <h5 class="payroll-breadcrumb mt-5 mb-5">
-      <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-      <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-      <span class="bc-parent" data-i18n="payslip_menu">Payslip</span>
-      <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-      <span class="bc-current" data-i18n="requests">Requests</span>
-    </h5>
-  </nav>
-  <!-- 2026-08-26, generalized alongside the new Employment Certificate Requests tab -- title/
-       description use their OWN new i18n keys (not `payslip_requests`, which is still the tab
-       button's own label specifically) so adding a second document type here doesn't misword the
-       page header into sounding payslip-only. -->
-  <div class="page-header-card mb-4">
-    <div class="page-header-card-icon"><i class="fa-solid fa-inbox"></i></div>
-    <div class="page-header-card-body">
-      <h5 class="page-header-card-title" data-i18n="document_requests_title">Document Requests</h5>
-      <p class="page-header-card-desc" data-i18n="document_requests_description">Submit and track payslip and employment certificate requests, and review the payslip delivery history.</p>
-    </div>
-  </div>
+  <?php
+  $title = 'Document Requests';
+  $title_i18n = 'document_requests_title';
+  $breadcrumb = [
+      ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+      ['label' => 'Payslip', 'href' => null, 'i18n' => 'payslip_menu'],
+      ['label' => 'Requests', 'href' => null, 'i18n' => 'requests'],
+  ];
+  $description = 'Submit and track payslip and employment certificate requests, and review the payslip delivery history.';
+  $description_i18n = 'document_requests_description';
+  include __DIR__ . '/../partials/page-header.php';
+  ?>
 
   <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" role="tablist">
     <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-req" type="button" id="payslipRequestTabBtn" role="tab"><span data-i18n="payslip_requests">Payslip Requests</span></button></li>

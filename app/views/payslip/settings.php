@@ -1,20 +1,16 @@
 <div class="container container-body">
-  <nav aria-label="breadcrumb">
-    <h5 class="payroll-breadcrumb mt-5 mb-5">
-      <span class="bc-root"><i class="fas fa-home me-1"></i> <span data-i18n="payroll">Payroll</span></span>
-      <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-      <span class="bc-parent" data-i18n="payslip_menu">Payslip</span>
-      <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-      <span class="bc-current" data-i18n="settings">Settings</span>
-    </h5>
-  </nav>
-  <div class="page-header-card mb-4">
-    <div class="page-header-card-icon"><i class="fa-solid fa-file-invoice"></i></div>
-    <div class="page-header-card-body">
-      <h5 class="page-header-card-title" data-i18n="payslip_settings">Payslip Settings</h5>
-      <p class="page-header-card-desc" data-i18n="payslip_settings_description">Configure the payslip template and how payslips get distributed to employees.</p>
-    </div>
-  </div>
+  <?php
+  $title = 'Payslip Settings';
+  $title_i18n = 'payslip_settings';
+  $breadcrumb = [
+      ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+      ['label' => 'Payslip', 'href' => null, 'i18n' => 'payslip_menu'],
+      ['label' => 'Settings', 'href' => null, 'i18n' => 'settings'],
+  ];
+  $description = 'Configure the payslip template and how payslips get distributed to employees.';
+  $description_i18n = 'payslip_settings_description';
+  include __DIR__ . '/../partials/page-header.php';
+  ?>
 
   <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" role="tablist">
     <li class="nav-item"><button class="nav-link setup-menu active" data-bs-toggle="tab" data-bs-target="#tab-tpl" type="button" id="payslipTemplateTabBtn" role="tab"><span data-i18n="payslip_template">Payslip Template</span></button></li>

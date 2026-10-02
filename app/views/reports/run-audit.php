@@ -1,27 +1,15 @@
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i><span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <a href="<?=BASE_URL?>/reports" class="bc-parent text-decoration-none" data-i18n="reports">Reports</a>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" data-i18n="payroll_run_audit_menu">Payroll Run Audit</span>
-        </h5>
-    </nav>
-    <!-- 2026-08-31, same-day follow-up (item 10, explicit request: "Design ให้หน่อยครับ No Idea") --
-         list every payroll run with its origin + how many manual edits it has on record, drill into
-         one run for a per-employee/per-item Original -> Edit 1 -> Edit 2 -> ... -> Current diff
-         table. See PayrollRunModel::runAuditList()/lineOverrideAuditDiff()'s own docblocks for the
-         data design, and payroll_run_line_override_history's migration comment for why runs from
-         before this feature shipped can genuinely show "no edit history available" even if they
-         WERE manually edited. -->
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon"><i class="fa-solid fa-magnifying-glass-chart"></i></div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="payroll_run_audit_menu">Payroll Run Audit</h5>
-            <p class="page-header-card-desc" data-i18n="run_audit_page_description">Which payroll runs were manually edited, by whom, and what changed -- drill into any run for a before/after breakdown.</p>
-        </div>
-    </div>
+    <?php
+    $title = 'Payroll Run Audit';
+    $title_i18n = 'payroll_run_audit_menu';
+    $breadcrumb = [
+        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Reports', 'href' => BASE_URL . '/reports', 'i18n' => 'reports'],
+    ];
+    $description = 'Which payroll runs were manually edited, by whom, and what changed -- drill into any run for a before/after breakdown.';
+    $description_i18n = 'run_audit_page_description';
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
 
     <div class="alert alert-info small mb-4" id="runAuditHistoryStartNotice">
         <i class="fa-solid fa-circle-info me-1"></i>

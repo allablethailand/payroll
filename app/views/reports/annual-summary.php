@@ -1,41 +1,15 @@
 <div class="container container-body">
-    <nav aria-label="breadcrumb">
-        <h5 class="payroll-breadcrumb mt-5 mb-5">
-            <span class="bc-root"><i class="fas fa-home me-1"></i><span data-i18n="payroll">Payroll</span></span>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <a href="<?=BASE_URL?>/reports" class="bc-parent text-decoration-none" data-i18n="reports">Reports</a>
-            <span class="bc-separator"><i class="fas fa-chevron-right"></i></span>
-            <span class="bc-current" data-i18n="annual_income_summary">Annual Income &amp; Tax Summary</span>
-        </h5>
-    </nav>
-    <!-- 2026-08-29, explicit request: "ต้องการอีกหน้าคล้ายๆหน้าของ Employee เป็นข้อมูลสรุปรอบตามปี" -- own
-         interactive page (live filter + horizontally-scrolling table with frozen columns), not a
-         generate-and-download document card like the rest of the Reports module -- see
-         AnnualIncomeSummaryModel's own docblock for the data/aggregation design.
-         2026-08-30 (Phase 4, T026/T027, explicit request: "Report หักภาษี รายเดือน...Report หักภาษี
-         สรุปรายปี + ปรับโครงสร้างเมนู...เปลี่ยนชื่อเมนู 'สรุปรายได้ประจำปี'...ทำเป็น Tab ภายใน รวมกับรายงานหัก
-         ภาษีรายปี") -- grown from a single-purpose page into a 3-tab combined page: the original
-         Annual Income Summary content is now Tab 1 unchanged, Tab 2 is the new Annual Withholding
-         Tax (PIT) Summary, Tab 3 is the new Monthly Withholding Tax detail (confirmed via
-         AskUserQuestion to live here as a 3rd tab, not a separate page). Route/URL
-         (/reports/annual-summary) and the page's own i18n key (annual_income_summary) are both
-         UNCHANGED -- only that key's VALUE was renamed (see en.json/th.json), same "change the i18n
-         value, not the key" precedent this project already used once for the Payslip menu rename
-         (see CLAUDE.md's Employment Certificate Template v4 section). -->
-    <div class="page-header-card mb-4">
-        <div class="page-header-card-icon"><i class="fa-solid fa-chart-column"></i></div>
-        <div class="page-header-card-body">
-            <h5 class="page-header-card-title" data-i18n="annual_income_summary">Annual Income &amp; Tax Summary</h5>
-            <p class="page-header-card-desc" data-i18n="annual_income_summary_description">Each employee's income, deductions, and withholding tax, month by month across a fiscal year.</p>
-        </div>
-        <!-- 2026-08-30 (Phase 4, T028, explicit request: "ตัดปุ่ม 'ตั้งค่าการตัดรอบปี' ออกจากหน้าสรุปรายได้
-             ประจำปี ใช้ค่าจาก Company Profile แทน") -- the quick-access "Fiscal Year Settings" gear
-             button + its own narrow save path (AnnualIncomeSummaryModel::saveFiscalYearStartMonth(),
-             now removed entirely) are gone. companies.fiscal_year_start_month is STILL read here
-             (AnnualIncomeSummaryController::fiscalStartMonth()) exactly as before, edited from
-             Company Profile's own "Company Information" section only -- its original/canonical home,
-             see CompanyProfileModel::save(). -->
-    </div>
+    <?php
+    $title = 'Annual Income & Tax Summary';
+    $title_i18n = 'annual_income_summary';
+    $breadcrumb = [
+        ['label' => 'Payroll', 'href' => BASE_URL . '/dashboard', 'i18n' => 'payroll'],
+        ['label' => 'Reports', 'href' => BASE_URL . '/reports', 'i18n' => 'reports'],
+    ];
+    $description = 'Each employee\'s income, deductions, and withholding tax, month by month across a fiscal year.';
+    $description_i18n = 'annual_income_summary_description';
+    include __DIR__ . '/../partials/page-header.php';
+    ?>
 
     <ul class="nav nav-tabs flex-nowrap scrollable-tabs setup-tabs mb-4" id="aisTopTabs" role="tablist">
         <li class="nav-item" role="presentation">
