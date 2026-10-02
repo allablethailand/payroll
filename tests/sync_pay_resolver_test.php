@@ -775,6 +775,35 @@ try {
     check('flat_amount deduction still computes correctly (2.00 * 30 = 60.00)', findLine($rWdFlat['deduction'], 'LATE_DEDUCT')['amount'] ?? null, 60.0);
     $pdo->prepare("DELETE FROM attendance_deduction_rules WHERE comp_id = :c AND event_code = 'late'")->execute([':c' => $compId]);
 
+    echo "=== 2026-10-02 Absent: 0.94 days AND 450 mins together -- minutes win, rate from config fallback (shift base_hours, prorate_divisor_days) ===
+";
+    $absBoth = $blankRow;
+    $absBoth['absent_days'] = 0.94;
+    $absBoth['absent_mins'] = 450;
+    $r = $resolver->resolve($compId, $absBoth, $baseSalary);
+    check('default 8h/30d: 24000/30/8/60*450 = 750.00 (minutes, not 0.94 days = 752.00)', findLine($r['deduction'], 'ABSENT_DEDUCT')['amount'] ?? null, 750.0);
+    $r = $resolver->resolve($compId, $absBoth, $baseSalary, [], [], null, null, true, [], [], 7.5, 30);
+    check('shift base_hours 7.5: 800/7.5/60*450 = 800.00', findLine($r['deduction'], 'ABSENT_DEDUCT')['amount'] ?? null, 800.0);
+    $r = $resolver->resolve($compId, $absBoth, $baseSalary, [], [], null, null, true, [], [], 8.0, 26);
+    check('divisor_days 26: 24000/26/8/60*450 = 865.38', findLine($r['deduction'], 'ABSENT_DEDUCT')['amount'] ?? null, 865.38);
+
+    echo "=== 2026-10-02 Absent: 0.94 days only -- days converted with the SAME base hours, so money = dailyRate * 0.94 ===
+";
+    $absDays = $blankRow;
+    $absDays['absent_days'] = 0.94;
+    $r = $resolver->resolve($compId, $absDays, $baseSalary);
+    check('default: 800 * 0.94 = 752.00', findLine($r['deduction'], 'ABSENT_DEDUCT')['amount'] ?? null, 752.0);
+    $r = $resolver->resolve($compId, $absDays, $baseSalary, [], [], null, null, true, [], [], 7.5, 30);
+    check('shift 7.5h: still 800 * 0.94 = 752.00 (days*7.5*60 mins at 800/450 per min)', findLine($r['deduction'], 'ABSENT_DEDUCT')['amount'] ?? null, 752.0);
+
+    echo "=== 2026-10-02 Origami working_days/working_mins stay primary over config ===
+";
+    $absOrigami = $absBoth;
+    $absOrigami['working_days'] = 22;
+    $absOrigami['working_mins'] = 10560;
+    $r = $resolver->resolve($compId, $absOrigami, $baseSalary, [], [], null, null, true, [], [], 7.0, 26);
+    check('24000/(10560/60)/60*450 = 1022.73 (config 7h/26d ignored)', findLine($r['deduction'], 'ABSENT_DEDUCT')['amount'] ?? null, 1022.73);
+
 } finally {
     $pdo->rollBack();
 }
