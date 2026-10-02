@@ -3161,6 +3161,14 @@ class PayrollRunModel {
         $stmtProrateDivisor->execute([':id' => $compId]);
         $prorateDivisorDays = (int)($stmtProrateDivisor->fetchColumn() ?: 30);
 
+        // shifts.base_hours (default 8.00) is the per-shift hours/day fallback for attendance-deduction rates.
+        $stmtShiftHours = $this->db->prepare("SELECT id, base_hours FROM `shifts` WHERE comp_id = :comp_id AND deleted_at IS NULL");
+        $stmtShiftHours->execute([':comp_id' => $compId]);
+        $shiftBaseHoursById = [];
+        foreach ($stmtShiftHours->fetchAll(PDO::FETCH_ASSOC) as $sh) {
+            $shiftBaseHoursById[(int)$sh['id']] = (float)$sh['base_hours'];
+        }
+
         // 2026-08-30 (Phase 8, T041): "no attendance/OT/leave data at all this period" is only a
         // meaningful WARNING for a company actually linked to Origami Payroll sync (a company on
         // that tier reasonably expects Origami to have sent SOMETHING every period) -- for a
@@ -3270,7 +3278,7 @@ class PayrollRunModel {
             // calculation regardless of also being manually rostered.
             $stmtEmp = $this->db->prepare("SELECT DISTINCT e.id, e.employee_no, e.base_salary_amount, e.key_version, e.employment_date, e.employment_end_date,
                     e.sso_enrolled, e.pvd_enrolled, e.tax_exempt, e.is_payroll_ready, e.ot_eligible, e.ot_rate_source, e.assigned_ot_rate_set_id,
-                    e.has_spouse, e.tax_calculation_method, e.tax_non_resident, e.salary_type, e.department_id, e.team_id, e.position_id, e.employment_status,
+                    e.has_spouse, e.tax_calculation_method, e.tax_non_resident, e.salary_type, e.department_id, e.team_id, e.shift_id, e.position_id, e.employment_status,
                     e.employment_type, e.intern_base_salary_ratio_override, e.probation_base_salary_ratio_override, e.probation_defer_pvd_override, e.probation_defer_sso_override, e.probation_defer_recurring_earning_override, e.intern_defer_pvd_override, e.intern_defer_sso_override, e.intern_defer_recurring_earning_override, e.sso_contribution_rate, e.sso_employer_contribution_rate, e.pvd_start_date, e.pvd_employee_rate, e.pvd_employer_rate, e.payment_method_id,
                     CASE WHEN psi.employee_id IS NOT NULL THEN 'sync' ELSE 'manual' END AS data_source
                 FROM `employees` e
@@ -3326,7 +3334,7 @@ class PayrollRunModel {
         } else {
             $stmtEmp = $this->db->prepare("SELECT e.id, e.employee_no, e.base_salary_amount, e.key_version, e.employment_date, e.employment_end_date,
                     e.sso_enrolled, e.pvd_enrolled, e.tax_exempt, e.is_payroll_ready, e.ot_eligible, e.ot_rate_source, e.assigned_ot_rate_set_id,
-                    e.has_spouse, e.tax_calculation_method, e.tax_non_resident, e.salary_type, e.department_id, e.team_id, e.position_id, e.employment_status,
+                    e.has_spouse, e.tax_calculation_method, e.tax_non_resident, e.salary_type, e.department_id, e.team_id, e.shift_id, e.position_id, e.employment_status,
                     e.employment_type, e.intern_base_salary_ratio_override, e.probation_base_salary_ratio_override, e.probation_defer_pvd_override, e.probation_defer_sso_override, e.probation_defer_recurring_earning_override, e.intern_defer_pvd_override, e.intern_defer_sso_override, e.intern_defer_recurring_earning_override, e.sso_contribution_rate, e.sso_employer_contribution_rate, e.pvd_start_date, e.pvd_employee_rate, e.pvd_employer_rate, e.payment_method_id, 'manual' AS data_source
                 FROM `payroll_run_manual_employees` pme
                 JOIN `employees` e ON e.id = pme.employee_id AND e.comp_id = :comp_id AND e.deleted_at IS NULL AND e.is_payroll_participant = 1
@@ -4191,7 +4199,8 @@ class PayrollRunModel {
                         $employeeTeamIdForSync = isset($emp['team_id']) && $emp['team_id'] !== null ? (int)$emp['team_id'] : null;
                         $syncResultIncentive = $this->syncPayResolver->resolve($compId, $syncItemsByEmployee[$employeeId], $baseSalary,
                             $attendanceOverridesByEmployee[$employeeId] ?? [], [], $employeeDepartmentIdForSync, $employeeTeamIdForSync,
-                            (bool)($emp['ot_eligible'] ?? true), $otOverridesByEmployee[$employeeId] ?? [], $otRateSetRatesByEmployee[$employeeId]['rates'] ?? []);
+                            (bool)($emp['ot_eligible'] ?? true), $otOverridesByEmployee[$employeeId] ?? [], $otRateSetRatesByEmployee[$employeeId]['rates'] ?? [],
+                            isset($emp['shift_id']) ? ($shiftBaseHoursById[(int)$emp['shift_id']] ?? null) : null, $prorateDivisorDays);
                         foreach ($syncResultIncentive['earning'] as $line) {
                             $earningLines[] = $line;
                         }
@@ -4370,7 +4379,8 @@ class PayrollRunModel {
                         );
                         $syncResult = $this->syncPayResolver->resolve($compId, $syncItemsByEmployee[$employeeId], $baseSalary,
                             $attendanceOverridesByEmployee[$employeeId] ?? [], $exemptEventCodes, $employeeDepartmentId, $employeeTeamId,
-                            (bool)($emp['ot_eligible'] ?? true), $otOverridesByEmployee[$employeeId] ?? [], $otRateSetRatesByEmployee[$employeeId]['rates'] ?? []);
+                            (bool)($emp['ot_eligible'] ?? true), $otOverridesByEmployee[$employeeId] ?? [], $otRateSetRatesByEmployee[$employeeId]['rates'] ?? [],
+                            isset($emp['shift_id']) ? ($shiftBaseHoursById[(int)$emp['shift_id']] ?? null) : null, $prorateDivisorDays);
                         foreach ($syncResult['earning'] as $line) {
                             $earningLines[] = $line;
                         }
